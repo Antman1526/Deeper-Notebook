@@ -4,8 +4,8 @@
 VERSION := $(shell grep -m1 version pyproject.toml | cut -d'"' -f2)
 IMAGE_NAME := lfnovo/open_notebook
 
-# Plataformas mais comumente suportadas pela imagem Python
-PLATFORMS=linux/amd64,linux/arm64,linux/arm/v7,linux/386
+PLATFORMS=linux/amd64,linux/arm64
+#,linux/arm/v7,linux/386
 
 database:
 	docker compose up -d
