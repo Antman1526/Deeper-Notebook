@@ -27,7 +27,7 @@ def call_model_with_messages(state: DocQueryState, config: RunnableConfig) -> di
         model_name = os.environ.get("RETRIEVAL_MODEL", os.environ["DEFAULT_MODEL"])
 
     model = get_langchain_model(model_name)
-    system_prompt = Prompter(prompt_template="ask_content").render(data=state)
+    system_prompt = Prompter(prompt_template="doc_query").render(data=state)
     logger.debug(f"System prompt: {system_prompt}")
     ai_message = model.invoke(system_prompt)
     return {"answer": ai_message}
