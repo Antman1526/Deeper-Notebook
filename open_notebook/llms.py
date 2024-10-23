@@ -136,7 +136,6 @@ class VertexAILanguageModel(LanguageModel):
             location=self.location,
             project=self.project,
             safety_settings=None,
-            api_key="[REDACTED_GOOGLE_API_KEY]",
         )
 
 
