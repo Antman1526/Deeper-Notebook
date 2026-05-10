@@ -142,3 +142,10 @@ specs/
 .harness/
 
 .mcp.json
+
+# desktop wrapper build outputs
+desktop/bin/
+*.spec.bak
+# Un-ignore the desktop/build Python package (caught by bare build/ rule above)
+!desktop/build/
+!desktop/build/**
