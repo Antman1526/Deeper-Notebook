@@ -1,8 +1,8 @@
-# desktop/build/post_build_windows.ps1 — wrap dist/open-notebook-Plus into a .zip
+# desktop/build/post_build_windows.ps1 — wrap dist/Open Notebook Plus into a .zip
 $ErrorActionPreference = "Stop"
-$Name = "open-notebook-Plus"
+$Name = "Open Notebook Plus"
 $Src = "dist\$Name"
-$Dest = "dist\$Name-windows-x64.zip"
+$Dest = "dist\Open-Notebook-Plus-windows-x64.zip"
 
 if (-not (Test-Path $Src)) {
   Write-Error "$Src not found. Run pyinstaller first."

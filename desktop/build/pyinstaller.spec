@@ -73,20 +73,20 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="open-notebook-Plus",
+    name="Open Notebook Plus",
     console=False,
     icon=str(ROOT / "resources" / ("icon.icns" if is_mac else "icon.ico")),
 )
 
 coll = COLLECT(
     exe, a.binaries, a.datas,
-    name="open-notebook-Plus",
+    name="Open Notebook Plus",
 )
 
 if is_mac:
     app = BUNDLE(
         coll,
-        name="open-notebook-Plus.app",
+        name="Open Notebook Plus.app",
         icon=str(ROOT / "resources" / "icon.icns"),
         bundle_identifier="com.antman1526.open-notebook-plus",
         info_plist={
