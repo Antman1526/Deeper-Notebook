@@ -52,7 +52,8 @@ datas = [
 hiddenimports = [
     "uvicorn", "uvicorn.protocols.http.h11_impl", "uvicorn.lifespan.on",
     "uvicorn.loops.auto", "uvicorn.protocols.websockets.auto",
-    "surreal_commands.worker", "llama_cpp.server",
+    "surreal_commands.cli.worker", "surreal_commands.core.worker",
+    "llama_cpp.server",
     "langchain_openai", "langchain_anthropic", "langchain_ollama",
     "langchain_google_genai", "langchain_groq", "langchain_mistralai",
     "langchain_deepseek",

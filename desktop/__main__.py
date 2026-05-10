@@ -1,11 +1,56 @@
 # desktop/__main__.py
-"""`python -m desktop` — boots config → wizard if needed → supervisor → window."""
+"""`python -m desktop` — boots config → wizard if needed → supervisor → window.
+
+When frozen by PyInstaller, `sys.executable` IS the bundled `Open Notebook Plus`
+binary — not a Python interpreter. Spawning `[sys.executable, "-m", "uvicorn", …]`
+re-runs the entire app and recurses. We avoid that with an internal dispatcher
+that re-enters the bundled Python with a different code path when the binary is
+invoked with our private `--onp-internal-*` flags.
+"""
 from __future__ import annotations
 
 import platform
 import sys
 from pathlib import Path
 
+
+def _dispatch_internal_subcommand() -> int | None:
+    """If invoked as a subprocess child, dispatch to the right entry point.
+
+    Returns an exit code (int) when handled and the caller should sys.exit().
+    Returns None when this is a normal app launch.
+    """
+    if len(sys.argv) < 2:
+        return None
+    cmd = sys.argv[1]
+
+    if cmd == "--onp-internal-uvicorn":
+        # Args: --onp-internal-uvicorn <APP> --host H --port P
+        # Re-shape sys.argv so uvicorn.main() parses correctly:
+        #   sys.argv = ["uvicorn", "<APP>", "--host", "H", "--port", "P"]
+        import uvicorn
+        sys.argv = ["uvicorn"] + sys.argv[2:]
+        uvicorn.main()
+        return 0  # uvicorn.main() doesn't return on graceful shutdown
+
+    if cmd == "--onp-internal-worker":
+        # Args: --onp-internal-worker --import-modules <MODULE>
+        from surreal_commands.cli.worker import main as worker_main
+        sys.argv = ["surreal-commands-worker"] + sys.argv[2:]
+        worker_main()
+        return 0
+
+    return None
+
+
+# Run the dispatcher BEFORE importing anything else heavy — child subprocesses
+# don't need Supervisor / PyWebView / the wizard.
+_rc = _dispatch_internal_subcommand()
+if _rc is not None:
+    sys.exit(_rc)
+
+
+# Normal app-launch path:
 from desktop.config import default_config_path, load_or_create
 from desktop.launcher import Supervisor
 from desktop.providers.llamacpp import LlamaCppProvider
