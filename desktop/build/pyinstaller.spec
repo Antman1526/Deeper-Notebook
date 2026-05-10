@@ -3,7 +3,10 @@
 import sys
 from pathlib import Path
 
-ROOT = Path(SPECPATH).resolve().parents[1]  # SPECPATH = desktop/build
+# SPECPATH is the directory holding this .spec file (i.e. desktop/build/).
+# ROOT = desktop/   (used for ROOT/bin, ROOT/first_run, ROOT/resources)
+# PROJECT_ROOT = repo root  (used for api/, frontend/, open_notebook/, etc.)
+ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
 
 is_mac = sys.platform == "darwin"
