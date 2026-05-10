@@ -32,3 +32,14 @@ def test_paperclip_provider_is_phase2_stub():
         p.list_models()
     with __import__("pytest").raises(NotImplementedError, match="Phase 2"):
         p.start("anything")
+
+
+from desktop.providers.hermes import HermesProvider
+
+
+def test_hermes_provider_is_phase2_stub():
+    p = HermesProvider()
+    assert p.name == "hermes"
+    assert p.is_available() is False
+    with __import__("pytest").raises(NotImplementedError, match="Phase 2"):
+        p.list_models()
