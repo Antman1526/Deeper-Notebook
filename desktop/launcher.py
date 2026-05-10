@@ -219,8 +219,10 @@ class Supervisor:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
             "node.exe" if self.node_arch.startswith("windows") else "bin/node"
         )
+        # The standalone build produces server.js with everything inlined.
+        # PORT comes from session_env (Next.js convention).
         self._spawn(
-            [str(node_bin), "start-server.js"],
+            [str(node_bin), "server.js"],
             cwd=self.repo_root / "frontend",
             name="next",
         )

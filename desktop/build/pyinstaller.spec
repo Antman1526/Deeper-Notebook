@@ -33,13 +33,15 @@ datas = [
     (str(PROJECT_ROOT / "open_notebook"), "open_notebook"),
     (str(PROJECT_ROOT / "commands"), "commands"),
     (str(PROJECT_ROOT / "prompts"), "prompts"),
-    # Frontend production build
-    (str(frontend_dir / ".next"), "frontend/.next"),
+    # Frontend: only the standalone build + static assets (no full node_modules,
+    # which is ~700 MB of symlinks PyInstaller can't traverse cleanly).
+    # `next build` with output="standalone" produces .next/standalone/server.js
+    # plus a deduplicated node_modules dir at .next/standalone/node_modules/.
+    # Static assets stay in .next/static/ and frontend/public/, which the
+    # standalone server reads from disk via FRONTEND_DIR.
+    (str(frontend_dir / ".next" / "standalone"), "frontend"),
+    (str(frontend_dir / ".next" / "static"), "frontend/.next/static"),
     (str(frontend_dir / "public"), "frontend/public"),
-    (str(frontend_dir / "package.json"), "frontend"),
-    (str(frontend_dir / "start-server.js"), "frontend"),
-    (str(frontend_dir / "next.config.ts"), "frontend"),
-    (str(frontend_dir / "node_modules"), "frontend/node_modules"),
     # Wizard static assets
     (str(ROOT / "first_run" / "static"), "desktop/first_run/static"),
     # Bundled binaries
