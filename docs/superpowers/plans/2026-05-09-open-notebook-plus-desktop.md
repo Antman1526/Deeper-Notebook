@@ -818,9 +818,10 @@ def test_start_spawns_server_and_returns_env(gguf_dir, monkeypatch):
     p = LlamaCppProvider(model_dir=gguf_dir, ready_probe=lambda port: True)
     env = p.start("model_b.gguf")
     assert isinstance(env, ProviderEnv)
-    assert env["OPENAI_API_BASE"] == "http://127.0.0.1:51111/v1"
-    assert env["OPENAI_API_KEY"] == "sk-no-key"
-    assert env["DEFAULT_MODEL"] == "model_b.gguf"
+    # Upstream uses esperanto's openai_compatible provider; env vars confirmed
+    # by reading esperanto/providers/llm/openai_compatible.py.
+    assert env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51111/v1"
+    assert env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     p.stop()
     fake_proc.terminate.assert_called_once()
 
@@ -921,10 +922,12 @@ class LlamaCppProvider:
                 raise RuntimeError(f"llama_cpp.server exited prematurely "
                                    f"(returncode={self._proc.returncode})")
             if self._ready_probe(port):
+                # Upstream uses esperanto's openai_compatible provider; these
+                # are the env var names esperanto's OpenAICompatibleLanguageModel
+                # actually reads. (`OPENAI_API_BASE` is NOT read by upstream.)
                 return ProviderEnv(
-                    OPENAI_API_BASE=f"http://127.0.0.1:{port}/v1",
-                    OPENAI_API_KEY="sk-no-key",
-                    DEFAULT_MODEL=model,
+                    OPENAI_COMPATIBLE_BASE_URL=f"http://127.0.0.1:{port}/v1",
+                    OPENAI_COMPATIBLE_API_KEY="sk-no-key",
                 )
             time.sleep(0.5)
 
