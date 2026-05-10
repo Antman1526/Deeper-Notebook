@@ -92,3 +92,17 @@ def test_save_handles_quote_in_value(tmp_path):
     cfg.save(cfg_path)
     loaded = load_or_create(cfg_path)
     assert loaded.default_model == 'weird"name.gguf'
+
+
+def test_theme_defaults_to_light_blue(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg = load_or_create(cfg_path)
+    assert cfg.theme == "light-blue"
+
+
+def test_theme_round_trips(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg = Config(model_dir=tmp_path, provider="none", default_model="",
+                 surreal_user="root", surreal_password="A" * 24, theme="dracula")
+    cfg.save(cfg_path)
+    assert load_or_create(cfg_path).theme == "dracula"

@@ -1,8 +1,53 @@
 (() => {
+  const THEMES = [
+    { id: 'light-blue', name: 'Light Blue', bg: '#FFFFFF', fg: '#2D7FF9' },
+    { id: 'system', name: 'System', bg: '#FFFFFF', fg: '#1A2B3C' },
+    { id: 'solarized-light', name: 'Solarized Light', bg: '#FDF6E3', fg: '#268BD2' },
+    { id: 'github-light', name: 'GitHub Light', bg: '#FFFFFF', fg: '#0969DA' },
+    { id: 'paper', name: 'Paper', bg: '#FBF8F1', fg: '#8B5A2B' },
+    { id: 'dark', name: 'Dark', bg: '#0F1419', fg: '#5AB1FF' },
+    { id: 'solarized-dark', name: 'Solarized Dark', bg: '#002B36', fg: '#268BD2' },
+    { id: 'dracula', name: 'Dracula', bg: '#282A36', fg: '#BD93F9' },
+    { id: 'nord', name: 'Nord', bg: '#2E3440', fg: '#88C0D0' },
+  ];
+
+  let chosenTheme = 'light-blue';
+  const html = document.documentElement;
+
   const screens = document.querySelectorAll('[data-screen]');
   const show = (name) => screens.forEach(s =>
     s.hidden = s.dataset.screen !== name);
 
+  const setTheme = (id) => {
+    chosenTheme = id;
+    html.dataset.theme = id;
+    document.querySelectorAll('.theme-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.theme === id);
+    });
+  };
+
+  // Build theme grid
+  const grid = document.getElementById('theme_grid');
+  THEMES.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'theme-card';
+    card.dataset.theme = t.id;
+    card.innerHTML = `
+      <div class="theme-swatch" style="--swatch-bg:${t.bg};--swatch-fg:${t.fg}"></div>
+      <div class="theme-name">${t.name}</div>
+    `;
+    card.addEventListener('click', () => setTheme(t.id));
+    grid.appendChild(card);
+  });
+  setTheme('light-blue');
+
+  // Dark-mode quick toggle: flips light-blue <-> dark
+  document.getElementById('dark_toggle').addEventListener('click', () => {
+    const dark = ['dark', 'solarized-dark', 'dracula', 'nord'].includes(chosenTheme);
+    setTheme(dark ? 'light-blue' : 'dark');
+  });
+
+  // Pre-fill model dir
   const modelDirInput = document.getElementById('model_dir');
   modelDirInput.value = navigator.platform.toLowerCase().includes('win')
     ? '%USERPROFILE%\\Desktop\\AI_Models'
@@ -18,17 +63,18 @@
             .replace(/^~/, document.body.dataset.home || '')
             .replace(/^%USERPROFILE%/, document.body.dataset.userprofile || ''),
           provider: choice,
-          default_model: document.getElementById('default_model').value || ''
+          default_model: document.getElementById('default_model').value || '',
+          theme: chosenTheme,
         };
         show('done');
-        document.getElementById('done_status').textContent = 'Saving...';
+        document.getElementById('done_status').textContent = 'Saving…';
         const r = await fetch('/api/save', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(payload)
         });
         document.getElementById('done_status').textContent = r.ok
-          ? 'Saved. You can close this window.'
+          ? 'Saved. Launching the main app…'
           : 'Error saving config; check logs.';
       } else {
         show(target);
