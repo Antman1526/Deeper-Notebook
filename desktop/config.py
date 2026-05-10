@@ -34,6 +34,7 @@ class Config:
     default_model: str
     surreal_user: str
     surreal_password: str
+    theme: str = "light-blue"
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,6 +64,7 @@ def load_or_create(path: Path) -> Config:
             default_model="",
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
+            theme="light-blue",
         )
         cfg.save(path)
         return cfg
@@ -77,4 +79,5 @@ def load_or_create(path: Path) -> Config:
         default_model=raw.get("default_model", ""),
         surreal_user=raw.get("surreal_user", "root"),
         surreal_password=raw["surreal_password"],
+        theme=raw.get("theme", "light-blue"),
     )
