@@ -1,2 +1,48 @@
-<!doctype html><html><body><h1>open-notebook-Plus</h1>
-<p>Wizard placeholder - replaced in Task 14.</p></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>open-notebook-Plus - Setup</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main id="app">
+    <section data-screen="welcome">
+      <h1>open-notebook-Plus</h1>
+      <p>Local-first AI notebooks. Let's get you set up - about 60 seconds.</p>
+      <button data-next="dir">Continue</button>
+    </section>
+
+    <section data-screen="dir" hidden>
+      <h2>Where should we look for models?</h2>
+      <p>GGUF files in this directory show up in the model picker.</p>
+      <input type="text" id="model_dir" />
+      <p class="hint" id="model_dir_hint"></p>
+      <button data-back="welcome">Back</button>
+      <button data-next="model">Continue</button>
+    </section>
+
+    <section data-screen="model" hidden>
+      <h2>Pick a starting model</h2>
+      <ul id="model_choices">
+        <li><label><input type="radio" name="choice" value="ollama" />
+          Use Ollama (auto-detected models)</label></li>
+        <li><label><input type="radio" name="choice" value="llamacpp" checked />
+          Use llama.cpp with a local GGUF</label></li>
+        <li><label><input type="radio" name="choice" value="none" />
+          Skip - I'll pick later in Settings</label></li>
+      </ul>
+      <select id="default_model" hidden></select>
+      <button data-back="dir">Back</button>
+      <button data-next="done">Continue</button>
+    </section>
+
+    <section data-screen="done" hidden>
+      <h2>You're set.</h2>
+      <p>Saving config and starting open-notebook-Plus...</p>
+      <p id="done_status"></p>
+    </section>
+  </main>
+  <script src="/static/wizard.js"></script>
+</body>
+</html>
