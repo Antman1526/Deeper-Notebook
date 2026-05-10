@@ -11,8 +11,10 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from typing import IO
 
 import httpx
 
@@ -53,6 +55,8 @@ class Supervisor:
         surreal_arch: str,
         node_arch: str,
         extra_env: dict[str, str] | None = None,
+        debug_mode: bool = False,
+        log_dir: Path | None = None,
     ) -> None:
         self.cfg = cfg
         self.repo_root = repo_root
@@ -60,7 +64,13 @@ class Supervisor:
         self.surreal_arch = surreal_arch
         self.node_arch = node_arch
         self.extra_env = dict(extra_env or {})
+        self.debug_mode = debug_mode
+        self.log_dir = log_dir or (
+            Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+            / ".open-notebook-plus" / "logs"
+        )
         self._procs: list[subprocess.Popen] = []
+        self._log_files: list[IO[bytes]] = []
         self.session_env: dict[str, str] = {}
         self.frontend_url: str = ""
 
@@ -109,21 +119,67 @@ class Supervisor:
                 p.kill()
             except Exception:
                 pass
+        for f in self._log_files:
+            try:
+                f.close()
+            except Exception:
+                pass
         self._procs.clear()
+        self._log_files.clear()
 
-    def _spawn(self, args: list[str], cwd: Path | None = None) -> subprocess.Popen:
-        # DEVNULL avoids the OS pipe-buffer deadlock that PIPE causes when
-        # long-running children (Surreal, uvicorn, Next) emit more output
-        # than the parent reads. v0.2 should drain to a rotating log file
-        # so users can debug startup failures.
+    def _spawn(
+        self,
+        args: list[str],
+        cwd: Path | None = None,
+        name: str = "child",
+    ) -> subprocess.Popen:
+        # PIPE without a reader deadlocks long-running children once the OS
+        # pipe buffer fills (Surreal, uvicorn, Next all emit plenty of output).
+        # In production we discard output entirely; in debug_mode we drain
+        # both streams on background threads into per-child log files so
+        # startup failures are recoverable.
+        if self.debug_mode:
+            stdout: int = subprocess.PIPE
+            stderr: int = subprocess.PIPE
+        else:
+            stdout = subprocess.DEVNULL
+            stderr = subprocess.DEVNULL
+
         proc = subprocess.Popen(
             args,
             cwd=str(cwd) if cwd else None,
             env=self.session_env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
         )
         self._procs.append(proc)
+
+        if self.debug_mode and proc.stdout is not None and proc.stderr is not None:
+            self._start_drainers(proc, name)
+
         return proc
+
+    def _start_drainers(self, proc: subprocess.Popen, name: str) -> None:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.log_dir / f"{name}.log"
+        log_file = open(log_path, "ab", buffering=0)
+        self._log_files.append(log_file)
+
+        def drain(stream: IO[bytes], prefix: bytes) -> None:
+            try:
+                for line in iter(stream.readline, b""):
+                    try:
+                        log_file.write(prefix + line)
+                    except Exception:
+                        return
+            except Exception:
+                return
+
+        for stream, prefix in ((proc.stdout, b"[out] "), (proc.stderr, b"[err] ")):
+            t = threading.Thread(
+                target=drain, args=(stream, prefix), name=f"drain-{name}", daemon=True
+            )
+            t.start()
 
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
@@ -131,19 +187,23 @@ class Supervisor:
         data_dir = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", "."))) \
             / ".open-notebook-plus" / "surreal_data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        self._spawn([
-            str(binary), "start",
-            "--user", self.cfg.surreal_user,
-            "--pass", self.cfg.surreal_password,
-            "--bind", f"127.0.0.1:{port}",
-            f"file://{data_dir}",
-        ])
+        self._spawn(
+            [
+                str(binary), "start",
+                "--user", self.cfg.surreal_user,
+                "--pass", self.cfg.surreal_password,
+                "--bind", f"127.0.0.1:{port}",
+                f"file://{data_dir}",
+            ],
+            name="surreal",
+        )
 
     def _spawn_api(self, port: int) -> None:
         self._spawn(
             [sys.executable, "-m", "uvicorn", "api.app:app",
              "--host", "127.0.0.1", "--port", str(port)],
             cwd=self.repo_root,
+            name="api",
         )
 
     def _spawn_worker(self) -> None:
@@ -152,6 +212,7 @@ class Supervisor:
         self._spawn(
             [sys.executable, "-m", "surreal_commands.worker"],
             cwd=self.repo_root,
+            name="worker",
         )
 
     def _spawn_next(self, port: int) -> None:
@@ -161,4 +222,5 @@ class Supervisor:
         self._spawn(
             [str(node_bin), "start-server.js"],
             cwd=self.repo_root / "frontend",
+            name="next",
         )
