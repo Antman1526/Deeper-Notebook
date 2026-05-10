@@ -60,3 +60,35 @@ def test_invalid_provider_raises(tmp_path):
                         'surreal_password = "AAAAAAAAAAAAAAAAAAAAAAAA"\n')
     with pytest.raises(ValueError, match="provider"):
         load_or_create(cfg_path)
+
+
+def test_save_round_trips_windows_path(tmp_path):
+    """Backslashes in model_dir must round-trip safely."""
+    cfg_path = tmp_path / "config.toml"
+    cfg = Config(
+        model_dir=Path(r"C:\Users\foo\Desktop\AI_Models"),
+        provider="llamacpp",
+        default_model="x.gguf",
+        surreal_user="root",
+        surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX",
+    )
+    cfg.save(cfg_path)
+    # On a real Windows machine load_or_create returns a WindowsPath, but
+    # tomllib parses the *string*; what matters is the string survives.
+    loaded = load_or_create(cfg_path)
+    assert str(loaded.model_dir) == r"C:\Users\foo\Desktop\AI_Models"
+
+
+def test_save_handles_quote_in_value(tmp_path):
+    """Embedded double quotes in user-supplied strings must survive."""
+    cfg_path = tmp_path / "config.toml"
+    cfg = Config(
+        model_dir=tmp_path / "AI",
+        provider="llamacpp",
+        default_model='weird"name.gguf',
+        surreal_user="root",
+        surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX",
+    )
+    cfg.save(cfg_path)
+    loaded = load_or_create(cfg_path)
+    assert loaded.default_model == 'weird"name.gguf'
