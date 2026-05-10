@@ -51,9 +51,27 @@ def main() -> int:
         if cfg.default_model:
             extra_env = lc.start(cfg.default_model)
 
+    # Until the app stably runs end-to-end, keep child stdout/stderr
+    # captured to ~/.open-notebook-plus/logs/ so post-mortem is possible.
+    # Disable once we trust the supervisor.
     sv = Supervisor(cfg=cfg, repo_root=repo_root(), bin_dir=bin_dir,
-                    surreal_arch=arch, node_arch=arch, extra_env=extra_env)
-    sv.start_all()
+                    surreal_arch=arch, node_arch=arch, extra_env=extra_env,
+                    debug_mode=True)
+    try:
+        sv.start_all()
+    except Exception as e:
+        # If a child probe times out, sv.frontend_url is empty and the
+        # window won't open. Surface what we have and bail cleanly.
+        import traceback
+        from pathlib import Path as _P
+        log_dir = _P.home() / ".open-notebook-plus" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "launcher.log").write_text(
+            f"Supervisor.start_all() failed:\n{traceback.format_exc()}\n"
+        )
+        sv.stop_all()
+        raise
+
     try:
         open_window(sv.frontend_url, on_close=sv.stop_all, theme=cfg.theme)
     finally:
