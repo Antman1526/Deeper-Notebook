@@ -28,11 +28,12 @@ def test_list_models_returns_names(provider, monkeypatch):
     assert provider.list_models() == ["llama3.1:latest", "mistral:7b"]
 
 
-def test_start_returns_env_with_base_url_and_model(provider):
+def test_start_returns_env_with_correct_base_url(provider):
     env = provider.start("llama3.1:latest")
     assert isinstance(env, ProviderEnv)
-    assert env["OLLAMA_BASE_URL"] == "http://127.0.0.1:11434"
-    assert env["DEFAULT_MODEL"] == "llama3.1:latest"
+    assert env["OLLAMA_API_BASE"] == "http://127.0.0.1:11434"
+    assert "DEFAULT_MODEL" not in env  # model selection is not env-driven
+    assert "OLLAMA_BASE_URL" not in env  # this is the wrong key (langchain convention only)
 
 
 def test_stop_is_noop(provider):
