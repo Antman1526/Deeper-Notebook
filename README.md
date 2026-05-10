@@ -1,4 +1,4 @@
-# open-notebook-Plus
+# Open Notebook Plus
 
 A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook)
 focused on **local-first AI notebooks**.
@@ -18,7 +18,7 @@ focused on **local-first AI notebooks**.
   the app to **Applications**, then **right-click -> Open** the first time
   (unsigned build; macOS Gatekeeper).
 - **Windows:** Download the `.zip` from Releases, extract anywhere, run
-  `open-notebook-Plus.exe`. SmartScreen will warn — click **More info ->
+  `Open Notebook Plus.exe`. SmartScreen will warn — click **More info ->
   Run anyway** (unsigned build).
 
 ## First run
@@ -56,7 +56,7 @@ zip and attaches them to a Release.
 
 ```
 +------------------------------------------------------+
-|  open-notebook-Plus.app / .exe                       |
+|  Open Notebook Plus.app / .exe                       |
 |                                                      |
 |  PyWebView native window (loads frontend URL)        |
 |                       |                              |
