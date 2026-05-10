@@ -9,6 +9,20 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+def _toml_string(v: str) -> str:
+    """TOML-safe string serialization.
+
+    Prefers literal strings (single-quoted, no escape interpretation) when the
+    value has no single quote or newline; otherwise falls back to a basic
+    string with backslash and double-quote escapes. Sufficient for the values
+    we serialize: paths, provider names, model identifiers, surreal credentials.
+    """
+    if "'" not in v and "\n" not in v:
+        return f"'{v}'"
+    escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 Provider = Literal["ollama", "llamacpp", "none"]
 _VALID_PROVIDERS: set[str] = {"ollama", "llamacpp", "none"}
 
@@ -25,7 +39,7 @@ class Config:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = asdict(self)
         data["model_dir"] = str(self.model_dir)
-        toml = "".join(f'{k} = "{v}"\n' for k, v in data.items())
+        toml = "".join(f"{k} = {_toml_string(v)}\n" for k, v in data.items())
         path.write_text(toml)
 
 
