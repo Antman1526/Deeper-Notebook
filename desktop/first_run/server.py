@@ -35,6 +35,7 @@ def build_app(config_path: Path, on_done: Callable[[], None]) -> web.Application
             default_model=body.get("default_model", ""),
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
+            theme=body.get("theme", "light-blue"),
         )
         cfg.save(config_path)
         on_done()
@@ -76,7 +77,7 @@ def run_wizard_blocking(config_path: Path) -> None:
         import time as _t
         _t.sleep(0.05)
 
-    window = webview.create_window("open-notebook-Plus - Setup",
+    window = webview.create_window("Open Notebook Plus — Setup",
                                    f"http://127.0.0.1:{site_port}/",
                                    width=720, height=540)
     def _watch_done():

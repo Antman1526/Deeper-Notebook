@@ -55,7 +55,7 @@ def main() -> int:
                     surreal_arch=arch, node_arch=arch, extra_env=extra_env)
     sv.start_all()
     try:
-        open_window(sv.frontend_url, on_close=sv.stop_all)
+        open_window(sv.frontend_url, on_close=sv.stop_all, theme=cfg.theme)
     finally:
         sv.stop_all()
     return 0

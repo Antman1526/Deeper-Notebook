@@ -29,7 +29,7 @@ class WizardTestCase(AioHTTPTestCase):
         assert resp.status == 200
         assert "text/html" in resp.headers["Content-Type"]
         body = await resp.text()
-        assert "open-notebook-Plus" in body
+        assert "Open Notebook Plus" in body
 
     async def test_post_save_writes_config(self):
         payload = {"model_dir": str(self.cfg_path.parent / "AI"),

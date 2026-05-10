@@ -1,46 +1,100 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light-blue">
 <head>
   <meta charset="utf-8">
-  <title>open-notebook-Plus - Setup</title>
+  <title>Open Notebook Plus — Setup</title>
+  <link rel="stylesheet" href="/static/themes.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <main id="app">
+    <button class="dark-toggle" id="dark_toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    </button>
+
     <section data-screen="welcome">
-      <h1>open-notebook-Plus</h1>
-      <p>Local-first AI notebooks. Let's get you set up - about 60 seconds.</p>
-      <button data-next="dir">Continue</button>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="8" y="12" width="48" height="40" rx="6" fill="currentColor" opacity="0.12"/>
+          <path d="M32 16v32M14 20h12M14 26h10M38 22h12M38 30h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <path d="M44 38l2 4 4 2-4 2-2 4-2-4-4-2 4-2z" fill="currentColor"/>
+        </svg>
+      </div>
+      <h1>Open Notebook Plus</h1>
+      <p class="lead">Local-first AI notebooks. Let's get you set up — about 60 seconds.</p>
+      <div class="button-row">
+        <span></span>
+        <button class="primary" data-next="dir">Get started</button>
+      </div>
     </section>
 
     <section data-screen="dir" hidden>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M8 18a4 4 0 014-4h12l4 6h20a4 4 0 014 4v22a4 4 0 01-4 4H12a4 4 0 01-4-4V18z" fill="currentColor"/>
+        </svg>
+      </div>
       <h2>Where should we look for models?</h2>
-      <p>GGUF files in this directory show up in the model picker.</p>
+      <p>GGUF files in this directory show up in the model picker. Subdirectories are scanned too.</p>
       <input type="text" id="model_dir" />
       <p class="hint" id="model_dir_hint"></p>
-      <button data-back="welcome">Back</button>
-      <button data-next="model">Continue</button>
+      <div class="button-row">
+        <button class="secondary" data-back="welcome">Back</button>
+        <button class="primary" data-next="model">Continue</button>
+      </div>
     </section>
 
     <section data-screen="model" hidden>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="3"/>
+          <circle cx="32" cy="22" r="4" fill="currentColor"/>
+          <circle cx="22" cy="36" r="4" fill="currentColor"/>
+          <circle cx="42" cy="36" r="4" fill="currentColor"/>
+          <path d="M32 22L22 36M32 22L42 36M22 36L42 36" stroke="currentColor" stroke-width="2" fill="none"/>
+        </svg>
+      </div>
       <h2>Pick a starting model</h2>
-      <ul id="model_choices">
+      <ul class="choices">
         <li><label><input type="radio" name="choice" value="ollama" />
-          Use Ollama (auto-detected models)</label></li>
+          Use <strong>Ollama</strong> (auto-detected models)</label></li>
         <li><label><input type="radio" name="choice" value="llamacpp" checked />
-          Use llama.cpp with a local GGUF</label></li>
+          Use <strong>llama.cpp</strong> with a local GGUF</label></li>
         <li><label><input type="radio" name="choice" value="none" />
-          Skip - I'll pick later in Settings</label></li>
+          Skip — I'll pick later in Settings</label></li>
       </ul>
       <select id="default_model" hidden></select>
-      <button data-back="dir">Back</button>
-      <button data-next="done">Continue</button>
+      <div class="button-row">
+        <button class="secondary" data-back="dir">Back</button>
+        <button class="primary" data-next="theme">Continue</button>
+      </div>
+    </section>
+
+    <section data-screen="theme" hidden>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="22" fill="currentColor"/>
+          <path d="M32 10v44M10 32h44" stroke="var(--bg)" stroke-width="2"/>
+        </svg>
+      </div>
+      <h2>Pick a theme</h2>
+      <p>You can change this anytime in Settings.</p>
+      <div class="theme-grid" id="theme_grid"></div>
+      <div class="button-row">
+        <button class="secondary" data-back="model">Back</button>
+        <button class="primary" data-next="done">Continue</button>
+      </div>
     </section>
 
     <section data-screen="done" hidden>
-      <h2>You're set.</h2>
-      <p>Saving config and starting open-notebook-Plus...</p>
-      <p id="done_status"></p>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="26" fill="currentColor"/>
+          <path d="M22 33l7 7 14-15" stroke="var(--bg)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <h2 style="text-align:center">You're all set</h2>
+      <p class="lead" id="done_status">Saving config…</p>
     </section>
   </main>
   <script src="/static/wizard.js"></script>
