@@ -36,12 +36,14 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
     def fake_popen(args, **kw):
         first = args[0] if isinstance(args, list) else args.split()[0]
         joined = " ".join(args) if isinstance(args, list) else args
-        if "surreal" in first:
+        # Check more specific patterns first — `surreal-commands-worker` would
+        # otherwise match the bare-`surreal` arm.
+        if "worker" in joined:
+            started.append("worker"); return procs["worker"]
+        if "surreal-darwin" in first or "surreal-windows" in first or first.endswith("/surreal"):
             started.append("surreal"); return procs["surreal"]
         if "uvicorn" in joined:
             started.append("api"); return procs["api"]
-        if "worker" in joined:
-            started.append("worker"); return procs["worker"]
         if "node" in first or "next" in joined:
             started.append("next"); return procs["next"]
         raise AssertionError(f"unexpected popen: {args}")
