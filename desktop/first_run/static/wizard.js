@@ -58,10 +58,10 @@
       const target = btn.dataset.next || btn.dataset.back;
       if (target === 'done') {
         const choice = document.querySelector('input[name=choice]:checked').value;
+        // Send raw model_dir; the server expands ~ and %USERPROFILE% because
+        // the browser cannot see the user's HOME / USERPROFILE env vars.
         const payload = {
-          model_dir: modelDirInput.value
-            .replace(/^~/, document.body.dataset.home || '')
-            .replace(/^%USERPROFILE%/, document.body.dataset.userprofile || ''),
+          model_dir: modelDirInput.value,
           provider: choice,
           default_model: document.getElementById('default_model').value || '',
           theme: chosenTheme,

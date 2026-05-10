@@ -29,8 +29,15 @@ def build_app(config_path: Path, on_done: Callable[[], None]) -> web.Application
         provider = body.get("provider", "none")
         if provider not in _VALID_PROVIDERS:
             return web.json_response({"error": "invalid provider"}, status=400)
+        # Server-side expansion of ~ and %USERPROFILE% — the browser can't see
+        # the user's home dir so JS can't expand them reliably.
+        raw_dir = body["model_dir"]
+        if raw_dir.startswith("%USERPROFILE%"):
+            import os
+            raw_dir = os.environ.get("USERPROFILE", str(Path.home())) + raw_dir[len("%USERPROFILE%"):]
+        model_dir = Path(raw_dir).expanduser()
         cfg = Config(
-            model_dir=Path(body["model_dir"]),
+            model_dir=model_dir,
             provider=provider,
             default_model=body.get("default_model", ""),
             surreal_user="root",
