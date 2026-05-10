@@ -112,11 +112,15 @@ class Supervisor:
         self._procs.clear()
 
     def _spawn(self, args: list[str], cwd: Path | None = None) -> subprocess.Popen:
+        # DEVNULL avoids the OS pipe-buffer deadlock that PIPE causes when
+        # long-running children (Surreal, uvicorn, Next) emit more output
+        # than the parent reads. v0.2 should drain to a rotating log file
+        # so users can debug startup failures.
         proc = subprocess.Popen(
             args,
             cwd=str(cwd) if cwd else None,
             env=self.session_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self._procs.append(proc)
         return proc
