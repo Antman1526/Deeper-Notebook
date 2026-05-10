@@ -40,12 +40,19 @@ def fetch_surreal(version: str, url: str, arch: str) -> None:
         download(url, out)
     else:
         archive = BIN / "surreal.tgz"
-        download(url, archive)
-        with tarfile.open(archive) as t:
-            t.extract("surreal", path=BIN)
-        archive.unlink()
-        (BIN / "surreal").rename(BIN / f"surreal-{arch}")
-        (BIN / f"surreal-{arch}").chmod(0o755)
+        target = BIN / f"surreal-{arch}"
+        # Pre-clean the destination so the rename below can't FileExistsError.
+        if target.exists():
+            target.unlink()
+        try:
+            download(url, archive)
+            with tarfile.open(archive) as t:
+                t.extract("surreal", path=BIN, filter="data")
+            (BIN / "surreal").rename(target)
+            target.chmod(0o755)
+        finally:
+            if archive.exists():
+                archive.unlink()
     print(f"  surreal v{version} → {BIN}/surreal-{arch}")
 
 
@@ -53,23 +60,35 @@ def fetch_node(version: str, url: str, arch: str) -> None:
     out_dir = BIN / f"node-{arch}"
     if out_dir.exists():
         shutil.rmtree(out_dir)
+
+    # Pre-clean any stale intermediate extraction directory left over from an
+    # aborted prior run; otherwise the glob below could pick the wrong one.
+    for stale in BIN.glob(f"node-v{version}-*"):
+        if stale.is_dir():
+            shutil.rmtree(stale)
+
     if arch.startswith("windows"):
         archive = BIN / "node.zip"
-        download(url, archive)
-        with zipfile.ZipFile(archive) as z:
-            z.extractall(BIN)
-        # Node win zip extracts to node-vX.Y.Z-win-x64/
-        extracted = next(BIN.glob(f"node-v{version}-*"))
-        extracted.rename(out_dir)
-        archive.unlink()
+        try:
+            download(url, archive)
+            with zipfile.ZipFile(archive) as z:
+                z.extractall(BIN)
+            extracted = next(BIN.glob(f"node-v{version}-*"))
+            extracted.rename(out_dir)
+        finally:
+            if archive.exists():
+                archive.unlink()
     else:
         archive = BIN / "node.tar.gz"
-        download(url, archive)
-        with tarfile.open(archive) as t:
-            t.extractall(BIN)
-        extracted = next(BIN.glob(f"node-v{version}-*"))
-        extracted.rename(out_dir)
-        archive.unlink()
+        try:
+            download(url, archive)
+            with tarfile.open(archive) as t:
+                t.extractall(BIN, filter="data")
+            extracted = next(BIN.glob(f"node-v{version}-*"))
+            extracted.rename(out_dir)
+        finally:
+            if archive.exists():
+                archive.unlink()
     print(f"  node v{version} → {out_dir}")
 
 
