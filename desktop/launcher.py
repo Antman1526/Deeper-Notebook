@@ -199,21 +199,31 @@ class Supervisor:
         )
 
     def _spawn_api(self, port: int) -> None:
-        self._spawn(
-            [sys.executable, "-m", "uvicorn", "api.app:app",
-             "--host", "127.0.0.1", "--port", str(port)],
-            cwd=self.repo_root,
-            name="api",
-        )
+        # When frozen, sys.executable is the bundled .app binary (NOT python).
+        # The desktop/__main__.py dispatcher recognizes --onp-internal-uvicorn
+        # and re-enters as uvicorn. When unfrozen, sys.executable is the real
+        # python interpreter, but we keep the same flag so the launcher only
+        # has one code path; __main__.py's dispatcher works in both modes.
+        if getattr(sys, "frozen", False):
+            args = [sys.executable, "--onp-internal-uvicorn",
+                    "api.app:app", "--host", "127.0.0.1", "--port", str(port)]
+        else:
+            args = [sys.executable, "-m", "uvicorn", "api.app:app",
+                    "--host", "127.0.0.1", "--port", str(port)]
+        self._spawn(args, cwd=self.repo_root, name="api")
 
     def _spawn_worker(self) -> None:
-        # Upstream uses `surreal-commands` as the worker runtime; the worker
-        # discovers commands via the same SURREAL_* env vars.
-        self._spawn(
-            [sys.executable, "-m", "surreal_commands.worker"],
-            cwd=self.repo_root,
-            name="worker",
-        )
+        # Upstream's worker entry point is the `surreal-commands-worker`
+        # console script, which calls surreal_commands.cli.worker:main.
+        # We re-implement that invocation through the same internal-dispatcher
+        # trick used for uvicorn.
+        if getattr(sys, "frozen", False):
+            args = [sys.executable, "--onp-internal-worker",
+                    "--import-modules", "commands"]
+        else:
+            # Use the console script when running unfrozen (it's installed by pip).
+            args = ["surreal-commands-worker", "--import-modules", "commands"]
+        self._spawn(args, cwd=self.repo_root, name="worker")
 
     def _spawn_next(self, port: int) -> None:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
