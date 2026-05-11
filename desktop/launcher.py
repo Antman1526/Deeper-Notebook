@@ -89,6 +89,7 @@ class Supervisor:
     def start_all(self) -> None:
         surreal_port, api_port, frontend_port = find_free_ports(3)
 
+        api_url = f"http://127.0.0.1:{api_port}"
         self.session_env = {
             **os.environ,
             **self.extra_env,
@@ -99,7 +100,16 @@ class Supervisor:
             "SURREAL_DATABASE": "open_notebook",
             "API_PORT": str(api_port),
             "PORT": str(frontend_port),  # Next.js convention
-            "NEXT_PUBLIC_API_BASE": f"http://127.0.0.1:{api_port}",
+            # Upstream Next.js reads these (see frontend/next.config.ts and
+            # frontend/src/app/config/route.ts):
+            # - API_URL: where the browser makes direct API calls
+            # - INTERNAL_API_URL: where the Next.js server-side proxy forwards
+            # - NEXT_PUBLIC_API_URL: client-bundle fallback
+            # All three point at our dynamic uvicorn port.
+            "API_URL": api_url,
+            "INTERNAL_API_URL": api_url,
+            "NEXT_PUBLIC_API_URL": api_url,
+            "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
         }
 
         self._spawn_surreal(surreal_port)
