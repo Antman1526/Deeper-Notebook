@@ -133,6 +133,10 @@ def main() -> int:
         extra_env=extra_env,
         debug_mode=True,
         venv_python=venv_py,
+        # In the frozen .app, upstream/ is a subdir of MEIPASS (separate from
+        # repo_root). API + worker spawns must cd to upstream_root so relative
+        # paths in upstream code (migrations, prompts) resolve correctly.
+        upstream_root=upstream_dir(),
     )
     try:
         sv.start_all()
