@@ -12,8 +12,66 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 from typing import Callable
+
+
+def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
+    """Extract the python-build-standalone tarball on first launch.
+
+    python-build-standalone ``install_only`` tarballs contain a single
+    top-level ``python/`` directory, so extracting into
+    ``dest_parent/python-runtime/`` yields:
+
+        dest_parent/python-runtime/python/bin/python3   (macOS/Linux)
+        dest_parent/python-runtime/python/python.exe    (Windows)
+
+    If the interpreter already exists the function returns immediately without
+    re-extracting.
+
+    Parameters
+    ----------
+    tarball:
+        Path to the ``python-<arch>.tar.gz`` (or ``.zip`` on Windows) file
+        shipped inside the bundle.
+    dest_parent:
+        Directory under which ``python-runtime/`` will be created
+        (typically ``~/.open-notebook-plus``).
+
+    Returns
+    -------
+    Path
+        Absolute path to the extracted python interpreter binary.
+    """
+    is_win = sys.platform == "win32"
+    runtime_dir = dest_parent / "python-runtime"
+    if is_win:
+        interpreter = runtime_dir / "python" / "python.exe"
+    else:
+        interpreter = runtime_dir / "python" / "bin" / "python3"
+
+    if interpreter.exists():
+        return interpreter
+
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = tarball.suffix.lower()
+    # Handle double-extension .tar.gz
+    if tarball.name.endswith(".tar.gz"):
+        with tarfile.open(tarball, "r:gz") as t:
+            t.extractall(runtime_dir, filter="data")
+    elif suffix == ".zip":
+        with zipfile.ZipFile(tarball) as z:
+            z.extractall(runtime_dir)
+    else:
+        raise ValueError(f"Unsupported archive format: {tarball}")
+
+    if not is_win and interpreter.exists():
+        interpreter.chmod(0o755)
+
+    return interpreter
 
 
 def venv_dir() -> Path:

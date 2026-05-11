@@ -33,7 +33,9 @@ bin_dir = ROOT / "bin"
 node_dir = bin_dir / f"node-{arch}"
 surreal_bin = bin_dir / (f"surreal-{arch}.exe" if is_win else f"surreal-{arch}")
 uv_bin = bin_dir / ("uv.exe" if is_win else "uv")
-python_standalone_dir = bin_dir / f"python-{arch}"
+python_standalone_tarball = bin_dir / (
+    f"python-{arch}.zip" if is_win else f"python-{arch}.tar.gz"
+)
 frontend_dir = PROJECT_ROOT / "frontend"
 
 # ---------------------------------------------------------------------------
@@ -72,7 +74,7 @@ datas = [
     (str(surreal_bin),          "desktop/bin"),
     (str(node_dir),             f"desktop/bin/node-{arch}"),
     (str(uv_bin),               "desktop/bin"),
-    (str(python_standalone_dir), f"desktop/bin/python-{arch}"),
+    (str(python_standalone_tarball), "desktop/bin"),
 
     # Frontend standalone build.
     (str(frontend_dir / ".next" / "standalone"), "frontend"),
