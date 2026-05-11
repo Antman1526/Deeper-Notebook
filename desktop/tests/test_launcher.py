@@ -79,6 +79,38 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
         p.terminate.assert_called()
 
 
+def test_supervisor_uses_venv_python_for_api_and_worker(cfg, tmp_path, monkeypatch):
+    """Spawned API and worker commands must use the configured venv_python."""
+    spawned_args: list[list[str]] = []
+
+    def fake_popen(args, **kw):
+        spawned_args.append(list(args))
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003])
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    fake_venv_python = Path("/tmp/fake/venv/bin/python")
+    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+                    surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+                    venv_python=fake_venv_python)
+    sv.start_all()
+    try:
+        # API spawn: [<venv_python>, "-m", "uvicorn", ...]
+        api_cmd = next(a for a in spawned_args if "uvicorn" in " ".join(a))
+        assert api_cmd[0] == str(fake_venv_python)
+        assert "-m" in api_cmd
+        assert "uvicorn" in api_cmd
+
+        # Worker spawn: [<venv_python>, "-m", "surreal_commands.cli.worker", ...]
+        worker_cmd = next(a for a in spawned_args if "surreal_commands" in " ".join(a))
+        assert worker_cmd[0] == str(fake_venv_python)
+    finally:
+        sv.stop_all()
+
+
 def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
     monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003])

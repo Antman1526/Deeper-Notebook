@@ -32,10 +32,15 @@ class LlamaCppProvider:
         model_dir: Path,
         ready_probe: Callable[[int], bool] = _http_ready,
         max_wait: float = 60.0,
+        python_executable: Path | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
         self._max_wait = max_wait
+        # python_executable: interpreter used to spawn llama_cpp.server.
+        # Defaults to sys.executable (unfrozen/dev); pass the venv python when
+        # running inside the frozen .app so llama_cpp is importable.
+        self._python_executable: Path = python_executable or Path(sys.executable)
         self._proc: subprocess.Popen | None = None
         self._port: int | None = None
 
@@ -54,7 +59,7 @@ class LlamaCppProvider:
 
         port = find_free_port()
         self._proc = subprocess.Popen(
-            [sys.executable, "-m", "llama_cpp.server",
+            [str(self._python_executable), "-m", "llama_cpp.server",
              "--model", str(path),
              "--host", "127.0.0.1",
              "--port", str(port)],
