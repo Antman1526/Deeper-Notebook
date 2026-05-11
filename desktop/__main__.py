@@ -108,18 +108,7 @@ def main() -> int:
     cfg_path = default_config_path()
     first_run = not cfg_path.exists()
 
-    if first_run:
-        from desktop.first_run.server import run_wizard_blocking
-        run_wizard_blocking(cfg_path)
-
-    cfg = load_or_create(cfg_path)
-    arch = host_arch()
-    bin_dir = repo_root() / "desktop" / "bin"
-
-    # Bootstrap: ensure ~/.open-notebook-plus/venv is provisioned with upstream
-    # deps. Progress messages go to the bootstrap log file.
-    from desktop import bootstrap
-
+    # Set up log directory and ProgressBus BEFORE the wizard runs.
     log_dir = (
         __import__("pathlib").Path.home() / ".open-notebook-plus" / "logs"
     )
@@ -128,6 +117,18 @@ def main() -> int:
     from desktop.progress import ProgressBus
     progress_bus = ProgressBus(log_path=log_dir / "progress.jsonl")
     progress_bus.publish("startup", "running", "Launcher starting…")
+
+    if first_run:
+        from desktop.first_run.server import run_wizard_blocking
+        run_wizard_blocking(cfg_path, progress_bus=progress_bus)
+
+    cfg = load_or_create(cfg_path)
+    arch = host_arch()
+    bin_dir = repo_root() / "desktop" / "bin"
+
+    # Bootstrap: ensure ~/.open-notebook-plus/venv is provisioned with upstream
+    # deps. Progress messages go to the bootstrap log file.
+    from desktop import bootstrap
 
     bootstrap_log = log_dir / "bootstrap.log"
 
