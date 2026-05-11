@@ -140,6 +140,23 @@ for _pkg in _collect_binaries_for:
     except Exception as _e:
         print(f"[pyinstaller.spec] WARNING: collect_dynamic_libs failed for {_pkg}: {_e}")
 
+# mypy-c-compiled packages (tomli, charset_normalizer, etc.) install
+# top-level `<hash>__mypyc.cpython-*.so` files at site-packages root.
+# `collect_dynamic_libs` per-package misses them because they live outside
+# any single package's directory. Pick them up directly so packages that
+# expect their hashed friend module at top-level can import them.
+import sysconfig as _sysconfig
+_site_packages = Path(_sysconfig.get_paths()["purelib"])
+if _site_packages.exists():
+    _mypyc_libs = list(_site_packages.glob("*__mypyc*.so")) + \
+                  list(_site_packages.glob("*__mypyc*.pyd"))
+    if _mypyc_libs:
+        print(f"[pyinstaller.spec] mypyc top-level: collected {len(_mypyc_libs)} shared libs")
+        for _lib in _mypyc_libs:
+            # (src, dest_dir) — PyInstaller drops these next to the other
+            # site-packages-equivalent files in the bundle root.
+            _collected_binaries.append((str(_lib), "."))
+
 datas = _collected_datas + [
     # Prompts directory — non-Python templates the upstream graphs/services load.
     (str(PROJECT_ROOT / "prompts"), "prompts"),
