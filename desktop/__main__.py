@@ -40,15 +40,15 @@ def upstream_dir() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _bundled_python(arch: str) -> Path:
-    """Path to the portable Python interpreter shipped in the bundle."""
+def _bundled_python_tarball(arch: str) -> Path:
+    """Path to the python-build-standalone tarball shipped in the bundle."""
     if getattr(sys, "frozen", False):
         bin_dir = Path(sys._MEIPASS) / "desktop" / "bin"  # type: ignore[attr-defined]
     else:
         bin_dir = repo_root() / "desktop" / "bin"
     if sys.platform == "win32":
-        return bin_dir / f"python-{arch}" / "python.exe"
-    return bin_dir / f"python-{arch}" / "bin" / "python3"
+        return bin_dir / f"python-{arch}.zip"
+    return bin_dir / f"python-{arch}.tar.gz"
 
 
 def _bundled_uv(arch: str) -> Path:
@@ -101,8 +101,13 @@ def main() -> int:
         with bootstrap_log.open("a") as f:
             f.write(msg + "\n")
 
+    standalone_python = bootstrap.extract_python_runtime(
+        tarball=_bundled_python_tarball(arch),
+        dest_parent=__import__("pathlib").Path.home() / ".open-notebook-plus",
+    )
+
     venv_py = bootstrap.ensure_venv(
-        standalone_python=_bundled_python(arch),
+        standalone_python=standalone_python,
         uv_binary=_bundled_uv(arch),
         lock_path=_lock_path(),
         upstream_dir=upstream_dir(),
