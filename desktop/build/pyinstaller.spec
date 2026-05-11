@@ -1,48 +1,25 @@
 # desktop/build/pyinstaller.spec
 # Run with: pyinstaller desktop/build/pyinstaller.spec
+#
+# Architecture after the uv-bootstrap pivot:
+# - The frozen launcher only bundles its OWN light deps (pywebview, aiohttp,
+#   httpx, stdlib). Upstream Python code (api/, open_notebook/, commands/)
+#   ships as DATA and is run by the user-venv python, not the frozen binary.
+# - uv binary + python-build-standalone are bundled in desktop/bin/ so the
+#   launcher can provision ~/.open-notebook-plus/venv on first launch.
+# - requirements.lock is bundled so bootstrap knows what to install.
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
-
 # SPECPATH is the directory holding this .spec file (i.e. desktop/build/).
-# ROOT = desktop/   (used for ROOT/bin, ROOT/first_run, ROOT/resources)
-# PROJECT_ROOT = repo root  (used for api/, frontend/, open_notebook/, etc.)
+# ROOT = desktop/
+# PROJECT_ROOT = repo root
 ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
-
-# Make PROJECT_ROOT importable at spec-load time so collect_submodules() can
-# discover the first-party `api`, `commands`, and `open_notebook` packages
-# (they're not pip-installed — they live in the repo).
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
-def _walk_first_party(pkg_name: str) -> list[str]:
-    """Return every dotted module name under PROJECT_ROOT/pkg_name/.
-
-    Used as a fallback to collect_submodules for first-party packages that
-    aren't pip-installed, so PyInstaller still bundles every .py inside them.
-    """
-    pkg_dir = PROJECT_ROOT / pkg_name
-    if not pkg_dir.exists():
-        return []
-    out = {pkg_name}
-    for py in pkg_dir.rglob("*.py"):
-        rel = py.relative_to(PROJECT_ROOT)
-        # __init__.py → parent dir = module; foo.py → stem
-        if py.name == "__init__.py":
-            parts = rel.parent.parts
-        else:
-            parts = rel.with_suffix("").parts
-        if parts:
-            out.add(".".join(parts))
-    return sorted(out)
 
 is_mac = sys.platform == "darwin"
 is_win = sys.platform == "win32"
 
-# arch suffix used by fetch_runtimes.py
 import platform as _pl
 _machine = _pl.machine().lower()
 if is_mac:
@@ -55,143 +32,80 @@ else:
 bin_dir = ROOT / "bin"
 node_dir = bin_dir / f"node-{arch}"
 surreal_bin = bin_dir / (f"surreal-{arch}.exe" if is_win else f"surreal-{arch}")
+uv_bin = bin_dir / ("uv.exe" if is_win else "uv")
+python_standalone_dir = bin_dir / f"python-{arch}"
 frontend_dir = PROJECT_ROOT / "frontend"
 
-# Wholesale-collect every package the upstream API + worker import.
-# Cherry-picking specific submodules misses things (fastapi.middleware.cors etc.).
-# collect_submodules walks the package tree; collect_data_files grabs non-.py files
-# (Jinja templates, .json configs, etc.) that the package needs at runtime.
-_collect_packages = [
-    # Upstream first-party packages — must be collected as Python (not data).
-    "api", "open_notebook",
-    # FastAPI / Starlette stack
-    "fastapi", "starlette",
-    # Langchain + provider integrations (upstream pyproject deps)
-    "langchain", "langchain_core", "langchain_community", "langchain_text_splitters",
-    "langchain_openai", "langchain_anthropic", "langchain_ollama",
-    "langchain_google_genai", "langchain_groq", "langchain_mistralai",
-    "langchain_deepseek",
-    "langgraph", "langgraph_checkpoint", "langgraph_checkpoint_sqlite",
-    # Esperanto (AI provider abstraction) + content / podcast / prompts libs
-    "esperanto", "content_core", "ai_prompter", "podcast_creator",
-    # Surreal commands runtime + the upstream `commands/` directory
-    "surreal_commands", "commands",
-    # Misc upstream runtime deps
-    "surrealdb", "loguru", "tiktoken",
-    # Server runtime
-    "uvicorn", "llama_cpp",
-    # Binary-heavy / C-extension packages — collect_all-style treatment so
-    # the compiled submodules ride along (numpy._core._exceptions etc.).
-    "numpy", "pydantic", "pydantic_core",
-    # Network / HTTP / config
-    "httpx", "aiohttp", "dotenv", "babel", "pycountry",
-    # SQLite checkpoint backend
-    "sqlalchemy",
-    # mypy-c-compiled packages (each ships a top-level __mypyc__ artifact
-    # plus per-package _parser.so / __init__.so files that collect_submodules
-    # often misses unless we ask explicitly).
-    "tomli", "charset_normalizer", "click",
-    # TOML writer (sometimes pulled in by ai-prompter / esperanto)
-    "tomli_w", "tomlkit",
-]
-
-# Packages whose compiled .so/.dylib files need explicit collection because
-# they aren't found by submodule walking alone.
-_collect_binaries_for = [
-    "numpy", "pydantic_core", "llama_cpp", "tiktoken",
-    "tomli", "charset_normalizer",
-]
-
+# ---------------------------------------------------------------------------
+# Hidden imports — only what the launcher's OWN modules need.
+# PyInstaller auto-discovers most imports; only obscure/dynamic ones need hints.
+# ---------------------------------------------------------------------------
 hiddenimports = [
-    "uvicorn.protocols.http.h11_impl",
-    "uvicorn.lifespan.on",
-    "uvicorn.loops.auto",
-    "uvicorn.protocols.websockets.auto",
-    "llama_cpp.server",
+    # pywebview uses a platform-specific backend selected at runtime.
+    "webview.platforms.cocoa",    # macOS
+    "webview.platforms.winforms", # Windows
+    "webview.platforms.gtk",      # Linux (future)
+    # aiohttp optional speedups — may be imported conditionally.
+    "aiohttp._helpers",
+    "aiohttp._http_parser",
 ]
-_collected_datas = []
-_collected_binaries = []
-for _pkg in _collect_packages:
-    try:
-        _submods = collect_submodules(_pkg)
-        if _submods:
-            hiddenimports.extend(_submods)
-        else:
-            # collect_submodules returned empty — typically because the package
-            # isn't pip-installed. Fall back to a directory walk so first-party
-            # packages (api, commands) are still bundled.
-            _walked = _walk_first_party(_pkg)
-            if _walked:
-                print(f"[pyinstaller.spec] {_pkg}: collect_submodules empty; "
-                      f"walking PROJECT_ROOT yielded {len(_walked)} modules")
-                hiddenimports.extend(_walked)
-            else:
-                print(f"[pyinstaller.spec] WARNING: no modules found for {_pkg}")
-    except Exception as _e:
-        print(f"[pyinstaller.spec] WARNING: collect_submodules failed for {_pkg}: {_e}")
-        _walked = _walk_first_party(_pkg)
-        if _walked:
-            hiddenimports.extend(_walked)
-    try:
-        _collected_datas.extend(collect_data_files(_pkg))
-    except Exception as _e:
-        print(f"[pyinstaller.spec] WARNING: collect_data_files failed for {_pkg}: {_e}")
 
-# Compiled dynamic libs (numpy's .dylib's, pydantic_core's _pydantic_core.so,
-# llama_cpp's libllama.dylib). Without these the bundle imports the Python
-# stubs but fails on C-extension load.
-for _pkg in _collect_binaries_for:
-    try:
-        _bins = collect_dynamic_libs(_pkg)
-        if _bins:
-            print(f"[pyinstaller.spec] {_pkg}: collected {len(_bins)} dynamic libs")
-            _collected_binaries.extend(_bins)
-    except Exception as _e:
-        print(f"[pyinstaller.spec] WARNING: collect_dynamic_libs failed for {_pkg}: {_e}")
+# ---------------------------------------------------------------------------
+# Data files
+# ---------------------------------------------------------------------------
+datas = [
+    # Upstream Python source — shipped as data, executed by venv python.
+    # Paths: <MEIPASS>/upstream/api, /upstream/open_notebook, etc.
+    (str(PROJECT_ROOT / "api"),          "upstream/api"),
+    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
+    (str(PROJECT_ROOT / "commands"),     "upstream/commands"),
+    (str(PROJECT_ROOT / "prompts"),      "upstream/prompts"),
+    (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
 
-# mypy-c-compiled packages (tomli, charset_normalizer, etc.) install
-# top-level `<hash>__mypyc.cpython-*.so` files at site-packages root.
-# `collect_dynamic_libs` per-package misses them because they live outside
-# any single package's directory. Pick them up directly so packages that
-# expect their hashed friend module at top-level can import them.
-import sysconfig as _sysconfig
-_site_packages = Path(_sysconfig.get_paths()["purelib"])
-if _site_packages.exists():
-    _mypyc_libs = list(_site_packages.glob("*__mypyc*.so")) + \
-                  list(_site_packages.glob("*__mypyc*.pyd"))
-    if _mypyc_libs:
-        print(f"[pyinstaller.spec] mypyc top-level: collected {len(_mypyc_libs)} shared libs")
-        for _lib in _mypyc_libs:
-            # (src, dest_dir) — PyInstaller drops these next to the other
-            # site-packages-equivalent files in the bundle root.
-            _collected_binaries.append((str(_lib), "."))
+    # Pinned lockfile — bootstrap reads this to provision the venv.
+    (str(ROOT / "requirements.lock"), "desktop"),
 
-datas = _collected_datas + [
-    # Prompts directory — non-Python templates the upstream graphs/services load.
-    (str(PROJECT_ROOT / "prompts"), "prompts"),
-    # Frontend: only the standalone build + static assets (no full node_modules,
-    # which is ~700 MB of symlinks PyInstaller can't traverse cleanly).
-    # `next build` with output="standalone" produces .next/standalone/server.js
-    # plus a deduplicated node_modules dir at .next/standalone/node_modules/.
-    (str(frontend_dir / ".next" / "standalone"), "frontend"),
-    (str(frontend_dir / ".next" / "static"), "frontend/.next/static"),
-    (str(frontend_dir / "public"), "frontend/public"),
-    # Wizard static assets
+    # Wizard static assets.
     (str(ROOT / "first_run" / "static"), "desktop/first_run/static"),
-    # Bundled binaries
-    (str(surreal_bin), "desktop/bin"),
-    (str(node_dir), f"desktop/bin/node-{arch}"),
+
+    # Bundled runtime binaries.
+    (str(surreal_bin),          "desktop/bin"),
+    (str(node_dir),             f"desktop/bin/node-{arch}"),
+    (str(uv_bin),               "desktop/bin"),
+    (str(python_standalone_dir), f"desktop/bin/python-{arch}"),
+
+    # Frontend standalone build.
+    (str(frontend_dir / ".next" / "standalone"), "frontend"),
+    (str(frontend_dir / ".next" / "static"),     "frontend/.next/static"),
+    (str(frontend_dir / "public"),               "frontend/public"),
 ]
 
 a = Analysis(
-    [str(ROOT.parent / "desktop" / "__main__.py")],
+    [str(PROJECT_ROOT / "desktop" / "__main__.py")],
     pathex=[str(PROJECT_ROOT)],
-    binaries=_collected_binaries,
+    binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["streamlit"],  # upstream lint config mentions Streamlit; runtime doesn't need it
+    excludes=[
+        # Upstream heavy deps — installed into user venv, not frozen.
+        "fastapi", "starlette", "uvicorn",
+        "langchain", "langchain_core", "langchain_community",
+        "langchain_openai", "langchain_anthropic", "langchain_ollama",
+        "langchain_google_genai", "langchain_groq", "langchain_mistralai",
+        "langchain_deepseek", "langgraph", "langgraph_checkpoint",
+        "langgraph_checkpoint_sqlite",
+        "esperanto", "content_core", "ai_prompter", "podcast_creator",
+        "surreal_commands", "surrealdb",
+        "loguru", "tiktoken", "numpy", "pydantic", "pydantic_core",
+        "dotenv", "babel", "pycountry", "sqlalchemy",
+        "tomli", "tomli_w", "tomlkit",
+        "charset_normalizer", "click",
+        "llama_cpp",
+        # Dev / test noise.
+        "streamlit", "pytest", "ipykernel",
+    ],
 )
 pyz = PYZ(a.pure)
 
