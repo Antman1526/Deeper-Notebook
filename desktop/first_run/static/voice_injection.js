@@ -287,6 +287,7 @@
     if (_currentAudio) {
       _currentAudio.pause();
       _currentAudio.currentTime = 0;
+      URL.revokeObjectURL(_currentAudio.src);  // free blob memory
       _currentAudio = null;
     }
     if (_currentProgressFill) {
@@ -295,6 +296,8 @@
     }
     if (_currentSpeakerBtn) {
       _currentSpeakerBtn.innerHTML = SPEAKER_ICON;
+      _currentSpeakerBtn.title = 'Play this response';
+      _currentSpeakerBtn.style.opacity = '0.6';
       _currentSpeakerBtn = null;
     }
   }
@@ -361,6 +364,7 @@
             barWrap.style.display = 'inline-flex';
             btn.innerHTML = STOP_ICON;
             btn.title = 'Stop playback';
+            btn.style.opacity = '1';
 
             audio.addEventListener('timeupdate', function () {
               if (audio.duration) {
