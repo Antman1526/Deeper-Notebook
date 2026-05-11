@@ -80,6 +80,13 @@ datas = [
     (str(frontend_dir / ".next" / "standalone"), "frontend"),
     (str(frontend_dir / ".next" / "static"),     "frontend/.next/static"),
     (str(frontend_dir / "public"),               "frontend/public"),
+
+    # v0.3 — shims, manager, voice JS
+    (str(PROJECT_ROOT / "desktop" / "desktop_shims"), "upstream/desktop_shims"),
+    (str(ROOT / "model_manager" / "static"), "desktop/model_manager/static"),
+    (str(ROOT / "model_manager" / "catalog.json"), "desktop/model_manager"),
+    (str(ROOT / "first_run" / "static" / "voice_injection.js"),
+        "desktop/first_run/static"),
 ]
 
 a = Analysis(
