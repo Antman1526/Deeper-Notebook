@@ -215,12 +215,16 @@ class Supervisor:
         data_dir = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", "."))) \
             / ".open-notebook-plus" / "surreal_data"
         data_dir.mkdir(parents=True, exist_ok=True)
+        # Use --flag=value form so passwords/usernames that happen to start
+        # with '-' (a real possibility from secrets.token_urlsafe which uses
+        # base64url, where `-` is a valid char) aren't reparsed by clap as
+        # a separate short flag like '-4'.
         self._spawn(
             [
                 str(binary), "start",
-                "--user", self.cfg.surreal_user,
-                "--pass", self.cfg.surreal_password,
-                "--bind", f"127.0.0.1:{port}",
+                f"--user={self.cfg.surreal_user}",
+                f"--pass={self.cfg.surreal_password}",
+                f"--bind=127.0.0.1:{port}",
                 f"file://{data_dir}",
             ],
             name="surreal",
