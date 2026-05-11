@@ -95,37 +95,22 @@ def build_app(config_path: Path, on_done: Callable[[], None],
 def run_wizard_blocking(config_path: Path,
                         progress_bus: "ProgressBus | None" = None) -> None:
     """Open the wizard in PyWebView; return once the user clicks Done."""
-    import asyncio
     import threading
 
     import webview
 
+    from desktop.aiohttp_window import start_aiohttp_server_thread
+
     done = threading.Event()
-    runner_loop: asyncio.AbstractEventLoop | None = None
-    runner: web.AppRunner | None = None
-    site_port = 0
 
-    def serve():
-        nonlocal runner_loop, runner, site_port
-        runner_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(runner_loop)
-        app = build_app(config_path, on_done=done.set, progress_bus=progress_bus)
-        runner = web.AppRunner(app)
-        runner_loop.run_until_complete(runner.setup())
-        site = web.TCPSite(runner, "127.0.0.1", 0)
-        runner_loop.run_until_complete(site.start())
-        site_port = site._server.sockets[0].getsockname()[1]
-        runner_loop.run_forever()
-
-    t = threading.Thread(target=serve, daemon=True)
-    t.start()
-    while site_port == 0:
-        import time as _t
-        _t.sleep(0.05)
+    site_port, _t, runner_loop, runner = start_aiohttp_server_thread(
+        lambda: build_app(config_path, on_done=done.set, progress_bus=progress_bus)
+    )
 
     window = webview.create_window("Open Notebook Plus — Setup",
                                    f"http://127.0.0.1:{site_port}/",
                                    width=720, height=540)
+
     def _watch_done():
         import time as _t
         while not done.is_set():
@@ -134,5 +119,5 @@ def run_wizard_blocking(config_path: Path,
     threading.Thread(target=_watch_done, daemon=True).start()
     webview.start()
 
-    if runner_loop is not None and runner is not None:
+    if runner_loop is not None:
         runner_loop.call_soon_threadsafe(runner_loop.stop)
