@@ -41,6 +41,24 @@ def _theme_injection_js(theme_id: str) -> str:
           --muted: {t['border']};
         }}
         html, body {{ background: {t['bg']} !important; color: {t['fg']}; }}
+
+        /* Open Notebook Plus — layout fixes for dropdown text overflow */
+        [role="combobox"], button[role="combobox"] {{
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }}
+        [role="combobox"] > span {{
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: block;
+          flex: 1 1 auto;
+          min-width: 0;
+        }}
+        /* Force the model-assignment grid columns to share equal width and clip */
+        .grid > * {{ min-width: 0; }}
       `;
       document.head.appendChild(s);
     }})();
