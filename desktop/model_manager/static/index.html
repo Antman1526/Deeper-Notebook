@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light-blue">
 <head>
   <meta charset="utf-8">
   <title>Open Notebook Plus — Models</title>
+  <link rel="stylesheet" href="/static/themes.css">
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Load user's chosen theme before first paint to avoid flash.
+    (function () {
+      fetch('/api/theme')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          document.documentElement.dataset.theme = d.theme || 'light-blue';
+        })
+        .catch(function () { /* keep default */ });
+    }());
+  </script>
 </head>
 <body>
   <main>
