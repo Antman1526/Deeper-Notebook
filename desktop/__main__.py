@@ -69,34 +69,6 @@ def _lock_path() -> Path:
     return repo_root() / "desktop" / "requirements.lock"
 
 
-def _pick_default_gguf(provider) -> str:
-    """Choose a sensible default GGUF from the user's model dir.
-
-    Preference order (first match wins):
-      1. Hermes-3 family (best chat-tuned model in the user's typical set)
-      2. Mistral-7B-Instruct (reliable baseline)
-      3. Qwen2.5-7B-Instruct
-      4. The first GGUF in the 3-8 GB range (medium-size, fits in most RAM)
-      5. Any GGUF at all
-    Returns "" if no usable GGUF exists.
-    """
-    try:
-        models = provider.list_models()
-    except Exception:
-        return ""
-    if not models:
-        return ""
-    by_name = {m.lower(): m for m in models}
-    # Substring preference passes
-    for hint in ("hermes-3", "mistral-7b-instruct", "qwen2.5-7b-instruct",
-                 "llama-3.2-3b", "phi-3.5-mini"):
-        for k, original in by_name.items():
-            if hint in k:
-                return original
-    # Fallback: first one that has a "reasonable" filename length (avoids picking
-    # a stub or weird custom name); list_models already filters out <1 MB files.
-    return models[0]
-
 
 def main() -> int:
     from desktop.config import default_config_path, load_or_create
@@ -182,7 +154,7 @@ def main() -> int:
         # If the user picked "llamacpp" in the wizard but didn't choose a
         # specific model, auto-pick one so a server actually runs and
         # auto_register has a live endpoint to attach credentials to.
-        chosen_model = cfg.default_model or _pick_default_gguf(lc)
+        chosen_model = cfg.default_model or lc.pick_default_model()
         if chosen_model:
             try:
                 extra_env = lc.start(chosen_model)
