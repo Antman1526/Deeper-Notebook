@@ -49,6 +49,10 @@ def auto_register(
     api_base_url: str,
     cfg: Config,
     llamacpp_port: int | None = None,
+    *,
+    whisper_port: int | None = None,
+    piper_port: int | None = None,
+    embed_port: int | None = None,
 ) -> None:
     """Register Ollama models + local GGUF models against the running API.
 
@@ -57,13 +61,21 @@ def auto_register(
     llamacpp_port: if set, a llama-cpp-python server is running on this port
                    and we should register an openai_compatible credential
                    pointing at http://127.0.0.1:<port>/v1.
+    whisper_port: if set, register a Whisper STT credential on this port.
+    piper_port: if set, register a Piper TTS credential on this port.
+    embed_port: if set, register a local embedding credential on this port.
 
     Idempotent: safe to call on every startup.  Logs failures; does NOT raise
     (registration failures must not crash the launcher).
     """
     try:
         with httpx.Client(base_url=api_base_url, timeout=15.0) as client:
-            _do_register(client, cfg, llamacpp_port)
+            _do_register(
+                client, cfg, llamacpp_port,
+                whisper_port=whisper_port,
+                piper_port=piper_port,
+                embed_port=embed_port,
+            )
     except Exception as exc:
         log.warning("auto_register failed (non-fatal): %s", exc)
 
@@ -76,6 +88,10 @@ def _do_register(
     client: httpx.Client,
     cfg: Config,
     llamacpp_port: int | None,
+    *,
+    whisper_port: int | None = None,
+    piper_port: int | None = None,
+    embed_port: int | None = None,
 ) -> None:
     """Main registration logic, runs inside an httpx.Client context."""
     # --- 1. Fetch existing credentials and models --------------------------
@@ -203,6 +219,133 @@ def _do_register(
                 log.warning("auto-assign returned %s: %s", r.status_code, r.text[:200])
         except Exception as exc:
             log.warning("auto-assign failed (non-fatal): %s", exc)
+
+    # --- 6. v0.3 — voice + embed registration + default episode profile -----
+    if any(p is not None for p in (whisper_port, piper_port, embed_port)):
+        register_voice_models(
+            client,
+            whisper_port=whisper_port,
+            piper_port=piper_port,
+            embed_port=embed_port,
+            cfg=cfg,
+        )
+        register_default_episode_profile(client)
+
+
+def register_voice_models(
+    client: httpx.Client,
+    *,
+    whisper_port: int | None,
+    piper_port: int | None,
+    embed_port: int | None,
+    cfg: Config,
+) -> None:
+    """Register Whisper/Piper/embed credentials + models if ports are set."""
+    # Whisper
+    if whisper_port is not None:
+        cred = _ensure_credential(
+            client=client,
+            existing_names=set(),
+            name="Whisper (local)",
+            provider="openai_compatible",
+            modalities=["speech_to_text"],
+            base_url=f"http://127.0.0.1:{whisper_port}/v1",
+        )
+        if cred:
+            _ensure_model(
+                client=client, existing_keys=set(),
+                name="whisper-base-en",
+                provider="openai_compatible",
+                model_type="speech_to_text",
+                credential_id=cred,
+            )
+
+    # Piper
+    if piper_port is not None:
+        cred = _ensure_credential(
+            client=client,
+            existing_names=set(),
+            name="Piper (local)",
+            provider="openai_compatible",
+            modalities=["text_to_speech"],
+            base_url=f"http://127.0.0.1:{piper_port}/v1",
+        )
+        if cred:
+            for voice_id in ("piper-amy-en", "piper-ryan-en"):
+                _ensure_model(
+                    client=client, existing_keys=set(),
+                    name=voice_id,
+                    provider="openai_compatible",
+                    model_type="text_to_speech",
+                    credential_id=cred,
+                )
+
+    # Embedding (llama.cpp server with --embedding flag)
+    if embed_port is not None:
+        cred = _ensure_credential(
+            client=client,
+            existing_names=set(),
+            name="Local Embeddings (llama.cpp)",
+            provider="openai_compatible",
+            modalities=["embedding"],
+            base_url=f"http://127.0.0.1:{embed_port}/v1",
+        )
+        if cred:
+            _ensure_model(
+                client=client, existing_keys=set(),
+                name="nomic-embed-text-v1.5",
+                provider="openai_compatible",
+                model_type="embedding",
+                credential_id=cred,
+            )
+
+
+def register_default_episode_profile(client: httpx.Client) -> None:
+    """Idempotent: create 'Open Notebook Plus Local' episode profile if missing."""
+    PROFILE_NAME = "Open Notebook Plus Local"
+    try:
+        r = client.get("/api/episode_profiles")
+        r.raise_for_status()
+        for p in r.json():
+            if p.get("name") == PROFILE_NAME:
+                return  # already exists
+    except Exception as exc:
+        log.warning("Could not list episode profiles: %s — skipping profile bootstrap", exc)
+        return
+
+    # Look up the IDs we just registered for chat model + piper voices
+    try:
+        models = client.get("/api/models").json()
+    except Exception:
+        return
+    by_name = {m.get("name"): m.get("id") for m in models}
+    chat_id = (by_name.get("Hermes-3-Llama-3.1-8B-Q4_K_M")
+               or by_name.get("Mistral-7B-Instruct-v0.3-Q4_K_M")
+               or next((mid for name, mid in by_name.items()
+                        if not name.startswith(("piper-", "whisper-", "nomic-"))),
+                       None))
+    amy_id = by_name.get("piper-amy-en")
+    ryan_id = by_name.get("piper-ryan-en")
+    if not (chat_id and amy_id and ryan_id):
+        log.info("Skipping episode profile creation: missing chat_id/amy_id/ryan_id")
+        return
+
+    payload = {
+        "name": PROFILE_NAME,
+        "description": "Two-voice podcast using local Piper TTS",
+        "chat_model_id": chat_id,
+        "speakers": [
+            {"name": "Alex", "role": "Host", "tts_model_id": amy_id},
+            {"name": "Sam", "role": "Co-host", "tts_model_id": ryan_id},
+        ],
+        "default_length_minutes": 5,
+    }
+    try:
+        r = client.post("/api/episode_profiles", json=payload)
+        if r.status_code in (200, 201):
+            log.info("Created default episode profile %r", PROFILE_NAME)
+    except Exception as exc:
+        log.warning("Could not create episode profile %r: %s", PROFILE_NAME, exc)
 
 
 def _ensure_credential(
