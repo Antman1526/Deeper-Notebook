@@ -35,6 +35,15 @@ focused on **local-first AI notebooks**.
 - `ollama pull <name>` — Ollama-installed models show up under the Ollama
   section in the picker.
 
+## Voice features (preview)
+
+Voice chat (Whisper STT + Piper TTS) is on the v0.3 roadmap. To pre-download
+the required models so they're ready when the feature ships:
+
+    python -m desktop.scripts.download_voice_models
+
+This pulls ~170 MB into your model directory under `STT/` and `TTS/`.
+
 ## Building from source
 
 ```
