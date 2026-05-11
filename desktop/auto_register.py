@@ -81,7 +81,7 @@ def _do_register(
     # --- 1. Fetch existing credentials and models --------------------------
     existing_cred_names: set[str] = set()
     try:
-        r = client.get("/credentials")
+        r = client.get("/api/credentials")
         r.raise_for_status()
         for cred in r.json():
             existing_cred_names.add(cred.get("name", "").lower())
@@ -91,7 +91,7 @@ def _do_register(
 
     existing_model_keys: set[tuple[str, str]] = set()  # (name.lower, type.lower)
     try:
-        r = client.get("/models")
+        r = client.get("/api/models")
         r.raise_for_status()
         for m in r.json():
             existing_model_keys.add((m.get("name", "").lower(), m.get("type", "").lower()))
@@ -190,7 +190,7 @@ def _do_register(
     # --- 5. Auto-assign defaults if we registered anything -----------------
     if registered_any:
         try:
-            r = client.post("/models/auto-assign")
+            r = client.post("/api/models/auto-assign")
             if r.status_code < 300:
                 result = r.json()
                 log.info(
@@ -221,7 +221,7 @@ def _ensure_credential(
     if name.lower() in existing_names:
         # Already exists — fetch its ID.
         try:
-            r = client.get("/credentials")
+            r = client.get("/api/credentials")
             r.raise_for_status()
             for cred in r.json():
                 if cred.get("name", "").lower() == name.lower():
@@ -234,7 +234,7 @@ def _ensure_credential(
     if base_url:
         payload["base_url"] = base_url
     try:
-        r = client.post("/credentials", json=payload)
+        r = client.post("/api/credentials", json=payload)
         if r.status_code == 201:
             data = r.json()
             log.info("Created credential %r (provider=%s id=%s)", name, provider, data.get("id"))
@@ -266,7 +266,7 @@ def _ensure_model(
     if credential_id:
         payload["credential"] = credential_id
     try:
-        r = client.post("/models", json=payload)
+        r = client.post("/api/models", json=payload)
         if r.status_code in (200, 201):
             log.info("Registered model %r (provider=%s type=%s)", name, provider, model_type)
             return True
