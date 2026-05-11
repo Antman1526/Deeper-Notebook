@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
 
 # SPECPATH is the directory holding this .spec file (i.e. desktop/build/).
 # ROOT = desktop/   (used for ROOT/bin, ROOT/first_run, ROOT/resources)
@@ -80,7 +80,18 @@ _collect_packages = [
     "surrealdb", "loguru", "tiktoken",
     # Server runtime
     "uvicorn", "llama_cpp",
+    # Binary-heavy / C-extension packages — collect_all-style treatment so
+    # the compiled submodules ride along (numpy._core._exceptions etc.).
+    "numpy", "pydantic", "pydantic_core",
+    # Network / HTTP / config
+    "httpx", "aiohttp", "dotenv", "babel", "pycountry",
+    # SQLite checkpoint backend
+    "sqlalchemy",
 ]
+
+# Packages whose compiled .so/.dylib files need explicit collection because
+# they aren't found by submodule walking alone.
+_collect_binaries_for = ["numpy", "pydantic_core", "llama_cpp", "tiktoken"]
 
 hiddenimports = [
     "uvicorn.protocols.http.h11_impl",
@@ -90,6 +101,7 @@ hiddenimports = [
     "llama_cpp.server",
 ]
 _collected_datas = []
+_collected_binaries = []
 for _pkg in _collect_packages:
     try:
         _submods = collect_submodules(_pkg)
@@ -116,6 +128,18 @@ for _pkg in _collect_packages:
     except Exception as _e:
         print(f"[pyinstaller.spec] WARNING: collect_data_files failed for {_pkg}: {_e}")
 
+# Compiled dynamic libs (numpy's .dylib's, pydantic_core's _pydantic_core.so,
+# llama_cpp's libllama.dylib). Without these the bundle imports the Python
+# stubs but fails on C-extension load.
+for _pkg in _collect_binaries_for:
+    try:
+        _bins = collect_dynamic_libs(_pkg)
+        if _bins:
+            print(f"[pyinstaller.spec] {_pkg}: collected {len(_bins)} dynamic libs")
+            _collected_binaries.extend(_bins)
+    except Exception as _e:
+        print(f"[pyinstaller.spec] WARNING: collect_dynamic_libs failed for {_pkg}: {_e}")
+
 datas = _collected_datas + [
     # Prompts directory — non-Python templates the upstream graphs/services load.
     (str(PROJECT_ROOT / "prompts"), "prompts"),
@@ -136,7 +160,7 @@ datas = _collected_datas + [
 a = Analysis(
     [str(ROOT.parent / "desktop" / "__main__.py")],
     pathex=[str(PROJECT_ROOT)],
-    binaries=[],
+    binaries=_collected_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
