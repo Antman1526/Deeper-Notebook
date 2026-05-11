@@ -1,11 +1,16 @@
-"""OpenAI-compatible STT shim wrapping whisper-cpp-python.
+"""OpenAI-compatible STT shim wrapping faster-whisper.
 
 Run as:
-    python -m desktop_shims.whisper_shim --port 8765 --model /path/to/ggml-base.en.bin
+    python -m desktop_shims.whisper_shim --port 8765 --model base.en
 
 Exposes:
     GET  /health                       → {"status": "ok"}
     POST /v1/audio/transcriptions      → multipart form (file), returns {"text": ...}
+
+The --model argument accepts either a faster-whisper model size string
+(e.g. "base.en", "small", "medium") or a path to a directory containing
+a pre-converted CTranslate2 model.  On first run the model is downloaded
+from HuggingFace (~150 MB for base.en) and cached in ~/.cache/huggingface.
 """
 from __future__ import annotations
 
@@ -19,9 +24,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 
 def build_app(model: Any) -> FastAPI:
-    """Build the FastAPI app with the (already-loaded) whisper model injected.
+    """Build the FastAPI app with the (already-loaded) faster-whisper model injected.
 
-    `model` only needs a `transcribe(audio_path_or_bytes) -> {"text": str}` method.
+    `model` is a faster_whisper.WhisperModel instance.
     """
     app = FastAPI(title="Open Notebook Plus — Whisper STT shim")
 
@@ -36,13 +41,14 @@ def build_app(model: Any) -> FastAPI:
     ) -> dict:
         try:
             audio_bytes = await file.read()
-            # Write to a temp file because whisper-cpp-python wants a path
+            # Write to a temp file because faster-whisper wants a file path
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
-            result = model.transcribe(tmp_path)
+            segments, _info = model.transcribe(tmp_path)
+            text = " ".join(seg.text for seg in segments).strip()
             Path(tmp_path).unlink(missing_ok=True)
-            return {"text": result.get("text", "")}
+            return {"text": text}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -53,13 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--model", required=True, help="Path to ggml-*.bin")
+    parser.add_argument(
+        "--model", required=True,
+        help="faster-whisper model name ('base.en', 'small', etc.) or path to "
+             "a CTranslate2 model directory",
+    )
     args = parser.parse_args(argv)
 
     # Lazy import — only at runtime; tests inject a fake model.
-    from whisper_cpp_python import Whisper
+    from faster_whisper import WhisperModel
 
-    model = Whisper(args.model)
+    # cpu + int8 keeps RAM low on desktops; base.en ~150 MB on disk.
+    model = WhisperModel(args.model, device="cpu", compute_type="int8")
     app = build_app(model=model)
 
     import uvicorn
