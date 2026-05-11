@@ -13,3 +13,20 @@ version = "20.18.0"
 darwin-arm64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-arm64.tar.gz"
 darwin-x86_64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-x64.tar.gz"
 windows-x86_64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip"
+
+[uv]
+version = "0.5.11"
+
+[uv.urls]
+darwin-arm64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-aarch64-apple-darwin.tar.gz"
+darwin-x86_64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-x86_64-apple-darwin.tar.gz"
+windows-x86_64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-x86_64-pc-windows-msvc.zip"
+
+[python_standalone]
+version = "20241206"
+python_version = "3.12.8"
+
+[python_standalone.urls]
+darwin-arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-aarch64-apple-darwin-install_only.tar.gz"
+darwin-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-apple-darwin-install_only.tar.gz"
+windows-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-pc-windows-msvc-install_only.tar.gz"
