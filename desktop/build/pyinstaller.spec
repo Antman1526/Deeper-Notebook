@@ -87,11 +87,20 @@ _collect_packages = [
     "httpx", "aiohttp", "dotenv", "babel", "pycountry",
     # SQLite checkpoint backend
     "sqlalchemy",
+    # mypy-c-compiled packages (each ships a top-level __mypyc__ artifact
+    # plus per-package _parser.so / __init__.so files that collect_submodules
+    # often misses unless we ask explicitly).
+    "tomli", "charset_normalizer", "click",
+    # TOML writer (sometimes pulled in by ai-prompter / esperanto)
+    "tomli_w", "tomlkit",
 ]
 
 # Packages whose compiled .so/.dylib files need explicit collection because
 # they aren't found by submodule walking alone.
-_collect_binaries_for = ["numpy", "pydantic_core", "llama_cpp", "tiktoken"]
+_collect_binaries_for = [
+    "numpy", "pydantic_core", "llama_cpp", "tiktoken",
+    "tomli", "charset_normalizer",
+]
 
 hiddenimports = [
     "uvicorn.protocols.http.h11_impl",
