@@ -97,6 +97,33 @@ class LlamaCppProvider:
         self._proc = None
         self._port = None
 
+    def pick_default_model(self) -> str:
+        """Choose a sensible default GGUF from the user's model dir.
+
+        Preference order (first match wins):
+          1. Hermes-3 family (best chat-tuned model in the user's typical set)
+          2. Mistral-7B-Instruct (reliable baseline)
+          3. Qwen2.5-7B-Instruct
+          4. llama-3.2-3b (small but capable)
+          5. phi-3.5-mini
+          6. Any GGUF at all (first in list_models() sorted order)
+        Returns "" if no usable GGUF exists.
+        """
+        try:
+            models = self.list_models()
+        except Exception:
+            return ""
+        if not models:
+            return ""
+        by_name = {m.lower(): m for m in models}
+        for hint in ("hermes-3", "mistral-7b-instruct", "qwen2.5-7b-instruct",
+                     "llama-3.2-3b", "phi-3.5-mini"):
+            for k, original in by_name.items():
+                if hint in k:
+                    return original
+        # Fallback: first model in sorted list (list_models already filters <1 MB files).
+        return models[0]
+
     def _iter_ggufs(self):
         if not self.model_dir.exists():
             return
