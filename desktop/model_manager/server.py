@@ -4,18 +4,26 @@ Exposes:
     GET    /                              → static UI
     GET    /api/installed                 → list of installed models by class
     GET    /api/catalog                   → curated downloadable models
+    GET    /api/theme                     → {"theme": "<name>"} from user config
     POST   /api/download                  → {category, name} — kick off a download
     DELETE /api/installed/<rel-path>      → remove a model file
 """
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 from aiohttp import web
 
 STATIC_DIR = Path(__file__).parent / "static"
 CATALOG_PATH = Path(__file__).parent / "catalog.json"
+_CONFIG_PATH = Path(os.environ.get("HOME", "~")) / ".open-notebook-plus" / "config.toml"
 
 _MIN_BYTES = 100_000
 
@@ -41,6 +49,14 @@ def build_app(model_dir: Path) -> web.Application:
             return web.FileResponse(STATIC_DIR / "index.html")
         return web.Response(text="<html><body>Model Manager (static UI not built yet)</body></html>",
                             content_type="text/html")
+
+    async def theme(_: web.Request) -> web.Response:
+        try:
+            raw = tomllib.loads(_CONFIG_PATH.read_text())
+            t = raw.get("theme", "light-blue")
+        except Exception:
+            t = "light-blue"
+        return web.json_response({"theme": t})
 
     async def installed(_: web.Request) -> web.Response:
         models = []
@@ -75,6 +91,7 @@ def build_app(model_dir: Path) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/api/installed", installed)
     app.router.add_get("/api/catalog", catalog)
+    app.router.add_get("/api/theme", theme)
     app.router.add_delete("/api/installed/{rel:.+}", delete_model)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)
