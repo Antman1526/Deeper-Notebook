@@ -650,3 +650,7 @@ zstandard==0.25.0
 # llama-cpp-python is needed in the venv so the launcher can spawn
 # `python -m llama_cpp.server` against local GGUF files.
 llama-cpp-python==0.3.5
+
+# v0.3 voice additions
+whisper-cpp-python==0.2.0
+piper-tts==1.4.2
