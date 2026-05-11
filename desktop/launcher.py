@@ -206,9 +206,9 @@ class Supervisor:
         # has one code path; __main__.py's dispatcher works in both modes.
         if getattr(sys, "frozen", False):
             args = [sys.executable, "--onp-internal-uvicorn",
-                    "api.app:app", "--host", "127.0.0.1", "--port", str(port)]
+                    "api.main:app", "--host", "127.0.0.1", "--port", str(port)]
         else:
-            args = [sys.executable, "-m", "uvicorn", "api.app:app",
+            args = [sys.executable, "-m", "uvicorn", "api.main:app",
                     "--host", "127.0.0.1", "--port", str(port)]
         self._spawn(args, cwd=self.repo_root, name="api")
 
