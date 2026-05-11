@@ -143,6 +143,27 @@ def main() -> int:
         progress=_bootstrap_progress,
     )
 
+    # Auto-download nomic-embed-text embedding GGUF if not present.
+    # Non-fatal: failures are logged to downloads.log and skipped.
+    # NOTE: v0.2 registers the file so the picker is populated; a live
+    # embedding endpoint requires a second llama.cpp server (v0.3 roadmap).
+    try:
+        import logging as _logging
+        _dl_log_path = log_dir / "downloads.log"
+        _dl_handler = _logging.FileHandler(_dl_log_path)
+        _dl_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        _logging.getLogger("desktop.model_downloads").addHandler(_dl_handler)
+
+        from desktop.model_downloads import ensure_embedding_model
+        _model_dir = __import__("pathlib").Path(cfg.model_dir)
+        ensure_embedding_model(_model_dir, progress=_bootstrap_progress)
+    except Exception:
+        import traceback
+        _bootstrap_progress(
+            "Warning: embedding model download failed (non-fatal): "
+            + traceback.format_exc()
+        )
+
     extra_env: dict[str, str] = {}
     if cfg.provider == "ollama":
         ol = OllamaProvider()
