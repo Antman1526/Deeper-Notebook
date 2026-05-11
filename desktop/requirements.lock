@@ -645,3 +645,8 @@ zipp==3.23.1
     # via importlib-metadata
 zstandard==0.25.0
     # via langsmith
+
+# --- desktop-app additions (not in upstream pyproject.toml) ---
+# llama-cpp-python is needed in the venv so the launcher can spawn
+# `python -m llama_cpp.server` against local GGUF files.
+llama-cpp-python==0.3.5
