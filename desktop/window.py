@@ -4,10 +4,22 @@ into the loaded page so Radix-UI / CSS-var-aware components pick up the
 user's chosen theme."""
 from __future__ import annotations
 
+import json as _json
 from pathlib import Path
 from typing import Callable
 
 import webview
+
+
+def _voice_injection_js() -> str:
+    """Read the voice-injection JS file content (bundled as data)."""
+    static = Path(__file__).parent / "first_run" / "static" / "voice_injection.js"
+    if static.exists():
+        try:
+            return static.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+    return ""
 
 # Keep in sync with desktop/first_run/static/themes.css
 _THEMES = {
@@ -25,7 +37,7 @@ _THEMES = {
 
 def _theme_injection_js(theme_id: str) -> str:
     t = _THEMES.get(theme_id, _THEMES["light-blue"])
-    return f"""
+    base_js = f"""
     (function() {{
       var s = document.createElement('style');
       s.id = 'onp-theme-injection';
@@ -63,6 +75,16 @@ def _theme_injection_js(theme_id: str) -> str:
       document.head.appendChild(s);
     }})();
     """
+    voice_js = _voice_injection_js()
+    # Append a script-tag injection so the voice JS runs after page DOM is ready.
+    voice_injector = f"""
+    (function() {{
+        var s = document.createElement('script');
+        s.textContent = {_json.dumps(voice_js)};
+        document.head.appendChild(s);
+    }})();
+    """
+    return base_js + voice_injector
 
 
 def open_window(url: str, on_close: Callable[[], None],
