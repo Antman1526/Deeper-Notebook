@@ -124,6 +124,11 @@ def main() -> int:
         __import__("pathlib").Path.home() / ".open-notebook-plus" / "logs"
     )
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    from desktop.progress import ProgressBus
+    progress_bus = ProgressBus(log_path=log_dir / "progress.jsonl")
+    progress_bus.publish("startup", "running", "Launcher starting…")
+
     bootstrap_log = log_dir / "bootstrap.log"
 
     def _bootstrap_progress(msg: str) -> None:
@@ -143,26 +148,28 @@ def main() -> int:
         progress=_bootstrap_progress,
     )
 
-    # Auto-download nomic-embed-text embedding GGUF if not present.
+    # Auto-download embedding + voice models if not present.
     # Non-fatal: failures are logged to downloads.log and skipped.
-    # NOTE: v0.2 registers the file so the picker is populated; a live
-    # embedding endpoint requires a second llama.cpp server (v0.3 roadmap).
-    try:
-        import logging as _logging
-        _dl_log_path = log_dir / "downloads.log"
-        _dl_handler = _logging.FileHandler(_dl_log_path)
-        _dl_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        _logging.getLogger("desktop.model_downloads").addHandler(_dl_handler)
+    import logging as _logging
+    _dl_log_path = log_dir / "downloads.log"
+    _dl_handler = _logging.FileHandler(_dl_log_path)
+    _dl_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _logging.getLogger("desktop.model_downloads").addHandler(_dl_handler)
 
-        from desktop.model_downloads import ensure_embedding_model
-        _model_dir = __import__("pathlib").Path(cfg.model_dir)
+    try:
+        from desktop.model_downloads import (
+            ensure_embedding_model, ensure_tts_model,
+            ensure_secondary_tts_voice, ensure_stt_model,
+        )
+        _model_dir = Path(cfg.model_dir)
         ensure_embedding_model(_model_dir, progress=_bootstrap_progress)
+        ensure_tts_model(_model_dir, progress=_bootstrap_progress)
+        ensure_secondary_tts_voice(_model_dir, progress=_bootstrap_progress)
+        ensure_stt_model(_model_dir, progress=_bootstrap_progress)
     except Exception:
         import traceback
-        _bootstrap_progress(
-            "Warning: embedding model download failed (non-fatal): "
-            + traceback.format_exc()
-        )
+        _bootstrap_progress("Warning: voice model downloads failed: "
+                            + traceback.format_exc())
 
     extra_env: dict[str, str] = {}
     if cfg.provider == "ollama":
@@ -187,19 +194,26 @@ def main() -> int:
                     f"{traceback.format_exc()}\n"
                 )
 
+    voice_model_dir = Path(cfg.model_dir)
+    whisper_path = voice_model_dir / "STT" / "ggml-base.en.bin"
+    amy_path = voice_model_dir / "TTS" / "en_US-amy-medium.onnx"
+    ryan_path = voice_model_dir / "TTS" / "en_US-ryan-high.onnx"
+    nomic_path = voice_model_dir / "GGUF" / "nomic-embed-text-v1.5.f16.gguf"
+    piper_voices: dict[str, Path] = {}
+    if amy_path.exists():
+        piper_voices["alex"] = amy_path
+    if ryan_path.exists():
+        piper_voices["sam"] = ryan_path
+
     sv = Supervisor(
-        cfg=cfg,
-        repo_root=repo_root(),
-        bin_dir=bin_dir,
-        surreal_arch=arch,
-        node_arch=arch,
-        extra_env=extra_env,
-        debug_mode=True,
-        venv_python=venv_py,
-        # In the frozen .app, upstream/ is a subdir of MEIPASS (separate from
-        # repo_root). API + worker spawns must cd to upstream_root so relative
-        # paths in upstream code (migrations, prompts) resolve correctly.
-        upstream_root=upstream_dir(),
+        cfg=cfg, repo_root=repo_root(), bin_dir=bin_dir,
+        surreal_arch=arch, node_arch=arch,
+        extra_env=extra_env, debug_mode=True,
+        venv_python=venv_py, upstream_root=upstream_dir(),
+        whisper_model_path=whisper_path if whisper_path.exists() else None,
+        piper_voices=piper_voices,
+        nomic_embed_path=nomic_path if nomic_path.exists() else None,
+        progress=progress_bus,
     )
     try:
         sv.start_all()
@@ -226,12 +240,19 @@ def main() -> int:
             if url:
                 import urllib.parse
                 llamacpp_port = urllib.parse.urlparse(url).port
-        auto_register(api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port)
+        auto_register(
+            api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
+            whisper_port=getattr(sv, "whisper_port", None) or None,
+            piper_port=getattr(sv, "piper_port", None) or None,
+            embed_port=getattr(sv, "embed_port", None) or None,
+        )
     except Exception:
         import traceback
         log_dir = Path.home() / ".open-notebook-plus" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / "auto_register.log").write_text(traceback.format_exc())
+
+    progress_bus.publish("ready", "done", "Main window opening…")
 
     try:
         open_window(sv.frontend_url, on_close=sv.stop_all, theme=cfg.theme)
