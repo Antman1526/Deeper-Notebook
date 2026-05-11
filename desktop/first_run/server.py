@@ -43,6 +43,7 @@ def build_app(config_path: Path, on_done: Callable[[], None]) -> web.Application
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
             theme=body.get("theme", "light-blue"),
+            encryption_key=secrets.token_urlsafe(32),
         )
         cfg.save(config_path)
         on_done()

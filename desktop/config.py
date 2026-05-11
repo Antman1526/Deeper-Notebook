@@ -5,7 +5,7 @@ import os
 import secrets
 import sys
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -35,6 +35,7 @@ class Config:
     surreal_user: str
     surreal_password: str
     theme: str = "light-blue"
+    encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +66,7 @@ def load_or_create(path: Path) -> Config:
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
             theme="light-blue",
+            encryption_key=secrets.token_urlsafe(32),
         )
         cfg.save(path)
         return cfg
@@ -73,11 +75,18 @@ def load_or_create(path: Path) -> Config:
     provider = raw.get("provider", "none")
     if provider not in _VALID_PROVIDERS:
         raise ValueError(f"Invalid provider in {path}: {provider!r}")
-    return Config(
+
+    encryption_key = raw.get("encryption_key", "")
+    cfg = Config(
         model_dir=Path(raw["model_dir"]),
         provider=provider,  # type: ignore[arg-type]
         default_model=raw.get("default_model", ""),
         surreal_user=raw.get("surreal_user", "root"),
         surreal_password=raw["surreal_password"],
         theme=raw.get("theme", "light-blue"),
+        encryption_key=encryption_key if encryption_key else secrets.token_urlsafe(32),
     )
+    # If the key was missing or blank in the file, persist the freshly-generated one.
+    if not encryption_key:
+        cfg.save(path)
+    return cfg
