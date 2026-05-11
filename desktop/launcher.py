@@ -58,6 +58,7 @@ class Supervisor:
         debug_mode: bool = False,
         log_dir: Path | None = None,
         venv_python: Path | None = None,
+        upstream_root: Path | None = None,
     ) -> None:
         self.cfg = cfg
         self.repo_root = repo_root
@@ -73,6 +74,13 @@ class Supervisor:
         # venv_python: the Python interpreter used to spawn FastAPI/worker children.
         # When None, falls back to sys.executable (unfrozen/dev path).
         self.venv_python: Path = venv_python or Path(sys.executable)
+        # upstream_root: cwd for the API + worker subprocesses. Upstream code
+        # uses relative paths like 'open_notebook/database/migrations/1.surrealql'
+        # so cwd MUST be the directory that contains the api/ and open_notebook/
+        # source trees. In the frozen .app, upstream lives at MEIPASS/upstream/;
+        # the frontend lives at MEIPASS/frontend/. They're not the same dir.
+        # In unfrozen/dev mode, upstream_root defaults to repo_root (they coincide).
+        self.upstream_root: Path = upstream_root or repo_root
         self._procs: list[subprocess.Popen] = []
         self._log_files: list[IO[bytes]] = []
         self.session_env: dict[str, str] = {}
@@ -211,20 +219,23 @@ class Supervisor:
         # Use the venv python to run uvicorn directly — it's a real Python
         # interpreter with all upstream deps installed, so -m uvicorn works
         # without any internal dispatcher tricks.
+        # cwd MUST be upstream_root so relative paths in upstream code resolve
+        # correctly (e.g. open_notebook/database/migrations/*.surrealql).
         args = [
             str(self.venv_python), "-m", "uvicorn", "api.main:app",
             "--host", "127.0.0.1", "--port", str(port),
         ]
-        self._spawn(args, cwd=self.repo_root, name="api")
+        self._spawn(args, cwd=self.upstream_root, name="api")
 
     def _spawn_worker(self) -> None:
         # Use the venv python to call the surreal-commands worker module
         # directly — no console script or frozen-binary dispatcher needed.
+        # cwd is upstream_root for the same reason as the API.
         args = [
             str(self.venv_python), "-m", "surreal_commands.cli.worker",
             "--import-modules", "commands",
         ]
-        self._spawn(args, cwd=self.repo_root, name="worker")
+        self._spawn(args, cwd=self.upstream_root, name="worker")
 
     def _spawn_next(self, port: int) -> None:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
