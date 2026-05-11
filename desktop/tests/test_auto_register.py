@@ -178,3 +178,42 @@ def test_auto_register_is_idempotent(tmp_path):
 
         # No POSTs should happen on second run (everything exists)
         assert client2.post.call_count == 0
+
+
+def test_register_voice_models_creates_credentials_and_models(monkeypatch):
+    from desktop.auto_register import register_voice_models
+    from desktop.config import Config
+    from pathlib import Path
+
+    created = []
+    class FakeClient:
+        def post(self, path, json=None):
+            created.append((path, json))
+            class R:
+                status_code = 201
+                text = ""
+                def json(self):
+                    return {"id": f"id-{json.get('name', '')}" if json else "id"}
+            return R()
+        def get(self, path):
+            class R:
+                status_code = 200
+                text = ""
+                def raise_for_status(self): pass
+                def json(self):
+                    return []
+            return R()
+
+    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
+                 surreal_user="root", surreal_password="x" * 24)
+    register_voice_models(FakeClient(),
+                          whisper_port=1234, piper_port=2345, embed_port=3456,
+                          cfg=cfg)
+    paths = [p for p, _ in created]
+    assert "/api/credentials" in paths
+    payloads = [j for _, j in created if j is not None]
+    assert any(j.get("name") == "Whisper (local)" for j in payloads)
+    assert any(j.get("name") == "Piper (local)" for j in payloads)
+    assert any(j.get("name") == "Local Embeddings (llama.cpp)" for j in payloads)
+    assert any(j.get("name") == "piper-amy-en" for j in payloads)
+    assert any(j.get("name") == "piper-ryan-en" for j in payloads)
