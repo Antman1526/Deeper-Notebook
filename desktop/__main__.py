@@ -232,32 +232,12 @@ def main() -> int:
 
     # Start the model-manager aiohttp server in a background thread so
     # the tray menu can open it on demand.
-    import threading as _th
-    import asyncio as _aio
-    import aiohttp.web as _aio_web
+    from desktop.aiohttp_window import start_aiohttp_server_thread as _start_server
     from desktop.model_manager.server import build_app as _mm_build_app
 
-    _mm_port = [0]
-
-    def _start_mm() -> None:
-        loop = _aio.new_event_loop()
-        _aio.set_event_loop(loop)
-        app = _mm_build_app(Path(cfg.model_dir))
-        runner = _aio_web.AppRunner(app)
-        loop.run_until_complete(runner.setup())
-        site = _aio_web.TCPSite(runner, "127.0.0.1", 0)
-        loop.run_until_complete(site.start())
-        _mm_port[0] = site._server.sockets[0].getsockname()[1]
-        loop.run_forever()
-
-    _mm_thread = _th.Thread(target=_start_mm, daemon=True)
-    _mm_thread.start()
-    # wait briefly for port
-    import time as _time
-    _waited = 0.0
-    while _mm_port[0] == 0 and _waited < 2.0:
-        _time.sleep(0.05)
-        _waited += 0.05
+    _mm_port, _mm_thread, _mm_loop, _mm_runner = _start_server(
+        lambda: _mm_build_app(Path(cfg.model_dir))
+    )
 
     from desktop.tray import install_tray
     import webview as _webview
@@ -272,7 +252,7 @@ def main() -> int:
         try:
             _webview.create_window(
                 "Models",
-                f"http://127.0.0.1:{_mm_port[0]}/",
+                f"http://127.0.0.1:{_mm_port}/",
                 width=920, height=640,
             )
         except Exception:
