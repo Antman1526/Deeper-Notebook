@@ -255,6 +255,69 @@ def main() -> int:
 
     progress_bus.publish("ready", "done", "Main window opening…")
 
+    # Start the model-manager aiohttp server in a background thread so
+    # the tray menu can open it on demand.
+    import threading as _th
+    import asyncio as _aio
+    import aiohttp.web as _aio_web
+    from desktop.model_manager.server import build_app as _mm_build_app
+
+    _mm_port = [0]
+
+    def _start_mm() -> None:
+        loop = _aio.new_event_loop()
+        _aio.set_event_loop(loop)
+        app = _mm_build_app(Path(cfg.model_dir))
+        runner = _aio_web.AppRunner(app)
+        loop.run_until_complete(runner.setup())
+        site = _aio_web.TCPSite(runner, "127.0.0.1", 0)
+        loop.run_until_complete(site.start())
+        _mm_port[0] = site._server.sockets[0].getsockname()[1]
+        loop.run_forever()
+
+    _mm_thread = _th.Thread(target=_start_mm, daemon=True)
+    _mm_thread.start()
+    # wait briefly for port
+    import time as _time
+    _waited = 0.0
+    while _mm_port[0] == 0 and _waited < 2.0:
+        _time.sleep(0.05)
+        _waited += 0.05
+
+    from desktop.tray import install_tray
+    import webview as _webview
+
+    def _on_open_main() -> None:
+        try:
+            _webview.windows[0].show()
+        except Exception:
+            pass
+
+    def _on_open_manager() -> None:
+        try:
+            _webview.create_window(
+                "Models",
+                f"http://127.0.0.1:{_mm_port[0]}/",
+                width=920, height=640,
+            )
+        except Exception:
+            pass
+
+    def _on_quit() -> None:
+        try:
+            sv.stop_all()
+        finally:
+            try:
+                _webview.windows[0].destroy()
+            except Exception:
+                pass
+
+    install_tray(
+        on_open_main=_on_open_main,
+        on_open_manager=_on_open_manager,
+        on_quit=_on_quit,
+    )
+
     try:
         open_window(sv.frontend_url, on_close=sv.stop_all, theme=cfg.theme)
     finally:
