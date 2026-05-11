@@ -133,5 +133,7 @@ if is_mac:
         info_plist={
             "CFBundleShortVersionString": "0.1.0",
             "NSHighResolutionCapable": True,
+            "NSMicrophoneUsageDescription":
+                "Open Notebook Plus uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
         },
     )
