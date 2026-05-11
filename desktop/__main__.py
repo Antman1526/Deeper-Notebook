@@ -196,7 +196,10 @@ def main() -> int:
                 )
 
     voice_model_dir = Path(cfg.model_dir)
-    whisper_path = voice_model_dir / "STT" / "ggml-base.en.bin"
+    # faster-whisper uses model-name strings ("base.en"), not .bin file paths.
+    # Always provide the shim with the model name; faster-whisper downloads
+    # and caches (~150 MB) to ~/.cache/huggingface on first use.
+    whisper_model_name = Path("base.en")  # Path so Supervisor type is satisfied
     amy_path = voice_model_dir / "TTS" / "en_US-amy-medium.onnx"
     ryan_path = voice_model_dir / "TTS" / "en_US-ryan-high.onnx"
     nomic_path = voice_model_dir / "GGUF" / "nomic-embed-text-v1.5.f16.gguf"
@@ -211,7 +214,7 @@ def main() -> int:
         surreal_arch=arch, node_arch=arch,
         extra_env=extra_env, debug_mode=True,
         venv_python=venv_py, upstream_root=upstream_dir(),
-        whisper_model_path=whisper_path if whisper_path.exists() else None,
+        whisper_model_path=whisper_model_name,
         piper_voices=piper_voices,
         nomic_embed_path=nomic_path if nomic_path.exists() else None,
         progress=progress_bus,

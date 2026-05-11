@@ -652,5 +652,11 @@ zstandard==0.25.0
 llama-cpp-python==0.3.5
 
 # v0.3 voice additions
-whisper-cpp-python==0.2.0
+# faster-whisper replaces whisper-cpp-python (cmake compat issues on macOS 26+)
+faster-whisper==1.2.1
+av==17.0.1
+ctranslate2==4.7.1
+flatbuffers==25.12.19
+onnxruntime==1.25.1
+protobuf==7.34.1
 piper-tts==1.4.2

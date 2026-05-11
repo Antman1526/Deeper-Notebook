@@ -88,6 +88,10 @@ class Supervisor:
         # the frontend lives at MEIPASS/frontend/. They're not the same dir.
         # In unfrozen/dev mode, upstream_root defaults to repo_root (they coincide).
         self.upstream_root: Path = upstream_root or repo_root
+        # whisper_model_path may be a Path to a legacy ggml .bin file (kept for
+        # type compatibility) OR a Path whose str() is a faster-whisper model
+        # name like "base.en".  _spawn_whisper no longer checks .exists() so
+        # that model-name strings (which are not real filesystem paths) work.
         self.whisper_model_path = whisper_model_path
         self.piper_voices = piper_voices or {}
         self.nomic_embed_path = nomic_embed_path
@@ -333,7 +337,7 @@ class Supervisor:
         self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
 
     def _spawn_whisper(self, port: int) -> None:
-        if self.whisper_model_path is None or not self.whisper_model_path.exists():
+        if self.whisper_model_path is None:
             return
         args = [
             str(self.venv_python), "-m", "desktop_shims.whisper_shim",
