@@ -6,19 +6,26 @@ user clicks Done, the wizard writes the config and signals completion.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import secrets
+import threading
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from aiohttp import web
 
 from desktop.config import Config
 
+if TYPE_CHECKING:
+    from desktop.progress import ProgressBus
+
 _VALID_PROVIDERS = {"ollama", "llamacpp", "none"}
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def build_app(config_path: Path, on_done: Callable[[], None]) -> web.Application:
+def build_app(config_path: Path, on_done: Callable[[], None],
+              progress_bus: "ProgressBus | None" = None) -> web.Application:
     app = web.Application()
 
     async def index(_: web.Request) -> web.Response:
@@ -49,13 +56,44 @@ def build_app(config_path: Path, on_done: Callable[[], None]) -> web.Application
         on_done()
         return web.json_response({"ok": True})
 
+    async def progress_stream(req: web.Request) -> web.StreamResponse:
+        if progress_bus is None:
+            return web.json_response({"error": "no progress bus"}, status=503)
+        resp = web.StreamResponse(status=200, headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        })
+        await resp.prepare(req)
+        loop = asyncio.get_event_loop()
+        q: asyncio.Queue = asyncio.Queue()
+
+        def reader():
+            for evt in progress_bus.subscribe(timeout=120.0, replay=True):
+                loop.call_soon_threadsafe(q.put_nowait, evt)
+            loop.call_soon_threadsafe(q.put_nowait, None)
+
+        threading.Thread(target=reader, daemon=True).start()
+
+        while True:
+            evt = await q.get()
+            if evt is None:
+                break
+            await resp.write(f"data: {json.dumps(evt)}\n\n".encode())
+            if evt["step"] == "ready" and evt["status"] == "done":
+                break
+        await resp.write_eof()
+        return resp
+
     app.router.add_get("/", index)
+    app.router.add_get("/api/progress", progress_stream)
     app.router.add_post("/api/save", save)
     app.router.add_static("/static", STATIC_DIR)
     return app
 
 
-def run_wizard_blocking(config_path: Path) -> None:
+def run_wizard_blocking(config_path: Path,
+                        progress_bus: "ProgressBus | None" = None) -> None:
     """Open the wizard in PyWebView; return once the user clicks Done."""
     import asyncio
     import threading
@@ -71,7 +109,7 @@ def run_wizard_blocking(config_path: Path) -> None:
         nonlocal runner_loop, runner, site_port
         runner_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(runner_loop)
-        app = build_app(config_path, on_done=done.set)
+        app = build_app(config_path, on_done=done.set, progress_bus=progress_bus)
         runner = web.AppRunner(app)
         runner_loop.run_until_complete(runner.setup())
         site = web.TCPSite(runner, "127.0.0.1", 0)
