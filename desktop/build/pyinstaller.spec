@@ -11,6 +11,34 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
 
+# Make PROJECT_ROOT importable at spec-load time so collect_submodules() can
+# discover the first-party `api`, `commands`, and `open_notebook` packages
+# (they're not pip-installed — they live in the repo).
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _walk_first_party(pkg_name: str) -> list[str]:
+    """Return every dotted module name under PROJECT_ROOT/pkg_name/.
+
+    Used as a fallback to collect_submodules for first-party packages that
+    aren't pip-installed, so PyInstaller still bundles every .py inside them.
+    """
+    pkg_dir = PROJECT_ROOT / pkg_name
+    if not pkg_dir.exists():
+        return []
+    out = {pkg_name}
+    for py in pkg_dir.rglob("*.py"):
+        rel = py.relative_to(PROJECT_ROOT)
+        # __init__.py → parent dir = module; foo.py → stem
+        if py.name == "__init__.py":
+            parts = rel.parent.parts
+        else:
+            parts = rel.with_suffix("").parts
+        if parts:
+            out.add(".".join(parts))
+    return sorted(out)
+
 is_mac = sys.platform == "darwin"
 is_win = sys.platform == "win32"
 
@@ -64,9 +92,25 @@ hiddenimports = [
 _collected_datas = []
 for _pkg in _collect_packages:
     try:
-        hiddenimports.extend(collect_submodules(_pkg))
+        _submods = collect_submodules(_pkg)
+        if _submods:
+            hiddenimports.extend(_submods)
+        else:
+            # collect_submodules returned empty — typically because the package
+            # isn't pip-installed. Fall back to a directory walk so first-party
+            # packages (api, commands) are still bundled.
+            _walked = _walk_first_party(_pkg)
+            if _walked:
+                print(f"[pyinstaller.spec] {_pkg}: collect_submodules empty; "
+                      f"walking PROJECT_ROOT yielded {len(_walked)} modules")
+                hiddenimports.extend(_walked)
+            else:
+                print(f"[pyinstaller.spec] WARNING: no modules found for {_pkg}")
     except Exception as _e:
         print(f"[pyinstaller.spec] WARNING: collect_submodules failed for {_pkg}: {_e}")
+        _walked = _walk_first_party(_pkg)
+        if _walked:
+            hiddenimports.extend(_walked)
     try:
         _collected_datas.extend(collect_data_files(_pkg))
     except Exception as _e:
