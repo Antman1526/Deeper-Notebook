@@ -14,9 +14,12 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from desktop.progress import ProgressBus
 
 from desktop.config import Config
 from desktop.ports import find_free_ports
@@ -59,6 +62,10 @@ class Supervisor:
         log_dir: Path | None = None,
         venv_python: Path | None = None,
         upstream_root: Path | None = None,
+        whisper_model_path: Path | None = None,
+        piper_voices: dict[str, Path] | None = None,
+        nomic_embed_path: Path | None = None,
+        progress: "ProgressBus | None" = None,
     ) -> None:
         self.cfg = cfg
         self.repo_root = repo_root
@@ -81,13 +88,21 @@ class Supervisor:
         # the frontend lives at MEIPASS/frontend/. They're not the same dir.
         # In unfrozen/dev mode, upstream_root defaults to repo_root (they coincide).
         self.upstream_root: Path = upstream_root or repo_root
+        self.whisper_model_path = whisper_model_path
+        self.piper_voices = piper_voices or {}
+        self.nomic_embed_path = nomic_embed_path
+        self.progress = progress
         self._procs: list[subprocess.Popen] = []
         self._log_files: list[IO[bytes]] = []
         self.session_env: dict[str, str] = {}
         self.frontend_url: str = ""
+        self.embed_port: int = 0
+        self.whisper_port: int = 0
+        self.piper_port: int = 0
 
     def start_all(self) -> None:
-        surreal_port, api_port, frontend_port = find_free_ports(3)
+        (surreal_port, api_port, frontend_port,
+         embed_port, whisper_port, piper_port) = find_free_ports(6)
 
         api_url = f"http://127.0.0.1:{api_port}"
         self.session_env = {
@@ -113,9 +128,12 @@ class Supervisor:
             "OPEN_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
         }
 
+        self._progress("supervisor.surreal", "running")
         self._spawn_surreal(surreal_port)
         _wait_tcp("127.0.0.1", surreal_port, timeout=30)
+        self._progress("supervisor.surreal", "done")
 
+        self._progress("supervisor.api", "running")
         self._spawn_api(api_port)
         # First-launch SurrealDB schema migrations + the heavy upstream import
         # chain (langchain + langgraph + podcast_creator) take 20-60 s before
@@ -123,14 +141,46 @@ class Supervisor:
         # we leave the generous timeout in place — better to wait than to
         # tear down an API that was about to come up.
         _wait_http(f"http://127.0.0.1:{api_port}/health", timeout=180)
+        self._progress("supervisor.api", "done")
 
+        self._progress("supervisor.worker", "running")
         self._spawn_worker()
         # Worker has no port; just give it a beat to subscribe.
         time.sleep(0.5)
+        self._progress("supervisor.worker", "done")
 
+        self._progress("supervisor.next", "running")
         self._spawn_next(frontend_port)
         _wait_http(f"http://127.0.0.1:{frontend_port}/", timeout=120)
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
+        self._progress("supervisor.next", "done")
+
+        # New v0.3 processes — best-effort; failures don't crash the launcher.
+        self._progress("supervisor.llamacpp_embed", "running")
+        try:
+            self._spawn_llamacpp_embed(embed_port)
+            self._progress("supervisor.llamacpp_embed", "done")
+        except Exception:
+            self._progress("supervisor.llamacpp_embed", "error")
+
+        self._progress("supervisor.whisper", "running")
+        try:
+            self._spawn_whisper(whisper_port)
+            self._progress("supervisor.whisper", "done")
+        except Exception:
+            self._progress("supervisor.whisper", "error")
+
+        self._progress("supervisor.piper", "running")
+        try:
+            self._spawn_piper(piper_port)
+            self._progress("supervisor.piper", "done")
+        except Exception:
+            self._progress("supervisor.piper", "error")
+
+        # Stash ports for auto_register to use.
+        self.embed_port = embed_port
+        self.whisper_port = whisper_port
+        self.piper_port = piper_port
 
     def stop_all(self) -> None:
         for p in reversed(self._procs):
@@ -263,3 +313,46 @@ class Supervisor:
             cwd=self.repo_root / "frontend",
             name="next",
         )
+
+    def _progress(self, step: str, status: str, message: str = "") -> None:
+        if self.progress is not None:
+            try:
+                self.progress.publish(step, status, message)
+            except Exception:
+                pass
+
+    def _spawn_llamacpp_embed(self, port: int) -> None:
+        if self.nomic_embed_path is None or not self.nomic_embed_path.exists():
+            return  # silently skip; embeddings just won't work this session
+        args = [
+            str(self.venv_python), "-m", "llama_cpp.server",
+            "--model", str(self.nomic_embed_path),
+            "--host", "127.0.0.1", "--port", str(port),
+            "--embedding", "true",
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
+
+    def _spawn_whisper(self, port: int) -> None:
+        if self.whisper_model_path is None or not self.whisper_model_path.exists():
+            return
+        args = [
+            str(self.venv_python), "-m", "desktop_shims.whisper_shim",
+            "--host", "127.0.0.1", "--port", str(port),
+            "--model", str(self.whisper_model_path),
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="whisper")
+
+    def _spawn_piper(self, port: int) -> None:
+        if not self.piper_voices:
+            return
+        voice_args = []
+        for name, path in self.piper_voices.items():
+            if path.exists():
+                voice_args.extend(["--voice", f"{name}={path}"])
+        if not voice_args:
+            return
+        args = [
+            str(self.venv_python), "-m", "desktop_shims.piper_shim",
+            "--host", "127.0.0.1", "--port", str(port),
+        ] + voice_args
+        self._spawn(args, cwd=self.upstream_root, name="piper")
