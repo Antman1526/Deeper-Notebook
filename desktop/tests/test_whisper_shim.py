@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 # Allow importing the shim package by adding desktop to sys.path
@@ -13,10 +12,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from desktop_shims.whisper_shim import build_app
 
 
+def _fake_segment(text: str) -> MagicMock:
+    seg = MagicMock()
+    seg.text = text
+    return seg
+
+
 def _fake_whisper_model(transcript: str = "hello world"):
+    """Return a mock that behaves like a faster-whisper WhisperModel.
+
+    faster-whisper API:
+        segments, info = model.transcribe(path)
+        text = " ".join(seg.text for seg in segments)
+    """
     fake = MagicMock()
-    # whisper-cpp-python style: model(audio_bytes).transcribe() → result dict
-    fake.transcribe.return_value = {"text": transcript}
+    fake_seg = _fake_segment(transcript)
+    fake.transcribe.return_value = ([fake_seg], MagicMock())
     return fake
 
 
