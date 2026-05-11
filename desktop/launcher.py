@@ -95,17 +95,22 @@ class Supervisor:
         }
 
         self._spawn_surreal(surreal_port)
-        _wait_tcp("127.0.0.1", surreal_port, timeout=15)
+        _wait_tcp("127.0.0.1", surreal_port, timeout=30)
 
         self._spawn_api(api_port)
-        _wait_http(f"http://127.0.0.1:{api_port}/health", timeout=30)
+        # First-launch SurrealDB schema migrations + the heavy upstream import
+        # chain (langchain + langgraph + podcast_creator) take 20-60 s before
+        # uvicorn finishes startup. Subsequent launches are much faster but
+        # we leave the generous timeout in place — better to wait than to
+        # tear down an API that was about to come up.
+        _wait_http(f"http://127.0.0.1:{api_port}/health", timeout=180)
 
         self._spawn_worker()
         # Worker has no port; just give it a beat to subscribe.
         time.sleep(0.5)
 
         self._spawn_next(frontend_port)
-        _wait_http(f"http://127.0.0.1:{frontend_port}/", timeout=60)
+        _wait_http(f"http://127.0.0.1:{frontend_port}/", timeout=120)
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
 
     def stop_all(self) -> None:
