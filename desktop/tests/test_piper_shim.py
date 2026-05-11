@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import wave
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
+from typing import List
 from unittest.mock import MagicMock
 
+import numpy as np
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -12,22 +15,28 @@ from fastapi.testclient import TestClient
 from desktop_shims.piper_shim import build_app
 
 
+@dataclass
+class _FakeAudioChunk:
+    """Minimal stand-in for piper.voice.AudioChunk."""
+    sample_rate: int = 22050
+    sample_width: int = 2
+    sample_channels: int = 1
+    audio_float_array: np.ndarray = field(
+        default_factory=lambda: np.zeros(100, dtype=np.float32)
+    )
+    phonemes: List[str] = field(default_factory=list)
+    phoneme_ids: List[int] = field(default_factory=list)
+
+
 def _fake_piper_voices():
     """Build a {voice_name: piper_voice_obj} dict. piper_voice_obj.synthesize
-    writes WAV bytes to the given file-like object.
+    returns an iterable of AudioChunk-like objects (new piper >= 0.0.3 API).
     """
-    def make(text_per_call: str):
+    def make():
         v = MagicMock()
-        def synth(text, wav_file, **kw):
-            # Minimal valid WAV
-            with wave.open(wav_file, "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(22050)
-                w.writeframes(b"\x00\x00" * 100)
-        v.synthesize.side_effect = synth
+        v.synthesize.return_value = [_FakeAudioChunk()]
         return v
-    return {"alex": make("alex"), "sam": make("sam")}
+    return {"alex": make(), "sam": make()}
 
 
 def test_health_returns_200():
