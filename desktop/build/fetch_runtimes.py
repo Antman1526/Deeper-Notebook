@@ -134,56 +134,32 @@ def fetch_uv(version: str, url: str, arch: str) -> None:
 
 
 def fetch_python_standalone(version: str, python_version: str, url: str, arch: str) -> None:
-    """Extract python-build-standalone into desktop/bin/python-<arch>/."""
-    BIN.mkdir(parents=True, exist_ok=True)
-    out_dir = BIN / f"python-{arch}"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
+    """Download python-build-standalone tarball into desktop/bin/python-<arch>.tar.gz (or .zip).
 
+    We intentionally do NOT extract the tarball here.  PyInstaller cannot
+    correctly replicate python-build-standalone's internal symlinks when it
+    walks an extracted directory tree.  Instead we ship the single archive
+    file and extract it on first launch inside extract_python_runtime()
+    (desktop/bootstrap.py).
+    """
+    BIN.mkdir(parents=True, exist_ok=True)
     is_win = arch.startswith("windows")
 
-    if is_win:
-        archive = BIN / "python-standalone.zip"
-        try:
-            download(url, archive)
-            tmp_dir = BIN / "_python_standalone_tmp"
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-            with zipfile.ZipFile(archive) as z:
-                z.extractall(tmp_dir)
-            # Expect a single top-level dir (usually "python/")
-            extracted = next(tmp_dir.iterdir())
-            extracted.rename(out_dir)
-        finally:
-            if archive.exists():
-                archive.unlink()
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-    else:
-        archive = BIN / "python-standalone.tar.gz"
-        tmp_dir = BIN / "_python_standalone_tmp"
-        try:
-            download(url, archive)
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-            tmp_dir.mkdir()
-            with tarfile.open(archive, "r:gz") as t:
-                t.extractall(tmp_dir, filter="data")
-            # python-build-standalone tarballs use "python/" as the top-level dir.
-            extracted = next(tmp_dir.iterdir())
-            extracted.rename(out_dir)
-        finally:
-            if archive.exists():
-                archive.unlink()
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
+    # Clean up any previously-extracted directory so the .app build won't
+    # accidentally bundle the broken extracted tree.
+    out_dir = BIN / f"python-{arch}"
+    if out_dir.exists():
+        print(f"  removing stale extracted tree {out_dir}")
+        shutil.rmtree(out_dir)
 
-    # Make interpreter executable
-    py_bin = out_dir / ("python.exe" if is_win else "bin/python3")
-    if py_bin.exists():
-        py_bin.chmod(0o755)
+    # Destination tarball path.
+    ext = ".zip" if is_win else ".tar.gz"
+    tarball = BIN / f"python-{arch}{ext}"
 
-    print(f"  python-build-standalone {version} (Python {python_version}) → {out_dir}")
+    download(url, tarball)
+
+    size_mb = tarball.stat().st_size // 1024 // 1024
+    print(f"  python-build-standalone {version} (Python {python_version}) → {tarball} ({size_mb} MB)")
 
 
 def main() -> int:
@@ -205,12 +181,13 @@ def main() -> int:
     surreal = BIN / (f"surreal-{arch}.exe" if is_win else f"surreal-{arch}")
     node_bin = BIN / f"node-{arch}" / ("node.exe" if is_win else "bin/node")
     uv_bin = BIN / ("uv.exe" if is_win else "uv")
-    py_bin = BIN / f"python-{arch}" / ("python.exe" if is_win else "bin/python3")
+    py_ext = ".zip" if is_win else ".tar.gz"
+    py_tarball = BIN / f"python-{arch}{py_ext}"
     print(f"\nVerifying:")
     print(f"  surreal: {surreal} ({surreal.stat().st_size // 1024 // 1024} MB)")
     print(f"  node:    {node_bin} ({node_bin.stat().st_size // 1024 // 1024} MB)")
     print(f"  uv:      {uv_bin} ({uv_bin.stat().st_size // 1024 // 1024} MB)")
-    print(f"  python:  {py_bin} ({py_bin.stat().st_size // 1024 // 1024} MB)")
+    print(f"  python:  {py_tarball} ({py_tarball.stat().st_size // 1024 // 1024} MB)")
     return 0
 
 
