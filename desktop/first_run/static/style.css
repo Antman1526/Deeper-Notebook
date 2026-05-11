@@ -124,3 +124,24 @@ button.secondary:hover { border-color: var(--muted); }
   color: var(--text);
 }
 .dark-toggle:hover { border-color: var(--primary); }
+
+.progress-list { list-style: none; padding: 0; margin: 16px 0; }
+.progress-list li {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  display: flex; align-items: center; gap: 10px;
+}
+.progress-list li[data-status="done"] { color: var(--muted); }
+.progress-list li[data-status="running"] { font-weight: 600; }
+.progress-list li[data-status="error"] { color: #c0382b; }
+.progress-list li::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; flex: 0 0 14px;
+  border-radius: 50%; background: var(--border);
+}
+.progress-list li[data-status="done"]::before { background: #3da750; }
+.progress-list li[data-status="running"]::before { background: var(--primary); animation: pulse 1s infinite alternate; }
+.progress-list li[data-status="error"]::before { background: #c0382b; }
+@keyframes pulse { from { opacity: 0.4 } to { opacity: 1 } }

@@ -66,16 +66,47 @@
           default_model: document.getElementById('default_model').value || '',
           theme: chosenTheme,
         };
-        show('done');
-        document.getElementById('done_status').textContent = 'Saving…';
-        const r = await fetch('/api/save', {
+        show('setting-up');
+        const list = document.getElementById('progress-list');
+        const latest = document.getElementById('progress-latest');
+        const elapsed = document.getElementById('progress-elapsed');
+        const startTs = Date.now();
+        setInterval(() => {
+          elapsed.textContent = Math.round((Date.now() - startTs) / 1000) + 's';
+        }, 500);
+
+        // Save config first
+        const saveResp = await fetch('/api/save', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
-        document.getElementById('done_status').textContent = r.ok
-          ? 'Saved. Launching the main app…'
-          : 'Error saving config; check logs.';
+        if (!saveResp.ok) {
+          latest.textContent = 'Failed to save config.';
+          return;
+        }
+
+        // Then subscribe to progress
+        const es = new EventSource('/api/progress');
+        const items = {};
+        es.onmessage = (ev) => {
+          const evt = JSON.parse(ev.data);
+          let li = items[evt.step];
+          if (!li) {
+            li = document.createElement('li');
+            li.textContent = evt.step.replaceAll('.', ' › ');
+            list.appendChild(li);
+            items[evt.step] = li;
+          }
+          li.dataset.status = evt.status;
+          if (evt.message) latest.textContent = evt.message;
+          if (evt.step === 'ready' && evt.status === 'done') {
+            es.close();
+          }
+        };
+        es.onerror = () => {
+          latest.textContent = '(progress stream disconnected)';
+        };
       } else {
         show(target);
       }
