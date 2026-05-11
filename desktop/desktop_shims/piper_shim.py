@@ -53,7 +53,27 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
         v = voices[voice_name]
         buf = io.BytesIO()
         try:
-            v.synthesize(req.input, buf)
+            # piper >= 0.0.3 returns an iterable of AudioChunk objects;
+            # convert the float32 arrays to int16 PCM and write one WAV.
+            import numpy as np
+            chunks = list(v.synthesize(req.input))
+            if not chunks:
+                raise HTTPException(status_code=500, detail="Piper returned no audio")
+            c0 = chunks[0]
+            sample_rate = c0.sample_rate
+            sample_width = c0.sample_width  # bytes per sample (2 for int16)
+            channels = c0.sample_channels
+            # Concatenate all float arrays and convert to PCM int16.
+            combined = np.concatenate([c.audio_float_array for c in chunks])
+            pcm = np.clip(combined, -1.0, 1.0)
+            pcm_int16 = (pcm * 32767).astype(np.int16)
+            with wave.open(buf, "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(pcm_int16.tobytes())
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return Response(content=buf.getvalue(), media_type="audio/wav")
