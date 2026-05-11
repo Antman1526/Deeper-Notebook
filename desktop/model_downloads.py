@@ -46,6 +46,21 @@ PIPER_VOICE_CONFIG = (
     1,
 )
 
+PIPER_RYAN_MODEL = (
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/"
+    "en_US-ryan-high.onnx?download=true",
+    "TTS/en_US-ryan-high.onnx",
+    "Piper Ryan high (text-to-speech voice)",
+    78,
+)
+PIPER_RYAN_CONFIG = (
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/"
+    "en_US-ryan-high.onnx.json?download=true",
+    "TTS/en_US-ryan-high.onnx.json",
+    "Piper Ryan high voice config",
+    1,
+)
+
 
 def _download_one(url: str, dest: Path, label: str,
                   progress: Callable[[str], None] | None = None) -> bool:
@@ -103,6 +118,21 @@ def ensure_tts_model(
     """Download Piper Amy medium voice (.onnx + .json) into model_dir/TTS/."""
     onnx_url, onnx_rel, onnx_label, _ = PIPER_VOICE_MODEL
     cfg_url, cfg_rel, cfg_label, _ = PIPER_VOICE_CONFIG
+    onnx = model_dir / onnx_rel
+    cfg = model_dir / cfg_rel
+    if (_download_one(onnx_url, onnx, onnx_label, progress)
+            and _download_one(cfg_url, cfg, cfg_label, progress)):
+        return (onnx, cfg)
+    return None
+
+
+def ensure_secondary_tts_voice(
+    model_dir: Path,
+    progress: Callable[[str], None] | None = None,
+) -> tuple[Path, Path] | None:
+    """Download Piper Ryan high voice (.onnx + .json) into model_dir/TTS/."""
+    onnx_url, onnx_rel, onnx_label, _ = PIPER_RYAN_MODEL
+    cfg_url, cfg_rel, cfg_label, _ = PIPER_RYAN_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
     if (_download_one(onnx_url, onnx, onnx_label, progress)

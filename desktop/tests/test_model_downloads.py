@@ -11,6 +11,7 @@ from desktop.model_downloads import (
     EMBEDDING_GGUF,
     _download_one,
     ensure_embedding_model,
+    ensure_secondary_tts_voice,
 )
 
 
@@ -137,3 +138,19 @@ def test_ensure_embedding_model_skips_if_already_present(tmp_path):
 
     mock_urlopen.assert_not_called()
     assert result == dest
+
+
+def test_ensure_secondary_tts_voice_skips_when_present(tmp_path, monkeypatch):
+    (tmp_path / "TTS").mkdir()
+    onnx = tmp_path / "TTS" / "en_US-ryan-high.onnx"
+    cfg = tmp_path / "TTS" / "en_US-ryan-high.onnx.json"
+    onnx.write_bytes(b"x" * 200_000)
+    cfg.write_text("{}" * 200_000)
+
+    called = []
+    monkeypatch.setattr(
+        "desktop.model_downloads.urllib.request.urlopen",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not download")),
+    )
+    result = ensure_secondary_tts_voice(tmp_path, progress=lambda m: called.append(m))
+    assert result == (onnx, cfg)
