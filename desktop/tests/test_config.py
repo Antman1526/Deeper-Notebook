@@ -1,3 +1,4 @@
+import secrets
 from pathlib import Path
 
 import pytest
@@ -106,3 +107,35 @@ def test_theme_round_trips(tmp_path):
                  surreal_user="root", surreal_password="A" * 24, theme="dracula")
     cfg.save(cfg_path)
     assert load_or_create(cfg_path).theme == "dracula"
+
+
+def test_encryption_key_defaults_to_random():
+    """Two fresh Configs must have different keys; missing key is regenerated."""
+    cfg1 = Config(
+        model_dir=Path("/tmp"), provider="none", default_model="",
+        surreal_user="root", surreal_password="A" * 24,
+    )
+    cfg2 = Config(
+        model_dir=Path("/tmp"), provider="none", default_model="",
+        surreal_user="root", surreal_password="A" * 24,
+    )
+    assert cfg1.encryption_key != cfg2.encryption_key
+    assert len(cfg1.encryption_key) >= 32
+
+
+def test_load_or_create_regenerates_missing_encryption_key(tmp_path):
+    """Existing config file without encryption_key gets one generated and saved."""
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        'model_dir = "/tmp/foo"\n'
+        'provider = "none"\n'
+        'default_model = ""\n'
+        'surreal_user = "root"\n'
+        'surreal_password = "supersecretsupersecretXX"\n'
+    )
+    cfg = load_or_create(cfg_path)
+    assert cfg.encryption_key  # non-empty
+    assert len(cfg.encryption_key) >= 32
+    # The key must now be persisted back to the file.
+    cfg2 = load_or_create(cfg_path)
+    assert cfg2.encryption_key == cfg.encryption_key

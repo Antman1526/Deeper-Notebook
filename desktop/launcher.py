@@ -110,6 +110,7 @@ class Supervisor:
             "INTERNAL_API_URL": api_url,
             "NEXT_PUBLIC_API_URL": api_url,
             "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
         }
 
         self._spawn_surreal(surreal_port)
