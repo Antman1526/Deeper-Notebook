@@ -73,3 +73,37 @@ def test_start_raises_if_server_never_ready(gguf_dir, monkeypatch):
     p = LlamaCppProvider(model_dir=gguf_dir, ready_probe=lambda port: False, max_wait=0.01)
     with pytest.raises(RuntimeError, match="ready"):
         p.start("model_b.gguf")
+
+
+# ---------------------------------------------------------------------------
+# pick_default_model
+# ---------------------------------------------------------------------------
+
+
+def test_pick_default_model_prefers_hermes(tmp_path):
+    """Hermes-3 should win over any other filename."""
+    for name, size in [
+        ("Mistral-7B-Instruct-v0.3-Q4.gguf", 3 * 1024 * 1024),
+        ("Hermes-3-Llama-3.1-8B-Q4_K_M.gguf", 4 * 1024 * 1024),
+        ("Qwen2.5-7B-Instruct-Q4.gguf", 3 * 1024 * 1024),
+    ]:
+        (tmp_path / name).write_bytes(b"x" * size)
+    p = LlamaCppProvider(model_dir=tmp_path)
+    result = p.pick_default_model()
+    assert "Hermes-3" in result
+
+
+def test_pick_default_model_fallback_to_first(tmp_path):
+    """When no preferred name matches, return the first sorted model."""
+    for name in ("zebra-model.gguf", "alpha-model.gguf"):
+        (tmp_path / name).write_bytes(b"x" * (2 * 1024 * 1024))
+    p = LlamaCppProvider(model_dir=tmp_path)
+    result = p.pick_default_model()
+    # list_models() is sorted; alpha < zebra
+    assert result == "alpha-model.gguf"
+
+
+def test_pick_default_model_empty_dir_returns_empty_string(tmp_path):
+    """Empty model directory should return empty string, not raise."""
+    p = LlamaCppProvider(model_dir=tmp_path)
+    assert p.pick_default_model() == ""
