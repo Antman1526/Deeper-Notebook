@@ -57,6 +57,7 @@ class Supervisor:
         extra_env: dict[str, str] | None = None,
         debug_mode: bool = False,
         log_dir: Path | None = None,
+        venv_python: Path | None = None,
     ) -> None:
         self.cfg = cfg
         self.repo_root = repo_root
@@ -69,6 +70,9 @@ class Supervisor:
             Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
             / ".open-notebook-plus" / "logs"
         )
+        # venv_python: the Python interpreter used to spawn FastAPI/worker children.
+        # When None, falls back to sys.executable (unfrozen/dev path).
+        self.venv_python: Path = venv_python or Path(sys.executable)
         self._procs: list[subprocess.Popen] = []
         self._log_files: list[IO[bytes]] = []
         self.session_env: dict[str, str] = {}
@@ -199,30 +203,22 @@ class Supervisor:
         )
 
     def _spawn_api(self, port: int) -> None:
-        # When frozen, sys.executable is the bundled .app binary (NOT python).
-        # The desktop/__main__.py dispatcher recognizes --onp-internal-uvicorn
-        # and re-enters as uvicorn. When unfrozen, sys.executable is the real
-        # python interpreter, but we keep the same flag so the launcher only
-        # has one code path; __main__.py's dispatcher works in both modes.
-        if getattr(sys, "frozen", False):
-            args = [sys.executable, "--onp-internal-uvicorn",
-                    "api.main:app", "--host", "127.0.0.1", "--port", str(port)]
-        else:
-            args = [sys.executable, "-m", "uvicorn", "api.main:app",
-                    "--host", "127.0.0.1", "--port", str(port)]
+        # Use the venv python to run uvicorn directly — it's a real Python
+        # interpreter with all upstream deps installed, so -m uvicorn works
+        # without any internal dispatcher tricks.
+        args = [
+            str(self.venv_python), "-m", "uvicorn", "api.main:app",
+            "--host", "127.0.0.1", "--port", str(port),
+        ]
         self._spawn(args, cwd=self.repo_root, name="api")
 
     def _spawn_worker(self) -> None:
-        # Upstream's worker entry point is the `surreal-commands-worker`
-        # console script, which calls surreal_commands.cli.worker:main.
-        # We re-implement that invocation through the same internal-dispatcher
-        # trick used for uvicorn.
-        if getattr(sys, "frozen", False):
-            args = [sys.executable, "--onp-internal-worker",
-                    "--import-modules", "commands"]
-        else:
-            # Use the console script when running unfrozen (it's installed by pip).
-            args = ["surreal-commands-worker", "--import-modules", "commands"]
+        # Use the venv python to call the surreal-commands worker module
+        # directly — no console script or frozen-binary dispatcher needed.
+        args = [
+            str(self.venv_python), "-m", "surreal_commands.cli.worker",
+            "--import-modules", "commands",
+        ]
         self._spawn(args, cwd=self.repo_root, name="worker")
 
     def _spawn_next(self, port: int) -> None:
