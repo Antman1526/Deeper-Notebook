@@ -35,8 +35,12 @@ Open Notebook Plus has the database, the local model, and the open-source ecosys
                 │  Layer 1: Working memory             │  v0.3 (upstream)
                 │   (RIGHT NOW — current chat context, │
                 │    LangGraph checkpoints)            │
+                ├──────────────────────────────────────┤
+                │  Layer 0: Ambient capture (optional) │  v0.4
+                │   (BACKGROUND — OpenChronicle's      │
+                │    passive screen context)           │
                 └──────────────────────────────────────┘
-                  All four run locally on SurrealDB +
+                  All run locally on SurrealDB +
                   the user's chosen local LLM.
 ```
 
@@ -116,6 +120,28 @@ Each of these is locally hostable and license-compatible:
 | **Chroma** | Apache 2.0 | Local vector DB | Not needed — SurrealDB's built-in vectors are enough |
 | **NousResearch/Hermes-Function-Calling** | Apache 2.0 | Reference implementation of Hermes tool-call format | Direct dependency for the v0.4 memory writer agent |
 | **NousResearch/hermes-agent** v2026.5.7 | (TBD) | Agent runtime for Hermes models | To investigate during v0.4 — may replace our hand-rolled memory writer with their canonical runtime |
+| **OpenChronicle** (Einsia/OpenChronicle) | MIT | macOS daemon that captures accessibility-tree events, sessionizes them, persists to SQLite + Markdown, exposes an MCP endpoint at `http://127.0.0.1:8742/mcp` | **Layer 0** (ambient capture). Complements layers 1–4 by providing a stream of "what the user was actually doing on this machine" that Open Notebook Plus can pull from via MCP. The notebook becomes the *queryable* memory; OpenChronicle is the *passive* memory. |
+
+### OpenChronicle as Layer 0 (ambient capture)
+
+The four-layer model above describes memory the user actively creates inside the notebook. **OpenChronicle adds a fifth, passive layer below them**: ambient context from the rest of the macOS environment.
+
+When OpenChronicle is installed and running, Open Notebook Plus can:
+
+1. **Query for recent context** at chat start — "what files / URLs / apps was the user working on in the last 10 minutes?" — and inject that into the chat system prompt as ambient context. The LLM then "knows" the user is, say, debugging a Rust file in `~/projects/foo/src/main.rs` and can answer questions about it without the user pasting paths.
+
+2. **Re-ground "this" / "that" / "the bug"** — when the user says ambiguous things like "explain this", OpenChronicle's recent screen captures resolve the referent.
+
+3. **Auto-import sources** — a daily/weekly job that scrapes OpenChronicle for documents/URLs the user has spent time reading, then offers to add them as sources to a notebook. Turns the user's existing browsing into a research corpus.
+
+Integration approach (v0.4):
+
+- The launcher's Supervisor adds a **"OpenChronicle bridge"** as a new optional child process: a small FastAPI shim that's an MCP *client* talking to OpenChronicle's MCP server, and an HTTP server exposing those tools to the upstream chat workflow.
+- Auto-detection: at startup, ping `http://127.0.0.1:8742/mcp` — if reachable, register the bridge; if not (OpenChronicle not installed), silently skip.
+- A new `desktop/providers/openchronicle.py` follows the same `ModelProvider`-ish pattern as the existing providers — `is_available()`, `list_tools()`, `start()` → env vars routing the chat flow to include OpenChronicle context.
+- The MEMORY.md privacy guarantee carries over: all OpenChronicle data stays local (it's a macOS daemon talking to a local SQLite); we never forward anything to a third party.
+
+If OpenChronicle isn't installed, none of this kicks in — Layer 0 is purely additive.
 
 **Likely v0.4 stack:** `mem0` as the orchestration layer + Hermes 3 as the memory-writer LLM + SurrealDB as the persistent store + nomic-embed for vector retrieval. Wired together by a new `desktop/memory/` package mirroring the existing `desktop/providers/` and `desktop/desktop_shims/` patterns.
 
@@ -150,6 +176,7 @@ In v0.4 it additionally becomes:
 | Procedural memory (user preferences) | ❌ | ✅ Hermes 3 + mem0 |
 | Memory dashboard ("what does Open Notebook Plus know about me?") | ❌ | ✅ new Settings page |
 | Memory export / wipe | ❌ | ✅ JSON export, "forget everything" button |
+| OpenChronicle ambient context (Layer 0) | ❌ | ✅ auto-detect at startup, optional MCP bridge |
 | Multi-device sync of memory | ❌ | ⏳ v0.5 (Tailscale/Syncthing) |
 
 ---
@@ -213,3 +240,5 @@ To wire a new tool into the Hermes memory writer:
 - **Letta**: https://github.com/letta-ai/letta
 - **LangGraph memory primitives**: https://langchain-ai.github.io/langgraph/concepts/memory/
 - **SurrealDB vector search**: https://surrealdb.com/docs/surrealdb/embedding/vector-search
+- **OpenChronicle** (ambient capture + MCP): https://github.com/Einsia/OpenChronicle
+- **Model Context Protocol (MCP) spec**: https://modelcontextprotocol.io
