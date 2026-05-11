@@ -249,7 +249,8 @@
             showToast('Transcribed: “' + preview + '”', 'success', 3000);
           })
           .catch(function (e) {
-            showToast('STT failed: ' + e.message, 'error');
+            var msg = (e instanceof TypeError) ? 'Network error' : ('STT failed: ' + e.message);
+            showToast(msg, 'error');
           })
           .finally(function () {
             fab.innerHTML = '🎤';
@@ -383,7 +384,8 @@
             showToast('Voice ready', 'success', 2000);
           })
           .catch(function (e) {
-            showToast('TTS failed: ' + e.message, 'error');
+            var msg = (e instanceof TypeError) ? 'Network error' : ('TTS failed: ' + e.message);
+            showToast(msg, 'error');
             btn.innerHTML = SPEAKER_ICON;
             btn.title = 'Play this response';
             barWrap.style.display = 'none';
