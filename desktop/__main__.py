@@ -151,6 +151,25 @@ def main() -> int:
         sv.stop_all()
         raise
 
+    # Auto-register local models so the user opens the app with a populated
+    # picker instead of a "Missing required models" warning.
+    try:
+        from desktop.auto_register import auto_register
+        api_base = sv.session_env["INTERNAL_API_URL"]
+        llamacpp_port = None
+        if cfg.provider == "llamacpp" and cfg.default_model:
+            # LlamaCppProvider.start() emitted OPENAI_COMPATIBLE_BASE_URL — extract port
+            url = extra_env.get("OPENAI_COMPATIBLE_BASE_URL", "")
+            if url:
+                import urllib.parse
+                llamacpp_port = urllib.parse.urlparse(url).port
+        auto_register(api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port)
+    except Exception:
+        import traceback
+        log_dir = Path.home() / ".open-notebook-plus" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "auto_register.log").write_text(traceback.format_exc())
+
     try:
         open_window(sv.frontend_url, on_close=sv.stop_all, theme=cfg.theme)
     finally:
