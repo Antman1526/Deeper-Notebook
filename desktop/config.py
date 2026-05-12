@@ -35,6 +35,7 @@ class Config:
     surreal_user: str
     surreal_password: str
     theme: str = "light-blue"
+    openchronicle_choice: str = "skip"
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
 
     def save(self, path: Path) -> None:
@@ -66,6 +67,7 @@ def load_or_create(path: Path) -> Config:
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
             theme="light-blue",
+            openchronicle_choice="skip",
             encryption_key=secrets.token_urlsafe(32),
         )
         cfg.save(path)
@@ -84,6 +86,7 @@ def load_or_create(path: Path) -> Config:
         surreal_user=raw.get("surreal_user", "root"),
         surreal_password=raw["surreal_password"],
         theme=raw.get("theme", "light-blue"),
+        openchronicle_choice=raw.get("openchronicle_choice", "skip"),
         encryption_key=encryption_key if encryption_key else secrets.token_urlsafe(32),
     )
     # If the key was missing or blank in the file, persist the freshly-generated one.
