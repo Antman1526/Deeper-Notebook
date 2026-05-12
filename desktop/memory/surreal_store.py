@@ -26,11 +26,35 @@ because mem0's `VectorStoreFactory.create()` calls `cls(**config.model_dump())`.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel
 from mem0.vector_stores.base import VectorStoreBase
+
+
+# vector_id (mem0's `memory_id`) is interpolated into SurrealQL via f-strings
+# in delete()/get()/update(). Surreal's record-id syntax (`table:thing`) doesn't
+# accept naked $-parameters in `FROM`/`DELETE`/`UPDATE` positions in older
+# Surreal versions, so we defend against injection by whitelisting the shape.
+# Anything containing whitespace, quotes, semicolons, or unknown tables is
+# rejected before reaching the database.
+_VALID_VECTOR_ID = re.compile(
+    r"^(memory_fact|memory_preference|memory_episode):[A-Za-z0-9_\-]+$"
+)
+
+
+def _validate_vector_id(vector_id: Any) -> str:
+    """Return `vector_id` as str if it matches our record-id whitelist.
+
+    Raises ValueError otherwise. Public so memory_shim/dashboard tests can
+    exercise the same gate.
+    """
+    s = str(vector_id)
+    if not _VALID_VECTOR_ID.match(s):
+        raise ValueError(f"Invalid vector_id (must be memory_<kind>:<id>): {s!r}")
+    return s
 
 # ---------------------------------------------------------- sync/async bridge
 #
@@ -197,10 +221,12 @@ class SurrealMemoryStore(VectorStoreBase):
 
     def delete(self, vector_id):
         self._ensure_connected()
-        self._exec(f"DELETE {vector_id}")
+        vid = _validate_vector_id(vector_id)
+        self._exec(f"DELETE {vid}")
 
     def update(self, vector_id, vector=None, payload=None):
         self._ensure_connected()
+        vid = _validate_vector_id(vector_id)
         patch: dict[str, Any] = {}
         if payload is not None:
             for k in ("text", "confidence", "metadata"):
@@ -209,11 +235,12 @@ class SurrealMemoryStore(VectorStoreBase):
         if vector is not None:
             patch["embedding"] = vector
         if patch:
-            self._exec(f"UPDATE {vector_id} MERGE $patch", {"patch": patch})
+            self._exec(f"UPDATE {vid} MERGE $patch", {"patch": patch})
 
     def get(self, vector_id) -> OutputData | None:
         self._ensure_connected()
-        rows = self._exec(f"SELECT * FROM {vector_id}")
+        vid = _validate_vector_id(vector_id)
+        rows = self._exec(f"SELECT * FROM {vid}")
         if not rows:
             return None
         return self._to_output(rows[0])
