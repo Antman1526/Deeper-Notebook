@@ -140,6 +140,13 @@ class Supervisor:
             "NEXT_PUBLIC_API_URL": api_url,
             "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
             "OPEN_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
+            # v0.4 memory layer: predeclare URLs so the surreal-commands worker
+            # (spawned before these servers actually bind) sees them in its env.
+            # The real servers come up later in start_all; worker connects
+            # lazily on first command invocation.
+            "MEMORY_CHAT_LLM_URL": f"http://127.0.0.1:{chat_llm_port}/v1",
+            "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
+            "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
         }
 
         self._progress("supervisor.surreal", "running")
