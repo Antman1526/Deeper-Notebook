@@ -21,6 +21,17 @@ def _voice_injection_js() -> str:
             return ""
     return ""
 
+
+def _memory_injection_js() -> str:
+    """Read the memory-injection JS file content (bundled as data)."""
+    static = Path(__file__).parent / "first_run" / "static" / "memory_injection.js"
+    if static.exists():
+        try:
+            return static.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+    return ""
+
 # Keep in sync with desktop/first_run/static/themes.css
 _THEMES = {
     "light-blue":      {"bg": "#FFFFFF", "fg": "#1A2B3C", "primary": "#2D7FF9", "accent": "#5AB1FF", "border": "#D8E5F5"},
@@ -35,7 +46,8 @@ _THEMES = {
 }
 
 
-def _theme_injection_js(theme_id: str) -> str:
+def _theme_injection_js(theme_id: str, memory_url: str | None = None,
+                        remind_openchronicle: bool = False) -> str:
     t = _THEMES.get(theme_id, _THEMES["light-blue"])
     base_js = f"""
     (function() {{
@@ -84,19 +96,36 @@ def _theme_injection_js(theme_id: str) -> str:
         document.head.appendChild(s);
     }})();
     """
-    return base_js + voice_injector
+    memory_js = _memory_injection_js()
+    memory_globals = (
+        f"window.ONP_MEMORY_URL = {_json.dumps(memory_url)};"
+        f"window.ONP_REMIND_OPENCHRONICLE = {('true' if remind_openchronicle else 'false')};"
+    )
+    memory_injector = f"""
+    (function() {{
+        {memory_globals}
+        var s = document.createElement('script');
+        s.textContent = {_json.dumps(memory_js)};
+        document.head.appendChild(s);
+    }})();
+    """
+    return base_js + voice_injector + memory_injector
 
 
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Open Notebook Plus",
                 width: int = 1280, height: int = 800,
-                theme: str = "light-blue") -> None:
+                theme: str = "light-blue",
+                memory_url: str | None = None,
+                remind_openchronicle: bool = False) -> None:
     """Blocking — returns when the user closes the window."""
     window = webview.create_window(title, url, width=width, height=height)
     window.events.closed += on_close
     def _on_loaded():
         try:
-            window.evaluate_js(_theme_injection_js(theme))
+            window.evaluate_js(
+                _theme_injection_js(theme, memory_url=memory_url,
+                                    remind_openchronicle=remind_openchronicle))
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded

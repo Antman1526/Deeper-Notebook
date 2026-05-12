@@ -116,6 +116,7 @@ class AppContext:
     # v0.4 memory additions
     openchronicle_available: bool = False
     commands_dst: "Path | None" = None
+    memory_dashboard_port: int = 0
 
 
 def _new_context() -> AppContext:
@@ -389,8 +390,28 @@ def _phase_start_model_manager(ctx: AppContext) -> None:
     ctx.mm_port = mm_port
 
 
+def _phase_start_memory_dashboard(ctx: AppContext) -> None:
+    """Start the aiohttp memory-dashboard window server; set ctx.memory_dashboard_port.
+
+    The dashboard proxies to the Supervisor's memory retriever shim. If the
+    retriever didn't start (sv.memory_port == 0), the dashboard still serves
+    but every proxy request will return 502 — the UI displays an error state.
+    """
+    assert ctx.sv is not None
+
+    from desktop.aiohttp_window import start_aiohttp_server_thread
+    from desktop.memory_dashboard.server import build_app as _md_build_app
+
+    memory_url = (f"http://127.0.0.1:{ctx.sv.memory_port}/"
+                  if getattr(ctx.sv, "memory_port", 0) else "")
+    port, _t, _l, _r = start_aiohttp_server_thread(
+        lambda: _md_build_app(memory_retriever_url=memory_url)
+    )
+    ctx.memory_dashboard_port = port
+
+
 def _phase_install_tray(ctx: AppContext) -> None:
-    """Install the system tray icon with Open Main / Model Manager / Quit actions."""
+    """Install the system tray icon with Open Main / Model Manager / Memory / Quit actions."""
     import webview as _webview
 
     from desktop.tray import install_tray
@@ -399,6 +420,7 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     sv = ctx.sv
     mm_port = ctx.mm_port
+    md_port = ctx.memory_dashboard_port
 
     def _on_open_main() -> None:
         try:
@@ -416,6 +438,18 @@ def _phase_install_tray(ctx: AppContext) -> None:
         except Exception:
             pass
 
+    def _on_open_memory() -> None:
+        if not md_port:
+            return
+        try:
+            _webview.create_window(
+                "Memory",
+                f"http://127.0.0.1:{md_port}/",
+                width=900, height=640,
+            )
+        except Exception:
+            pass
+
     def _on_quit() -> None:
         try:
             sv.stop_all()
@@ -428,6 +462,7 @@ def _phase_install_tray(ctx: AppContext) -> None:
     install_tray(
         on_open_main=_on_open_main,
         on_open_manager=_on_open_manager,
+        on_open_memory=_on_open_memory if md_port else None,
         on_quit=_on_quit,
     )
 
@@ -442,8 +477,14 @@ def _phase_open_window(ctx: AppContext) -> None:
 
     ctx.progress_bus.publish("ready", "done", "Main window opening…")
 
+    memory_url = (f"http://127.0.0.1:{ctx.memory_dashboard_port}/"
+                  if ctx.memory_dashboard_port else None)
+    remind = (not ctx.openchronicle_available
+              and ctx.cfg.openchronicle_choice == "prompt")
     try:
-        open_window(ctx.sv.frontend_url, on_close=ctx.sv.stop_all, theme=ctx.cfg.theme)
+        open_window(ctx.sv.frontend_url, on_close=ctx.sv.stop_all,
+                    theme=ctx.cfg.theme,
+                    memory_url=memory_url, remind_openchronicle=remind)
     finally:
         ctx.sv.stop_all()
 
@@ -466,6 +507,7 @@ def run() -> int:
     _phase_start_supervisor(ctx)
     _phase_auto_register(ctx)
     _phase_start_model_manager(ctx)
+    _phase_start_memory_dashboard(ctx)
     _phase_install_tray(ctx)
     _phase_open_window(ctx)
     return 0
