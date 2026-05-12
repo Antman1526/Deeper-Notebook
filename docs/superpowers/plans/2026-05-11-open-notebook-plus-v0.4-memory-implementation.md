@@ -849,11 +849,12 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
 def test_build_memory_client_imports_register_module_for_side_effect():
     """If `desktop.memory._register` hasn't run by the time Memory.from_config
     is called, mem0 will reject `provider: 'surreal'` as unknown. Verify the
-    side-effect import happened."""
+    side-effect import happened. Note: `_provider_configs` is a Pydantic v2
+    ModelPrivateAttr at class level — read its `.default` to see the dict."""
     import sys
     assert "desktop.memory._register" in sys.modules
     from mem0.vector_stores.configs import VectorStoreConfig
-    assert "surreal" in VectorStoreConfig._provider_configs
+    assert "surreal" in VectorStoreConfig._provider_configs.default
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
