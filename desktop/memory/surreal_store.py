@@ -32,6 +32,45 @@ from typing import Any, Optional
 from pydantic import BaseModel
 from mem0.vector_stores.base import VectorStoreBase
 
+# ---------------------------------------------------------- sync/async bridge
+#
+# mem0's VectorStoreBase methods are sync, but surrealdb's Python client is
+# async-only. Naive bridges break:
+#   - `asyncio.get_event_loop().run_until_complete(...)` no longer auto-creates
+#     a loop on Python 3.14's main thread.
+#   - `asyncio.run(...)` raises RuntimeError if a loop is already running
+#     in the caller's thread (which Task 8's FastAPI shim guarantees).
+#
+# We run a single daemon thread carrying its own loop for the lifetime of
+# the process; sync callers submit coroutines to it.
+
+import threading
+
+_bg_loop: asyncio.AbstractEventLoop | None = None
+_bg_loop_lock = threading.Lock()
+
+
+def _get_bg_loop() -> asyncio.AbstractEventLoop:
+    global _bg_loop
+    with _bg_loop_lock:
+        if _bg_loop is None or _bg_loop.is_closed():
+            loop = asyncio.new_event_loop()
+            t = threading.Thread(target=loop.run_forever, name="surreal-async-loop",
+                                 daemon=True)
+            t.start()
+            _bg_loop = loop
+        return _bg_loop
+
+
+def _run_async(coro):
+    """Run a coroutine on the dedicated background loop and block on its result.
+
+    Safe to call from both sync code AND from inside an existing event loop
+    (e.g. a FastAPI handler) because the bg loop is in a different thread.
+    """
+    fut = asyncio.run_coroutine_threadsafe(coro, _get_bg_loop())
+    return fut.result()
+
 
 class OutputData(BaseModel):
     id: Optional[str]
@@ -85,8 +124,8 @@ class SurrealMemoryStore(VectorStoreBase):
         if self._connected:
             return
         ns, db, user, password = self._connect_args
-        asyncio.run(self._client.signin({"user": user, "pass": password}))
-        asyncio.run(self._client.use(ns, db))
+        _run_async(self._client.signin({"user": user, "pass": password}))
+        _run_async(self._client.use(ns, db))
         self._connected = True
 
     def _table(self, payload: dict) -> str:
@@ -96,7 +135,7 @@ class SurrealMemoryStore(VectorStoreBase):
         """Execute a SurrealQL query, supporting sync (mock) + async (real) clients."""
         result = self._client.query(sql, vars)
         if asyncio.iscoroutine(result):
-            result = asyncio.run(result)
+            result = _run_async(result)
         if isinstance(result, list) and result:
             first = result[0]
             if isinstance(first, list):
