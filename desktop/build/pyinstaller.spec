@@ -87,6 +87,18 @@ datas = [
     (str(ROOT / "model_manager" / "catalog.json"), "desktop/model_manager"),
     (str(ROOT / "first_run" / "static" / "voice_injection.js"),
         "desktop/first_run/static"),
+
+    # v0.4 — memory package (bundled into upstream/ so worker subprocess
+    # imports `desktop.memory.*` cleanly from cwd=upstream_dir), and the
+    # dashboard static UI (loaded by memory_dashboard/server.py via
+    # __file__-relative path).
+    (str(PROJECT_ROOT / "desktop" / "memory"), "upstream/desktop/memory"),
+    (str(ROOT / "memory_dashboard" / "static"),
+        "desktop/memory_dashboard/static"),
+    # Migration #15 ships inside upstream/open_notebook/database/migrations
+    # (already covered by the upstream/open_notebook entry above).
+    # memory_injection.js is included by the first_run/static directory
+    # entry above — no separate line needed.
 ]
 
 a = Analysis(
