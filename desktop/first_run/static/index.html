@@ -82,7 +82,43 @@
       <div class="theme-grid" id="theme_grid"></div>
       <div class="button-row">
         <button class="secondary" data-back="model">Back</button>
-        <button class="primary" data-next="done">Continue</button>
+        <button class="primary" data-next="ambient-memory">Continue</button>
+      </div>
+    </section>
+
+    <section data-screen="ambient-memory" hidden>
+      <div class="icon-row">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M32 12 C 20 12 14 22 14 32 C 14 42 20 52 32 52
+                   C 44 52 50 42 50 32 C 50 22 44 12 32 12 Z"
+                fill="currentColor" opacity="0.15"/>
+          <circle cx="32" cy="32" r="3" fill="currentColor"/>
+          <circle cx="22" cy="26" r="2" fill="currentColor"/>
+          <circle cx="42" cy="26" r="2" fill="currentColor"/>
+          <circle cx="22" cy="40" r="2" fill="currentColor"/>
+          <circle cx="42" cy="40" r="2" fill="currentColor"/>
+          <path d="M22 26 L32 32 M42 26 L32 32 M22 40 L32 32 M42 40 L32 32"
+                stroke="currentColor" stroke-width="1.2" fill="none"/>
+        </svg>
+      </div>
+      <h2>✨ Enhance with ambient memory? <span class="hint">(optional)</span></h2>
+      <p>Open Notebook Plus can remember what you were working on without you having
+         to tell it. Ask things like:</p>
+      <ul class="examples">
+        <li>"What was the bug in that file?"</li>
+        <li>"Summarize the article I just read."</li>
+        <li>"Continue what I was doing."</li>
+      </ul>
+      <p>This uses <strong>OpenChronicle</strong>
+         (<a href="https://github.com/Einsia/OpenChronicle" target="_blank">MIT</a>),
+         a separate free app that reads your screen via macOS accessibility to
+         build local-only memory. Nothing leaves your machine.</p>
+      <div class="button-row">
+        <button class="secondary" data-back="theme">Back</button>
+        <button class="secondary" data-next="done"
+                data-onclick="skip_openchronicle">Skip — set up later</button>
+        <button class="primary" data-next="done"
+                data-onclick="open_openchronicle_install">Open install page</button>
       </div>
     </section>
 

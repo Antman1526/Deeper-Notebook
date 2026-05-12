@@ -50,10 +50,27 @@ def build_app(config_path: Path, on_done: Callable[[], None],
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
             theme=body.get("theme", "light-blue"),
+            openchronicle_choice=body.get("openchronicle_choice", "skip"),
             encryption_key=secrets.token_urlsafe(32),
         )
         cfg.save(config_path)
         on_done()
+        return web.json_response({"ok": True})
+
+    async def dismiss_openchronicle_reminder(_req: web.Request) -> web.Response:
+        """Post-launch endpoint: the memory_injection.js toast hits this when
+        the user closes the OpenChronicle reminder. We rewrite the config to
+        flip choice→'skip' so the toast never re-shows."""
+        from desktop.config import load_or_create
+        cfg = load_or_create(config_path)
+        new_cfg = Config(
+            model_dir=cfg.model_dir, provider=cfg.provider,
+            default_model=cfg.default_model,
+            surreal_user=cfg.surreal_user, surreal_password=cfg.surreal_password,
+            theme=cfg.theme, encryption_key=cfg.encryption_key,
+            openchronicle_choice="skip",
+        )
+        new_cfg.save(config_path)
         return web.json_response({"ok": True})
 
     async def progress_stream(req: web.Request) -> web.StreamResponse:
@@ -88,6 +105,8 @@ def build_app(config_path: Path, on_done: Callable[[], None],
     app.router.add_get("/", index)
     app.router.add_get("/api/progress", progress_stream)
     app.router.add_post("/api/save", save)
+    app.router.add_post("/api/config/dismiss_openchronicle_reminder",
+                        dismiss_openchronicle_reminder)
     app.router.add_static("/static", STATIC_DIR)
     return app
 
