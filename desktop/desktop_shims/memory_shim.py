@@ -80,11 +80,27 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
             query=q, top_k=50, filters={"user_id": USER_ID}))
         return {"records": records}
 
+    # Map the user-facing kind names (fact/preference/episode) to the actual
+    # SurrealDB table names mem0 stores under. `memory_id` in SurrealMemoryStore
+    # is a full record reference like `memory_fact:abc-123` — without this
+    # mapping, DELETE `fact:abc` references a non-existent table.
+    _KIND_TO_TABLE = {
+        "fact": "memory_fact",
+        "preference": "memory_preference",
+        "episode": "memory_episode",
+    }
+
     @app.delete("/api/memory/{kind}/{id}")
     def delete(kind: str, id: str) -> dict:
-        if kind not in ("fact", "preference", "episode"):
+        table = _KIND_TO_TABLE.get(kind)
+        if table is None:
             raise HTTPException(status_code=400, detail="invalid kind")
-        mem_client.delete(memory_id=f"{kind}:{id}")
+        # Defense in depth: reject ids containing anything outside the safe
+        # whitelist before forwarding to mem0 / SurrealQL.
+        import re as _re
+        if not _re.fullmatch(r"[A-Za-z0-9_\-]+", id):
+            raise HTTPException(status_code=400, detail="invalid id")
+        mem_client.delete(memory_id=f"{table}:{id}")
         return {"ok": True}
 
     @app.get("/api/memory/ambient/status")

@@ -5,8 +5,12 @@ from unittest.mock import MagicMock
 # Importing _register installs the synthetic `mem0.configs.vector_stores.surreal`
 # module — must happen before surreal_store is imported because surreal_store
 # inherits from VectorStoreBase (a sibling of the synthetic module's parent pkg).
+import pytest
+
 from desktop.memory import _register  # noqa: F401
-from desktop.memory.surreal_store import SurrealMemoryStore, OutputData
+from desktop.memory.surreal_store import (
+    SurrealMemoryStore, OutputData, _validate_vector_id,
+)
 
 
 def _fake_client(responses: dict):
@@ -91,6 +95,58 @@ def test_reset_removes_and_redefines_all_three_tables():
     sqls = " ".join(c.args[0] for c in store._client.query.call_args_list)
     for table in ("memory_fact", "memory_preference", "memory_episode"):
         assert table in sqls
+
+
+@pytest.mark.parametrize("good_id", [
+    "memory_fact:abc",
+    "memory_preference:abc-123_def",
+    "memory_episode:01HJZ4K0R0XYZ",
+])
+def test_validate_vector_id_accepts_whitelisted_shapes(good_id):
+    assert _validate_vector_id(good_id) == good_id
+
+
+@pytest.mark.parametrize("bad_id", [
+    # Wrong table
+    "memory_xyz:abc",
+    "user:abc",
+    # Injection attempts
+    "memory_fact:abc; DROP TABLE memory_fact",
+    "memory_fact:abc'",
+    "memory_fact:abc\nDELETE memory_fact",
+    "memory_fact:abc memory_fact:def",
+    # Empty parts
+    ":abc",
+    "memory_fact:",
+    "",
+    # Wrong case
+    "Memory_Fact:abc",
+])
+def test_validate_vector_id_rejects_invalid_shapes(bad_id):
+    with pytest.raises(ValueError, match="Invalid vector_id"):
+        _validate_vector_id(bad_id)
+
+
+def test_delete_rejects_injection_before_hitting_surreal():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"DELETE": [[]]}))
+    with pytest.raises(ValueError):
+        store.delete("memory_fact:abc; DROP TABLE memory_fact")
+    # No SQL should have reached the mock client.
+    store._client.query.assert_not_called()
+
+
+def test_update_rejects_injection_before_hitting_surreal():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"UPDATE": [[]]}))
+    with pytest.raises(ValueError):
+        store.update("memory_fact:abc'--", payload={"text": "x"})
+    store._client.query.assert_not_called()
+
+
+def test_get_rejects_injection_before_hitting_surreal():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"SELECT": [[]]}))
+    with pytest.raises(ValueError):
+        store.get("not a valid id")
+    store._client.query.assert_not_called()
 
 
 def test_keyword_search_returns_none():

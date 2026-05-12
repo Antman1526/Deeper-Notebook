@@ -17,16 +17,31 @@
       list.innerHTML = '';
       records.forEach(rec => {
         const li = document.createElement('li');
-        li.innerHTML = `
-          <span style="flex:1">${rec.text || rec.summary || '(no text)'}</span>
-          <span style="color:#888">${(rec.confidence || 0).toFixed(2)}</span>
-          <button data-kind="${kind}" data-id="${(rec.id || '').replace(/^[^:]+:/,'')}">Forget</button>
-        `;
-        li.querySelector('button').addEventListener('click', async (e) => {
+        // Build with DOM APIs + textContent — memory text may contain arbitrary
+        // user-derived content (chat messages, file paths, code snippets), so
+        // string-interpolating into innerHTML would be an XSS vector.
+        const textSpan = document.createElement('span');
+        textSpan.style.flex = '1';
+        textSpan.textContent = rec.text || rec.summary || '(no text)';
+
+        const confSpan = document.createElement('span');
+        confSpan.style.color = '#888';
+        const confNum = typeof rec.confidence === 'number' ? rec.confidence : 0;
+        confSpan.textContent = confNum.toFixed(2);
+
+        const btn = document.createElement('button');
+        btn.dataset.kind = kind;
+        btn.dataset.id = (rec.id || '').replace(/^[^:]+:/, '');
+        btn.textContent = 'Forget';
+        btn.addEventListener('click', async (e) => {
           if (!confirm('Forget this record?')) return;
           await fetch(`/api/memory/${kind}/${e.target.dataset.id}`, {method: 'DELETE'});
           loadList(kind, listId, countId);
         });
+
+        li.appendChild(textSpan);
+        li.appendChild(confSpan);
+        li.appendChild(btn);
         list.appendChild(li);
       });
     } catch (e) {
