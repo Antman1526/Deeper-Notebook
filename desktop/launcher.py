@@ -65,6 +65,8 @@ class Supervisor:
         whisper_model_path: Path | None = None,
         piper_voices: dict[str, Path] | None = None,
         nomic_embed_path: Path | None = None,
+        chat_llm_path: Path | None = None,
+        openchronicle_available: bool = False,
         progress: "ProgressBus | None" = None,
     ) -> None:
         self.cfg = cfg
@@ -103,10 +105,18 @@ class Supervisor:
         self.embed_port: int = 0
         self.whisper_port: int = 0
         self.piper_port: int = 0
+        self.chat_llm_path = chat_llm_path
+        self.openchronicle_available = openchronicle_available
+        # New v0.4 ports — initialised to 0 so auto_register can skip cleanly
+        # when a server failed to start.
+        self.chat_llm_port: int = 0
+        self.memory_port: int = 0
+        self.openchronicle_port: int = 0
 
     def start_all(self) -> None:
         (surreal_port, api_port, frontend_port,
-         embed_port, whisper_port, piper_port) = find_free_ports(6)
+         embed_port, whisper_port, piper_port,
+         chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
 
         api_url = f"http://127.0.0.1:{api_port}"
         self.session_env = {
@@ -185,6 +195,34 @@ class Supervisor:
         self.embed_port = embed_port
         self.whisper_port = whisper_port
         self.piper_port = piper_port
+
+        # v0.4 additions — order matters: chat LLM must be up before the
+        # memory retriever boots, because the retriever instantiates
+        # mem0.Memory which validates the LLM endpoint at startup.
+        self._progress("supervisor.llamacpp_chat", "running")
+        try:
+            self._spawn_llamacpp_chat(chat_llm_port)
+            self._progress("supervisor.llamacpp_chat", "done")
+        except Exception:
+            self._progress("supervisor.llamacpp_chat", "error")
+        self.chat_llm_port = chat_llm_port    # assigned before memory_retriever spawn
+
+        self._progress("supervisor.memory", "running")
+        try:
+            self._spawn_memory_retriever(memory_port)
+            self._progress("supervisor.memory", "done")
+        except Exception:
+            self._progress("supervisor.memory", "error")
+        self.memory_port = memory_port
+
+        if self.openchronicle_available:
+            self._progress("supervisor.openchronicle", "running")
+            try:
+                self._spawn_openchronicle_bridge(openchronicle_port)
+                self._progress("supervisor.openchronicle", "done")
+            except Exception:
+                self._progress("supervisor.openchronicle", "error")
+        self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 
     def stop_all(self) -> None:
         for p in reversed(self._procs):
@@ -360,3 +398,41 @@ class Supervisor:
             "--host", "127.0.0.1", "--port", str(port),
         ] + voice_args
         self._spawn(args, cwd=self.upstream_root, name="piper")
+
+    def _spawn_llamacpp_chat(self, port: int) -> None:
+        """Second llama-server, this one serving a chat-capable GGUF.
+
+        Needed by mem0's writer (extract_turn / summarize_session) for
+        Hermes-3-style tool calling. ~5 GB RAM at runtime.
+        """
+        if self.chat_llm_path is None or not self.chat_llm_path.exists():
+            return  # silently skip; memory writer will simply no-op
+        args = [
+            str(self.venv_python), "-m", "llama_cpp.server",
+            "--model", str(self.chat_llm_path),
+            "--host", "127.0.0.1", "--port", str(port),
+            "--n_ctx", "8192",
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
+
+    def _spawn_memory_retriever(self, port: int) -> None:
+        args = [
+            str(self.venv_python), "-m", "desktop_shims.memory_shim",
+            "--host", "127.0.0.1", "--port", str(port),
+            "--surreal-url", self.session_env["SURREAL_URL"],
+            "--embed-url",
+            f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
+            "--llm-url",
+            f"http://127.0.0.1:{self.chat_llm_port}/v1" if self.chat_llm_port else "",
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="memory")
+
+    def _spawn_openchronicle_bridge(self, port: int) -> None:
+        if not self.openchronicle_available:
+            return
+        args = [
+            str(self.venv_python), "-m", "desktop_shims.openchronicle_shim",
+            "--host", "127.0.0.1", "--port", str(port),
+            "--mcp-url", "http://127.0.0.1:8742/mcp",
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="openchronicle")

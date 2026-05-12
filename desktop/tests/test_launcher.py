@@ -36,8 +36,9 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
     def fake_popen(args, **kw):
         first = args[0] if isinstance(args, list) else args.split()[0]
         joined = " ".join(args) if isinstance(args, list) else args
-        # v0.3 optional shims — just return an alive proc, don't record order.
-        if "llama_cpp" in joined or "whisper_shim" in joined or "piper_shim" in joined:
+        # v0.3/v0.4 optional shims — just return an alive proc, don't record order.
+        if ("llama_cpp" in joined or "whisper_shim" in joined or "piper_shim" in joined
+                or "memory_shim" in joined or "openchronicle_shim" in joined):
             return _alive_proc()
         # Check more specific patterns first — `surreal-commands-worker` would
         # otherwise match the bare-`surreal` arm.
@@ -67,8 +68,8 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
 
 
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
-    # Supply enough procs for all possible spawns (4 core + up to 3 v0.3 shims).
-    procs = [_alive_proc() for _ in range(7)]
+    # Supply enough procs for all possible spawns (4 core + up to 3 v0.3 shims + up to 2 v0.4 shims).
+    procs = [_alive_proc() for _ in range(10)]
     seq = iter(procs)
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: next(seq))
     monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
@@ -186,5 +187,95 @@ def test_supervisor_skips_v03_children_when_paths_missing(cfg, tmp_path, monkeyp
         joined = [" ".join(a) for a in spawned]
         assert not any("whisper_shim" in s for s in joined)
         assert not any("piper_shim" in s for s in joined)
+    finally:
+        sv.stop_all()
+
+
+def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypatch):
+    """v0.4: with a chat_llm_path and openchronicle_available=False,
+    Supervisor.start_all should spawn both llamacpp_chat and memory_shim,
+    but NOT openchronicle_shim."""
+    spawned: list[list[str]] = []
+
+    def fake_popen(args, **kw):
+        spawned.append(list(args))
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.launcher.find_free_ports",
+                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    # Stub chat GGUF so `_spawn_llamacpp_chat` doesn't no-op out.
+    chat_gguf = tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"
+    chat_gguf.write_bytes(b"FAKE-GGUF")
+
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        chat_llm_path=chat_gguf,
+        openchronicle_available=False,
+    )
+    sv.start_all()
+    try:
+        joined = [" ".join(a) for a in spawned]
+        assert any("llama_cpp.server" in s and "Hermes-3" in s for s in joined)
+        assert any("desktop_shims.memory_shim" in s for s in joined)
+        assert not any("openchronicle_shim" in s for s in joined)
+        assert sv.chat_llm_port != 0
+        assert sv.memory_port != 0
+        assert sv.openchronicle_port == 0
+    finally:
+        sv.stop_all()
+
+
+def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypatch):
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda a, **kw: (spawned.append(list(a)),
+                                         MagicMock(spec=subprocess.Popen,
+                                                   poll=MagicMock(return_value=None)))[1])
+    monkeypatch.setattr("desktop.launcher.find_free_ports",
+                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        openchronicle_available=True,
+    )
+    sv.start_all()
+    try:
+        joined = [" ".join(a) for a in spawned]
+        assert any("openchronicle_shim" in s for s in joined)
+        assert sv.openchronicle_port != 0
+    finally:
+        sv.stop_all()
+
+
+def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
+    """No chat_llm_path → no llamacpp_chat process spawned; chat_llm_port stays 0."""
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda a, **kw: (spawned.append(list(a)),
+                                         MagicMock(spec=subprocess.Popen,
+                                                   poll=MagicMock(return_value=None)))[1])
+    monkeypatch.setattr("desktop.launcher.find_free_ports",
+                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        chat_llm_path=None,
+    )
+    sv.start_all()
+    try:
+        joined = [" ".join(a) for a in spawned]
+        assert not any("llama_cpp.server" in s and "Hermes-3" in s for s in joined)
+        assert any("desktop_shims.memory_shim" in s for s in joined)
     finally:
         sv.stop_all()
