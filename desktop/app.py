@@ -257,18 +257,42 @@ def _phase_select_provider(ctx: AppContext) -> None:
 def _phase_detect_openchronicle(ctx: AppContext) -> None:
     """Probe localhost:8742 for the OpenChronicle MCP daemon. Best-effort —
     a missing daemon is the normal state for users who chose 'skip' in the
-    wizard."""
-    import httpx
+    wizard. MUST NEVER raise; OpenChronicle is purely optional.
+
+    The MCP server may speak HTTP-streamable (POST-only), so we use a TCP
+    connect check rather than HTTP GET — robust against servers that reject
+    GET with 4xx/5xx (which would falsely register as "available").
+    """
+    ctx.openchronicle_available = False
     try:
-        r = httpx.get("http://127.0.0.1:8742/mcp", timeout=0.5)
-        ctx.openchronicle_available = (r.status_code < 500)
-    except Exception:
-        ctx.openchronicle_available = False
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            s.connect(("127.0.0.1", 8742))
+            ctx.openchronicle_available = True
+    except (OSError, socket.timeout):
+        # No listener on port 8742 → normal "not installed" state.
+        pass
+    except BaseException as e:
+        # Swallow everything else (incl. KeyboardInterrupt-derived edge cases).
+        # OpenChronicle detection must never block startup.
+        if ctx.log_dir is not None:
+            try:
+                ctx.log_dir.mkdir(parents=True, exist_ok=True)
+                (ctx.log_dir / "openchronicle_detect.log").write_text(
+                    f"detect failed (non-fatal): {type(e).__name__}: {e}\n"
+                )
+            except Exception:
+                pass
+
     if ctx.progress_bus is not None:
-        ctx.progress_bus.publish(
-            "openchronicle.detect", "done",
-            f"available={ctx.openchronicle_available}",
-        )
+        try:
+            ctx.progress_bus.publish(
+                "openchronicle.detect", "done",
+                f"available={ctx.openchronicle_available}",
+            )
+        except Exception:
+            pass
 
 
 def _phase_register_memory_commands(ctx: AppContext) -> None:

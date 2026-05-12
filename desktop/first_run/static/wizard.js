@@ -60,9 +60,17 @@
       const action = btn.dataset.onclick;
       if (action === 'open_openchronicle_install') {
         openchronicleChoice = 'prompt';
-        try {
-          window.open('https://github.com/Einsia/OpenChronicle/releases/latest', '_blank');
-        } catch (e) { /* sandboxed contexts may block window.open — non-fatal */ }
+        // PyWebView's WKWebView handling of `window.open(url, '_blank')` is
+        // unreliable on macOS — can navigate the wizard window itself or
+        // crash the WebView. Route through the aiohttp server, which uses
+        // Python's `webbrowser.open()` (the OS handler, never the WebView).
+        fetch('/api/open-url', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            url: 'https://github.com/Einsia/OpenChronicle/releases/latest',
+          }),
+        }).catch(() => { /* swallow — opening the page is best-effort */ });
       } else if (action === 'skip_openchronicle') {
         openchronicleChoice = 'skip';
       }
