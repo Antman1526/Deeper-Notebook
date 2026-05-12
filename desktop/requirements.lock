@@ -660,3 +660,7 @@ flatbuffers==25.12.19
 onnxruntime==1.25.1
 protobuf==7.34.1
 piper-tts==1.4.2
+
+# v0.4 memory additions
+mem0ai==2.0.2
+mcp==1.27.1
