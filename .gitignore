@@ -149,3 +149,5 @@ desktop/bin/
 # Un-ignore the desktop/build Python package (caught by bare build/ rule above)
 !desktop/build/
 !desktop/build/**
+# Local build venv created by `make build-mac` (separate from .venv used for tests)
+.build-venv/
