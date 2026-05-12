@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+# Importing _register installs the synthetic `mem0.configs.vector_stores.surreal`
+# module — must happen before surreal_store is imported because surreal_store
+# inherits from VectorStoreBase (a sibling of the synthetic module's parent pkg).
+from desktop.memory import _register  # noqa: F401
+from desktop.memory.surreal_store import SurrealMemoryStore, OutputData
+
+
+def _fake_client(responses: dict):
+    """Mock pretending to be a surrealdb async client.
+
+    Matches SurrealQL by prefix of the first non-whitespace word.
+    """
+    client = MagicMock()
+    async def query(sql, vars=None):
+        for prefix, resp in responses.items():
+            if sql.strip().startswith(prefix):
+                return resp
+        return [[]]
+    client.query.side_effect = query
+    return client
+
+
+def test_insert_routes_facts_to_memory_fact_table():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
+    store.insert(
+        vectors=[[0.1, 0.2, 0.3]],
+        payloads=[{"kind": "fact", "text": "User likes coffee",
+                   "metadata": {"scope": "user"}, "confidence": 0.9}],
+        ids=["fact-001"],
+    )
+    sent_sql = store._client.query.call_args_list[0].args[0]
+    assert "memory_fact" in sent_sql
+
+
+def test_insert_routes_preferences_to_memory_preference_table():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
+    store.insert(
+        vectors=[[0.1]],
+        payloads=[{"kind": "preference", "text": "bullets",
+                   "metadata": {"scope": "user"}, "confidence": 0.85}],
+        ids=["pref-001"],
+    )
+    sent_sql = store._client.query.call_args_list[0].args[0]
+    assert "memory_preference" in sent_sql
+
+
+def test_search_returns_outputdata_objects():
+    fake_record = {
+        "id": "memory_fact:abc",
+        "text": "user lives in SF",
+        "metadata": {"scope": "user"},
+        "confidence": 0.8,
+        "created_at": "2026-05-11T00:00:00Z",
+        "score": 0.92,
+    }
+    store = SurrealMemoryStore.from_test_client(
+        _fake_client({"SELECT": [[fake_record]]}))
+    # mem0 2.x signature: search(query, vectors, top_k, filters)
+    hits = store.search(query="where does user live",
+                        vectors=[0.1, 0.2], top_k=5,
+                        filters={"kind": "fact"})
+    assert len(hits) == 1
+    assert isinstance(hits[0], OutputData)
+    assert hits[0].id == "memory_fact:abc"
+    assert hits[0].payload["text"] == "user lives in SF"
+    assert hits[0].score == 0.92
+
+
+def test_delete_emits_delete_sql_with_id():
+    store = SurrealMemoryStore.from_test_client(_fake_client({"DELETE": [[]]}))
+    store.delete("memory_fact:abc")
+    sent_sql = store._client.query.call_args_list[0].args[0]
+    assert "DELETE" in sent_sql
+    assert "memory_fact:abc" in sent_sql
+
+
+def test_list_cols_returns_three_memory_tables():
+    store = SurrealMemoryStore.from_test_client(_fake_client({}))
+    cols = store.list_cols()
+    assert set(cols) == {"memory_fact", "memory_preference", "memory_episode"}
+
+
+def test_reset_removes_and_redefines_all_three_tables():
+    store = SurrealMemoryStore.from_test_client(
+        _fake_client({"REMOVE": [[]], "DEFINE": [[]]}))
+    store.reset()
+    sqls = " ".join(c.args[0] for c in store._client.query.call_args_list)
+    for table in ("memory_fact", "memory_preference", "memory_episode"):
+        assert table in sqls
+
+
+def test_keyword_search_returns_none():
+    """We do not wire up SurrealDB FTS in v0.4; mem0 treats None as 'skip BM25'."""
+    store = SurrealMemoryStore.from_test_client(_fake_client({}))
+    assert store.keyword_search("anything") is None
