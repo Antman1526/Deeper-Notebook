@@ -1596,24 +1596,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mcp-url", default="http://127.0.0.1:8742/mcp")
     args = parser.parse_args(argv)
 
-    # Lazy import; only when running for real
+    # Lazy import; only when running for real.
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
-    async def _build_mcp():
-        # Establishes MCP connection. Errors propagate; supervisor restarts us.
-        async with streamablehttp_client(args.mcp_url) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                # We need a long-lived client wrapper that exposes call_tool.
-                class _Wrapper:
-                    async def call_tool(self, name, arguments):
-                        result = await session.call_tool(name, arguments)
-                        return result.model_dump() if hasattr(result, "model_dump") else result
-                return _Wrapper()
+    class _PerCallMcpClient:
+        """Opens a fresh MCP session per tool call.
 
-    mcp_client = asyncio.run(_build_mcp())
-    app = build_app(mcp_client=mcp_client)
+        We can't hold a session across HTTP requests because `streamablehttp_client`
+        and `ClientSession` are async context managers — once the `with` blocks
+        exit, the connection is closed. Per-call setup adds ~50–100 ms latency but
+        is simple, correct, and reconnects automatically if OpenChronicle
+        restarts.
+        """
+        def __init__(self, url: str):
+            self._url = url
+
+        async def call_tool(self, name: str, arguments: dict) -> dict:
+            async with streamablehttp_client(self._url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool(name, arguments)
+                    return result.model_dump() if hasattr(result, "model_dump") else result
+
+    app = build_app(mcp_client=_PerCallMcpClient(args.mcp_url))
 
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
