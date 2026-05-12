@@ -62,6 +62,7 @@ def auto_register(
     whisper_port: int | None = None,
     piper_port: int | None = None,
     embed_port: int | None = None,
+    memory_port: int | None = None,
 ) -> None:
     """Register Ollama models + local GGUF models against the running API.
 
@@ -73,6 +74,7 @@ def auto_register(
     whisper_port: if set, register a Whisper STT credential on this port.
     piper_port: if set, register a Piper TTS credential on this port.
     embed_port: if set, register a local embedding credential on this port.
+    memory_port: if set, register a Memory retriever credential on this port.
 
     Idempotent: safe to call on every startup.  Logs failures; does NOT raise
     (registration failures must not crash the launcher).
@@ -84,6 +86,7 @@ def auto_register(
                 whisper_port=whisper_port,
                 piper_port=piper_port,
                 embed_port=embed_port,
+                memory_port=memory_port,
             )
     except Exception as exc:
         log.warning("auto_register failed (non-fatal): %s", exc)
@@ -97,6 +100,7 @@ def _do_register(
     whisper_port: int | None = None,
     piper_port: int | None = None,
     embed_port: int | None = None,
+    memory_port: int | None = None,
 ) -> None:
     """Main registration logic, runs inside an httpx.Client context."""
     # --- 1. Fetch existing credentials and models --------------------------
@@ -166,3 +170,8 @@ def _do_register(
             cfg=cfg,
         )
         register_default_episode_profile(client)
+
+    # --- v0.4 memory layer --------------------------------------------------
+    if memory_port is not None:
+        from desktop.auto_register.memory import register_memory_credential
+        register_memory_credential(client, memory_port=memory_port, cfg=cfg)
