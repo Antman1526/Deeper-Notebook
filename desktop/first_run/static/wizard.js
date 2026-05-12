@@ -12,6 +12,7 @@
   ];
 
   let chosenTheme = 'light-blue';
+  let openchronicleChoice = 'skip';
   const html = document.documentElement;
 
   const screens = document.querySelectorAll('[data-screen]');
@@ -55,6 +56,16 @@
 
   document.querySelectorAll('button[data-next], button[data-back]').forEach(btn => {
     btn.addEventListener('click', async () => {
+      // Screen-5.5 OpenChronicle choices: capture before navigating away.
+      const action = btn.dataset.onclick;
+      if (action === 'open_openchronicle_install') {
+        openchronicleChoice = 'prompt';
+        try {
+          window.open('https://github.com/Einsia/OpenChronicle/releases/latest', '_blank');
+        } catch (e) { /* sandboxed contexts may block window.open — non-fatal */ }
+      } else if (action === 'skip_openchronicle') {
+        openchronicleChoice = 'skip';
+      }
       const target = btn.dataset.next || btn.dataset.back;
       if (target === 'done') {
         const choice = document.querySelector('input[name=choice]:checked').value;
@@ -65,6 +76,7 @@
           provider: choice,
           default_model: document.getElementById('default_model').value || '',
           theme: chosenTheme,
+          openchronicle_choice: openchronicleChoice,
         };
         show('setting-up');
         const list = document.getElementById('progress-list');
