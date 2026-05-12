@@ -139,3 +139,18 @@ def test_load_or_create_regenerates_missing_encryption_key(tmp_path):
     # The key must now be persisted back to the file.
     cfg2 = load_or_create(cfg_path)
     assert cfg2.encryption_key == cfg.encryption_key
+
+
+def test_openchronicle_choice_defaults_to_skip(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg = load_or_create(cfg_path)
+    assert cfg.openchronicle_choice == "skip"
+
+
+def test_openchronicle_choice_round_trips(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg = Config(model_dir=tmp_path, provider="none", default_model="",
+                 surreal_user="root", surreal_password="A" * 24,
+                 openchronicle_choice="prompt")
+    cfg.save(cfg_path)
+    assert load_or_create(cfg_path).openchronicle_choice == "prompt"
