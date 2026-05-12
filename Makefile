@@ -197,6 +197,110 @@ export-docs:
 	@uv run python scripts/export_docs.py
 	@echo "✅ Documentation export complete!"
 
+# === Desktop build (mirrors .github/workflows/build-desktop.yml) ===
+#
+# Builds the macOS .app + .dmg locally. Mirrors CI exactly so what you build
+# here is what GitHub Actions would build on a tag push.
+#
+# One-shot:
+#   make build-mac                      # full clean build, produces dist/Open Notebook Plus.app + .dmg
+#
+# Iterative (re-run individual stages):
+#   make build-mac-venv                 # set up .build-venv with pinned deps
+#   make build-mac-frontend             # Next.js build into frontend/.next
+#   make build-mac-runtimes             # fetch surreal/node/uv/python-build-standalone
+#   make build-mac-pyinstaller          # run pyinstaller spec
+#   make build-mac-dmg                  # wrap .app into .dmg via hdiutil
+#
+# Tear-down:
+#   make build-mac-clean                # remove dist/, build/, .build-venv/
+#   make build-mac-distclean            # also remove the fetched runtimes
+#
+# Override the Python interpreter (default: python3.12 from PATH):
+#   make build-mac BUILD_PYTHON=/opt/homebrew/bin/python3.12
+#
+# To install the .app after building:
+#   make build-mac-install              # copies dist/Open\ Notebook\ Plus.app → /Applications
+
+.PHONY: build-mac build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg build-mac-clean build-mac-distclean build-mac-install
+
+BUILD_PYTHON ?= python3.12
+BUILD_VENV   := .build-venv
+BUILD_PIP    := $(BUILD_VENV)/bin/pip
+BUILD_PY     := $(BUILD_VENV)/bin/python
+BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
+
+# Detect CPU arch (arm64 vs x86_64) — drives the DMG filename.
+BUILD_ARCH := $(shell uname -m)
+
+build-mac: build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
+	@echo ""
+	@echo "✅ macOS build complete:"
+	@echo "    dist/Open Notebook Plus.app"
+	@echo "    dist/Open-Notebook-Plus-mac-$(BUILD_ARCH).dmg"
+	@echo ""
+	@echo "Run with:  open 'dist/Open Notebook Plus.app'"
+	@echo "Tail logs: tail -F ~/.open-notebook-plus/logs/*.log"
+
+# Stage 1: isolated build venv with pinned deps (separate from .venv used for tests).
+build-mac-venv:
+	@if [ ! -d "$(BUILD_VENV)" ]; then \
+		echo "🐍 Creating $(BUILD_VENV) with $(BUILD_PYTHON)..."; \
+		$(BUILD_PYTHON) -m venv $(BUILD_VENV); \
+	fi
+	@echo "📦 Installing desktop build deps..."
+	@$(BUILD_PIP) install --upgrade pip > /dev/null
+	@$(BUILD_PIP) install -r desktop/requirements.txt
+	@$(BUILD_PIP) install -e .
+
+# Stage 2: Next.js standalone build → frontend/.next/standalone (consumed by PyInstaller spec).
+build-mac-frontend:
+	@echo "⚛️  Building Next.js frontend..."
+	@if [ ! -d "frontend/node_modules" ]; then cd frontend && npm ci; fi
+	@cd frontend && npm run build
+
+# Stage 3: fetch surreal binary, node, uv, python-build-standalone tarball into desktop/bin/.
+# Idempotent — fetch_runtimes.py skips files already present.
+build-mac-runtimes:
+	@echo "⬇️  Fetching bundled runtimes (surreal / node / uv / python-standalone)..."
+	@$(BUILD_PY) desktop/build/fetch_runtimes.py
+
+# Stage 4: PyInstaller — produces dist/Open Notebook Plus.app from desktop/build/pyinstaller.spec.
+build-mac-pyinstaller:
+	@echo "🔧 Running PyInstaller (this is the slow step, ~5-10 min)..."
+	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
+
+# Stage 5: wrap the .app into a .dmg via hdiutil. Unsigned — first launch needs
+# right-click → Open OR `xattr -dr com.apple.quarantine dist/Open\ Notebook\ Plus.app`.
+build-mac-dmg:
+	@echo "💾 Building .dmg..."
+	@bash desktop/build/post_build_mac.sh
+
+# Convenience: copy the built .app to /Applications.
+build-mac-install:
+	@if [ ! -d "dist/Open Notebook Plus.app" ]; then \
+		echo "❌ dist/Open Notebook Plus.app not found. Run 'make build-mac' first."; \
+		exit 1; \
+	fi
+	@echo "📥 Installing to /Applications..."
+	@rm -rf "/Applications/Open Notebook Plus.app"
+	@cp -R "dist/Open Notebook Plus.app" /Applications/
+	@xattr -dr com.apple.quarantine "/Applications/Open Notebook Plus.app" || true
+	@echo "✅ Installed. Launch with: open '/Applications/Open Notebook Plus.app'"
+
+# Remove PyInstaller artifacts and the build venv. Keeps fetched runtimes
+# (downloading them again is the slowest step).
+build-mac-clean:
+	@echo "🧹 Removing dist/, build/, $(BUILD_VENV)/..."
+	@rm -rf dist build $(BUILD_VENV)
+	@echo "✅ Build artifacts cleaned. Runtimes in desktop/bin/ kept (use build-mac-distclean to wipe those too)."
+
+# Nuclear option — also remove the fetched runtime binaries.
+build-mac-distclean: build-mac-clean
+	@echo "🧹 Removing desktop/bin/ (surreal / node / uv / python-standalone)..."
+	@rm -rf desktop/bin
+	@echo "✅ Distclean complete. Next build will re-download ~500 MB of runtimes."
+
 # === Cleanup ===
 clean-cache:
 	@echo "🧹 Cleaning cache directories..."
