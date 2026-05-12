@@ -47,9 +47,12 @@ desktop/
 upstream/ (data injected at first launch, not modified at repo level)
 └── commands/memory_commands.py      # auto-written by app.py phase
 
-migrations/                          # SurrealDB schema additions
-└── 010_memory_tables.surrealql      # new (auto-applied by upstream's AsyncMigrationManager)
+open_notebook/database/migrations/   # upstream's SurrealDB migration directory
+├── 15.surrealql                     # new — memory tables (memory_fact/preference/episode)
+└── 15_down.surrealql                # new — rollback (drop the 3 tables)
 ```
+
+(NB: upstream's `AsyncMigrationManager` is NOT auto-discovery — `open_notebook/database/async_migrate.py` hard-codes the up/down list. Task 4 also appends migration #15 to that list.)
 
 ### Modified
 - `desktop/requirements.lock` — add `mem0ai`, `mcp`
@@ -686,16 +689,21 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 
 ## Task 4: SurrealDB migration for the 3 memory tables
 
+Upstream's `open_notebook/database/async_migrate.py` hard-codes the migration list (currently 1–14). We add migration #15 covering the three memory tables, plus a `15_down.surrealql` rollback, then register both in `AsyncMigrationManager`.
+
 **Files:**
-- Create: `migrations/010_memory_tables.surrealql`
+- Create: `open_notebook/database/migrations/15.surrealql`
+- Create: `open_notebook/database/migrations/15_down.surrealql`
+- Modify: `open_notebook/database/async_migrate.py` (append migration 15 to up + down lists)
 
-- [ ] **Step 1: Write the migration**
-
-Upstream's `AsyncMigrationManager` runs all `migrations/*.surrealql` files in order at FastAPI startup. We add a new file:
+- [ ] **Step 1: Write the up migration** (file: `open_notebook/database/migrations/15.surrealql`)
 
 ```sql
--- migrations/010_memory_tables.surrealql
+-- 15.surrealql
 -- Open Notebook Plus v0.4 — memory layer tables.
+-- 3 tables, identical shape, routed by `kind` in payloads:
+--   memory_fact, memory_preference, memory_episode.
+-- HNSW index DIMENSION 768 = nomic-embed-text-v1.5's output size.
 
 -- memory_fact: atomic facts extracted from chat turns.
 DEFINE TABLE memory_fact SCHEMAFULL;
@@ -705,7 +713,8 @@ DEFINE FIELD metadata   ON memory_fact TYPE object DEFAULT {};
 DEFINE FIELD scope      ON memory_fact TYPE string DEFAULT "user";
 DEFINE FIELD confidence ON memory_fact TYPE float  DEFAULT 1.0;
 DEFINE FIELD created_at ON memory_fact TYPE datetime DEFAULT time::now();
-DEFINE INDEX memory_fact_embedding ON memory_fact FIELDS embedding HNSW DIMENSION 768;
+DEFINE INDEX IF NOT EXISTS memory_fact_embedding ON memory_fact
+    FIELDS embedding HNSW DIMENSION 768;
 
 -- memory_preference: user preferences and workflow habits.
 DEFINE TABLE memory_preference SCHEMAFULL;
@@ -715,7 +724,8 @@ DEFINE FIELD metadata   ON memory_preference TYPE object DEFAULT {};
 DEFINE FIELD scope      ON memory_preference TYPE string DEFAULT "user";
 DEFINE FIELD confidence ON memory_preference TYPE float  DEFAULT 1.0;
 DEFINE FIELD created_at ON memory_preference TYPE datetime DEFAULT time::now();
-DEFINE INDEX memory_preference_embedding ON memory_preference FIELDS embedding HNSW DIMENSION 768;
+DEFINE INDEX IF NOT EXISTS memory_preference_embedding ON memory_preference
+    FIELDS embedding HNSW DIMENSION 768;
 
 -- memory_episode: per-chat-session summaries.
 DEFINE TABLE memory_episode SCHEMAFULL;
@@ -725,30 +735,71 @@ DEFINE FIELD metadata   ON memory_episode TYPE object DEFAULT {};
 DEFINE FIELD scope      ON memory_episode TYPE string DEFAULT "user";
 DEFINE FIELD confidence ON memory_episode TYPE float  DEFAULT 1.0;
 DEFINE FIELD created_at ON memory_episode TYPE datetime DEFAULT time::now();
-DEFINE INDEX memory_episode_embedding ON memory_episode FIELDS embedding HNSW DIMENSION 768;
+DEFINE INDEX IF NOT EXISTS memory_episode_embedding ON memory_episode
+    FIELDS embedding HNSW DIMENSION 768;
 ```
 
-(`DIMENSION 768` matches nomic-embed-text-v1.5's output dimension.)
+- [ ] **Step 2: Write the down migration** (file: `open_notebook/database/migrations/15_down.surrealql`)
 
-- [ ] **Step 2: Verify the SurrealQL is syntactically valid**
+```sql
+-- 15_down.surrealql — rollback for v0.4 memory layer tables.
+REMOVE TABLE IF EXISTS memory_fact;
+REMOVE TABLE IF EXISTS memory_preference;
+REMOVE TABLE IF EXISTS memory_episode;
+```
+
+- [ ] **Step 3: Register migration #15 in `AsyncMigrationManager`**
+
+In `open_notebook/database/async_migrate.py`, find the `up_migrations` list (currently ends with `14.surrealql`) and append:
+
+```python
+            AsyncMigration.from_file(
+                "open_notebook/database/migrations/14.surrealql"
+            ),
+            AsyncMigration.from_file(
+                "open_notebook/database/migrations/15.surrealql"
+            ),
+        ]
+```
+
+Then in the `down_migrations` list (currently ends with `14_down.surrealql`) append:
+
+```python
+            AsyncMigration.from_file(
+                "open_notebook/database/migrations/14_down.surrealql"
+            ),
+            AsyncMigration.from_file(
+                "open_notebook/database/migrations/15_down.surrealql"
+            ),
+        ]
+```
+
+(Two list appends; nothing else in the class changes — `needs_migration()` already keys off `len(self.up_migrations)`.)
+
+- [ ] **Step 4: Verify SurrealQL parses**
 
 ```bash
 cd /Users/Antman/Desktop/OpenNotebook/open-notebook-Plus
-# Quick smoke check by piping into a one-shot SurrealDB CLI:
-desktop/bin/surreal-darwin-arm64 sql --user root --pass test \
-    --endpoint memory --ns _test --db _test \
-    < migrations/010_memory_tables.surrealql 2>&1 | tail -10
+# Smoke check using a temporary in-memory SurrealDB. If `surreal` binary not
+# convenient, skip and rely on the integration smoke at first launch.
+surreal start --user root --pass test memory --bind 127.0.0.1:0 &
+SDB_PID=$!
+sleep 1
+surreal sql --user root --pass test --endpoint http://127.0.0.1:8000 \
+    --ns _test --db _test \
+    < open_notebook/database/migrations/15.surrealql 2>&1 | tail -10
+kill $SDB_PID 2>/dev/null
 ```
-Expected: no syntax errors; tables and indexes confirmed created.
+Expected: no `ERR` lines. (If the local `surreal` binary isn't on PATH, this step is skippable — first-launch smoke catches errors.)
 
-(If the in-memory smoke runs into auth/host issues, skip and rely on the integration smoke later. The syntax is straightforward.)
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add migrations/010_memory_tables.surrealql
+git add open_notebook/database/migrations/15.surrealql \
+        open_notebook/database/migrations/15_down.surrealql \
+        open_notebook/database/async_migrate.py
 git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
-  commit -m "db: v0.4 migration — memory_fact / memory_preference / memory_episode tables"
+  commit -m "db: v0.4 migration #15 — memory_fact/preference/episode tables + HNSW indexes"
 ```
 
 ---
