@@ -369,6 +369,7 @@ def _phase_auto_register(ctx: AppContext) -> None:
             whisper_port=getattr(sv, "whisper_port", None) or None,
             piper_port=getattr(sv, "piper_port", None) or None,
             embed_port=getattr(sv, "embed_port", None) or None,
+            memory_port=getattr(sv, "memory_port", None) or None,
         )
     except Exception:
         (ctx.log_dir / "auto_register.log").write_text(traceback.format_exc())
