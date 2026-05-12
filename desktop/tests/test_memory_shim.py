@@ -48,10 +48,48 @@ def test_relevant_empty_topic_returns_200():
         assert r.status_code == 200
 
 
-def test_delete_calls_memory_client_delete():
+def test_delete_translates_kind_to_table_prefix():
+    """`/api/memory/fact/abc` must dispatch to `memory_id='memory_fact:abc'` —
+    `fact:` would point at a non-existent SurrealDB table."""
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
         r = c.delete("/api/memory/fact/abc-123")
         assert r.status_code == 200
-        mem.delete.assert_called_once_with(memory_id="fact:abc-123")
+        mem.delete.assert_called_once_with(memory_id="memory_fact:abc-123")
+
+
+def test_delete_rejects_invalid_kind():
+    app = build_app(mem_client=_fake_memory_client())
+    with TestClient(app) as c:
+        r = c.delete("/api/memory/banana/abc")
+        assert r.status_code == 400
+        assert r.json()["detail"] == "invalid kind"
+
+
+def test_delete_rejects_injection_in_id():
+    """id is interpolated into SurrealQL downstream — reject anything outside
+    the safe character whitelist. Some bad inputs (newlines, control chars) are
+    rejected by httpx before they hit the server, which is even better
+    (defense in depth)."""
+    from httpx import InvalidURL
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    bad_ids = [
+        "abc'; DROP TABLE memory_fact;",
+        "abc def",
+        "abc\nDELETE memory_fact",
+        "abc:other_id",  # colon would smuggle a second record-id
+        "",
+    ]
+    with TestClient(app) as c:
+        for bad in bad_ids:
+            try:
+                r = c.delete(f"/api/memory/fact/{bad}")
+            except InvalidURL:
+                # httpx refused to send → input was rejected before reaching us.
+                continue
+            assert r.status_code in (400, 404, 405), (
+                f"id={bad!r} returned {r.status_code}, expected 4xx"
+            )
+    mem.delete.assert_not_called()
