@@ -1648,25 +1648,54 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 
 ---
 
-## Task 10: Supervisor — spawn memory retriever + OpenChronicle bridge
+## Task 10: Supervisor — spawn chat LLM + memory retriever + OpenChronicle bridge
+
+The memory writer (Task 7/12) needs Hermes 3 chat completions for fact extraction. v0.3 spawns a llama-server only for embeddings; v0.4 adds a second llama-server for a chat-capable GGUF.
 
 **Files:**
 - Modify: `desktop/launcher.py`
 - Modify: `desktop/tests/test_launcher.py`
 
-- [ ] **Step 1: Add Supervisor constructor params + spawn methods**
+- [ ] **Step 1: Add Supervisor constructor params + instance attrs**
 
-Update `Supervisor.__init__` to accept:
+Update `Supervisor.__init__` to accept two new optional kwargs (place after `nomic_embed_path` for symmetry):
 
 ```python
+        chat_llm_path: Path | None = None,
         openchronicle_available: bool = False,
 ```
 
-Add new instance attrs and `find_free_ports` count bumps from 6 → 8.
-
-Add two new spawn methods after `_spawn_piper`:
+And add the matching instance assignments + ports:
 
 ```python
+        self.chat_llm_path = chat_llm_path
+        self.openchronicle_available = openchronicle_available
+        # New v0.4 ports — initialised to 0 so auto_register can skip cleanly
+        # when a server failed to start.
+        self.chat_llm_port: int = 0
+        self.memory_port: int = 0
+        self.openchronicle_port: int = 0
+```
+
+- [ ] **Step 2: Add three new spawn methods after `_spawn_piper`**
+
+```python
+    def _spawn_llamacpp_chat(self, port: int) -> None:
+        """Second llama-server, this one serving a chat-capable GGUF.
+
+        Needed by mem0's writer (extract_turn / summarize_session) for
+        Hermes-3-style tool calling. ~5 GB RAM at runtime.
+        """
+        if self.chat_llm_path is None or not self.chat_llm_path.exists():
+            return  # silently skip; memory writer will simply no-op
+        args = [
+            str(self.venv_python), "-m", "llama_cpp.server",
+            "--model", str(self.chat_llm_path),
+            "--host", "127.0.0.1", "--port", str(port),
+            "--n_ctx", "8192",
+        ]
+        self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
+
     def _spawn_memory_retriever(self, port: int) -> None:
         args = [
             str(self.venv_python), "-m", "desktop_shims.memory_shim",
@@ -1675,7 +1704,7 @@ Add two new spawn methods after `_spawn_piper`:
             "--embed-url",
             f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
             "--llm-url",
-            f"http://127.0.0.1:{self.llamacpp_port}/v1" if getattr(self, "llamacpp_port", 0) else "",
+            f"http://127.0.0.1:{self.chat_llm_port}/v1" if self.chat_llm_port else "",
         ]
         self._spawn(args, cwd=self.upstream_root, name="memory")
 
@@ -1690,19 +1719,29 @@ Add two new spawn methods after `_spawn_piper`:
         self._spawn(args, cwd=self.upstream_root, name="openchronicle")
 ```
 
-- [ ] **Step 2: Extend `start_all` to allocate 2 more ports + spawn**
+- [ ] **Step 3: Extend `start_all` to allocate 3 more ports + spawn**
 
-Change `find_free_ports(6)` to `find_free_ports(8)`, capturing two more:
+Change `find_free_ports(6)` to `find_free_ports(9)`, unpacking the new ports:
 
 ```python
         (surreal_port, api_port, frontend_port,
          embed_port, whisper_port, piper_port,
-         memory_port, openchronicle_port) = find_free_ports(8)
+         chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
 ```
 
-After existing v0.3 supervisor.* progress blocks, append:
+After the existing v0.3 supervisor.piper progress block (right after stashing `self.piper_port = piper_port`), append:
 
 ```python
+        # v0.4 additions — order matters: chat LLM must be up before the
+        # memory retriever boots, because the retriever instantiates
+        # mem0.Memory which validates the LLM endpoint at startup.
+        self._progress("supervisor.llamacpp_chat", "running")
+        try:
+            self._spawn_llamacpp_chat(chat_llm_port)
+            self._progress("supervisor.llamacpp_chat", "done")
+        except Exception:
+            self._progress("supervisor.llamacpp_chat", "error")
+
         self._progress("supervisor.memory", "running")
         try:
             self._spawn_memory_retriever(memory_port)
@@ -1718,16 +1757,20 @@ After existing v0.3 supervisor.* progress blocks, append:
             except Exception:
                 self._progress("supervisor.openchronicle", "error")
 
+        self.chat_llm_port = chat_llm_port
         self.memory_port = memory_port
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 ```
 
-- [ ] **Step 3: Add tests**
+- [ ] **Step 4: Add tests**
 
 Append to `desktop/tests/test_launcher.py`:
 
 ```python
-def test_supervisor_spawns_memory_retriever(cfg, tmp_path, monkeypatch):
+def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypatch):
+    """v0.4: with a chat_llm_path and openchronicle_available=False,
+    Supervisor.start_all should spawn both llamacpp_chat and memory_shim,
+    but NOT openchronicle_shim."""
     spawned: list[list[str]] = []
 
     def fake_popen(args, **kw):
@@ -1742,16 +1785,26 @@ def test_supervisor_spawns_memory_retriever(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
+    # Stub chat GGUF so `_spawn_llamacpp_chat` doesn't no-op out.
+    chat_gguf = tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"
+    chat_gguf.write_bytes(b"FAKE-GGUF")
+
     sv = Supervisor(
         cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
         surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        chat_llm_path=chat_gguf,
         openchronicle_available=False,
     )
     sv.start_all()
     try:
         joined = [" ".join(a) for a in spawned]
+        assert any("llama_cpp.server" in s and "Hermes-3" in s for s in joined)
         assert any("desktop_shims.memory_shim" in s for s in joined)
         assert not any("openchronicle_shim" in s for s in joined)
+        # Ports captured on the Supervisor instance
+        assert sv.chat_llm_port != 0
+        assert sv.memory_port != 0
+        assert sv.openchronicle_port == 0
     finally:
         sv.stop_all()
 
@@ -1776,23 +1829,51 @@ def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypat
     try:
         joined = [" ".join(a) for a in spawned]
         assert any("openchronicle_shim" in s for s in joined)
+        assert sv.openchronicle_port != 0
+    finally:
+        sv.stop_all()
+
+
+def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
+    """No chat_llm_path → no llamacpp_chat process spawned; chat_llm_port stays 0."""
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda a, **kw: (spawned.append(list(a)),
+                                         MagicMock(spec=subprocess.Popen,
+                                                   poll=MagicMock(return_value=None)))[1])
+    monkeypatch.setattr("desktop.launcher.find_free_ports",
+                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        chat_llm_path=None,
+    )
+    sv.start_all()
+    try:
+        joined = [" ".join(a) for a in spawned]
+        # chat LLM is skipped, but memory retriever still spawns (degraded mode).
+        assert not any("llama_cpp.server" in s and "Hermes-3" in s for s in joined)
+        assert any("desktop_shims.memory_shim" in s for s in joined)
     finally:
         sv.stop_all()
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 /Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/test_launcher.py -v
 ```
-Expected: all launcher tests pass (existing + 2 new).
+Expected: all launcher tests pass (existing + 3 new).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add desktop/launcher.py desktop/tests/test_launcher.py
 git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
-  commit -m "desktop: Supervisor — spawn memory retriever + OpenChronicle bridge"
+  commit -m "desktop: Supervisor — chat LLM + memory retriever + OpenChronicle"
 ```
 
 ---
