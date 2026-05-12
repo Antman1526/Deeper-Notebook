@@ -113,6 +113,9 @@ class AppContext:
     extra_env: dict[str, str] = dataclasses.field(default_factory=dict)
     sv: "Supervisor | None" = None
     mm_port: int = 0
+    # v0.4 memory additions
+    openchronicle_available: bool = False
+    commands_dst: "Path | None" = None
 
 
 def _new_context() -> AppContext:
@@ -250,6 +253,44 @@ def _phase_select_provider(ctx: AppContext) -> None:
     ctx.extra_env = extra_env
 
 
+def _phase_detect_openchronicle(ctx: AppContext) -> None:
+    """Probe localhost:8742 for the OpenChronicle MCP daemon. Best-effort —
+    a missing daemon is the normal state for users who chose 'skip' in the
+    wizard."""
+    import httpx
+    try:
+        r = httpx.get("http://127.0.0.1:8742/mcp", timeout=0.5)
+        ctx.openchronicle_available = (r.status_code < 500)
+    except Exception:
+        ctx.openchronicle_available = False
+    if ctx.progress_bus is not None:
+        ctx.progress_bus.publish(
+            "openchronicle.detect", "done",
+            f"available={ctx.openchronicle_available}",
+        )
+
+
+def _phase_register_memory_commands(ctx: AppContext) -> None:
+    """Copy commands/memory_commands.py into the bundled upstream's commands/
+    directory so the surreal-commands worker discovers our new handlers on
+    startup. No-op if the template hasn't been packaged (graceful)."""
+    import shutil
+    assert ctx.bin_dir is not None
+    commands_dst = upstream_dir() / "commands"
+    commands_dst.mkdir(parents=True, exist_ok=True)
+    # Locate the template via the desktop.memory package.
+    import desktop.memory as mem_pkg
+    src = Path(mem_pkg.__file__).parent / "memory_commands.py"
+    if src.exists():
+        shutil.copyfile(src, commands_dst / "memory_commands.py")
+    ctx.commands_dst = commands_dst
+    if ctx.progress_bus is not None:
+        ctx.progress_bus.publish(
+            "memory.commands_registered", "done",
+            str(commands_dst / "memory_commands.py"),
+        )
+
+
 def _phase_start_supervisor(ctx: AppContext) -> None:
     """Build and start the Supervisor process tree."""
     from desktop.launcher import Supervisor
@@ -266,6 +307,13 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     amy_path = voice_model_dir / "TTS" / "en_US-amy-medium.onnx"
     ryan_path = voice_model_dir / "TTS" / "en_US-ryan-high.onnx"
     nomic_path = voice_model_dir / "GGUF" / "nomic-embed-text-v1.5.f16.gguf"
+    # v0.4: discover the chat LLM (Hermes 3) for mem0's memory writer.
+    # We just pick the first Hermes-3*.gguf in the GGUF dir; users who chose
+    # a different model in the wizard still get fact-extraction as long as a
+    # Hermes-style GGUF is present.
+    gguf_dir = voice_model_dir / "GGUF"
+    chat_candidates = sorted(gguf_dir.glob("Hermes-3*.gguf")) if gguf_dir.exists() else []
+    chat_llm_path = chat_candidates[0] if chat_candidates else None
     piper_voices: dict[str, Path] = {}
     if amy_path.exists():
         piper_voices["alex"] = amy_path
@@ -280,6 +328,8 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         whisper_model_path=whisper_model_name,
         piper_voices=piper_voices,
         nomic_embed_path=nomic_path if nomic_path.exists() else None,
+        chat_llm_path=chat_llm_path,
+        openchronicle_available=ctx.openchronicle_available,
         progress=ctx.progress_bus,
     )
     try:
@@ -410,6 +460,8 @@ def run() -> int:
     _phase_bootstrap_runtime(ctx)
     _phase_download_models(ctx)
     _phase_select_provider(ctx)
+    _phase_detect_openchronicle(ctx)
+    _phase_register_memory_commands(ctx)
     _phase_start_supervisor(ctx)
     _phase_auto_register(ctx)
     _phase_start_model_manager(ctx)
