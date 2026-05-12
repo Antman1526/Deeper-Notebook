@@ -19,12 +19,16 @@
 desktop/
 ├── memory/
 │   ├── __init__.py
-│   ├── surreal_store.py             # mem0 vector-store adapter for SurrealDB
+│   ├── _register.py                 # registers `surreal` as a mem0 provider (Task 2.5)
+│   ├── surreal_store.py             # mem0 VectorStoreBase adapter for SurrealDB
 │   ├── client.py                    # build_memory_client(cfg) → mem0.Memory
 │   ├── writer.py                    # extract_turn / summarize_session
 │   ├── prompts.py                   # writer system prompts + tool defs
 │   └── tests/
+│       ├── __init__.py
+│       ├── test_register.py
 │       ├── test_surreal_store.py
+│       ├── test_client.py
 │       ├── test_writer_extract.py
 │       └── test_writer_summarize.py
 ├── desktop_shims/
@@ -142,15 +146,189 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 
 ---
 
-## Task 3: SurrealDB adapter for mem0
+## Task 2.5: Register `surreal` as a mem0 vector-store provider
 
-A mem0 custom vector store backed by SurrealDB. Three tables share one adapter; `metadata.kind` (`fact`/`preference`/`episode`) routes inserts and filters searches.
+mem0 2.x's `VectorStoreFactory` and `VectorStoreConfig` both gate on hardcoded provider allowlists (mem0 never shipped a `register_provider()` for vector stores, unlike LLMs/embedders). We extend the allowlists at import time so `Memory.from_config({"vector_store": {"provider": "surreal", ...}})` works in Task 5.
+
+**Why monkey-patch is acceptable here:** mem0's own `LlmFactory.register_provider()` does exactly this dict mutation for LLMs — we're filling in functionality the library author skipped for vector stores. The names targeted (`_provider_configs`, `provider_to_class`) are stable across mem0 0.1.62 → 2.0.2. The synthetic `sys.modules` injection is the same idiom `unittest.mock.patch` uses.
 
 **Files:**
 - Create: `desktop/memory/__init__.py` (empty)
-- Create: `desktop/memory/surreal_store.py`
+- Create: `desktop/memory/_register.py`
 - Create: `desktop/memory/tests/__init__.py` (empty)
+- Create: `desktop/memory/tests/test_register.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# desktop/memory/tests/test_register.py
+from __future__ import annotations
+
+import importlib
+import sys
+
+
+def test_surreal_provider_is_registered_after_import():
+    # Reload mem0 modules clean so the test is order-independent.
+    for mod in list(sys.modules):
+        if mod.startswith(("mem0", "desktop.memory._register")):
+            del sys.modules[mod]
+    from mem0.vector_stores.configs import VectorStoreConfig
+    from mem0.utils.factory import VectorStoreFactory
+
+    # `VectorStoreConfig._provider_configs` is a Pydantic v2 ModelPrivateAttr;
+    # the underlying dict lives at `.default`.
+    assert "surreal" not in VectorStoreConfig._provider_configs.default
+    assert "surreal" not in VectorStoreFactory.provider_to_class
+
+    # Importing _register installs the provider as a side effect.
+    importlib.import_module("desktop.memory._register")
+
+    assert VectorStoreConfig._provider_configs.default["surreal"] == "SurrealVectorStoreConfig"
+    assert VectorStoreFactory.provider_to_class["surreal"] == \
+        "desktop.memory.surreal_store.SurrealMemoryStore"
+
+
+def test_surreal_provider_passes_mem0_pydantic_validation():
+    """End-to-end check: after registration, mem0's VectorStoreConfig
+    validator accepts `provider: 'surreal'` and instantiates our config."""
+    import desktop.memory._register  # noqa: F401
+    from mem0.vector_stores.configs import VectorStoreConfig
+
+    cfg = VectorStoreConfig(
+        provider="surreal",
+        config={
+            "surreal_url": "ws://127.0.0.1:50000/rpc",
+            "user": "root",
+            "password": "x" * 24,
+        },
+    )
+    assert type(cfg.config).__name__ == "SurrealVectorStoreConfig"
+    dump = cfg.config.model_dump()
+    assert dump["surreal_url"] == "ws://127.0.0.1:50000/rpc"
+    assert dump["namespace"] == "open_notebook"
+
+
+def test_synthetic_config_module_exports_pydantic_class():
+    import desktop.memory._register  # noqa: F401
+    from mem0.configs.vector_stores.surreal import SurrealVectorStoreConfig
+
+    inst = SurrealVectorStoreConfig(
+        surreal_url="ws://localhost:50000/rpc",
+        user="root",
+        password="x" * 24,
+    )
+    assert inst.collection_name == "memory"
+    assert inst.embedding_model_dims == 768
+    assert inst.namespace == "open_notebook"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/memory/tests/test_register.py -v
+```
+Expected: `ModuleNotFoundError: No module named 'desktop.memory._register'`.
+
+- [ ] **Step 3: Implement**
+
+```python
+# desktop/memory/__init__.py
+```
+
+```python
+# desktop/memory/_register.py
+"""Register `surreal` as a mem0 vector-store provider.
+
+mem0 2.x guards `Memory.from_config({"vector_store": {"provider": ...}})` with two
+hardcoded allowlists:
+
+  1. `VectorStoreConfig._provider_configs` — Pydantic config-class names per
+     provider. The validator does
+     `__import__(f"mem0.configs.vector_stores.{provider}")` and
+     `getattr(module, _provider_configs[provider])` to load the config class.
+  2. `VectorStoreFactory.provider_to_class` — dotted import paths to the store
+     class. The factory does `load_class(class_type)(**config.model_dump())`.
+
+There is no public `register_provider()` for vector stores (only for LLMs and
+embedders — see `LlmFactory.register_provider` in `mem0/utils/factory.py`).
+We mutate the underlying dicts directly and inject a synthetic Pydantic-config
+module into `sys.modules` so the validator's `__import__` lookup resolves.
+
+Note on Pydantic v2 mechanics: `VectorStoreConfig._provider_configs` is declared
+as `_provider_configs: Dict[str, str] = {...}` on a `BaseModel` subclass, which
+Pydantic v2 turns into a `ModelPrivateAttr` descriptor. The underlying dict
+(used as the per-instance default) lives at `.default`. Mutating
+`VectorStoreConfig._provider_configs.default[...]` updates the allowlist for
+all subsequent instances.
+
+Importing this module has the side effect of installing the `surreal` provider.
+`desktop/memory/client.py` (Task 5) imports it before calling `Memory.from_config`.
+"""
+from __future__ import annotations
+
+import sys
+import types
+
+from pydantic import BaseModel
+from mem0.utils.factory import VectorStoreFactory
+from mem0.vector_stores.configs import VectorStoreConfig
+
+
+class SurrealVectorStoreConfig(BaseModel):
+    """Pydantic config for our SurrealDB-backed memory store.
+
+    These fields become kwargs to `SurrealMemoryStore.__init__` because mem0's
+    `VectorStoreFactory.create` calls `cls(**config.model_dump())`.
+    """
+    collection_name: str = "memory"        # mem0 reads .collection_name — unused for routing
+    embedding_model_dims: int = 768         # nomic-embed-text-v1.5 native dim
+    surreal_url: str
+    namespace: str = "open_notebook"
+    database: str = "open_notebook"
+    user: str
+    password: str
+
+
+_synthetic_module = types.ModuleType("mem0.configs.vector_stores.surreal")
+_synthetic_module.SurrealVectorStoreConfig = SurrealVectorStoreConfig
+sys.modules["mem0.configs.vector_stores.surreal"] = _synthetic_module
+
+# `._provider_configs` is a Pydantic v2 ModelPrivateAttr — mutate its `.default`.
+VectorStoreConfig._provider_configs.default["surreal"] = "SurrealVectorStoreConfig"
+VectorStoreFactory.provider_to_class["surreal"] = \
+    "desktop.memory.surreal_store.SurrealMemoryStore"
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/memory/tests/test_register.py -v
+```
+Expected: `3 passed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add desktop/memory/__init__.py desktop/memory/_register.py \
+        desktop/memory/tests/__init__.py desktop/memory/tests/test_register.py
+git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
+  commit -m "desktop: register 'surreal' as mem0 vector-store provider (v0.4 memory)"
+```
+
+---
+
+## Task 3: SurrealDB adapter for mem0 (mem0 2.x `VectorStoreBase` contract)
+
+A mem0 vector store backed by SurrealDB, registered under provider name `"surreal"` in Task 2.5. Three tables share one adapter; `payloads[i]["kind"]` (`fact`/`preference`/`episode`) routes inserts and filters searches.
+
+**Why this shape:** mem0 2.x's `VectorStoreFactory` instantiates stores via `cls(**config_dict)` where `config_dict` is `SurrealVectorStoreConfig.model_dump()`. The adapter must inherit from `VectorStoreBase` (11 abstract methods) and return search results as `OutputData(id, score, payload)`-shaped objects — mem0 reads `.id`, `.score`, `.payload` attrs from each hit.
+
+**Files:**
+- Create: `desktop/memory/surreal_store.py`
 - Create: `desktop/memory/tests/test_surreal_store.py`
+
+(`desktop/memory/__init__.py` and `desktop/memory/tests/__init__.py` were already created in Task 2.5; do not recreate.)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -160,15 +338,17 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from desktop.memory.surreal_store import SurrealMemoryStore, MemoryHit
+# Importing _register installs the synthetic `mem0.configs.vector_stores.surreal`
+# module — must happen before surreal_store is imported because surreal_store
+# inherits from VectorStoreBase (a sibling of the synthetic module's parent pkg).
+from desktop.memory import _register  # noqa: F401
+from desktop.memory.surreal_store import SurrealMemoryStore, OutputData
 
 
 def _fake_client(responses: dict):
-    """Return a mock that pretends to be a surrealdb async client.
+    """Mock pretending to be a surrealdb async client.
 
-    Maps SurrealQL strings (or prefixes) to canned responses.
+    Matches SurrealQL by prefix of the first non-whitespace word.
     """
     client = MagicMock()
     async def query(sql, vars=None):
@@ -190,7 +370,6 @@ def test_insert_routes_facts_to_memory_fact_table():
     )
     sent_sql = store._client.query.call_args_list[0].args[0]
     assert "memory_fact" in sent_sql
-    assert "fact-001" in str(store._client.query.call_args_list[0])
 
 
 def test_insert_routes_preferences_to_memory_preference_table():
@@ -205,9 +384,9 @@ def test_insert_routes_preferences_to_memory_preference_table():
     assert "memory_preference" in sent_sql
 
 
-def test_search_returns_memory_hits():
+def test_search_returns_outputdata_objects():
     fake_record = {
-        "id": "fact:abc",
+        "id": "memory_fact:abc",
         "text": "user lives in SF",
         "metadata": {"scope": "user"},
         "confidence": 0.8,
@@ -216,19 +395,44 @@ def test_search_returns_memory_hits():
     }
     store = SurrealMemoryStore.from_test_client(
         _fake_client({"SELECT": [[fake_record]]}))
-    hits = store.search(query_vector=[0.1, 0.2], filters={"kind": "fact"}, limit=5)
+    # mem0 2.x signature: search(query, vectors, top_k, filters)
+    hits = store.search(query="where does user live",
+                        vectors=[0.1, 0.2], top_k=5,
+                        filters={"kind": "fact"})
     assert len(hits) == 1
-    assert isinstance(hits[0], MemoryHit)
-    assert hits[0].id == "fact:abc"
-    assert hits[0].text == "user lives in SF"
+    assert isinstance(hits[0], OutputData)
+    assert hits[0].id == "memory_fact:abc"
+    assert hits[0].payload["text"] == "user lives in SF"
     assert hits[0].score == 0.92
 
 
-def test_delete_uses_correct_table():
+def test_delete_emits_delete_sql_with_id():
     store = SurrealMemoryStore.from_test_client(_fake_client({"DELETE": [[]]}))
-    store.delete("fact:abc")  # bare ID assumed to be a fact by default
+    store.delete("memory_fact:abc")
     sent_sql = store._client.query.call_args_list[0].args[0]
     assert "DELETE" in sent_sql
+    assert "memory_fact:abc" in sent_sql
+
+
+def test_list_cols_returns_three_memory_tables():
+    store = SurrealMemoryStore.from_test_client(_fake_client({}))
+    cols = store.list_cols()
+    assert set(cols) == {"memory_fact", "memory_preference", "memory_episode"}
+
+
+def test_reset_removes_and_redefines_all_three_tables():
+    store = SurrealMemoryStore.from_test_client(
+        _fake_client({"REMOVE": [[]], "DEFINE": [[]]}))
+    store.reset()
+    sqls = " ".join(c.args[0] for c in store._client.query.call_args_list)
+    for table in ("memory_fact", "memory_preference", "memory_episode"):
+        assert table in sqls
+
+
+def test_keyword_search_returns_none():
+    """We do not wire up SurrealDB FTS in v0.4; mem0 treats None as 'skip BM25'."""
+    store = SurrealMemoryStore.from_test_client(_fake_client({}))
+    assert store.keyword_search("anything") is None
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -241,45 +445,46 @@ Expected: `ModuleNotFoundError: No module named 'desktop.memory.surreal_store'`.
 - [ ] **Step 3: Implement the adapter**
 
 ```python
-# desktop/memory/__init__.py
-```
-
-```python
 # desktop/memory/surreal_store.py
-"""mem0 vector-store adapter for SurrealDB.
+"""mem0 VectorStoreBase adapter for SurrealDB.
 
-mem0's custom-store contract is duck-typed: any object with insert(),
-search(), delete(), update(), get() returning normalized records works.
-We translate to SurrealDB's CRUD + vector-similarity primitives.
+mem0 2.x requires that vector stores inherit from `VectorStoreBase` (in
+`mem0.vector_stores.base`) and implement 11 abstract methods. Search results
+must expose `.id`, `.score`, `.payload` attributes (mem0's internal hit shape)
+— we use a small Pydantic `OutputData` class to match.
 
-Schema (3 tables, same shape):
+Schema (3 tables, same shape, created in Task 4):
     memory_fact, memory_preference, memory_episode
     {
         id: record<...>,
         text: string,
-        embedding: array<float>,    // 768 dims for nomic-embed-text
+        embedding: array<float>,    # 768 dims for nomic-embed-text-v1.5
         metadata: object,
-        scope: string,              // "user" | "notebook"
+        scope: string,              # "user" | "notebook"
         confidence: float,
         created_at: datetime,
     }
+
+Routing: `payloads[i]["kind"]` ∈ {"fact","preference","episode"} chooses the
+table on insert; `filters["kind"]` chooses on search. Default "fact".
+
+The `__init__` signature must match `SurrealVectorStoreConfig` (Task 2.5)
+because mem0's `VectorStoreFactory.create()` calls `cls(**config.model_dump())`.
 """
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+
+from pydantic import BaseModel
+from mem0.vector_stores.base import VectorStoreBase
 
 
-@dataclass
-class MemoryHit:
-    id: str
-    text: str
-    metadata: dict
-    confidence: float
-    created_at: str
-    score: float
+class OutputData(BaseModel):
+    id: Optional[str]
+    score: Optional[float]
+    payload: Optional[dict]
 
 
 _KIND_TO_TABLE = {
@@ -287,50 +492,88 @@ _KIND_TO_TABLE = {
     "preference": "memory_preference",
     "episode": "memory_episode",
 }
+_ALL_TABLES: list[str] = list(_KIND_TO_TABLE.values())
 
 
-class SurrealMemoryStore:
+class SurrealMemoryStore(VectorStoreBase):
     """mem0 vector-store adapter for SurrealDB.
 
-    Constructor connects via the same SURREAL_* env vars the Supervisor sets.
-    For tests, use the `from_test_client` classmethod with a mock surrealdb client.
+    Constructed by mem0's `VectorStoreFactory` as
+    `SurrealMemoryStore(**SurrealVectorStoreConfig.model_dump())`.
+    For tests, use the `from_test_client` classmethod with a mock client.
     """
 
-    def __init__(self, surreal_url: str, namespace: str, database: str,
-                 user: str, password: str):
+    def __init__(self, *,
+                 collection_name: str = "memory",
+                 embedding_model_dims: int = 768,
+                 surreal_url: str,
+                 namespace: str = "open_notebook",
+                 database: str = "open_notebook",
+                 user: str,
+                 password: str):
         from surrealdb import Surreal
         self._client = Surreal(surreal_url)
-        # Eager connection / signin; real connect happens lazily on first call
         self._connect_args = (namespace, database, user, password)
         self._connected = False
+        self._collection_name = collection_name
+        self._embedding_dims = embedding_model_dims
 
     @classmethod
     def from_test_client(cls, client) -> "SurrealMemoryStore":
         inst = cls.__new__(cls)
         inst._client = client
         inst._connected = True
+        inst._collection_name = "memory"
+        inst._embedding_dims = 768
         return inst
+
+    # ---------------------------------------------------------- internal helpers
 
     def _ensure_connected(self) -> None:
         if self._connected:
             return
         ns, db, user, password = self._connect_args
-        asyncio.get_event_loop().run_until_complete(self._client.signin(
-            {"user": user, "pass": password}))
+        asyncio.get_event_loop().run_until_complete(
+            self._client.signin({"user": user, "pass": password}))
         asyncio.get_event_loop().run_until_complete(self._client.use(ns, db))
         self._connected = True
 
     def _table(self, payload: dict) -> str:
         return _KIND_TO_TABLE.get(payload.get("kind", "fact"), "memory_fact")
 
-    def insert(self, vectors: list[list[float]], payloads: list[dict],
-               ids: list[str]) -> None:
+    def _exec(self, sql: str, vars: dict | None = None):
+        """Execute a SurrealQL query, supporting sync (mock) + async (real) clients."""
+        result = self._client.query(sql, vars)
+        if asyncio.iscoroutine(result):
+            result = asyncio.get_event_loop().run_until_complete(result)
+        if isinstance(result, list) and result:
+            first = result[0]
+            if isinstance(first, list):
+                return first
+        return result or []
+
+    def _to_output(self, row: dict) -> OutputData:
+        """Convert a SurrealDB row dict to an OutputData (mem0's hit shape)."""
+        row = dict(row)
+        score = row.pop("score", 1.0)
+        rid = str(row.pop("id", ""))
+        return OutputData(id=rid, score=float(score), payload=row)
+
+    # ---------------------------------------------------------- VectorStoreBase
+
+    def create_col(self, name, vector_size, distance):
+        """No-op: the 3 memory tables + HNSW index are created by the SQL
+        migration in Task 4. mem0 calls this on first init — accept silently."""
+        return None
+
+    def insert(self, vectors, payloads=None, ids=None):
         self._ensure_connected()
+        payloads = payloads or [{} for _ in vectors]
+        ids = ids or [None for _ in vectors]
         for vec, payload, _id in zip(vectors, payloads, ids):
             table = self._table(payload)
             now = datetime.now(timezone.utc).isoformat()
             row = {
-                "id": _id,
                 "text": payload.get("text", ""),
                 "embedding": vec,
                 "metadata": payload.get("metadata", {}),
@@ -338,81 +581,90 @@ class SurrealMemoryStore:
                 "confidence": payload.get("confidence", 1.0),
                 "created_at": now,
             }
+            if _id:
+                row["id"] = _id
             self._exec(f"CREATE {table} CONTENT $row", {"row": row})
 
-    def search(self, query_vector: list[float], filters: dict | None = None,
-               limit: int = 5) -> list[MemoryHit]:
+    def search(self, query: str, vectors, top_k: int = 5,
+               filters: dict | None = None) -> list[OutputData]:
+        """Vector cosine search. `query` (text) is unused — we operate on the
+        precomputed `vectors` embedding. `filters['kind']` narrows to a single
+        memory table; otherwise we union the three."""
         self._ensure_connected()
-        # If the caller filters by kind, search just that table; else union all 3.
         kind = (filters or {}).get("kind")
-        tables = [_KIND_TO_TABLE[kind]] if kind in _KIND_TO_TABLE else list(_KIND_TO_TABLE.values())
-        hits: list[MemoryHit] = []
+        tables = [_KIND_TO_TABLE[kind]] if kind in _KIND_TO_TABLE else _ALL_TABLES
+        hits: list[OutputData] = []
         for table in tables:
             rows = self._exec(
                 f"SELECT *, vector::similarity::cosine(embedding, $q) AS score "
                 f"FROM {table} ORDER BY score DESC LIMIT $limit",
-                {"q": query_vector, "limit": limit},
+                {"q": vectors, "limit": top_k},
             )
             for row in rows or []:
-                hits.append(MemoryHit(
-                    id=str(row.get("id", "")),
-                    text=row.get("text", ""),
-                    metadata=row.get("metadata", {}),
-                    confidence=row.get("confidence", 1.0),
-                    created_at=row.get("created_at", ""),
-                    score=float(row.get("score", 0.0)),
-                ))
-        hits.sort(key=lambda h: h.score, reverse=True)
-        return hits[:limit]
+                hits.append(self._to_output(row))
+        hits.sort(key=lambda h: h.score or 0.0, reverse=True)
+        return hits[:top_k]
 
-    def delete(self, vector_id: str) -> None:
+    def delete(self, vector_id):
         self._ensure_connected()
         self._exec(f"DELETE {vector_id}")
 
-    def update(self, vector_id: str, payload: dict | None = None,
-               vector: list[float] | None = None) -> None:
+    def update(self, vector_id, vector=None, payload=None):
         self._ensure_connected()
         patch: dict[str, Any] = {}
         if payload is not None:
-            if "text" in payload:
-                patch["text"] = payload["text"]
-            if "confidence" in payload:
-                patch["confidence"] = payload["confidence"]
-            if "metadata" in payload:
-                patch["metadata"] = payload["metadata"]
+            for k in ("text", "confidence", "metadata"):
+                if k in payload:
+                    patch[k] = payload[k]
         if vector is not None:
             patch["embedding"] = vector
         if patch:
             self._exec(f"UPDATE {vector_id} MERGE $patch", {"patch": patch})
 
-    def get(self, vector_id: str) -> MemoryHit | None:
+    def get(self, vector_id) -> OutputData | None:
         self._ensure_connected()
         rows = self._exec(f"SELECT * FROM {vector_id}")
         if not rows:
             return None
-        row = rows[0]
-        return MemoryHit(
-            id=str(row.get("id", "")),
-            text=row.get("text", ""),
-            metadata=row.get("metadata", {}),
-            confidence=row.get("confidence", 1.0),
-            created_at=row.get("created_at", ""),
-            score=1.0,
-        )
+        return self._to_output(rows[0])
 
-    def _exec(self, sql: str, vars: dict | None = None):
-        """Run a query against the surrealdb client, supporting both sync
-        (test mock) and async (real client) variants."""
-        result = self._client.query(sql, vars)
-        if asyncio.iscoroutine(result):
-            result = asyncio.get_event_loop().run_until_complete(result)
-        if isinstance(result, list) and result:
-            # surrealdb returns [[rows], ...] for queries
-            first = result[0]
-            if isinstance(first, list):
-                return first
-            return result
-        return result or []
+    def list_cols(self) -> list:
+        return list(_ALL_TABLES)
+
+    def delete_col(self):
+        self._ensure_connected()
+        for table in _ALL_TABLES:
+            self._exec(f"REMOVE TABLE IF EXISTS {table}")
+
+    def col_info(self) -> dict:
+        self._ensure_connected()
+        return {t: self._exec(f"INFO FOR TABLE {t}") for t in _ALL_TABLES}
+
+    def list(self, filters: dict | None = None, top_k: int | None = 100) -> list:
+        self._ensure_connected()
+        kind = (filters or {}).get("kind")
+        tables = [_KIND_TO_TABLE[kind]] if kind in _KIND_TO_TABLE else _ALL_TABLES
+        limit = top_k or 100
+        out: list[OutputData] = []
+        for table in tables:
+            rows = self._exec(f"SELECT * FROM {table} LIMIT $limit", {"limit": limit})
+            for row in rows or []:
+                out.append(self._to_output(row))
+        return out
+
+    def reset(self):
+        """Drop and recreate the 3 memory tables. mem0 invokes this from
+        `Memory.reset()`. NB: Task 4's migration adds the HNSW index — after
+        reset we have bare tables; re-running the migration restores indexes."""
+        self.delete_col()
+        for table in _ALL_TABLES:
+            self._exec(f"DEFINE TABLE {table}")
+
+    def keyword_search(self, query: str, top_k: int = 5,
+                       filters: dict | None = None):
+        """BM25 / FTS not wired in v0.4. Returning None tells mem0 to skip
+        hybrid scoring and rely on vector search alone."""
+        return None
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -420,15 +672,14 @@ class SurrealMemoryStore:
 ```bash
 /Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/memory/tests/test_surreal_store.py -v
 ```
-Expected: `4 passed`.
+Expected: `7 passed`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add desktop/memory/__init__.py desktop/memory/surreal_store.py \
-        desktop/memory/tests/__init__.py desktop/memory/tests/test_surreal_store.py
+git add desktop/memory/surreal_store.py desktop/memory/tests/test_surreal_store.py
 git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
-  commit -m "desktop: SurrealDB vector-store adapter for mem0 (3 tables)"
+  commit -m "desktop: SurrealDB VectorStoreBase adapter for mem0 (3 tables, mem0 2.x)"
 ```
 
 ---
@@ -519,26 +770,39 @@ from unittest.mock import patch, MagicMock
 from desktop.memory.client import build_memory_client
 
 
-def test_build_memory_client_constructs_mem0_with_local_endpoints():
+def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
     fake_cfg = MagicMock(
         surreal_user="root", surreal_password="x" * 24,
     )
-    with patch("desktop.memory.client.Memory") as mem0_cls, \
-         patch("desktop.memory.client.SurrealMemoryStore") as store_cls:
-        store_cls.return_value = MagicMock()
-        client = build_memory_client(
+    with patch("desktop.memory.client.Memory") as mem0_cls:
+        build_memory_client(
             cfg=fake_cfg,
             surreal_url="ws://127.0.0.1:50000/rpc",
             embed_url="http://127.0.0.1:51000/v1",
             llm_url="http://127.0.0.1:52000/v1",
         )
-        # Memory.from_config was called once with the expected shape
         call_args = mem0_cls.from_config.call_args
         config = call_args.kwargs.get("config") or call_args.args[0]
+        # Vector store wired to our registered surreal provider, not "custom"
+        assert config["vector_store"]["provider"] == "surreal"
+        assert config["vector_store"]["config"]["surreal_url"] == "ws://127.0.0.1:50000/rpc"
+        assert config["vector_store"]["config"]["user"] == "root"
+        assert config["vector_store"]["config"]["password"] == "x" * 24
+        # Embedder + LLM point at local servers
         assert config["embedder"]["config"]["base_url"] == "http://127.0.0.1:51000/v1"
         assert config["embedder"]["config"]["model"] == "nomic-embed-text-v1.5"
         assert config["llm"]["config"]["base_url"] == "http://127.0.0.1:52000/v1"
         assert config["llm"]["config"]["model"] == "Hermes-3-Llama-3.1-8B-Q4_K_M"
+
+
+def test_build_memory_client_imports_register_module_for_side_effect():
+    """If `desktop.memory._register` hasn't run by the time Memory.from_config
+    is called, mem0 will reject `provider: 'surreal'` as unknown. Verify the
+    side-effect import happened."""
+    import sys
+    assert "desktop.memory._register" in sys.modules
+    from mem0.vector_stores.configs import VectorStoreConfig
+    assert "surreal" in VectorStoreConfig._provider_configs
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -553,32 +817,37 @@ Expected: `ModuleNotFoundError: No module named 'desktop.memory.client'`.
 ```python
 # desktop/memory/client.py
 """Factory for the mem0 memory client wired to our local SurrealDB +
-local-LLM + local-embedder endpoints."""
+local-LLM + local-embedder endpoints.
+
+The `_register` import below has the side effect of installing `surreal` as
+a mem0 vector-store provider; it MUST happen before `Memory.from_config()`
+sees `provider: "surreal"`, or mem0 will reject the config as unknown.
+"""
 from __future__ import annotations
 
-from desktop.memory.surreal_store import SurrealMemoryStore
+import desktop.memory._register  # noqa: F401 — registers `surreal` provider
 
 try:
     from mem0 import Memory
-except ImportError:  # tests don't need mem0 installed
+except ImportError:  # tests don't need mem0 installed at import time
     Memory = None  # type: ignore[assignment]
 
 
 def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
-    """Build a mem0.Memory instance backed by SurrealDB + local LLM/embed servers."""
+    """Build a `mem0.Memory` instance backed by our SurrealDB store + local
+    OpenAI-compatible LLM and embedder endpoints."""
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
-    store = SurrealMemoryStore(
-        surreal_url=surreal_url,
-        namespace="open_notebook",
-        database="open_notebook",
-        user=cfg.surreal_user,
-        password=cfg.surreal_password,
-    )
     return Memory.from_config({
         "vector_store": {
-            "provider": "custom",
-            "config": {"client": store},
+            "provider": "surreal",
+            "config": {
+                "surreal_url": surreal_url,
+                "namespace": "open_notebook",
+                "database": "open_notebook",
+                "user": cfg.surreal_user,
+                "password": cfg.surreal_password,
+            },
         },
         "embedder": {
             "provider": "openai",
@@ -604,7 +873,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
 ```bash
 /Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/memory/tests/test_client.py -v
 ```
-Expected: `1 passed`.
+Expected: `2 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -2477,16 +2746,18 @@ Spec coverage check (against `2026-05-11-open-notebook-plus-v0.4-memory-design.m
 - ✅ Goal 3 (OpenChronicle Layer 0) — Tasks 9, 10, 11, 18
 - ✅ Goal 4 (Memory dashboard) — Tasks 15, 16, 17
 - ✅ Config + wizard onboarding — Tasks 2, 18
-- ✅ SurrealDB schema + adapter — Tasks 3, 4
+- ✅ SurrealDB schema + adapter — Tasks 2.5, 3, 4
 - ✅ Auto-register integration — Tasks 13, 14
 - ✅ Build + bundle — Task 19
 - ✅ Definition of done coverage — Task 20
 
-Type consistency: `MemoryHit` dataclass shape consistent across surreal_store.py and shim. `apply_tool_call` signature matches `extract_turn` + `summarize_session` usage. `mem_client.search(query=...)` interface matches mem0's actual API.
+Type consistency: `SurrealMemoryStore.__init__` kwargs match `SurrealVectorStoreConfig` fields (mem0 factory does `cls(**config.model_dump())`). `OutputData(id, score, payload)` matches mem0's expected hit shape in `Memory.search()`. `apply_tool_call` signature matches `extract_turn` + `summarize_session` usage. `mem_client.search(query=...)` and `.add(...)`/`.delete(...)` match mem0 2.x `Memory` API.
+
+mem0 version compatibility: plan targets `mem0ai==2.0.2` (current latest, pinned in Task 1). The provider-registration trick in Task 2.5 works for any mem0 in the 0.1.62–2.x range because the underlying `_provider_configs` + `provider_to_class` dict pattern has been stable since 0.1.x. If mem0 ever ships `VectorStoreFactory.register_provider()`, Task 2.5 can be simplified to a one-liner.
 
 No placeholders. No TBDs. Each `Task` row points to either a created or modified file. Each step has executable commands or full code blocks.
 
-Test count growth: 88 → ~115 (4 surreal_store + 1 client + 7 writer + 4 memory_shim + 3 openchronicle_shim + 2 launcher + 1 auto_register + 2 config + 2 dashboard + ~2 wizard = 28 new).
+Test count growth: 88 → ~123 (3 register + 7 surreal_store + 2 client + 7 writer + 4 memory_shim + 3 openchronicle_shim + 2 launcher + 1 auto_register + 2 config + 2 dashboard + ~2 wizard = 35 new).
 
 ---
 
