@@ -57,6 +57,33 @@ def build_app(config_path: Path, on_done: Callable[[], None],
         on_done()
         return web.json_response({"ok": True})
 
+    async def open_url(req: web.Request) -> web.Response:
+        """Open a URL in the user's default browser.
+
+        Used by the wizard's "Open install page" button instead of JS
+        `window.open(...)`, because PyWebView's WKWebView handling of
+        `target='_blank'` on macOS is unreliable — it can navigate the
+        current window or silently no-op.
+
+        Scheme + host is whitelisted to prevent abuse (the wizard server
+        binds 127.0.0.1 so attack surface is local, but defense in depth).
+        """
+        try:
+            body = await req.json()
+        except Exception:
+            return web.json_response({"error": "invalid json"}, status=400)
+        url = (body.get("url") or "").strip()
+        allowed_prefixes = (
+            "https://github.com/Einsia/OpenChronicle",
+            "https://github.com/Einsia/openchronicle",
+            "https://huggingface.co/",
+        )
+        if not any(url.startswith(p) for p in allowed_prefixes):
+            return web.json_response({"error": "url not whitelisted"}, status=400)
+        import webbrowser
+        webbrowser.open(url)
+        return web.json_response({"ok": True})
+
     async def dismiss_openchronicle_reminder(_req: web.Request) -> web.Response:
         """Post-launch endpoint: the memory_injection.js toast hits this when
         the user closes the OpenChronicle reminder. We rewrite the config to
@@ -105,6 +132,7 @@ def build_app(config_path: Path, on_done: Callable[[], None],
     app.router.add_get("/", index)
     app.router.add_get("/api/progress", progress_stream)
     app.router.add_post("/api/save", save)
+    app.router.add_post("/api/open-url", open_url)
     app.router.add_post("/api/config/dismiss_openchronicle_reminder",
                         dismiss_openchronicle_reminder)
     app.router.add_static("/static", STATIC_DIR)
