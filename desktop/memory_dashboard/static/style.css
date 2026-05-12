@@ -1,0 +1,25 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+       padding: 24px; background: var(--bg, #fafafa); color: var(--text, #222); }
+main { max-width: 900px; margin: 0 auto; }
+h1 { margin-bottom: 16px; }
+section { background: var(--surface, #fff);
+          border: 1px solid var(--border, #e0e0e0);
+          border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+h2 { font-size: 16px; margin-bottom: 12px; }
+.count { font-size: 12px; color: var(--muted, #888);
+         background: var(--border, #f0f0f0);
+         padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
+ul { list-style: none; }
+ul li { padding: 8px 0; border-bottom: 1px solid var(--border, #f0f0f0);
+        display: flex; align-items: center; gap: 8px; }
+ul li button { padding: 4px 10px; border-radius: 6px;
+               border: 1px solid var(--border, #ccc);
+               background: var(--bg, #fff); cursor: pointer;
+               color: var(--text, #333); font-size: 12px;
+               opacity: 0; transition: opacity 0.15s; }
+ul li:hover button { opacity: 1; }
+button#ambient-pause { padding: 6px 14px; border-radius: 6px;
+                       border: 1px solid var(--border, #ccc);
+                       background: var(--bg, #fff); color: var(--text, #333);
+                       cursor: pointer; }
