@@ -1187,6 +1187,7 @@ def apply_tool_call(mem_client, call: dict) -> None:
         metadata["source_chat_id"] = args.get("source_chat_id", "")
     mem_client.add(
         messages=text,
+        user_id="local",
         metadata=metadata,
     )
 
@@ -1337,9 +1338,21 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 
+def _unwrap(results: Any) -> list:
+    """mem0 2.x's Memory.search() returns {"results": [...]}; the test mock
+    may return a bare list. Normalize to a list either way."""
+    if isinstance(results, dict):
+        return list(results.get("results") or [])
+    return list(results or [])
+
+
 def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     app = FastAPI(title="Open Notebook Plus — Memory retriever")
     state = {"ambient_paused": False}
+
+    # mem0 2.x requires every search/add to be scoped to a user/agent/run.
+    # We're a single-user desktop app — pin to "local".
+    USER_ID = "local"
 
     @app.get("/health")
     def health() -> dict:
@@ -1349,33 +1362,38 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     def relevant(topic: str = "", k: int = 5) -> dict:
         if not topic:
             return {"records": []}
-        results = mem_client.search(query=topic, limit=k)
-        return {"records": list(results)[:k]}
+        records = _unwrap(mem_client.search(
+            query=topic, top_k=k, filters={"user_id": USER_ID}))
+        return {"records": records[:k]}
 
     @app.get("/api/memory/preferences")
     def preferences() -> dict:
-        results = mem_client.search(query="", limit=200,
-                                    filters={"kind": "preference"}) or []
-        return {"records": list(results)}
+        records = _unwrap(mem_client.search(
+            query="", top_k=200,
+            filters={"user_id": USER_ID, "kind": "preference"}))
+        return {"records": records}
 
     @app.get("/api/memory/facts")
     def facts() -> dict:
-        results = mem_client.search(query="", limit=200,
-                                    filters={"kind": "fact"}) or []
-        return {"records": list(results)}
+        records = _unwrap(mem_client.search(
+            query="", top_k=200,
+            filters={"user_id": USER_ID, "kind": "fact"}))
+        return {"records": records}
 
     @app.get("/api/memory/episodes")
     def episodes() -> dict:
-        results = mem_client.search(query="", limit=200,
-                                    filters={"kind": "episode"}) or []
-        return {"records": list(results)}
+        records = _unwrap(mem_client.search(
+            query="", top_k=200,
+            filters={"user_id": USER_ID, "kind": "episode"}))
+        return {"records": records}
 
     @app.get("/api/memory/search")
     def search(q: str) -> dict:
         if not q:
             return {"records": []}
-        results = mem_client.search(query=q, limit=50)
-        return {"records": list(results)}
+        records = _unwrap(mem_client.search(
+            query=q, top_k=50, filters={"user_id": USER_ID}))
+        return {"records": records}
 
     @app.delete("/api/memory/{kind}/{id}")
     def delete(kind: str, id: str) -> dict:

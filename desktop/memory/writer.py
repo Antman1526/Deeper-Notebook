@@ -65,8 +65,11 @@ def apply_tool_call(mem_client, call: dict) -> None:
         metadata["topics"] = args.get("topics", [])
         metadata["outcome"] = args.get("outcome", "no_outcome")
         metadata["source_chat_id"] = args.get("source_chat_id", "")
+    # mem0 2.x requires every add to be scoped to a user/agent/run.
+    # We're a single-user desktop app — pin to "local".
     mem_client.add(
         messages=text,
+        user_id="local",
         metadata=metadata,
     )
 
