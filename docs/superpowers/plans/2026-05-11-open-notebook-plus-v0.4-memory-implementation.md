@@ -1924,7 +1924,20 @@ Insert the two new phases into the `run()` call sequence between `_phase_bootstr
     _phase_register_memory_commands(ctx)
 ```
 
-Update `_phase_start_supervisor(ctx)` to pass `openchronicle_available=ctx.openchronicle_available` into the `Supervisor(...)` constructor.
+Update `_phase_start_supervisor(ctx)` to:
+
+1. **Discover the chat LLM** (Hermes 3 GGUF) under `voice_model_dir / "GGUF"` — pick the first `Hermes-3*.gguf` found:
+   ```python
+   gguf_dir = voice_model_dir / "GGUF"
+   chat_candidates = sorted(gguf_dir.glob("Hermes-3*.gguf")) if gguf_dir.exists() else []
+   chat_llm_path = chat_candidates[0] if chat_candidates else None
+   ```
+
+2. **Pass two new kwargs** into the `Supervisor(...)` constructor:
+   ```python
+       chat_llm_path=chat_llm_path,
+       openchronicle_available=ctx.openchronicle_available,
+   ```
 
 - [ ] **Step 2: Sanity-import**
 
@@ -1980,15 +1993,25 @@ def _build_clients():
     """Lazily build the LLM + memory clients at command-invocation time.
 
     Avoids importing heavy deps at module load (worker discovery).
+
+    Reads MEMORY_* env vars set by the Supervisor in `session_env` before
+    spawning the worker. We use a private namespace (MEMORY_*) instead of
+    OPENAI_COMPATIBLE_BASE_URL to avoid conflicting with the upstream
+    esperanto/Ollama configuration the user picked for regular chat.
     """
     from desktop.config import default_config_path, load_or_create
     from desktop.memory.client import build_memory_client
 
     cfg = load_or_create(default_config_path())
-    surreal_url = os.environ.get("SURREAL_URL", "")
-    embed_url = os.environ.get("OPENAI_COMPATIBLE_BASE_URL_EMBED",
-                               os.environ.get("OPENAI_COMPATIBLE_BASE_URL", ""))
-    llm_url = os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "")
+    surreal_url = os.environ.get("MEMORY_SURREAL_URL",
+                                 os.environ.get("SURREAL_URL", ""))
+    embed_url = os.environ.get("MEMORY_EMBED_URL", "")
+    llm_url = os.environ.get("MEMORY_CHAT_LLM_URL", "")
+    if not (surreal_url and embed_url and llm_url):
+        raise RuntimeError(
+            "memory_commands invoked without MEMORY_* URLs set — was the "
+            "launcher Supervisor used to spawn this worker?"
+        )
     mem_client = build_memory_client(
         cfg=cfg, surreal_url=surreal_url,
         embed_url=embed_url, llm_url=llm_url,
