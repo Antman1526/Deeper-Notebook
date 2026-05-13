@@ -49,3 +49,31 @@ ul li:hover button { opacity: 1; }
   font: inherit; text-decoration: underline; opacity: 0.85;
 }
 .link-btn:hover { opacity: 1; }
+
+/* ONP v0.5.4 — Active models panel */
+.active-models dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin-top: 8px;
+}
+.active-models dt {
+  color: var(--muted, #888);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.active-models dd {
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.active-models dd.empty-slot {
+  color: var(--muted, #888);
+  font-style: italic;
+  font-family: inherit;
+}

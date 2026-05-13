@@ -221,6 +221,43 @@
   const markAllBtn = document.getElementById('inbox-mark-all');
   if (markAllBtn) markAllBtn.addEventListener('click', markAllSeen);
 
+  // ONP v0.5.4 — Active models panel: shows which model is in each role
+  async function loadActiveModels() {
+    const section = document.getElementById('active-models-section');
+    const list = document.getElementById('active-models-list');
+    if (!section || !list) return;
+    let payload;
+    try {
+      payload = await fetch('/api/dashboard/active-models').then(r => r.json());
+    } catch (e) {
+      return;  // silently skip — section stays hidden
+    }
+    if (!payload.available || !payload.slots) return;
+    list.innerHTML = '';
+    // Render in fixed order so the layout doesn't shuffle
+    const order = ['Chat', 'Tools', 'Reasoning', 'Transformation',
+                   'Large Context', 'Embedding', 'Text-to-Speech', 'Speech-to-Text'];
+    let anyAssigned = false;
+    for (const label of order) {
+      if (!(label in payload.slots)) continue;
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      const v = payload.slots[label];
+      if (v) {
+        dd.textContent = v;
+        anyAssigned = true;
+      } else {
+        dd.textContent = '(not set)';
+        dd.className = 'empty-slot';
+      }
+      list.appendChild(dt);
+      list.appendChild(dd);
+    }
+    if (anyAssigned) section.hidden = false;
+  }
+
+  await loadActiveModels();
   await loadInbox();
   await loadList('preference', 'pref-list', 'pref-count');
   await loadList('fact', 'fact-list', 'fact-count');

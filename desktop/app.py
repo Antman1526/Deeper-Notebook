@@ -497,10 +497,14 @@ def _phase_start_memory_dashboard(ctx: AppContext) -> None:
     # can power the Capture Inbox. Empty string when the bridge isn't running.
     oc_url = (f"http://127.0.0.1:{ctx.sv.openchronicle_port}/"
               if getattr(ctx.sv, "openchronicle_port", 0) else "")
+    # v0.5.4 — pass the upstream FastAPI URL so the dashboard can populate
+    # its 'Active models' header (shows which model is in each role slot).
+    upstream_api = ctx.sv.session_env.get("INTERNAL_API_URL", "")
     port, _t, _l, _r = start_aiohttp_server_thread(
         lambda: _md_build_app(
             memory_retriever_url=memory_url,
             openchronicle_bridge_url=oc_url,
+            upstream_api_url=upstream_api,
         )
     )
     ctx.memory_dashboard_port = port
