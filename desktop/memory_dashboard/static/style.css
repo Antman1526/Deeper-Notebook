@@ -97,7 +97,15 @@ ul li:hover button { opacity: 1; }
   margin-top: 24px;
   padding: 12px 0;
   opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
+.system-info .dot { opacity: 0.5; }
+#health-status[data-status="ok"]   { color: #14B870; opacity: 1; }
+#health-status[data-status="warn"] { color: #DD9F1F; opacity: 1; }
+#health-status[data-status="err"]  { color: #C44; opacity: 1; }
 
 /* ONP v0.5.4 — Active models panel */
 .active-models dl {
