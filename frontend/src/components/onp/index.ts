@@ -6,3 +6,4 @@
  */
 
 export { ReasoningSlotCard } from './ReasoningSlotCard'
+export { ThemeSwitcher } from './ThemeSwitcher'

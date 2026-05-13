@@ -174,65 +174,93 @@ def _theme_tokens(theme_id: str) -> dict:
 
 def _theme_injection_js(theme_id: str, memory_url: str | None = None,
                         remind_openchronicle: bool = False) -> str:
-    tokens = _theme_tokens(theme_id)
-    is_dark = _THEMES.get(theme_id, _THEMES["light-blue"])["is_dark"]
-    var_decls = "\n          ".join(f"{k}: {v};" for k, v in tokens.items())
-    # Force the .dark class on <html> only when the active theme is a dark one
-    # — shadcn components use [data-theme] / .dark to swap their own variable
-    # layer; we set the class explicitly so the user's theme choice wins.
-    body_class_setup = (
-        "document.documentElement.classList.add('dark');"
-        if is_dark else
-        "document.documentElement.classList.remove('dark');"
-    )
+    """Inject ALL 9 themes' tokens up front, keyed by [data-theme="X"]
+    attribute selectors. The active theme is set by `dataset.theme` on
+    <html>. The onp/ThemeSwitcher React component (and `window.ONP.setTheme`
+    that we expose below) can switch themes live — instant, no reload.
+
+    v0.5.7: previously baked a single theme into the CSS, so switching
+    required re-evaluating the injection. With all themes present, switching
+    is just changing one DOM attribute.
+    """
+    # Build a CSS block per theme: `:root[data-theme="X"] { ... }`
+    blocks = []
+    for tid, _meta in _THEMES.items():
+        tokens = _theme_tokens(tid)
+        decls = "\n          ".join(f"{k}: {v};" for k, v in tokens.items())
+        # The default block (no data-theme attribute) uses the light-blue
+        # palette so the page never flashes unstyled.
+        if tid == "light-blue":
+            blocks.append(f":root, :root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
+        else:
+            blocks.append(f":root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
+    all_themes_css = "\n        ".join(blocks)
+    initial = theme_id if theme_id in _THEMES else "light-blue"
+    is_dark_map = {tid: ("true" if _THEMES[tid]["is_dark"] else "false") for tid in _THEMES}
+    is_dark_js = ", ".join(f'"{tid}": {v}' for tid, v in is_dark_map.items())
+
     base_js = f"""
     (function() {{
-      // P1-MED-08 audit fix: idempotent injection. On Next.js soft navigations
-      // the loaded event fires repeatedly; if the theme hasn't changed there's
-      // nothing to do. Skip re-injection when the prior <style data-theme="X">
-      // matches the active theme.
-      var THEME_ID = "{theme_id}";
-      var prior = document.getElementById('onp-theme-injection');
-      if (prior && prior.dataset.theme === THEME_ID) return;
-
-      // Set theme mode class BEFORE injecting variables — shadcn checks .dark
-      {body_class_setup}
-
-      var s = document.createElement('style');
-      s.id = 'onp-theme-injection';
-      s.dataset.theme = THEME_ID;
-      s.textContent = `
-        /* Open Notebook Plus theme — full shadcn token override
-           (overrides both light + dark default blocks in upstream globals.css) */
-        :root,
-        :root.dark,
-        :root[data-theme] {{
-          {var_decls}
-        }}
+      var INITIAL_THEME = "{initial}";
+      // ONP v0.5.7 — all 9 themes live in CSS; live-switch via data-theme attr.
+      // The same <style id="onp-theme-injection"> is reused across Next.js soft
+      // navigations because the CSS block is theme-independent.
+      if (!document.getElementById('onp-theme-injection')) {{
+        var s = document.createElement('style');
+        s.id = 'onp-theme-injection';
+        s.textContent = `
+        {all_themes_css}
         html, body {{
-          background: {tokens['--background']} !important;
-          color: {tokens['--foreground']};
+          background: var(--background) !important;
+          color: var(--foreground);
         }}
-
         /* Layout fixes for dropdown text overflow */
         [role="combobox"], button[role="combobox"] {{
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          min-width: 0;
+          overflow: hidden; text-overflow: ellipsis;
+          white-space: nowrap; min-width: 0;
         }}
         [role="combobox"] > span {{
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          display: block;
-          flex: 1 1 auto;
-          min-width: 0;
+          overflow: hidden; text-overflow: ellipsis;
+          white-space: nowrap; display: block;
+          flex: 1 1 auto; min-width: 0;
         }}
         .grid > * {{ min-width: 0; }}
-      `;
-      if (prior) prior.remove();
-      document.head.appendChild(s);
+        `;
+        document.head.appendChild(s);
+      }}
+
+      // Map of theme id → is_dark. Toggling the .dark class on <html> keeps
+      // shadcn components that switch on `.dark` (not [data-theme]) in sync.
+      var IS_DARK = {{ {is_dark_js} }};
+
+      // Apply a theme: sets dataset.theme + .dark class. Internal — called
+      // by both the initial-load path and window.ONP.setTheme.
+      function applyTheme(theme) {{
+        if (!IS_DARK.hasOwnProperty(theme)) theme = "light-blue";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.classList.toggle('dark', IS_DARK[theme]);
+      }}
+
+      // Initial apply. INITIAL_THEME is baked from config.toml at the start
+      // of every loaded event (open_window re-reads on each loaded), so we
+      // pick up persistent changes across navigations.
+      applyTheme(INITIAL_THEME);
+
+      // Expose a switcher for the ThemeSwitcher React component. Sets the
+      // attribute immediately for instant feedback, then POSTs to persist.
+      // window.ONP is the namespace for all desktop-wrapper-only hooks.
+      window.ONP = window.ONP || {{}};
+      window.ONP.setTheme = function(theme) {{
+        applyTheme(theme);
+        try {{
+          fetch('/api/onp/theme', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{theme: theme}}),
+          }}).catch(function() {{}});
+        }} catch (e) {{}}
+      }};
+      window.ONP.themes = Object.keys(IS_DARK);
     }})();
     """
     voice_js = _voice_injection_js()
@@ -269,10 +297,20 @@ def open_window(url: str, on_close: Callable[[], None],
     """Blocking — returns when the user closes the window."""
     window = webview.create_window(title, url, width=width, height=height)
     window.events.closed += on_close
+
     def _on_loaded():
+        # v0.5.7 — re-read config.toml on every page load so live theme
+        # switches via /api/onp/theme persist across navigations. Falls back
+        # to the `theme` argument if the config can't be read.
+        active_theme = theme
+        try:
+            from desktop.config import default_config_path, load_or_create
+            active_theme = load_or_create(default_config_path()).theme
+        except Exception:
+            pass
         try:
             window.evaluate_js(
-                _theme_injection_js(theme, memory_url=memory_url,
+                _theme_injection_js(active_theme, memory_url=memory_url,
                                     remind_openchronicle=remind_openchronicle))
         except Exception:
             pass  # best-effort; never crash on theme injection

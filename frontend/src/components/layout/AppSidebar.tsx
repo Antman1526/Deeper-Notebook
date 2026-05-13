@@ -22,7 +22,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ThemeToggle } from '@/components/common/ThemeToggle'
+// ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
+// shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
+// import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { ThemeSwitcher as ThemeToggle } from '@/components/onp'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
