@@ -193,6 +193,35 @@ def build_app(
             slots[label] = id_to_name.get(v, v) if v else None
         return web.json_response({"available": True, "slots": slots})
 
+    async def health(_: web.Request) -> web.Response:
+        """ONP v0.5.6 — live status of the subsystems the dashboard depends on.
+
+        Hits each subsystem's /health (or equivalent) endpoint with a short
+        timeout and reports up/down per service. Surfaced in the dashboard
+        footer so users see at a glance if anything's broken without having
+        to tail launcher.log.
+        """
+        async def _probe(name: str, url: str, ok_status: int = 200) -> tuple[str, bool, str | None]:
+            if not url:
+                return (name, False, "not wired")
+            try:
+                r = await shared_client.get(url, timeout=2)
+                return (name, r.status_code == ok_status, None if r.status_code == ok_status
+                        else f"HTTP {r.status_code}")
+            except Exception as exc:
+                return (name, False, type(exc).__name__)
+
+        import asyncio
+        results = await asyncio.gather(
+            _probe("memory_retriever", f"{memory_retriever_url}/health" if memory_retriever_url else ""),
+            _probe("upstream_api", f"{upstream_api_url}/health" if upstream_api_url else ""),
+            _probe("openchronicle_bridge",
+                   f"{openchronicle_bridge_url}/health" if openchronicle_bridge_url else ""),
+        )
+        services = {name: {"ok": ok, "detail": detail} for name, ok, detail in results}
+        all_ok = all(v["ok"] for v in services.values() if v["detail"] != "not wired")
+        return web.json_response({"all_ok": all_ok, "services": services})
+
     async def theme(_: web.Request) -> web.Response:
         try:
             from desktop.config import default_config_path, load_or_create
@@ -208,6 +237,7 @@ def build_app(
     app.router.add_get("/api/capture/inbox", capture_inbox)
     app.router.add_post("/api/capture/mark_seen", capture_mark_seen)
     app.router.add_get("/api/dashboard/active-models", active_models)
+    app.router.add_get("/api/dashboard/health", health)
     app.router.add_get("/api/theme", theme)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)

@@ -344,9 +344,40 @@
     });
   }
 
+  // ONP v0.5.6 — health badge in footer. Polls every 30 s so a subsystem
+  // crash is visible without leaving the page.
+  async function loadHealth() {
+    const el = document.getElementById('health-status');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/dashboard/health');
+      const payload = await r.json();
+      if (payload.all_ok) {
+        el.textContent = '✓ All services OK';
+        el.dataset.status = 'ok';
+      } else {
+        const down = Object.entries(payload.services)
+          .filter(([_, v]) => !v.ok && v.detail !== 'not wired')
+          .map(([k]) => k);
+        if (down.length === 0) {
+          el.textContent = '✓ All wired services OK';
+          el.dataset.status = 'ok';
+        } else {
+          el.textContent = `⚠ ${down.join(', ')} down`;
+          el.dataset.status = down.length > 1 ? 'err' : 'warn';
+        }
+      }
+    } catch (e) {
+      el.textContent = '(health check failed)';
+      el.dataset.status = 'warn';
+    }
+  }
+  setInterval(loadHealth, 30_000);
+
   await loadActiveModels();
   await loadInbox();
   await loadList('preference', 'pref-list', 'pref-count');
   await loadList('fact', 'fact-list', 'fact-count');
   await loadList('episode', 'ep-list', 'ep-count');
+  await loadHealth();
 })();
