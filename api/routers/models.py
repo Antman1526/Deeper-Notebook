@@ -731,6 +731,8 @@ async def auto_assign_defaults():
             ("default_transformation_model", "language", defaults.default_transformation_model),  # type: ignore[attr-defined]
             ("default_tools_model", "language", defaults.default_tools_model),  # type: ignore[attr-defined]
             ("large_context_model", "language", defaults.large_context_model),  # type: ignore[attr-defined]
+            # ONP v0.5 — 8th slot for slow-but-deep reasoning models.
+            ("default_reasoning_model", "language", getattr(defaults, "default_reasoning_model", None)),
             ("default_embedding_model", "embedding", defaults.default_embedding_model),  # type: ignore[attr-defined]
             ("default_text_to_speech_model", "text_to_speech", defaults.default_text_to_speech_model),  # type: ignore[attr-defined]
             ("default_speech_to_text_model", "speech_to_text", defaults.default_speech_to_text_model),  # type: ignore[attr-defined]
