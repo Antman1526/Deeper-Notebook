@@ -7,13 +7,34 @@
 </head>
 <body>
   <main>
-    <h1>Memory</h1>
+    <header class="page-header">
+      <h1>Memory</h1>
+      <p id="memory-subtitle" class="subtitle">Loading…</p>
+      <!-- ONP v0.5.5 — Search bar. Wraps the existing /api/memory/search
+           endpoint that was never UI-surfaced before. Empty query shows all,
+           non-empty filters across facts/preferences/episodes in one shot. -->
+      <div class="search-bar">
+        <input
+          id="memory-search"
+          type="search"
+          placeholder="Search memory… (e.g. 'paper about RAG')"
+          aria-label="Search memory"
+          autocomplete="off"
+        >
+        <button id="memory-search-clear" hidden aria-label="Clear search">×</button>
+      </div>
+    </header>
 
-    <!-- ONP v0.5.4 — Active models: shows which model fills each role slot.
-         Replaces the 'I have no idea what's actually loaded' UX of v0.4–v0.5.3. -->
+    <!-- ONP v0.5.4 — Active models: shows which model fills each role slot. -->
     <section id="active-models-section" class="active-models" hidden>
       <h2>Active models</h2>
       <dl id="active-models-list"></dl>
+    </section>
+
+    <!-- ONP v0.5.5 — Search results section (hidden unless a query is active) -->
+    <section id="search-results-section" hidden>
+      <h2>Search results <span class="count" id="search-count">0</span></h2>
+      <ul id="search-list"></ul>
     </section>
 
     <!-- ONP v0.5 — Capture Inbox: events from OpenChronicle awaiting curation -->
@@ -43,6 +64,11 @@
       <h2>Episodes <span class="count" id="ep-count">0</span></h2>
       <ul id="ep-list"></ul>
     </section>
+
+    <!-- ONP v0.5.5 — system info footer (component versions for support) -->
+    <footer class="system-info" id="system-info">
+      <span>Open Notebook Plus 0.5.5</span>
+    </footer>
   </main>
   <script src="/static/dashboard.js"></script>
 </body>

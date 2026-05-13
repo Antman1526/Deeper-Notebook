@@ -257,6 +257,93 @@
     if (anyAssigned) section.hidden = false;
   }
 
+  // ONP v0.5.5 — subtitle: "X facts · Y preferences · Z episodes"
+  // Counts pulled from the same lists the sections render, so the header
+  // stays in sync after Forget / Save-from-inbox actions.
+  const counts = {fact: 0, preference: 0, episode: 0};
+  function updateSubtitle() {
+    const el = document.getElementById('memory-subtitle');
+    if (!el) return;
+    const parts = [];
+    if (counts.fact)       parts.push(`${counts.fact} fact${counts.fact === 1 ? '' : 's'}`);
+    if (counts.preference) parts.push(`${counts.preference} preference${counts.preference === 1 ? '' : 's'}`);
+    if (counts.episode)    parts.push(`${counts.episode} episode${counts.episode === 1 ? '' : 's'}`);
+    el.textContent = parts.length ? parts.join(' · ') : 'No memories yet';
+  }
+  // Patch the existing loadList to also update counts
+  const _origLoadList = loadList;
+  loadList = async function(kind, listId, countId) {
+    const before = parseInt(document.getElementById(countId)?.textContent || '0', 10);
+    await _origLoadList(kind, listId, countId);
+    const after = parseInt(document.getElementById(countId)?.textContent || '0', 10);
+    counts[kind] = after;
+    updateSubtitle();
+  };
+
+  // ONP v0.5.5 — search bar. Wraps existing /api/memory/search shim
+  // endpoint; debounced to avoid hammering on every keystroke.
+  const searchInput = document.getElementById('memory-search');
+  const searchClear = document.getElementById('memory-search-clear');
+  const searchResultsSection = document.getElementById('search-results-section');
+  const searchList = document.getElementById('search-list');
+  const searchCount = document.getElementById('search-count');
+  let searchDebounce = null;
+
+  async function runSearch(q) {
+    if (!q.trim()) {
+      searchResultsSection.hidden = true;
+      return;
+    }
+    searchResultsSection.hidden = false;
+    searchList.innerHTML = '<li class="empty-state">Searching…</li>';
+    try {
+      const r = await fetch(`/api/memory/search?q=${encodeURIComponent(q)}`);
+      const body = await r.json();
+      const records = body.records || [];
+      searchCount.textContent = String(records.length);
+      searchList.innerHTML = '';
+      if (records.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty-state';
+        li.textContent = `No matches for "${q}"`;
+        searchList.appendChild(li);
+        return;
+      }
+      for (const rec of records) {
+        const li = document.createElement('li');
+        const text = document.createElement('span');
+        text.style.flex = '1';
+        text.textContent = rec.text || rec.summary || rec.payload?.text || '(no text)';
+        const meta = document.createElement('span');
+        meta.style.color = 'var(--muted, #888)';
+        meta.style.fontSize = '12px';
+        const kind = rec.payload?.kind || rec.metadata?.kind || '?';
+        const score = typeof rec.score === 'number' ? rec.score.toFixed(2) : '';
+        meta.textContent = `${kind}${score ? ` · ${score}` : ''}`;
+        li.appendChild(text);
+        li.appendChild(meta);
+        searchList.appendChild(li);
+      }
+    } catch (e) {
+      searchList.innerHTML = `<li class="empty-state">Search failed: ${e.message}</li>`;
+    }
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value;
+      searchClear.hidden = !q;
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => runSearch(q), 220);
+    });
+    searchClear.addEventListener('click', () => {
+      searchInput.value = '';
+      searchClear.hidden = true;
+      searchResultsSection.hidden = true;
+      searchInput.focus();
+    });
+  }
+
   await loadActiveModels();
   await loadInbox();
   await loadList('preference', 'pref-list', 'pref-count');
