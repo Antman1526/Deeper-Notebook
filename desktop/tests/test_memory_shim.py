@@ -93,3 +93,49 @@ def test_delete_rejects_injection_in_id():
                 f"id={bad!r} returned {r.status_code}, expected 4xx"
             )
     mem.delete.assert_not_called()
+
+
+# ---------------------------------------------------------- ONP v0.5 Capture Inbox
+
+def test_capture_approve_calls_mem_client_add_with_source_metadata():
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/capture/approve", json={
+            "text": "User read the Self-RAG paper",
+            "source_app": "Safari",
+            "event_id": "evt-abc",
+            "ts": "2026-05-12T14:30:00Z",
+            "kind": "fact",
+        })
+        assert r.status_code == 200
+        mem.add.assert_called_once()
+        call = mem.add.call_args
+        # mem0 add scoped to single user (single-user desktop)
+        assert call.kwargs["user_id"] == "local"
+        assert call.kwargs["messages"] == "User read the Self-RAG paper"
+        # source attribution baked into metadata so we can trace facts back
+        md = call.kwargs["metadata"]
+        assert md["kind"] == "fact"
+        assert md["source"] == "openchronicle"
+        assert md["source_app"] == "Safari"
+        assert md["source_event_id"] == "evt-abc"
+
+
+def test_capture_approve_rejects_empty_text():
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/capture/approve", json={"text": "", "kind": "fact"})
+        assert r.status_code == 400
+        mem.add.assert_not_called()
+
+
+def test_capture_approve_rejects_invalid_kind():
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/capture/approve",
+                   json={"text": "hi", "kind": "banana"})
+        assert r.status_code == 400
+        mem.add.assert_not_called()

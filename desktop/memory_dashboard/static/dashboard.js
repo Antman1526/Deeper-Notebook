@@ -49,22 +49,122 @@
     }
   }
 
+  // ONP v0.5 — Capture Inbox
+  // The inbox shows OpenChronicle screen events from the last N minutes so
+  // the user can curate BEFORE they commit to memory. Dismissed events are
+  // session-local (no backend mute) — re-open the window and they reappear.
+  const dismissed = new Set();
+
+  async function loadInbox() {
+    const list = document.getElementById('inbox-list');
+    const empty = document.getElementById('inbox-empty');
+    const countEl = document.getElementById('inbox-count');
+    if (!list) return;
+    list.innerHTML = '';
+    empty.hidden = true;
+
+    let payload;
+    try {
+      payload = await fetch('/api/capture/inbox?minutes=30').then(r => r.json());
+    } catch (e) {
+      empty.hidden = false;
+      empty.textContent = '(could not reach OpenChronicle bridge)';
+      countEl.textContent = '0';
+      return;
+    }
+
+    if (!payload.available) {
+      empty.hidden = false;
+      countEl.textContent = '0';
+      return;
+    }
+
+    const events = (payload.events || []).filter(
+      ev => !dismissed.has(eventId(ev))
+    );
+    countEl.textContent = String(events.length);
+
+    if (events.length === 0) {
+      empty.hidden = false;
+      empty.textContent = 'No new captures in the last 30 minutes.';
+      return;
+    }
+
+    events.forEach(ev => list.appendChild(renderInboxRow(ev)));
+  }
+
+  function eventId(ev) {
+    return ev.id || ev.ts || (ev.title || '') + (ev.app || '');
+  }
+
+  function renderInboxRow(ev) {
+    const li = document.createElement('li');
+    const row = document.createElement('div');
+    row.className = 'inbox-event';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'title';
+    titleEl.textContent = ev.title || '(no title)';
+
+    const metaEl = document.createElement('span');
+    metaEl.className = 'meta';
+    const parts = [];
+    if (ev.app) parts.push(ev.app);
+    if (ev.ts) parts.push(new Date(ev.ts).toLocaleTimeString());
+    metaEl.textContent = parts.join(' • ');
+
+    row.appendChild(titleEl);
+    row.appendChild(metaEl);
+
+    const actions = document.createElement('div');
+    actions.className = 'inbox-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn-approve';
+    approveBtn.textContent = 'Save as fact';
+    approveBtn.addEventListener('click', async () => {
+      approveBtn.disabled = true;
+      approveBtn.textContent = 'Saving…';
+      try {
+        const resp = await fetch('/api/memory/capture/approve', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            text: ev.title || '',
+            source_app: ev.app || '',
+            event_id: eventId(ev),
+            ts: ev.ts || '',
+            kind: 'fact',
+          }),
+        });
+        if (!resp.ok) throw new Error('save failed');
+        dismissed.add(eventId(ev));
+        loadInbox();
+        await loadList('fact', 'fact-list', 'fact-count');
+      } catch (e) {
+        approveBtn.disabled = false;
+        approveBtn.textContent = 'Save failed — retry';
+      }
+    });
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'btn-dismiss';
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.addEventListener('click', () => {
+      dismissed.add(eventId(ev));
+      loadInbox();
+    });
+
+    actions.appendChild(approveBtn);
+    actions.appendChild(dismissBtn);
+    row.appendChild(actions);
+
+    li.appendChild(row);
+    return li;
+  }
+
+  await loadInbox();
   await loadList('preference', 'pref-list', 'pref-count');
   await loadList('fact', 'fact-list', 'fact-count');
   await loadList('episode', 'ep-list', 'ep-count');
-
-  // Ambient status
-  try {
-    const s = await fetch('/api/memory/ambient/status').then(r => r.json());
-    const el = document.getElementById('ambient-status');
-    el.textContent = s.available
-      ? (s.paused ? 'Available — currently paused' : 'Active')
-      : 'Not detected — install OpenChronicle to enable';
-    document.getElementById('ambient-pause').addEventListener('click', async () => {
-      await fetch('/api/memory/ambient/pause', {method: 'POST'});
-      el.textContent = 'Available — currently paused';
-    });
-  } catch (e) {
-    document.getElementById('ambient-status').textContent = '(error reading status)';
-  }
 })();
