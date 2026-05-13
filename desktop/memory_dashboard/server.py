@@ -14,7 +14,18 @@ from aiohttp import web
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def build_app(memory_retriever_url: str) -> web.Application:
+def build_app(
+    memory_retriever_url: str,
+    *,
+    openchronicle_bridge_url: str = "",
+) -> web.Application:
+    """Build the dashboard aiohttp app.
+
+    memory_retriever_url      — http://127.0.0.1:<memory_port>/  (mem0 + writer)
+    openchronicle_bridge_url  — http://127.0.0.1:<openchronicle_port>/ if the
+                                bridge spawned, else "" (Capture Inbox shows
+                                an empty/unavailable state).
+    """
     app = web.Application()
 
     async def index(_: web.Request) -> web.Response:
@@ -49,6 +60,33 @@ def build_app(memory_retriever_url: str) -> web.Application:
             except Exception as exc:
                 return web.json_response({"error": str(exc)}, status=502)
 
+    # --- ONP v0.5 — Capture Inbox -----------------------------------------
+    # The inbox shows recent OpenChronicle screen events so the user can curate
+    # them BEFORE they commit to memory. If the bridge isn't running (user
+    # chose "skip" in the wizard or hasn't installed OC), this returns an
+    # empty list — the dashboard then renders an "OpenChronicle not available"
+    # state instead of an error.
+
+    async def capture_inbox(req: web.Request) -> web.Response:
+        if not openchronicle_bridge_url:
+            return web.json_response(
+                {"available": False, "events": [], "reason": "openchronicle not detected"}
+            )
+        minutes = int(req.query.get("minutes", "30"))
+        url = f"{openchronicle_bridge_url}/context/recent"
+        async with httpx.AsyncClient(timeout=5) as client:
+            try:
+                r = await client.get(url, params={"minutes": minutes})
+                r.raise_for_status()
+                payload = r.json()
+                events = payload.get("events") if isinstance(payload, dict) else payload
+                return web.json_response({"available": True, "events": list(events or [])})
+            except Exception as exc:
+                return web.json_response(
+                    {"available": True, "events": [], "error": str(exc)},
+                    status=502,
+                )
+
     async def theme(_: web.Request) -> web.Response:
         try:
             from desktop.config import default_config_path, load_or_create
@@ -61,6 +99,7 @@ def build_app(memory_retriever_url: str) -> web.Application:
     app.router.add_get("/api/memory/{path:.+}", proxy)
     app.router.add_delete("/api/memory/{path:.+}", proxy)
     app.router.add_post("/api/memory/{path:.+}", proxy)
+    app.router.add_get("/api/capture/inbox", capture_inbox)
     app.router.add_get("/api/theme", theme)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)

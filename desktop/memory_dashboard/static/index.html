@@ -8,6 +8,19 @@
 <body>
   <main>
     <h1>Memory</h1>
+
+    <!-- ONP v0.5 — Capture Inbox: events from OpenChronicle awaiting curation -->
+    <section id="inbox-section">
+      <div class="inbox-header">
+        <h2>Recent capture <span class="count" id="inbox-count">0</span></h2>
+        <p class="hint">Approve to save to memory. Dismiss to hide for this session.</p>
+      </div>
+      <p id="inbox-empty" class="empty-state" hidden>
+        OpenChronicle not detected. Nothing being captured.
+      </p>
+      <ul id="inbox-list"></ul>
+    </section>
+
     <section>
       <h2>Preferences <span class="count" id="pref-count">0</span></h2>
       <ul id="pref-list"></ul>
@@ -19,11 +32,6 @@
     <section>
       <h2>Episodes <span class="count" id="ep-count">0</span></h2>
       <ul id="ep-list"></ul>
-    </section>
-    <section>
-      <h2>Ambient context (OpenChronicle)</h2>
-      <p id="ambient-status">Checking…</p>
-      <button id="ambient-pause">Pause</button>
     </section>
   </main>
   <script src="/static/dashboard.js"></script>
