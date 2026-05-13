@@ -187,11 +187,20 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     )
     base_js = f"""
     (function() {{
+      // P1-MED-08 audit fix: idempotent injection. On Next.js soft navigations
+      // the loaded event fires repeatedly; if the theme hasn't changed there's
+      // nothing to do. Skip re-injection when the prior <style data-theme="X">
+      // matches the active theme.
+      var THEME_ID = "{theme_id}";
+      var prior = document.getElementById('onp-theme-injection');
+      if (prior && prior.dataset.theme === THEME_ID) return;
+
       // Set theme mode class BEFORE injecting variables — shadcn checks .dark
       {body_class_setup}
 
       var s = document.createElement('style');
       s.id = 'onp-theme-injection';
+      s.dataset.theme = THEME_ID;
       s.textContent = `
         /* Open Notebook Plus theme — full shadcn token override
            (overrides both light + dark default blocks in upstream globals.css) */
@@ -222,8 +231,6 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
         }}
         .grid > * {{ min-width: 0; }}
       `;
-      // Remove any prior injection so theme switches don't stack
-      var prior = document.getElementById('onp-theme-injection');
       if (prior) prior.remove();
       document.head.appendChild(s);
     }})();
