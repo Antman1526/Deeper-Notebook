@@ -222,7 +222,7 @@ export-docs:
 # To install the .app after building:
 #   make build-mac-install              # copies dist/Open\ Notebook\ Plus.app → /Applications
 
-.PHONY: build-mac build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg build-mac-clean build-mac-distclean build-mac-install
+.PHONY: build-mac build-mac-test build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg build-mac-clean build-mac-distclean build-mac-install
 
 BUILD_PYTHON ?= python3.12
 BUILD_VENV   := .build-venv
@@ -233,7 +233,7 @@ BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
 # Detect CPU arch (arm64 vs x86_64) — drives the DMG filename.
 BUILD_ARCH := $(shell uname -m)
 
-build-mac: build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
+build-mac: build-mac-test build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
 	@echo ""
 	@echo "✅ macOS build complete:"
 	@echo "    dist/Open Notebook Plus.app"
@@ -241,6 +241,13 @@ build-mac: build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinst
 	@echo ""
 	@echo "Run with:  open 'dist/Open Notebook Plus.app'"
 	@echo "Tail logs: tail -F ~/.open-notebook-plus/logs/*.log"
+
+# Stage 0: precondition — fast unit suite. Catches regressions before we
+# spend 15+ min on a build that's going to be DOA. Uses the test venv (3.14)
+# which is separate from the build venv (3.12). P2-MED-12 audit fix.
+build-mac-test:
+	@echo "🧪 Running unit tests (precondition for build-mac)…"
+	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q 2>&1 | tail -3
 
 # Stage 1: isolated build venv with pinned deps (separate from .venv used for tests).
 build-mac-venv:
