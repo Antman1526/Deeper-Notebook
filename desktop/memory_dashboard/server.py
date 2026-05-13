@@ -48,6 +48,7 @@ def build_app(
     memory_retriever_url: str,
     *,
     openchronicle_bridge_url: str = "",
+    upstream_api_url: str = "",
 ) -> web.Application:
     """Build the dashboard aiohttp app.
 
@@ -55,6 +56,9 @@ def build_app(
     openchronicle_bridge_url  — http://127.0.0.1:<openchronicle_port>/ if the
                                 bridge spawned, else "" (Capture Inbox shows
                                 an empty/unavailable state).
+    upstream_api_url          — http://127.0.0.1:<api_port>      (FastAPI;
+                                feeds the 'Active models' panel which shows
+                                which model fills each role slot).
     """
     app = web.Application()
 
@@ -139,6 +143,48 @@ def build_app(
         _save_last_seen(ts)
         return web.json_response({"ok": True, "last_seen": ts})
 
+    async def active_models(_: web.Request) -> web.Response:
+        """Resolve each DefaultModels slot → human-readable model name.
+
+        The dashboard surfaces this at the top so users see which model is
+        currently doing what (chat / tools / reasoning / etc.) without
+        having to context-switch to the Settings → Models page.
+        """
+        if not upstream_api_url:
+            return web.json_response({"available": False, "slots": {}})
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                defaults_resp, models_resp = await client.get(
+                    f"{upstream_api_url}/api/models/defaults"
+                ), await client.get(f"{upstream_api_url}/api/models")
+                defaults_resp.raise_for_status()
+                models_resp.raise_for_status()
+                defaults = defaults_resp.json() or {}
+                models = models_resp.json() or []
+        except Exception as exc:
+            return web.json_response(
+                {"available": False, "slots": {}, "error": str(exc)},
+                status=502,
+            )
+        # id → name lookup for human-readable display
+        id_to_name = {m.get("id", ""): m.get("name", "") for m in models}
+        # Order matches the Settings panel for consistency.
+        slot_to_field = [
+            ("Chat",            "default_chat_model"),
+            ("Tools",           "default_tools_model"),
+            ("Reasoning",       "default_reasoning_model"),
+            ("Transformation",  "default_transformation_model"),
+            ("Large Context",   "large_context_model"),
+            ("Embedding",       "default_embedding_model"),
+            ("Text-to-Speech",  "default_text_to_speech_model"),
+            ("Speech-to-Text",  "default_speech_to_text_model"),
+        ]
+        slots = {}
+        for label, field in slot_to_field:
+            v = defaults.get(field)
+            slots[label] = id_to_name.get(v, v) if v else None
+        return web.json_response({"available": True, "slots": slots})
+
     async def theme(_: web.Request) -> web.Response:
         try:
             from desktop.config import default_config_path, load_or_create
@@ -153,6 +199,7 @@ def build_app(
     app.router.add_post("/api/memory/{path:.+}", proxy)
     app.router.add_get("/api/capture/inbox", capture_inbox)
     app.router.add_post("/api/capture/mark_seen", capture_mark_seen)
+    app.router.add_get("/api/dashboard/active-models", active_models)
     app.router.add_get("/api/theme", theme)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)
