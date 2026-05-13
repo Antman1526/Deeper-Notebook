@@ -91,6 +91,8 @@ class DefaultModelsResponse(BaseModel):
     default_speech_to_text_model: Optional[str] = None
     default_embedding_model: Optional[str] = None
     default_tools_model: Optional[str] = None
+    # ONP v0.5 — slow-but-deep reasoning model slot (R1, gpt-oss, Nemotron etc.)
+    default_reasoning_model: Optional[str] = None
 
 
 class ProviderAvailabilityResponse(BaseModel):

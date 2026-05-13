@@ -31,6 +31,8 @@ class Pick:
 #   ctx_bias: bonus per log10(context_len). Used for `large_context`.
 _RECIPES: dict[str, dict] = {
     "chat": {
+        # Casual conversational use. Reasoning models are excluded (the
+        # `kinds: {"chat"}` filter — they live in the reasoning slot now).
         "kinds": {"chat"},
         "weights": {"chat": 0.55, "speed": 0.25, "tools": 0.10, "reasoning": -0.10},
         "require": None,
@@ -39,6 +41,15 @@ _RECIPES: dict[str, dict] = {
         "kinds": {"chat"},
         "weights": {"tools": 0.65, "chat": 0.25, "speed": 0.10},
         "require": lambda d: d.score("tools") >= 0.55,
+    },
+    "reasoning": {
+        # Slow-but-deep slot — used for hard questions, code review, multi-step
+        # analysis. Accepts chat models too if they happen to score high on
+        # reasoning (e.g. Qwen3.6-35B-A3B with reasoning=0.88), not just
+        # purpose-built reasoning models.
+        "kinds": {"chat", "reasoning"},
+        "weights": {"reasoning": 0.70, "code": 0.15, "chat": 0.10, "speed": -0.05},
+        "require": lambda d: d.score("reasoning") >= 0.75,
     },
     "transformation": {
         # Summaries / insights — depth matters, speed less critical

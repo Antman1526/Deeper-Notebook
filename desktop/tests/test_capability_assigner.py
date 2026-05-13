@@ -83,6 +83,10 @@ EXPECTED_PICKS = [
     ("large_context",  "Qwen"),
     # Transformation favors reasoning + chat — Qwen3.6-27B should win
     ("transformation", "Qwen3.6-27B"),
+    # ONP v0.5 — Reasoning slot picks the purpose-built reasoner
+    # (DeepSeek-R1-Distill is the only model in the test pool with
+    # reasoning >= 0.75)
+    ("reasoning",      "R1-Distill"),
 ]
 
 
