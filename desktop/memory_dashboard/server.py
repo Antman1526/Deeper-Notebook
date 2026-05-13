@@ -25,23 +25,44 @@ def _capture_state_path() -> Path:
     return base / ".open-notebook-plus" / "capture_state.json"
 
 
-def _load_last_seen() -> str:
+def _load_capture_state() -> dict:
+    """Returns full capture state dict: {last_seen, muted_apps}."""
     p = _capture_state_path()
     if not p.exists():
-        return ""
+        return {"last_seen": "", "muted_apps": []}
     try:
-        return json.loads(p.read_text()).get("last_seen", "")
+        data = json.loads(p.read_text())
+        return {
+            "last_seen": data.get("last_seen", ""),
+            "muted_apps": list(data.get("muted_apps", [])),
+        }
     except Exception:
-        return ""
+        return {"last_seen": "", "muted_apps": []}
 
 
-def _save_last_seen(ts: str) -> None:
+def _save_capture_state(state: dict) -> None:
+    """Writes the full state dict back. Best-effort — missing state just
+    means the inbox shows more events."""
     p = _capture_state_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
-        p.write_text(json.dumps({"last_seen": ts}))
+        p.write_text(json.dumps({
+            "last_seen": state.get("last_seen", ""),
+            "muted_apps": sorted(set(state.get("muted_apps", []))),
+        }))
     except Exception:
-        pass  # best-effort; missing-state means inbox just shows more
+        pass
+
+
+# Legacy helpers — preserved for tests that previously called them directly.
+def _load_last_seen() -> str:
+    return _load_capture_state().get("last_seen", "")
+
+
+def _save_last_seen(ts: str) -> None:
+    state = _load_capture_state()
+    state["last_seen"] = ts
+    _save_capture_state(state)
 
 
 def build_app(
@@ -123,14 +144,23 @@ def build_app(
             payload = r.json()
             events = payload.get("events") if isinstance(payload, dict) else payload
             events = list(events or [])
+            state = _load_capture_state()
             # P1-HIGH-05: filter out events already acknowledged in past
             # sessions. Events with no `ts` always pass (we can't compare).
-            last_seen = _load_last_seen()
+            last_seen = state.get("last_seen", "")
             if last_seen:
                 events = [e for e in events
                           if not e.get("ts") or e["ts"] > last_seen]
-            return web.json_response({"available": True, "events": events,
-                                      "last_seen": last_seen})
+            # v0.5.8 — per-app mute. Drop events whose `app` field matches
+            # any muted app (case-insensitive substring match).
+            muted_apps = [a.lower() for a in state.get("muted_apps", [])]
+            if muted_apps:
+                events = [e for e in events
+                          if not any(m in (e.get("app") or "").lower() for m in muted_apps)]
+            return web.json_response({
+                "available": True, "events": events,
+                "last_seen": last_seen, "muted_apps": state.get("muted_apps", []),
+            })
         except Exception as exc:
             return web.json_response(
                 {"available": True, "events": [], "error": str(exc)},
@@ -150,6 +180,30 @@ def build_app(
             return web.json_response({"error": "ts required"}, status=400)
         _save_last_seen(ts)
         return web.json_response({"ok": True, "last_seen": ts})
+
+    async def capture_mute(req: web.Request) -> web.Response:
+        """v0.5.8 — toggle an app's mute state. Body: {app: "VSCode",
+        action: "mute" | "unmute"}. Persists to capture_state.json so the
+        rule survives restarts."""
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        app_name = (body.get("app") or "").strip()
+        action = body.get("action", "mute")
+        if not app_name:
+            return web.json_response({"error": "app required"}, status=400)
+        state = _load_capture_state()
+        muted = set(state.get("muted_apps", []))
+        if action == "mute":
+            muted.add(app_name)
+        elif action == "unmute":
+            muted.discard(app_name)
+        else:
+            return web.json_response({"error": "action must be mute|unmute"}, status=400)
+        state["muted_apps"] = sorted(muted)
+        _save_capture_state(state)
+        return web.json_response({"ok": True, "muted_apps": state["muted_apps"]})
 
     async def active_models(_: web.Request) -> web.Response:
         """Resolve each DefaultModels slot → human-readable model name.
@@ -236,6 +290,7 @@ def build_app(
     app.router.add_post("/api/memory/{path:.+}", proxy)
     app.router.add_get("/api/capture/inbox", capture_inbox)
     app.router.add_post("/api/capture/mark_seen", capture_mark_seen)
+    app.router.add_post("/api/capture/mute", capture_mute)
     app.router.add_get("/api/dashboard/active-models", active_models)
     app.router.add_get("/api/dashboard/health", health)
     app.router.add_get("/api/theme", theme)

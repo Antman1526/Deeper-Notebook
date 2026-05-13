@@ -125,6 +125,15 @@ button.secondary:hover { border-color: var(--muted); }
 }
 .dark-toggle:hover { border-color: var(--primary); }
 
+/* v0.5.8 — setup-screen explainer text */
+.setup-explainer {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 12px 0 4px;
+  max-width: 480px;
+}
+
 .progress-list { list-style: none; padding: 0; margin: 16px 0; }
 .progress-list li {
   padding: 8px 12px;
