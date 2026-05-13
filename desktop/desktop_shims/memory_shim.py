@@ -84,11 +84,7 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     # SurrealDB table names mem0 stores under. `memory_id` in SurrealMemoryStore
     # is a full record reference like `memory_fact:abc-123` — without this
     # mapping, DELETE `fact:abc` references a non-existent table.
-    _KIND_TO_TABLE = {
-        "fact": "memory_fact",
-        "preference": "memory_preference",
-        "episode": "memory_episode",
-    }
+    from desktop.memory.constants import KIND_TO_TABLE as _KIND_TO_TABLE
 
     @app.delete("/api/memory/{kind}/{id}")
     def delete(kind: str, id: str) -> dict:
