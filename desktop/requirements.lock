@@ -658,7 +658,9 @@ av==17.0.1
 ctranslate2==4.7.1
 flatbuffers==25.12.19
 onnxruntime==1.25.1
-protobuf==7.34.1
+# protobuf bound by mem0ai==2.0.2's <7.0.0 cap; loosen so uv picks a v6
+# compatible with onnxruntime (validated to install 6.x cleanly).
+protobuf>=5.29.6,<7.0.0
 piper-tts==1.4.2
 
 # v0.4 memory additions
