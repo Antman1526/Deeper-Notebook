@@ -72,6 +72,11 @@ class ModelsService:
         )
         defaults.default_embedding_model = defaults_data.get("default_embedding_model")
         defaults.default_tools_model = defaults_data.get("default_tools_model")
+        # ONP v0.5 — 8th slot. setattr keeps this working on DefaultModels
+        # instances created before the field was added to the domain model.
+        if "default_reasoning_model" in defaults_data:
+            setattr(defaults, "default_reasoning_model",
+                    defaults_data.get("default_reasoning_model"))
 
         return defaults
 
@@ -85,6 +90,7 @@ class ModelsService:
             "default_speech_to_text_model": defaults.default_speech_to_text_model,
             "default_embedding_model": defaults.default_embedding_model,
             "default_tools_model": defaults.default_tools_model,
+            "default_reasoning_model": getattr(defaults, "default_reasoning_model", None),
         }
 
         response = api_client.update_default_models(**updates)
@@ -104,6 +110,9 @@ class ModelsService:
         )
         defaults.default_embedding_model = defaults_data.get("default_embedding_model")
         defaults.default_tools_model = defaults_data.get("default_tools_model")
+        if "default_reasoning_model" in defaults_data:
+            setattr(defaults, "default_reasoning_model",
+                    defaults_data.get("default_reasoning_model"))
 
         return defaults
 
