@@ -114,19 +114,27 @@ def _mock_client_responses(
     client.__enter__ = MagicMock(return_value=client)
     client.__exit__ = MagicMock(return_value=False)
 
-    # GET /credentials → empty list on first call, then with the new cred
-    cred_with_id = {"id": post_credential_id, "name": "Ollama (local)"}
+    # On a fresh first run _ensure_credential gets the new cred's id directly
+    # from the POST response, so there is no follow-up GET /credentials. The
+    # next two GETs come from v0.5's capability-aware assignment:
+    #   GET /api/models/defaults — read current to preserve manual overrides
+    #   GET /api/models          — read all to score
+    registered_model = {"id": "model:1", "name": "llama3.1:latest", "type": "language"}
     client.get.side_effect = [
-        make_resp(200, credentials_list),   # first GET /credentials
-        make_resp(200, models_list),        # GET /models
-        make_resp(200, [cred_with_id]),     # GET /credentials (fetch id after create)
+        make_resp(200, credentials_list),    # GET /credentials (existence check)
+        make_resp(200, models_list),         # GET /models      (existence check)
+        make_resp(200, {}),                  # GET /api/models/defaults (no manual overrides)
+        make_resp(200, [registered_model]),  # GET /api/models  (scoring pool)
     ]
 
-    # POST /credentials
+    # POST /credentials, POST /models (auto-assign endpoint no longer called)
     client.post.side_effect = [
         make_resp(201, {"id": post_credential_id, "name": "Ollama (local)"}),  # POST /credentials
-        make_resp(200, {"id": "model:1", "name": "llama3.1:latest", "type": "language"}),  # POST /models
-        make_resp(200, {"assigned": {"default_chat_model": "model:1"}, "skipped": [], "missing": []}),  # auto-assign
+        make_resp(200, registered_model),                                       # POST /models
+    ]
+    # v0.5 — PUT /api/models/defaults replaces the old auto-assign POST
+    client.put.side_effect = [
+        make_resp(200, {}),
     ]
     return client
 
@@ -148,8 +156,10 @@ def test_auto_register_is_idempotent(tmp_path):
 
         auto_register("http://127.0.0.1:9999", cfg)
 
-        # POST /credentials + POST /models + POST /models/auto-assign
-        assert client1.post.call_count == 3
+        # v0.5: POST /credentials + POST /models. The old POST /models/auto-assign
+        # was replaced by PUT /api/models/defaults (asserted separately below).
+        assert client1.post.call_count == 2
+        assert client1.put.call_count == 1
 
         # Second run: credential and model already exist
         import json
@@ -176,8 +186,10 @@ def test_auto_register_is_idempotent(tmp_path):
 
         auto_register("http://127.0.0.1:9999", cfg)
 
-        # No POSTs should happen on second run (everything exists)
+        # No POSTs / PUTs should happen on second run — nothing new registered,
+        # so we don't even enter the assignment phase.
         assert client2.post.call_count == 0
+        assert client2.put.call_count == 0
 
 
 def test_register_voice_models_creates_credentials_and_models(monkeypatch):
