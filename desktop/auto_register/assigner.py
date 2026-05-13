@@ -17,6 +17,19 @@ from pathlib import Path
 from desktop.auto_register.capability import ModelDescriptor, score_model
 
 
+def _detect_total_ram_gb() -> float | None:
+    """Memoize the system-RAM probe — sysconf is constant per process."""
+    return _detect_total_ram_gb._cached  # type: ignore[attr-defined]
+
+
+try:
+    _detect_total_ram_gb._cached = (  # type: ignore[attr-defined]
+        os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
+    )
+except (OSError, AttributeError, ValueError):
+    _detect_total_ram_gb._cached = None  # type: ignore[attr-defined]
+
+
 def _get_chat_ram_ceiling_gb() -> float:
     """Compute the chat-slot RAM ceiling in GB.
 
@@ -41,12 +54,10 @@ def _get_chat_ram_ceiling_gb() -> float:
             return max(0.5, float(env))
         except ValueError:
             pass
-    try:
-        total_bytes = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
-        total_gb = total_bytes / (1024 ** 3)
-        return max(3.0, min(32.0, total_gb * 0.40))
-    except (OSError, AttributeError, ValueError):
-        return 4.0  # safe fallback when sysconf isn't available (Windows)
+    total_gb = _detect_total_ram_gb()
+    if total_gb is None:
+        return 4.0  # sysconf unavailable (Windows fallback)
+    return max(3.0, min(32.0, total_gb * 0.40))
 
 
 @dataclass(frozen=True)

@@ -50,6 +50,55 @@ ul li:hover button { opacity: 1; }
 }
 .link-btn:hover { opacity: 1; }
 
+/* ONP v0.5.5 — Page header with subtitle + search */
+.page-header { margin-bottom: 18px; }
+.page-header h1 { margin-bottom: 4px; }
+.subtitle {
+  color: var(--muted, #888);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-bar input {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #ccc);
+  background: var(--surface, #fff);
+  color: var(--text, #222);
+  font: inherit;
+  font-size: 13px;
+}
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--primary, #2D7FF9);
+}
+#memory-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted, #888);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+/* ONP v0.5.5 — system info footer */
+.system-info {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted, #888);
+  margin-top: 24px;
+  padding: 12px 0;
+  opacity: 0.7;
+}
+
 /* ONP v0.5.4 — Active models panel */
 .active-models dl {
   display: grid;
