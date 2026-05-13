@@ -17,12 +17,36 @@ from pathlib import Path
 from desktop.auto_register.capability import ModelDescriptor, score_model
 
 
-# v0.5.1 audit: the chat slot now filters by RAM so we always pick a
-# fast/responsive model — the previous setup would let Hermes-3 (5 GB) win,
-# slow on machines with <16 GB RAM. Override via env var if you want bigger:
-#   ONP_CHAT_RAM_GB_CEILING=8 → allows mid-size models
-#   ONP_CHAT_RAM_GB_CEILING=99 → effectively unbounded (any chat model)
-_CHAT_RAM_CEILING_GB = float(os.environ.get("ONP_CHAT_RAM_GB_CEILING", "4.0"))
+def _get_chat_ram_ceiling_gb() -> float:
+    """Compute the chat-slot RAM ceiling in GB.
+
+    Adaptive by default: ~40% of total system RAM, clamped to [3, 32] GB.
+    Floor of 3 GB ensures gemma-4-E2B (3 GB) qualifies on small machines.
+    Cap of 32 GB ensures the chat slot never tries to load a frontier model
+    that would starve the rest of the supervisor process tree.
+
+    Examples (clamped 40% rule):
+      8 GB Mac  → ceiling = 3.0 GB  (Llama-3.2-3B / gemma-4-E2B fit)
+      16 GB Mac → ceiling = 6.4 GB  (Hermes-3-8B / Qwen3.5-9B fit)
+      32 GB Mac → ceiling = 12.8 GB (Qwen2.5-14B fits comfortably)
+      64 GB Mac → ceiling = 25.6 GB (Qwen3.6-35B-A3B at 21 GB fits)
+      128 GB+   → ceiling = 32.0 GB (Qwen3.6-35B-A3B still wins)
+
+    Env var override:
+      ONP_CHAT_RAM_GB_CEILING=N    pins to N GB regardless of system RAM
+    """
+    env = os.environ.get("ONP_CHAT_RAM_GB_CEILING")
+    if env:
+        try:
+            return max(0.5, float(env))
+        except ValueError:
+            pass
+    try:
+        total_bytes = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        total_gb = total_bytes / (1024 ** 3)
+        return max(3.0, min(32.0, total_gb * 0.40))
+    except (OSError, AttributeError, ValueError):
+        return 4.0  # safe fallback when sysconf isn't available (Windows)
 
 
 @dataclass(frozen=True)
@@ -43,10 +67,11 @@ _RECIPES: dict[str, dict] = {
     "chat": {
         # Casual conversational use. Reasoning models are excluded (the
         # `kinds: {"chat"}` filter — they live in the reasoning slot now).
-        # RAM-ceiling-bound so chat stays responsive on small machines.
+        # RAM-ceiling-bound to the current system; bigger machines get bigger
+        # / higher-quality chat models. See _get_chat_ram_ceiling_gb() above.
         "kinds": {"chat"},
         "weights": {"chat": 0.55, "speed": 0.25, "tools": 0.10, "reasoning": -0.10},
-        "require": lambda d: d.ram_gb_q4 <= _CHAT_RAM_CEILING_GB,
+        "require": lambda d: d.ram_gb_q4 <= _get_chat_ram_ceiling_gb(),
     },
     "tools": {
         "kinds": {"chat"},
@@ -168,7 +193,7 @@ def pick_chat_llm_file(
     """
     if not gguf_dir.exists():
         return None
-    ceiling = ram_ceiling_gb if ram_ceiling_gb is not None else _CHAT_RAM_CEILING_GB
+    ceiling = ram_ceiling_gb if ram_ceiling_gb is not None else _get_chat_ram_ceiling_gb()
     recipe = _RECIPES["chat"]
 
     pool: list[tuple[float, Path, ModelDescriptor]] = []
