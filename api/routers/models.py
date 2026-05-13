@@ -304,6 +304,7 @@ async def get_default_models():
             default_speech_to_text_model=defaults.default_speech_to_text_model,  # type: ignore[attr-defined]
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
+            default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
         )
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
@@ -339,6 +340,8 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             defaults.default_embedding_model = defaults_data.default_embedding_model  # type: ignore[attr-defined]
         if defaults_data.default_tools_model is not None:
             defaults.default_tools_model = defaults_data.default_tools_model  # type: ignore[attr-defined]
+        if defaults_data.default_reasoning_model is not None:
+            defaults.default_reasoning_model = defaults_data.default_reasoning_model  # type: ignore[attr-defined]
 
         await defaults.update()
 
@@ -352,6 +355,7 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             default_speech_to_text_model=defaults.default_speech_to_text_model,  # type: ignore[attr-defined]
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
+            default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
         )
     except HTTPException:
         raise
