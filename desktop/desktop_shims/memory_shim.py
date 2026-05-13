@@ -139,6 +139,32 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
         )
         return {"ok": True}
 
+    # --- ONP v0.5.8 — edit-in-place for memory rows ------------------------
+    # The dashboard's "Edit" button posts here. mem0's Memory.update handles
+    # re-embedding so semantic search reflects the new text.
+
+    @app.post("/api/memory/update")
+    def memory_update(body: dict) -> dict:
+        kind = body.get("kind")
+        rid = (body.get("id") or "").strip()
+        text = (body.get("text") or "").strip()
+        if kind not in _KIND_TO_TABLE:
+            raise HTTPException(status_code=400, detail="invalid kind")
+        if not rid:
+            raise HTTPException(status_code=400, detail="id required")
+        if not text:
+            raise HTTPException(status_code=400, detail="text required")
+        table = _KIND_TO_TABLE[kind]
+        # mem0's Memory.update takes the full record id (table:id). The data
+        # dict is the new memory content; mem0 re-embeds before persisting.
+        memory_id = rid if ":" in rid else f"{table}:{rid}"
+        try:
+            mem_client.update(memory_id=memory_id, data=text)
+        except Exception as exc:
+            # mem0 raises on unknown id / bad shape — surface as 400
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
     return app
 
 

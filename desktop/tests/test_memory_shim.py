@@ -139,3 +139,50 @@ def test_capture_approve_rejects_invalid_kind():
                    json={"text": "hi", "kind": "banana"})
         assert r.status_code == 400
         mem.add.assert_not_called()
+
+
+# ---------------------------------------------------------- v0.5.8 Memory edit
+
+def test_memory_update_calls_mem_client_update():
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/update", json={
+            "kind": "fact", "id": "abc-123", "text": "user prefers tabs"
+        })
+        assert r.status_code == 200
+        mem.update.assert_called_once()
+        # Full record id is reconstructed from kind + id
+        call = mem.update.call_args
+        assert call.kwargs["memory_id"] == "memory_fact:abc-123"
+        assert call.kwargs["data"] == "user prefers tabs"
+
+
+def test_memory_update_accepts_full_record_id():
+    """If the caller passes a full id like 'memory_fact:abc', we pass it
+    through unchanged — useful for the dashboard's search results where the
+    full id is already known."""
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/update", json={
+            "kind": "fact", "id": "memory_fact:xyz", "text": "y"
+        })
+        assert r.status_code == 200
+        call = mem.update.call_args
+        assert call.kwargs["memory_id"] == "memory_fact:xyz"
+
+
+def test_memory_update_rejects_missing_fields():
+    mem = _fake_memory_client()
+    app = build_app(mem_client=mem)
+    with TestClient(app) as c:
+        for bad in [
+            {"kind": "fact", "id": "abc"},               # no text
+            {"kind": "fact", "text": "x"},                # no id
+            {"id": "abc", "text": "x"},                   # no kind
+            {"kind": "banana", "id": "abc", "text": "x"}, # invalid kind
+        ]:
+            r = c.post("/api/memory/update", json=bad)
+            assert r.status_code == 400
+        mem.update.assert_not_called()
