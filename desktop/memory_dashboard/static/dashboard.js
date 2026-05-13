@@ -119,13 +119,29 @@
     const actions = document.createElement('div');
     actions.className = 'inbox-actions';
 
+    // P1-MED-09 audit fix: dropdown for kind so user can save as
+    // fact / preference / episode (was hardcoded to 'fact' only).
+    const kindSelect = document.createElement('select');
+    kindSelect.className = 'btn-approve';
+    kindSelect.setAttribute('aria-label', 'Save as kind');
+    for (const k of ['fact', 'preference', 'episode']) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = `Save as ${k}`;
+      kindSelect.appendChild(opt);
+    }
+    // Default to fact, but make sure changing the dropdown alone doesn't fire
+    // a save — user has to click the Save button next to it.
     const approveBtn = document.createElement('button');
     approveBtn.className = 'btn-approve';
-    approveBtn.textContent = 'Save as fact';
+    approveBtn.textContent = 'Save';
     approveBtn.addEventListener('click', async () => {
       approveBtn.disabled = true;
+      kindSelect.disabled = true;
+      const oldText = approveBtn.textContent;
       approveBtn.textContent = 'Saving…';
       try {
+        const kind = kindSelect.value;
         const resp = await fetch('/api/memory/capture/approve', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -134,16 +150,26 @@
             source_app: ev.app || '',
             event_id: eventId(ev),
             ts: ev.ts || '',
-            kind: 'fact',
+            kind: kind,
           }),
         });
         if (!resp.ok) throw new Error('save failed');
         dismissed.add(eventId(ev));
         loadInbox();
-        await loadList('fact', 'fact-list', 'fact-count');
+        // Refresh the matching list at the bottom of the dashboard so the
+        // newly-saved record shows up immediately.
+        const listMap = {
+          fact: ['fact', 'fact-list', 'fact-count'],
+          preference: ['preference', 'pref-list', 'pref-count'],
+          episode: ['episode', 'ep-list', 'ep-count'],
+        };
+        const args = listMap[kind];
+        if (args) await loadList(...args);
       } catch (e) {
         approveBtn.disabled = false;
-        approveBtn.textContent = 'Save failed — retry';
+        kindSelect.disabled = false;
+        approveBtn.textContent = oldText;
+        approveBtn.title = 'Save failed — click to retry';
       }
     });
 
@@ -155,6 +181,7 @@
       loadInbox();
     });
 
+    actions.appendChild(kindSelect);
     actions.appendChild(approveBtn);
     actions.appendChild(dismissBtn);
     row.appendChild(actions);

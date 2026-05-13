@@ -98,9 +98,15 @@ def test_reset_removes_and_redefines_all_three_tables():
 
 
 @pytest.mark.parametrize("good_id", [
+    # Plain alphanumerics
     "memory_fact:abc",
     "memory_preference:abc-123_def",
     "memory_episode:01HJZ4K0R0XYZ",
+    # mem0-generated IDs include periods (timestamps) and dots — P1-HIGH-06
+    "memory_fact:01HF9G2K8M.x9z",
+    "memory_fact:550e8400-e29b-41d4-a716-446655440000",  # UUID
+    "memory_episode:chat.session.123",                    # dotted path
+    "memory_preference:0x7fff5fbff850",                   # hex
 ])
 def test_validate_vector_id_accepts_whitelisted_shapes(good_id):
     assert _validate_vector_id(good_id) == good_id
@@ -110,11 +116,13 @@ def test_validate_vector_id_accepts_whitelisted_shapes(good_id):
     # Wrong table
     "memory_xyz:abc",
     "user:abc",
-    # Injection attempts
+    # Injection attempts — must STILL be rejected even with the looser id char class
     "memory_fact:abc; DROP TABLE memory_fact",
     "memory_fact:abc'",
+    'memory_fact:abc"',
     "memory_fact:abc\nDELETE memory_fact",
     "memory_fact:abc memory_fact:def",
+    "memory_fact:abc(injected)",
     # Empty parts
     ":abc",
     "memory_fact:",

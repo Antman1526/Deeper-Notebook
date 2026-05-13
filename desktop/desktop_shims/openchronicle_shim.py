@@ -44,10 +44,16 @@ def build_app(mcp_client: Any) -> FastAPI:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import os
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--mcp-url", default="http://127.0.0.1:8742/mcp")
+    # OPENCHRONICLE_MCP_URL env var overrides the default for users who run
+    # OpenChronicle on a non-standard port (P1-MED-10 audit fix).
+    parser.add_argument(
+        "--mcp-url",
+        default=os.environ.get("OPENCHRONICLE_MCP_URL", "http://127.0.0.1:8742/mcp"),
+    )
     args = parser.parse_args(argv)
 
     # Lazy import; only when running for real.

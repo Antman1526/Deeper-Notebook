@@ -38,10 +38,15 @@ from mem0.vector_stores.base import VectorStoreBase
 # in delete()/get()/update(). Surreal's record-id syntax (`table:thing`) doesn't
 # accept naked $-parameters in `FROM`/`DELETE`/`UPDATE` positions in older
 # Surreal versions, so we defend against injection by whitelisting the shape.
-# Anything containing whitespace, quotes, semicolons, or unknown tables is
-# rejected before reaching the database.
+#
+# The `id` portion accepts any character EXCEPT whitespace, quotes, semicolons,
+# parentheses, and angle brackets — the actual SurrealQL injection vectors.
+# This is deliberately broad enough to accept mem0-generated record IDs which
+# can contain periods (timestamps like 01HF9G2K8M.x9z), hyphens (UUIDs), and
+# unicode (P1-HIGH-06 audit fix — previous `[A-Za-z0-9_\-]+` rejected mem0's
+# real IDs and broke .delete()/.update() in production).
 _VALID_VECTOR_ID = re.compile(
-    r"^(memory_fact|memory_preference|memory_episode):[A-Za-z0-9_\-]+$"
+    r"^(memory_fact|memory_preference|memory_episode):[^\s'\";(){}<>]+$"
 )
 
 
