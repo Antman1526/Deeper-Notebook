@@ -428,8 +428,15 @@ def _phase_start_memory_dashboard(ctx: AppContext) -> None:
 
     memory_url = (f"http://127.0.0.1:{ctx.sv.memory_port}/"
                   if getattr(ctx.sv, "memory_port", 0) else "")
+    # ONP v0.5 — wire the OpenChronicle bridge URL through so the dashboard
+    # can power the Capture Inbox. Empty string when the bridge isn't running.
+    oc_url = (f"http://127.0.0.1:{ctx.sv.openchronicle_port}/"
+              if getattr(ctx.sv, "openchronicle_port", 0) else "")
     port, _t, _l, _r = start_aiohttp_server_thread(
-        lambda: _md_build_app(memory_retriever_url=memory_url)
+        lambda: _md_build_app(
+            memory_retriever_url=memory_url,
+            openchronicle_bridge_url=oc_url,
+        )
     )
     ctx.memory_dashboard_port = port
 

@@ -114,6 +114,35 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
         state["ambient_paused"] = True
         return {"ok": True}
 
+    # --- ONP v0.5 — OpenChronicle Capture Inbox ----------------------------
+    # The dashboard's Capture Inbox calls /api/memory/capture/approve after
+    # the user clicks "Save as fact / preference / episode" on a recent
+    # OpenChronicle event. We commit it via mem_client.add (same path as the
+    # writer worker), with source attribution baked into metadata.
+
+    @app.post("/api/memory/capture/approve")
+    def capture_approve(body: dict) -> dict:
+        text = (body.get("text") or "").strip()
+        kind = body.get("kind") or "fact"
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+        if kind not in ("fact", "preference", "episode"):
+            raise HTTPException(status_code=400, detail="invalid kind")
+        metadata = {
+            "kind": kind,
+            "scope": "user",
+            "source": "openchronicle",
+            "source_app": body.get("source_app", ""),
+            "source_event_id": body.get("event_id", ""),
+            "captured_at": body.get("ts", ""),
+        }
+        mem_client.add(
+            messages=text,
+            user_id=USER_ID,
+            metadata=metadata,
+        )
+        return {"ok": True}
+
     return app
 
 
