@@ -73,12 +73,23 @@ def build_app(config_path: Path, on_done: Callable[[], None],
         except Exception:
             return web.json_response({"error": "invalid json"}, status=400)
         url = (body.get("url") or "").strip()
-        allowed_prefixes = (
+        # P2-HIGH-15 audit fix: tightened whitelist — only the exact pages the
+        # wizard actually opens. Previously `https://huggingface.co/` was a
+        # bare prefix that would have accepted any path under it. Now we
+        # match exact-or-with-fragment URLs only.
+        allowed_urls = {
+            "https://github.com/Einsia/OpenChronicle/releases/latest",
             "https://github.com/Einsia/OpenChronicle",
             "https://github.com/Einsia/openchronicle",
-            "https://huggingface.co/",
-        )
-        if not any(url.startswith(p) for p in allowed_prefixes):
+        }
+        # Allow anchor fragments / query strings but not path changes
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(url)
+            normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+        except Exception:
+            normalized = url
+        if normalized not in allowed_urls:
             return web.json_response({"error": "url not whitelisted"}, status=400)
         import webbrowser
         webbrowser.open(url)
