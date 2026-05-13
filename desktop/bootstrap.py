@@ -93,6 +93,42 @@ def _lock_hash(lock_path: Path) -> str:
     return hashlib.sha256(lock_path.read_bytes()).hexdigest()
 
 
+def _bootstrap_log_path() -> Path:
+    """Append-only diagnostic log next to bootstrap.log (same dir)."""
+    base = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+    return base / ".open-notebook-plus" / "logs" / "bootstrap-subprocess.log"
+
+
+def _run_logged(args: list[str], tag: str) -> None:
+    """subprocess.run with stdout+stderr captured to disk, then raised on
+    non-zero exit. Without this, errors from `uv pip install` vanish when the
+    .app is launched from Finder (no terminal attached).
+    """
+    log_path = _bootstrap_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as f:
+        f.write(f"\n===== [{tag}] $ {' '.join(args)} =====\n".encode())
+        f.flush()
+        proc = subprocess.run(
+            args,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+        f.write(f"\n===== [{tag}] exit={proc.returncode} =====\n".encode())
+    if proc.returncode != 0:
+        # Include the tail of the log in the exception so callers (and the
+        # frozen launcher's traceback handler) surface something actionable.
+        try:
+            tail = log_path.read_text(errors="replace").splitlines()[-25:]
+            tail_str = "\n".join(tail)
+        except Exception:
+            tail_str = "(could not read bootstrap-subprocess.log)"
+        raise RuntimeError(
+            f"[{tag}] subprocess failed with exit={proc.returncode}. "
+            f"Last 25 lines of {log_path}:\n{tail_str}"
+        )
+
+
 def is_venv_current(lock_path: Path) -> bool:
     """True iff venv exists AND was provisioned against this exact lock."""
     if not venv_python().exists():
@@ -130,19 +166,19 @@ def ensure_venv(
     venv_dir().parent.mkdir(parents=True, exist_ok=True)
 
     progress("Creating Python environment…")
-    subprocess.run(
+    _run_logged(
         [str(standalone_python), "-m", "venv", str(venv_dir())],
-        check=True,
+        "venv-create",
     )
 
     progress("Installing dependencies (this takes about a minute)…")
-    subprocess.run(
+    _run_logged(
         [
             str(uv_binary), "pip", "install",
             "--python", str(venv_python()),
             "-r", str(lock_path),
         ],
-        check=True,
+        "uv-install",
     )
 
     # Make upstream importable from the venv by writing a .pth file pointing
