@@ -1,0 +1,37 @@
+/* Open Notebook Plus design tokens — layered on top of shadcn's --foreground,
+ * --background, --primary etc. set at runtime by desktop/window.py. These
+ * tokens use color-mix() against shadcn variables so they auto-adapt to the
+ * active theme (light-blue, dracula, nord, …) without per-theme overrides. */
+
+:root {
+  /* Soft translucent versions of the primary/accent colors for chips, hover
+   * states, subtle highlights. Works on both light and dark themes. */
+  --onp-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
+  --onp-accent-strong: color-mix(in oklab, var(--primary) 22%, transparent);
+
+  /* Status colors not present in shadcn defaults */
+  --onp-success: oklch(0.65 0.18 145);
+  --onp-success-soft: color-mix(in oklab, var(--onp-success) 18%, transparent);
+  --onp-warning: oklch(0.78 0.16 75);
+  --onp-warning-soft: color-mix(in oklab, var(--onp-warning) 18%, transparent);
+  --onp-info: var(--primary);
+  --onp-info-soft: var(--onp-accent-soft);
+
+  /* Elevation — subtle border + soft shadow that reads as a card without
+   * fighting the body background. */
+  --onp-elevation-low: 0 1px 2px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+  --onp-elevation-md: 0 4px 12px -2px color-mix(in oklab, var(--foreground) 12%, transparent);
+
+  /* Type scale (not all shadcn themes set these consistently) */
+  --onp-text-xs: 0.75rem;
+  --onp-text-sm: 0.875rem;
+  --onp-text-base: 1rem;
+  --onp-text-lg: 1.125rem;
+
+  /* Spacing rhythm — onp components prefer these over Tailwind's gap-N */
+  --onp-space-1: 0.25rem;
+  --onp-space-2: 0.5rem;
+  --onp-space-3: 0.75rem;
+  --onp-space-4: 1rem;
+  --onp-space-6: 1.5rem;
+}

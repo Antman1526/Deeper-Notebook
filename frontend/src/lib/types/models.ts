@@ -23,6 +23,8 @@ export interface ModelDefaults {
   default_speech_to_text_model?: string | null
   default_embedding_model?: string | null
   default_tools_model?: string | null
+  // ONP v0.5 — dedicated slot for slow-but-deep reasoning models
+  default_reasoning_model?: string | null
 }
 
 export interface ProviderAvailability {

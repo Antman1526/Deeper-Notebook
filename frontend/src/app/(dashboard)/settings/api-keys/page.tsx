@@ -1108,6 +1108,8 @@ function DefaultModelSelectors({
     { key: 'default_transformation_model', label: t('models.transformationModelLabel'), description: t('models.transformationModelDesc'), modelType: 'language', required: true, id: `${generatedId}-transform` },
     { key: 'default_tools_model', label: t('models.toolsModelLabel'), description: t('models.toolsModelDesc'), modelType: 'language', id: `${generatedId}-tools` },
     { key: 'large_context_model', label: t('models.largeContextModelLabel'), description: t('models.largeContextModelDesc'), modelType: 'language', id: `${generatedId}-large` },
+    // ONP v0.5 — 8th slot for slow-but-deep reasoning models (R1, gpt-oss, etc.)
+    { key: 'default_reasoning_model', label: t('models.reasoningModelLabel'), description: t('models.reasoningModelDesc'), modelType: 'language', id: `${generatedId}-reasoning` },
   ]
 
   const defaultConfigs = [...primaryConfigs, ...advancedConfigs]

@@ -850,6 +850,10 @@ export const bnIN = {
     toolsModelDesc: "ফাংশন কলিং এর জন্য ব্যবহৃত - OpenAI বা Anthropic প্রস্তাবিত",
     largeContextModelLabel: "বড় কন্টেক্সট মডেল",
     largeContextModelDesc: "বড় ডকুমেন্ট প্রক্রিয়াকরণের জন্য ব্যবহৃত - Gemini প্রস্তাবিত",
+
+    reasoningModelLabel: "Reasoning Model",
+
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "এমবেডিং মডেল",
     embeddingModelDesc: "সেমান্টিক সার্চ এবং ভেক্টর এমবেডিংয়ের জন্য ব্যবহৃত",
     ttsModelLabel: "টেক্সট-টু-স্পিচ মডেল",
