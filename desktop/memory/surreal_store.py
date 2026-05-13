@@ -102,12 +102,10 @@ class OutputData(BaseModel):
     payload: Optional[dict]
 
 
-_KIND_TO_TABLE = {
-    "fact": "memory_fact",
-    "preference": "memory_preference",
-    "episode": "memory_episode",
-}
-_ALL_TABLES: list[str] = list(_KIND_TO_TABLE.values())
+from desktop.memory.constants import (
+    KIND_TO_TABLE as _KIND_TO_TABLE,
+    ALL_MEMORY_TABLES as _ALL_TABLES,
+)
 
 
 class SurrealMemoryStore(VectorStoreBase):
