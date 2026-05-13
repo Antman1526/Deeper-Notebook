@@ -17,23 +17,75 @@
       list.innerHTML = '';
       records.forEach(rec => {
         const li = document.createElement('li');
+        const recordId = (rec.id || '').replace(/^[^:]+:/, '');
+        const originalText = rec.text || rec.summary || rec.payload?.text || '(no text)';
+
         // Build with DOM APIs + textContent — memory text may contain arbitrary
         // user-derived content (chat messages, file paths, code snippets), so
         // string-interpolating into innerHTML would be an XSS vector.
         const textSpan = document.createElement('span');
         textSpan.style.flex = '1';
-        textSpan.textContent = rec.text || rec.summary || '(no text)';
+        textSpan.textContent = originalText;
 
         const confSpan = document.createElement('span');
         confSpan.style.color = '#888';
         const confNum = typeof rec.confidence === 'number' ? rec.confidence : 0;
         confSpan.textContent = confNum.toFixed(2);
 
-        const btn = document.createElement('button');
-        btn.dataset.kind = kind;
-        btn.dataset.id = (rec.id || '').replace(/^[^:]+:/, '');
-        btn.textContent = 'Forget';
-        btn.addEventListener('click', async (e) => {
+        // v0.5.8 — Edit button (inline). Clicking swaps textSpan for an
+        // <input>, Enter or blur commits via POST /api/memory/update.
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = originalText;
+          input.style.flex = '1';
+          input.style.font = 'inherit';
+          input.style.padding = '4px 8px';
+          input.style.border = '1px solid var(--border, #ccc)';
+          input.style.borderRadius = '4px';
+          input.style.background = 'var(--surface, #fff)';
+          input.style.color = 'var(--text, #222)';
+          textSpan.replaceWith(input);
+          input.focus();
+          input.select();
+          let committed = false;
+          const commit = async () => {
+            if (committed) return;
+            committed = true;
+            const newText = input.value.trim();
+            if (!newText || newText === originalText) {
+              loadList(kind, listId, countId);
+              return;
+            }
+            try {
+              const r = await fetch('/api/memory/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({kind, id: recordId, text: newText}),
+              });
+              if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                alert(`Edit failed: ${err.detail || r.status}`);
+              }
+            } catch (e) {
+              alert(`Edit failed: ${e.message}`);
+            }
+            loadList(kind, listId, countId);
+          };
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') loadList(kind, listId, countId);
+          });
+        });
+
+        const forgetBtn = document.createElement('button');
+        forgetBtn.dataset.kind = kind;
+        forgetBtn.dataset.id = recordId;
+        forgetBtn.textContent = 'Forget';
+        forgetBtn.addEventListener('click', async (e) => {
           if (!confirm('Forget this record?')) return;
           await fetch(`/api/memory/${kind}/${e.target.dataset.id}`, {method: 'DELETE'});
           loadList(kind, listId, countId);
@@ -41,7 +93,8 @@
 
         li.appendChild(textSpan);
         li.appendChild(confSpan);
-        li.appendChild(btn);
+        li.appendChild(editBtn);
+        li.appendChild(forgetBtn);
         list.appendChild(li);
       });
     } catch (e) {
@@ -207,9 +260,32 @@
       loadInbox();
     });
 
+    // v0.5.8 — per-app mute. Posting {app, action: 'mute'} persists across
+    // sessions so noisy apps (1Password, etc.) stay out of the inbox.
+    const muteBtn = document.createElement('button');
+    muteBtn.className = 'btn-dismiss';
+    muteBtn.textContent = ev.app ? `Mute ${ev.app}` : 'Mute';
+    muteBtn.disabled = !ev.app;
+    muteBtn.title = ev.app ? `Stop showing events from "${ev.app}"` : '(no app attribution)';
+    muteBtn.addEventListener('click', async () => {
+      if (!ev.app) return;
+      if (!confirm(`Stop showing all events from "${ev.app}"?`)) return;
+      try {
+        await fetch('/api/capture/mute', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({app: ev.app, action: 'mute'}),
+        });
+        loadInbox();
+      } catch (e) {
+        alert(`Mute failed: ${e.message}`);
+      }
+    });
+
     actions.appendChild(kindSelect);
     actions.appendChild(approveBtn);
     actions.appendChild(dismissBtn);
+    actions.appendChild(muteBtn);
     row.appendChild(actions);
 
     li.appendChild(row);
