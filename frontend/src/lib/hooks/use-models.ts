@@ -116,6 +116,53 @@ export function useProviders() {
   })
 }
 
+/**
+ * ONP v0.5.2 — capability-aware re-evaluation hook. Wired to the
+ * "Re-evaluate model assignments" button in the api-keys settings page.
+ * Uses our local-model scoring engine; `force=true` overrides previous
+ * picks (useful when the user has just downloaded a new model).
+ */
+export function useAutoAssignCapability() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({ force }: { force?: boolean } = {}) =>
+      modelsApi.autoAssignCapability(force ?? false),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: MODEL_QUERY_KEYS.defaults })
+      const assignedCount = Object.keys(result.assigned).length
+      const missingCount = result.missing.length
+      if (assignedCount > 0) {
+        toast({
+          title: t('common.success'),
+          description: `Re-evaluated ${assignedCount} slot${assignedCount === 1 ? '' : 's'}` +
+            (missingCount > 0 ? ` (${missingCount} slot${missingCount === 1 ? '' : 's'} have no eligible model)` : ''),
+        })
+      } else if (missingCount > 0) {
+        toast({
+          title: 'No changes',
+          description: `${missingCount} slot${missingCount === 1 ? ' has' : 's have'} no eligible model.`,
+        })
+      } else {
+        toast({
+          title: 'No changes',
+          description: 'All slots are already assigned. Use Reset to force re-evaluation.',
+        })
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+
 export function useAutoAssignDefaults() {
   const queryClient = useQueryClient()
   const { toast } = useToast()

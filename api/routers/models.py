@@ -780,3 +780,88 @@ async def auto_assign_defaults():
         raise HTTPException(
             status_code=500, detail=f"Error auto-assigning defaults: {str(e)}"
         )
+
+
+@router.post("/models/auto-assign-capability", response_model=AutoAssignResult)
+async def auto_assign_capability(force: bool = False):
+    """ONP v0.5.2 — capability-aware re-evaluation.
+
+    Replaces upstream's PROVIDER_PRIORITY logic with our local-model-aware
+    scorer (desktop/auto_register/capability + assigner). Designed for the
+    "Re-evaluate model assignments" button in the Settings UI: lets users
+    refresh picks after downloading a new model, raising/lowering the chat
+    RAM ceiling, or changing the registry.
+
+    force=true wipes existing assignments before scoring — without this the
+    "never overwrite a manual override" guarantee makes the button a no-op.
+    """
+    try:
+        from open_notebook.database.repository import repo_query
+        from desktop.auto_register.capability import score_model
+        from desktop.auto_register.assigner import assign_all, SLOTS
+
+        # Get all models
+        all_models = await repo_query(
+            "SELECT * FROM model ORDER BY provider, name",
+            {},
+        )
+
+        # Score each model + run the assigner
+        pool = [score_model(m.get("name", "")) for m in all_models if m.get("name")]
+        picks = assign_all(pool)
+
+        # Map slot → upstream DefaultModels field
+        slot_to_field = {
+            "chat": "default_chat_model",
+            "tools": "default_tools_model",
+            "transformation": "default_transformation_model",
+            "large_context": "large_context_model",
+            "reasoning": "default_reasoning_model",
+            "embedding": "default_embedding_model",
+            "tts": "default_text_to_speech_model",
+            "stt": "default_speech_to_text_model",
+        }
+
+        # Build a model-name → id lookup so we can write the upstream ID
+        name_to_model = {m.get("name", ""): m for m in all_models}
+
+        defaults = await DefaultModels.get_instance()
+        assigned: Dict[str, str] = {}
+        skipped: List[str] = []
+        missing: List[str] = []
+
+        for slot in SLOTS:
+            field = slot_to_field.get(slot)
+            if not field:
+                continue
+            pick = picks.get(slot)
+            if pick is None or pick.model is None:
+                missing.append(field)
+                continue
+            current = getattr(defaults, field, None)
+            if current and not force:
+                skipped.append(field)
+                continue
+            m = name_to_model.get(pick.model.name)
+            if not m:
+                missing.append(field)
+                continue
+            model_id = m.get("id", "")
+            assigned[field] = model_id
+            setattr(defaults, field, model_id)
+
+        if assigned:
+            await defaults.update()
+
+        return AutoAssignResult(
+            assigned=assigned,
+            skipped=skipped,
+            missing=missing,
+        )
+
+    except Exception as e:
+        logger.error(f"Error in capability-aware auto-assign: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error in capability-aware auto-assign: {str(e)}",
+        )
