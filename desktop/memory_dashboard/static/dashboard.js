@@ -55,13 +55,19 @@
   // session-local (no backend mute) — re-open the window and they reappear.
   const dismissed = new Set();
 
+  // P1-HIGH-05 — also track the latest ts seen so we can persist it on
+  // approve / dismiss / mark-all and the server-side last_seen filter kicks in.
+  let mostRecentTs = '';
+
   async function loadInbox() {
     const list = document.getElementById('inbox-list');
     const empty = document.getElementById('inbox-empty');
     const countEl = document.getElementById('inbox-count');
+    const markAllBtn = document.getElementById('inbox-mark-all');
     if (!list) return;
     list.innerHTML = '';
     empty.hidden = true;
+    if (markAllBtn) markAllBtn.hidden = true;
 
     let payload;
     try {
@@ -83,6 +89,11 @@
       ev => !dismissed.has(eventId(ev))
     );
     countEl.textContent = String(events.length);
+    // Track the newest event ts for the mark-seen watermark
+    mostRecentTs = events.reduce((max, ev) => {
+      const t = ev.ts || '';
+      return t > max ? t : max;
+    }, '');
 
     if (events.length === 0) {
       empty.hidden = false;
@@ -90,7 +101,22 @@
       return;
     }
 
+    if (markAllBtn) markAllBtn.hidden = false;
     events.forEach(ev => list.appendChild(renderInboxRow(ev)));
+  }
+
+  async function markAllSeen() {
+    if (!mostRecentTs) return;
+    try {
+      await fetch('/api/capture/mark_seen', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ts: mostRecentTs}),
+      });
+      await loadInbox();
+    } catch (e) {
+      // non-fatal
+    }
   }
 
   function eventId(ev) {
@@ -189,6 +215,11 @@
     li.appendChild(row);
     return li;
   }
+
+  // Wire up the "Mark all as seen" button (button is hidden until inbox has
+  // events). Click → POST /api/capture/mark_seen with the newest ts seen.
+  const markAllBtn = document.getElementById('inbox-mark-all');
+  if (markAllBtn) markAllBtn.addEventListener('click', markAllSeen);
 
   await loadInbox();
   await loadList('preference', 'pref-list', 'pref-count');
