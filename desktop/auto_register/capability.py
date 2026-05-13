@@ -46,12 +46,15 @@ def score_model(name: str) -> ModelDescriptor:
             source="registry",
         )
 
-    # 2. Filename regex fallback — first match wins for `kind`, all merge for scores
+    # 2. Filename regex fallback — patterns are ordered baseline → specializing.
+    # Both kind AND scores merge with "last match wins" semantics so a
+    # specializing pattern (e.g. `r1` for reasoning) overrides an earlier
+    # baseline (e.g. `deepseek` for generic chat).
     kind: str | None = None
     scores: dict[str, float] = {}
     for pattern, score_delta, pkind in reg.FALLBACK_PATTERNS:
         if re.search(pattern, name):
-            if kind is None and pkind is not None:
+            if pkind is not None:
                 kind = pkind
             scores.update(score_delta)
     if kind is not None:

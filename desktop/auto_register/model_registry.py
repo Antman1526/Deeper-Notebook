@@ -92,19 +92,42 @@ MODELS: dict[str, dict] = {
 
 # Regex → partial scores update + kind, applied to unknown model names in order.
 # First match wins for `kind`; score updates merge across all matches.
+#
+# IMPORTANT for Ollama-style names: Ollama models look like `llama3.1:latest`
+# or `qwen2.5:14b` (lowercase, no "Instruct" tag) — the registry's HF-format
+# prefixes don't match. The Ollama family patterns below catch them so they
+# don't fall through to the last-resort neutral default. Order: more-specific
+# patterns first (e.g. `coder` before bare family name).
+# Score updates from later patterns OVERWRITE earlier ones (dict.update
+# semantics). Order matters: put broad baselines first, narrower specializing
+# patterns later so e.g. `qwen2.5-coder:32b` ends with the code-specialist
+# scores, not the bare-family ones.
 FALLBACK_PATTERNS: list[tuple[str, dict, str | None]] = [
-    # Voice / embed (kind-determining)
-    (r"(?i)whisper",                       {},                                                       "stt"),
-    (r"(?i)piper",                         {},                                                       "tts"),
-    (r"(?i)nomic.*embed|.*-embed|embed-",  {},                                                       "embed"),
-    # Reasoning families
-    (r"(?i)r1|distill|reasoning|deepthink",{"reasoning": 0.85, "speed": 0.35, "tools": 0.35},        "reasoning"),
-    # Tool-trained
-    (r"(?i)hermes",                        {"tools": 0.92, "chat": 0.83},                             "chat"),
-    # Code-specialized
-    (r"(?i)coder?|code-",                  {"code": 0.85, "chat": 0.55},                              "chat"),
-    # Bare instruct / chat — neutral baseline
-    (r"(?i)instruct|chat",                 {"chat": 0.70, "tools": 0.55},                             "chat"),
+    # ---- Voice / embed (kind-determining) — first match sets the kind ----
+    (r"(?i)whisper",                              {},                                                       "stt"),
+    (r"(?i)piper",                                {},                                                       "tts"),
+    (r"(?i)nomic.*embed|.*-embed|embed-|^bge-",   {},                                                       "embed"),
+    (r"(?i):embed|^text-embedding",               {},                                                       "embed"),  # Ollama / OpenAI styles
+
+    # ---- Broad baselines (run FIRST so specifics can override) ----
+    # Ollama family names — `<family><version>:<tag>` form, lowercase. Without
+    # this, `llama3.1:latest` etc. fell through to neutral 0.5 defaults and
+    # left Tools / Large Context slots empty for Ollama users (P1-CRIT-01).
+    (r"(?i)^(llama|qwen|mistral|mixtral|phi|gemma|smollm|yi|deepseek|nemotron|openchat|starling|aya|tinyllama|granite|olmo)[\d.]*[:_-]?",
+        {"chat": 0.75, "tools": 0.60, "speed": 0.75, "reasoning": 0.60, "code": 0.55}, "chat"),
+    # Bare instruct / chat — generic HF naming
+    (r"(?i)instruct|chat",                        {"chat": 0.70, "tools": 0.55},                            "chat"),
+
+    # ---- Specializing patterns (override the broad baseline above) ----
+    # Code-specialist
+    (r"(?i)coder?|code-|:.*coder|^codellama|^codestral",
+        {"code": 0.85, "chat": 0.55, "tools": 0.55, "speed": 0.65},                                          "chat"),
+    # Tool-trained (Hermes family — heavily tuned for function calling)
+    (r"(?i)hermes",                               {"tools": 0.92, "chat": 0.83, "speed": 0.70},             "chat"),
+    # Reasoning families — slow but deep; first kind-match wins so put after
+    # general patterns but use a kind override
+    (r"(?i)r1|distill|reasoning|deepthink",       {"reasoning": 0.85, "speed": 0.35, "tools": 0.35},        "reasoning"),
+    (r"(?i):.*-r1|gpt-oss",                        {"reasoning": 0.88, "speed": 0.45, "tools": 0.40},       "reasoning"),
 ]
 
 

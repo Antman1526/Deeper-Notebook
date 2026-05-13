@@ -24,13 +24,25 @@ from desktop.auto_register.capability import ModelDescriptor, score_model
         ("nomic-embed-text-v1.5",              "embed",     "registry", None),
         ("whisper-base-en",                    "stt",       "registry", None),
         ("piper-amy-en",                       "tts",       "registry", None),
-        # ----- Fallback patterns -----
+        # ----- Fallback patterns (HF-style) -----
         ("MyNew-Coder-9B-Instruct",            "chat",      "fallback", ("code",      0.80)),
         ("Some-R1-Reasoning-Distill",          "reasoning", "fallback", ("reasoning", 0.80)),
         ("ImaginaryEmbed-2",                   "embed",     "fallback", None),
         ("whisper-medium-multilingual",        "stt",       "fallback", None),
-        # ----- Last-resort default -----
-        ("Totally-Unknown-Model-XYZ",          "chat",      "default",  None),
+        # ----- Fallback patterns (Ollama `<family>:<tag>` style) -----
+        # P1-CRIT-01 fix: was returning kind=chat source=default with neutral
+        # 0.5 scores, leaving Tools / Large Context / Reasoning slots empty
+        # for Ollama-only users. Now scores via family-name regex.
+        ("llama3.1:latest",                    "chat",      "fallback", ("tools",     0.55)),
+        ("qwen2.5:14b",                        "chat",      "fallback", ("speed",     0.70)),
+        ("mistral:7b-instruct",                "chat",      "fallback", ("tools",     0.55)),
+        ("phi3.5:latest",                      "chat",      "fallback", ("chat",      0.70)),
+        ("gemma2:9b",                          "chat",      "fallback", ("chat",      0.70)),
+        ("deepseek-r1:14b",                    "reasoning", "fallback", ("reasoning", 0.80)),
+        ("qwen2.5-coder:32b",                  "chat",      "fallback", ("code",      0.80)),
+        ("nomic-embed-text:latest",            "embed",     "fallback", None),
+        # ----- Last-resort default (truly unrecognizable name) -----
+        ("xyz-9000-something",                 "chat",      "default",  None),
     ],
 )
 def test_score_model_classifies_correctly(
