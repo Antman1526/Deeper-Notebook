@@ -39,7 +39,7 @@ import {
   Bot,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useTestModel } from '@/lib/hooks/use-models'
+import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useAutoAssignCapability, useTestModel } from '@/lib/hooks/use-models'
 import {
   useCredentials,
   useCredential,
@@ -1074,6 +1074,7 @@ function DefaultModelSelectors({
   const { t } = useTranslation()
   const updateDefaults = useUpdateModelDefaults()
   const autoAssign = useAutoAssignDefaults()
+  const autoAssignCapability = useAutoAssignCapability()
   const { setValue, watch } = useForm<ModelDefaults>({ defaultValues: defaults })
   const generatedId = useId()
 
@@ -1170,6 +1171,34 @@ function DefaultModelSelectors({
             </AlertDescription>
           </Alert>
         )}
+
+        {/* ONP v0.5.2 — Re-evaluate model assignments using our local-model
+            capability engine. Two buttons: a non-destructive variant that
+            only fills empty slots, and a destructive "Reset & Re-evaluate"
+            that wipes existing picks first. Useful after downloading a new
+            model or bumping ONP_CHAT_RAM_GB_CEILING. */}
+        <div className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
+          <span>Local-model auto-assignment:</span>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => autoAssignCapability.mutate({ force: false })}
+            disabled={autoAssignCapability.isPending}
+            className="h-7 gap-1.5"
+            title="Fill empty slots with the best matching local model. Keeps your existing picks."
+          >
+            {autoAssignCapability.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+            Fill empty slots
+          </Button>
+          <Button
+            variant="ghost" size="sm"
+            onClick={() => autoAssignCapability.mutate({ force: true })}
+            disabled={autoAssignCapability.isPending}
+            className="h-7 gap-1.5"
+            title="Overwrite all slots with the best matching local model. Use after downloading a new model."
+          >
+            Reset & re-evaluate
+          </Button>
+        </div>
 
         {/* Primary models: Chat, Embedding, TTS, STT */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

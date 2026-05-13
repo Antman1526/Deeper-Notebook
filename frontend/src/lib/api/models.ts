@@ -97,6 +97,21 @@ export const modelsApi = {
   },
 
   /**
+   * ONP v0.5.2 — capability-aware re-evaluation. Uses our local-model
+   * scorer + slot recipes (chat / tools / reasoning / large_context /
+   * transformation / embedding / tts / stt) rather than upstream's
+   * cloud-centric provider priority. `force=true` wipes existing
+   * assignments before re-scoring; without it, slots that already have
+   * a value are skipped (preserves manual user picks).
+   */
+  autoAssignCapability: async (force = false) => {
+    const response = await apiClient.post<AutoAssignResult>(
+      `/models/auto-assign-capability?force=${force}`
+    )
+    return response.data
+  },
+
+  /**
    * Test an individual model configuration
    */
   testModel: async (modelId: string): Promise<ModelTestResult> => {
