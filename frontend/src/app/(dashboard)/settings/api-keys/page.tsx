@@ -56,6 +56,8 @@ import {
 import { Credential, CreateCredentialRequest, UpdateCredentialRequest, DiscoveredModel } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
 import { MigrationBanner, ModelTestResultDialog } from '@/components/settings'
+// ONP shadow-layer components (see frontend/src/components/onp/README.md)
+import { ReasoningSlotCard } from '@/components/onp'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
 
 type ModelType = 'language' | 'embedding' | 'text_to_speech' | 'speech_to_text'
@@ -1381,6 +1383,20 @@ export default function ApiKeysPage() {
           {/* Default Model Selectors */}
           {models && defaults && (
             <DefaultModelSelectors models={models} defaults={defaults} />
+          )}
+
+          {/* ONP v0.5 — Reasoning slot primer (shadow-layer component). Renders
+              regardless of whether a model is assigned; it's an explainer + a
+              status indicator combined. */}
+          {defaults && (
+            <ReasoningSlotCard
+              assignedModel={
+                defaults.default_reasoning_model
+                  ? models?.find(m => m.id === defaults.default_reasoning_model)?.name
+                    ?? defaults.default_reasoning_model
+                  : null
+              }
+            />
           )}
 
           {/* Provider Cards */}
