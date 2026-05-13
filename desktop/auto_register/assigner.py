@@ -10,9 +10,19 @@ the model it got.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
-from desktop.auto_register.capability import ModelDescriptor
+from desktop.auto_register.capability import ModelDescriptor, score_model
+
+
+# v0.5.1 audit: the chat slot now filters by RAM so we always pick a
+# fast/responsive model — the previous setup would let Hermes-3 (5 GB) win,
+# slow on machines with <16 GB RAM. Override via env var if you want bigger:
+#   ONP_CHAT_RAM_GB_CEILING=8 → allows mid-size models
+#   ONP_CHAT_RAM_GB_CEILING=99 → effectively unbounded (any chat model)
+_CHAT_RAM_CEILING_GB = float(os.environ.get("ONP_CHAT_RAM_GB_CEILING", "4.0"))
 
 
 @dataclass(frozen=True)
@@ -33,9 +43,10 @@ _RECIPES: dict[str, dict] = {
     "chat": {
         # Casual conversational use. Reasoning models are excluded (the
         # `kinds: {"chat"}` filter — they live in the reasoning slot now).
+        # RAM-ceiling-bound so chat stays responsive on small machines.
         "kinds": {"chat"},
         "weights": {"chat": 0.55, "speed": 0.25, "tools": 0.10, "reasoning": -0.10},
-        "require": None,
+        "require": lambda d: d.ram_gb_q4 <= _CHAT_RAM_CEILING_GB,
     },
     "tools": {
         "kinds": {"chat"},
@@ -135,3 +146,53 @@ def pick_for_slot(slot: str, pool: list[ModelDescriptor]) -> Pick:
 def assign_all(pool: list[ModelDescriptor]) -> dict[str, Pick]:
     """Run pick_for_slot across all known slots."""
     return {slot: pick_for_slot(slot, pool) for slot in SLOTS}
+
+
+def pick_chat_llm_file(
+    gguf_dir: Path,
+    *,
+    ram_ceiling_gb: float | None = None,
+) -> Path | None:
+    """Select the best chat-suitable .gguf in `gguf_dir` for the
+    llama-cpp chat-completion server to load.
+
+    Same scoring as the `chat` recipe used by the DefaultModels assigner,
+    so the loaded model matches what gets assigned. Used by app.py instead
+    of the legacy `Hermes-3*.gguf` glob — that hardcoded selection made
+    `ONP_CHAT_RAM_GB_CEILING` ineffective for the actual chat experience
+    (the assignment slot would change, but the loaded model wouldn't).
+
+    Fallback: if no chat-kind model fits the ceiling, return the smallest
+    chat-kind model in the directory so the server still spawns; user can
+    override via the wizard's default-model field.
+    """
+    if not gguf_dir.exists():
+        return None
+    ceiling = ram_ceiling_gb if ram_ceiling_gb is not None else _CHAT_RAM_CEILING_GB
+    recipe = _RECIPES["chat"]
+
+    pool: list[tuple[float, Path, ModelDescriptor]] = []
+    fallback_pool: list[tuple[float, Path, ModelDescriptor]] = []
+    for path in sorted(gguf_dir.glob("*.gguf")):
+        # Filter to keep only valid GGUF files (skip 29-byte stub placeholders
+        # and obvious incomplete downloads).
+        try:
+            if path.stat().st_size < 1_000_000:
+                continue
+        except OSError:
+            continue
+        desc = score_model(path.stem)
+        if desc.kind != "chat":
+            continue
+        s = _score(desc, recipe)
+        fallback_pool.append((s, path, desc))
+        if desc.ram_gb_q4 <= ceiling:
+            pool.append((s, path, desc))
+
+    target_pool = pool if pool else fallback_pool
+    if not target_pool:
+        return None
+    # Tie-break by ram_gb_q4 ASC, then name ASC — when scores are close, prefer
+    # the smaller model.
+    target_pool.sort(key=lambda t: (-t[0], t[2].ram_gb_q4, t[1].name))
+    return target_pool[0][1]

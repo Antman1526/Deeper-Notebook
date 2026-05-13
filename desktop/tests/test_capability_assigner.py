@@ -76,6 +76,7 @@ def _pool() -> list[ModelDescriptor]:
         "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M",
         "Llama-3.2-3B-Instruct-Q4_K_M",
         "Phi-3.5-mini-instruct-Q4_K_M",
+        "gemma-4-E2B-it-Q4_K_M",            # NEW: small chat winner under 4 GB ceiling
         "nomic-embed-text-v1.5",
         "whisper-base-en",
         "piper-amy-en",
@@ -85,6 +86,10 @@ def _pool() -> list[ModelDescriptor]:
 
 # Each row: (slot, expected_model_substring_in_name)
 EXPECTED_PICKS = [
+    # v0.5.1: chat is now RAM-bounded (default 4 GB) so it picks a small fast
+    # model. gemma-4-E2B-it (3 GB, chat=0.78, speed=0.93) is the highest
+    # scorer in the test pool that fits the ceiling.
+    ("chat",           "gemma-4-E2B"),
     # Hermes-3 is the tool specialist — should win Tools regardless of size
     ("tools",          "Hermes-3"),
     # Embedding / TTS / STT are kind-filtered — only one eligible each
@@ -155,3 +160,63 @@ def test_deterministic_across_runs():
             assert b[slot].model is None
         else:
             assert a[slot].model.name == b[slot].model.name
+
+
+# ---------------------------------------------------------- pick_chat_llm_file
+
+def test_pick_chat_llm_file_respects_ram_ceiling(tmp_path):
+    """The launcher uses this to decide which GGUF to load into the chat
+    server. With ceiling=4, gemma-4-E2B (3 GB) should win over Hermes-3 (5 GB)
+    despite Hermes scoring higher on tools."""
+    from desktop.auto_register.assigner import pick_chat_llm_file
+
+    # Make non-tiny dummy files so the size filter (skip < 1 MB) passes
+    big = b"x" * 2_000_000
+    (tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf").write_bytes(big)
+    (tmp_path / "Qwen3.6-27B-Q4_K_M.gguf").write_bytes(big)
+    (tmp_path / "gemma-4-E2B-it-Q4_K_M.gguf").write_bytes(big)
+    (tmp_path / "Phi-3.5-mini-instruct-Q4_K_M.gguf").write_bytes(big)
+
+    chosen = pick_chat_llm_file(tmp_path, ram_ceiling_gb=4.0)
+    assert chosen is not None
+    assert "gemma-4-E2B" in chosen.name
+
+    # Higher ceiling: Hermes-3 wins (its tools=0.95 + chat=0.85 still trumps gemma)
+    chosen_big = pick_chat_llm_file(tmp_path, ram_ceiling_gb=16.0)
+    assert chosen_big is not None
+    assert "Hermes-3" in chosen_big.name
+
+
+def test_pick_chat_llm_file_skips_stub_files(tmp_path):
+    """29-byte stub GGUFs (from failed downloads — we deleted some of those
+    earlier in the session) should not be selectable. The 1 MB threshold
+    catches them."""
+    from desktop.auto_register.assigner import pick_chat_llm_file
+    (tmp_path / "ministral-3-14b-fallback-Q4_K_M.gguf").write_bytes(b"x" * 29)
+    (tmp_path / "gemma-4-E2B-it-Q4_K_M.gguf").write_bytes(b"x" * 2_000_000)
+    chosen = pick_chat_llm_file(tmp_path, ram_ceiling_gb=4.0)
+    assert chosen is not None
+    assert "ministral" not in chosen.name
+
+
+def test_pick_chat_llm_file_returns_none_for_empty_dir(tmp_path):
+    """No GGUFs → None. Caller (app.py) handles by skipping the chat-server
+    spawn."""
+    from desktop.auto_register.assigner import pick_chat_llm_file
+    assert pick_chat_llm_file(tmp_path) is None
+    missing = tmp_path / "does-not-exist"
+    assert pick_chat_llm_file(missing) is None
+
+
+def test_pick_chat_llm_file_falls_back_when_no_models_fit_ceiling(tmp_path):
+    """If every model is too big for the ceiling, the function falls back to
+    the highest-scoring chat-kind model (instead of returning None and
+    leaving the user without a chat server)."""
+    from desktop.auto_register.assigner import pick_chat_llm_file
+    big = b"x" * 2_000_000
+    (tmp_path / "Qwen3.6-27B-Q4_K_M.gguf").write_bytes(big)        # 16 GB
+    (tmp_path / "Qwen2.5-14B-Instruct-Q4_K_M.gguf").write_bytes(big)  # 9 GB
+    chosen = pick_chat_llm_file(tmp_path, ram_ceiling_gb=4.0)
+    assert chosen is not None
+    # Fell back to a larger model rather than returning None
+    assert chosen.name.endswith(".gguf")
