@@ -849,6 +849,10 @@ export const ruRU = {
     toolsModelDesc: "Используется для вызова функций — рекомендуется OpenAI или Anthropic",
     largeContextModelLabel: "Модель для большого контекста",
     largeContextModelDesc: "Используется для обработки больших документов — рекомендуется Gemini",
+
+    reasoningModelLabel: "Reasoning Model",
+
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "Модель эмбеддинга",
     embeddingModelDesc: "Используется для семантического поиска и векторных эмбеддингов",
     ttsModelLabel: "Модель озвучивания",

@@ -849,6 +849,10 @@ export const zhCN = {
     toolsModelDesc: "用于函数调用 - 推荐 OpenAI 或 Anthropic",
     largeContextModelLabel: "大上下文模型",
     largeContextModelDesc: "用于处理大文档 - 推荐 Gemini",
+
+    reasoningModelLabel: "Reasoning Model",
+
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "嵌入模型",
     embeddingModelDesc: "用于语义搜索和向量嵌入",
     ttsModelLabel: "文字转语音模型",

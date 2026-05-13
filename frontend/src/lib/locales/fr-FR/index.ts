@@ -849,6 +849,10 @@ export const frFR = {
     toolsModelDesc: "Utilisé pour l'appel de fonctions (OpenAI ou Anthropic recommandé)",
     largeContextModelLabel: "Modèle à large contexte",
     largeContextModelDesc: "Utilisé pour le traitement de documents volumineux (Gemini recommandé)",
+
+    reasoningModelLabel: "Reasoning Model",
+
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "Modèle d'Embedding",
     embeddingModelDesc: "Utilisé pour la recherche sémantique et les index vectoriels",
     ttsModelLabel: "Modèle de Synthèse Vocale (TTS)",
