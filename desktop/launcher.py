@@ -8,6 +8,7 @@ HTTP 200.
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -292,11 +293,22 @@ class Supervisor:
         log_file = open(log_path, "ab", buffering=0)
         self._log_files.append(log_file)
 
+        # P2-HIGH-16 audit fix: scrub known secrets from subprocess output.
+        # The Surreal binary, in particular, echoes its CLI flags (including
+        # `--pass=...`) to stdout on startup. With debug_mode on, that would
+        # land in surreal.log in plaintext.
+        secret_pat = re.compile(
+            rb"(?i)(--pass=|password[=:]|surreal_password[=:]|encryption_key[=:])"
+            rb"([^\s\"']+)"
+        )
+        def _redact(b: bytes) -> bytes:
+            return secret_pat.sub(rb"\1[REDACTED]", b)
+
         def drain(stream: IO[bytes], prefix: bytes) -> None:
             try:
                 for line in iter(stream.readline, b""):
                     try:
-                        log_file.write(prefix + line)
+                        log_file.write(prefix + _redact(line))
                     except Exception:
                         return
             except Exception:
