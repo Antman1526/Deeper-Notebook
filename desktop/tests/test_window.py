@@ -78,15 +78,39 @@ def test_foreground_meets_wcag_aaa_against_background(theme_id):
 
 def test_dark_themes_set_dark_class_in_injection_js():
     """The shadcn dark-mode token block is keyed by the `.dark` class on
-    <html>. Dark themes must add it; light themes must remove it."""
+    <html>. v0.5.7 — applyTheme() uses classList.toggle('dark', is_dark)
+    so a single code path covers both light and dark transitions."""
     js = _theme_injection_js("dark")
-    assert "classList.add('dark')" in js
-    js = _theme_injection_js("light-blue")
-    assert "classList.remove('dark')" in js
+    # All 9 themes are present in the IS_DARK map
+    for theme_id in _THEMES:
+        assert f'"{theme_id}":' in js
+    # And applyTheme toggles the class
+    assert "classList.toggle('dark'" in js or 'classList.toggle("dark"' in js
 
 
-def test_idempotent_injection_emits_data_theme_marker():
-    """P1-MED-08 — injection writes data-theme so re-runs can early-return."""
+def test_injection_contains_all_nine_themes_as_attribute_selectors():
+    """v0.5.7 — injection emits all 9 themes as :root[data-theme="X"]
+    blocks so the ThemeSwitcher can swap live by changing dataset.theme."""
     js = _theme_injection_js("dracula")
-    assert "data-theme" in js or "dataset.theme" in js
-    assert 'THEME_ID = "dracula"' in js
+    # Every theme id should appear as an attribute selector
+    for theme_id in _THEMES:
+        assert f'data-theme="{theme_id}"' in js, (
+            f"injection missing :root[data-theme=\"{theme_id}\"] block"
+        )
+
+
+def test_injection_exposes_setTheme_bridge():
+    """v0.5.7 — window.ONP.setTheme is what ThemeSwitcher calls. Must be
+    present in the generated JS or the dropdown won't work."""
+    js = _theme_injection_js("dark")
+    assert "window.ONP" in js
+    assert "ONP.setTheme" in js
+    # And it should POST to /api/onp/theme to persist
+    assert "/api/onp/theme" in js
+
+
+def test_injection_sets_initial_theme_via_dataset():
+    """v0.5.7 — the initial active theme is set via dataset.theme on <html>."""
+    js = _theme_injection_js("nord")
+    assert 'INITIAL_THEME = "nord"' in js
+    assert "applyTheme" in js
