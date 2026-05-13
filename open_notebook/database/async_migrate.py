@@ -93,82 +93,44 @@ class AsyncMigrationManager:
     Main migration manager with async support.
     """
 
+    # P2-HIGH-01 audit fix: auto-discover migrations instead of the hard-coded
+    # 1..N list. Each new migration just drops in as <n>.surrealql + optional
+    # <n>_down.surrealql — no need to remember to also edit this file.
+    @staticmethod
+    def _discover_migrations() -> tuple[list[AsyncMigration], list[AsyncMigration]]:
+        import re
+        import os
+        from pathlib import Path
+        # Migration directory is relative to repo root (cwd is upstream_dir in
+        # the frozen app, repo_root in dev — both produce the same relative
+        # path since open_notebook/ lives at the same level either way).
+        mig_dir = Path("open_notebook/database/migrations")
+        files = sorted(
+            (p for p in mig_dir.iterdir() if p.suffix == ".surrealql"),
+            key=lambda p: int(re.match(r"(\d+)", p.stem).group(1))  # type: ignore[union-attr]
+            if re.match(r"(\d+)", p.stem) else 999999,
+        )
+        ups: list[tuple[int, AsyncMigration]] = []
+        downs_by_n: dict[int, AsyncMigration] = {}
+        for f in files:
+            m = re.match(r"(\d+)(_down)?$", f.stem)
+            if not m:
+                continue
+            n = int(m.group(1))
+            if m.group(2):
+                downs_by_n[n] = AsyncMigration.from_file(str(f))
+            else:
+                ups.append((n, AsyncMigration.from_file(str(f))))
+        # Up list must be contiguous from 1; pair each up with its down (skip
+        # downs that have no matching up).
+        ups.sort(key=lambda t: t[0])
+        return [u for _, u in ups], [downs_by_n[n] for n, _ in ups if n in downs_by_n]
+
     def __init__(self):
-        """Initialize migration manager."""
-        self.up_migrations = [
-            AsyncMigration.from_file("open_notebook/database/migrations/1.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/2.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/3.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/4.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/5.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/6.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/7.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/8.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/9.surrealql"),
-            AsyncMigration.from_file("open_notebook/database/migrations/10.surrealql"),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/11.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/12.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/13.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/14.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/15.surrealql"
-            ),
-        ]
-        self.down_migrations = [
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/1_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/2_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/3_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/4_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/5_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/6_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/7_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/8_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/9_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/10_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/11_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/12_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/13_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/14_down.surrealql"
-            ),
-            AsyncMigration.from_file(
-                "open_notebook/database/migrations/15_down.surrealql"
-            ),
-        ]
+        """Initialize migration manager — auto-discovers migrations from
+        open_notebook/database/migrations/*.surrealql via _discover_migrations.
+        """
+        self.up_migrations, self.down_migrations = self._discover_migrations()
         self.runner = AsyncMigrationRunner(
             up_migrations=self.up_migrations,
             down_migrations=self.down_migrations,

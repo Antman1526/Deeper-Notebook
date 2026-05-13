@@ -95,6 +95,12 @@ datas = [
     (str(PROJECT_ROOT / "desktop" / "memory"), "upstream/desktop/memory"),
     (str(ROOT / "memory_dashboard" / "static"),
         "desktop/memory_dashboard/static"),
+    # P2-MED-13 audit fix: ship an explicit `desktop/__init__.py` inside
+    # upstream/ so `from desktop.memory.writer import ...` works in the worker
+    # subprocess (cwd=upstream_dir). PEP 420 namespace packages cover the
+    # case where this file is missing, but ONLY if no other directory with
+    # an __init__.py shadows the search path. Belt-and-suspenders.
+    (str(PROJECT_ROOT / "desktop" / "__init__.py"), "upstream/desktop"),
     # Migration #15 ships inside upstream/open_notebook/database/migrations
     # (already covered by the upstream/open_notebook entry above).
     # memory_injection.js is included by the first_run/static directory
