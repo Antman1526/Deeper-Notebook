@@ -6,12 +6,42 @@ provides a /api/theme endpoint so the dashboard adopts the user's wizard theme.
 """
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 import httpx
 from aiohttp import web
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+# P1-HIGH-05 audit fix: persist a single timestamp marking the last "Recent
+# capture" event the user acknowledged (approve/dismiss/mark-seen). On reload
+# the inbox only shows events after this timestamp, so it doesn't become a
+# wall of already-triaged items. Survives app restart; user-deletable.
+def _capture_state_path() -> Path:
+    base = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+    return base / ".open-notebook-plus" / "capture_state.json"
+
+
+def _load_last_seen() -> str:
+    p = _capture_state_path()
+    if not p.exists():
+        return ""
+    try:
+        return json.loads(p.read_text()).get("last_seen", "")
+    except Exception:
+        return ""
+
+
+def _save_last_seen(ts: str) -> None:
+    p = _capture_state_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        p.write_text(json.dumps({"last_seen": ts}))
+    except Exception:
+        pass  # best-effort; missing-state means inbox just shows more
 
 
 def build_app(
@@ -80,12 +110,34 @@ def build_app(
                 r.raise_for_status()
                 payload = r.json()
                 events = payload.get("events") if isinstance(payload, dict) else payload
-                return web.json_response({"available": True, "events": list(events or [])})
+                events = list(events or [])
+                # P1-HIGH-05: filter out events already acknowledged in past
+                # sessions. Events with no `ts` always pass (we can't compare).
+                last_seen = _load_last_seen()
+                if last_seen:
+                    events = [e for e in events
+                              if not e.get("ts") or e["ts"] > last_seen]
+                return web.json_response({"available": True, "events": events,
+                                          "last_seen": last_seen})
             except Exception as exc:
                 return web.json_response(
                     {"available": True, "events": [], "error": str(exc)},
                     status=502,
                 )
+
+    async def capture_mark_seen(req: web.Request) -> web.Response:
+        """Update the last-seen watermark. Posted by dashboard.js when the user
+        clicks 'Mark all as seen' OR after a successful approve/dismiss.
+        """
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        ts = (body.get("ts") or "").strip()
+        if not ts:
+            return web.json_response({"error": "ts required"}, status=400)
+        _save_last_seen(ts)
+        return web.json_response({"ok": True, "last_seen": ts})
 
     async def theme(_: web.Request) -> web.Response:
         try:
@@ -100,6 +152,7 @@ def build_app(
     app.router.add_delete("/api/memory/{path:.+}", proxy)
     app.router.add_post("/api/memory/{path:.+}", proxy)
     app.router.add_get("/api/capture/inbox", capture_inbox)
+    app.router.add_post("/api/capture/mark_seen", capture_mark_seen)
     app.router.add_get("/api/theme", theme)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)
