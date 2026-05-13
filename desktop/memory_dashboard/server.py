@@ -62,6 +62,16 @@ def build_app(
     """
     app = web.Application()
 
+    # ONP v0.5.5 perf — reuse a single httpx client for the lifetime of the
+    # dashboard server. Previously every proxy/inbox/active-models call did
+    # `async with httpx.AsyncClient(...)` which incurs TCP + TLS handshake
+    # overhead per request (~30-50 ms locally). One pool, one connection.
+    shared_client = httpx.AsyncClient(timeout=10)
+
+    async def _cleanup(_: web.Application) -> None:
+        await shared_client.aclose()
+    app.on_cleanup.append(_cleanup)
+
     async def index(_: web.Request) -> web.Response:
         idx = STATIC_DIR / "index.html"
         if idx.exists():
@@ -75,24 +85,23 @@ def build_app(
         """Proxy /api/memory/* to the retriever shim."""
         path = req.match_info["path"]
         url = f"{memory_retriever_url}/api/memory/{path}"
-        async with httpx.AsyncClient(timeout=10) as client:
-            try:
-                if req.method == "GET":
-                    r = await client.get(url, params=dict(req.query))
-                elif req.method == "DELETE":
-                    r = await client.delete(url)
-                elif req.method == "POST":
-                    body = await req.json() if req.body_exists else None
-                    r = await client.post(url, json=body)
-                else:
-                    return web.Response(status=405, text="method not allowed")
-                return web.Response(
-                    status=r.status_code,
-                    body=r.content,
-                    content_type=r.headers.get("content-type", "application/json"),
-                )
-            except Exception as exc:
-                return web.json_response({"error": str(exc)}, status=502)
+        try:
+            if req.method == "GET":
+                r = await shared_client.get(url, params=dict(req.query))
+            elif req.method == "DELETE":
+                r = await shared_client.delete(url)
+            elif req.method == "POST":
+                body = await req.json() if req.body_exists else None
+                r = await shared_client.post(url, json=body)
+            else:
+                return web.Response(status=405, text="method not allowed")
+            return web.Response(
+                status=r.status_code,
+                body=r.content,
+                content_type=r.headers.get("content-type", "application/json"),
+            )
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=502)
 
     # --- ONP v0.5 — Capture Inbox -----------------------------------------
     # The inbox shows recent OpenChronicle screen events so the user can curate
@@ -108,26 +117,25 @@ def build_app(
             )
         minutes = int(req.query.get("minutes", "30"))
         url = f"{openchronicle_bridge_url}/context/recent"
-        async with httpx.AsyncClient(timeout=5) as client:
-            try:
-                r = await client.get(url, params={"minutes": minutes})
-                r.raise_for_status()
-                payload = r.json()
-                events = payload.get("events") if isinstance(payload, dict) else payload
-                events = list(events or [])
-                # P1-HIGH-05: filter out events already acknowledged in past
-                # sessions. Events with no `ts` always pass (we can't compare).
-                last_seen = _load_last_seen()
-                if last_seen:
-                    events = [e for e in events
-                              if not e.get("ts") or e["ts"] > last_seen]
-                return web.json_response({"available": True, "events": events,
-                                          "last_seen": last_seen})
-            except Exception as exc:
-                return web.json_response(
-                    {"available": True, "events": [], "error": str(exc)},
-                    status=502,
-                )
+        try:
+            r = await shared_client.get(url, params={"minutes": minutes}, timeout=5)
+            r.raise_for_status()
+            payload = r.json()
+            events = payload.get("events") if isinstance(payload, dict) else payload
+            events = list(events or [])
+            # P1-HIGH-05: filter out events already acknowledged in past
+            # sessions. Events with no `ts` always pass (we can't compare).
+            last_seen = _load_last_seen()
+            if last_seen:
+                events = [e for e in events
+                          if not e.get("ts") or e["ts"] > last_seen]
+            return web.json_response({"available": True, "events": events,
+                                      "last_seen": last_seen})
+        except Exception as exc:
+            return web.json_response(
+                {"available": True, "events": [], "error": str(exc)},
+                status=502,
+            )
 
     async def capture_mark_seen(req: web.Request) -> web.Response:
         """Update the last-seen watermark. Posted by dashboard.js when the user
@@ -153,14 +161,14 @@ def build_app(
         if not upstream_api_url:
             return web.json_response({"available": False, "slots": {}})
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                defaults_resp, models_resp = await client.get(
-                    f"{upstream_api_url}/api/models/defaults"
-                ), await client.get(f"{upstream_api_url}/api/models")
-                defaults_resp.raise_for_status()
-                models_resp.raise_for_status()
-                defaults = defaults_resp.json() or {}
-                models = models_resp.json() or []
+            defaults_resp = await shared_client.get(
+                f"{upstream_api_url}/api/models/defaults", timeout=5)
+            models_resp = await shared_client.get(
+                f"{upstream_api_url}/api/models", timeout=5)
+            defaults_resp.raise_for_status()
+            models_resp.raise_for_status()
+            defaults = defaults_resp.json() or {}
+            models = models_resp.json() or []
         except Exception as exc:
             return web.json_response(
                 {"available": False, "slots": {}, "error": str(exc)},

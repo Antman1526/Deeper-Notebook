@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from desktop.auto_register import model_registry as reg
 
@@ -27,11 +28,16 @@ class ModelDescriptor:
         return self.scores.get(axis, 0.5)
 
 
+@lru_cache(maxsize=512)
 def score_model(name: str) -> ModelDescriptor:
     """Resolve a model name to its capability descriptor.
 
     Never raises — unknown models return a neutral descriptor so callers can
     proceed without special-casing.
+
+    Memoized: assignment fires score_model repeatedly across slots for the
+    same model name. Cache size 512 covers any realistic model pool with
+    headroom.
     """
     # 1. Exact-prefix match in the curated registry
     prefix = reg._lookup_prefix(name)
