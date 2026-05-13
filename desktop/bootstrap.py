@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,11 @@ import tarfile
 import zipfile
 from pathlib import Path
 from typing import Callable
+
+# Max bytes kept in bootstrap-subprocess.log before truncation (P2-MED-19).
+# 5 MB is plenty for the heaviest install we run; rotating on next launch
+# keeps the file from growing forever across many launches.
+_BOOTSTRAP_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 
 def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
@@ -99,15 +105,35 @@ def _bootstrap_log_path() -> Path:
     return base / ".open-notebook-plus" / "logs" / "bootstrap-subprocess.log"
 
 
+def _rotate_log_if_oversized(log_path: Path) -> None:
+    """P2-MED-19 — keep bootstrap-subprocess.log bounded. Called on every
+    `_run_logged` invocation (cheap stat). If the file exceeds the cap, move
+    it to `<name>.old` (clobbering the previous .old) and start fresh."""
+    try:
+        if log_path.exists() and log_path.stat().st_size > _BOOTSTRAP_LOG_MAX_BYTES:
+            old = log_path.with_suffix(log_path.suffix + ".old")
+            old.unlink(missing_ok=True)
+            log_path.rename(old)
+    except Exception:
+        pass  # never fatal
+
+
 def _run_logged(args: list[str], tag: str) -> None:
     """subprocess.run with stdout+stderr captured to disk, then raised on
     non-zero exit. Without this, errors from `uv pip install` vanish when the
     .app is launched from Finder (no terminal attached).
+
+    Uses shlex.join for the header (P1-HIGH-07 — robust to args containing
+    spaces). Flushes the file before reading the tail back for the error
+    message so all subprocess output is on disk before we reach for it.
     """
     log_path = _bootstrap_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_log_if_oversized(log_path)
     with log_path.open("ab") as f:
-        f.write(f"\n===== [{tag}] $ {' '.join(args)} =====\n".encode())
+        # shlex.join produces a copy-pasteable, shell-safe representation
+        cmd_repr = shlex.join(args)
+        f.write(f"\n===== [{tag}] $ {cmd_repr} =====\n".encode())
         f.flush()
         proc = subprocess.run(
             args,
@@ -115,6 +141,11 @@ def _run_logged(args: list[str], tag: str) -> None:
             stderr=subprocess.STDOUT,
         )
         f.write(f"\n===== [{tag}] exit={proc.returncode} =====\n".encode())
+        f.flush()
+        try:
+            os.fsync(f.fileno())  # ensure on disk before exception reads it
+        except (OSError, AttributeError):
+            pass
     if proc.returncode != 0:
         # Include the tail of the log in the exception so callers (and the
         # frozen launcher's traceback handler) surface something actionable.
