@@ -394,13 +394,16 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     amy_path = voice_model_dir / "TTS" / "en_US-amy-medium.onnx"
     ryan_path = voice_model_dir / "TTS" / "en_US-ryan-high.onnx"
     nomic_path = voice_model_dir / "GGUF" / "nomic-embed-text-v1.5.f16.gguf"
-    # v0.4: discover the chat LLM (Hermes 3) for mem0's memory writer.
-    # We just pick the first Hermes-3*.gguf in the GGUF dir; users who chose
-    # a different model in the wizard still get fact-extraction as long as a
-    # Hermes-style GGUF is present.
+    # v0.5.1 audit fix: capability-aware chat-LLM selection.
+    # Replaces the v0.4 hardcoded Hermes-3*.gguf glob (which loaded the
+    # 5 GB model regardless of machine size). Now picks the highest-scoring
+    # `chat`-kind GGUF that fits within ONP_CHAT_RAM_GB_CEILING (default 4 GB
+    # — small + fast for the chat experience). Hermes-3 still wins the
+    # `default_tools_model` assignment if downloaded, since that slot has a
+    # different recipe.
     gguf_dir = voice_model_dir / "GGUF"
-    chat_candidates = sorted(gguf_dir.glob("Hermes-3*.gguf")) if gguf_dir.exists() else []
-    chat_llm_path = chat_candidates[0] if chat_candidates else None
+    from desktop.auto_register.assigner import pick_chat_llm_file
+    chat_llm_path = pick_chat_llm_file(gguf_dir)
     piper_voices: dict[str, Path] = {}
     if amy_path.exists():
         piper_voices["alex"] = amy_path
