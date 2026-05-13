@@ -74,6 +74,7 @@ _SLOT_TO_DEFAULT_FIELD = {
     "embedding":       "default_embedding_model",
     "tts":             "default_text_to_speech_model",
     "stt":             "default_speech_to_text_model",
+    "reasoning":       "default_reasoning_model",   # ONP v0.5 — 8th slot
 }
 
 

@@ -69,6 +69,10 @@ class DefaultModels(RecordModel):
     # default_vision_model: Optional[str]
     default_embedding_model: Optional[str] = None
     default_tools_model: Optional[str] = None
+    # ONP v0.5 — dedicated slot for slow-but-deep reasoning models (R1, gpt-oss,
+    # Nemotron etc.). Kept separate from chat so the casual chat model can stay
+    # fast. Read by provision_langchain_model() when "reasoning" type requested.
+    default_reasoning_model: Optional[str] = None
 
     @classmethod
     async def get_instance(cls) -> "DefaultModels":
