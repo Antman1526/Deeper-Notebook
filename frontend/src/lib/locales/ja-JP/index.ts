@@ -849,6 +849,10 @@ export const jaJP = {
     toolsModelDesc: "関数呼び出しに使用 - OpenAIまたはAnthropicを推奨",
     largeContextModelLabel: "大規模コンテキストモデル",
     largeContextModelDesc: "大きなドキュメントの処理に使用 - Geminiを推奨",
+
+    reasoningModelLabel: "Reasoning Model",
+
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "Embeddingモデル",
     embeddingModelDesc: "セマンティック検索とベクトルEmbeddingに使用",
     ttsModelLabel: "音声合成モデル",

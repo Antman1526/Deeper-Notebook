@@ -850,6 +850,8 @@ export const enUS = {
     toolsModelDesc: "Used for function calling - OpenAI or Anthropic recommended",
     largeContextModelLabel: "Large Context Model",
     largeContextModelDesc: "Used for processing large documents - Gemini recommended",
+    reasoningModelLabel: "Reasoning Model",
+    reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
     embeddingModelLabel: "Embedding Model",
     embeddingModelDesc: "Used for semantic search and vector embeddings",
     ttsModelLabel: "Text-to-Speech Model",
