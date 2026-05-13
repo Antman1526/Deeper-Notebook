@@ -255,32 +255,94 @@ def _phase_select_provider(ctx: AppContext) -> None:
 
 
 def _phase_detect_openchronicle(ctx: AppContext) -> None:
-    """Probe localhost:8742 for the OpenChronicle MCP daemon. Best-effort —
-    a missing daemon is the normal state for users who chose 'skip' in the
-    wizard. MUST NEVER raise; OpenChronicle is purely optional.
+    """Probe the OpenChronicle MCP daemon. Best-effort — a missing daemon is
+    the normal state for users who chose 'skip' in the wizard. MUST NEVER
+    raise; OpenChronicle is purely optional.
 
-    The MCP server may speak HTTP-streamable (POST-only), so we use a TCP
-    connect check rather than HTTP GET — robust against servers that reject
-    GET with 4xx/5xx (which would falsely register as "available").
+    Two-stage check (P1-HIGH-04 audit fix):
+      1. TCP connect — fast (~10 ms) reject for nothing-listening.
+      2. JSON-RPC `initialize` POST — confirms whatever's listening actually
+         speaks MCP, not a random dev server on the same port.
+
+    Port + URL come from OPENCHRONICLE_MCP_URL env var if set, else default
+    (P1-MED-10). The bridge shim reads the same env var.
     """
+    import os
+    import urllib.parse
+
     ctx.openchronicle_available = False
+    mcp_url = (
+        os.environ.get("OPENCHRONICLE_MCP_URL")
+        or "http://127.0.0.1:8742/mcp"
+    )
     try:
-        import socket
+        parsed = urllib.parse.urlparse(mcp_url)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 8742
+    except Exception:
+        host, port = "127.0.0.1", 8742
+
+    # Stage 1 — quick TCP connect to filter "not running"
+    import socket
+    try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
-            s.connect(("127.0.0.1", 8742))
-            ctx.openchronicle_available = True
+            s.connect((host, port))
     except (OSError, socket.timeout):
-        # No listener on port 8742 → normal "not installed" state.
-        pass
+        # No listener → normal "not installed" state, exit silently.
+        if ctx.progress_bus is not None:
+            try:
+                ctx.progress_bus.publish(
+                    "openchronicle.detect", "done", "available=False",
+                )
+            except Exception:
+                pass
+        return
     except BaseException as e:
-        # Swallow everything else (incl. KeyboardInterrupt-derived edge cases).
-        # OpenChronicle detection must never block startup.
         if ctx.log_dir is not None:
             try:
                 ctx.log_dir.mkdir(parents=True, exist_ok=True)
                 (ctx.log_dir / "openchronicle_detect.log").write_text(
-                    f"detect failed (non-fatal): {type(e).__name__}: {e}\n"
+                    f"tcp connect failed (non-fatal): {type(e).__name__}: {e}\n"
+                )
+            except Exception:
+                pass
+        return
+
+    # Stage 2 — speak MCP. A genuine MCP server replies to `initialize` with
+    # protocolVersion + serverInfo. Anything else (404, plain HTML, random
+    # dev server) gets rejected. Short timeout so we don't block startup.
+    try:
+        import httpx
+        r = httpx.post(
+            mcp_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "open-notebook-plus", "version": "0.5"},
+                },
+            },
+            headers={
+                "Content-Type": "application/json",
+                # MCP streamable-http requires this Accept header
+                "Accept": "application/json, text/event-stream",
+            },
+            timeout=1.5,
+        )
+        # Streamable-http returns 200 (with SSE stream) or accepts and returns
+        # JSON-RPC. Both indicate a real MCP server. 404/405/non-JSON = nope.
+        if 200 <= r.status_code < 300:
+            ctx.openchronicle_available = True
+    except BaseException as e:
+        if ctx.log_dir is not None:
+            try:
+                ctx.log_dir.mkdir(parents=True, exist_ok=True)
+                (ctx.log_dir / "openchronicle_detect.log").write_text(
+                    f"mcp handshake failed (non-fatal): {type(e).__name__}: {e}\n"
                 )
             except Exception:
                 pass
