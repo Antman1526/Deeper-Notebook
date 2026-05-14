@@ -80,12 +80,30 @@ class AsyncMigrationRunner:
             await self.up_migrations[current_version].run(bump=True)
 
     async def run_one_down(self) -> None:
-        """Run one down migration."""
+        """Run one down migration.
+
+        v0.6.12 — down_migrations is now indexed parallel to up_migrations
+        with None for ups that lack a matching down file. Previously this
+        method could IndexError or apply the wrong down by accident.
+        """
         current_version = await get_latest_version()
 
-        if current_version > 0:
-            logger.info(f"Rolling back migration {current_version}")
-            await self.down_migrations[current_version - 1].run(bump=False)
+        if current_version <= 0:
+            return
+        idx = current_version - 1
+        if idx >= len(self.down_migrations):
+            raise RuntimeError(
+                f"Cannot rollback: down list has {len(self.down_migrations)} "
+                f"entries but current_version is {current_version}."
+            )
+        down = self.down_migrations[idx]
+        if down is None:
+            raise RuntimeError(
+                f"Cannot rollback migration {current_version}: no matching "
+                f"{current_version}_down.surrealql in the migrations directory."
+            )
+        logger.info(f"Rolling back migration {current_version}")
+        await down.run(bump=False)
 
 
 class AsyncMigrationManager:
@@ -97,20 +115,36 @@ class AsyncMigrationManager:
     # 1..N list. Each new migration just drops in as <n>.surrealql + optional
     # <n>_down.surrealql — no need to remember to also edit this file.
     @staticmethod
-    def _discover_migrations() -> tuple[list[AsyncMigration], list[AsyncMigration]]:
+    def _discover_migrations(
+        mig_dir: "Path | None" = None,
+    ) -> tuple[list[AsyncMigration], list[AsyncMigration]]:
+        """Scan the migrations directory and return parallel (ups, downs) lists.
+
+        v0.6.12 changes:
+          1. Enforce contiguous numbering from 1..N. A missing `4.surrealql`
+             between `3` and `5` used to silently produce `[m1, m2, m3, m5]`
+             with len=4 — so the DB would record "version 4" while the SQL
+             actually run was migration #5. Then if `4.surrealql` got restored
+             later, the manager would see 5 files, compute `needs_migration =
+             current(4) < total(5)`, run index 4 (= the original m5 again),
+             and either crash with "already exists" or silently re-apply.
+          2. Build a downs list with the SAME LENGTH as ups (placeholders for
+             ups that lack a matching down). Previously `run_one_down` could
+             IndexError on a partial down set.
+        """
         import re
-        import os
         from pathlib import Path
         # Migration directory is relative to repo root (cwd is upstream_dir in
         # the frozen app, repo_root in dev — both produce the same relative
         # path since open_notebook/ lives at the same level either way).
-        mig_dir = Path("open_notebook/database/migrations")
+        if mig_dir is None:
+            mig_dir = Path("open_notebook/database/migrations")
         files = sorted(
             (p for p in mig_dir.iterdir() if p.suffix == ".surrealql"),
             key=lambda p: int(re.match(r"(\d+)", p.stem).group(1))  # type: ignore[union-attr]
             if re.match(r"(\d+)", p.stem) else 999999,
         )
-        ups: list[tuple[int, AsyncMigration]] = []
+        ups_by_n: dict[int, AsyncMigration] = {}
         downs_by_n: dict[int, AsyncMigration] = {}
         for f in files:
             m = re.match(r"(\d+)(_down)?$", f.stem)
@@ -120,11 +154,29 @@ class AsyncMigrationManager:
             if m.group(2):
                 downs_by_n[n] = AsyncMigration.from_file(str(f))
             else:
-                ups.append((n, AsyncMigration.from_file(str(f))))
-        # Up list must be contiguous from 1; pair each up with its down (skip
-        # downs that have no matching up).
-        ups.sort(key=lambda t: t[0])
-        return [u for _, u in ups], [downs_by_n[n] for n, _ in ups if n in downs_by_n]
+                ups_by_n[n] = AsyncMigration.from_file(str(f))
+
+        if not ups_by_n:
+            return [], []
+
+        # Enforce contiguous 1..N — surfaces missing migration files LOUDLY.
+        max_n = max(ups_by_n)
+        missing = [n for n in range(1, max_n + 1) if n not in ups_by_n]
+        if missing:
+            raise RuntimeError(
+                f"Migration directory {mig_dir} has gaps: missing "
+                f"{', '.join(f'{n}.surrealql' for n in missing)}. "
+                f"Migration numbering must be contiguous from 1; refusing to "
+                f"run partial migration set."
+            )
+
+        # Parallel lists indexed 0..N-1 corresponding to migration versions 1..N.
+        # Downs use a placeholder (the same up migration with bump=False sense
+        # is wrong, so use None and let run_one_down check) when a matching
+        # down file is absent. `run_one_down` now guards on missing entries.
+        ups = [ups_by_n[n] for n in range(1, max_n + 1)]
+        downs = [downs_by_n.get(n) for n in range(1, max_n + 1)]
+        return ups, downs  # type: ignore[return-value]
 
     def __init__(self):
         """Initialize migration manager — auto-discovers migrations from
