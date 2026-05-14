@@ -32,29 +32,33 @@
         const confNum = typeof rec.confidence === 'number' ? rec.confidence : 0;
         confSpan.textContent = confNum.toFixed(2);
 
-        // v0.5.8 — Edit button (inline). Clicking swaps textSpan for an
-        // <input>, Enter or blur commits via POST /api/memory/update.
+        // v0.5.8/.10 — Edit button (inline). Clicking swaps textSpan for a
+        // <textarea> (auto-sized) so long multi-line facts edit cleanly.
+        // Enter (without shift) or blur commits; Shift+Enter inserts newline;
+        // Escape cancels.
         const editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', () => {
-          const input = document.createElement('input');
-          input.type = 'text';
-          input.value = originalText;
-          input.style.flex = '1';
-          input.style.font = 'inherit';
-          input.style.padding = '4px 8px';
-          input.style.border = '1px solid var(--border, #ccc)';
-          input.style.borderRadius = '4px';
-          input.style.background = 'var(--surface, #fff)';
-          input.style.color = 'var(--text, #222)';
-          textSpan.replaceWith(input);
-          input.focus();
-          input.select();
+          const ta = document.createElement('textarea');
+          ta.value = originalText;
+          ta.rows = Math.max(1, Math.min(6, originalText.split('\n').length));
+          ta.style.flex = '1';
+          ta.style.font = 'inherit';
+          ta.style.padding = '4px 8px';
+          ta.style.border = '1px solid var(--border, #ccc)';
+          ta.style.borderRadius = '4px';
+          ta.style.background = 'var(--surface, #fff)';
+          ta.style.color = 'var(--text, #222)';
+          ta.style.resize = 'vertical';
+          ta.style.minHeight = '28px';
+          textSpan.replaceWith(ta);
+          ta.focus();
+          ta.select();
           let committed = false;
           const commit = async () => {
             if (committed) return;
             committed = true;
-            const newText = input.value.trim();
+            const newText = ta.value.trim();
             if (!newText || newText === originalText) {
               loadList(kind, listId, countId);
               return;
@@ -74,12 +78,33 @@
             }
             loadList(kind, listId, countId);
           };
-          input.addEventListener('blur', commit);
-          input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') commit();
+          ta.addEventListener('blur', commit);
+          ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              commit();
+            }
             if (e.key === 'Escape') loadList(kind, listId, countId);
           });
         });
+
+        // v0.5.10 — source attribution badge for captures from OpenChronicle.
+        // mem0 stores our metadata.source/source_app in the payload.
+        const md = rec.metadata || rec.payload?.metadata || rec.payload || {};
+        if (md.source === 'openchronicle' && md.source_app) {
+          const badge = document.createElement('span');
+          badge.textContent = `via ${md.source_app}`;
+          badge.title = md.source_event_id || '';
+          Object.assign(badge.style, {
+            fontSize: '10px',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            background: 'var(--onp-info-soft, var(--border, #eee))',
+            color: 'var(--muted, #888)',
+            marginRight: '6px',
+          });
+          li.appendChild(badge);
+        }
 
         const forgetBtn = document.createElement('button');
         forgetBtn.dataset.kind = kind;
@@ -466,6 +491,20 @@
       searchResultsSection.hidden = true;
       searchInput.focus();
     });
+    // v0.5.10 — Cmd/Ctrl+K focuses the search box from anywhere on the page.
+    // Standard shortcut convention (matches Linear, Notion, GitHub, etc.).
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+    });
+    // Surface the shortcut in the placeholder so users discover it
+    const isMac = navigator.platform.toLowerCase().includes('mac');
+    searchInput.placeholder = isMac
+      ? "Search memory… (⌘K)"
+      : "Search memory… (Ctrl+K)";
   }
 
   // ONP v0.5.6 — health badge in footer. Polls every 30 s so a subsystem

@@ -29,12 +29,28 @@ _END = object()  # sentinel pushed to subscribers on close
 
 
 class ProgressBus:
+    # v0.5.10 — rotate progress.jsonl once it crosses this size. Otherwise
+    # the file grows forever across launches (each launch writes ~30
+    # supervisor.* events at ~120 bytes each = ~3.6 KB per launch).
+    _MAX_LOG_BYTES = 2 * 1024 * 1024
+
     def __init__(self, log_path: Path) -> None:
         self.log_path = log_path
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._subscribers: list[queue.Queue] = []
         self._history: list[ProgressEvent] = []
+        self._rotate_if_oversized()
+
+    def _rotate_if_oversized(self) -> None:
+        """Cheap stat check on startup; move to .old if over the cap."""
+        try:
+            if self.log_path.exists() and self.log_path.stat().st_size > self._MAX_LOG_BYTES:
+                old = self.log_path.with_suffix(self.log_path.suffix + ".old")
+                old.unlink(missing_ok=True)
+                self.log_path.rename(old)
+        except Exception:
+            pass  # never fatal
 
     def publish(self, step: str, status: str, message: str = "") -> None:
         evt: ProgressEvent = {
