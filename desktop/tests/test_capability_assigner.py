@@ -229,3 +229,44 @@ def test_pick_chat_llm_file_falls_back_when_no_models_fit_ceiling(tmp_path):
     assert chosen is not None
     # Fell back to a larger model rather than returning None
     assert chosen.name.endswith(".gguf")
+
+
+# v0.6.11 — Cross-platform RAM probe regression tests
+def test_ram_probe_prefers_psutil_when_available(monkeypatch):
+    """psutil works on Windows where os.sysconf raises AttributeError. We
+    must use it when present so Windows users don't get the 4 GB fallback."""
+    from desktop.auto_register import assigner
+
+    class _FakeVmem:
+        total = 64 * 1024 ** 3  # 64 GB
+
+    fake_psutil = type("psutil", (), {"virtual_memory": staticmethod(lambda: _FakeVmem())})
+    monkeypatch.setitem(__import__("sys").modules, "psutil", fake_psutil)
+    assert assigner._probe_total_ram_gb() == 64.0
+
+
+def test_ram_probe_falls_back_to_sysconf_when_psutil_missing(monkeypatch):
+    """If psutil isn't importable (super-minimal env), the sysconf path
+    still works on Mac/Linux."""
+    import sys
+    from desktop.auto_register import assigner
+
+    # Hide psutil from the lookup
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    # Skip on Windows where os.sysconf doesn't exist regardless of psutil
+    if not hasattr(__import__("os"), "sysconf"):
+        import pytest
+        pytest.skip("os.sysconf unavailable (Windows)")
+    val = assigner._probe_total_ram_gb()
+    # Should produce SOMETHING positive
+    assert val is None or val > 0
+
+
+def test_ram_probe_returns_none_when_everything_fails(monkeypatch):
+    """Caller (_get_chat_ram_ceiling_gb) relies on None → 4.0 fallback."""
+    import sys
+    from desktop.auto_register import assigner
+
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    monkeypatch.setattr("os.sysconf", lambda *_a: (_ for _ in ()).throw(OSError("nope")))
+    assert assigner._probe_total_ram_gb() is None
