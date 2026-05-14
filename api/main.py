@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -147,12 +148,45 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Podcast profile migration encountered errors: {e}")
         # Non-fatal: profiles can be migrated manually via UI
 
+    # ONP v0.6.1 — Start Gmail digest scheduler background task.
+    # The scheduler wakes every 5 minutes, checks GmailIntegration state, and
+    # fires daily/weekly digests when due. Non-fatal if it fails to start —
+    # users can still trigger digests manually from the UI.
+    digest_stop_event: asyncio.Event = asyncio.Event()
+    digest_scheduler_task: asyncio.Task | None = None
+    try:
+        from open_notebook.digest.scheduler import run_forever as _digest_run_forever
+
+        digest_scheduler_task = asyncio.create_task(
+            _digest_run_forever(digest_stop_event),
+            name="onp-digest-scheduler",
+        )
+        logger.info("Digest scheduler task started")
+    except Exception as e:
+        logger.warning(f"Failed to start digest scheduler (non-fatal): {e}")
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
     yield
 
-    # Shutdown: cleanup if needed
+    # Shutdown: signal the digest scheduler to stop and wait for it briefly.
+    if digest_scheduler_task is not None:
+        logger.info("Signalling digest scheduler to stop...")
+        digest_stop_event.set()
+        try:
+            await asyncio.wait_for(digest_scheduler_task, timeout=10)
+            logger.info("Digest scheduler stopped cleanly")
+        except asyncio.TimeoutError:
+            logger.warning("Digest scheduler did not stop in 10s — cancelling")
+            digest_scheduler_task.cancel()
+            try:
+                await digest_scheduler_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        except Exception as e:
+            logger.warning(f"Digest scheduler exit raised: {e}")
+
     logger.info("API shutdown complete")
 
 

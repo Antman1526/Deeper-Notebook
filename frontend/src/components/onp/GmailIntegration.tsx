@@ -91,10 +91,35 @@ export function GmailIntegration() {
     // browser context than the PyWebView main window (Google Sign-In blocks
     // embedded WebViews). The callback returns an HTML page that closes the
     // window automatically.
-    window.open('/api/onp/gmail/connect', 'gmail_oauth', 'width=600,height=720')
-    // Poll for connection status — refresh every 2s for 60s
-    const interval = setInterval(refresh, 2000)
-    setTimeout(() => clearInterval(interval), 60_000)
+    const popup = window.open('/api/onp/gmail/connect', 'gmail_oauth',
+                              'width=600,height=720')
+    // v0.6.1 — if popup blocked, fall back to opening in the current window
+    // (user will navigate back after OAuth completes).
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      setError(
+        'Popup blocked. Click "Connect Gmail" again with popups enabled, ' +
+        'or open the OAuth URL directly: /api/onp/gmail/connect'
+      )
+      return
+    }
+    // Poll for connection status until we see connected=true. Stops itself
+    // on success (instead of waiting the full 60s) so we don't keep hammering
+    // the API after the user finishes.
+    setMessage('Waiting for Google sign-in to complete…')
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch('/api/onp/gmail/status')
+        if (!r.ok) return
+        const data = (await r.json()) as GmailStatus
+        setStatus(data)
+        if (data.connected) {
+          clearInterval(interval)
+          setMessage(`Connected as ${data.email_address}`)
+        }
+      } catch { /* keep polling */ }
+    }, 2000)
+    // Belt-and-suspenders: stop polling after 90 s even if user abandoned
+    setTimeout(() => clearInterval(interval), 90_000)
   }
 
   async function updateSetting<K extends keyof GmailStatus>(key: K, value: GmailStatus[K]) {
@@ -119,6 +144,29 @@ export function GmailIntegration() {
       await fetch('/api/onp/gmail/disconnect', { method: 'POST' })
       await refresh()
       setMessage('Disconnected.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // v0.6.1 — actually delete the OAuth client credentials. Previously the
+  // 'Forget credentials' button toggled `enabled=false`, which was a no-op
+  // when credentials existed but the user wasn't connected yet.
+  async function forgetCredentials() {
+    if (!confirm(
+      'Forget the saved Google OAuth client_id / client_secret? You\'ll ' +
+      'need to paste them again next time.'
+    )) return
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const r = await fetch('/api/onp/gmail/credentials', { method: 'DELETE' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await refresh()
+      setMessage('OAuth credentials cleared.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -233,7 +281,7 @@ export function GmailIntegration() {
               <Button onClick={connectGmail} disabled={busy} size="sm">
                 <Mail className="h-3 w-3 mr-1" /> Connect Gmail
               </Button>
-              <Button onClick={() => updateSetting('enabled' as keyof GmailStatus, false as never)} disabled={busy} variant="ghost" size="sm">
+              <Button onClick={forgetCredentials} disabled={busy} variant="ghost" size="sm">
                 Forget credentials
               </Button>
             </div>
