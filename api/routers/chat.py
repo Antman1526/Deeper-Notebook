@@ -369,7 +369,12 @@ async def execute_chat(request: ExecuteChatRequest):
         state_values["messages"].append(user_message)
 
         # Execute chat graph
-        result = chat_graph.invoke(
+        # v0.6.10 — wrap sync invoke in asyncio.to_thread so it doesn't block
+        # the event loop. LLM calls can take 30s–5min on local models; without
+        # this every concurrent API request stalls. The get_state() call above
+        # already uses this pattern; this brings invoke() in line.
+        result = await asyncio.to_thread(
+            chat_graph.invoke,
             input=state_values,  # type: ignore[arg-type]
             config=RunnableConfig(
                 configurable={
