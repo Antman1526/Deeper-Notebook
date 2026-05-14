@@ -101,6 +101,13 @@ datas = [
     # case where this file is missing, but ONLY if no other directory with
     # an __init__.py shadows the search path. Belt-and-suspenders.
     (str(PROJECT_ROOT / "desktop" / "__init__.py"), "upstream/desktop"),
+    # v0.5.7/8 audit-fix: bundle additional desktop modules that upstream
+    # API routers import:
+    #   - desktop.config           — used by /api/onp/theme (theme switcher)
+    #   - desktop.auto_register.*  — used by /api/models/auto-assign-capability
+    # Without these the imports raise ImportError → upstream surfaces HTTP 500.
+    (str(PROJECT_ROOT / "desktop" / "config.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "auto_register"), "upstream/desktop/auto_register"),
     # Migration #15 ships inside upstream/open_notebook/database/migrations
     # (already covered by the upstream/open_notebook entry above).
     # memory_injection.js is included by the first_run/static directory

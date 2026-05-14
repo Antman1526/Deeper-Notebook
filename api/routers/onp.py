@@ -41,7 +41,19 @@ class ThemeResponse(BaseModel):
 def _load_config():
     """Lazy import — `desktop.config` lives inside the bundled upstream/desktop
     namespace at runtime. Tests can patch this if needed."""
-    from desktop.config import default_config_path, load_or_create
+    try:
+        from desktop.config import default_config_path, load_or_create
+    except ImportError as exc:
+        # Surfaces the real issue (module not bundled) instead of generic 500
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "desktop.config not importable from upstream API process. "
+                "PyInstaller spec must bundle desktop/config.py into "
+                "upstream/desktop/. Underlying: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
     return default_config_path(), load_or_create(default_config_path())
 
 
@@ -64,6 +76,17 @@ async def set_theme(body: ThemeRequest) -> ThemeResponse:
         )
     try:
         from desktop.config import Config, default_config_path, load_or_create
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "desktop.config not importable from upstream API process. "
+                "Rebuild required (PyInstaller spec must bundle "
+                "desktop/config.py). Underlying: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
+    try:
         path = default_config_path()
         cfg = load_or_create(path)
         new_cfg = Config(
