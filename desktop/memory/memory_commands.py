@@ -42,29 +42,57 @@ def _build_clients():
         embed_url=embed_url, llm_url=llm_url,
     )
     # Minimal LLM wrapper compatible with our writer's llm.complete()
+    # v0.5.10 — fixes for production reliability:
+    #   - Model name no longer hardcoded to Hermes-3. The launcher's
+    #     capability-aware spawner (v0.5.1+) picks the model dynamically,
+    #     so the writer must use whatever the chat server actually loaded.
+    #     llama-cpp-python's OpenAI-compatible endpoint accepts model="default"
+    #     or echoes the active model regardless of the name passed.
+    #   - Timeout dropped from 120 s → 30 s default (writer is per-turn,
+    #     blocking the worker that long stalls subsequent extracts).
+    #     Overridable via ONP_CHAT_TIMEOUT_S env var.
+    #   - Reject the empty system+user case before the network round trip.
     import httpx
+    import os
+
+    chat_timeout_s = float(os.environ.get("ONP_CHAT_TIMEOUT_S", "30"))
+    chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")
 
     class _LLM:
         def __init__(self, base_url, model):
             self.base_url = base_url
             self.model = model
+
         def complete(self, system, user):
-            with httpx.Client(timeout=120) as client:
-                r = client.post(
-                    f"{self.base_url}/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": user},
-                        ],
-                        "max_tokens": 800,
-                        "temperature": 0.2,
-                    },
+            if not (system or user):
+                return ""
+            try:
+                with httpx.Client(timeout=chat_timeout_s) as client:
+                    r = client.post(
+                        f"{self.base_url}/chat/completions",
+                        json={
+                            "model": self.model,
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user},
+                            ],
+                            "max_tokens": 800,
+                            "temperature": 0.2,
+                        },
+                    )
+                    r.raise_for_status()
+                    return r.json()["choices"][0]["message"]["content"]
+            except httpx.TimeoutException:
+                # Don't crash the worker — log and return empty so the writer
+                # silently produces zero facts for this turn.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "chat LLM timed out after %ss — skipping fact extraction",
+                    chat_timeout_s,
                 )
-                r.raise_for_status()
-                return r.json()["choices"][0]["message"]["content"]
-    llm = _LLM(llm_url, "Hermes-3-Llama-3.1-8B-Q4_K_M")
+                return ""
+
+    llm = _LLM(llm_url, chat_model_name)
     return llm, mem_client
 
 
