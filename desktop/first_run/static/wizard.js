@@ -96,13 +96,48 @@
         }, 500);
 
         // Save config first
-        const saveResp = await fetch('/api/save', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(payload),
-        });
-        if (!saveResp.ok) {
-          latest.textContent = 'Failed to save config.';
+        // v0.5.10 — retry-aware save. Previously a 500 here showed
+        // "Failed to save config." and the wizard was stuck. Now we surface
+        // the actual error from the response body + offer a retry button.
+        const attemptSave = async () => {
+          const resp = await fetch('/api/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) {
+            let detail = `HTTP ${resp.status}`;
+            try {
+              const body = await resp.json();
+              if (body.error) detail = body.error;
+              else if (body.detail) detail = body.detail;
+            } catch (_) { /* not JSON */ }
+            throw new Error(detail);
+          }
+          return resp;
+        };
+
+        try {
+          await attemptSave();
+        } catch (err) {
+          latest.textContent = `Failed to save config: ${err.message}`;
+          const retryBtn = document.createElement('button');
+          retryBtn.textContent = 'Retry';
+          retryBtn.className = 'primary';
+          retryBtn.style.marginTop = '12px';
+          retryBtn.addEventListener('click', async () => {
+            latest.textContent = 'Retrying…';
+            retryBtn.remove();
+            try {
+              await attemptSave();
+              latest.textContent = 'starting…';
+              // Continue with the progress stream below
+            } catch (err2) {
+              latest.textContent = `Failed again: ${err2.message}`;
+              latest.parentElement.appendChild(retryBtn);
+            }
+          });
+          latest.parentElement.appendChild(retryBtn);
           return;
         }
 
