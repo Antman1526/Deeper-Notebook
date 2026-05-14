@@ -57,7 +57,7 @@ import { Credential, CreateCredentialRequest, UpdateCredentialRequest, Discovere
 import { Model, ModelDefaults } from '@/lib/types/models'
 import { MigrationBanner, ModelTestResultDialog } from '@/components/settings'
 // ONP shadow-layer components (see frontend/src/components/onp/README.md)
-import { ReasoningSlotCard } from '@/components/onp'
+import { ReasoningSlotCard, GmailIntegration } from '@/components/onp'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
 
 type ModelType = 'language' | 'embedding' | 'text_to_speech' | 'speech_to_text'
@@ -1427,6 +1427,12 @@ export default function ApiKeysPage() {
               }
             />
           )}
+
+          {/* ONP v0.6 — Gmail email-digest integration (shadow-layer component)
+              Anchored ID matches the sidebar button's deep-link target. */}
+          <div id="email-digests">
+            <GmailIntegration />
+          </div>
 
           {/* Provider Cards */}
           <div className="grid gap-4">
