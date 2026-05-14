@@ -20,11 +20,13 @@ user clicks "Send digest now" when they want one.
 from __future__ import annotations
 
 import base64
+import html as _html
+import logging
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional  # noqa: F401  (List kept for back-compat consumers)
 from urllib.parse import urlencode
 
 import httpx
@@ -34,6 +36,8 @@ from pydantic import BaseModel, Field
 
 from open_notebook.domain.gmail import GmailIntegration
 
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/onp/gmail", tags=["onp-gmail"])
 
@@ -214,18 +218,26 @@ async def connect(request: Request):
 
 @router.get("/callback", response_class=HTMLResponse)
 async def callback(
+    request: Request,
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
-    request: Request = None,  # type: ignore
 ):
     """OAuth callback. Exchanges code for tokens + persists."""
+    # v0.6.3 — Always purge stale states so an abandoned consent doesn't
+    # leak memory across the day.
+    _purge_stale_states()
+
     if error:
-        return _result_page("Gmail connection cancelled", f"Google returned: {error}", ok=False)
+        log.warning("Gmail OAuth callback error from Google: %s", error)
+        return _result_page("Gmail connection cancelled",
+                            f"Google returned: {error}", ok=False)
     if not code or not state:
-        return _result_page("Gmail connection failed", "Missing code/state.", ok=False)
+        return _result_page("Gmail connection failed",
+                            "Missing code/state.", ok=False)
     if state not in _oauth_states or _oauth_states[state] < datetime.now(timezone.utc):
         _oauth_states.pop(state, None)
+        log.warning("Gmail OAuth state mismatch — possible CSRF or stale link")
         return _result_page(
             "Gmail connection failed",
             "OAuth state mismatch (possible CSRF or stale link). Try again.",
@@ -235,6 +247,7 @@ async def callback(
 
     g = await GmailIntegration.get()
     if not (g.client_id and g.client_secret):
+        log.warning("Gmail OAuth callback: client credentials cleared mid-flow")
         return _result_page(
             "Gmail connection failed",
             "Client credentials were cleared mid-flow.",
@@ -254,6 +267,7 @@ async def callback(
             r.raise_for_status()
             tok = r.json()
         except Exception as exc:
+            log.exception("Gmail OAuth token exchange failed")
             return _result_page(
                 "Gmail connection failed",
                 f"Token exchange error: {exc}",
@@ -264,6 +278,7 @@ async def callback(
         refresh_token = tok.get("refresh_token")
         expires_in = int(tok.get("expires_in", 3600))
         if not access_token or not refresh_token:
+            log.warning("Gmail token response missing access_token or refresh_token")
             return _result_page(
                 "Gmail connection failed",
                 "Google didn't return both access + refresh tokens. "
@@ -280,7 +295,8 @@ async def callback(
             )
             ui.raise_for_status()
             email = ui.json().get("email", "")
-        except Exception:
+        except Exception as exc:
+            log.warning("Gmail userinfo fetch failed (non-fatal): %s", exc)
             email = ""
 
     g.access_token = access_token
@@ -288,6 +304,7 @@ async def callback(
     g.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     g.email_address = email
     await g.save()
+    log.info("Gmail OAuth connection established for %s", email or "(unknown email)")
     return _result_page(
         "Gmail connected!",
         f"Connected as {email or 'your account'}. You can close this tab "
@@ -328,19 +345,27 @@ def _purge_stale_states() -> None:
 
 
 def _result_page(title: str, body: str, ok: bool) -> HTMLResponse:
-    """Tiny HTML page shown after OAuth flow completes."""
+    """Tiny HTML page shown after OAuth flow completes.
+
+    v0.6.3 — title/body are HTML-escaped because they include callback-time
+    interpolations (exception messages, the email Google returned). Without
+    escaping, a `<` in either field breaks the page; in principle hostile
+    content could inject script tags too.
+    """
     color = "#14B870" if ok else "#C44"
+    safe_title = _html.escape(title)
+    safe_body = _html.escape(body)
     return HTMLResponse(
         f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>{title}</title>
+<html><head><meta charset="utf-8"><title>{safe_title}</title>
 <style>
   body {{ font: 15px -apple-system, sans-serif; padding: 48px;
           max-width: 560px; margin: 0 auto; }}
   h1 {{ color: {color}; }} p {{ color: #555; line-height: 1.5; }}
   .hint {{ color: #888; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
-  <h1>{title}</h1>
-  <p>{body}</p>
+  <h1>{safe_title}</h1>
+  <p>{safe_body}</p>
   <p class="hint">Window closes automatically in 5 seconds.</p>
   <script>setTimeout(function(){{window.close()}}, 5000);</script>
 </body></html>""",
@@ -349,8 +374,15 @@ def _result_page(title: str, body: str, ok: bool) -> HTMLResponse:
 
 
 async def _refresh_access_token(g: GmailIntegration) -> bool:
-    """Use the refresh_token to get a new access_token. Returns True on success."""
+    """Use the refresh_token to get a new access_token. Returns True on success.
+
+    v0.6.3 — Google occasionally rotates the refresh_token in the refresh
+    response (security policy, suspicious-activity recovery, etc). If we
+    don't persist the new one, the NEXT refresh fails and the user has to
+    reconnect. We now save it whenever Google returns one.
+    """
     if not g.refresh_token or not g.client_id or not g.client_secret:
+        log.warning("Gmail token refresh skipped: missing credentials or refresh_token")
         return False
     async with httpx.AsyncClient(timeout=10) as client:
         try:
@@ -362,9 +394,19 @@ async def _refresh_access_token(g: GmailIntegration) -> bool:
             })
             r.raise_for_status()
             tok = r.json()
-        except Exception:
+        except Exception as exc:
+            log.warning("Gmail token refresh failed: %s", exc)
             return False
-    g.access_token = tok.get("access_token")
+    new_access = tok.get("access_token")
+    if not new_access:
+        log.warning("Gmail token refresh: response missing access_token")
+        return False
+    g.access_token = new_access
+    # If Google rotated the refresh_token, persist the new one.
+    new_refresh = tok.get("refresh_token")
+    if new_refresh and new_refresh != g.refresh_token:
+        log.info("Gmail rotated refresh_token — persisting new value")
+        g.refresh_token = new_refresh
     expires_in = int(tok.get("expires_in", 3600))
     g.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     await g.save()
