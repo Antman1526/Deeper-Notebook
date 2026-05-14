@@ -43,6 +43,43 @@ ul li:hover button { opacity: 1; }
 .inbox-actions .btn-approve { border-color: var(--primary, #2D7FF9);
                               color: var(--primary, #2D7FF9); }
 .inbox-actions .btn-dismiss { opacity: 0.7 !important; }
+
+/* v0.5.9 — Muted apps chips (shown below inbox list when non-empty) */
+.muted-apps {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border, #e0e0e0);
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.muted-apps .muted-label {
+  color: var(--muted, #888);
+  margin-right: 4px;
+}
+.muted-apps .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--border, #f0f0f0);
+  color: var(--text, #222);
+  font-size: 11px;
+}
+.muted-apps .chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--muted, #888);
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 2px;
+}
+.muted-apps .chip button:hover { color: var(--text, #222); }
 .link-btn {
   background: none; border: none; color: var(--primary, #2D7FF9);
   cursor: pointer; padding: 0; margin-left: 12px;
