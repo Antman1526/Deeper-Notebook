@@ -60,16 +60,33 @@ def register_llamacpp_models(
                     existing_model_keys.add((model_name.lower(), model_type))
                     registered_any = True
     elif model_dir.exists():
-        # No live server but GGUFs exist — register them so the picker shows them.
+        # v0.5.9 — the previous fallback registered an "openai_compatible"
+        # credential with base_url=http://127.0.0.1:8080/v1 even when no
+        # llama-cpp server was spawned. Result: dropdowns showed local
+        # models that failed with connection errors when selected. Since
+        # ONP always spawns its own llama-cpp server in the supervisor
+        # process tree, this branch is dead in production. Logging here
+        # so a future regression that strips the chat-server spawn shows
+        # up in launcher.log instead of silently shipping broken creds.
         if local_ggufs:
-            cred_id = _ensure_credential(
-                client=client,
-                existing_names=existing_cred_names,
-                name="Local GGUF (llama.cpp)",
-                provider="openai_compatible",
-                modalities=["language", "embedding"],
-                base_url="http://127.0.0.1:8080/v1",
+            log.info(
+                "skipping local-GGUF credential registration: no llama-cpp "
+                "server port supplied (would have created broken creds)"
             )
+        return registered_any
+        # --- legacy fallback intentionally removed; if you need to bring
+        # it back, ALSO add a way for the user to start a llama-cpp server
+        # at the registered base_url, otherwise the models are unusable.
+        if False:  # pragma: no cover
+            if local_ggufs:
+                cred_id = _ensure_credential(
+                    client=client,
+                    existing_names=existing_cred_names,
+                    name="Local GGUF (llama.cpp)",
+                    provider="openai_compatible",
+                    modalities=["language", "embedding"],
+                    base_url="http://127.0.0.1:8080/v1",
+                )
             if cred_id:
                 existing_cred_names.add("local gguf (llama.cpp)")
                 for gguf_rel in local_ggufs:

@@ -156,6 +156,44 @@
 
     if (markAllBtn) markAllBtn.hidden = false;
     events.forEach(ev => list.appendChild(renderInboxRow(ev)));
+
+    // v0.5.9 — render muted-apps chips below the list
+    renderMutedAppsChips(payload.muted_apps || []);
+  }
+
+  function renderMutedAppsChips(mutedApps) {
+    const container = document.getElementById('muted-apps-container');
+    const chips = document.getElementById('muted-apps-chips');
+    if (!container || !chips) return;
+    chips.innerHTML = '';
+    if (!mutedApps || mutedApps.length === 0) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    for (const app of mutedApps) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = app;
+      const x = document.createElement('button');
+      x.textContent = '×';
+      x.setAttribute('aria-label', `Unmute ${app}`);
+      x.title = `Unmute "${app}"`;
+      x.addEventListener('click', async () => {
+        try {
+          await fetch('/api/capture/mute', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({app, action: 'unmute'}),
+          });
+          loadInbox();
+        } catch (e) {
+          alert(`Unmute failed: ${e.message}`);
+        }
+      });
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    }
   }
 
   async function markAllSeen() {
@@ -234,6 +272,16 @@
         });
         if (!resp.ok) throw new Error('save failed');
         dismissed.add(eventId(ev));
+        // v0.5.9 — also bump the persistent watermark so this event (and any
+        // older ones) don't re-appear after dashboard restart. Without this,
+        // 'approve' was only effective for the current session.
+        if (ev.ts) {
+          fetch('/api/capture/mark_seen', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ts: ev.ts}),
+          }).catch(() => {});
+        }
         loadInbox();
         // Refresh the matching list at the bottom of the dashboard so the
         // newly-saved record shows up immediately.
