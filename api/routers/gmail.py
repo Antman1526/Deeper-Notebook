@@ -154,6 +154,23 @@ async def disconnect():
     return {"ok": True}
 
 
+@router.delete("/credentials")
+async def forget_credentials():
+    """Wipe BOTH the OAuth client credentials AND the tokens. Returns the
+    integration to its 'fresh install' state. v0.6.1 — fixes the misnamed
+    'Forget credentials' button that previously only toggled `enabled`."""
+    g = await GmailIntegration.get()
+    g.client_id = None
+    g.client_secret = None
+    g.access_token = None
+    g.refresh_token = None
+    g.token_expires_at = None
+    g.email_address = None
+    g.enabled = False
+    await g.save()
+    return {"ok": True}
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # OAuth flow
 # ────────────────────────────────────────────────────────────────────────────────
