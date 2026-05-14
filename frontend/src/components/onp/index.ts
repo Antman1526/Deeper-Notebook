@@ -7,3 +7,5 @@
 
 export { ReasoningSlotCard } from './ReasoningSlotCard'
 export { ThemeSwitcher } from './ThemeSwitcher'
+export { GmailIntegration } from './GmailIntegration'
+export { GmailSidebarButton } from './GmailSidebarButton'

@@ -25,7 +25,7 @@ import {
 // ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
 // shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
-import { ThemeSwitcher as ThemeToggle } from '@/components/onp'
+import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -343,11 +343,22 @@ export function AppSidebar() {
                   </TooltipTrigger>
                   <TooltipContent side="right">{t('common.language')}</TooltipContent>
                 </Tooltip>
+                {/* ONP v0.6 — Gmail sign-in / status (icon-only when collapsed) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <GmailSidebarButton iconOnly />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Email Digests</TooltipContent>
+                </Tooltip>
               </>
             ) : (
               <>
                 <ThemeToggle />
                 <LanguageToggle />
+                {/* ONP v0.6 — Gmail sign-in / status */}
+                <GmailSidebarButton />
               </>
             )}
           </div>

@@ -22,6 +22,7 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
+    gmail as gmail_router,
     insights,
     languages,
     models,
@@ -296,6 +297,7 @@ app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(transformations.router, prefix="/api", tags=["transformations"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(onp.router, prefix="/api", tags=["onp"])  # ONP desktop-wrapper endpoints
+app.include_router(gmail_router.router, prefix="/api", tags=["onp-gmail"])  # Gmail digest integration
 app.include_router(embedding.router, prefix="/api", tags=["embedding"])
 app.include_router(
     embedding_rebuild.router, prefix="/api/embeddings", tags=["embeddings"]
