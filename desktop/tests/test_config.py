@@ -154,3 +154,42 @@ def test_openchronicle_choice_round_trips(tmp_path):
                  openchronicle_choice="prompt")
     cfg.save(cfg_path)
     assert load_or_create(cfg_path).openchronicle_choice == "prompt"
+
+
+def test_config_file_is_owner_only_on_unix(tmp_path, monkeypatch):
+    """v0.6.8 regression: config.toml contains the Fernet encryption key
+    that protects every saved API key + Gmail OAuth token. With default
+    umask the file would be world-readable on shared Macs/Linux."""
+    import os, sys
+    if sys.platform == "win32":
+        pytest.skip("Unix permission bits don't apply to Windows ACLs")
+    # Pretend umask is something permissive (022) so we can verify chmod
+    # actually clamps it down regardless.
+    monkeypatch.setattr("os.umask", lambda x: 0o022)
+    cfg_path = tmp_path / ".onp" / "config.toml"
+    cfg = Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
+    cfg.save(cfg_path)
+    mode = cfg_path.stat().st_mode & 0o777
+    assert mode == 0o600, f"expected 0o600 perms on config, got {oct(mode)}"
+
+
+def test_config_save_is_atomic(tmp_path):
+    """Writing via tmp + replace means a stale partial file can never be
+    read by another reader. Verify there's no leftover .tmp after save."""
+    cfg_path = tmp_path / "config.toml"
+    Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    ).save(cfg_path)
+    assert cfg_path.exists()
+    leftover = cfg_path.with_suffix(cfg_path.suffix + ".tmp")
+    assert not leftover.exists(), "atomic-replace should leave no .tmp file"
