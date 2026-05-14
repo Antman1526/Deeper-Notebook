@@ -1,0 +1,22 @@
+-- 16.surrealql
+-- Open Notebook Plus v0.6 — Gmail digest integration.
+-- Stores OAuth tokens (encrypted) + per-user digest preferences. Single
+-- record per installation since ONP is single-user.
+
+DEFINE TABLE gmail_integration SCHEMAFULL;
+DEFINE FIELD client_id_enc    ON gmail_integration TYPE option<string>;
+DEFINE FIELD client_secret_enc ON gmail_integration TYPE option<string>;
+DEFINE FIELD access_token_enc  ON gmail_integration TYPE option<string>;
+DEFINE FIELD refresh_token_enc ON gmail_integration TYPE option<string>;
+DEFINE FIELD token_expires_at  ON gmail_integration TYPE option<datetime>;
+DEFINE FIELD email_address     ON gmail_integration TYPE option<string>;
+DEFINE FIELD enabled           ON gmail_integration TYPE bool DEFAULT false;
+DEFINE FIELD frequency         ON gmail_integration TYPE string DEFAULT "daily";  -- daily | weekly | manual
+DEFINE FIELD include_notebooks ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD include_sources   ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD include_notes     ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD include_podcasts  ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD include_memory    ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD last_sent_at      ON gmail_integration TYPE option<datetime>;
+DEFINE FIELD created_at        ON gmail_integration TYPE datetime DEFAULT time::now();
+DEFINE FIELD updated_at        ON gmail_integration TYPE datetime DEFAULT time::now();

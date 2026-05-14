@@ -1,0 +1,2 @@
+-- 16_down.surrealql — rollback for v0.6 Gmail integration table.
+REMOVE TABLE IF EXISTS gmail_integration;
