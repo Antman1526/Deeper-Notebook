@@ -57,22 +57,36 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
 
   // Read the current theme from <html data-theme="..."> on mount.
   // window.ONP.setTheme has already set that attribute by the time React
-  // mounts — fallback to the API if the attribute isn't present (e.g.
-  // running in dev where the desktop injection didn't fire).
+  // mounts — fallback to localStorage (preserves user choice across hard
+  // reloads that may briefly race the injection), then to the API.
   useEffect(() => {
     const current = document.documentElement.dataset.theme
     if (current) {
       setActiveTheme(current)
-    } else {
-      fetch('/api/onp/theme')
-        .then((r) => r.json())
-        .then((d) => setActiveTheme(d.theme || 'light-blue'))
-        .catch(() => {})
+      return
     }
+    // v0.5.9 — localStorage fallback so the dropdown doesn't flicker to
+    // the default while waiting for the API response.
+    try {
+      const cached = localStorage.getItem('onp-theme')
+      if (cached) {
+        setActiveTheme(cached)
+        return
+      }
+    } catch {
+      /* localStorage disabled — fall through to API */
+    }
+    fetch('/api/onp/theme')
+      .then((r) => r.json())
+      .then((d) => setActiveTheme(d.theme || 'light-blue'))
+      .catch(() => {})
   }, [])
 
   const handleSelect = (themeId: string) => {
     setActiveTheme(themeId)
+    // v0.5.9 — also write localStorage so a subsequent navigation that races
+    // the injection still shows the right swatch in the dropdown.
+    try { localStorage.setItem('onp-theme', themeId) } catch { /* noop */ }
     const w = window as OnpWindow & Window
     if (w.ONP?.setTheme) {
       w.ONP.setTheme(themeId)
