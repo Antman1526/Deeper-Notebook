@@ -14,6 +14,8 @@ app restarts (config.toml is the source of truth).
 """
 from __future__ import annotations
 
+from dataclasses import replace as _dc_replace
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -59,12 +61,18 @@ def _load_config():
 
 @router.get("/onp/theme", response_model=ThemeResponse)
 async def get_theme() -> ThemeResponse:
+    """v0.6.5 — HTTPException from `_load_config` (e.g. 'module not bundled')
+    is intentionally let through so the user sees the actionable error;
+    only the file-read fallback returns the default theme."""
     try:
         _, cfg = _load_config()
-        return ThemeResponse(theme=cfg.theme, available=sorted(_VALID_THEMES))
-    except Exception as exc:
-        # Don't break the UI if config can't be read; return the default
+    except HTTPException:
+        raise
+    except Exception:
+        # Config file unreadable / first-run before disk write — return
+        # the default rather than 500'ing the UI.
         return ThemeResponse(theme="light-blue", available=sorted(_VALID_THEMES))
+    return ThemeResponse(theme=cfg.theme, available=sorted(_VALID_THEMES))
 
 
 @router.post("/onp/theme", response_model=ThemeResponse)
@@ -74,31 +82,13 @@ async def set_theme(body: ThemeRequest) -> ThemeResponse:
             status_code=400,
             detail=f"unknown theme '{body.theme}' (valid: {sorted(_VALID_THEMES)})",
         )
+    # Reuse the helper — same error message as GET if the module isn't bundled.
+    path, cfg = _load_config()
+    # v0.6.5 — dataclasses.replace() preserves any future Config fields
+    # automatically. Previously this enumerated all 8 fields by hand, which
+    # silently dropped any added field to its default on the next save.
     try:
-        from desktop.config import Config, default_config_path, load_or_create
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "desktop.config not importable from upstream API process. "
-                "Rebuild required (PyInstaller spec must bundle "
-                "desktop/config.py). Underlying: "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        )
-    try:
-        path = default_config_path()
-        cfg = load_or_create(path)
-        new_cfg = Config(
-            model_dir=cfg.model_dir,
-            provider=cfg.provider,
-            default_model=cfg.default_model,
-            surreal_user=cfg.surreal_user,
-            surreal_password=cfg.surreal_password,
-            theme=body.theme,
-            openchronicle_choice=cfg.openchronicle_choice,
-            encryption_key=cfg.encryption_key,
-        )
+        new_cfg = _dc_replace(cfg, theme=body.theme)
         new_cfg.save(path)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

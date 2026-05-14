@@ -1,14 +1,19 @@
 """PyWebView window wrapper. Opens a native window pointed at a URL and
 calls a teardown callback on close. Optionally injects a theme stylesheet
 into the loaded page so Radix-UI / CSS-var-aware components pick up the
-user's chosen theme."""
+user's chosen theme.
+
+v0.6.5: `webview` is imported lazily inside open_window() so the pure-
+function helpers in this module (_THEMES, _theme_tokens,
+_theme_injection_js) can be tested without pywebview installed. The
+desktop bundle's runtime path is unaffected — it calls open_window()
+which still requires webview.
+"""
 from __future__ import annotations
 
 import json as _json
 from pathlib import Path
 from typing import Callable
-
-import webview
 
 
 def _voice_injection_js() -> str:
@@ -295,6 +300,7 @@ def open_window(url: str, on_close: Callable[[], None],
                 memory_url: str | None = None,
                 remind_openchronicle: bool = False) -> None:
     """Blocking — returns when the user closes the window."""
+    import webview  # lazy: only the desktop runtime path needs this
     window = webview.create_window(title, url, width=width, height=height)
     window.events.closed += on_close
 
@@ -315,4 +321,4 @@ def open_window(url: str, on_close: Callable[[], None],
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
-    webview.start()
+    webview.start()  # noqa: F821 — already imported above
