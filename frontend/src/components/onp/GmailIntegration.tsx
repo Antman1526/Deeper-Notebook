@@ -12,7 +12,7 @@
  */
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,21 +44,42 @@ export function GmailIntegration() {
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
 
+  // v0.6.3 — track mount state + active OAuth poller so we can cancel both
+  // cleanly. Without this, setInterval / setTimeout / in-flight fetches
+  // happily call setState on an unmounted component (React warning + leak).
+  const mountedRef = useRef(true)
+  const oauthPollRef = useRef<{
+    interval: ReturnType<typeof setInterval> | null
+    timeout: ReturnType<typeof setTimeout> | null
+  }>({ interval: null, timeout: null })
+
+  function stopOauthPolling() {
+    if (oauthPollRef.current.interval) clearInterval(oauthPollRef.current.interval)
+    if (oauthPollRef.current.timeout) clearTimeout(oauthPollRef.current.timeout)
+    oauthPollRef.current.interval = null
+    oauthPollRef.current.timeout = null
+  }
+
   async function refresh() {
     try {
       const r = await fetch('/api/onp/gmail/status')
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const data = (await r.json()) as GmailStatus
-      setStatus(data)
+      if (mountedRef.current) setStatus(data)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (mountedRef.current) setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }
 
   useEffect(() => {
+    mountedRef.current = true
     refresh()
+    return () => {
+      mountedRef.current = false
+      stopOauthPolling()
+    }
   }, [])
 
   async function saveCredentials() {
@@ -91,6 +112,8 @@ export function GmailIntegration() {
     // browser context than the PyWebView main window (Google Sign-In blocks
     // embedded WebViews). The callback returns an HTML page that closes the
     // window automatically.
+    stopOauthPolling()  // cancel any previous attempt
+
     const popup = window.open('/api/onp/gmail/connect', 'gmail_oauth',
                               'width=600,height=720')
     // v0.6.1 — if popup blocked, fall back to opening in the current window
@@ -102,52 +125,84 @@ export function GmailIntegration() {
       )
       return
     }
-    // Poll for connection status until we see connected=true. Stops itself
-    // on success (instead of waiting the full 60s) so we don't keep hammering
-    // the API after the user finishes.
+    // Poll for connection status until we see connected=true. Stops on
+    // success, user-closed popup, component unmount, or 90s timeout.
     setMessage('Waiting for Google sign-in to complete…')
     const interval = setInterval(async () => {
+      // Bail fast if component unmounted between ticks
+      if (!mountedRef.current) {
+        stopOauthPolling()
+        return
+      }
+      // Bail if user closed the popup (gives back ~85s of wasted requests)
+      if (popup.closed) {
+        stopOauthPolling()
+        setMessage(null)
+        return
+      }
       try {
         const r = await fetch('/api/onp/gmail/status')
         if (!r.ok) return
         const data = (await r.json()) as GmailStatus
+        if (!mountedRef.current) return
         setStatus(data)
         if (data.connected) {
-          clearInterval(interval)
+          stopOauthPolling()
           setMessage(`Connected as ${data.email_address}`)
         }
       } catch { /* keep polling */ }
     }, 2000)
     // Belt-and-suspenders: stop polling after 90 s even if user abandoned
-    setTimeout(() => clearInterval(interval), 90_000)
+    const timeout = setTimeout(() => {
+      stopOauthPolling()
+      if (mountedRef.current) {
+        setMessage((prev) => (prev?.startsWith('Waiting') ? null : prev))
+      }
+    }, 90_000)
+    oauthPollRef.current = { interval, timeout }
   }
 
   async function updateSetting<K extends keyof GmailStatus>(key: K, value: GmailStatus[K]) {
     if (!status) return
+    // Optimistic UI update — reverted by refresh() on failure.
+    const previous = status
     setStatus({ ...status, [key]: value })
     try {
-      await fetch('/api/onp/gmail/settings', {
+      const r = await fetch('/api/onp/gmail/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [key]: value }),
       })
+      // v0.6.3 — fetch() only rejects on network error; HTTP errors come
+      // through as ok=false and were previously silently ignored.
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({} as { detail?: string }))
+        throw new Error(body.detail || `HTTP ${r.status}`)
+      }
     } catch (e) {
+      if (!mountedRef.current) return
       setError(e instanceof Error ? e.message : String(e))
-      refresh()
+      setStatus(previous)  // roll back optimistic update
     }
   }
 
   async function disconnect() {
     if (!confirm('Disconnect Gmail? You can reconnect anytime.')) return
     setBusy(true)
+    setError(null)
+    setMessage(null)
     try {
-      await fetch('/api/onp/gmail/disconnect', { method: 'POST' })
+      const r = await fetch('/api/onp/gmail/disconnect', { method: 'POST' })
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({} as { detail?: string }))
+        throw new Error(body.detail || `HTTP ${r.status}`)
+      }
       await refresh()
-      setMessage('Disconnected.')
+      if (mountedRef.current) setMessage('Disconnected.')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (mountedRef.current) setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 
