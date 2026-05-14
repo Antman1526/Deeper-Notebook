@@ -797,8 +797,19 @@ async def auto_assign_capability(force: bool = False):
     """
     try:
         from open_notebook.database.repository import repo_query
-        from desktop.auto_register.capability import score_model
-        from desktop.auto_register.assigner import assign_all, SLOTS
+        try:
+            from desktop.auto_register.capability import score_model
+            from desktop.auto_register.assigner import assign_all, SLOTS
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "desktop.auto_register not importable from upstream API "
+                    "process. Rebuild required (PyInstaller spec must bundle "
+                    "desktop/auto_register/ into upstream/desktop/). "
+                    f"Underlying: {type(exc).__name__}: {exc}"
+                ),
+            )
 
         # Get all models
         all_models = await repo_query(
