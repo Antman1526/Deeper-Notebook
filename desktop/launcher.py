@@ -7,6 +7,7 @@ HTTP 200.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import socket
@@ -24,6 +25,15 @@ if TYPE_CHECKING:
 
 from desktop.config import Config
 from desktop.ports import find_free_ports
+
+
+# v0.6.5 — debugging supervised-child failures was painful: every optional
+# service had `except Exception: pass`, so a misconfigured Piper voice path
+# (or a missing whisper binary, or an OOM-killed llama.cpp) produced only
+# "supervisor.piper: error" in the UI with zero log trail. Now we log the
+# exception at warning level AND surface the message through the progress
+# bus so the wizard's status overlay can show it.
+log = logging.getLogger(__name__)
 
 
 def _wait_tcp(host: str, port: int, timeout: float = 30.0) -> None:
@@ -177,27 +187,12 @@ class Supervisor:
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
         self._progress("supervisor.next", "done")
 
-        # New v0.3 processes — best-effort; failures don't crash the launcher.
-        self._progress("supervisor.llamacpp_embed", "running")
-        try:
-            self._spawn_llamacpp_embed(embed_port)
-            self._progress("supervisor.llamacpp_embed", "done")
-        except Exception:
-            self._progress("supervisor.llamacpp_embed", "error")
-
-        self._progress("supervisor.whisper", "running")
-        try:
-            self._spawn_whisper(whisper_port)
-            self._progress("supervisor.whisper", "done")
-        except Exception:
-            self._progress("supervisor.whisper", "error")
-
-        self._progress("supervisor.piper", "running")
-        try:
-            self._spawn_piper(piper_port)
-            self._progress("supervisor.piper", "done")
-        except Exception:
-            self._progress("supervisor.piper", "error")
+        # v0.6.5 — replace 6 copy-pasted try/except blocks with one helper
+        # that logs + reports through _progress. Avoids the silent-swallow
+        # bug that made debugging missing/broken optional services painful.
+        self._try_spawn("supervisor.llamacpp_embed", self._spawn_llamacpp_embed, embed_port)
+        self._try_spawn("supervisor.whisper", self._spawn_whisper, whisper_port)
+        self._try_spawn("supervisor.piper", self._spawn_piper, piper_port)
 
         # Stash ports for auto_register to use.
         self.embed_port = embed_port
@@ -207,29 +202,18 @@ class Supervisor:
         # v0.4 additions — order matters: chat LLM must be up before the
         # memory retriever boots, because the retriever instantiates
         # mem0.Memory which validates the LLM endpoint at startup.
-        self._progress("supervisor.llamacpp_chat", "running")
-        try:
-            self._spawn_llamacpp_chat(chat_llm_port)
-            self._progress("supervisor.llamacpp_chat", "done")
-        except Exception:
-            self._progress("supervisor.llamacpp_chat", "error")
+        self._try_spawn("supervisor.llamacpp_chat", self._spawn_llamacpp_chat, chat_llm_port)
         self.chat_llm_port = chat_llm_port    # assigned before memory_retriever spawn
 
-        self._progress("supervisor.memory", "running")
-        try:
-            self._spawn_memory_retriever(memory_port)
-            self._progress("supervisor.memory", "done")
-        except Exception:
-            self._progress("supervisor.memory", "error")
+        self._try_spawn("supervisor.memory", self._spawn_memory_retriever, memory_port)
         self.memory_port = memory_port
 
         if self.openchronicle_available:
-            self._progress("supervisor.openchronicle", "running")
-            try:
-                self._spawn_openchronicle_bridge(openchronicle_port)
-                self._progress("supervisor.openchronicle", "done")
-            except Exception:
-                self._progress("supervisor.openchronicle", "error")
+            self._try_spawn(
+                "supervisor.openchronicle",
+                self._spawn_openchronicle_bridge,
+                openchronicle_port,
+            )
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 
     def stop_all(self) -> None:
@@ -381,6 +365,25 @@ class Supervisor:
                 self.progress.publish(step, status, message)
             except Exception:
                 pass
+
+    def _try_spawn(self, step: str, fn, *args) -> None:
+        """Wrap an optional/best-effort spawn in progress + logging.
+
+        v0.6.5 — Previously each optional service had its own try/except
+        that swallowed exceptions silently and only published "error" to
+        the progress bus with no message. Anyone debugging "piper doesn't
+        work on my machine" had nothing to go on. Now:
+          - logger.warning logs the full exception (with traceback)
+          - the progress event includes the str(exc) so the UI sees it
+          - control flow is unchanged: failure here doesn't crash launcher
+        """
+        self._progress(step, "running")
+        try:
+            fn(*args)
+            self._progress(step, "done")
+        except Exception as exc:
+            log.warning("%s spawn failed: %s", step, exc, exc_info=True)
+            self._progress(step, "error", str(exc))
 
     def _spawn_llamacpp_embed(self, port: int) -> None:
         if self.nomic_embed_path is None or not self.nomic_embed_path.exists():

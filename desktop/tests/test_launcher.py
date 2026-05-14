@@ -279,3 +279,57 @@ def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
         assert any("desktop_shims.memory_shim" in s for s in joined)
     finally:
         sv.stop_all()
+
+
+def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_path, monkeypatch, caplog):
+    """v0.6.5 regression test: when an optional spawn raises, we must:
+      1. log the exception (so users debugging missing binaries can grep logs)
+      2. publish progress event with the error message (so the UI status shows it)
+      3. NOT crash the launcher (other services keep going)
+    """
+    import logging
+
+    # Make every spawn succeed EXCEPT piper, which raises a recognizable error.
+    def fake_popen(args, **kw):
+        joined = " ".join(args) if isinstance(args, list) else args
+        if "piper_shim" in joined:
+            raise FileNotFoundError("piper voice asset missing: /no/such/path.onnx")
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    progress_events: list[tuple[str, str, str]] = []
+    progress = MagicMock()
+    progress.publish = lambda step, status, message="": progress_events.append((step, status, message))
+
+    # _spawn_piper requires the voice file to actually exist on disk;
+    # otherwise it returns early without trying to spawn.
+    voice_path = tmp_path / "fake.onnx"
+    voice_path.write_bytes(b"")
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        progress=progress,
+        piper_voices={"en-us-amy": voice_path},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="desktop.launcher"):
+        sv.start_all()
+    try:
+        # 1. Logged the exception with traceback (exc_info=True path)
+        piper_logs = [r for r in caplog.records if "supervisor.piper" in r.getMessage()]
+        assert piper_logs, "expected a warning log for the failed piper spawn"
+        assert "piper voice asset missing" in piper_logs[0].getMessage()
+        # 2. Progress event includes the error message (not just status)
+        piper_errors = [(s, st, m) for (s, st, m) in progress_events
+                        if s == "supervisor.piper" and st == "error"]
+        assert piper_errors, "expected an error progress event for piper"
+        assert "piper voice asset missing" in piper_errors[0][2]
+        # 3. Other services kept going (e.g. memory_retriever or openchronicle reached)
+        steps_seen = {s for (s, _, _) in progress_events}
+        assert "supervisor.memory" in steps_seen, "memory spawn should still run after piper failure"
+    finally:
+        sv.stop_all()
