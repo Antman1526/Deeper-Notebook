@@ -32,6 +32,10 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
   const router = useRouter()
   const [status, setStatus] = useState<GmailStatus | null>(null)
 
+  // ONP v0.6.1 — Adaptive polling: 60s while disconnected (state may change
+  // any moment via OAuth popup), 5min once connected (state is stable; cuts
+  // background traffic 5×). Re-arms whenever connectedness toggles.
+  const connectedFlag = status?.connected === true
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -45,12 +49,13 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
       }
     }
     load()
-    const interval = setInterval(load, 60_000)
+    const pollMs = connectedFlag ? 300_000 : 60_000
+    const interval = setInterval(load, pollMs)
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [])
+  }, [connectedFlag])
 
   const goToSettings = () => {
     router.push('/settings/api-keys#email-digests')
