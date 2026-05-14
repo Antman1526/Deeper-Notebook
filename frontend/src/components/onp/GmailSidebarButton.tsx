@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { onpFetch } from '@/lib/api/onp'
 import { Button } from '@/components/ui/button'
 import { Mail, CheckCircle2 } from 'lucide-react'
 
@@ -40,7 +41,7 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
     let cancelled = false
     const load = async () => {
       try {
-        const r = await fetch('/api/onp/gmail/status')
+        const r = await onpFetch('/api/onp/gmail/status')
         if (!r.ok) return
         const data = (await r.json()) as GmailStatus
         if (!cancelled) setStatus(data)

@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from 'react'
 
+import { onpFetch } from '@/lib/api/onp'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -76,7 +77,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     } catch {
       /* localStorage disabled — fall through to API */
     }
-    fetch('/api/onp/theme')
+    onpFetch('/api/onp/theme')
       .then((r) => r.json())
       .then((d) => setActiveTheme(d.theme || 'light-blue'))
       .catch(() => {})
@@ -91,7 +92,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     if (w.ONP?.setTheme) {
       w.ONP.setTheme(themeId)
     } else {
-      fetch('/api/onp/theme', {
+      onpFetch('/api/onp/theme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ theme: themeId }),
