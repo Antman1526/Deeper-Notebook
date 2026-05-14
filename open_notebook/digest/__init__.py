@@ -29,10 +29,14 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
     sections: list[str] = []
     total = 0
 
+    # ONP v0.6.2 — SurrealDB compares datetime columns by type, not by string.
+    # Cast `$since` to <datetime> in each WHERE so an ISO-8601 param works.
     if g.include_notebooks:
         rows = await _safe_query(
             "SELECT id, name, description, created, updated FROM notebook "
-            "WHERE updated > $since OR created > $since ORDER BY updated DESC LIMIT 20",
+            "WHERE (archived != true) "
+            "AND (updated > <datetime>$since OR created > <datetime>$since) "
+            "ORDER BY updated DESC LIMIT 20",
             {"since": since_iso},
         )
         if rows:
@@ -44,9 +48,11 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             total += len(rows)
 
     if g.include_sources:
+        # `source` table has no `type` or `status` column (asset metadata is
+        # stored on the linked asset record). Just show title + created.
         rows = await _safe_query(
-            "SELECT id, title, type, status, created FROM source "
-            "WHERE created > $since ORDER BY created DESC LIMIT 30",
+            "SELECT id, title, created FROM source "
+            "WHERE created > <datetime>$since ORDER BY created DESC LIMIT 30",
             {"since": since_iso},
         )
         if rows:
@@ -60,7 +66,7 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
     if g.include_notes:
         rows = await _safe_query(
             "SELECT id, title, created FROM note "
-            "WHERE created > $since ORDER BY created DESC LIMIT 20",
+            "WHERE created > <datetime>$since ORDER BY created DESC LIMIT 20",
             {"since": since_iso},
         )
         if rows:
@@ -72,9 +78,11 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             total += len(rows)
 
     if g.include_podcasts:
+        # Table is `episode` (migration 7), not `podcast_episode`. Status is
+        # on the linked `command` record, so skip it for the digest summary.
         rows = await _safe_query(
-            "SELECT id, name, status, created FROM podcast_episode "
-            "WHERE created > $since ORDER BY created DESC LIMIT 20",
+            "SELECT id, name, created FROM episode "
+            "WHERE created > <datetime>$since ORDER BY created DESC LIMIT 20",
             {"since": since_iso},
         )
         if rows:
@@ -88,7 +96,7 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
     if g.include_memory:
         rows = await _safe_query(
             "SELECT id, text, scope, confidence, created_at "
-            "FROM memory_fact WHERE created_at > $since "
+            "FROM memory_fact WHERE created_at > <datetime>$since "
             "ORDER BY created_at DESC LIMIT 30",
             {"since": since_iso},
         )
@@ -151,9 +159,7 @@ def _render_notebook(r: dict) -> str:
 
 
 def _render_source(r: dict) -> str:
-    title = _esc(r.get("title") or "(untitled)")
-    kind = _esc(r.get("type") or "")
-    return f"<strong>{title}</strong>" + (f" <span style='color:#888;'>[{kind}]</span>" if kind else "")
+    return f"<strong>{_esc(r.get('title') or '(untitled)')}</strong>"
 
 
 def _render_note(r: dict) -> str:
@@ -161,10 +167,7 @@ def _render_note(r: dict) -> str:
 
 
 def _render_podcast(r: dict) -> str:
-    name = _esc(r.get("name") or "(unnamed)")
-    status = _esc(r.get("status") or "")
-    badge = f" <span style='color:#888;'>[{status}]</span>" if status else ""
-    return f"<strong>{name}</strong>{badge}"
+    return f"<strong>{_esc(r.get('name') or '(unnamed)')}</strong>"
 
 
 def _render_memory(r: dict) -> str:
