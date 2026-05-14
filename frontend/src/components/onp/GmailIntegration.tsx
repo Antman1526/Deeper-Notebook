@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import { onpFetch } from '@/lib/api/onp'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -62,7 +63,7 @@ export function GmailIntegration() {
 
   async function refresh() {
     try {
-      const r = await fetch('/api/onp/gmail/status')
+      const r = await onpFetch('/api/onp/gmail/status')
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const data = (await r.json()) as GmailStatus
       if (mountedRef.current) setStatus(data)
@@ -87,7 +88,7 @@ export function GmailIntegration() {
     setError(null)
     setMessage(null)
     try {
-      const r = await fetch('/api/onp/gmail/credentials', {
+      const r = await onpFetch('/api/onp/gmail/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
@@ -141,7 +142,7 @@ export function GmailIntegration() {
         return
       }
       try {
-        const r = await fetch('/api/onp/gmail/status')
+        const r = await onpFetch('/api/onp/gmail/status')
         if (!r.ok) return
         const data = (await r.json()) as GmailStatus
         if (!mountedRef.current) return
@@ -168,7 +169,7 @@ export function GmailIntegration() {
     const previous = status
     setStatus({ ...status, [key]: value })
     try {
-      const r = await fetch('/api/onp/gmail/settings', {
+      const r = await onpFetch('/api/onp/gmail/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [key]: value }),
@@ -192,7 +193,7 @@ export function GmailIntegration() {
     setError(null)
     setMessage(null)
     try {
-      const r = await fetch('/api/onp/gmail/disconnect', { method: 'POST' })
+      const r = await onpFetch('/api/onp/gmail/disconnect', { method: 'POST' })
       if (!r.ok) {
         const body = await r.json().catch(() => ({} as { detail?: string }))
         throw new Error(body.detail || `HTTP ${r.status}`)
@@ -218,7 +219,7 @@ export function GmailIntegration() {
     setError(null)
     setMessage(null)
     try {
-      const r = await fetch('/api/onp/gmail/credentials', { method: 'DELETE' })
+      const r = await onpFetch('/api/onp/gmail/credentials', { method: 'DELETE' })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       await refresh()
       setMessage('OAuth credentials cleared.')
@@ -234,7 +235,7 @@ export function GmailIntegration() {
     setError(null)
     setMessage(null)
     try {
-      const r = await fetch('/api/onp/gmail/send-test', { method: 'POST' })
+      const r = await onpFetch('/api/onp/gmail/send-test', { method: 'POST' })
       const body = await r.json()
       if (!r.ok || !body.ok) {
         throw new Error(body.message || body.detail || `HTTP ${r.status}`)
