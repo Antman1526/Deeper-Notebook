@@ -39,11 +39,29 @@ class Config:
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
 
     def save(self, path: Path) -> None:
+        # v0.6.8 — config.toml stores both the SurrealDB password and the
+        # Fernet encryption_key that decrypts every saved API key + Gmail
+        # OAuth token. With default umask (022 on most Macs/Linux) the file
+        # is world-readable, which means any other local user on a shared
+        # machine could exfiltrate the user's tokens. Restrict to owner-only.
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Tighten parent dir too — same secrets reachable via dir listing.
+        try:
+            os.chmod(path.parent, 0o700)
+        except OSError:
+            pass  # non-fatal (read-only fs, Windows ACL, etc.)
         data = asdict(self)
         data["model_dir"] = str(self.model_dir)
         toml = "".join(f"{k} = {_toml_string(v)}\n" for k, v in data.items())
-        path.write_text(toml)
+        # Write atomically via temp file + replace, so a crashed write
+        # never leaves a half-written world-readable file behind.
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(toml)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass  # Windows: file permission model is different; rely on ACLs
+        os.replace(tmp, path)
 
 
 def default_model_dir() -> Path:
