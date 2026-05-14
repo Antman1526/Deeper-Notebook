@@ -18,16 +18,37 @@ from desktop.auto_register.capability import ModelDescriptor, score_model
 
 
 def _detect_total_ram_gb() -> float | None:
-    """Memoize the system-RAM probe — sysconf is constant per process."""
+    """Memoize the system-RAM probe — total RAM is constant per process."""
     return _detect_total_ram_gb._cached  # type: ignore[attr-defined]
 
 
-try:
-    _detect_total_ram_gb._cached = (  # type: ignore[attr-defined]
-        os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
-    )
-except (OSError, AttributeError, ValueError):
-    _detect_total_ram_gb._cached = None  # type: ignore[attr-defined]
+def _probe_total_ram_gb() -> float | None:
+    """Cross-platform total-RAM probe in GB.
+
+    v0.6.11 — previously os.sysconf-only, which only works on Mac/Linux. On
+    Windows os.sysconf doesn't exist → AttributeError → `None`, which the
+    caller fell back to hardcoded 4 GB. So every Windows user got the
+    smallest chat model regardless of having 32 GB / 64 GB / 128 GB.
+
+    Strategy:
+      1. psutil if available (already in pyproject deps) — accurate on all
+         platforms.
+      2. os.sysconf — fast path on Mac/Linux when psutil somehow isn't
+         importable (e.g. minimal frozen build).
+      3. None — caller falls back to a sensible 4 GB.
+    """
+    try:
+        import psutil  # type: ignore
+        return psutil.virtual_memory().total / (1024 ** 3)
+    except Exception:
+        pass
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+_detect_total_ram_gb._cached = _probe_total_ram_gb()  # type: ignore[attr-defined]
 
 
 def _get_chat_ram_ceiling_gb() -> float:
