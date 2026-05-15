@@ -42,16 +42,35 @@ def _load_capture_state() -> dict:
 
 def _save_capture_state(state: dict) -> None:
     """Writes the full state dict back. Best-effort — missing state just
-    means the inbox shows more events."""
+    means the inbox shows more events.
+
+    v0.6.27 — atomic write. The previous `p.write_text(...)` was a single
+    open-truncate-write-close sequence; if the launcher crashed mid-write
+    (sigkill, OOM, host shutdown), the file was left half-written.
+    `_load_capture_state` then caught the JSON decode error and silently
+    returned the default empty state — losing the user's muted_apps list.
+    Now we write to a sibling .tmp file and os.replace into place; the
+    visible file is always either the old complete content or the new
+    complete content, never partial.
+    """
     p = _capture_state_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({
+        "last_seen": state.get("last_seen", ""),
+        "muted_apps": sorted(set(state.get("muted_apps", []))),
+    })
+    tmp = p.with_suffix(p.suffix + ".tmp")
     try:
-        p.write_text(json.dumps({
-            "last_seen": state.get("last_seen", ""),
-            "muted_apps": sorted(set(state.get("muted_apps", []))),
-        }))
+        tmp.write_text(payload)
+        os.replace(tmp, p)
     except Exception:
-        pass
+        # Clean up any leftover .tmp so the next save isn't blocked by
+        # a stale temp file (rare but possible if write succeeded and
+        # replace failed).
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # Legacy helpers — preserved for tests that previously called them directly.
