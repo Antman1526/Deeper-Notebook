@@ -37,7 +37,6 @@ Flow:
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import List, Optional
 
@@ -83,6 +82,21 @@ _MAX_EXTRACT_CHARS_PER_FILE = 50_000
 # upgrade in provision_langchain_model — which on a self-hosted setup may
 # not actually be configured.
 _MAX_COMBINED_CHARS = 200_000
+
+# v0.7.1 — Cap warning-message length. Parser libraries (PyMuPDF, mammoth)
+# can produce KB-long error strings with paths and partial stack traces.
+# 200 chars matches api/routers/gmail.py:406 — long enough to identify
+# the cause, short enough to keep response payloads small and avoid
+# leaking deep path info to the client.
+_MAX_WARNING_LEN = 200
+
+
+def _brief(exc: BaseException) -> str:
+    """Truncate exception text for safe inclusion in user-visible warnings."""
+    s = str(exc)
+    if len(s) <= _MAX_WARNING_LEN:
+        return s
+    return s[: _MAX_WARNING_LEN - 1] + "…"
 
 
 # -----------------------------------------------------------------------------
@@ -260,10 +274,13 @@ async def studio_generate(
     for upload in files:
         filename = upload.filename or "upload"
         try:
-            saved_path = await save_uploaded_file(upload)
+            # v0.7.1 — pass max_bytes through so chunked-transfer-encoded
+            # uploads can't bypass the size cap (UploadFile.size is None
+            # for those, so the pre-check above silently skips).
+            saved_path = await save_uploaded_file(upload, max_bytes=_MAX_FILE_BYTES)
         except Exception as exc:
             logger.warning("Studio: save_uploaded_file failed for %r: %s", filename, exc)
-            warnings.append(f"Could not save {filename!r}: {exc}")
+            warnings.append(f"Could not save {filename!r}: {_brief(exc)}")
             continue
 
         # Create + link the Source first so it's visible even if extract fails
@@ -271,14 +288,13 @@ async def studio_generate(
             source = Source(
                 title=Path(filename).name,
                 asset=Asset(file_path=saved_path),
-                topics=[],
             )
             await source.save()
             await source.add_to_notebook(notebook_id)
             source_ids.append(str(source.id))
         except Exception as exc:
             logger.warning("Studio: source create failed for %r: %s", filename, exc)
-            warnings.append(f"Could not create source for {filename!r}: {exc}")
+            warnings.append(f"Could not create source for {filename!r}: {_brief(exc)}")
             continue
 
         # Extract content via content_core (handles pdf/docx/pptx/html/md/txt)
@@ -312,7 +328,7 @@ async def studio_generate(
                 logger.warning("Studio: vectorize failed (non-fatal) for %r: %s", filename, exc)
         except Exception as exc:
             logger.exception("Studio: extract_content failed for %r", filename)
-            warnings.append(f"Could not parse {filename!r}: {exc}")
+            warnings.append(f"Could not parse {filename!r}: {_brief(exc)}")
 
     if not extracted:
         # We created an empty notebook + maybe some empty sources. That's
@@ -483,8 +499,3 @@ async def _dispatch_podcast_mode(
         warnings=warnings,
     )
 
-
-# `asyncio` is imported above for symmetry with other routers; nothing
-# currently uses it here. Future: wrap synchronous ai_prompter Prompter
-# in asyncio.to_thread if we move NOTEBOOK_SYSTEM_PROMPT to a Jinja file.
-_ = asyncio  # silence linters about unused import

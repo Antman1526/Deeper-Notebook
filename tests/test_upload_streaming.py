@@ -94,3 +94,47 @@ async def test_save_uploaded_file_cleans_up_on_write_failure(tmp_path, monkeypat
     # No leftover file in the upload folder
     leftovers = list(tmp_path.iterdir())
     assert leftovers == [], f"expected no leftover files, got {leftovers}"
+
+
+@pytest.mark.asyncio
+async def test_save_uploaded_file_enforces_max_bytes_mid_stream(tmp_path, monkeypatch):
+    """v0.7.1 Issue #1 regression: chunked-transfer uploads bypass the
+    UploadFile.size pre-check. save_uploaded_file's max_bytes kwarg must
+    abort mid-stream when the cap is exceeded, regardless of whether
+    Content-Length was set. Without this, an authenticated client can
+    stream arbitrarily large files to disk via chunked transfer encoding."""
+    monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(tmp_path))
+    # Build a file that's 5 MB total. Cap it at 1 MB. Must abort early.
+    payload = b"X" * (5 * 1024 * 1024)
+    f = _FakeUploadFile("oversize.bin", payload)
+
+    with pytest.raises(ValueError, match=r"exceeds size limit"):
+        await sources_mod.save_uploaded_file(f, max_bytes=1 * 1024 * 1024)
+
+    # No leftover file in the upload folder (cleanup path ran)
+    leftovers = list(tmp_path.iterdir())
+    assert leftovers == [], f"expected partial file cleanup, got {leftovers}"
+
+
+@pytest.mark.asyncio
+async def test_save_uploaded_file_allows_files_under_max_bytes(tmp_path, monkeypatch):
+    """Control: a file UNDER the cap saves successfully without raising."""
+    monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(tmp_path))
+    payload = b"Y" * 512  # 512 bytes
+    f = _FakeUploadFile("ok.bin", payload)
+
+    saved = await sources_mod.save_uploaded_file(f, max_bytes=1024)
+    assert Path(saved).read_bytes() == payload
+
+
+@pytest.mark.asyncio
+async def test_save_uploaded_file_no_cap_when_max_bytes_is_none(tmp_path, monkeypatch):
+    """Backward-compat: existing callers that don't pass max_bytes
+    keep the prior unbounded behavior (caller is responsible for
+    enforcement at a higher layer)."""
+    monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(tmp_path))
+    payload = b"Z" * (2 * 1024 * 1024)  # 2 MB
+    f = _FakeUploadFile("big.bin", payload)
+
+    saved = await sources_mod.save_uploaded_file(f)  # no max_bytes
+    assert Path(saved).read_bytes() == payload
