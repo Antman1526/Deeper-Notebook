@@ -131,17 +131,27 @@ export function useSourceChat(sourceId: string) {
     setMessages(prev => [...prev, userMessage])
     setIsStreaming(true)
 
+    // v0.6.32 — actually wire the AbortController. The previous version
+    // declared abortControllerRef but NEVER assigned to .current, so
+    // cancelStreaming() was a no-op AND the unmount path leaked the
+    // stream reader + setState'd on a dead component.
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
-      const response = await sourceChatApi.sendMessage(sourceId, sessionId, {
-        message,
-        model_override: modelOverride
-      })
+      const response = await sourceChatApi.sendMessage(
+        sourceId, sessionId,
+        { message, model_override: modelOverride },
+        controller.signal,
+      )
 
       if (!response) {
         throw new Error('No response body')
       }
 
-      const reader = response.getReader()
+      reader = response.getReader()
       const decoder = new TextDecoder()
       let aiMessage: SourceChatMessage | null = null
 
@@ -192,6 +202,12 @@ export function useSourceChat(sourceId: string) {
         }
       }
     } catch (err: unknown) {
+      // AbortError = user clicked Stop OR component unmounted; silent.
+      if ((err as { name?: string }).name === 'AbortError') {
+        // Drop optimistic so it doesn't linger when user re-sends
+        setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+        return
+      }
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
@@ -199,10 +215,27 @@ export function useSourceChat(sourceId: string) {
       setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
     } finally {
       setIsStreaming(false)
+      // v0.6.32 — release the reader lock so the response body can be GC'd
+      // and the underlying HTTP connection returned to the pool.
+      try {
+        reader?.releaseLock()
+      } catch {
+        // Reader may already be released by abort/cancel path; ignore.
+      }
+      // Clear the controller ref if it's still ours.
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
       // Refetch session to get persisted messages
       refetchCurrentSession()
     }
   }, [sourceId, currentSessionId, refetchCurrentSession, queryClient, t])
+
+  // v0.6.32 — abort the in-flight controller on unmount.
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+  }, [])
 
   // Cancel streaming
   const cancelStreaming = useCallback(() => {
