@@ -71,18 +71,38 @@ def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
 
 
 async def save_uploaded_file(upload_file: UploadFile) -> str:
-    """Save uploaded file to uploads folder and return file path."""
+    """Save uploaded file to uploads folder and return file path.
+
+    v0.6.16 — streamed in 1 MiB chunks instead of `await upload_file.read()`
+    which buffered the ENTIRE upload into Python memory before writing. With
+    Next.js's 100 MB proxy limit (frontend/next.config.ts), that meant up to
+    100 MB of RAM per concurrent upload through the proxy, plus an
+    additional spike for the `f.write(content)` syscall. Direct API hits
+    (Docker / scripted) had no FastAPI body-size limit at all and could OOM
+    the worker on a multi-GB file.
+
+    Chunked streaming keeps memory bounded to the chunk size regardless of
+    upload total — same memory footprint for 1 MB or 10 GB.
+    """
     if not upload_file.filename:
         raise ValueError("No filename provided")
 
     # Generate unique filename
     file_path = generate_unique_filename(upload_file.filename, UPLOADS_FOLDER)
 
+    _CHUNK = 1024 * 1024  # 1 MiB
+
     try:
-        # Save file
+        # Stream chunks straight to disk. The sync open()/write() is fine
+        # inside the async handler — each chunk write is microseconds and the
+        # await on upload_file.read() yields control back to the loop
+        # between chunks.
         with open(file_path, "wb") as f:
-            content = await upload_file.read()
-            f.write(content)
+            while True:
+                chunk = await upload_file.read(_CHUNK)
+                if not chunk:
+                    break
+                f.write(chunk)
 
         logger.info(f"Saved uploaded file to: {file_path}")
         return file_path
