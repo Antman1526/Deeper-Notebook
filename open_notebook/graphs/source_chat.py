@@ -19,6 +19,7 @@ from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import ContextBuilder
 from open_notebook.utils.error_classifier import classify_error
+from open_notebook.utils.message_history import trim_message_history
 from open_notebook.utils.text_utils import extract_text_content
 
 
@@ -180,7 +181,17 @@ def _call_model_with_source_context_inner(
     system_prompt = Prompter(prompt_template="source_chat/system").render(
         data=prompt_data
     )
-    payload = [SystemMessage(content=system_prompt)] + state.get("messages", [])
+    # v0.7.13 — trim message history before building payload. Source-chat
+    # has a smaller default history budget (8_000 vs chat.py's 12_000)
+    # because the system prompt already carries up to ~3.5k tokens of
+    # source + insight context (v0.7.12 caps), leaving less headroom in
+    # a 16k-context local server.
+    history = trim_message_history(
+        state.get("messages", []),
+        env_var_name="ONP_SOURCE_CHAT_HISTORY_CHAR_CAP",
+        default_char_cap=8_000,
+    )
+    payload = [SystemMessage(content=system_prompt)] + history
 
     # Handle async model provisioning from sync context
     def run_in_new_loop():
