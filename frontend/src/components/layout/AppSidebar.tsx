@@ -44,6 +44,7 @@ import {
   Plus,
   Wrench,
   Command,
+  Sparkles,
 } from 'lucide-react'
 
 const getNavigation = (t: TFunction) => [
@@ -63,6 +64,10 @@ const getNavigation = (t: TFunction) => [
   {
     title: t('navigation.create'),
     items: [
+      // ONP v0.7.0 — Studio: one-shot upload + mode → output. Lives in
+      // the Create group because that's its conceptual home (it produces
+      // a new notebook or podcast from uploaded docs).
+      { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
     ],
   },
