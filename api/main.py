@@ -41,6 +41,7 @@ from api.routers import (
 )
 from api.routers import commands as commands_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
+from open_notebook.logging import configure_logging
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -105,8 +106,14 @@ async def lifespan(app: FastAPI):
     Lifespan event handler for the FastAPI application.
     Runs database migrations automatically on startup.
     """
+    # v0.7.14 — configure rotated file logging before anything else, so
+    # startup errors (migrations, encryption checks) land in a file the
+    # user can `tail`. Default sink: ~/.open-notebook-plus/logs/api.log
+    # Honors ONP_LOG_DIR, ONP_LOG_LEVEL, ONP_LOG_JSON.
+    log_dir = configure_logging("api")
+
     # Startup: Security checks
-    logger.info("Starting API initialization...")
+    logger.info("Starting API initialization — logs at {}", log_dir)
 
     # Security check: Encryption key
     if not get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"):
