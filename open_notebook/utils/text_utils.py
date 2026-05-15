@@ -138,8 +138,20 @@ def extract_text_content(content) -> str:
         text_parts = []
         for part in content:
             if isinstance(part, dict) and "text" in part:
-                text_parts.append(part["text"])
+                # v0.6.19 — defensively coerce non-string `text` values to str.
+                # Some providers (legacy versions of langchain wrappers, or
+                # nested envelope formats) put a list/dict at "text" instead
+                # of a string; the old code happily appended that and then
+                # crashed on "".join with TypeError.
+                text_parts.append(str(part["text"]))
             elif isinstance(part, str):
                 text_parts.append(part)
+        # v0.6.19 — if we found no recognized parts (e.g. a future provider
+        # ships an entirely new shape like [{"type": "image_url", ...}]),
+        # fall back to str(content) instead of returning "" silently. Data
+        # loss in this path used to manifest as "blank chat reply" with no
+        # log trail.
+        if not text_parts:
+            return str(content)
         return "".join(text_parts)
     return str(content)
