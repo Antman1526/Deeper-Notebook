@@ -295,3 +295,126 @@ def test_register_voice_models_is_idempotent_when_creds_already_exist():
     assert not posted, (
         f"Expected zero POST calls when all entities already exist, got: {posted}"
     )
+
+
+def test_register_memory_credential_is_idempotent_when_cred_exists():
+    """v0.6.22 regression: pre-fix memory.py passed existing_names=set()
+    and therefore POSTed a duplicate 'Memory (local)' on every relaunch."""
+    from desktop.auto_register.memory import register_memory_credential
+
+    posted: list[tuple[str, dict]] = []
+
+    class FakeClient:
+        def post(self, path, json=None):
+            posted.append((path, json))
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {"id": "id-x"}
+            return R()
+        def get(self, path):
+            class R:
+                status_code = 200
+                text = ""
+                def raise_for_status(self): pass
+                def json(self):
+                    return [{"name": "Memory (local)", "id": "cred:42"}]
+            return R()
+
+    existing = {"memory (local)"}
+    register_memory_credential(
+        FakeClient(), memory_port=8767, cfg=None,
+        existing_cred_names=existing,
+    )
+    # No POST: credential already exists, the existing-set tells us so.
+    assert not posted, f"expected zero POSTs when cred exists, got {posted}"
+
+
+def test_episode_profile_picks_qwen_chat_model_over_voice_models():
+    """v0.6.22 regression: the old hardcoded fallback chain checked for
+    'Hermes-3-Llama-3.1-8B-Q4_K_M' and 'Mistral-7B-Instruct-v0.3-Q4_K_M'
+    first. On a 64 GB Mac running v0.6.11's auto-assigner the registered
+    chat model is named e.g. 'Qwen3.6-35B-A3B-Q4_K_M'. The new code
+    picks the first non-voice/embed model regardless of its name."""
+    from desktop.auto_register.episode_profile import register_default_episode_profile
+
+    posted_episode_profiles: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                status_code = 200
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode_profiles":
+                        return []  # no existing profile
+                    if path == "/api/models":
+                        # Order matters — the function picks the first non-voice.
+                        return [
+                            {"name": "Qwen3.6-35B-A3B-Q4_K_M", "id": "model:qwen"},
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                            {"name": "nomic-embed-text-v1.5", "id": "model:nomic"},
+                        ]
+                    return []
+            return R()
+
+        def post(self, path, json=None):
+            if path == "/api/episode_profiles":
+                posted_episode_profiles.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    assert len(posted_episode_profiles) == 1
+    profile = posted_episode_profiles[0]
+    assert profile["chat_model_id"] == "model:qwen", (
+        f"chat model should be Qwen, got {profile['chat_model_id']}"
+    )
+    assert profile["speakers"][0]["tts_model_id"] == "model:amy"
+    assert profile["speakers"][1]["tts_model_id"] == "model:ryan"
+
+
+def test_episode_profile_skips_bge_embedding_in_chat_pick():
+    """The old fallback used only prefix matching (piper-, whisper-, nomic-).
+    A user with bge-large-en-v1.5 in their model dir (no matching prefix)
+    would get it picked as chat model — wrong. The fix also runs the
+    embedding heuristic."""
+    from desktop.auto_register.episode_profile import register_default_episode_profile
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode_profiles":
+                        return []
+                    if path == "/api/models":
+                        return [
+                            # bge-large-en-v1.5 — NOT matching any old prefix
+                            # but IS an embedding model. Old code would have
+                            # picked it as chat. New code correctly skips it.
+                            {"name": "bge-large-en-v1.5", "id": "model:bge"},
+                            {"name": "Qwen-7B-chat", "id": "model:qwen7"},
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                        ]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/episode_profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    assert posted[0]["chat_model_id"] == "model:qwen7", (
+        "should skip bge-* embedding and pick the real chat model"
+    )
