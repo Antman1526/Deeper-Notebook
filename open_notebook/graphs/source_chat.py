@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sqlite3
 from typing import Annotated, Dict, List, Optional
 
@@ -8,6 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from loguru import logger
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
@@ -18,6 +20,56 @@ from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import ContextBuilder
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.7.12 — context-budget caps for the source-chat formatter.
+#
+# `_format_source_context` previously had ONE cap (source full_text @
+# 5000 chars) and zero caps on the insight side. A source typically
+# accrues 5-20 insights from transformations, each insight's `content`
+# field carrying 500-2000 chars of LLM-generated summary. With no per-
+# insight cap and no max-insight-count cap, the formatted_context could
+# easily reach 30 KB ≈ 7,500 tokens for a heavily-transformed source.
+#
+# Combined with the hardcoded `max_tokens=8192` output reservation in
+# the LLM call (lines 145, 169), the 16k-context local server (v0.7.8
+# default) is overwhelmed: 8,192 (output) + 7,500 (insights) + 1,250
+# (source full_text) + ~500 (system template) = 17,442 — over budget
+# before the user's message history is even added.
+#
+# Defaults sized for v0.7.8's 16k chat server: total formatted_context
+# stays under ~3,500 tokens (~14 KB), leaving comfortable room for
+# the system prompt, message history (v0.7.11 cap), and the 8192-token
+# output reservation. Capable-hardware users with bigger context
+# windows can raise any of the three knobs independently.
+_SOURCE_CHAT_SOURCE_CHAR_CAP_DEFAULT = 4_000
+_SOURCE_CHAT_INSIGHT_CHAR_CAP_DEFAULT = 1_000
+_SOURCE_CHAT_MAX_INSIGHTS_DEFAULT = 10
+_SOURCE_TRUNCATION_MARKER = "\n...[truncated for context budget]"
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+        if val < minimum:
+            logger.warning(
+                f"{name}={raw} is below minimum {minimum}; using default {default}"
+            )
+            return default
+        return val
+    except ValueError:
+        logger.warning(f"{name}={raw!r} is not an int; using default {default}")
+        return default
+
+
+def _cap_text(text: str, cap: int) -> str:
+    """Truncate a string to `cap` chars with a visible marker."""
+    if len(text) <= cap:
+        return text
+    return text[:cap] + _SOURCE_TRUNCATION_MARKER
 
 
 class SourceChatState(TypedDict):
@@ -191,12 +243,32 @@ def _format_source_context(context_data: Dict) -> str:
     """
     Format the context data into a readable string for the prompt.
 
+    v0.7.12 — applies env-configurable caps so the formatted output
+    stays inside a 16k-context local server's budget. See the
+    module-level _SOURCE_CHAT_* constants for rationale.
+
     Args:
         context_data: Context data from ContextBuilder
 
     Returns:
         Formatted context string
     """
+    source_cap = _env_int(
+        "ONP_SOURCE_CHAT_SOURCE_CHAR_CAP",
+        _SOURCE_CHAT_SOURCE_CHAR_CAP_DEFAULT,
+        minimum=500,
+    )
+    insight_cap = _env_int(
+        "ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP",
+        _SOURCE_CHAT_INSIGHT_CHAR_CAP_DEFAULT,
+        minimum=200,
+    )
+    max_insights = _env_int(
+        "ONP_SOURCE_CHAT_MAX_INSIGHTS",
+        _SOURCE_CHAT_MAX_INSIGHTS_DEFAULT,
+        minimum=1,
+    )
+
     context_parts = []
 
     # Add source information
@@ -207,25 +279,40 @@ def _format_source_context(context_data: Dict) -> str:
                 context_parts.append(f"**Source ID:** {source.get('id', 'Unknown')}")
                 context_parts.append(f"**Title:** {source.get('title', 'No title')}")
                 if source.get("full_text"):
-                    # Truncate full text if too long
-                    full_text = source["full_text"]
-                    if len(full_text) > 5000:
-                        full_text = full_text[:5000] + "...\n[Content truncated]"
+                    full_text = _cap_text(source["full_text"], source_cap)
                     context_parts.append(f"**Content:**\n{full_text}")
                 context_parts.append("")  # Empty line for separation
 
-    # Add insights
+    # Add insights — both count- and per-content-capped to keep the
+    # formatted_context inside the budget even when a source has
+    # accumulated dozens of insights from prior transformations.
     if context_data.get("insights"):
+        all_insights = context_data["insights"]
+        capped_insights = list(all_insights)[:max_insights]
+        dropped_count = len(all_insights) - len(capped_insights)
         context_parts.append("## SOURCE INSIGHTS")
-        for insight in context_data["insights"]:
+        if dropped_count > 0:
+            logger.warning(
+                f"Source-chat insights truncated: kept {len(capped_insights)}/"
+                f"{len(all_insights)} insights (cap={max_insights}). "
+                f"Set ONP_SOURCE_CHAT_MAX_INSIGHTS to raise."
+            )
+            context_parts.append(
+                f"_[{dropped_count} additional insights elided for context budget]_"
+            )
+        for insight in capped_insights:
             if isinstance(insight, dict):
                 context_parts.append(f"**Insight ID:** {insight.get('id', 'Unknown')}")
                 context_parts.append(
                     f"**Type:** {insight.get('insight_type', 'Unknown')}"
                 )
-                context_parts.append(
-                    f"**Content:** {insight.get('content', 'No content')}"
+                raw_content = insight.get("content", "No content")
+                content_str = (
+                    _cap_text(raw_content, insight_cap)
+                    if isinstance(raw_content, str)
+                    else str(raw_content)
                 )
+                context_parts.append(f"**Content:** {content_str}")
                 context_parts.append("")  # Empty line for separation
 
     # Add metadata
