@@ -470,3 +470,122 @@ def test_brief_passes_short_messages_through():
     result = studio_mod._brief(short)
     assert result == "plain bug"
     assert not result.endswith("…")
+
+
+# ----------------------------------------------------------------------------
+# v0.7.4 — Local-model-friendly default tests
+# ----------------------------------------------------------------------------
+
+
+def test_default_caps_are_local_model_friendly():
+    """v0.7.4: defaults must be sized for 8k-32k context local models, not
+    cloud frontier models. If anyone bumps the defaults back up to cloud
+    sizes, this test catches it — local users would silently start
+    hitting context-overflow errors."""
+    # Per-file cap ≤ 20k chars (~5k tokens; leaves room for combined cap)
+    assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE <= 20_000, (
+        f"_MAX_EXTRACT_CHARS_PER_FILE={studio_mod._MAX_EXTRACT_CHARS_PER_FILE} "
+        "is too large for local 8k-context models"
+    )
+    # Combined cap ≤ 80k chars (~20k tokens; fits in a 32k-context model
+    # alongside the system prompt + 8k output budget)
+    assert studio_mod._MAX_COMBINED_CHARS <= 80_000, (
+        f"_MAX_COMBINED_CHARS={studio_mod._MAX_COMBINED_CHARS} "
+        "is too large for local 32k-context models"
+    )
+
+
+def test_env_overrides_lift_studio_caps_for_cloud_users(monkeypatch):
+    """Cloud users who configure a large-context model (or use cloud APIs)
+    must be able to lift the caps via env vars without code changes."""
+    import importlib
+    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "100000")
+    monkeypatch.setenv("ONP_STUDIO_MAX_COMBINED_CHARS", "500000")
+    # Re-import to pick up the env values (module-level constants)
+    importlib.reload(studio_mod)
+    try:
+        assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE == 100_000
+        assert studio_mod._MAX_COMBINED_CHARS == 500_000
+    finally:
+        # Restore module to default state for other tests
+        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
+        monkeypatch.delenv("ONP_STUDIO_MAX_COMBINED_CHARS", raising=False)
+        importlib.reload(studio_mod)
+
+
+def test_invalid_env_var_falls_back_to_default(monkeypatch):
+    """Garbage in the env var must not crash startup. Module load must
+    survive ONP_STUDIO_MAX_FILE_CHARS=banana with a warning + fallback."""
+    import importlib
+    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "banana")
+    importlib.reload(studio_mod)
+    try:
+        # Falls back to default (15_000)
+        assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE == 15_000
+    finally:
+        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
+        importlib.reload(studio_mod)
+
+
+def test_negative_env_var_falls_back_to_default(monkeypatch):
+    """A negative value (typo, miscalc) must not produce an invalid cap."""
+    import importlib
+    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "-1")
+    importlib.reload(studio_mod)
+    try:
+        assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE == 15_000
+    finally:
+        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
+        importlib.reload(studio_mod)
+
+
+# ----------------------------------------------------------------------------
+# Context-overflow error messaging
+# ----------------------------------------------------------------------------
+
+
+def test_context_overflow_error_includes_local_model_hint():
+    """v0.7.4: when the LLM rejects the request because of context-window
+    overflow, the error detail must point users at the new env vars so
+    they can actually fix it. Otherwise local users see a confusing raw
+    server error and just retry, hitting the same wall."""
+    exc = ValueError("Error: prompt is too long for context length 8192")
+    detail = studio_mod._studio_generation_error_detail(
+        exc, notebook_id="notebook:abc", source_count=3,
+    )
+    assert "context window" in detail.lower()
+    assert "ONP_STUDIO_MAX_FILE_CHARS" in detail
+    assert "ONP_STUDIO_MAX_COMBINED_CHARS" in detail
+    assert "notebook:abc" in detail  # user can still recover content
+
+
+def test_generic_error_omits_local_model_hint():
+    """A generic LLM error (auth failure, network) doesn't get the
+    local-model hint — that'd be misleading."""
+    exc = RuntimeError("HTTP 401 Unauthorized")
+    detail = studio_mod._studio_generation_error_detail(
+        exc, notebook_id="notebook:abc", source_count=1,
+    )
+    # No misleading local-model advice
+    assert "ONP_STUDIO_MAX_FILE_CHARS" not in detail
+    # But still includes notebook_id for recovery
+    assert "notebook:abc" in detail
+
+
+def test_overflow_error_pattern_matching_is_case_insensitive():
+    """Different LLM servers use different casings. Match should be
+    case-insensitive."""
+    variants = [
+        "Context Length Exceeded",
+        "MAX_TOKENS exceeded",
+        "prompt is too long",
+        "Exceeds the model's context size",
+    ]
+    for msg in variants:
+        exc = ValueError(msg)
+        detail = studio_mod._studio_generation_error_detail(
+            exc, notebook_id="notebook:x", source_count=1,
+        )
+        assert "ONP_STUDIO_MAX_FILE_CHARS" in detail, (
+            f"pattern not matched for {msg!r}"
+        )
