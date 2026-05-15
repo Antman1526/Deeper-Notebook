@@ -12,8 +12,20 @@ from api.podcast_service import (
     PodcastGenerationResponse,
     PodcastService,
 )
+from open_notebook.config import DATA_FOLDER
 
 router = APIRouter()
+
+
+# v0.7.2 — Containment root for podcast audio files. The generation
+# command (commands/podcast_commands.py:build_episode_output_dir) puts
+# every episode's audio under `{DATA_FOLDER}/podcasts/episodes/<uuid>/`.
+# We pin to that root and refuse to operate on any audio_file path
+# that resolves outside it. Defense-in-depth against DB tampering /
+# future bug that allows setting episode.audio_file to e.g. /etc/passwd
+# (without this check, the FileResponse endpoint would happily serve
+# it and the retry/delete handlers would unlink it).
+_AUDIO_ROOT = (Path(DATA_FOLDER) / "podcasts" / "episodes").resolve()
 
 
 class PodcastEpisodeResponse(BaseModel):
@@ -31,11 +43,40 @@ class PodcastEpisodeResponse(BaseModel):
     error_message: Optional[str] = None
 
 
-def _resolve_audio_path(audio_file: str) -> Path:
+def _resolve_audio_path(audio_file: str) -> Optional[Path]:
+    """Resolve an episode's audio_file string to a Path inside _AUDIO_ROOT.
+
+    Accepts both file:// URLs and raw paths. Returns the resolved Path if
+    it lives under {DATA_FOLDER}/podcasts/episodes/; returns None for any
+    path outside that root.
+
+    v0.7.2 — added the containment check. Previously this returned
+    Path(audio_file) unchecked; downstream callers used the result to
+    FileResponse / unlink without validation, so a tampered DB row could
+    direct the API to serve or delete arbitrary files. Same family as
+    the v0.6.34 Source.delete fix and the v0.6.31 model_manager fix.
+    Callers must now handle None — serving sites should 404, cleanup
+    sites should skip the unlink with a log warning.
+    """
     if audio_file.startswith("file://"):
         parsed = urlparse(audio_file)
-        return Path(unquote(parsed.path))
-    return Path(audio_file)
+        raw = Path(unquote(parsed.path))
+    else:
+        raw = Path(audio_file)
+    try:
+        resolved = raw.resolve()
+    except (OSError, ValueError):
+        return None
+    # is_relative_to handles dotdot traversal (via .resolve canonicalization)
+    # AND the sibling-prefix bug that v0.6.31 fixed in model_manager.
+    if not resolved.is_relative_to(_AUDIO_ROOT):
+        logger.warning(
+            "Refusing audio_file path outside _AUDIO_ROOT: %s "
+            "(expected under %s). DB may be corrupted.",
+            raw, _AUDIO_ROOT,
+        )
+        return None
+    return resolved
 
 
 @router.post("/podcasts/generate", response_model=PodcastGenerationResponse)
@@ -112,7 +153,9 @@ async def list_podcast_episodes():
             audio_url = None
             if episode.audio_file:
                 audio_path = _resolve_audio_path(episode.audio_file)
-                if audio_path.exists():
+                # v0.7.2 — _resolve_audio_path now returns None for paths
+                # outside _AUDIO_ROOT; treat that as "no audio available".
+                if audio_path is not None and audio_path.exists():
                     audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
 
             response_episodes.append(
@@ -164,7 +207,7 @@ async def get_podcast_episode(episode_id: str):
         audio_url = None
         if episode.audio_file:
             audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path.exists():
+            if audio_path is not None and audio_path.exists():
                 audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
 
         return PodcastEpisodeResponse(
@@ -202,7 +245,12 @@ async def stream_podcast_episode_audio(episode_id: str):
         raise HTTPException(status_code=404, detail="Episode has no audio file")
 
     audio_path = _resolve_audio_path(episode.audio_file)
-    if not audio_path.exists():
+    # v0.7.2 — _resolve_audio_path returns None for paths outside the
+    # podcast output root. 404 instead of serving the file — same status
+    # code as the not-found-on-disk case so the API can't be used to
+    # distinguish "file exists but outside root" from "file missing"
+    # (information leak).
+    if audio_path is None or not audio_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found on disk")
 
     return FileResponse(
@@ -238,10 +286,17 @@ async def retry_podcast_episode(episode_id: str):
                 detail="Cannot retry: episode or speaker profile name missing from stored data",
             )
 
-        # Delete audio file if any
+        # Delete audio file if any. v0.7.2 — skip unlink for paths
+        # outside _AUDIO_ROOT (None) instead of trusting the DB value.
         if episode.audio_file:
             audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path.exists():
+            if audio_path is None:
+                logger.warning(
+                    "Retry: skipping audio cleanup — episode.audio_file "
+                    "(%s) is outside the podcast output root",
+                    episode.audio_file,
+                )
+            elif audio_path.exists():
                 try:
                     audio_path.unlink()
                 except Exception as e:
@@ -276,10 +331,19 @@ async def delete_podcast_episode(episode_id: str):
         # Get the episode first to check if it exists and get the audio file path
         episode = await PodcastService.get_episode(episode_id)
 
-        # Delete the physical audio file if it exists
+        # Delete the physical audio file if it exists.
+        # v0.7.2 — skip unlink for paths outside _AUDIO_ROOT (DB tampering
+        # defense). The episode record itself still gets deleted below
+        # — losing track of a renegade file is better than deleting it.
         if episode.audio_file:
             audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path.exists():
+            if audio_path is None:
+                logger.warning(
+                    "Delete: skipping audio cleanup — episode.audio_file "
+                    "(%s) is outside the podcast output root",
+                    episode.audio_file,
+                )
+            elif audio_path.exists():
                 try:
                     audio_path.unlink()
                     logger.info(f"Deleted audio file: {audio_path}")
@@ -292,6 +356,11 @@ async def delete_podcast_episode(episode_id: str):
         logger.info(f"Deleted podcast episode: {episode_id}")
         return {"message": "Episode deleted successfully", "episode_id": episode_id}
 
+    except HTTPException:
+        # v0.7.2 Issue #9 — preserve 404/400 from PodcastService.get_episode
+        # instead of swallowing them into a generic 500. Matches the
+        # retry handler's pattern at line 263-264.
+        raise
     except Exception as e:
         logger.error(f"Error deleting podcast episode: {str(e)}")
         raise HTTPException(
