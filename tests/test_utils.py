@@ -282,3 +282,66 @@ class TestContextBuilder:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestExtractTextContent:
+    """ONP v0.6.19 — coverage for extract_text_content's structured-content
+    handling. The function is invoked on every LLM response to flatten
+    provider envelope formats (Gemini, Claude, etc.) into a plain string."""
+
+    def test_extract_text_content_plain_string_passes_through(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        assert extract_text_content("hello") == "hello"
+
+    def test_extract_text_content_gemini_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "text", "text": "hi there", "extras": {}}]
+        assert extract_text_content(content) == "hi there"
+
+    def test_extract_text_content_multi_part_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [
+            {"type": "text", "text": "Part 1. "},
+            {"type": "text", "text": "Part 2."},
+        ]
+        assert extract_text_content(content) == "Part 1. Part 2."
+
+    def test_extract_text_content_mixed_string_and_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = ["raw string ", {"type": "text", "text": "envelope"}]
+        assert extract_text_content(content) == "raw string envelope"
+
+    def test_extract_text_content_coerces_non_string_text_field(self):
+        """v0.6.19 regression: some providers put a list/dict at "text"
+        instead of a string. The old code appended that as-is and then
+        crashed at "".join with TypeError. Now we coerce to str first."""
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "text", "text": ["nested", "list"]}]
+        # Should NOT raise; coerced via str(...)
+        result = extract_text_content(content)
+        assert isinstance(result, str)
+        assert "nested" in result and "list" in result
+
+    def test_extract_text_content_unrecognized_list_falls_back_to_str(self):
+        """v0.6.19 regression: a future provider may ship a list with shapes
+        we don't recognize (e.g. all image_url parts). The old code returned
+        "" silently → 'blank chat reply' bug with no log trail. Now we
+        fall back to str(content) so SOMETHING gets through."""
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "image_url", "image_url": "https://x.png"}]
+        result = extract_text_content(content)
+        # Original empty string was the bug; now we get the repr.
+        assert result != ""
+        assert "image_url" in result
+
+    def test_extract_text_content_unknown_type_falls_back_to_str(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        # Not a string, not a list — falls through to str(content)
+        result = extract_text_content({"single": "dict"})
+        assert "single" in result and "dict" in result
+
+    def test_extract_text_content_empty_list_falls_back_to_str(self):
+        """Empty list → no text parts → fallback. Old behavior returned ""."""
+        from open_notebook.utils.text_utils import extract_text_content
+        # str([]) is "[]" — at least not blank, signals weird shape to caller.
+        assert extract_text_content([]) == "[]"
