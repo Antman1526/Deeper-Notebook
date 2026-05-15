@@ -37,6 +37,7 @@ Flow:
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -72,16 +73,51 @@ _ALLOWED_EXTENSIONS: set[str] = {
 # starving downstream LLM context window.
 _MAX_FILE_BYTES = 50 * 1024 * 1024
 
-# Per-source extracted-text cap. Above this we truncate before prompting —
-# the LLM context window is finite and the goal is a study notebook, not
-# a full transcript. Caller can split a huge document into multiple uploads.
-_MAX_EXTRACT_CHARS_PER_FILE = 50_000
+# v0.7.4 — Per-source / combined caps tuned for LOCAL MODEL deployments.
+#
+# ONP is documented as "privacy-focused, self-hosted alternative to Notebook
+# LM" — the typical deployment runs llama-cpp-python locally with 7B-9B
+# models at 8k-32k context. The previous v0.7.0 defaults (50k per-file,
+# 200k combined) were cloud-sized: ~50k tokens, fine for GPT-4 / Claude /
+# Gemini but overflowing a Hermes-3 / Qwen 2.5 7B at 8k context.
+#
+# New defaults (per char ≈ 0.25 tokens):
+#   - per-file: 15,000 chars ≈ 3,750 tokens
+#   - combined: 60,000 chars ≈ 15,000 tokens
+#
+# That leaves room for the ~1k-token system prompt and an 8k-token output
+# budget within a 32k-context model — and degrades gracefully (input
+# truncated, output capped) on 8k-context models too.
+#
+# Cloud users can opt out via env vars; the defaults still produce useful
+# study notebooks for any single-document upload up to ~15 KB of text.
+def _env_int(name: str, default: int) -> int:
+    """Read a positive int from env; fall back to default on missing/invalid."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+        if value < 1:
+            raise ValueError
+        return value
+    except ValueError:
+        # Don't crash startup over a bad env var; fall back loudly.
+        import logging
+        logging.getLogger(__name__).warning(
+            "Invalid %s=%r; using default %d", name, raw, default,
+        )
+        return default
 
-# Cap on the total combined context. Below the 105k-token large-context
-# threshold so we don't accidentally trigger the large-context model
-# upgrade in provision_langchain_model — which on a self-hosted setup may
-# not actually be configured.
-_MAX_COMBINED_CHARS = 200_000
+
+# Defaults sized for local 7B-9B models with 8k-32k context. Cloud users
+# can raise these via env vars (e.g. ONP_STUDIO_MAX_COMBINED_CHARS=200000).
+_MAX_EXTRACT_CHARS_PER_FILE = _env_int(
+    "ONP_STUDIO_MAX_FILE_CHARS", 15_000,
+)
+_MAX_COMBINED_CHARS = _env_int(
+    "ONP_STUDIO_MAX_COMBINED_CHARS", 60_000,
+)
 
 # v0.7.1 — Cap warning-message length. Parser libraries (PyMuPDF, mammoth)
 # can produce KB-long error strings with paths and partial stack traces.
@@ -97,6 +133,53 @@ def _brief(exc: BaseException) -> str:
     if len(s) <= _MAX_WARNING_LEN:
         return s
     return s[: _MAX_WARNING_LEN - 1] + "…"
+
+
+# v0.7.4 — Common local-model error signatures. When llama-cpp-python /
+# ollama / a generic OpenAI-compatible server rejects a request because
+# the input is too long, the response usually contains one of these
+# substrings. We pattern-match to surface an actionable hint instead of
+# the raw error.
+_LOCAL_OVERFLOW_PATTERNS = (
+    "context length",
+    "context window",
+    "max_tokens",
+    "context size",
+    "tokens exceeded",
+    "input too long",
+    "prompt is too long",
+    "exceeds the model's context",
+)
+
+
+def _studio_generation_error_detail(
+    exc: BaseException, *, notebook_id: str, source_count: int,
+) -> str:
+    """Build the 502 detail string for LLM-call failures.
+
+    Always includes the notebook_id so the user can navigate back to
+    their uploaded content. When the failure looks like a context-window
+    overflow (common for local 7B-9B models with 8k-context), prepend a
+    pointer to the relevant env vars so the user knows how to fix it
+    rather than just retrying the same prompt against the same model.
+    """
+    msg = str(exc).lower()
+    hint = ""
+    if any(pat in msg for pat in _LOCAL_OVERFLOW_PATTERNS):
+        hint = (
+            "Looks like the model's context window was exceeded. Smaller "
+            "local models (Hermes-3 8k, Llama-3.2-3B 4k) can't fit large "
+            "documents. Try uploading fewer/smaller files, or tighten the "
+            "caps via ONP_STUDIO_MAX_FILE_CHARS / "
+            "ONP_STUDIO_MAX_COMBINED_CHARS, or pick a chat model with a "
+            "larger context window in Settings → Models. "
+        )
+    return (
+        f"{hint}Generation failed: {_brief(exc)}. "
+        f"Notebook {notebook_id} was created and contains your "
+        f"{source_count} uploaded source(s). Try regenerating, or check "
+        "Settings → Models for a working LLM."
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -416,10 +499,8 @@ async def _dispatch_notebook_mode(
         logger.exception("Studio notebook mode: LLM call failed")
         raise HTTPException(
             status_code=502,
-            detail=(
-                f"Generation failed: {exc}. Notebook {notebook.id} was created "
-                f"and contains your {len(source_ids)} uploaded source(s). Try "
-                "regenerating, or check Settings → Models for a working LLM."
+            detail=_studio_generation_error_detail(
+                exc, notebook_id=str(notebook.id), source_count=len(source_ids),
             ),
         )
 
