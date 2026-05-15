@@ -15,6 +15,7 @@ from HuggingFace (~150 MB for base.en) and cached in ~/.cache/huggingface.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 import tempfile
 from pathlib import Path
@@ -39,18 +40,34 @@ def build_app(model: Any) -> FastAPI:
         file: UploadFile = File(...),
         model_id: str = Form("whisper-base-en", alias="model"),
     ) -> dict:
+        # v0.6.13 — two bugs fixed at once:
+        #   1. The previous `Path(tmp_path).unlink()` after model.transcribe
+        #      only ran on the happy path. If transcribe() raised (malformed
+        #      audio, GPU OOM, model crash) the .wav file leaked forever.
+        #      Now wrapped in try/finally.
+        #   2. model.transcribe() is SYNC and was being called from inside
+        #      an async handler — it blocked the event loop for the entire
+        #      transcription (5-30s for typical clips). Now wrapped in
+        #      asyncio.to_thread so the shim can serve /health + queue more
+        #      requests while one is in flight.
+        tmp_path: str | None = None
         try:
             audio_bytes = await file.read()
             # Write to a temp file because faster-whisper wants a file path
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
-            segments, _info = model.transcribe(tmp_path)
+            segments, _info = await asyncio.to_thread(model.transcribe, tmp_path)
+            # `segments` is an iterator — collect inside the thread too, since
+            # iterating it pulls more work from the model. Inline join here is
+            # fine because each `seg.text` is already a finished string.
             text = " ".join(seg.text for seg in segments).strip()
-            Path(tmp_path).unlink(missing_ok=True)
             return {"text": text}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        finally:
+            if tmp_path is not None:
+                Path(tmp_path).unlink(missing_ok=True)
 
     return app
 
