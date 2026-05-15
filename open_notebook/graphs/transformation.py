@@ -1,7 +1,10 @@
+import os
+
 from ai_prompter import Prompter
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
+from loguru import logger
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
@@ -11,6 +14,60 @@ from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.7.10 — Input-text cap for transformations.
+#
+# `run_transformation` previously passed `source.full_text` (or
+# `input_text`) into the prompt verbatim with no upper bound. A modest
+# 50 KB source ≈ 12,500 tokens; combined with the (existing) 8192-token
+# `max_tokens` output reservation, this already exceeds a 16k-context
+# local LLM server's budget (the v0.7.8 default) before the system
+# prompt is even counted.
+#
+# Default 12,000 chars ≈ 3,000 tokens leaves ample headroom in a 16k
+# context after 8192-token output reservation + system prompt. Users
+# on larger-context models (Hermes-3 @ 131k, Qwen 2.5 @ 32k+) can raise
+# the cap via `ONP_TRANSFORMATION_INPUT_CAP` without code edits.
+_TRANSFORMATION_INPUT_CAP_DEFAULT = 12_000
+_TRUNCATION_MARKER = "\n\n[... transformation input truncated for context budget ...]"
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+        if val < minimum:
+            logger.warning(
+                f"{name}={raw} is below minimum {minimum}; using default {default}"
+            )
+            return default
+        return val
+    except ValueError:
+        logger.warning(f"{name}={raw!r} is not an int; using default {default}")
+        return default
+
+
+def _truncate_transformation_input(content: str) -> str:
+    """Cap transformation input length for local-model safety.
+
+    Adds a visible marker so the LLM (and any human inspecting the
+    prompt) sees the input was elided rather than silently lost.
+    """
+    cap = _env_int(
+        "ONP_TRANSFORMATION_INPUT_CAP",
+        _TRANSFORMATION_INPUT_CAP_DEFAULT,
+        minimum=500,
+    )
+    if len(content) <= cap:
+        return content
+    logger.warning(
+        f"Transformation input truncated from {len(content)} to {cap} chars "
+        f"(set ONP_TRANSFORMATION_INPUT_CAP to raise the limit)"
+    )
+    return content[:cap] + _TRUNCATION_MARKER
 
 
 class TransformationState(TypedDict):
@@ -41,6 +98,10 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
             data=state
         )
         content_str = str(content) if content else ""
+        # v0.7.10 — cap input length before LLM call so a large source
+        # doesn't overflow a 16k-context local server. See
+        # `_truncate_transformation_input` docstring for rationale.
+        content_str = _truncate_transformation_input(content_str)
         payload = [SystemMessage(content=system_prompt), HumanMessage(content=content_str)]
         chain = await provision_langchain_model(
             str(payload),
