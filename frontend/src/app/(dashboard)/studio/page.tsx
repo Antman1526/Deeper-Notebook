@@ -21,7 +21,7 @@
  */
 'use client'
 
-import { useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react'
+import { useState, useCallback, useRef, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic } from 'lucide-react'
@@ -41,6 +41,11 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { useStudioGenerate } from '@/lib/hooks/use-studio'
 import { StudioMode } from '@/lib/api/studio'
 import apiClient from '@/lib/api/client'
+// v0.7.1 — use existing QUERY_KEYS so Studio's profile fetches share
+// cache with use-podcasts.ts (and pick up invalidations from profile
+// mutations). Previously this file declared its own raw keys, causing
+// duplicate network requests + stale data.
+import { QUERY_KEYS } from '@/lib/api/query-client'
 
 // Must match api/routers/studio.py:_ALLOWED_EXTENSIONS
 const ALLOWED_EXTS = new Set([
@@ -86,12 +91,12 @@ export default function StudioPage() {
   // Fetch episode + speaker profiles for the podcast mode dropdowns.
   // Cheap — both queries return a small list and TanStack caches them.
   const { data: episodeProfiles = [] } = useQuery<ProfileSummary[]>({
-    queryKey: ['episode-profiles'],
+    queryKey: QUERY_KEYS.episodeProfiles,
     queryFn: async () => (await apiClient.get('/episode-profiles')).data,
     enabled: mode === 'podcast',
   })
   const { data: speakerProfiles = [] } = useQuery<ProfileSummary[]>({
-    queryKey: ['speaker-profiles'],
+    queryKey: QUERY_KEYS.speakerProfiles,
     queryFn: async () => (await apiClient.get('/speaker-profiles')).data,
     enabled: mode === 'podcast',
   })
@@ -144,6 +149,19 @@ export default function StudioPage() {
     if (e.target.files && e.target.files.length > 0) addFiles(e.target.files)
     // Reset input so re-selecting the same file fires onchange again
     if (e.target) e.target.value = ''
+  }
+
+  // v0.7.1 — keyboard activation for the drop zone. The element advertises
+  // itself as role="button" + tabIndex={0}, so screen readers and
+  // keyboard-only users expect Enter/Space to activate. Without this
+  // handler, focus lands on the zone but nothing happens — WCAG 2.1.1
+  // (keyboard) violation. Standard fix: handle Enter + Space, preventDefault
+  // on Space to stop page scroll.
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      fileInputRef.current?.click()
+    }
   }
 
   // ----- Submit -----
@@ -215,6 +233,7 @@ export default function StudioPage() {
             onDragLeave={onDragLeave}
             onDrop={onDrop}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={onKeyDown}
             className={`
               border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
               transition-colors
@@ -363,7 +382,16 @@ export default function StudioPage() {
         <div className="mb-4 p-3 rounded border border-destructive/50 bg-destructive/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="text-sm text-destructive">
-            {(mutation.error as Error)?.message || 'Generation failed.'}
+            {/* v0.7.1 — extract the backend's `detail` field from axios's
+                response chain when present. Otherwise we'd show generic
+                "Request failed with status code 400" instead of the
+                actual reason from the API (e.g. "No usable text could
+                be extracted…"). Matches the toast behavior in
+                onGenerate's catch branch. */}
+            {(mutation.error as { response?: { data?: { detail?: string } }; message?: string })
+              ?.response?.data?.detail
+              || (mutation.error as Error)?.message
+              || 'Generation failed.'}
           </div>
         </div>
       )}

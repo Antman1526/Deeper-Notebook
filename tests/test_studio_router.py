@@ -55,7 +55,8 @@ def patched_pipeline(monkeypatch):
     # save_uploaded_file → return a fake path
     saved_paths: list[str] = []
 
-    async def _save(upload):  # noqa: ARG001
+    # v0.7.1 — accepts the new max_bytes kwarg from studio_generate
+    async def _save(upload, max_bytes=None):  # noqa: ARG001
         path = f"/fake/uploads/{upload.filename}"
         saved_paths.append(path)
         return path
@@ -380,3 +381,92 @@ def test_partial_extraction_still_generates_with_warning(
     assert any("bad.pdf" in w for w in body["warnings"])
     # Both sources were created even though one failed parsing
     assert len(body["source_ids"]) == 2
+
+
+# ----------------------------------------------------------------------------
+# v0.7.1 — Regression tests for code-review fixes
+# ----------------------------------------------------------------------------
+
+
+def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
+    """v0.7.1 Issue #1 regression: chunked-transfer uploads bypass the
+    UploadFile.size check. save_uploaded_file's new max_bytes kwarg must
+    be passed by Studio so the cap is enforced mid-stream regardless of
+    whether Content-Length was set."""
+    import sys
+    captured_kwargs: list[dict] = []
+
+    async def _save_recording(upload, max_bytes=None):
+        captured_kwargs.append({"max_bytes": max_bytes, "name": upload.filename})
+        return f"/fake/uploads/{upload.filename}"
+
+    monkeypatch.setattr(studio_mod, "save_uploaded_file", _save_recording)
+    # Need to stub the rest of the pipeline too — re-use the same fakes
+    # as patched_pipeline but inline (since we replace save_uploaded_file).
+    async def _extract(state):
+        return SimpleNamespace(content="text", title=None, url=None,
+                               file_path=state.file_path)
+    fake_cc = SimpleNamespace(extract_content=_extract)
+    fake_cc_common = SimpleNamespace(
+        ProcessSourceState=lambda **kw: SimpleNamespace(**kw),
+    )
+    monkeypatch.setitem(sys.modules, "content_core", fake_cc)
+    monkeypatch.setitem(sys.modules, "content_core.common", fake_cc_common)
+
+    class _NotebookMock:
+        def __init__(self, *, name, description=None):
+            self.name, self.id = name, "notebook:0"
+        async def save(self): pass
+    class _SourceMock:
+        def __init__(self, **_kw):
+            self.id, self.full_text, self.title = "source:0", None, None
+        async def save(self): pass
+        async def add_to_notebook(self, _id): pass
+        async def vectorize(self): pass
+    class _NoteMock:
+        def __init__(self, **kw):
+            self.id, self.title, self.content = "note:0", kw.get("title"), kw.get("content")
+        async def save(self): pass
+        async def add_to_notebook(self, _id): pass
+
+    monkeypatch.setattr(studio_mod, "Notebook", _NotebookMock)
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(studio_mod, "Note", _NoteMock)
+    monkeypatch.setattr(studio_mod, "Asset", lambda **kw: SimpleNamespace(**kw))
+
+    fake_chain = MagicMock(ainvoke=AsyncMock(return_value=MagicMock(content="ok")))
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook"},
+        files=[("files", ("a.txt", b"x", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    # The crucial assertion: max_bytes was passed, and it equals the
+    # module constant. If a future refactor accidentally drops the kwarg,
+    # the chunked-upload DoS is reopened — this test catches it.
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["max_bytes"] == studio_mod._MAX_FILE_BYTES
+
+
+def test_brief_truncates_long_exception_messages():
+    """v0.7.1 Issue #4 regression: _brief() caps exception strings at
+    _MAX_WARNING_LEN so a 10 KB parser error doesn't balloon the response
+    payload or leak path info."""
+    long_msg = "x" * 5000
+    fake_exc = ValueError(long_msg)
+    result = studio_mod._brief(fake_exc)
+    assert len(result) <= studio_mod._MAX_WARNING_LEN
+    assert result.endswith("…")  # ellipsis on truncation
+
+
+def test_brief_passes_short_messages_through():
+    """Short exception messages are not modified — no ellipsis tacked on."""
+    short = ValueError("plain bug")
+    result = studio_mod._brief(short)
+    assert result == "plain bug"
+    assert not result.endswith("…")
