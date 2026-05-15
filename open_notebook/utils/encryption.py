@@ -20,9 +20,9 @@ import base64
 import hashlib
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from loguru import logger
 
 
@@ -59,46 +59,84 @@ def get_secret_from_env(var_name: str) -> Optional[str]:
     return os.environ.get(var_name)
 
 
-def _get_or_create_encryption_key() -> str:
+def _get_encryption_keys_from_env() -> List[str]:
     """
-    Get encryption key from environment, requires explicit configuration.
+    Return all configured encryption-key strings, primary first.
 
-    Priority:
-    1. OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE (Docker secrets)
-    2. OPEN_NOTEBOOK_ENCRYPTION_KEY (environment variable)
+    v0.7.17 — added rotation support. Priority order:
 
-    For production deployments, you MUST set OPEN_NOTEBOOK_ENCRYPTION_KEY explicitly!
+    1. ``OPEN_NOTEBOOK_ENCRYPTION_KEYS`` (plural) — comma-separated list.
+       First entry is the *primary* (used for all new encryption);
+       remaining entries are accepted for decryption only. Use this
+       during a rotation: add the new key first, leave the old one
+       second, run a re-encrypt sweep, then drop the old key.
+    2. ``OPEN_NOTEBOOK_ENCRYPTION_KEY`` (singular) — single key, the
+       pre-rotation default. Still honored for backward compatibility.
+    3. Both Docker-secrets ``_FILE`` variants are honored at each step.
 
     Returns:
-        Encryption key string.
+        List of non-empty key strings; primary is index 0.
 
     Raises:
-        ValueError: If no encryption key is configured.
+        ValueError: If no key is configured at all.
     """
-    # First check environment/Docker secrets
-    key = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
-    if key:
-        return key
+    # Plural takes precedence — comma-separated list.
+    multi = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
+    if multi:
+        keys = [k.strip() for k in multi.split(",")]
+        keys = [k for k in keys if k]
+        if keys:
+            return keys
+
+    single = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+    if single:
+        return [single]
 
     raise ValueError(
-        "OPEN_NOTEBOOK_ENCRYPTION_KEY is not set. "
-        "Set this environment variable to any secret string to enable "
-        "encrypted storage of API keys in the database."
+        "Neither OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural) nor "
+        "OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) is set. "
+        "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret-string> to enable "
+        "encrypted storage, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> "
+        "to rotate without losing existing credentials."
     )
 
 
-# Lazy-loaded encryption key: initialized on first use, not at import time.
-# This prevents the entire app from crashing if the key is not yet configured
-# when other modules import from this file.
-_ENCRYPTION_KEY: Optional[str] = None
+# Back-compat shim: older code paths might still import this.
+def _get_or_create_encryption_key() -> str:
+    """Return the *primary* encryption key (first entry).
+
+    Kept as a thin compatibility wrapper around the new
+    `_get_encryption_keys_from_env()`. Returns just the primary so any
+    pre-v0.7.17 caller that only needs one key sees the new key.
+    """
+    return _get_encryption_keys_from_env()[0]
+
+
+# Lazy-loaded key list: initialized on first use, not at import time.
+# Avoids crashing other modules at import if the key isn't yet set.
+_ENCRYPTION_KEYS: Optional[List[str]] = None
+
+
+def _get_encryption_keys() -> List[str]:
+    """Get the list of encryption keys (primary first), caching after
+    first read. Cache is cleared by `_reset_encryption_cache()` in tests."""
+    global _ENCRYPTION_KEYS
+    if _ENCRYPTION_KEYS is None:
+        _ENCRYPTION_KEYS = _get_encryption_keys_from_env()
+    return _ENCRYPTION_KEYS
+
+
+def _reset_encryption_cache() -> None:
+    """Clear the cached key list. Test-only — production code never
+    needs this; the keys are read once per process at first use."""
+    global _ENCRYPTION_KEYS
+    _ENCRYPTION_KEYS = None
 
 
 def _get_encryption_key() -> str:
-    """Get the encryption key, initializing lazily on first call."""
-    global _ENCRYPTION_KEY
-    if _ENCRYPTION_KEY is None:
-        _ENCRYPTION_KEY = _get_or_create_encryption_key()
-    return _ENCRYPTION_KEY
+    """Back-compat: return primary key only. Most call sites should use
+    `_get_encryption_keys()` to benefit from rotation."""
+    return _get_encryption_keys()[0]
 
 
 def _ensure_fernet_key(key: str) -> str:
@@ -114,10 +152,10 @@ def _ensure_fernet_key(key: str) -> str:
 
 def get_fernet() -> Fernet:
     """
-    Get Fernet instance with the configured encryption key.
+    Get Fernet instance with the *primary* encryption key.
 
-    Returns:
-        Fernet instance.
+    Used for new encryption only; for decryption use `get_multi_fernet()`
+    so rotation works.
 
     Raises:
         ValueError: If encryption key is not configured.
@@ -125,9 +163,33 @@ def get_fernet() -> Fernet:
     return Fernet(_ensure_fernet_key(_get_encryption_key()).encode())
 
 
+def get_multi_fernet() -> MultiFernet:
+    """
+    Get a MultiFernet wrapping ALL configured keys (primary first).
+
+    cryptography's MultiFernet:
+      - encrypts with the FIRST key only (the active key)
+      - decrypts by trying each key in order until one works
+
+    This is the right primitive for rotation: declare the new key first,
+    the old key second, and existing data remains decryptable until you
+    sweep + drop the old key.
+
+    Raises:
+        ValueError: If no encryption key is configured.
+    """
+    keys = _get_encryption_keys()
+    fernets = [Fernet(_ensure_fernet_key(k).encode()) for k in keys]
+    return MultiFernet(fernets)
+
+
 def encrypt_value(value: str) -> str:
     """
-    Encrypt a string value using Fernet symmetric encryption.
+    Encrypt a string value using the primary encryption key.
+
+    When multiple keys are configured (rotation in progress), new
+    encryptions always use the first key. Old data encrypted with the
+    secondary keys remains decryptable via `decrypt_value`.
 
     Args:
         value: The plain text string to encrypt.
@@ -138,8 +200,42 @@ def encrypt_value(value: str) -> str:
     Raises:
         ValueError: If encryption is not configured.
     """
-    fernet = get_fernet()
-    return fernet.encrypt(value.encode()).decode()
+    return get_multi_fernet().encrypt(value.encode()).decode()
+
+
+def re_encrypt_value(value: str) -> str:
+    """
+    Decrypt with any configured key, then re-encrypt with the primary key.
+
+    Used during rotation: walk the credentials table, call
+    `re_encrypt_value` on each stored ciphertext, save it back. Once
+    everything is re-encrypted with the new primary key, drop the old
+    key from `OPEN_NOTEBOOK_ENCRYPTION_KEYS`.
+
+    Args:
+        value: The encrypted string to rotate.
+
+    Returns:
+        Ciphertext encrypted with the primary key. If the input was a
+        legacy plaintext value (failed the `looks_like_fernet_token`
+        sniff), it is encrypted as-is rather than re-encrypted.
+
+    Raises:
+        ValueError: If decryption fails under every configured key.
+    """
+    mf = get_multi_fernet()
+    try:
+        plaintext = mf.decrypt(value.encode())
+    except InvalidToken:
+        if looks_like_fernet_token(value):
+            raise ValueError(
+                "Re-encrypt failed: value looks like a Fernet token but no "
+                "configured key can decrypt it. Are all old keys still "
+                "listed in OPEN_NOTEBOOK_ENCRYPTION_KEYS?"
+            )
+        # Legacy plaintext — just encrypt it under the primary key.
+        return mf.encrypt(value.encode()).decode()
+    return mf.encrypt(plaintext).decode()
 
 
 def looks_like_fernet_token(s: str) -> bool:
@@ -192,16 +288,25 @@ def decrypt_value(value: str) -> str:
         ValueError: If encryption is not configured or if decryption fails
             for what appears to be encrypted data (wrong key).
     """
-    fernet = get_fernet()
+    # v0.7.17 — use MultiFernet so rotation works. MultiFernet tries each
+    # configured key in order until one succeeds, then raises InvalidToken
+    # only if none did.
+    mf = get_multi_fernet()
 
     try:
-        return fernet.decrypt(value.encode()).decode()
+        return mf.decrypt(value.encode()).decode()
     except InvalidToken:
         if looks_like_fernet_token(value):
-            # Looks like encrypted data but failed to decrypt - likely wrong key
+            # Looks like encrypted data but no configured key can decrypt
+            # it — either wrong key, key rotated without re-encrypt, or
+            # the old key was dropped from OPEN_NOTEBOOK_ENCRYPTION_KEYS
+            # before the data was re-encrypted.
             raise ValueError(
-                "Decryption failed: data appears to be encrypted but key is incorrect. "
-                "Check OPEN_NOTEBOOK_ENCRYPTION_KEY configuration."
+                "Decryption failed: data appears to be encrypted but no "
+                "configured key can decrypt it. If you recently rotated "
+                "keys, ensure the OLD key is still in "
+                "OPEN_NOTEBOOK_ENCRYPTION_KEYS until you've run the "
+                "re-encrypt sweep."
             )
         # Not a valid token - treat as legacy plaintext
         return value
