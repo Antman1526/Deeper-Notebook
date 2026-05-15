@@ -1,4 +1,5 @@
 import operator
+import os
 from typing import Annotated, List
 
 from ai_prompter import Prompter
@@ -6,6 +7,7 @@ from langchain_core.output_parsers.pydantic import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
+from loguru import logger
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -15,6 +17,90 @@ from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.7.9 — Per-result content cap for the Ask graph.
+#
+# `vector_search` returns up to N results where each result's `matches`
+# field is `array::flatten(content)` across all chunks that grouped under
+# one source/note/insight. A single hot source can easily contribute
+# 10-20 chunks of 500-1500 chars each, so one result can be 10-30 KB and
+# 10 results 100-300 KB — which is rendered verbatim into the prompt
+# `{{results}}` and shipped to the LLM.
+#
+# For local-model deployments this is catastrophic. A 16k-context server
+# (the v0.7.8 default) is overwhelmed: the input alone consumes most of
+# the window, leaving no room for the system prompt + 2000-token answer
+# reservation. The failure mode is server-side context overflow, often
+# surfaced as opaque 500s mid-stream.
+#
+# Defaults (per-result 1500 chars, max 10 results) keep the worst case
+# at ~15 KB ≈ 3.75k tokens — comfortable headroom in a 16k context with
+# room for output + template overhead. Users on bigger context windows
+# can raise the cap via env vars without code edits.
+_ASK_PER_RESULT_CHAR_CAP_DEFAULT = 1500
+_ASK_MAX_RESULTS_DEFAULT = 10
+_TRUNCATION_MARKER = "\n[...truncated for context budget...]"
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    """Parse a positive integer from env; fall back to default on garbage."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+        if val < minimum:
+            logger.warning(
+                f"{name}={raw} is below minimum {minimum}; using default {default}"
+            )
+            return default
+        return val
+    except ValueError:
+        logger.warning(f"{name}={raw!r} is not an int; using default {default}")
+        return default
+
+
+def _truncate_ask_results(results: list) -> list:
+    """Cap result count and per-result content size for local-model safety.
+
+    Mutates a *copy* — leaves the original list (which other code might
+    still reference) untouched. Each result's `matches` field, if
+    present, is joined and truncated to the char cap with a marker so
+    the LLM sees that content was elided rather than silently lost.
+    Non-`matches` fields (id, parent_id, title, similarity) are
+    untouched — they're tiny and the prompt needs them for citation.
+    """
+    max_results = _env_int(
+        "ONP_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1
+    )
+    char_cap = _env_int(
+        "ONP_ASK_PER_RESULT_CHAR_CAP",
+        _ASK_PER_RESULT_CHAR_CAP_DEFAULT,
+        minimum=200,
+    )
+    capped = list(results)[:max_results]
+    out = []
+    for r in capped:
+        if not isinstance(r, dict):
+            out.append(r)
+            continue
+        new_r = dict(r)
+        matches = new_r.get("matches")
+        # `matches` is array::flatten(content) — usually a list of strings,
+        # but defensively also handle a single string.
+        if isinstance(matches, list):
+            joined = "\n".join(m for m in matches if isinstance(m, str))
+        elif isinstance(matches, str):
+            joined = matches
+        else:
+            out.append(new_r)
+            continue
+        if len(joined) > char_cap:
+            joined = joined[:char_cap] + _TRUNCATION_MARKER
+        new_r["matches"] = joined
+        out.append(new_r)
+    return out
 
 
 class SubGraphState(TypedDict):
@@ -104,6 +190,11 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         results = await vector_search(state["term"], 10, True, True)
         if len(results) == 0:
             return {"answers": []}
+        # v0.7.9 — cap result count and per-result content size before
+        # passing into the prompt; protects local 16k-context LLMs from
+        # context overflow on hot sources with many chunks. See
+        # _truncate_ask_results docstring for rationale.
+        results = _truncate_ask_results(results)
         payload["results"] = results
         ids = [r["id"] for r in results]
         payload["ids"] = ids
