@@ -10,7 +10,20 @@ T = TypeVar("T", Dict[str, Any], List[Dict[str, Any]])
 
 
 def get_database_url():
-    """Get database URL with backward compatibility"""
+    """Get database URL with backward compatibility.
+
+    v0.7.6 — fixed a long-standing typo in the legacy fallback path:
+    the previous version produced `ws://{address}/rpc:{port}` (port
+    AFTER the path), which is not a valid WebSocket URL. SurrealDB's
+    WebSocket endpoint is `ws://host:port/rpc` — port BEFORE path.
+    Any deployment using SURREAL_ADDRESS + SURREAL_PORT without
+    SURREAL_URL (legacy Docker setups, pre-2024 deploys) hit
+    connection failures with cryptic URL-parse errors.
+
+    The desktop bundle is unaffected because desktop/launcher.py
+    always sets SURREAL_URL explicitly. This fix unblocks the
+    documented backward-compat path.
+    """
     surreal_url = os.getenv("SURREAL_URL")
     if surreal_url:
         return surreal_url
@@ -18,7 +31,7 @@ def get_database_url():
     # Fallback to old format - WebSocket URL format
     address = os.getenv("SURREAL_ADDRESS", "localhost")
     port = os.getenv("SURREAL_PORT", "8000")
-    return f"ws://{address}/rpc:{port}"
+    return f"ws://{address}:{port}/rpc"
 
 
 def get_database_password():
