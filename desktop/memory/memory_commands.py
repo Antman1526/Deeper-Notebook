@@ -81,7 +81,26 @@ def _build_clients():
                         },
                     )
                     r.raise_for_status()
-                    return r.json()["choices"][0]["message"]["content"]
+                    # v0.7.5 — defensive .get() chain. Some
+                    # OpenAI-compatible servers return HTTP 200 with
+                    # `{"error": "..."}` (no "choices" key). The previous
+                    # chained `[]` indexing would KeyError and crash
+                    # the worker on those responses. Now we return "" and
+                    # the writer silently produces zero facts for the
+                    # turn — same outcome as the timeout path.
+                    payload = r.json()
+                    choices = payload.get("choices") or []
+                    if not choices:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "chat LLM returned no choices (payload keys=%s) "
+                            "— skipping fact extraction",
+                            list(payload.keys()),
+                        )
+                        return ""
+                    return (
+                        choices[0].get("message", {}).get("content") or ""
+                    )
             except httpx.TimeoutException:
                 # Don't crash the worker — log and return empty so the writer
                 # silently produces zero facts for this turn.
@@ -89,6 +108,25 @@ def _build_clients():
                 logging.getLogger(__name__).warning(
                     "chat LLM timed out after %ss — skipping fact extraction",
                     chat_timeout_s,
+                )
+                return ""
+            except Exception as exc:
+                # v0.7.5 — broaden to all Exception. Previously only
+                # TimeoutException was caught; a connection-refused
+                # (server restarting), HTTP 503 (model still loading on
+                # local servers), HTTP 4xx (auth), or malformed-JSON
+                # response would propagate out and crash the
+                # surreal_commands worker. surreal_commands then retried
+                # 5x per turn — log spam + no actual benefit since the
+                # underlying server failure wasn't transient enough to
+                # recover within retry windows. Now we degrade
+                # gracefully: zero facts extracted for this turn, the
+                # user's chat experience is unaffected, and one warning
+                # in the log identifies the root cause.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "chat LLM failed (%s: %s) — skipping fact extraction",
+                    type(exc).__name__, exc,
                 )
                 return ""
 
