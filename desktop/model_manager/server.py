@@ -79,9 +79,27 @@ def build_app(model_dir: Path) -> web.Application:
 
     async def delete_model(req: web.Request) -> web.Response:
         rel = req.match_info["rel"]
-        # Defensive: refuse paths trying to escape model_dir
-        target = (model_dir / rel).resolve()
-        if not str(target).startswith(str(model_dir.resolve())):
+        # v0.6.31 — path-traversal hardening. The previous check used
+        # `str(target).startswith(str(model_dir.resolve()))` which has a
+        # well-known prefix bug: if model_dir is "/Users/foo/models" and
+        # `rel` resolves to "/Users/foo/models_evil/x.gguf", the str
+        # comparison passes (because "/Users/foo/models_evil/..." literally
+        # starts with "/Users/foo/models"). Use Path.is_relative_to which
+        # operates on path components, not raw strings.
+        try:
+            target = (model_dir / rel).resolve()
+        except (OSError, ValueError):
+            return web.json_response({"error": "invalid path"}, status=400)
+        root = model_dir.resolve()
+        if not target.is_relative_to(root):
+            return web.json_response({"error": "invalid path"}, status=400)
+        # Refuse to follow symlinks that point outside model_dir — the
+        # resolve() above already canonicalizes them, so any symlink chain
+        # ending outside the dir is caught by is_relative_to. But also
+        # guard the target itself against being a symlink to a sensitive
+        # path, just in case: only allow regular files (not symlinks,
+        # not dirs).
+        if target.is_symlink() or (target.exists() and not target.is_file()):
             return web.json_response({"error": "invalid path"}, status=400)
         if target.exists():
             target.unlink()
