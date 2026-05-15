@@ -514,11 +514,42 @@ class Source(ObjectModel):
         return data
 
     async def delete(self) -> bool:
-        """Delete source and clean up associated file, embeddings, and insights."""
+        """Delete source and clean up associated file, embeddings, and insights.
+
+        v0.6.34 — verifies the file_path is INSIDE UPLOADS_FOLDER before
+        unlinking. Previously the path came from the DB unchecked, so a
+        tampered asset.file_path (raw SurrealQL access, an unrelated bug
+        in another endpoint that allows setting Asset fields directly,
+        future API additions that don't enforce containment) could cause
+        Source.delete() to remove arbitrary files the API process has
+        write access to.
+
+        The create path (api/routers/sources.py:358) already does this
+        check; the symmetric check on delete had been missing.
+        """
         # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)
-            if file_path.exists():
+            # Defense-in-depth: only unlink files inside UPLOADS_FOLDER.
+            # Lazy import to avoid a circular dependency at module load.
+            from open_notebook.config import UPLOADS_FOLDER as _uploads
+            try:
+                uploads_root = Path(_uploads).resolve()
+                resolved = file_path.resolve()
+                inside_uploads = resolved.is_relative_to(uploads_root)
+            except (OSError, ValueError) as exc:
+                logger.warning(
+                    f"Could not validate file_path for source {self.id} "
+                    f"({file_path}): {exc}; skipping file cleanup"
+                )
+                inside_uploads = False
+            if not inside_uploads:
+                logger.warning(
+                    f"Refusing to unlink file_path outside UPLOADS_FOLDER for "
+                    f"source {self.id}: {file_path} (uploads root: "
+                    f"{_uploads}). DB may be corrupted."
+                )
+            elif file_path.exists():
                 try:
                     os.unlink(file_path)
                     logger.info(f"Deleted file for source {self.id}: {file_path}")

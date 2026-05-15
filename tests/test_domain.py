@@ -124,12 +124,21 @@ class TestSourceDomain:
         assert "command" in save_data
 
     @pytest.mark.asyncio
-    async def test_source_delete_cleans_up_file(self):
-        """Test that deleting a source removes the associated file."""
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
-            tmp_file.write(b"Test content")
-            tmp_path = Path(tmp_file.name)
+    async def test_source_delete_cleans_up_file(self, monkeypatch):
+        """Test that deleting a source removes the associated file.
+
+        v0.6.34 — must use a file INSIDE UPLOADS_FOLDER (the new
+        containment check refuses to unlink outside-uploads paths).
+        Monkeypatches UPLOADS_FOLDER to tempdir so the test stays
+        hermetic.
+        """
+        # Create a "uploads" dir + a file inside it
+        uploads_dir = Path(tempfile.mkdtemp())
+        monkeypatch.setattr(
+            "open_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
+        )
+        tmp_path = uploads_dir / "test.txt"
+        tmp_path.write_bytes(b"Test content")
 
         try:
             # Create source with file asset
