@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
@@ -129,15 +129,19 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   })
 
-  // Build context from sources and notes based on user selections
+  // Build context from sources and notes based on user selections.
+  // v0.6.24 — no longer setState-s tokenCount/charCount internally.
+  // The previous version did, but that created a race when called twice
+  // concurrently (e.g. user rapidly toggling source inclusion modes):
+  // the LAST setState to land could be the FIRST request to start, leaving
+  // counts stuck on a stale intermediate value. State updates are now the
+  // caller's responsibility — see the gated effect below.
   const buildContext = useCallback(async () => {
-    // Build context_config mapping IDs to selection modes
     const context_config: { sources: Record<string, string>, notes: Record<string, string> } = {
       sources: {},
       notes: {}
     }
 
-    // Map source selections
     sources.forEach(source => {
       const mode = contextSelections.sources[source.id]
       if (mode === 'insights') {
@@ -149,7 +153,6 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       }
     })
 
-    // Map note selections
     notes.forEach(note => {
       const mode = contextSelections.notes[note.id]
       if (mode === 'full') {
@@ -159,17 +162,11 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       }
     })
 
-    // Call API to build context with actual content
     const response = await chatApi.buildContext({
       notebook_id: notebookId,
       context_config
     })
-
-    // Store token and char counts
-    setTokenCount(response.token_count)
-    setCharCount(response.char_count)
-
-    return response.context
+    return response  // { context, token_count, char_count }
   }, [notebookId, sources, notes, contextSelections])
 
   // Send message (synchronous, no streaming)
@@ -214,11 +211,15 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
 
     try {
       // Build context and send message
-      const context = await buildContext()
+      // v0.6.24 — buildContext now returns the whole response (context +
+      // counts). We discard the counts here; they're set by the dedicated
+      // effect that has the race-safe sequence guard. The actual context
+      // string is what the API needs.
+      const built = await buildContext()
       const response = await chatApi.sendMessage({
         session_id: sessionId,
         message,
-        context,
+        context: built.context,
         model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
       })
 
@@ -287,12 +288,40 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   }, [currentSessionId, updateSessionMutation])
 
-  // Update token/char counts when context selections change
+  // v0.6.24 — fix a real out-of-order race when the user rapidly toggles
+  // source/note inclusion. Each toggle triggers a new buildContext call,
+  // and the previous effect simply awaited each and overwrote
+  // tokenCount/charCount in completion order. Network latency varies, so
+  // the LAST call to START was not always the LAST to FINISH — tokenCount
+  // could end up stuck on a stale intermediate value (e.g. the user
+  // selected A, A+B, A+B+C in fast succession, and the counts showed
+  // the A+B total because that request finished last).
+  //
+  // Two guards:
+  //   1. A monotonic request counter — each effect run captures its own
+  //      counter, and only commits its result if its counter is STILL
+  //      the most recent. Stale completions are dropped silently.
+  //   2. A mountedRef — never setState after unmount.
+  const contextRequestSeq = useRef(0)
+  const mountedRef = useRef(true)
   useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  useEffect(() => {
+    const mySeq = ++contextRequestSeq.current
     const updateContextCounts = async () => {
       try {
-        await buildContext()
+        const result = await buildContext()
+        // Drop stale results. mySeq < contextRequestSeq.current means
+        // another effect run started after us; its result will land
+        // shortly and overwrite ours, so don't commit ours.
+        if (!mountedRef.current || mySeq !== contextRequestSeq.current) return
+        setTokenCount(result.token_count)
+        setCharCount(result.char_count)
       } catch (error) {
+        if (!mountedRef.current || mySeq !== contextRequestSeq.current) return
         console.error('Error updating context counts:', error)
       }
     }
