@@ -98,16 +98,19 @@ def build_app(config_path: Path, on_done: Callable[[], None],
     async def dismiss_openchronicle_reminder(_req: web.Request) -> web.Response:
         """Post-launch endpoint: the memory_injection.js toast hits this when
         the user closes the OpenChronicle reminder. We rewrite the config to
-        flip choice→'skip' so the toast never re-shows."""
+        flip choice→'skip' so the toast never re-shows.
+
+        v0.6.28 — use dataclasses.replace instead of manually enumerating
+        every Config field. Same antipattern fix as v0.6.5 applied to
+        api/routers/onp.py — if anyone adds a new field to Config (e.g.
+        a future "last_used_model" or "telemetry_opt_in"), the manual
+        Config(...) call would silently revert it to its default the next
+        time the user clicks "dismiss".
+        """
+        from dataclasses import replace as _dc_replace
         from desktop.config import load_or_create
         cfg = load_or_create(config_path)
-        new_cfg = Config(
-            model_dir=cfg.model_dir, provider=cfg.provider,
-            default_model=cfg.default_model,
-            surreal_user=cfg.surreal_user, surreal_password=cfg.surreal_password,
-            theme=cfg.theme, encryption_key=cfg.encryption_key,
-            openchronicle_choice="skip",
-        )
+        new_cfg = _dc_replace(cfg, openchronicle_choice="skip")
         new_cfg.save(config_path)
         return web.json_response({"ok": True})
 
