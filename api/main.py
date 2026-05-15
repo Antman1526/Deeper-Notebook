@@ -195,6 +195,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Digest scheduler exit raised: {e}")
 
+    # v0.7.18 — close pooled SurrealDB connections so we exit clean
+    # (avoids "task pending" warnings and leaves the DB free).
+    try:
+        from open_notebook.database.repository import close_pool
+
+        await close_pool()
+        logger.info("SurrealDB pool closed")
+    except Exception as e:
+        logger.warning(f"Closing DB pool raised: {e}")
+
     logger.info("API shutdown complete")
 
 
