@@ -418,3 +418,74 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
     assert posted[0]["chat_model_id"] == "model:qwen7", (
         "should skip bge-* embedding and pick the real chat model"
     )
+
+
+def test_ensure_credential_does_not_post_when_existing_set_lies():
+    """v0.6.30 regression: if pre-fetched existing_names claims a credential
+    exists but the /api/credentials response doesn't actually contain it
+    (e.g. case mismatch, race with delete, server response variance), the
+    old code FELL THROUGH to a POST — creating a duplicate. The fix returns
+    None so the caller logs + skips, never creating an unintended duplicate."""
+    from desktop.auto_register._http import _ensure_credential
+
+    posted = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                status_code = 200
+                def raise_for_status(self): pass
+                def json(self): return [{"name": "Other Cred", "id": "cred:other"}]
+            return R()
+        def post(self, path, json=None):
+            posted.append((path, json))
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {"id": "id-new"}
+            return R()
+
+    existing = {"mismatch cred"}  # claims to exist
+    result = _ensure_credential(
+        client=FakeClient(),
+        existing_names=existing,
+        name="Mismatch Cred",
+        provider="ollama",
+        modalities=["language"],
+    )
+    # Returns None, NOT the new ID — and crucially never POSTed.
+    assert result is None
+    assert not posted, f"expected zero POST calls, got: {posted}"
+
+
+def test_ensure_credential_returns_existing_id_on_match():
+    """Happy path control test — when GET response DOES contain the
+    credential, return its ID without POSTing."""
+    from desktop.auto_register._http import _ensure_credential
+
+    posted = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                status_code = 200
+                def raise_for_status(self): pass
+                def json(self):
+                    return [{"name": "Whisper (local)", "id": "cred:whisper-1"}]
+            return R()
+        def post(self, path, json=None):
+            posted.append((path, json))
+            class R:
+                status_code = 201
+                def json(self): return {"id": "would-be-duplicate"}
+            return R()
+
+    result = _ensure_credential(
+        client=FakeClient(),
+        existing_names={"whisper (local)"},
+        name="Whisper (local)",
+        provider="openai_compatible",
+        modalities=["speech_to_text"],
+    )
+    assert result == "cred:whisper-1"
+    assert not posted
