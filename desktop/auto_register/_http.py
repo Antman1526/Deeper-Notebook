@@ -36,6 +36,22 @@ def _ensure_credential(
     """Return the ID of the named credential, creating it if missing.
 
     Returns None on error.
+
+    v0.6.30 — control-flow bug fix. The previous version:
+
+        if name.lower() in existing_names:
+            r = client.get(...)
+            for cred in r.json():
+                if cred name matches:
+                    return cred.get("id")
+            # 🔴 loop ended without finding a match? FALL THROUGH to POST below
+
+    That fall-through created a duplicate credential whenever the
+    pre-fetched `existing_names` claimed the credential existed but the
+    follow-up GET response didn't include it (e.g. case-normalization
+    mismatch, unicode normalization, server response variance). The fix
+    returns None in that case — caller may log + skip the model
+    registration, but cannot accidentally produce a duplicate.
     """
     if name.lower() in existing_names:
         # Already exists — fetch its ID.
@@ -45,6 +61,13 @@ def _ensure_credential(
             for cred in r.json():
                 if cred.get("name", "").lower() == name.lower():
                     return cred.get("id")
+            # Loop exited without finding a match — refuse to POST a duplicate.
+            log.warning(
+                "Credential %r reported as existing but not found in "
+                "/api/credentials response; refusing to POST duplicate",
+                name,
+            )
+            return None
         except Exception as exc:
             log.warning("Could not fetch credential id for %r: %s", name, exc)
             return None
