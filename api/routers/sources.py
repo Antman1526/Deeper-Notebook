@@ -70,7 +70,10 @@ def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
         counter += 1
 
 
-async def save_uploaded_file(upload_file: UploadFile) -> str:
+async def save_uploaded_file(
+    upload_file: UploadFile,
+    max_bytes: Optional[int] = None,
+) -> str:
     """Save uploaded file to uploads folder and return file path.
 
     v0.6.16 — streamed in 1 MiB chunks instead of `await upload_file.read()`
@@ -83,6 +86,14 @@ async def save_uploaded_file(upload_file: UploadFile) -> str:
 
     Chunked streaming keeps memory bounded to the chunk size regardless of
     upload total — same memory footprint for 1 MB or 10 GB.
+
+    v0.7.1 — `max_bytes` closes a DoS vector. The Studio router's per-file
+    size check used `getattr(f, "size", None)` which is None for HTTP
+    requests sent with chunked transfer encoding (no Content-Length).
+    A malicious authenticated client could bypass that pre-check and
+    stream arbitrarily large files to disk. Now we count bytes as we
+    stream and abort mid-write when the cap is exceeded; the existing
+    except branch cleans up the partial file.
     """
     if not upload_file.filename:
         raise ValueError("No filename provided")
@@ -97,12 +108,22 @@ async def save_uploaded_file(upload_file: UploadFile) -> str:
         # inside the async handler — each chunk write is microseconds and the
         # await on upload_file.read() yields control back to the loop
         # between chunks.
+        written = 0
         with open(file_path, "wb") as f:
             while True:
                 chunk = await upload_file.read(_CHUNK)
                 if not chunk:
                     break
+                # v0.7.1 — enforce the cap BEFORE writing the chunk so
+                # even one chunk past the threshold is rejected.
+                if max_bytes is not None and written + len(chunk) > max_bytes:
+                    raise ValueError(
+                        f"Upload exceeds size limit "
+                        f"({max_bytes} bytes); aborted after "
+                        f"writing {written} bytes"
+                    )
                 f.write(chunk)
+                written += len(chunk)
 
         logger.info(f"Saved uploaded file to: {file_path}")
         return file_path
