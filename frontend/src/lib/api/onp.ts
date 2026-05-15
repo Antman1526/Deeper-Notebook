@@ -40,8 +40,12 @@ export async function onpFetch(input: string, init: RequestInit = {}): Promise<R
   const response = await fetch(input, { ...init, headers })
   if (response.status === 401 && typeof window !== 'undefined') {
     // Match apiClient's behavior: blow away the bad token + bounce to login.
+    // v0.6.20 — also skip the redirect if we're already on /login, to
+    // match apiClient.ts and avoid a /login → /login bounce loop.
     localStorage.removeItem('auth-storage')
-    window.location.href = '/login'
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
   }
   return response
 }

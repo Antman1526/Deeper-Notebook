@@ -54,9 +54,15 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Clear auth and redirect to login
+      // v0.6.20 — skip the redirect if we're already on /login. Without
+      // this guard, an authenticated API call that the login page itself
+      // happens to make (e.g. checkAuth() racing against a fresh logout)
+      // can spin the browser in /login → /login → /login forever.
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth-storage')
-        window.location.href = '/login'
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(error)
