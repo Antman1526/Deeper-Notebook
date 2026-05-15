@@ -7,6 +7,8 @@ sees `provider: "surreal"`, or mem0 will reject the config as unknown.
 """
 from __future__ import annotations
 
+import os
+
 import desktop.memory._register  # noqa: F401 — registers `surreal` provider
 
 try:
@@ -17,9 +19,22 @@ except ImportError:  # tests don't need mem0 installed at import time
 
 def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     """Build a `mem0.Memory` instance backed by our SurrealDB store + local
-    OpenAI-compatible LLM and embedder endpoints."""
+    OpenAI-compatible LLM and embedder endpoints.
+
+    v0.6.14 — model name no longer hardcoded to Hermes-3. The launcher's
+    capability-aware spawner (v0.5.1+) picks the chat model dynamically
+    based on available RAM, so on a 64 GB box it may load Qwen3.6-35B-A3B.
+    Asking llama-cpp for a literal "Hermes-3-Llama-3.1-8B-Q4_K_M" then
+    either silently returns the wrong model's output (when llama-cpp is
+    lenient about model names) or 404s (when strict). Matches the same
+    fix already applied in memory_commands.py.
+
+    Override via ONP_CHAT_MODEL_NAME env var; default "default" works
+    against llama-cpp-python's permissive OpenAI-compatible server.
+    """
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
+    chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")
     return Memory.from_config({
         "vector_store": {
             "provider": "surreal",
@@ -44,7 +59,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
             "config": {
                 "api_key": "sk-no-key",
                 "base_url": llm_url,
-                "model": "Hermes-3-Llama-3.1-8B-Q4_K_M",
+                "model": chat_model_name,
             },
         },
     })

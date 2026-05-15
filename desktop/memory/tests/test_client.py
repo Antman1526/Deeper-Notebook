@@ -5,10 +5,12 @@ from unittest.mock import patch, MagicMock
 from desktop.memory.client import build_memory_client
 
 
-def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
+def test_build_memory_client_uses_surreal_provider_and_local_endpoints(monkeypatch):
     fake_cfg = MagicMock(
         surreal_user="root", surreal_password="x" * 24,
     )
+    # v0.6.14 — ensure the env var doesn't bleed in from the test runner.
+    monkeypatch.delenv("ONP_CHAT_MODEL_NAME", raising=False)
     with patch("desktop.memory.client.Memory") as mem0_cls:
         build_memory_client(
             cfg=fake_cfg,
@@ -27,7 +29,26 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
         assert config["embedder"]["config"]["base_url"] == "http://127.0.0.1:51000/v1"
         assert config["embedder"]["config"]["model"] == "nomic-embed-text-v1.5"
         assert config["llm"]["config"]["base_url"] == "http://127.0.0.1:52000/v1"
-        assert config["llm"]["config"]["model"] == "Hermes-3-Llama-3.1-8B-Q4_K_M"
+        # v0.6.14: model name is "default" by default (llama-cpp accepts it)
+        # so a different chat model loaded by the launcher still works.
+        assert config["llm"]["config"]["model"] == "default"
+
+
+def test_build_memory_client_respects_onp_chat_model_name_env(monkeypatch):
+    """v0.6.14 regression: ONP_CHAT_MODEL_NAME override flows through to
+    mem0's LLM config. Without this the hardcoded Hermes-3 name persists."""
+    fake_cfg = MagicMock(surreal_user="root", surreal_password="x" * 24)
+    monkeypatch.setenv("ONP_CHAT_MODEL_NAME", "Qwen3.6-35B-A3B-Q4_K_M")
+    with patch("desktop.memory.client.Memory") as mem0_cls:
+        build_memory_client(
+            cfg=fake_cfg,
+            surreal_url="ws://127.0.0.1:50000/rpc",
+            embed_url="http://127.0.0.1:51000/v1",
+            llm_url="http://127.0.0.1:52000/v1",
+        )
+        call_args = mem0_cls.from_config.call_args
+        config = call_args.kwargs.get("config") or call_args.args[0]
+        assert config["llm"]["config"]["model"] == "Qwen3.6-35B-A3B-Q4_K_M"
 
 
 def test_build_memory_client_imports_register_module_for_side_effect():
