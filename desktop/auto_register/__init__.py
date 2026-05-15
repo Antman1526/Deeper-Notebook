@@ -262,7 +262,11 @@ def _do_register(
     # --- v0.4 memory layer --------------------------------------------------
     if memory_port is not None:
         from desktop.auto_register.memory import register_memory_credential
-        register_memory_credential(client, memory_port=memory_port, cfg=cfg)
+        # v0.6.22 — thread the existing-names set through (same fix as voice.py)
+        register_memory_credential(
+            client, memory_port=memory_port, cfg=cfg,
+            existing_cred_names=existing_cred_names,
+        )
 
     # --- 6. Capability-aware default assignment (v0.5) ----------------------
     # Replaces upstream's cloud-centric /api/models/auto-assign with a local-

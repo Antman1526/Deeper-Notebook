@@ -5,7 +5,15 @@ import logging
 
 import httpx
 
+from desktop.auto_register._http import _is_embedding_gguf
+
 log = logging.getLogger(__name__)
+
+
+# Names that should never be picked as the chat model. We match by prefix
+# AND by the same heuristic _ensure_model uses (an embedding-y filename),
+# so "nomic-embed-text-v1.5" is correctly excluded.
+_NON_CHAT_PREFIXES = ("piper-", "whisper-", "nomic-", "Local Embeddings")
 
 
 def register_default_episode_profile(client: httpx.Client) -> None:
@@ -21,17 +29,27 @@ def register_default_episode_profile(client: httpx.Client) -> None:
         log.warning("Could not list episode profiles: %s — skipping profile bootstrap", exc)
         return
 
-    # Look up the IDs we just registered for chat model + piper voices
+    # Look up the IDs we just registered for chat model + piper voices.
+    # v0.6.22 — dropped hardcoded "Hermes-3 / Mistral" fallback gates.
+    # After v0.6.11's RAM-probe fix, a 64 GB box auto-registers a chat
+    # model named e.g. "Qwen3.6-35B-A3B-Q4_K_M". The hardcoded .get()
+    # calls returned None on those installs and we silently fell through
+    # to the "any non-voice/embed model" path anyway. Now that path is
+    # the primary — and also filters out embedding-y names that the old
+    # version let slip through (a name not matching the prefix tuple
+    # but matching the embedding heuristic, like "bge-large-en-v1.5").
     try:
         models = client.get("/api/models").json()
     except Exception:
         return
     by_name = {m.get("name"): m.get("id") for m in models}
-    chat_id = (by_name.get("Hermes-3-Llama-3.1-8B-Q4_K_M")
-               or by_name.get("Mistral-7B-Instruct-v0.3-Q4_K_M")
-               or next((mid for name, mid in by_name.items()
-                        if not name.startswith(("piper-", "whisper-", "nomic-"))),
-                       None))
+    chat_id = next(
+        (mid for name, mid in by_name.items()
+         if name
+         and not name.startswith(_NON_CHAT_PREFIXES)
+         and not _is_embedding_gguf(name)),
+        None,
+    )
     amy_id = by_name.get("piper-amy-en")
     ryan_id = by_name.get("piper-ryan-en")
     if not (chat_id and amy_id and ryan_id):
