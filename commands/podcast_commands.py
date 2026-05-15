@@ -241,25 +241,61 @@ async def generate_podcast_command(
 
         logger.info(f"Created output directory: {output_dir}")
 
-        # 8. Generate podcast using podcast-creator
+        # 8. Generate podcast using podcast-creator.
+        # v0.7.3 — wrap in try/except so we can clean up empty output_dir
+        # if generation fails. Without this, every failed generation
+        # leaves an empty UUID directory under data/podcasts/episodes/
+        # that accumulates over time (disk-fill). We only remove the dir
+        # if it's empty post-failure — never delete partial output that
+        # might still be useful for diagnostics.
         logger.info("Starting podcast generation with podcast-creator...")
 
-        result = await create_podcast(
-            content=input_data.content,
-            briefing=briefing,
-            episode_name=episode_dir_name,
-            output_dir=str(output_dir),
-            speaker_config=speaker_profile.name,
-            episode_profile=episode_profile.name,
-        )
+        try:
+            result = await create_podcast(
+                content=input_data.content,
+                briefing=briefing,
+                episode_name=episode_dir_name,
+                output_dir=str(output_dir),
+                speaker_config=speaker_profile.name,
+                episode_profile=episode_profile.name,
+            )
+        except Exception:
+            # Leave non-empty dirs alone — those have partial output
+            # (transcript file, intermediate WAVs) that the user can
+            # inspect to understand the failure.
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+                    logger.info(
+                        "Cleaned up empty output dir after failure: %s",
+                        output_dir,
+                    )
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Could not clean up output dir %s after failure: %s",
+                    output_dir, cleanup_exc,
+                )
+            raise
 
+        # v0.7.3 — defensive: result may be None (early-return) or a
+        # partial dict missing keys (future podcast-creator versions, edge
+        # cases where audio succeeded but transcript/outline failed). The
+        # PodcastGenerationOutput block below already uses .get() for the
+        # same fields — this block was inconsistent and would KeyError on
+        # the indexed access, masking a partial success as a worker crash.
         episode.audio_file = (
             str(result.get("final_output_file_path")) if result else None
         )
         episode.transcript = {
-            "transcript": full_model_dump(result["transcript"]) if result else None
+            "transcript": full_model_dump(result.get("transcript"))
+            if result and result.get("transcript") is not None
+            else None
         }
-        episode.outline = full_model_dump(result["outline"]) if result else None
+        episode.outline = (
+            full_model_dump(result.get("outline"))
+            if result and result.get("outline") is not None
+            else None
+        )
         await episode.save()
 
         processing_time = time.time() - start_time
