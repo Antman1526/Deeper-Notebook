@@ -146,17 +146,29 @@ def looks_like_fernet_token(s: str) -> bool:
     """
     Check if string looks like a Fernet encrypted token.
 
-    Fernet tokens are versioned (1 byte) + timestamp (8 bytes) + IV (16 bytes)
-    + ciphertext (variable, multiple of 16 with PKCS7 padding) + HMAC (32 bytes).
+    Fernet tokens (per spec) are:
+      version(1=0x80) + timestamp(8) + IV(16) + ciphertext(>=16, multiple of
+      16 with PKCS7 padding) + HMAC(32)
     Minimum decoded size is 73 bytes (1+8+16+16+32) for the smallest payload.
+
+    v0.6.15 — also check the version byte (0x80). Without this guard, any
+    random 100+ char base64-decodable string with the right block alignment
+    passed the test, which:
+      - made decrypt_value raise "data appears to be encrypted but key is
+        incorrect" for what was actually plaintext that happened to look
+        right — confusing error message
+      - in edge cases could mask a legitimate decryption failure
+    Random data has a 1/256 chance of starting with 0x80, so this cuts the
+    false-positive rate to <1% even before the other structural checks.
     """
     if len(s) < 100:  # Base64 of 73 bytes = ~100 chars minimum
         return False
     try:
         decoded = base64.urlsafe_b64decode(s)
-        # Fernet: version(1) + timestamp(8) + IV(16) + ciphertext(>=16) + HMAC(32)
-        # Minimum 73 bytes, ciphertext must be multiple of 16 (AES block size)
         if len(decoded) < 73:
+            return False
+        # Fernet's first byte is always the version marker 0x80.
+        if decoded[0] != 0x80:
             return False
         ciphertext_len = len(decoded) - 1 - 8 - 16 - 32
         return ciphertext_len > 0 and ciphertext_len % 16 == 0
