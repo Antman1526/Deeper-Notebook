@@ -141,12 +141,51 @@ def _phase_load_config(ctx: AppContext) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     ctx.log_dir = log_dir
 
+    # v0.6.25 — wire `desktop.launcher`, `desktop.auto_register.*`,
+    # `desktop.memory.*` etc. into launcher.log. Previously the file was
+    # only written by a single .write_text() on supervisor crash (which
+    # also OVERWROTE the file each time, losing history). Several
+    # comments throughout the codebase promise that users can
+    # `cat ~/.open-notebook-plus/logs/launcher.log` to debug startup —
+    # this makes that actually true. Append-mode + rotate-on-size keeps
+    # the file bounded.
+    _setup_launcher_log_handler(log_dir / "launcher.log")
+
     progress_bus = ProgressBus(log_path=log_dir / "progress.jsonl")
     progress_bus.publish("startup", "running", "Launcher starting…")
     ctx.progress_bus = progress_bus
 
     # Config is loaded after the wizard (if first run); stash the path.
     ctx._load_or_create = load_or_create
+
+
+def _setup_launcher_log_handler(log_path: Path) -> None:
+    """Add a single rotating FileHandler under `desktop` so all launcher-
+    side modules (launcher, auto_register, memory, model_downloads, etc.)
+    end up in launcher.log. Idempotent — safe to call from re-entrant
+    code paths."""
+    import logging as _logging
+    from logging.handlers import RotatingFileHandler
+
+    root = _logging.getLogger("desktop")
+    # Idempotency guard — avoid duplicating the handler on relaunch within
+    # the same process (e.g. unit tests re-importing the module).
+    for h in root.handlers:
+        if isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", "") == str(log_path):
+            return
+
+    # 2 MB × 3 backups = ~8 MB total cap. Plenty for a launcher log.
+    handler = RotatingFileHandler(
+        log_path, maxBytes=2 * 1024 * 1024, backupCount=3
+    )
+    handler.setFormatter(_logging.Formatter(
+        "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+    ))
+    root.addHandler(handler)
+    # Setting level on the parent ensures we capture INFO from children;
+    # individual modules can still configure their own level.
+    if root.level == _logging.NOTSET or root.level > _logging.INFO:
+        root.setLevel(_logging.INFO)
 
 
 def _phase_wizard_if_first_run(ctx: AppContext) -> None:
@@ -425,9 +464,20 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     try:
         sv.start_all()
     except Exception:
-        (_ctx_log := ctx.log_dir / "launcher.log").write_text(  # type: ignore[assignment]
-            f"Supervisor.start_all() failed:\n{traceback.format_exc()}\n"
-        )
+        # v0.6.25 — append, not overwrite. The old `.write_text(...)`
+        # truncated launcher.log, wiping any prior failure traces and
+        # the FileHandler's accumulated lines. Now we open in append
+        # mode with a separator so multiple failures are preserved.
+        import datetime as _dt
+        try:
+            with (ctx.log_dir / "launcher.log").open("a") as _log:
+                _log.write(
+                    f"\n===== Supervisor.start_all() failed at "
+                    f"{_dt.datetime.now().isoformat()} =====\n"
+                    f"{traceback.format_exc()}\n"
+                )
+        except Exception:
+            pass  # if logging itself fails, don't mask the original error
         sv.stop_all()
         raise
 
