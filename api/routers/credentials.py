@@ -18,6 +18,7 @@ Endpoints:
 NEVER returns actual API key values - only metadata.
 """
 
+import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -145,13 +146,18 @@ async def create_credential(request: CreateCredentialRequest):
         raise _handle_value_error(e)
 
     # Validate all URL fields
+    # v0.6.18 — validate_url calls socket.getaddrinfo() for non-IP hostnames,
+    # which blocks the event loop for the DNS round-trip (typically 10-200ms,
+    # but up to 30s on a misconfigured/slow resolver). With 6 URL fields per
+    # credential, a worst-case create blocked the entire API for ~3 min.
+    # Run each validation off the event loop.
     for url_field in [
         request.base_url, request.endpoint, request.endpoint_llm,
         request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
     ]:
         if url_field:
             try:
-                validate_url(url_field, request.provider)
+                await asyncio.to_thread(validate_url, url_field, request.provider)
             except ValueError as e:
                 raise _handle_value_error(e)
 
@@ -201,13 +207,14 @@ async def update_credential(credential_id: str, request: UpdateCredentialRequest
         raise _handle_value_error(e)
 
     # Validate all URL fields being updated
+    # v0.6.18 — see create_credential above for the rationale on to_thread.
     for url_field in [
         request.base_url, request.endpoint, request.endpoint_llm,
         request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
     ]:
         if url_field:
             try:
-                validate_url(url_field, "update")
+                await asyncio.to_thread(validate_url, url_field, "update")
             except ValueError as e:
                 raise _handle_value_error(e)
 
