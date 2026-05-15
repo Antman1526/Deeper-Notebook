@@ -63,24 +63,68 @@ PIPER_RYAN_CONFIG = (
 
 
 def _download_one(url: str, dest: Path, label: str,
-                  progress: Callable[[str], None] | None = None) -> bool:
-    """Download url to dest atomically. Returns True if file is present after."""
+                  progress: Callable[[str], None] | None = None,
+                  expected_size_mb: int = 0) -> bool:
+    """Download url to dest atomically. Returns True if file is present after.
+
+    v0.6.29 fixes:
+      1. The previous "skip if file > 100 KB" check let PARTIAL downloads
+         pass: a 280 MB embedding model interrupted at 120 MB has
+         size_bytes > 100_000, so we skipped re-download — and llama-cpp
+         then crashed loading the truncated GGUF header. Now we compare
+         against expected_size_mb when provided, with a 20% lower-bound
+         tolerance to absorb the size estimate being slightly off.
+      2. urllib.request.urlopen previously had no timeout. A flaky CDN
+         response could hang the whole launcher forever — the launcher
+         spinner showed "Downloading..." and never progressed. Now we
+         pass a generous 300s timeout.
+      3. tmp.unlink uses missing_ok=True so a race during cleanup doesn't
+         crash the worker.
+    """
     progress = progress or (lambda msg: None)
-    if dest.exists() and dest.stat().st_size > 100_000:
-        return True
+
+    # Skip-if-already-present check uses the expected size as the source
+    # of truth when we know it; 100 KB is the legacy fallback for entries
+    # that don't yet declare an expected_size_mb (the small Piper config
+    # JSONs, which are ~1 MB and have no partial-download risk).
+    if dest.exists():
+        existing_bytes = dest.stat().st_size
+        min_bytes_ok = (
+            int(expected_size_mb * 1024 * 1024 * 0.80)
+            if expected_size_mb > 0
+            else 100_000
+        )
+        if existing_bytes >= min_bytes_ok:
+            return True
+        # Below threshold — looks like a partial / corrupted download.
+        # Don't trust it; delete and re-download.
+        log.warning(
+            "Existing %s is only %d bytes (expected >= %d) — re-downloading",
+            dest.name, existing_bytes, min_bytes_ok,
+        )
+        try:
+            dest.unlink()
+        except OSError:
+            pass  # if we can't delete it, the rename below will overwrite anyway
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     try:
         progress(f"Downloading {label} (~{dest.name})…")
-        with urllib.request.urlopen(url) as resp, tmp.open("wb") as f:
+        # 300s timeout for the FIRST byte; for large files we then stream
+        # bytes which uses the same socket — no per-byte timeout, so a
+        # genuinely slow connection still completes.
+        with urllib.request.urlopen(url, timeout=300) as resp, tmp.open("wb") as f:
             shutil.copyfileobj(resp, f)
         tmp.rename(dest)
         progress(f"Downloaded {label}: {dest.stat().st_size // 1024 // 1024} MB")
         return True
     except Exception as exc:
         log.warning("Could not download %s: %s", label, exc)
-        if tmp.exists():
-            tmp.unlink()
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         return False
 
 
@@ -92,9 +136,9 @@ def ensure_embedding_model(
 
     Returns the path to the model on success, None on failure.
     """
-    url, rel, label, _ = EMBEDDING_GGUF
+    url, rel, label, size_mb = EMBEDDING_GGUF
     dest = model_dir / rel
-    if _download_one(url, dest, label, progress):
+    if _download_one(url, dest, label, progress, expected_size_mb=size_mb):
         return dest
     return None
 
@@ -104,9 +148,9 @@ def ensure_stt_model(
     progress: Callable[[str], None] | None = None,
 ) -> Path | None:
     """Download Whisper.cpp base.en model into model_dir/STT/."""
-    url, rel, label, _ = WHISPER_STT
+    url, rel, label, size_mb = WHISPER_STT
     dest = model_dir / rel
-    if _download_one(url, dest, label, progress):
+    if _download_one(url, dest, label, progress, expected_size_mb=size_mb):
         return dest
     return None
 
@@ -116,12 +160,12 @@ def ensure_tts_model(
     progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, Path] | None:
     """Download Piper Amy medium voice (.onnx + .json) into model_dir/TTS/."""
-    onnx_url, onnx_rel, onnx_label, _ = PIPER_VOICE_MODEL
-    cfg_url, cfg_rel, cfg_label, _ = PIPER_VOICE_CONFIG
+    onnx_url, onnx_rel, onnx_label, onnx_size = PIPER_VOICE_MODEL
+    cfg_url, cfg_rel, cfg_label, cfg_size = PIPER_VOICE_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
-    if (_download_one(onnx_url, onnx, onnx_label, progress)
-            and _download_one(cfg_url, cfg, cfg_label, progress)):
+    if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
+            and _download_one(cfg_url, cfg, cfg_label, progress, expected_size_mb=cfg_size)):
         return (onnx, cfg)
     return None
 
@@ -131,11 +175,11 @@ def ensure_secondary_tts_voice(
     progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, Path] | None:
     """Download Piper Ryan high voice (.onnx + .json) into model_dir/TTS/."""
-    onnx_url, onnx_rel, onnx_label, _ = PIPER_RYAN_MODEL
-    cfg_url, cfg_rel, cfg_label, _ = PIPER_RYAN_CONFIG
+    onnx_url, onnx_rel, onnx_label, onnx_size = PIPER_RYAN_MODEL
+    cfg_url, cfg_rel, cfg_label, cfg_size = PIPER_RYAN_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
-    if (_download_one(onnx_url, onnx, onnx_label, progress)
-            and _download_one(cfg_url, cfg, cfg_label, progress)):
+    if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
+            and _download_one(cfg_url, cfg, cfg_label, progress, expected_size_mb=cfg_size)):
         return (onnx, cfg)
     return None
