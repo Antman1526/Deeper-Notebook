@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
@@ -36,6 +36,21 @@ export function useAsk() {
     error: null
   })
 
+  // v0.6.23 — track in-flight controller + mount state so we can cancel
+  // the stream on unmount (or on a second sendAsk before the first
+  // finishes). Without this, the reader leaks AND every setState fired
+  // by the streaming loop hits the unmounted component → React warning.
+  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
+
   const sendAsk = useCallback(async (question: string, models: AskModels) => {
     // Validate inputs
     if (!question.trim()) {
@@ -48,6 +63,11 @@ export function useAsk() {
       return
     }
 
+    // Cancel any prior in-flight stream before starting a new one.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     // Reset state
     setState({
       isStreaming: true,
@@ -57,23 +77,26 @@ export function useAsk() {
       error: null
     })
 
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
       const response = await searchApi.askKnowledgeBase({
         question,
         strategy_model: models.strategy,
         answer_model: models.answer,
         final_answer_model: models.finalAnswer
-      })
+      }, controller.signal)
 
       if (!response) {
         throw new Error('No response body received from server')
       }
 
-      const reader = response.getReader()
+      reader = response.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
       while (true) {
+        // Bail if unmounted between chunks — don't bother reading further.
+        if (!mountedRef.current) break
         const { done, value } = await reader.read()
 
         if (done) {
@@ -93,6 +116,9 @@ export function useAsk() {
               if (!jsonStr) continue
 
               const data: AskStreamEvent = JSON.parse(jsonStr)
+              // v0.6.23 — bail if unmounted between the read and the setState
+              // (the chunk may straddle the unmount). Errors still re-raise.
+              if (!mountedRef.current && data.type !== 'error') continue
 
               if (data.type === 'strategy') {
                 setState(prev => ({
@@ -134,22 +160,42 @@ export function useAsk() {
       }
 
       // Ensure streaming is stopped
-      setState(prev => ({ ...prev, isStreaming: false }))
+      if (mountedRef.current) {
+        setState(prev => ({ ...prev, isStreaming: false }))
+      }
 
     } catch (error) {
+      // AbortError from controller.abort() is expected — silent.
+      if ((error as { name?: string }).name === 'AbortError') {
+        return
+      }
       const err = error as { message?: string }
       const errorMessage = err.message || 'An unexpected error occurred'
       console.error('Ask error:', error)
 
-      setState(prev => ({
-        ...prev,
-        isStreaming: false,
-        error: errorMessage
-      }))
+      if (mountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isStreaming: false,
+          error: errorMessage
+        }))
 
-      toast.error(t('apiErrors.askFailed'), {
-        description: getApiErrorMessage(errorMessage, (key) => t(key))
-      })
+        toast.error(t('apiErrors.askFailed'), {
+          description: getApiErrorMessage(errorMessage, (key) => t(key))
+        })
+      }
+    } finally {
+      // Release the reader's lock so the underlying stream can be GC'd.
+      try {
+        reader?.releaseLock()
+      } catch {
+        // Reader may already be released (cancellation path); ignore.
+      }
+      // Clear the controller ref if it's still ours (i.e. nobody started
+      // a newer ask in the meantime).
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
     }
   }, [t])
 
