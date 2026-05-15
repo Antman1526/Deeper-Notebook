@@ -512,7 +512,22 @@ def _phase_auto_register(ctx: AppContext) -> None:
             memory_port=getattr(sv, "memory_port", None) or None,
         )
     except Exception:
-        (ctx.log_dir / "auto_register.log").write_text(traceback.format_exc())
+        # v0.6.26 — append, not overwrite. Same fix as v0.6.25's
+        # launcher.log: .write_text() truncated, wiping prior failure
+        # traces. Now we append with a timestamp banner so repeated
+        # auto-register failures are preserved (e.g. the API was slow to
+        # come up on first launch + fast on second — without history the
+        # only-on-first failure looks irreproducible).
+        import datetime as _dt
+        try:
+            with (ctx.log_dir / "auto_register.log").open("a") as _log:
+                _log.write(
+                    f"\n===== auto_register failed at "
+                    f"{_dt.datetime.now().isoformat()} =====\n"
+                    f"{traceback.format_exc()}\n"
+                )
+        except Exception:
+            pass  # logging failure must not propagate from a non-fatal phase
 
 
 def _phase_start_model_manager(ctx: AppContext) -> None:
@@ -645,7 +660,19 @@ def _phase_open_window(ctx: AppContext) -> None:
 
 
 def run() -> int:
-    """Top-level entry point — calls the phased orchestrators in order."""
+    """Top-level entry point — calls the phased orchestrators in order.
+
+    v0.6.26 — wraps the post-supervisor phases in try/finally so that an
+    exception in _phase_start_model_manager, _phase_start_memory_dashboard,
+    or _phase_install_tray cleanly tears down the supervisor children
+    before propagating. Before this guard, a failure in any of those
+    phases would orphan SurrealDB / FastAPI / uvicorn / Next.js processes —
+    they'd happily keep running after the launcher died, requiring manual
+    `lsof -i` + `kill -9` to free their ports on a subsequent relaunch.
+
+    _phase_open_window has its own finally and is OK; the new guard
+    covers everything between supervisor.start_all() and that finally.
+    """
     ctx = _new_context()
     _phase_load_config(ctx)
     _phase_wizard_if_first_run(ctx)
@@ -655,9 +682,21 @@ def run() -> int:
     _phase_detect_openchronicle(ctx)
     _phase_register_memory_commands(ctx)
     _phase_start_supervisor(ctx)
-    _phase_auto_register(ctx)
-    _phase_start_model_manager(ctx)
-    _phase_start_memory_dashboard(ctx)
-    _phase_install_tray(ctx)
-    _phase_open_window(ctx)
+    # From here on the supervisor owns child processes. Any uncaught
+    # exception in the remaining phases MUST clean them up before
+    # propagating, or the user's machine is left with orphaned binaries
+    # holding ports.
+    try:
+        _phase_auto_register(ctx)
+        _phase_start_model_manager(ctx)
+        _phase_start_memory_dashboard(ctx)
+        _phase_install_tray(ctx)
+        _phase_open_window(ctx)
+    except BaseException:
+        if ctx.sv is not None:
+            try:
+                ctx.sv.stop_all()
+            except Exception:
+                pass  # don't mask the original error
+        raise
     return 0
