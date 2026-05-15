@@ -229,3 +229,69 @@ def test_register_voice_models_creates_credentials_and_models(monkeypatch):
     assert any(j.get("name") == "Local Embeddings (llama.cpp)" for j in payloads)
     assert any(j.get("name") == "piper-amy-en" for j in payloads)
     assert any(j.get("name") == "piper-ryan-en" for j in payloads)
+
+
+def test_register_voice_models_is_idempotent_when_creds_already_exist():
+    """v0.6.21 regression: pre-fix, register_voice_models always passed
+    existing_names=set() to _ensure_credential, so the existence check
+    was a no-op and every relaunch POSTed a duplicate creation request.
+
+    With the fix, the caller passes its already-fetched set of credential
+    names; voice.py uses it. When all names are already in the set,
+    NO /api/credentials POST should happen at all.
+    """
+    from desktop.auto_register import register_voice_models
+    from desktop.config import Config
+    from pathlib import Path
+
+    posted: list[tuple[str, dict]] = []
+    gotten: list[str] = []
+
+    class FakeClient:
+        def post(self, path, json=None):
+            posted.append((path, json))
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {"id": "id-x"}
+            return R()
+        def get(self, path):
+            gotten.append(path)
+            class R:
+                status_code = 200
+                text = ""
+                def raise_for_status(self): pass
+                def json(self):
+                    # Simulate existing creds (so _ensure_credential's
+                    # "name already exists" GET path returns the real ID)
+                    return [
+                        {"name": "Whisper (local)", "id": "cred:1"},
+                        {"name": "Piper (local)", "id": "cred:2"},
+                        {"name": "Local Embeddings (llama.cpp)", "id": "cred:3"},
+                    ]
+            return R()
+
+    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
+                 surreal_user="root", surreal_password="x" * 24)
+    existing_cred_names = {
+        "whisper (local)", "piper (local)", "local embeddings (llama.cpp)"
+    }
+    existing_model_keys = {
+        ("whisper-base-en", "speech_to_text"),
+        ("piper-amy-en", "text_to_speech"),
+        ("piper-ryan-en", "text_to_speech"),
+        ("nomic-embed-text-v1.5", "embedding"),
+    }
+    register_voice_models(
+        FakeClient(),
+        whisper_port=1234, piper_port=2345, embed_port=3456, cfg=cfg,
+        existing_cred_names=existing_cred_names,
+        existing_model_keys=existing_model_keys,
+    )
+
+    # The crucial assertion: NO POST happened — neither for credentials
+    # nor models. The pre-fix code would have POSTed every credential
+    # and every model, regardless of the existing sets.
+    assert not posted, (
+        f"Expected zero POST calls when all entities already exist, got: {posted}"
+    )

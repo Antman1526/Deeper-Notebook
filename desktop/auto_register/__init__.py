@@ -244,12 +244,17 @@ def _do_register(
     # MUST run BEFORE the assignment step (was the TTS/STT empty-slot bug pre-v0.5
     # — voice models registered AFTER auto-assign and never reached defaults).
     if any(p is not None for p in (whisper_port, piper_port, embed_port)):
+        # v0.6.21 — pass through the already-fetched name/key sets so voice
+        # registration is actually idempotent (was creating duplicates on
+        # every launch).
         register_voice_models(
             client,
             whisper_port=whisper_port,
             piper_port=piper_port,
             embed_port=embed_port,
             cfg=cfg,
+            existing_cred_names=existing_cred_names,
+            existing_model_keys=existing_model_keys,
         )
         register_default_episode_profile(client)
         registered_any = True

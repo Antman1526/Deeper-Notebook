@@ -73,34 +73,9 @@ def register_llamacpp_models(
                 "skipping local-GGUF credential registration: no llama-cpp "
                 "server port supplied (would have created broken creds)"
             )
-        return registered_any
-        # --- legacy fallback intentionally removed; if you need to bring
-        # it back, ALSO add a way for the user to start a llama-cpp server
-        # at the registered base_url, otherwise the models are unusable.
-        if False:  # pragma: no cover
-            if local_ggufs:
-                cred_id = _ensure_credential(
-                    client=client,
-                    existing_names=existing_cred_names,
-                    name="Local GGUF (llama.cpp)",
-                    provider="openai_compatible",
-                    modalities=["language", "embedding"],
-                    base_url="http://127.0.0.1:8080/v1",
-                )
-            if cred_id:
-                existing_cred_names.add("local gguf (llama.cpp)")
-                for gguf_rel in local_ggufs:
-                    model_name = Path(gguf_rel).stem
-                    model_type = "embedding" if _is_embedding_gguf(model_name) else "language"
-                    if _ensure_model(
-                        client=client,
-                        existing_keys=existing_model_keys,
-                        name=model_name,
-                        provider="openai_compatible",
-                        model_type=model_type,
-                        credential_id=cred_id,
-                    ):
-                        existing_model_keys.add((model_name.lower(), model_type))
-                        registered_any = True
+        # v0.6.21 — the previous version kept ~30 lines of `if False:` legacy
+        # fallback code below this point as documentation. Removed: comment
+        # block above already captures the rationale, and the dead code was
+        # never exercised (unreachable after the `return` two lines up).
 
     return registered_any
