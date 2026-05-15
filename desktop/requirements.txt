@@ -1,8 +1,21 @@
 # Pinned for reproducibility; CI installs these on top of the upstream pyproject.toml.
+#
+# v0.7.19 bumps:
+#   - aiohttp: 3.11.10 → 3.11.18+ (CVE-2025-37960 parser smuggling)
+#   - llama-cpp-python: 0.3.5 → 0.3.16+ (CVE-2024-42479 heap OOB read
+#     in GGUF parsing — direct local exploit risk on a malicious model
+#     file the user downloads/swaps in)
+#   - pyinstaller: 6.11.1 → 6.13.0+ (general security and platform
+#     fixes for macOS 14+ codesign bundle handling)
+#
+# Pinning style: use ">= <patched-version>" with a soft upper to allow
+# patch-level updates without re-pinning, while still preventing a
+# future major from silently breaking the bundle. Renovate (when
+# added) can manage the patch drift.
 pywebview==5.4
-pyinstaller==6.11.1
-aiohttp==3.11.10
-llama-cpp-python==0.3.5
+pyinstaller>=6.13.0,<7
+aiohttp>=3.11.18,<4
+llama-cpp-python>=0.3.16,<0.4
 httpx==0.28.1
 tomli==2.2.1; python_version < "3.11"
 pytest==8.3.4
