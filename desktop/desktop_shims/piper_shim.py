@@ -23,6 +23,16 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 
+# v0.7.7 — Cap on input text length for one TTS request. 50,000 chars
+# ≈ 10 minutes of synthesized audio at typical speech rates (~150 wpm,
+# ~5 chars/word). Plenty for any legitimate single segment of a
+# generated podcast. The cap protects against a buggy caller (or
+# malicious local process) blowing the shim's memory by passing a
+# huge text — Piper accumulates the entire WAV in BytesIO before
+# returning, so input length directly drives RAM usage.
+_MAX_INPUT_CHARS = 50_000
+
+
 class SpeechRequest(BaseModel):
     input: str
     voice: str | None = None
@@ -47,6 +57,18 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
 
     @app.post("/v1/audio/speech")
     def speech(req: SpeechRequest) -> Response:
+        # v0.7.7 — reject oversize input early. Piper synthesizes the
+        # entire text into a single BytesIO before returning, so a
+        # 10 MB input string would consume gigabytes of RAM and pin a
+        # CPU core for minutes. Caller should split into segments.
+        if len(req.input) > _MAX_INPUT_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Input text is {len(req.input)} chars; cap is "
+                    f"{_MAX_INPUT_CHARS}. Split into smaller segments."
+                ),
+            )
         voice_name = req.voice or default_voice
         if voice_name not in voices:
             voice_name = default_voice
