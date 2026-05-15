@@ -221,6 +221,8 @@ app.add_middleware(
     excluded_paths=[
         "/",
         "/health",
+        "/livez",
+        "/readyz",
         "/docs",
         "/openapi.json",
         "/redoc",
@@ -367,4 +369,71 @@ async def root():
 
 @app.get("/health")
 async def health():
+    """Kept for backward compatibility — returns 200 if the process is up.
+
+    Same shape as /livez. Existing dashboards and the launcher's wait
+    loop point at /health; new code should use /livez (cheap) or
+    /readyz (full dependency check)."""
     return {"status": "healthy"}
+
+
+# v0.7.15 — split liveness vs readiness so the user can actually
+# diagnose "is the API up but stuck?" vs "is the DB unreachable?"
+# without grepping logs. /livez: process is responding. /readyz:
+# DB reachable + migrations applied. The launcher's progress UI and
+# any external uptime checker should poll /readyz.
+@app.get("/livez")
+async def livez():
+    """Liveness probe — the process is alive and serving HTTP.
+
+    Intentionally trivial. Should return < 1ms. No DB call. If this
+    fails, the process is wedged and needs a restart.
+    """
+    return {"status": "alive"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe — the API can serve real traffic.
+
+    Checks:
+      - SurrealDB reachable (2s timeout, via check_database_health)
+      - Migrations applied (via AsyncMigrationManager)
+
+    Returns 200 with detail on success, 503 on any failure so external
+    pollers can distinguish "starting up" from "fully ready". The
+    detail body always includes the same fields so a grep-friendly
+    response shape stays consistent.
+    """
+    # Late-binding the imports keeps tests cheap (they can monkeypatch
+    # without importing the whole api.main side-effect chain).
+    from api.routers.config import check_database_health
+    from open_notebook.database import async_migrate
+
+    db_health = await check_database_health()
+    db_status = db_health.get("status", "unknown")
+
+    migrations_ok = False
+    migrations_error: str | None = None
+    pending_migrations = False
+    try:
+        manager = async_migrate.AsyncMigrationManager()
+        pending_migrations = await manager.needs_migration()
+        migrations_ok = not pending_migrations
+    except Exception as exc:
+        migrations_error = str(exc)
+        logger.warning("readyz: migration check failed: {}", exc)
+
+    ready = db_status == "online" and migrations_ok
+    body = {
+        "status": "ready" if ready else "not_ready",
+        "checks": {
+            "database": db_status,
+            "database_error": db_health.get("error"),
+            "migrations_applied": migrations_ok,
+            "migrations_pending": pending_migrations,
+            "migrations_error": migrations_error,
+        },
+    }
+    status_code = 200 if ready else 503
+    return JSONResponse(content=body, status_code=status_code)
