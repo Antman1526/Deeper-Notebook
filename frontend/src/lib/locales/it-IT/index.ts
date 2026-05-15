@@ -849,6 +849,8 @@ export const itIT = {
     toolsModelDesc: "Usato per chiamate funzione - OpenAI o Anthropic consigliati",
     largeContextModelLabel: "Modello contesto ampio",
     largeContextModelDesc: "Usato per elaborare documenti grandi - Gemini consigliato",
+    reasoningModelLabel: "Modello di ragionamento",
+    reasoningModelDesc: "Usato per domande difficili e analisi multi-step - lento ma profondo",
     embeddingModelLabel: "Modello di embedding",
     embeddingModelDesc: "Usato per ricerca semantica e embedding vettoriali",
     ttsModelLabel: "Modello Text-to-Speech",
