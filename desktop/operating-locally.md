@@ -251,10 +251,19 @@ uv sync   # backend
 
 # 3. Rebuild the desktop bundle (macOS):
 make build-mac
-# or:
-make build-mac-test   # builds + immediately runs the new binary
+# Outputs: dist/Open Notebook Plus.app + dist/Open-Notebook-Plus-mac-<arch>.dmg
+# Composite of: build-mac-test → build-mac-venv → build-mac-frontend
+#               → build-mac-runtimes → build-mac-pyinstaller → build-mac-dmg
 
-# 4. Verify: launch the app, check /readyz returns 200, do a smoke chat
+# Useful sub-targets:
+make build-mac-test       # just runs desktop pytest as a precondition
+make build-mac-install    # copies built .app to /Applications
+make build-mac-clean      # remove build artifacts (keeps dmg)
+make build-mac-distclean  # remove everything including dmg
+
+# 4. Launch and verify:
+open 'dist/Open Notebook Plus.app'
+curl -sf http://127.0.0.1:5055/readyz | jq    # should be 200 + ready
 ```
 
 If an update breaks your DB (migrations applied that the new code
