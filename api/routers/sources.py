@@ -38,6 +38,48 @@ from open_notebook.exceptions import InvalidInputError
 router = APIRouter()
 
 
+# v0.7.16 — upload byte cap for /api/sources. Without this, the only
+# protection was the Next.js reverse-proxy limit (proxyClientMaxBodySize
+# in next.config.ts). Authenticated users hitting the API directly
+# (Docker / scripted clients / pywebview shell) had no ceiling and
+# could fill the local disk on a runaway upload. Studio router got
+# its cap in v0.7.1; this is the same pattern applied to the main
+# source endpoint.
+#
+# Default 500 MB. Local-deploy disks vary widely; a power user with a
+# terabyte volume can raise the cap. The minimum (1 MB) guards typo'd
+# values like "100" that would reject every legitimate upload.
+_SOURCE_UPLOAD_MAX_BYTES_DEFAULT = 500 * 1024 * 1024
+_SOURCE_UPLOAD_MIN_BYTES = 1024 * 1024
+
+
+def _source_upload_max_bytes() -> int:
+    """Resolve the upload cap from ONP_SOURCE_UPLOAD_MAX_BYTES.
+
+    Defensive parsing: garbage or below-minimum values fall back to the
+    default with a logged warning. Returns the active cap in bytes.
+    """
+    raw = os.environ.get("ONP_SOURCE_UPLOAD_MAX_BYTES")
+    if raw is None:
+        return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+    try:
+        val = int(raw)
+        if val < _SOURCE_UPLOAD_MIN_BYTES:
+            logger.warning(
+                f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw} is below minimum "
+                f"{_SOURCE_UPLOAD_MIN_BYTES}; using default "
+                f"{_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
+            )
+            return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+        return val
+    except ValueError:
+        logger.warning(
+            f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw!r} is not an int; using "
+            f"default {_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
+        )
+        return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+
+
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
     """Generate unique filename like Streamlit app (append counter if file exists)."""
     file_path = Path(upload_folder)
@@ -350,8 +392,26 @@ async def create_source(
 
         # Handle file upload if provided
         if upload_file and source_data.type == "upload":
+            # v0.7.16 — apply the same byte-cap the Studio router has had
+            # since v0.7.1. Without this, an authenticated user can fill
+            # the local disk via multi-GB uploads. Default 500 MB matches
+            # the typical "very large PDF / dataset / book" ceiling
+            # while leaving room for local-deploy disk constraints.
+            # Env override: ONP_SOURCE_UPLOAD_MAX_BYTES.
+            max_bytes = _source_upload_max_bytes()
             try:
-                file_path = await save_uploaded_file(upload_file)
+                file_path = await save_uploaded_file(
+                    upload_file, max_bytes=max_bytes
+                )
+            except ValueError as exc:
+                # ValueError from save_uploaded_file is the upload-cap
+                # path — surface as 413 (Payload Too Large), not 400.
+                msg = str(exc)
+                if "exceeds size limit" in msg:
+                    logger.warning("Source upload rejected (oversize): {}", msg)
+                    raise HTTPException(status_code=413, detail=msg)
+                logger.error(f"File upload failed: {exc}")
+                raise HTTPException(status_code=400, detail=f"File upload failed: {msg}")
             except Exception as e:
                 logger.error(f"File upload failed: {e}")
                 raise HTTPException(
