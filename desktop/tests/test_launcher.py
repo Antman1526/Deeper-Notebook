@@ -333,3 +333,136 @@ def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_pat
         assert "supervisor.memory" in steps_seen, "memory spawn should still run after piper failure"
     finally:
         sv.stop_all()
+
+
+# ---------------------------------------------------------------------------
+# v0.7.8 — ONP_CHAT_LLM_CTX env-var handling in _spawn_llamacpp_chat
+#
+# The chat LLM server's --n_ctx was hardcoded to 8192, which (a) capped
+# every chat session below the model's true context window for modern
+# local models (Hermes-3 / Qwen2.5 / Mistral-7B / Llama-3.2 all support
+# 32k+), and (b) contradicted v0.7.4's Studio fix that sizes combined
+# inputs at ~15k tokens. These tests pin the new env-var contract so a
+# future refactor can't silently regress the cap.
+# ---------------------------------------------------------------------------
+
+def _build_chat_sv(cfg, tmp_path):
+    """Helper: build a Supervisor with a stub chat GGUF on disk.
+
+    Without the GGUF file present, `_spawn_llamacpp_chat` returns early
+    and no llama_cpp.server process is spawned — which would mask any
+    n_ctx assertion.
+    """
+    chat_gguf = tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"
+    chat_gguf.write_bytes(b"FAKE-GGUF")
+    return Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        chat_llm_path=chat_gguf,
+        openchronicle_available=False,
+    )
+
+
+def _capture_n_ctx(spawned: list[list[str]]) -> str | None:
+    """Pull the --n_ctx value out of the llama_cpp.server command line."""
+    for args in spawned:
+        joined = " ".join(args)
+        if "llama_cpp.server" in joined and "Hermes-3" in joined:
+            # args is [..., "--n_ctx", "<value>", ...]
+            for i, tok in enumerate(args):
+                if tok == "--n_ctx" and i + 1 < len(args):
+                    return args[i + 1]
+    return None
+
+
+def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
+    def fake_popen(args, **kw):
+        spawned.append(list(args))
+        return _alive_proc()
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.launcher.find_free_ports",
+                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+
+def test_chat_llm_n_ctx_defaults_to_16384(cfg, tmp_path, monkeypatch):
+    """No ONP_CHAT_LLM_CTX env var → server gets --n_ctx 16384.
+
+    Regression: previous hardcoded 8192 silently capped every modern
+    local model below its real context window and contradicted v0.7.4
+    Studio's ~15k token combined-input ceiling.
+    """
+    monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+    spawned: list[list[str]] = []
+    _stub_launcher_io(monkeypatch, spawned)
+
+    sv = _build_chat_sv(cfg, tmp_path)
+    sv.start_all()
+    try:
+        n_ctx = _capture_n_ctx(spawned)
+        assert n_ctx == "16384", f"expected default 16384, got {n_ctx!r}"
+    finally:
+        sv.stop_all()
+
+
+def test_chat_llm_n_ctx_respects_env_var(cfg, tmp_path, monkeypatch):
+    """ONP_CHAT_LLM_CTX=<n> → server gets --n_ctx <n>.
+
+    Users with capable models (Hermes-3 @ 131k, Qwen2.5 @ 32k) must be
+    able to raise the ceiling without code edits; users on constrained
+    hardware must be able to lower it for RAM budget reasons.
+    """
+    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "32768")
+    spawned: list[list[str]] = []
+    _stub_launcher_io(monkeypatch, spawned)
+
+    sv = _build_chat_sv(cfg, tmp_path)
+    sv.start_all()
+    try:
+        n_ctx = _capture_n_ctx(spawned)
+        assert n_ctx == "32768", f"expected env-driven 32768, got {n_ctx!r}"
+    finally:
+        sv.stop_all()
+
+
+def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
+    """Garbage in env var → falls back to 16384 instead of passing through.
+
+    llama-cpp's --n_ctx is an integer arg; forwarding "abc" would crash
+    the server at spawn time and leave the memory writer permanently
+    broken until the user noticed. Defensive validation belongs in the
+    launcher, not in the user's terminal.
+    """
+    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "not-an-int")
+    spawned: list[list[str]] = []
+    _stub_launcher_io(monkeypatch, spawned)
+
+    sv = _build_chat_sv(cfg, tmp_path)
+    sv.start_all()
+    try:
+        n_ctx = _capture_n_ctx(spawned)
+        assert n_ctx == "16384", f"expected fallback 16384, got {n_ctx!r}"
+    finally:
+        sv.stop_all()
+
+
+def test_chat_llm_n_ctx_falls_back_when_too_low(cfg, tmp_path, monkeypatch):
+    """ONP_CHAT_LLM_CTX < 512 → falls back to 16384.
+
+    Below ~512 tokens the chat server is effectively unusable (system
+    prompt alone won't fit), so a fat-fingered "128" or "0" is almost
+    certainly a typo — coerce to the safe default rather than spawn a
+    crippled server.
+    """
+    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "128")
+    spawned: list[list[str]] = []
+    _stub_launcher_io(monkeypatch, spawned)
+
+    sv = _build_chat_sv(cfg, tmp_path)
+    sv.start_all()
+    try:
+        n_ctx = _capture_n_ctx(spawned)
+        assert n_ctx == "16384", f"expected fallback 16384 for too-low value, got {n_ctx!r}"
+    finally:
+        sv.stop_all()

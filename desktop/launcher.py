@@ -429,11 +429,41 @@ class Supervisor:
         """
         if self.chat_llm_path is None or not self.chat_llm_path.exists():
             return  # silently skip; memory writer will simply no-op
+        # v0.7.8 — n_ctx is configurable via env var. Previous hardcoded 8192
+        # capped EVERY chat session at 8k tokens regardless of the model's
+        # actual capability. Modern local models commonly support much more:
+        # Qwen 2.5/3.x at 32k-131k, Hermes-3 at 131k, Mistral-7B at 32k,
+        # Llama-3.2 at 131k. The 8k cap also undermined v0.7.4's Studio
+        # fix — Studio's combined-context cap is now ~15k tokens, more than
+        # the server itself accepted.
+        #
+        # Default 16384: safe for any modern local model (covers gemma-2-9b
+        # and codellama-13b's 8k/16k while leaving comfortable headroom
+        # for Hermes/Qwen/Mistral/Llama larger contexts via env override).
+        # Constrained-hardware users with low VRAM can lower it via
+        # ONP_CHAT_LLM_CTX; capable users with 32k+ models can raise it.
+        n_ctx = os.environ.get("ONP_CHAT_LLM_CTX", "16384")
+        # Defensive: validate it's a positive int. Garbage falls back to
+        # the safe default rather than passing through to llama-cpp.
+        try:
+            n_ctx_int = int(n_ctx)
+            if n_ctx_int < 512:
+                log.warning(
+                    "ONP_CHAT_LLM_CTX=%s too low (<512); using 16384 instead",
+                    n_ctx,
+                )
+                n_ctx = "16384"
+        except ValueError:
+            log.warning(
+                "ONP_CHAT_LLM_CTX=%r is not an int; using 16384", n_ctx,
+            )
+            n_ctx = "16384"
+
         args = [
             str(self.venv_python), "-m", "llama_cpp.server",
             "--model", str(self.chat_llm_path),
             "--host", "127.0.0.1", "--port", str(port),
-            "--n_ctx", "8192",
+            "--n_ctx", n_ctx,
         ]
         self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
 
