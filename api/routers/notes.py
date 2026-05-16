@@ -62,7 +62,20 @@ async def create_note(note_data: NoteCreate):
                     "prompt": prompt,
                 }
             )
-            title = result.get("output", "Untitled Note")
+            # v0.7.81 — same dict-vs-Pydantic dual-path guard we apply to
+            # other LangGraph ainvoke results (chat.py v0.7.52,
+            # search.py v0.7.55, source_chat.py v0.7.56,
+            # transformations.py v0.7.75). The prompt graph happens to
+            # use a TypedDict today so `result` is a dict, but the
+            # standing audit pattern in CLAUDE.md flags subscript /
+            # `.get()` against ainvoke output as a state-shape blind
+            # spot. Apply the dual-path now so a future LangGraph
+            # release that returns a Pydantic state can't 500 the
+            # note-create endpoint.
+            if isinstance(result, dict):
+                title = result.get("output") or "Untitled Note"
+            else:
+                title = getattr(result, "output", None) or "Untitled Note"
 
         # Validate note_type
         note_type: Optional[Literal["human", "ai"]] = None
