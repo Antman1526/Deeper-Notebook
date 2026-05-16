@@ -249,8 +249,10 @@ def _phase_download_models(ctx: AppContext) -> None:
 
     try:
         from desktop.model_downloads import (
-            ensure_embedding_model, ensure_tts_model,
-            ensure_secondary_tts_voice, ensure_stt_model,
+            ensure_embedding_model,
+            ensure_secondary_tts_voice,
+            ensure_stt_model,
+            ensure_tts_model,
         )
         model_dir = Path(ctx.cfg.model_dir)
         ensure_embedding_model(model_dir, progress=_bp)
@@ -491,8 +493,9 @@ def _phase_auto_register(ctx: AppContext) -> None:
     assert ctx.log_dir is not None
 
     try:
-        from desktop.auto_register import auto_register
         import urllib.parse
+
+        from desktop.auto_register import auto_register
 
         cfg = ctx.cfg
         sv = ctx.sv

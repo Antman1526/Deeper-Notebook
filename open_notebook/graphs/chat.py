@@ -16,12 +16,15 @@ from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.message_history import (
     HISTORY_TRUNCATION_MARKER as _HISTORY_TRUNCATION_MARKER,  # re-exported for tests
+)
+from open_notebook.utils.message_history import (
     msg_char_len as _msg_char_len,  # re-exported for tests
+)
+from open_notebook.utils.message_history import (
     trim_message_history,
 )
 from open_notebook.utils.sqlite_checkpoint import get_checkpoint_connection
 from open_notebook.utils.text_utils import extract_text_content
-
 
 # v0.7.11 / v0.7.13 — Message-history cap for the chat graph.
 #

@@ -72,8 +72,8 @@ def test_register_module_installs_surreal_provider():
     the writer / retriever / capture-approve flows are broken."""
     _reload_mem0_clean()
     importlib.import_module("desktop.memory._register")
-    from mem0.vector_stores.configs import VectorStoreConfig
     from mem0.utils.factory import VectorStoreFactory
+    from mem0.vector_stores.configs import VectorStoreConfig
     assert "surreal" in VectorStoreConfig._provider_configs.default
     assert "surreal" in VectorStoreFactory.provider_to_class
     cfg_mod = importlib.import_module("mem0.configs.vector_stores.surreal")

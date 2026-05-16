@@ -14,8 +14,8 @@ import httpx
 from loguru import logger
 
 from open_notebook.ai.models import Model
-from open_notebook.domain.credential import Credential
 from open_notebook.database.repository import repo_query
+from open_notebook.domain.credential import Credential
 
 
 @dataclass

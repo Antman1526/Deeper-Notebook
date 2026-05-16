@@ -52,8 +52,18 @@ def _build_clients():
     #     blocking the worker that long stalls subsequent extracts).
     #     Overridable via ONP_CHAT_TIMEOUT_S env var.
     #   - Reject the empty system+user case before the network round trip.
+    #
+    # v0.7.48 — removed redundant `import os` (was on line 55). The
+    # module-level `import os` on line 12 was already in scope. Because
+    # there was ALSO a local `import os` inside this function, Python
+    # treated `os` as a function-local variable throughout the function
+    # body — `os.environ.get(...)` calls at lines 31-34 hit
+    # UnboundLocalError at runtime, BEFORE the local import line ran.
+    # This bug was masked until v0.7.47 fixed memory-commands
+    # registration; the writer code path never actually executed pre-
+    # v0.7.47. Without this fix, the FIRST chat turn after v0.7.47
+    # would have crashed the worker.
     import httpx
-    import os
 
     chat_timeout_s = float(os.environ.get("ONP_CHAT_TIMEOUT_S", "30"))
     chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")

@@ -20,7 +20,6 @@ from typing import Any
 from langchain_core.messages import SystemMessage
 from loguru import logger
 
-
 # A marker injected at the front of the trimmed list so the model
 # sees that earlier turns existed and were elided rather than
 # hallucinating a nonexistent earlier exchange. Same string used for

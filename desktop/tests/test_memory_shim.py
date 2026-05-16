@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi.testclient import TestClient
 from desktop_shims.memory_shim import build_app
+from fastapi.testclient import TestClient
 
 
 def _fake_memory_client():

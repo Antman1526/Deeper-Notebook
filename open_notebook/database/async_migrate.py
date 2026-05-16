@@ -3,6 +3,7 @@ Async migration system for SurrealDB using the official Python client.
 Based on patterns from sblpy migration system.
 """
 
+from pathlib import Path
 from typing import List
 
 from loguru import logger
@@ -116,7 +117,7 @@ class AsyncMigrationManager:
     # <n>_down.surrealql — no need to remember to also edit this file.
     @staticmethod
     def _discover_migrations(
-        mig_dir: "Path | None" = None,
+        mig_dir: Path | None = None,
     ) -> tuple[list[AsyncMigration], list[AsyncMigration]]:
         """Scan the migrations directory and return parallel (ups, downs) lists.
 

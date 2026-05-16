@@ -30,9 +30,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from pydantic import BaseModel
 from mem0.vector_stores.base import VectorStoreBase
-
+from pydantic import BaseModel
 
 # vector_id (mem0's `memory_id`) is interpolated into SurrealQL via f-strings
 # in delete()/get()/update(). Surreal's record-id syntax (`table:thing`) doesn't
@@ -108,8 +107,10 @@ class OutputData(BaseModel):
 
 
 from desktop.memory.constants import (
-    KIND_TO_TABLE as _KIND_TO_TABLE,
     ALL_MEMORY_TABLES as _ALL_TABLES,
+)
+from desktop.memory.constants import (
+    KIND_TO_TABLE as _KIND_TO_TABLE,
 )
 
 

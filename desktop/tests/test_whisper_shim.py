@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+# Allow importing the shim package by adding desktop to sys.path
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
-# Allow importing the shim package by adding desktop to sys.path
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from desktop_shims.whisper_shim import build_app

@@ -27,7 +27,6 @@ from pathlib import Path
 
 from loguru import logger
 
-
 _DEFAULT_ROTATION = "20 MB"
 _DEFAULT_RETENTION = "14 days"
 _DEFAULT_LEVEL = "INFO"

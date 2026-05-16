@@ -3,7 +3,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from desktop.memory.writer import (
-    parse_tool_calls, apply_tool_call, extract_turn, summarize_session,
+    apply_tool_call,
+    extract_turn,
+    parse_tool_calls,
+    summarize_session,
 )
 
 

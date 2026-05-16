@@ -15,7 +15,6 @@ from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
 
-
 # v0.7.10 — Input-text cap for transformations.
 #
 # `run_transformation` previously passed `source.full_text` (or

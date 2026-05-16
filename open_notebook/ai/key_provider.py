@@ -19,7 +19,6 @@ from loguru import logger
 
 from open_notebook.domain.credential import Credential
 
-
 # =============================================================================
 # Provider Configuration Mapping
 # =============================================================================
