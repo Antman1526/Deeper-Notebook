@@ -1133,8 +1133,15 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         if not transformation:
             raise HTTPException(status_code=404, detail="Transformation not found")
 
-        # Submit transformation as background job (fire-and-forget)
-        command_id = submit_command(
+        # Submit transformation as background job (fire-and-forget).
+        # v0.7.62 — wrap in asyncio.to_thread for the same reason as
+        # v0.7.55 in podcast_service / command_service: surreal_commands'
+        # submit_command opens a SYNC SurrealDB WebSocket (sign-in +
+        # use + create) and blocks the event loop for the duration of
+        # the handshake. Concurrent insight creations otherwise stall
+        # every other in-flight request.
+        command_id = await asyncio.to_thread(
+            submit_command,
             "open_notebook",
             "run_transformation",
             {

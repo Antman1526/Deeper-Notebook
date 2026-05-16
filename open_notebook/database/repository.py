@@ -162,9 +162,21 @@ async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
     reality, eventually hitting `_pool_cap` and wedging every future
     acquire on `await _pool.get()`. Same root cause we fixed on the
     acquire side; same fix here.
+
+    v0.7.62 — if the pool has already been closed (`close_pool` nulled
+    out _pool while we still had a connection checked out), just close
+    the connection here and bail. The previous code asserted
+    `_pool is not None` which threw AssertionError mid-shutdown,
+    turning a clean FastAPI lifespan exit into a noisy crash and
+    leaking the underlying websocket to the OS.
     """
     global _pool_total
-    assert _pool is not None and _pool_lock is not None
+    if _pool is None or _pool_lock is None:
+        try:
+            await conn.close()
+        except Exception:
+            pass
+        return
     if broken:
         try:
             await conn.close()
@@ -188,10 +200,22 @@ async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
 
 async def close_pool() -> None:
     """Close every connection in the pool. Call from API/launcher
-    shutdown hooks so we exit cleanly."""
+    shutdown hooks so we exit cleanly.
+
+    v0.7.62 — wait briefly for any checked-out connections to come
+    back before nulling out state, then null. The previous version
+    drained only the idle queue and immediately set `_pool = None`,
+    which made every still-in-flight `_release(conn)` raise
+    AssertionError. We now poll the checked-out count (`_pool_total -
+    _pool.qsize()`) for up to ~2 s; remaining checkouts after that
+    timeout are abandoned to the `_pool is None` guard inside
+    `_release`, which closes the conn cleanly without touching pool
+    state.
+    """
     global _pool, _pool_lock, _pool_total
     if _pool is None:
         return
+    # Drain any idle connections first.
     while True:
         try:
             conn = _pool.get_nowait()
@@ -201,6 +225,24 @@ async def close_pool() -> None:
             await conn.close()
         except Exception:
             pass
+    # Wait briefly for in-flight requests to release their checkouts.
+    # 200 ms * 10 = 2 s total; if a request is still running past that,
+    # the v0.7.62 _release guard handles its eventual close anyway.
+    for _ in range(10):
+        checked_out = _pool_total - _pool.qsize()
+        if checked_out <= 0:
+            break
+        await asyncio.sleep(0.2)
+        # Drain anything that came back during the sleep.
+        while True:
+            try:
+                conn = _pool.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            try:
+                await conn.close()
+            except Exception:
+                pass
     _pool = None
     _pool_lock = None
     _pool_total = 0
