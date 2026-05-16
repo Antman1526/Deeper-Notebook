@@ -194,11 +194,27 @@ def validate_url(url: str, provider: str) -> None:
 
 
 def require_encryption_key() -> None:
-    """Raise ValueError if encryption key is not configured."""
-    if not get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"):
+    """Raise ValueError if encryption key is not configured.
+
+    v0.7.63 — accept either OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) or
+    OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural — rotation list). The
+    encryption utility (`utils/encryption.get_fernet_keys`) and the
+    lifespan check in api/main.py both already accept both forms. The
+    previous check here only looked at the singular, so a user who had
+    completed a key rotation and now had ONLY the plural set would
+    boot the API fine but hit "Encryption key not configured" the
+    moment they tried to migrate credentials from env vars or from the
+    legacy ProviderConfig — even though encryption was working
+    perfectly. Same fix applied to `get_provider_status` below.
+    """
+    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
+    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    if not (has_singular or has_plural):
         raise ValueError(
             "Encryption key not configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY to enable storing API keys."
+            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret-string> for a single "
+            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for a "
+            "rotation list, to enable storing API keys."
         )
 
 
@@ -321,7 +337,15 @@ async def get_provider_status() -> dict:
     Get configuration status: encryption key status, and per-provider
     configured/source information.
     """
-    encryption_configured = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
+    # v0.7.63 — report `encryption_configured = True` if EITHER the
+    # singular or plural env var is set, matching the behavior of the
+    # encryption utility itself. The previous version reported False
+    # for rotation-only deployments, which surfaced as a misleading
+    # "encryption not configured" banner in the credentials UI.
+    encryption_configured = bool(
+        get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+        or get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
+    )
 
     configured: Dict[str, bool] = {}
     source: Dict[str, str] = {}
