@@ -87,13 +87,42 @@ export function CommandPalette() {
         e.preventDefault()
         e.stopPropagation()
         setOpen((open) => !open)
+        return
+      }
+      // v0.7.35 — additional shortcuts. All gated on Cmd/Ctrl to avoid
+      // hijacking single-letter typing outside form fields (the early
+      // return above already excludes inputs/textareas/contentEditable).
+      //
+      //   Cmd+N → open New Notebook dialog
+      //   Cmd+U → open Upload Source dialog (U for Upload — N is taken)
+      //   Cmd+/ → jump to /search (Ask + global search)
+      if (e.key === 'n' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        openNotebookDialog()
+        return
+      }
+      if (e.key === 'u' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        openSourceDialog()
+        return
+      }
+      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        router.push('/search')
+        return
       }
     }
 
     // Use capture phase to intercept before other handlers
     document.addEventListener('keydown', down, true)
     return () => document.removeEventListener('keydown', down, true)
-  }, [])
+    // v0.7.35 — depends on closures captured by the new shortcuts.
+    // The handlers themselves are stable across re-renders (from
+    // useCreateDialogs + router), so this just keeps the linter happy.
+  }, [openNotebookDialog, openSourceDialog, router])
 
   // Reset query when dialog closes
   useEffect(() => {
