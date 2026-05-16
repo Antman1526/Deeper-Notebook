@@ -102,11 +102,22 @@ export function SourceDetailContent({
   // a React warning in the console and an unnecessary refetch.
   const insightFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // v0.7.80 — AbortController shared by every in-flight insight-polling
+  // loop spawned by this component. When the component unmounts (user
+  // navigated away mid-polling) we abort the controller so the polling
+  // loop exits its abortable sleep within milliseconds instead of
+  // continuing to hit /commands/jobs/{id} for the remaining 4 minutes.
+  const insightPollAbortRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     return () => {
       if (insightFallbackTimerRef.current) {
         clearTimeout(insightFallbackTimerRef.current)
         insightFallbackTimerRef.current = null
+      }
+      if (insightPollAbortRef.current) {
+        insightPollAbortRef.current.abort()
+        insightPollAbortRef.current = null
       }
     }
   }, [])
@@ -183,18 +194,39 @@ export function SourceDetailContent({
 
       // Poll for command completion if we have a command_id
       if (response.command_id) {
+        // v0.7.80 — share an AbortController with the unmount cleanup so
+        // navigating away mid-poll stops the 4-minute polling loop
+        // immediately. Replace any prior controller (concurrent insight
+        // creates are uncommon but we still don't want a stale one).
+        if (insightPollAbortRef.current) {
+          insightPollAbortRef.current.abort()
+        }
+        const controller = new AbortController()
+        insightPollAbortRef.current = controller
+
         // Poll in background (don't block UI)
         insightsApi.waitForCommand(response.command_id, {
           maxAttempts: 120, // Up to 4 minutes (120 * 2s)
-          intervalMs: 2000
+          intervalMs: 2000,
+          signal: controller.signal,
         }).then(success => {
+          // If aborted (component unmounted), `success` is false and we
+          // skip the cache invalidation that would no-op on a dead tree.
+          if (controller.signal.aborted) return
           if (success) {
             void fetchInsights()
             // Invalidate sources queries so notebook page refreshes with updated insights_count
             queryClient.invalidateQueries({ queryKey: ['sources'] })
           }
         }).catch(err => {
+          if (controller.signal.aborted) return
           console.error('Error waiting for insight command:', err)
+        }).finally(() => {
+          // Clear the ref only if it still points at OUR controller
+          // (a later poll may have replaced it).
+          if (insightPollAbortRef.current === controller) {
+            insightPollAbortRef.current = null
+          }
         })
       } else {
         // Fallback: refresh after delay if no command_id.
