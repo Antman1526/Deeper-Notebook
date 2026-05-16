@@ -101,8 +101,19 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
             config=dict(configurable={"model_id": execute_request.model_id}),
         )
 
+        # v0.7.75 — defensive access to `output`. The transformation graph
+        # currently returns a TypedDict shape but the same generic chat
+        # graphs were already bitten by the dict-vs-Pydantic variance
+        # (fixed in v0.7.52/55/56). Use isinstance/getattr dual-path so
+        # the endpoint can't 500 with KeyError just because LangGraph
+        # changed the wrapper shape in a future release.
+        if isinstance(result, dict):
+            output_text = result.get("output", "")
+        else:
+            output_text = getattr(result, "output", "") or ""
+
         return TransformationExecuteResponse(
-            output=result["output"],
+            output=output_text,
             transformation_id=execute_request.transformation_id,
             model_id=execute_request.model_id,
         )
