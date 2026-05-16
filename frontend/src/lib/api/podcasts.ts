@@ -119,6 +119,24 @@ export const podcastsApi = {
     return response.data
   },
 
+  // v0.7.31 — heuristic auto-suggester. Given a notebook or list of
+  // source IDs, returns recommended episode profile + length + title +
+  // briefing addition. No LLM call; instant + deterministic.
+  suggestEpisode: async (payload: {
+    notebook_id?: string
+    source_ids?: string[]
+  }) => {
+    const response = await apiClient.post<{
+      episode_profile_name: string
+      length_minutes: number
+      title: string
+      briefing_addition: string
+      reasoning: string
+      matched_signals: Record<string, number>
+    }>('/podcasts/suggest', payload)
+    return response.data
+  },
+
   listLanguages: async () => {
     const response = await apiClient.get<Language[]>('/languages')
     return response.data
