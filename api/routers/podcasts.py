@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.podcast_service import (
     PodcastGenerationRequest,
@@ -13,6 +13,8 @@ from api.podcast_service import (
     PodcastService,
 )
 from open_notebook.config import DATA_FOLDER
+from open_notebook.database.repository import repo_query
+from open_notebook.podcasts.models import EpisodeProfile
 
 router = APIRouter()
 
@@ -366,3 +368,263 @@ async def delete_podcast_episode(episode_id: str):
         raise HTTPException(
             status_code=500, detail="Failed to delete episode"
         )
+
+
+# ---------------------------------------------------------------------------
+# v0.7.31 — /podcasts/suggest
+#
+# Analyzes selected source IDs / notebook IDs and recommends:
+#   - The best-fit episode preset (one of the v0.7.30 9 presets)
+#   - A length in minutes calibrated to total content volume
+#   - An auto-derived episode title (from the notebook or first source)
+#   - Optional briefing additions that pin the suggestion to the
+#     content's distinguishing features
+#
+# Pure heuristic — no LLM call. Local-deploy friendly: instant,
+# deterministic, no cost. The user can always override every field
+# the suggestion returns before generation.
+# ---------------------------------------------------------------------------
+
+
+class SuggestRequest(BaseModel):
+    """Inputs for /podcasts/suggest. Either notebook_id OR source_ids
+    (or both) — the endpoint will union the available content."""
+
+    notebook_id: Optional[str] = Field(
+        None, description="Notebook ID; sources + notes from it are analyzed"
+    )
+    source_ids: Optional[List[str]] = Field(
+        None, description="Explicit source IDs to analyze"
+    )
+
+
+class SuggestResponse(BaseModel):
+    episode_profile_name: str = Field(
+        ..., description="Recommended preset name (matches an existing profile)"
+    )
+    length_minutes: int = Field(..., description="Recommended episode length")
+    title: str = Field(..., description="Auto-generated episode title")
+    briefing_addition: str = Field(
+        default="",
+        description=(
+            "Optional briefing suffix that focuses the suggested preset "
+            "on this content's distinguishing features. May be empty."
+        ),
+    )
+    reasoning: str = Field(
+        ..., description="One-line plain-English why-we-picked-this"
+    )
+    matched_signals: Dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Heuristic scores per preset, for transparency / debugging. "
+            "Highest score wins."
+        ),
+    )
+
+
+# Keyword signals: each list is OR'd; matching titles / topics nudges the
+# corresponding preset's score. Tuned for low false-positive rate — only
+# strong, near-unambiguous indicators.
+_SIGNALS: Dict[str, List[str]] = {
+    "Tutorial": [
+        "how to", "how-to", "tutorial", "guide", "walkthrough", "getting started",
+        "step-by-step", "step by step", "beginners", "intro to", "introduction to",
+        "primer", "lesson", "cookbook", "handbook",
+    ],
+    "News Roundup": [
+        "news", "weekly", "daily", "roundup", "digest", "headlines",
+        "this week", "report", "press release", "announcement",
+    ],
+    "Debate": [
+        "vs", "versus", "debate", "argument", "controversy", "critique",
+        "rebuttal", "for and against", "pros and cons", "case against",
+        "case for",
+    ],
+    "Recap & Review": [
+        "review", "recap", "verdict", "rating", "assessment", "post-mortem",
+        "retrospective", "book", "paper", "thesis", "dissertation",
+    ],
+    "Story Mode": [
+        "story", "history of", "the rise of", "the fall of", "biography",
+        "memoir", "chronicle", "narrative", "saga",
+    ],
+    "Q&A Interview": [
+        "interview", "q&a", "ask me anything", "ama", "questions",
+        "conversation with",
+    ],
+    "Deep Dive": [
+        "deep dive", "everything you", "in depth", "comprehensive",
+        "complete guide", "definitive guide", "explained",
+    ],
+}
+
+
+def _score_signals(text: str) -> Dict[str, int]:
+    """Return a {preset_name: hit_count} score map from a corpus string."""
+    lower = text.lower()
+    scores: Dict[str, int] = {}
+    for preset, keywords in _SIGNALS.items():
+        scores[preset] = sum(1 for kw in keywords if kw in lower)
+    return scores
+
+
+def _length_from_volume(total_chars: int, source_count: int) -> int:
+    """Map content volume → recommended episode length in minutes."""
+    # Calibrated for ~150 wpm conversational pace.
+    # < 3 KB or only 1 source → quick brief (4 min)
+    # 3-15 KB → standard (~6-8 min)
+    # 15-60 KB → medium-deep (~10-12 min)
+    # > 60 KB → deep dive (~15 min)
+    if total_chars < 3_000 or source_count <= 1:
+        return 4
+    if total_chars < 15_000:
+        return 7
+    if total_chars < 60_000:
+        return 11
+    return 15
+
+
+@router.post("/podcasts/suggest", response_model=SuggestResponse)
+async def suggest_episode(req: SuggestRequest):
+    """Recommend an episode profile + length + title based on content.
+
+    Heuristic-only — no LLM call. Returns instantly. The user can
+    override every suggested field in the generation dialog.
+
+    Decision rule:
+      1. Collect titles + topics + total content size from the inputs.
+      2. Score each preset by keyword hits in titles/topics.
+      3. If the top score is ≥ 2, pick that preset.
+      4. Otherwise default by volume: small → Quick Brief, large →
+         Deep Dive, mid → Open Notebook Plus Local (the safe default).
+    """
+    # ---- 1. Resolve content from the request ----
+    source_ids: List[str] = list(req.source_ids or [])
+    notebook_title: Optional[str] = None
+
+    if req.notebook_id:
+        # Pull the notebook + all its source IDs
+        try:
+            nb_rows = await repo_query(
+                "SELECT name FROM ONLY $id;",
+                {"id": req.notebook_id},
+            )
+            if isinstance(nb_rows, list) and nb_rows:
+                notebook_title = nb_rows[0].get("name")
+            elif isinstance(nb_rows, dict):
+                notebook_title = nb_rows.get("name")
+        except Exception as exc:
+            logger.warning("suggest: notebook fetch failed: %s", exc)
+        try:
+            # Sources are linked via a reference edge (`reference`).
+            ref_rows = await repo_query(
+                "SELECT <-reference<-source.id AS source_ids "
+                "FROM ONLY $id;",
+                {"id": req.notebook_id},
+            )
+            ids: List[str] = []
+            if isinstance(ref_rows, list) and ref_rows:
+                ids = ref_rows[0].get("source_ids") or []
+            elif isinstance(ref_rows, dict):
+                ids = ref_rows.get("source_ids") or []
+            source_ids.extend([str(s) for s in ids])
+        except Exception as exc:
+            logger.warning("suggest: notebook source fetch failed: %s", exc)
+
+    # Dedupe while preserving order
+    seen = set()
+    source_ids = [s for s in source_ids if not (s in seen or seen.add(s))]
+
+    titles: List[str] = []
+    topics_corpus: List[str] = []
+    total_chars = 0
+    if source_ids:
+        try:
+            # Single SurrealQL trip; aggregate fields we need for scoring.
+            rows = await repo_query(
+                "SELECT title, topics, string::len(full_text) AS chars "
+                "FROM source WHERE id INSIDE $ids;",
+                {"ids": source_ids},
+            )
+            for r in rows or []:
+                t = r.get("title")
+                if isinstance(t, str):
+                    titles.append(t)
+                topics = r.get("topics") or []
+                if isinstance(topics, list):
+                    topics_corpus.extend(str(x) for x in topics)
+                chars = r.get("chars")
+                if isinstance(chars, (int, float)):
+                    total_chars += int(chars)
+        except Exception as exc:
+            logger.warning("suggest: source fetch failed: %s", exc)
+
+    # ---- 2. Score presets against the corpus ----
+    corpus = " ".join(filter(None, [notebook_title] + titles + topics_corpus))
+    scores = _score_signals(corpus) if corpus.strip() else {}
+    top_preset = max(scores.items(), key=lambda kv: kv[1], default=("", 0))
+
+    # ---- 3. Pick a preset ----
+    available_presets: set = set()
+    try:
+        # Resolve real presets from DB so we never recommend a name
+        # the user has deleted. Falls back to the v0.7.30 default if
+        # this fetch fails.
+        prof_rows = await repo_query("SELECT name FROM episode_profile;")
+        available_presets = {
+            r.get("name") for r in prof_rows or [] if r.get("name")
+        }
+    except Exception as exc:
+        logger.warning("suggest: episode_profile list failed: %s", exc)
+
+    source_count = len(source_ids)
+    if top_preset[1] >= 2 and top_preset[0] in available_presets:
+        chosen = top_preset[0]
+        reason = (
+            f"Source titles strongly suggest '{chosen}' format "
+            f"({top_preset[1]} matching signals)."
+        )
+    else:
+        # Volume-based default
+        if source_count <= 1 or total_chars < 3_000:
+            chosen = "Quick Brief"
+            reason = "Small content volume — a tight brief works best."
+        elif total_chars >= 60_000:
+            chosen = "Deep Dive"
+            reason = "Large content volume — long-form deep dive fits."
+        else:
+            chosen = "Open Notebook Plus Local"
+            reason = "Balanced two-host format for mid-sized content."
+        # If our default isn't available (user deleted everything but
+        # one), fall back to whatever exists.
+        if chosen not in available_presets and available_presets:
+            chosen = sorted(available_presets)[0]
+            reason += f" (Falling back to available preset '{chosen}'.)"
+        elif chosen not in available_presets:
+            # No presets at all in DB. Return the chosen name anyway;
+            # the frontend will surface the error if generation fails.
+            reason += " (Warning: no matching preset is configured.)"
+
+    # ---- 4. Length + title + briefing addition ----
+    length = _length_from_volume(total_chars, source_count)
+    title = notebook_title or (titles[0] if titles else "Untitled Episode")
+    # Trim long titles for the episode_name field (UI shows it raw).
+    title = title.strip()[:120] or "Untitled Episode"
+
+    briefing_addition = ""
+    if notebook_title and source_count > 0:
+        briefing_addition = (
+            f"Center the episode on the notebook '{notebook_title}'. "
+            f"The material spans {source_count} source"
+            f"{'s' if source_count != 1 else ''}."
+        )
+
+    return SuggestResponse(
+        episode_profile_name=chosen,
+        length_minutes=length,
+        title=title,
+        briefing_addition=briefing_addition,
+        reasoning=reason,
+        matched_signals=scores,
+    )
