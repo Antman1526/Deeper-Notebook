@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import {
@@ -89,8 +90,16 @@ export function AppSidebar() {
   const navigation = getNavigation(t)
   const pathname = usePathname()
   const { logout } = useAuth()
-  const { isCollapsed, toggleCollapse } = useSidebarStore()
+  const { isCollapsed: storeCollapsed, toggleCollapse } = useSidebarStore()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
+
+  // v0.7.41 — responsive collapse. On `<lg` viewports the sidebar is
+  // forced into mini-rail mode regardless of the persisted store state.
+  // The full 256px sidebar dominates phone screens (320-414px wide) and
+  // pushes the content area off-screen. At lg (1024px+), the user's
+  // saved preference (expanded or collapsed) applies normally.
+  const isDesktop = useIsDesktop()
+  const isCollapsed = isDesktop ? storeCollapsed : true
 
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   // v0.7.28 — `null` until the effect resolves. The previous `true`

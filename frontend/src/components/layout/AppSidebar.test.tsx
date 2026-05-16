@@ -12,6 +12,16 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+// v0.7.41 — force desktop viewport for these tests. The new
+// useIsDesktop() returns false under jsdom by default (SSR-safe), which
+// would force the sidebar into collapsed mode regardless of the store
+// state. These tests are about sidebar BEHAVIOR, not media-query
+// behavior — mock the hook to always say "yes, you're on desktop".
+vi.mock('@/lib/hooks/use-media-query', () => ({
+  useMediaQuery: () => true,
+  useIsDesktop: () => true,
+}))
+
 describe('AppSidebar', () => {
   it('renders correctly when expanded', () => {
     render(<AppSidebar />)
