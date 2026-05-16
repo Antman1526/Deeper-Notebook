@@ -23,8 +23,15 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
         template_text=state["prompt"], parser=state.get("parser")
     ).render(data=state)
     payload = [SystemMessage(content=system_prompt)] + [HumanMessage(content=content)]
+    # v0.7.75 — size against message text only, not str(payload). See
+    # chat.py/source_chat.py/transformation.py for the same fix —
+    # repr of a list of LangChain Messages adds wrapper noise that
+    # mis-triggers the 105k large_context cutoff for cosmetic reasons.
+    content_for_sizing = "\n".join(
+        extract_text_content(m.content) for m in payload
+    )
     chain = await provision_langchain_model(
-        str(payload),
+        content_for_sizing,
         config.get("configurable", {}).get("model_id"),
         "transformation",
         max_tokens=5000,
