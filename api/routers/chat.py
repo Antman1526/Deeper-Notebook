@@ -369,12 +369,12 @@ async def execute_chat(request: ExecuteChatRequest):
         state_values["messages"].append(user_message)
 
         # Execute chat graph
-        # v0.6.10 — wrap sync invoke in asyncio.to_thread so it doesn't block
-        # the event loop. LLM calls can take 30s–5min on local models; without
-        # this every concurrent API request stalls. The get_state() call above
-        # already uses this pattern; this brings invoke() in line.
-        result = await asyncio.to_thread(
-            chat_graph.invoke,
+        # v0.7.37 — native async. The v0.6.10 asyncio.to_thread wrapper
+        # is no longer needed because the chat-graph node itself is
+        # now `async def call_model_with_messages`. LangGraph routes
+        # ainvoke() directly to the async node without re-bridging
+        # through a thread pool.
+        result = await chat_graph.ainvoke(
             input=state_values,  # type: ignore[arg-type]
             config=RunnableConfig(
                 configurable={

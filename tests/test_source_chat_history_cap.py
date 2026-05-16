@@ -78,10 +78,17 @@ def test_source_chat_default_cap_is_8000(monkeypatch):
 # Integration with source_chat.py — verify it's actually wired in
 # ---------------------------------------------------------------------------
 
-def test_source_chat_invokes_trim(monkeypatch):
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_source_chat_invokes_trim(monkeypatch):
     """Verify _call_model_with_source_context_inner calls
     trim_message_history before building the LLM payload — so the bug
-    fix is wired in, not just defined as a helper somewhere."""
+    fix is wired in, not just defined as a helper somewhere.
+
+    v0.7.37 — the inner function is now `async def`. Call-site
+    needs `await`; the fake model now exposes `ainvoke`."""
     from open_notebook.graphs import source_chat
 
     monkeypatch.delenv("ONP_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
@@ -112,7 +119,7 @@ def test_source_chat_invokes_trim(monkeypatch):
             return new
 
     class _FakeModel:
-        def invoke(self, payload):
+        async def ainvoke(self, payload):
             sent_payloads.append(payload)
             return _FakeResp()
 
@@ -139,7 +146,7 @@ def test_source_chat_invokes_trim(monkeypatch):
     monkeypatch.setattr(source_chat, "provision_langchain_model", fake_provision)
 
     msgs = _hist(20, content_size=500)
-    source_chat._call_model_with_source_context_inner(
+    await source_chat._call_model_with_source_context_inner(
         {
             "source_id": "source:1",
             "messages": msgs,

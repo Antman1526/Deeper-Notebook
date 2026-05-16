@@ -164,10 +164,16 @@ def test_trim_preserves_message_order(monkeypatch):
 # call_model_with_messages integration
 # ---------------------------------------------------------------------------
 
-def test_call_model_invokes_trimming(monkeypatch):
+@pytest.mark.asyncio
+async def test_call_model_invokes_trimming(monkeypatch):
     """Verify the chat-graph node calls _trim_message_history before
     building its LLM payload — so the bug fix is wired in, not just
-    defined as a helper."""
+    defined as a helper.
+
+    v0.7.37 — call_model_with_messages is now `async def`. The model's
+    LLM round trip is `await model.ainvoke()` instead of
+    `model.invoke()`. The trimmer is invoked the same way; only the
+    test's call-site needs `await`."""
     monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
 
     called_with: list = []
@@ -191,7 +197,7 @@ def test_call_model_invokes_trimming(monkeypatch):
     _FakeResp.type = "ai"
 
     class _FakeModel:
-        def invoke(self, payload):
+        async def ainvoke(self, payload):
             sent_payloads.append(payload)
             return _FakeResp()
 
@@ -210,7 +216,7 @@ def test_call_model_invokes_trimming(monkeypatch):
     monkeypatch.setattr(chat, "provision_langchain_model", fake_provision)
 
     msgs = _make_history(20, content_size=500)
-    chat.call_model_with_messages(
+    await chat.call_model_with_messages(
         {"messages": msgs, "notebook": None, "context": None,
          "context_config": None, "model_override": None},
         {"configurable": {}},
