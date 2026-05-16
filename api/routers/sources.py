@@ -1000,7 +1000,17 @@ async def retry_source_processing(source_id: str):
             )
 
             # Update source with new command ID
-            source.command = ensure_record_id(f"command:{command_id}")
+            # v0.7.24 — drop the `command:` prefix. command_id from
+            # submit_command_job already includes the `command:`
+            # prefix (see line 518 in the create path: `# command_id
+            # already includes 'command:' prefix`). Concatenating it
+            # produced `command:command:<uuid>`, which either failed
+            # to parse or parsed as a nested RecordID — making
+            # subsequent get_status() lookups return None forever.
+            # The 409 retry-conflict check at line ~932 was defeated
+            # on a second retry because the corrupted RecordID
+            # resolved to no row.
+            source.command = ensure_record_id(command_id)
             await source.save()
 
             # Get current embedded chunks count

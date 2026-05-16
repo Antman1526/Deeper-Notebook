@@ -116,11 +116,20 @@ async def lifespan(app: FastAPI):
     logger.info("Starting API initialization — logs at {}", log_dir)
 
     # Security check: Encryption key
-    if not get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"):
+    # v0.7.24 — also honor the v0.7.17 plural rotation env var. A user
+    # who has finished rotation and only has OPEN_NOTEBOOK_ENCRYPTION_KEYS
+    # set was getting a spurious "encryption will fail" warning pointing
+    # at the wrong variable.
+    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
+    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    if not (has_singular or has_plural):
         logger.warning(
-            "OPEN_NOTEBOOK_ENCRYPTION_KEY not set. "
-            "API key encryption will fail until this is configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY to any secret string."
+            "Neither OPEN_NOTEBOOK_ENCRYPTION_KEY nor "
+            "OPEN_NOTEBOOK_ENCRYPTION_KEYS is set. "
+            "API key encryption will fail until one is configured. "
+            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret> for a single "
+            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for "
+            "rotation."
         )
 
     # Run database migrations

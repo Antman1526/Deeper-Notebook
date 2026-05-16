@@ -38,15 +38,32 @@ _DEFAULT_COMPRESSION = "gz"
 
 def default_log_dir() -> Path:
     """Resolve the log directory. Honors ONP_LOG_DIR if set, else uses
-    the standard ~/.open-notebook-plus/logs path."""
+    the standard ~/.open-notebook-plus/logs path.
+
+    v0.7.24 — improved Docker fallback. Previously, when HOME and
+    USERPROFILE were both unset (common in stripped-down containers
+    using distroless/scratch bases), this returned `cwd/.logs/`.
+    For the standard `/app` workdir that put logs at `/app/.logs`,
+    invisible to host volume mounts unless the operator happened to
+    bind-mount that exact path. Result: logs were *hidden* compared
+    to the pre-v0.7.14 stderr-only behavior that `docker logs`
+    captured cleanly.
+
+    Now the Docker-style fallback prefers `/var/log/open-notebook-plus`
+    (the conventional container log location). If that path isn't
+    writable (e.g. read-only filesystem), the caller can override via
+    ONP_LOG_DIR.
+    """
     raw = os.environ.get("ONP_LOG_DIR")
     if raw:
         return Path(raw).expanduser()
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
     if not home:
-        # Fallback when neither env var exists (e.g. some CI shells).
-        # Doesn't crash logging; just dumps under cwd/.logs/.
-        return Path(".logs").resolve()
+        # Container fallback: use /var/log/<app>. This is the
+        # conventional Linux container log location; ops folk know to
+        # mount/scrape it. If write fails (read-only fs), the caller
+        # can set ONP_LOG_DIR explicitly.
+        return Path("/var/log/open-notebook-plus")
     return Path(home) / ".open-notebook-plus" / "logs"
 
 

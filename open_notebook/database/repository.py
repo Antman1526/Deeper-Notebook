@@ -105,7 +105,22 @@ async def _new_connection() -> AsyncSurreal:
 
 
 async def _acquire() -> AsyncSurreal:
-    """Get a connection from the pool, growing the pool if needed."""
+    """Get a connection from the pool, growing the pool if needed.
+
+    v0.7.24 — fixed a race: the previous version did
+        if _pool_total < _pool_cap:
+            conn = await _new_connection()   # ← await yields the loop!
+            _pool_total += 1
+    A concurrent release during that await landed a connection in the
+    queue while we held the lock, but _pool_total still reflected only
+    the pre-await count. After we incremented, total was correct, but
+    the next release saw QueueFull and dropped a healthy connection
+    onto the floor — slowly leaking pool capacity.
+
+    Fix: reserve the slot under the lock BEFORE awaiting, so total is
+    always >= queue.qsize() + checked-out connections. If
+    _new_connection() raises, decrement back so the slot doesn't leak.
+    """
     global _pool_total
     await _ensure_pool_init()
     assert _pool is not None and _pool_lock is not None
@@ -114,12 +129,23 @@ async def _acquire() -> AsyncSurreal:
         return _pool.get_nowait()
     except asyncio.QueueEmpty:
         pass
-    # Slow path: under the lock, grow the pool if we're below cap.
+    # Slow path: under the lock, reserve a slot then create.
     async with _pool_lock:
         if _pool_total < _pool_cap:
-            conn = await _new_connection()
             _pool_total += 1
-            return conn
+            reserved = True
+        else:
+            reserved = False
+    if reserved:
+        try:
+            return await _new_connection()
+        except Exception:
+            # Connection creation failed — give back our reserved slot
+            # so future acquires can try again. Otherwise total drifts
+            # up and the pool gradually wedges.
+            async with _pool_lock:
+                _pool_total -= 1
+            raise
     # At cap: wait for someone to release.
     return await _pool.get()
 
