@@ -123,14 +123,18 @@ def test_log_level_respects_env(monkeypatch, tmp_path):
     assert "info-message-should-be-filtered" not in text
 
 
-def test_missing_home_falls_back_to_cwd(monkeypatch, tmp_path):
-    """When neither HOME nor USERPROFILE is set, fall back to .logs/
-    in cwd — doesn't crash, doesn't try to write to /."""
+def test_missing_home_falls_back_to_container_path(monkeypatch, tmp_path):
+    """v0.7.24 — when neither HOME nor USERPROFILE is set (typical
+    inside distroless/scratch containers), fall back to the
+    conventional Linux container log location `/var/log/<app>`
+    rather than cwd/.logs. The previous behavior put logs at
+    /app/.logs in a Docker workdir — invisible to host volume mounts
+    unless the operator bind-mounted exactly that path."""
     monkeypatch.delenv("ONP_LOG_DIR", raising=False)
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("USERPROFILE", raising=False)
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)  # cwd should NOT be used
 
+    from pathlib import Path
     result = onp_logging.default_log_dir()
-    # Resolves under cwd (which is tmp_path)
-    assert result == (tmp_path / ".logs").resolve()
+    assert result == Path("/var/log/open-notebook-plus")

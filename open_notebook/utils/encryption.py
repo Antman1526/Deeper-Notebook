@@ -118,12 +118,22 @@ _ENCRYPTION_KEYS: Optional[List[str]] = None
 
 
 def _get_encryption_keys() -> List[str]:
-    """Get the list of encryption keys (primary first), caching after
-    first read. Cache is cleared by `_reset_encryption_cache()` in tests."""
-    global _ENCRYPTION_KEYS
-    if _ENCRYPTION_KEYS is None:
-        _ENCRYPTION_KEYS = _get_encryption_keys_from_env()
-    return _ENCRYPTION_KEYS
+    """Get the list of encryption keys (primary first).
+
+    v0.7.24 — no caching. Previously this was a process-lifetime
+    singleton, which masked a real rotation bug: under uvicorn
+    --reload (or any in-place env refresh), updating
+    OPEN_NOTEBOOK_ENCRYPTION_KEYS appeared to take effect but the
+    module retained the stale cached list, so every encrypt_value
+    call used the old key. Plus across the API + worker processes
+    the caches could diverge during a rolling rotation, producing
+    ciphertexts neither process could later decrypt.
+
+    Fernet construction is microseconds — caching saves nothing
+    meaningful. Reading env vars per call is the correct behavior
+    so rotation is always visible to live processes.
+    """
+    return _get_encryption_keys_from_env()
 
 
 def _reset_encryption_cache() -> None:

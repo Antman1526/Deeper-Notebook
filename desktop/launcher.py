@@ -172,7 +172,14 @@ class Supervisor:
         # uvicorn finishes startup. Subsequent launches are much faster but
         # we leave the generous timeout in place — better to wait than to
         # tear down an API that was about to come up.
-        _wait_http(f"http://127.0.0.1:{api_port}/health", timeout=180)
+        #
+        # v0.7.24 — wait on /readyz, not /health. /health (preserved for
+        # back-compat) returns 200 the instant uvicorn binds, even
+        # mid-migration. /readyz only returns 200 once the DB is
+        # actually reachable AND migrations have applied — the real
+        # signal that downstream services (worker, frontend window)
+        # can safely come up against the API.
+        _wait_http(f"http://127.0.0.1:{api_port}/readyz", timeout=180)
         self._progress("supervisor.api", "done")
 
         self._progress("supervisor.worker", "running")
