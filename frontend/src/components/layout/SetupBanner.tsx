@@ -62,10 +62,13 @@ export function SetupBanner() {
     )
   }
 
+  // v0.7.27 — uses the new --warning semantic token from globals.css.
+  // text-warning-foreground falls back to a high-contrast text per theme;
+  // border-warning/50 gives the right strength regardless of theme.
   return (
     <div className="px-4 pt-3">
-      <Alert className="border-amber-500/50 bg-amber-100/40 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
-        <AlertTriangle className="h-4 w-4" />
+      <Alert className="border-warning/50 bg-warning/10 text-warning-foreground">
+        <AlertTriangle className="h-4 w-4 text-warning" />
         <AlertTitle>
           {t('setupBanner.migrationAvailable')}
         </AlertTitle>
