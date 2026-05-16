@@ -8,6 +8,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import {
@@ -37,6 +38,7 @@ import {
   Mic,
   Volume2,
   Bot,
+  Search,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useAutoAssignCapability, useTestModel } from '@/lib/hooks/use-models'
@@ -1368,6 +1370,29 @@ export default function ApiKeysPage() {
     })
   }, [credentialsByProvider])
 
+  // v0.7.35 — provider filter (search + status). With 16 providers
+  // stacked, scrolling to find one is tedious. A 12-LOC filter
+  // input + status-chip narrows the list.
+  const [providerQuery, setProviderQuery] = useState('')
+  const [providerStatusFilter, setProviderStatusFilter] = useState<
+    'all' | 'configured' | 'env' | 'none'
+  >('all')
+
+  const filteredProviders = useMemo(() => {
+    const q = providerQuery.trim().toLowerCase()
+    return sortedProviders.filter((provider) => {
+      // Name match (case-insensitive substring)
+      if (q && !provider.toLowerCase().includes(q)) return false
+      if (providerStatusFilter === 'all') return true
+      const hasCred = (credentialsByProvider[provider]?.length || 0) > 0
+      const hasEnv = envStatus?.[provider] === true
+      if (providerStatusFilter === 'configured') return hasCred
+      if (providerStatusFilter === 'env') return hasEnv && !hasCred
+      if (providerStatusFilter === 'none') return !hasCred && !hasEnv
+      return true
+    })
+  }, [sortedProviders, providerQuery, providerStatusFilter, credentialsByProvider, envStatus])
+
   const isLoading = credentialsLoading || modelsLoading || defaultsLoading
 
   if (isLoading) {
@@ -1434,9 +1459,49 @@ export default function ApiKeysPage() {
             <GmailIntegration />
           </div>
 
+          {/* v0.7.35 — Provider filter row. 16 providers stacked
+              vertically was hard to navigate; this gives both a
+              substring search and a status-chip filter. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative max-w-md flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={providerQuery}
+                onChange={(e) => setProviderQuery(e.target.value)}
+                placeholder="Filter providers…"
+                className="pl-9"
+                aria-label="Filter providers"
+              />
+            </div>
+            <div className="flex gap-2 text-xs">
+              {(['all', 'configured', 'env', 'none'] as const).map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={providerStatusFilter === status ? 'default' : 'outline'}
+                  onClick={() => setProviderStatusFilter(status)}
+                  className="h-8"
+                >
+                  {status === 'all'
+                    ? 'All'
+                    : status === 'configured'
+                      ? 'Has credential'
+                      : status === 'env'
+                        ? 'From env'
+                        : 'Unconfigured'}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {filteredProviders.length === 0 && (
+            <p className="text-sm text-muted-foreground py-4">
+              No providers match the filter.
+            </p>
+          )}
+
           {/* Provider Cards */}
           <div className="grid gap-4">
-            {sortedProviders.map(provider => (
+            {filteredProviders.map(provider => (
               <ProviderSection
                 key={provider}
                 provider={provider}
