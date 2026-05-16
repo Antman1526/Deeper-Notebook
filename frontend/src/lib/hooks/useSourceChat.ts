@@ -121,9 +121,12 @@ export function useSourceChat(sourceId: string) {
       }
     }
 
-    // Add user message optimistically
+    // v0.7.49 — unique per-send temp id (was `temp-${Date.now()}` which
+    // collides on rapid-fire sends and triggered the prefix-filter bug
+    // below). Mirrors the v0.7.26 fix on useNotebookChat.
+    const tempId = `temp-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)}`
     const userMessage: SourceChatMessage = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       type: 'human',
       content: message,
       timestamp: new Date().toISOString()
@@ -139,6 +142,13 @@ export function useSourceChat(sourceId: string) {
     const controller = new AbortController()
     abortControllerRef.current = controller
 
+    // v0.7.49 — stable AI streaming id captured in the closure so the
+    // map-update callbacks don't need to read the mutating `aiMessage`
+    // object. We also no longer mutate the in-state message in place.
+    const streamingAiId = `streaming-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)}`
+    let aiCreated = false
+    let aiAccumulated = ''
+
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
       const response = await sourceChatApi.sendMessage(
@@ -153,62 +163,75 @@ export function useSourceChat(sourceId: string) {
 
       reader = response.getReader()
       const decoder = new TextDecoder()
-      let aiMessage: SourceChatMessage | null = null
+      // v0.7.49 — multi-bug fix in this section:
+      //   (a) `decoder.decode(value)` must use `{ stream: true }`
+      //       so multibyte UTF-8 (CJK, emoji) split across two TCP
+      //       chunks doesn't get replaced with U+FFFD. Mirrors the
+      //       correct usage in chat.ts:129 and use-ask.ts:106.
+      //   (b) lines need a buffer kept across reads — a `data: …\n\n`
+      //       frame is regularly split across two TCP chunks, and
+      //       `text.split('\n')` without buffering silently drops
+      //       events. We now `buffer.split('\n')` with `buffer = lines.pop()`
+      //       to carry the trailing partial line forward.
+      //   (c) bounded buffer so a pathological stream that never emits
+      //       a newline can't grow unbounded.
+      let buffer = ''
+      const BUFFER_MAX = 4 * 1024 * 1024
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
+        buffer += decoder.decode(value, { stream: true })
+        if (buffer.length > BUFFER_MAX) {
+          throw new Error('source-chat stream buffer exceeded 4 MiB')
+        }
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''  // keep partial last line for next read
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              
+
               if (data.type === 'ai_message_delta') {
-                // v0.7.42 — per-token delta event. Append to the
-                // streaming message (create on first delta).
-                if (!aiMessage) {
-                  aiMessage = {
-                    id: `ai-${Date.now()}`,
+                // v0.7.42/v0.7.49 — append delta. No object mutation;
+                // closure variables only.
+                aiAccumulated += data.content || ''
+                if (!aiCreated) {
+                  const initial: SourceChatMessage = {
+                    id: streamingAiId,
                     type: 'ai',
-                    content: data.content || '',
-                    timestamp: new Date().toISOString()
+                    content: aiAccumulated,
+                    timestamp: new Date().toISOString(),
                   }
-                  setMessages(prev => [...prev, aiMessage!])
+                  setMessages(prev => [...prev, initial])
+                  aiCreated = true
                 } else {
-                  aiMessage.content += data.content || ''
                   setMessages(prev =>
-                    prev.map(msg => msg.id === aiMessage!.id
-                      ? { ...msg, content: aiMessage!.content }
+                    prev.map(msg => msg.id === streamingAiId
+                      ? { ...msg, content: aiAccumulated }
                       : msg
                     )
                   )
                 }
               } else if (data.type === 'ai_message') {
-                // v0.7.42 — terminal canonical message. Replaces (not
-                // appends) the streamed buffer with the server's final
-                // string. Important: the backend emits BOTH the delta
-                // stream AND a final `ai_message` so clients that
-                // ignore deltas still get the full reply. Once we've
-                // consumed deltas, the terminal event is just a
-                // confirmation — but we still respect it as the
-                // canonical value to fix any incremental drift.
-                if (!aiMessage) {
-                  aiMessage = {
-                    id: `ai-${Date.now()}`,
+                // Terminal canonical message — replaces accumulator.
+                aiAccumulated = data.content || aiAccumulated
+                if (!aiCreated) {
+                  const initial: SourceChatMessage = {
+                    id: streamingAiId,
                     type: 'ai',
-                    content: data.content || '',
-                    timestamp: new Date().toISOString()
+                    content: aiAccumulated,
+                    timestamp: new Date().toISOString(),
                   }
-                  setMessages(prev => [...prev, aiMessage!])
+                  setMessages(prev => [...prev, initial])
+                  aiCreated = true
                 } else {
-                  aiMessage.content = data.content || aiMessage.content
                   setMessages(prev =>
-                    prev.map(msg => msg.id === aiMessage!.id
-                      ? { ...msg, content: aiMessage!.content }
+                    prev.map(msg => msg.id === streamingAiId
+                      ? { ...msg, content: aiAccumulated }
                       : msg
                     )
                   )
@@ -231,8 +254,16 @@ export function useSourceChat(sourceId: string) {
     } catch (err: unknown) {
       // AbortError = user clicked Stop OR component unmounted; silent.
       if ((err as { name?: string }).name === 'AbortError') {
-        // Drop optimistic so it doesn't linger when user re-sends
-        setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+        // v0.7.49 — drop ONLY this send's optimistic message + streamed
+        // AI placeholder. Was `!msg.id.startsWith('temp-')` which wiped
+        // EVERY temp-prefixed message — including the NEW send's
+        // optimistic message when a prior in-flight send was aborted
+        // by the new send (line 138). The new send would see its own
+        // message disappear seconds after submitting. Mirrors v0.7.26
+        // fix on useNotebookChat.
+        setMessages(prev =>
+          prev.filter(msg => msg.id !== tempId && msg.id !== streamingAiId)
+        )
         return
       }
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
