@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.76 (in flight)
+## Unreleased — v0.7.36 → v0.7.78 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -199,6 +199,25 @@ uncovered by a follow-up audit pass:
   gets a new delete override that cascades `artifact` edges +
   `note_embedding` rows — symmetric to Source and to the v0.7.61
   Notebook.delete chat_session cascade.
+- **v0.7.77** Four MORE sync submit_command sites in
+  commands/embedding_commands.py: create_insight (per-insight
+  fire-and-forget) and rebuild_embeddings' three submit loops
+  (source / note / insight). The rebuild path under
+  /advanced/rebuild-embeddings fired hundreds-to-thousands of
+  sync SurrealDB WS handshakes back-to-back, blocking the
+  worker's event loop for the entire rebuild and starving any
+  concurrent commands (chat memory extracts, podcast generation)
+  the same worker was servicing. All four now wrapped in
+  asyncio.to_thread.
+- **v0.7.78** Source-chat now recalls memory facts/preferences in
+  its system prompt — parity with v0.7.71's wiring for the main
+  chat. Without this, the assistant would surface a remembered
+  preference inside the main chat but forget it the moment the
+  user clicked into a source-chat session. Tighter prompt framing
+  for source-chat ("Stay focused on the source; only weave a
+  memory note in when it directly helps the answer") since the
+  source-chat system prompt already carries up to ~3.5k tokens
+  of source + insight context.
 
 ---
 
