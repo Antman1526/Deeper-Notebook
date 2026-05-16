@@ -58,11 +58,32 @@ export default function NotebookPage() {
     notes: {}
   })
 
-  // Initialize and update selections when sources load or change
+  // v0.7.64 — reset context selections whenever the user navigates to
+  // a different notebook. Previously the state survived navigation
+  // because it's plain useState (not keyed on notebookId), so stale
+  // source/note IDs from a previous notebook accumulated. The init
+  // effects below only ADD keys; they never prune. When the chat then
+  // built context, `Source.get(stale_id)` would 404 on the backend —
+  // mostly silently, but it's a wasted round-trip and in source_chat
+  // it could short-circuit the prompt build.
+  useEffect(() => {
+    setContextSelections({ sources: {}, notes: {} })
+  }, [notebookId])
+
+  // Initialize and update selections when sources load or change.
+  // v0.7.64 — also PRUNE keys for sources that are no longer in the
+  // list (deleted source, filter change, etc.). The previous version
+  // only added new keys, so a deleted source would linger in the
+  // selection map indefinitely.
   useEffect(() => {
     if (sources && sources.length > 0) {
       setContextSelections(prev => {
-        const newSourceSelections = { ...prev.sources }
+        const validIds = new Set(sources.map(s => s.id))
+        const newSourceSelections: Record<string, ContextMode> = {}
+        // Carry forward only keys still in the current source list.
+        for (const [id, mode] of Object.entries(prev.sources)) {
+          if (validIds.has(id)) newSourceSelections[id] = mode
+        }
         sources.forEach(source => {
           const currentMode = newSourceSelections[source.id]
           const hasInsights = source.insights_count > 0
@@ -83,7 +104,12 @@ export default function NotebookPage() {
   useEffect(() => {
     if (notes && notes.length > 0) {
       setContextSelections(prev => {
-        const newNoteSelections = { ...prev.notes }
+        // v0.7.64 — prune stale note IDs same as sources above.
+        const validIds = new Set(notes.map(n => n.id))
+        const newNoteSelections: Record<string, ContextMode> = {}
+        for (const [id, mode] of Object.entries(prev.notes)) {
+          if (validIds.has(id)) newNoteSelections[id] = mode
+        }
         notes.forEach(note => {
           // Only set default if not already set
           if (!(note.id in newNoteSelections)) {

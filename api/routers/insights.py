@@ -16,8 +16,24 @@ async def get_insight(insight_id: str):
         if not insight:
             raise HTTPException(status_code=404, detail="Insight not found")
 
-        # Get source ID from the insight relationship
+        # Get source ID from the insight relationship.
+        # v0.7.64 — guard against the orphaned-insight case explicitly.
+        # If the source was deleted without cascading to its insights
+        # (older data, or a partial-cascade race), `get_source()`
+        # returns None and the immediately-following `source.id` access
+        # used to AttributeError, which the generic `except Exception`
+        # below mapped to "Error fetching insight" 500. The actual
+        # situation is a 404-shaped problem: the insight references a
+        # source that no longer exists.
         source = await insight.get_source()
+        if source is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Insight references a source that no longer exists "
+                    "(orphaned record from an incomplete delete)."
+                ),
+            )
 
         return SourceInsightResponse(
             id=insight.id or "",
