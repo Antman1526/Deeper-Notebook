@@ -450,8 +450,28 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
         if r.status_code >= 300:
             return (False, f"Gmail API: HTTP {r.status_code} — {r.text[:200]}", n)
 
+    # v0.7.81 — guard the post-send save. The Gmail API call ALREADY
+    # succeeded (status < 300) so we know the email left our process; if
+    # `g.save()` then raises (DB blip, lock contention), the previous
+    # code let the exception propagate, the scheduler's `_tick` caught
+    # it as a "tick failure" and applied failure backoff, and then on
+    # the next tick `last_sent_at` was still stale → we'd send the
+    # SAME digest again (a duplicate email). Now we always return
+    # success after a confirmed send and log loudly on save failure so
+    # the duplicate window is bounded to one tick instead of every
+    # tick until the DB recovers. The next successful save (whether via
+    # this scheduler or any other mutation of GmailIntegration) will
+    # persist the correct last_sent_at.
     g.last_sent_at = datetime.now(timezone.utc)
-    await g.save()
+    try:
+        await g.save()
+    except Exception as save_exc:
+        log.exception(
+            "Gmail send succeeded but persist of last_sent_at failed — "
+            "next scheduler tick may send a duplicate digest until DB "
+            "recovers: %s",
+            save_exc,
+        )
     return (True, f"Sent to {g.email_address} ({n} items)", n)
 
 
