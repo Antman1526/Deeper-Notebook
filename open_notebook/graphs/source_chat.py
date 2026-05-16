@@ -176,8 +176,14 @@ async def _call_model_with_source_context_inner(
     payload = [SystemMessage(content=system_prompt)] + history
 
     # v0.7.37 — direct await; no thread bridge.
+    # v0.7.65 — size against actual message text, not str(payload). See
+    # chat.py for the same fix; same root cause (wrapper noise in
+    # repr(list_of_Message) overcounted the context-budget tokens).
+    content_for_sizing = "\n".join(
+        extract_text_content(m.content) for m in payload
+    )
     model = await provision_langchain_model(
-        str(payload),
+        content_for_sizing,
         config.get("configurable", {}).get("model_id")
         or state.get("model_override"),
         "chat",

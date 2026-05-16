@@ -87,8 +87,24 @@ async def call_model_with_messages(
             "model_override"
         )
 
+        # v0.7.65 — size the context against the actual message text
+        # only. The previous version passed `str(payload)`, which is
+        # Python's `repr` of a list of LangChain Message objects and
+        # includes wrapper noise like
+        #     [SystemMessage(content='...', additional_kwargs={}, response_metadata={}), ...]
+        # That overhead is ~80-120 chars per message; for a long chat
+        # session (50 turns) the wrapper alone added ~5k phantom
+        # "tokens" to the count provision_langchain_model uses for its
+        # 105k large_context cutoff. Net effect: the chat could be
+        # routed to the large_context model earlier than intended for
+        # purely cosmetic reasons. Now we extract `.content` per
+        # message and join — the same text that actually goes to the
+        # LLM.
+        content_for_sizing = "\n".join(
+            extract_text_content(m.content) for m in payload
+        )
         model = await provision_langchain_model(
-            str(payload), model_id, "chat", max_tokens=8192
+            content_for_sizing, model_id, "chat", max_tokens=8192
         )
 
         ai_message = await model.ainvoke(payload)
