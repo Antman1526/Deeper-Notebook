@@ -14,6 +14,10 @@ from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
+from open_notebook.utils.memory_recall import (
+    recall_recent_memory,
+    render_memory_block,
+)
 from open_notebook.utils.message_history import (
     HISTORY_TRUNCATION_MARKER as _HISTORY_TRUNCATION_MARKER,  # re-exported for tests
 )
@@ -76,7 +80,19 @@ async def call_model_with_messages(
     `astream_events` on the compiled graph.
     """
     try:
-        system_prompt = Prompter(prompt_template="chat/system").render(data=state)  # type: ignore[arg-type]
+        # v0.7.71 — pull recent memory facts + preferences for the
+        # system prompt. Companion to v0.7.68 / v0.7.70 (the WRITE
+        # path): without recall here, the assistant kept extracting
+        # facts every turn but never remembered them across sessions.
+        # `recall_recent_memory` returns empty on missing tables /
+        # upstream non-desktop builds, so the prompt block silently
+        # disappears when there's nothing to inject — no env-var
+        # gating needed.
+        memory = await recall_recent_memory()
+        memory_block = render_memory_block(memory)
+        prompt_data: dict = dict(state)  # type: ignore[arg-type]
+        prompt_data["memory_block"] = memory_block
+        system_prompt = Prompter(prompt_template="chat/system").render(data=prompt_data)
         # v0.7.11 — trim accumulated message history before building the
         # LLM payload so a long-running session doesn't overflow a
         # 16k-context local server. See `_trim_message_history` docstring
