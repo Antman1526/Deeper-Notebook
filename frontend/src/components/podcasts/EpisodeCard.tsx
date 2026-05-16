@@ -138,6 +138,61 @@ function extractTranscriptEntries(transcript: unknown): TranscriptEntry[] {
   return []
 }
 
+// v0.7.33 — derive the current generation stage from the episode's
+// data fields, no backend change needed. The worker writes:
+//   outline (object with segments)  → ~30% of total time
+//   transcript (object with array)  → +30%
+//   audio_file (string path)        → +40% (TTS dominates)
+// So a stage indicator is: outline absent? Generating outline.
+// Outline present, transcript absent? Drafting transcript. etc.
+type GenerationStage = 'outline' | 'transcript' | 'tts' | 'done' | 'idle'
+
+function deriveStage(episode: PodcastEpisode): GenerationStage {
+  if (episode.audio_file) return 'done'
+  const t = extractTranscriptEntries(episode.transcript)
+  if (t.length > 0) return 'tts'
+  const o = extractOutlineSegments(episode.outline)
+  if (o.length > 0) return 'transcript'
+  return 'outline'
+}
+
+function stageLabel(
+  stage: GenerationStage,
+  numSegments?: number,
+  builtSegments?: number,
+): string {
+  switch (stage) {
+    case 'outline':
+      return 'Generating outline…'
+    case 'transcript':
+      return numSegments
+        ? `Drafting transcript (${builtSegments ?? 0}/${numSegments} segments)…`
+        : 'Drafting transcript…'
+    case 'tts':
+      return 'Synthesizing speech (this is the slow part)…'
+    case 'done':
+      return 'Ready'
+    default:
+      return 'Queued'
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '—'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function estimateLengthMinutes(episode: PodcastEpisode): number | undefined {
+  // EpisodeProfile.default_length_minutes isn't stored as a domain
+  // field (yet) but num_segments is. Two-host conversational pacing
+  // averages ~2 min per segment.
+  const n = episode.episode_profile?.num_segments
+  if (typeof n === 'number' && n > 0) return Math.round(n * 2)
+  return undefined
+}
+
 export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: EpisodeCardProps) {
   const { t, language } = useTranslation()
   const [audioSrc, setAudioSrc] = useState<string | undefined>()
@@ -146,6 +201,16 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
 
   const outlineSegments = useMemo(() => extractOutlineSegments(episode.outline), [episode.outline])
   const transcriptEntries = useMemo(() => extractTranscriptEntries(episode.transcript), [episode.transcript])
+
+  // v0.7.33 — derive stage from episode fields. Refreshes whenever
+  // the parent polls and gets new outline/transcript data.
+  const stage = useMemo(() => deriveStage(episode), [episode])
+  const isProcessing =
+    stage !== 'done' && !FAILED_EPISODE_STATUSES.includes(
+      episode.job_status as EpisodeStatus,
+    )
+  const estimatedMinutes = estimateLengthMinutes(episode)
+  const [actualDurationSec, setActualDurationSec] = useState<number | null>(null)
 
   useEffect(() => {
     let revokeUrl: string | undefined
@@ -240,8 +305,29 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
             </div>
             <p className="text-xs text-muted-foreground">
               {t('podcasts.profile')}: {episode.episode_profile?.name || t('common.unknown')}
+              {/* v0.7.33 — show audible duration once known, else
+                  the estimate from num_segments. Either way the user
+                  sees "is this a 4-min brief or a 12-min deep dive?"
+                  before opening the player. */}
+              {actualDurationSec != null
+                ? ` • ${formatDuration(actualDurationSec)}`
+                : estimatedMinutes
+                  ? ` • ~${estimatedMinutes} min`
+                  : ''}
               {createdLabel ? ` • ${createdLabel}` : ''}
             </p>
+            {/* v0.7.33 — stage indicator. Surfaces what the worker is
+                actually doing right now (outline/transcript/TTS) so a
+                long-running podcast generation doesn't look hung. */}
+            {isProcessing && (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {stageLabel(
+                  stage,
+                  episode.episode_profile?.num_segments,
+                  outlineSegments.length,
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
@@ -260,7 +346,22 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 </DialogHeader>
                 <div className="space-y-4 overflow-hidden">
                   {audioSrc ? (
-                    <audio controls preload="none" src={audioSrc} className="w-full" />
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={audioSrc}
+                      className="w-full"
+                      // v0.7.33 — read the actual duration as soon as
+                      // the audio metadata loads. preload="metadata"
+                      // (was "none") makes this fire without forcing a
+                      // full download; effectively zero perceptible cost.
+                      onLoadedMetadata={(e) => {
+                        const dur = (e.target as HTMLAudioElement).duration
+                        if (isFinite(dur) && dur > 0) {
+                          setActualDurationSec(dur)
+                        }
+                      }}
+                    />
                   ) : audioError ? (
                     <p className="text-sm text-destructive">{audioError}</p>
                   ) : null}
