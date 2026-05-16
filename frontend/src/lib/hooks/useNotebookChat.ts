@@ -134,8 +134,21 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       // sessions query refetches — in the meantime ChatPanel renders
       // a blank "no session" state for a frame or two, scroll resets,
       // and the user sees a jarring flicker.
+      //
+      // v0.7.59 — read sessions from the TanStack cache instead of the
+      // outer closure. The closure captured `sessions` at the render
+      // where this mutation object was created. If a second delete
+      // fires before the first onSuccess runs, both closures still
+      // point at the same pre-delete list and the "next" session
+      // picked might already be the one being deleted by the in-flight
+      // sibling mutation. The cache always reflects the latest
+      // server-confirmed truth.
       if (currentSessionId === deletedId) {
-        const next = sessions.find((s) => s.id !== deletedId)
+        const cached = queryClient.getQueryData<typeof sessions>(
+          QUERY_KEYS.notebookChatSessions(notebookId)
+        )
+        const list = cached ?? sessions
+        const next = list.find((s) => s.id !== deletedId)
         setCurrentSessionId(next?.id ?? null)
         setMessages([])
       }

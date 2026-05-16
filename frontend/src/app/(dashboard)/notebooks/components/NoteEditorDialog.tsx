@@ -1,7 +1,7 @@
 'use client'
 
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -71,15 +71,32 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     reset({ title, content })
   }, [open, note, fetchedNote, reset])
 
+  // v0.7.59 — scope the fullscreen-class observer to the editor wrapper
+  // instead of `document.body`. The previous version fired on every
+  // class mutation anywhere in the document: Radix tooltips opening,
+  // dropdown menus toggling, Sonner toasts appearing/dismissing — all
+  // of those mutate class lists deep in the tree and woke up the
+  // observer just so we could re-query for `.w-md-editor-fullscreen`.
+  // While the dialog was open that was a continuous low-grade CPU
+  // burn. Observing the editor wrapper alone gives us the same
+  // signal — `.w-md-editor-fullscreen` lives inside the editor's own
+  // DOM — without the noise.
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!open) return
+    // Editor renders behind `noteLoading` for the edit-existing case,
+    // so re-check after loading completes — include `noteLoading` in
+    // deps so the effect re-runs once the wrapper actually mounts.
+    const target = editorContainerRef.current
+    if (!target) return
 
     const observer = new MutationObserver(() => {
-      setIsEditorFullscreen(!!document.querySelector('.w-md-editor-fullscreen'))
+      setIsEditorFullscreen(!!target.querySelector('.w-md-editor-fullscreen'))
     })
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] })
+    observer.observe(target, { subtree: true, attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
-  }, [open])
+  }, [open, noteLoading])
 
   const onSubmit = async (data: CreateNoteFormData) => {
     if (note) {
@@ -154,18 +171,20 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
                   control={control}
                   name="content"
                   render={({ field }) => (
-                    <MarkdownEditor
-                      key={note?.id ?? 'new'}
-                      textareaId="note-content"
-                      value={field.value}
-                      onChange={field.onChange}
-                      height={420}
-                      placeholder={t('sources.writeNotePlaceholder')}
-                      className={cn(
-                          "w-full h-full min-h-[420px] max-h-[500px] overflow-hidden [&_.w-md-editor]:!static [&_.w-md-editor]:!w-full [&_.w-md-editor]:!h-full [&_.w-md-editor-content]:overflow-y-auto",
-                          !isEditorFullscreen && "rounded-md border"
-                      )}
-                    />
+                    <div ref={editorContainerRef} className="w-full h-full">
+                      <MarkdownEditor
+                        key={note?.id ?? 'new'}
+                        textareaId="note-content"
+                        value={field.value}
+                        onChange={field.onChange}
+                        height={420}
+                        placeholder={t('sources.writeNotePlaceholder')}
+                        className={cn(
+                            "w-full h-full min-h-[420px] max-h-[500px] overflow-hidden [&_.w-md-editor]:!static [&_.w-md-editor]:!w-full [&_.w-md-editor]:!h-full [&_.w-md-editor-content]:overflow-y-auto",
+                            !isEditorFullscreen && "rounded-md border"
+                        )}
+                      />
+                    </div>
                   )}
                 />
                 {errors.content && (
