@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -18,6 +19,84 @@ from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
+
+
+# v0.7.68 — memory-writer hook. The bundled desktop build registers
+# `memory_extract_turn` + `memory_summarize_session` surreal_commands
+# handlers (desktop/memory/memory_commands.py, registered through
+# desktop/app.py:_phase_register_memory_commands). They've been wired
+# up since v0.7.47, but until now NOTHING in the chat path actually
+# submitted those jobs after a turn — so the memory feature was
+# entirely inert at runtime. Both /chat/execute and /chat/stream now
+# fire `open_notebook.memory_extract_turn` fire-and-forget after the
+# turn's session.save() succeeds.
+#
+# Best-effort: any failure is logged at debug and swallowed. The
+# user's chat experience is unaffected when the memory worker is
+# down, the chat LLM is missing, or the launcher is the upstream
+# (non-desktop) build that doesn't ship memory commands.
+def _memory_extraction_configured() -> bool:
+    """True when the memory worker stack is configured (desktop build)."""
+    return all(
+        os.environ.get(var)
+        for var in (
+            "MEMORY_SURREAL_URL",
+            "MEMORY_EMBED_URL",
+            "MEMORY_CHAT_LLM_URL",
+        )
+    )
+
+
+def _extract_text(msg: Any) -> str:
+    """Coerce a LangChain message-or-dict's content to a plain string."""
+    if msg is None:
+        return ""
+    c = getattr(msg, "content", None)
+    if c is None and isinstance(msg, dict):
+        c = msg.get("content")
+    if c is None:
+        return ""
+    return c if isinstance(c, str) else str(c)
+
+
+async def _fire_memory_extract_turn(
+    chat_session_id: str, user_text: str, assistant_text: str
+) -> None:
+    """Submit the memory_extract_turn job fire-and-forget.
+
+    Caller does NOT await the actual extraction — surreal_commands.submit_command
+    only queues the row. The worker picks it up asynchronously. We still wrap
+    submit_command in asyncio.to_thread (matches v0.7.55/57/62 sites) because
+    it opens a synchronous SurrealDB WebSocket.
+    """
+    if not _memory_extraction_configured():
+        # Upstream (non-desktop) build, or memory env vars not wired —
+        # silently skip. The desktop launcher sets all three before
+        # spawning the API.
+        return
+    if not (user_text or assistant_text):
+        return
+    try:
+        from surreal_commands import submit_command
+
+        await asyncio.to_thread(
+            submit_command,
+            "open_notebook",
+            "memory_extract_turn",
+            {
+                "chat_session_id": chat_session_id,
+                "user_text": user_text,
+                "assistant_text": assistant_text,
+            },
+        )
+    except Exception as exc:
+        # Memory is best-effort. A failed submit_command (worker down,
+        # SurrealDB blip, command not registered on this build) MUST
+        # NOT take the chat response down with it.
+        logger.debug(
+            "memory_extract_turn submit failed (best-effort, ignored): %s",
+            exc,
+        )
 
 
 # Request/Response models
@@ -401,6 +480,23 @@ async def execute_chat(request: ExecuteChatRequest):
                 )
             )
 
+        # v0.7.68 — fire the memory extractor for this turn. The user's
+        # text is request.message; the assistant's reply is the last
+        # AIMessage in result["messages"]. Last-message heuristic is
+        # safe here because the chat graph appends exactly one AI
+        # response per turn (state["messages"] is a reducer-added list).
+        ai_text = ""
+        for msg in reversed(result.get("messages", [])):
+            mtype = getattr(msg, "type", None)
+            if mtype == "ai":
+                ai_text = _extract_text(msg)
+                break
+        await _fire_memory_extract_turn(
+            chat_session_id=full_session_id,
+            user_text=request.message,
+            assistant_text=ai_text,
+        )
+
         return ExecuteChatResponse(session_id=request.session_id, messages=messages)
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -582,6 +678,24 @@ async def _stream_chat_events(
             await session.save()
         except Exception as exc:
             logger.warning("chat stream: session save failed: %s", exc)
+
+        # v0.7.68 — fire the memory extractor. Same logic as
+        # /chat/execute: the user's text is the inbound request.message,
+        # the assistant's reply is the last AIMessage in the final
+        # canonical state. Fire-and-forget; failure does NOT take the
+        # stream down.
+        ai_text = ""
+        if final_result and "messages" in final_result:
+            for msg in reversed(final_result["messages"]):
+                mtype = getattr(msg, "type", None)
+                if mtype == "ai":
+                    ai_text = _extract_text(msg)
+                    break
+        await _fire_memory_extract_turn(
+            chat_session_id=full_session_id,
+            user_text=request.message,
+            assistant_text=ai_text,
+        )
 
         yield json.dumps({"type": "done", "messages": messages}) + "\n"
 
