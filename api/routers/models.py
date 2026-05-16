@@ -13,7 +13,6 @@ from api.models import (
     ModelResponse,
     ProviderAvailabilityResponse,
 )
-from open_notebook.domain.credential import Credential
 from open_notebook.ai.connection_tester import test_individual_model
 from open_notebook.ai.key_provider import provision_provider_keys
 from open_notebook.ai.model_discovery import (
@@ -23,6 +22,7 @@ from open_notebook.ai.model_discovery import (
     sync_provider_models,
 )
 from open_notebook.ai.models import DefaultModels, Model
+from open_notebook.domain.credential import Credential
 from open_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
@@ -798,8 +798,8 @@ async def auto_assign_capability(force: bool = False):
     try:
         from open_notebook.database.repository import repo_query
         try:
+            from desktop.auto_register.assigner import SLOTS, assign_all
             from desktop.auto_register.capability import score_model
-            from desktop.auto_register.assigner import assign_all, SLOTS
         except ImportError as exc:
             raise HTTPException(
                 status_code=500,

@@ -104,7 +104,8 @@ class SymlinkTraversalTest(AioHTTPTestCase):
     but ensure the explicit guard also catches them as a belt-and-suspenders."""
 
     async def get_application(self):
-        import os, tempfile
+        import os
+        import tempfile
         self._root = Path(tempfile.mkdtemp())
         self._model_dir = self._root / "models"
         self._model_dir.mkdir()

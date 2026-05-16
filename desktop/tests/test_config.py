@@ -160,7 +160,8 @@ def test_config_file_is_owner_only_on_unix(tmp_path, monkeypatch):
     """v0.6.8 regression: config.toml contains the Fernet encryption key
     that protects every saved API key + Gmail OAuth token. With default
     umask the file would be world-readable on shared Macs/Linux."""
-    import os, sys
+    import os
+    import sys
     if sys.platform == "win32":
         pytest.skip("Unix permission bits don't apply to Windows ACLs")
     # Pretend umask is something permissive (022) so we can verify chmod

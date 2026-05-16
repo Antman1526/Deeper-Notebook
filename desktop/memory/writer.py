@@ -22,7 +22,6 @@ from desktop.memory.prompts import (
     render_summarize_user,
 )
 
-
 _TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
 
 # v0.5.10 — hard caps on inputs to keep us under any chat-model context.

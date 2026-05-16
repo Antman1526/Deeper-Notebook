@@ -14,12 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from fastapi import FastAPI
 
 from api.routers import onp as onp_mod
-
 
 # --- Lightweight fake Config that mimics desktop.config.Config ------------
 

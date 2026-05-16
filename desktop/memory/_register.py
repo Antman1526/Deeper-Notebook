@@ -30,9 +30,9 @@ from __future__ import annotations
 import sys
 import types
 
-from pydantic import BaseModel
 from mem0.utils.factory import VectorStoreFactory
 from mem0.vector_stores.configs import VectorStoreConfig
+from pydantic import BaseModel
 
 
 class SurrealVectorStoreConfig(BaseModel):

@@ -53,6 +53,7 @@ def test_save_capture_state_preserves_old_file_on_replace_failure(tmp_path, monk
     weird mount setup), the ORIGINAL capture_state.json must remain
     intact — its data is more valuable than the new write."""
     import os as _os
+
     from desktop.memory_dashboard import server as srv
 
     monkeypatch.setattr(srv, "_capture_state_path",

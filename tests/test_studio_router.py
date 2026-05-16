@@ -29,7 +29,6 @@ from fastapi.testclient import TestClient
 
 from api.routers import studio as studio_mod
 
-
 # ----------------------------------------------------------------------------
 # Fixtures
 # ----------------------------------------------------------------------------

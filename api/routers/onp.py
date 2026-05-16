@@ -19,7 +19,6 @@ from dataclasses import replace as _dc_replace
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-
 router = APIRouter()
 
 

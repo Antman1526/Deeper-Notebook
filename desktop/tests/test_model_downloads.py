@@ -14,7 +14,6 @@ from desktop.model_downloads import (
     ensure_secondary_tts_voice,
 )
 
-
 # ---------------------------------------------------------------------------
 # _download_one
 # ---------------------------------------------------------------------------
@@ -151,7 +150,7 @@ def test_ensure_embedding_model_skips_if_already_present(tmp_path):
 
 def test_ensure_secondary_tts_voice_skips_when_present(tmp_path, monkeypatch):
     """v0.6.29 — files need to be within 80% of expected size (78 MB onnx)."""
-    from desktop.model_downloads import PIPER_RYAN_MODEL, PIPER_RYAN_CONFIG
+    from desktop.model_downloads import PIPER_RYAN_CONFIG, PIPER_RYAN_MODEL
     _, _, _, onnx_size_mb = PIPER_RYAN_MODEL
     _, _, _, cfg_size_mb = PIPER_RYAN_CONFIG
 

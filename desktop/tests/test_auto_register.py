@@ -14,7 +14,6 @@ from desktop.auto_register import (
 )
 from desktop.config import Config
 
-
 # ---------------------------------------------------------------------------
 # _list_ollama_models
 # ---------------------------------------------------------------------------
@@ -193,9 +192,10 @@ def test_auto_register_is_idempotent(tmp_path):
 
 
 def test_register_voice_models_creates_credentials_and_models(monkeypatch):
+    from pathlib import Path
+
     from desktop.auto_register import register_voice_models
     from desktop.config import Config
-    from pathlib import Path
 
     created = []
     class FakeClient:
@@ -240,9 +240,10 @@ def test_register_voice_models_is_idempotent_when_creds_already_exist():
     names; voice.py uses it. When all names are already in the set,
     NO /api/credentials POST should happen at all.
     """
+    from pathlib import Path
+
     from desktop.auto_register import register_voice_models
     from desktop.config import Config
-    from pathlib import Path
 
     posted: list[tuple[str, dict]] = []
     gotten: list[str] = []
@@ -443,8 +444,8 @@ def test_speaker_profile_registers_local_piper_library():
     so the GeneratePodcastDialog has working defaults instead of the
     cloud-only presets from migration 7.surrealql."""
     from desktop.auto_register.speaker_profile import (
-        register_default_speaker_profile,
         _build_presets,
+        register_default_speaker_profile,
     )
 
     posted: list[dict] = []
@@ -571,8 +572,8 @@ def test_episode_profile_library_is_idempotent():
     only creates the missing ones. Customised existing profiles are
     never overwritten (we POST, not PUT)."""
     from desktop.auto_register.episode_profile import (
-        register_default_episode_profile,
         _PRESETS,
+        register_default_episode_profile,
     )
 
     posted: list[dict] = []

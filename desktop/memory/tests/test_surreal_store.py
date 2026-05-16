@@ -9,7 +9,9 @@ import pytest
 
 from desktop.memory import _register  # noqa: F401
 from desktop.memory.surreal_store import (
-    SurrealMemoryStore, OutputData, _validate_vector_id,
+    OutputData,
+    SurrealMemoryStore,
+    _validate_vector_id,
 )
 
 

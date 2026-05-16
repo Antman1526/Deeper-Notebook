@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 
 from api.routers import chat as chat_router
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

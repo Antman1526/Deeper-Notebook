@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
-
 import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi.testclient import TestClient
 from desktop_shims.openchronicle_shim import build_app
+from fastapi.testclient import TestClient
 
 
 def _fake_mcp_client(recent_events=None, search_events=None):

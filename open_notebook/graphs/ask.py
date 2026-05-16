@@ -18,7 +18,6 @@ from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
 
-
 # v0.7.9 — Per-result content cap for the Ask graph.
 #
 # `vector_search` returns up to N results where each result's `matches`

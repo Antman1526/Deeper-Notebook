@@ -56,7 +56,6 @@ from open_notebook.utils.text_utils import (
     extract_text_content,
 )
 
-
 router = APIRouter(prefix="/studio", tags=["studio"])
 
 

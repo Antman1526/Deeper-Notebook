@@ -19,7 +19,6 @@ from fastapi import UploadFile
 
 from api.routers import sources as sources_mod
 
-
 # ---------------------------------------------------------------------------
 # _source_upload_max_bytes — env-driven helper
 # ---------------------------------------------------------------------------
