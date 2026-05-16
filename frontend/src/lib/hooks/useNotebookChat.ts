@@ -199,9 +199,21 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       }
     }
 
-    // Add user message optimistically
+    // v0.7.26 — generate a UNIQUE temp id per send via crypto.randomUUID()
+    // instead of `temp-${Date.now()}`. Two issues with the timestamp
+    // approach:
+    //   1. Double-click within the same millisecond produced duplicate
+    //      IDs — React key warnings, and a partial-failure scenario
+    //      could wipe both messages.
+    //   2. On error, the catch handler filtered *every* `temp-` message,
+    //      so if send A succeeded then B was in-flight and C errored,
+    //      the rollback removed B's optimistic copy too — the user
+    //      saw their B vanish even though the server had it.
+    // Now: each send gets its own UUID, and rollback only removes the
+    // specific one this call created.
+    const tempId = `temp-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)}`
     const userMessage: NotebookChatMessage = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       type: 'human',
       content: message,
       timestamp: new Date().toISOString()
@@ -232,8 +244,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      // v0.7.26 — remove ONLY this send's optimistic message, not every
+      // temp- message in flight. See tempId comment above.
+      setMessages(prev => prev.filter(msg => msg.id !== tempId))
     } finally {
       setIsSending(false)
     }
