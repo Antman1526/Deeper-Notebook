@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-
-  // Redirect root to notebooks
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/notebooks', request.url))
-  }
-
+// v0.7.29 — root / no longer redirects. (dashboard)/page.tsx is now
+// the Command Center landing page rather than a stub redirect to
+// /notebooks. The proxy stays in place for future routing logic;
+// the matcher still excludes API + Next internals.
+export function proxy(_request: NextRequest) {
   return NextResponse.next()
 }
 
