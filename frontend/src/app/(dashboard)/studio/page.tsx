@@ -254,6 +254,8 @@ export default function StudioPage() {
             className={`
               border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
               transition-colors
+              focus-visible:outline-none focus-visible:ring-2
+              focus-visible:ring-ring focus-visible:ring-offset-2
               ${isDragging
                 ? 'border-primary bg-primary/5'
                 : 'border-muted-foreground/30 hover:border-muted-foreground/60'}
