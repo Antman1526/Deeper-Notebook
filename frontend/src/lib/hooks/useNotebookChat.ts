@@ -229,32 +229,85 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setMessages(prev => [...prev, userMessage])
     setIsSending(true)
 
+    // v0.7.38 — token-streaming send. Replaces the buffered
+    // chatApi.sendMessage with chatApi.streamMessage. While streaming,
+    // a placeholder `streaming-${uuid}` AI message is appended and its
+    // .content gets concatenated as tokens arrive. The user sees the
+    // response build up character by character — critical for local
+    // LLMs at 5-30 tok/s where the full response would otherwise be a
+    // 15-30s wall of blank.
+    const streamingAiId = `streaming-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)}`
     try {
-      // Build context and send message
-      // v0.6.24 — buildContext now returns the whole response (context +
-      // counts). We discard the counts here; they're set by the dedicated
-      // effect that has the race-safe sequence guard. The actual context
-      // string is what the API needs.
       const built = await buildContext()
-      const response = await chatApi.sendMessage({
+
+      // Append a placeholder AI message we'll mutate as tokens arrive.
+      const placeholder: NotebookChatMessage = {
+        id: streamingAiId,
+        type: 'ai',
+        content: '',
+        timestamp: new Date().toISOString(),
+      }
+      setMessages(prev => [...prev, placeholder])
+
+      let canonicalMessages: NotebookChatMessage[] | null = null
+      let streamError: string | null = null
+
+      for await (const event of chatApi.streamMessage({
         session_id: sessionId,
         message,
         context: built.context,
-        model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
-      })
+        model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+      })) {
+        if (event.type === 'token') {
+          // Append token text to the placeholder AI message in-place.
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === streamingAiId
+                ? { ...m, content: m.content + event.content }
+                : m,
+            ),
+          )
+        } else if (event.type === 'done') {
+          // Server's canonical message list — wins over our streamed
+          // buffer (which lacks IDs, timestamps, and any pre-existing
+          // messages from the session checkpoint).
+          canonicalMessages = event.messages
+        } else if (event.type === 'error') {
+          streamError = event.detail
+          break
+        }
+        // 'start' event acknowledged but not surfaced — UI already
+        // shows the placeholder.
+      }
 
-      // Update messages with API response
-      setMessages(response.messages)
-
-      // Refetch current session to get updated data
-      await refetchCurrentSession()
+      if (streamError) {
+        // Error path — clean up the streamed placeholder + the user
+        // optimistic message; toast the failure.
+        setMessages(prev =>
+          prev.filter(m => m.id !== streamingAiId && m.id !== tempId),
+        )
+        toast.error(
+          getApiErrorMessage(streamError, (key) => t(key), 'apiErrors.failedToSendMessage'),
+        )
+      } else if (canonicalMessages) {
+        // Replace local streaming buffer with the server's canonical
+        // list — same shape as the non-streaming /chat/execute response.
+        setMessages(canonicalMessages)
+        await refetchCurrentSession()
+      } else {
+        // Stream ended without an error or a done event — unusual
+        // (server bug?). Keep what we have; refetch for safety.
+        await refetchCurrentSession()
+      }
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      const error = err as { response?: { data?: { detail?: string } }; message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // v0.7.26 — remove ONLY this send's optimistic message, not every
-      // temp- message in flight. See tempId comment above.
-      setMessages(prev => prev.filter(msg => msg.id !== tempId))
+      // Clean up both the user's optimistic message AND the streaming
+      // AI placeholder.
+      setMessages(prev =>
+        prev.filter(m => m.id !== tempId && m.id !== streamingAiId),
+      )
     } finally {
       setIsSending(false)
     }
