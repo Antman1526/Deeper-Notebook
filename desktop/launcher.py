@@ -459,8 +459,32 @@ class Supervisor:
         Needed by mem0's writer (extract_turn / summarize_session) for
         Hermes-3-style tool calling. ~5 GB RAM at runtime.
         """
-        if self.chat_llm_path is None or not self.chat_llm_path.exists():
-            return  # silently skip; memory writer will simply no-op
+        # v0.7.67 — log a clear warning when we skip rather than
+        # silently returning. The previous comment said "memory writer
+        # will simply no-op" — true, but the user opening the bundled
+        # app with no chat GGUF will then wonder why "memory" features
+        # never produce facts. A single WARNING line in the launcher
+        # log identifies the cause immediately. Each cause is logged
+        # distinctly so the user can act on it (drop a GGUF in the
+        # configured path vs. download one).
+        if self.chat_llm_path is None:
+            log.warning(
+                "Skipping llamacpp_chat: no chat GGUF configured "
+                "(chat_llm_path is None). Memory writer (fact "
+                "extraction + session summaries) will no-op. "
+                "Configure a chat model via the launcher config to "
+                "enable it."
+            )
+            return
+        if not self.chat_llm_path.exists():
+            log.warning(
+                "Skipping llamacpp_chat: configured GGUF not found at "
+                "%s. Memory writer will no-op. Download a chat-capable "
+                "GGUF (e.g. Hermes-3, Qwen2.5-Instruct, Llama-3.2) to "
+                "that path to enable it.",
+                self.chat_llm_path,
+            )
+            return
         # v0.7.8 — n_ctx is configurable via env var. Previous hardcoded 8192
         # capped EVERY chat session at 8k tokens regardless of the model's
         # actual capability. Modern local models commonly support much more:
