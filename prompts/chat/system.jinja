@@ -14,6 +14,17 @@ Whenever a user asks you a question, you need to identify the query context and 
 {{notebook}}
 {% endif %}
 
+{% if memory_block %}
+# WHAT YOU REMEMBER ABOUT THE USER
+
+These notes were captured automatically from previous chat turns. Treat them as
+soft hints about preferences and prior context — never as authoritative claims
+about the current question. Don't restate them unprompted; weave them in only
+when relevant.
+
+{{memory_block}}
+{% endif %}
+
 {% if context %}
 # CONTEXT
 
