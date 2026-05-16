@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.59 (in flight)
+## Unreleased — v0.7.36 → v0.7.62 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -66,6 +66,28 @@ uncovered by a follow-up audit pass:
   MutationObserver scoped to the editor wrapper instead of
   document.body. useNotebookChat deleteSession reads from the
   TanStack cache instead of a stale outer closure.
+- **v0.7.60** Two pre-existing edge-table query bugs uncovered by
+  the third audit pass: the `add source to notebook` idempotency
+  check on `reference` was inverted (every link call created a
+  fresh duplicate edge → source_count inflated forever); the
+  source-retry endpoint queried non-existent `source`/`notebook`
+  columns on the `reference` edge table so EVERY retry hit the
+  "not associated with any notebooks" 400 and retry was
+  effectively dead.
+- **v0.7.61** `graphs/source.transform_content` returned None when
+  `source.full_text` was empty — LangGraph then tried `[] + None`
+  for the `Annotated[list, operator.add]` reducer and crashed the
+  whole graph run, leaving sources half-saved. Now returns
+  `{"transformation": []}`. Notebook.delete cascades chat sessions
+  (was orphaning `chat_session` records with dangling notebook
+  references after deletion).
+- **v0.7.62** Connection-pool shutdown safety: close_pool waits up
+  to ~2 s for checked-out connections to drain before nulling
+  state, and `_release` no longer asserts on `_pool is None` (it
+  just closes the conn directly), so FastAPI lifespan shutdown
+  exits cleanly even when requests are mid-flight. Plus one more
+  asyncio.to_thread wrap on a sync surreal_commands.submit_command
+  call in the run-transformation endpoint.
 
 ---
 
