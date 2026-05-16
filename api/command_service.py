@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -24,8 +25,11 @@ class CommandService:
                 logger.error(f"Failed to import command modules: {import_err}")
                 raise ValueError("Command modules not available")
 
-            # surreal-commands expects: submit_command(app_name, command_name, args)
-            cmd_id = submit_command(
+            # v0.7.55 — wrap blocking submit_command (sync SurrealDB WS
+            # call) in asyncio.to_thread so it doesn't stall the event
+            # loop. Same root cause as podcast_service.py.
+            cmd_id = await asyncio.to_thread(
+                submit_command,
                 module_name,  # This is actually the app name (e.g., "open_notebook")
                 command_name,  # Command name (e.g., "process_text")
                 command_args,  # Input data
