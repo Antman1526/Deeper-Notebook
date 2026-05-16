@@ -63,6 +63,13 @@ describe('Unused Key Detection', () => {
         `Found ${unused.length} unused i18n key(s):\n${unused.join('\n')}`,
       ).toEqual([])
     },
-    30_000,
+    // v0.7.31 — bumped from 30s to 120s. The test walks every .ts/.tsx
+    // file in src/ and string-matches every en-US leaf key against the
+    // corpus. As the codebase has grown (Dashboard, podcast presets,
+    // auto-fill, etc.), the file walk has crept past 30s on slower
+    // boxes (especially under cold-cache CI). 120s gives comfortable
+    // headroom; the check is still well under 1 min on a warm-cache
+    // local run.
+    120_000,
   )
 })

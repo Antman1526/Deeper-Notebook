@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
 
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
@@ -9,6 +9,7 @@ import { useEpisodeProfiles, useGeneratePodcast } from '@/lib/hooks/use-podcasts
 import { chatApi } from '@/lib/api/chat'
 import { sourcesApi } from '@/lib/api/sources'
 import { notesApi } from '@/lib/api/notes'
+import { podcastsApi } from '@/lib/api/podcasts'
 import { BuildContextRequest, NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
 import type { QueryClient } from '@tanstack/react-query'
 import { PodcastGenerationRequest } from '@/lib/types/podcasts'
@@ -628,6 +629,79 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     return episodeProfiles.find((profile) => profile.id === episodeProfileId)
   }, [episodeProfileId, episodeProfiles])
 
+  // v0.7.31 — auto-fill from sources. Walks current selections, sends
+  // the source IDs to /podcasts/suggest, and populates the episode-
+  // profile picker + title + instructions with the recommendation.
+  // Pure UX affordance — the user can immediately override any field.
+  const [autoFilling, setAutoFilling] = useState(false)
+  const handleAutoFill = useCallback(async () => {
+    // Collect every selected source ID across notebooks.
+    const sourceIds: string[] = []
+    for (const sel of Object.values(selections)) {
+      for (const [sid, mode] of Object.entries(sel.sources)) {
+        if (mode !== 'off') sourceIds.push(sid)
+      }
+    }
+    // Prefer notebook context when only one notebook has selections.
+    const activeNbIds = Object.entries(selections)
+      .filter(([, sel]) => hasSelections(sel))
+      .map(([nbId]) => nbId)
+
+    if (sourceIds.length === 0 && activeNbIds.length === 0) {
+      toast({
+        title: 'Nothing selected',
+        description:
+          'Pick at least one source or notebook before auto-filling.',
+      })
+      return
+    }
+
+    setAutoFilling(true)
+    try {
+      const suggestion = await podcastsApi.suggestEpisode({
+        notebook_id: activeNbIds.length === 1 ? activeNbIds[0] : undefined,
+        source_ids: sourceIds,
+      })
+
+      // Match the suggestion to a real episode-profile id (the
+      // endpoint returns names; the form binds by id).
+      const matched = episodeProfiles.find(
+        (p) => p.name === suggestion.episode_profile_name,
+      )
+      if (matched) {
+        setEpisodeProfileId(matched.id)
+      }
+      if (suggestion.title) {
+        setEpisodeName(suggestion.title)
+      }
+      if (suggestion.briefing_addition) {
+        // Prepend, don't clobber — preserve any in-progress user text.
+        setInstructions((prev) =>
+          prev
+            ? `${suggestion.briefing_addition}\n\n${prev}`
+            : suggestion.briefing_addition,
+        )
+      }
+      toast({
+        title: 'Auto-fill applied',
+        description: suggestion.reasoning,
+      })
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } }; message?: string })
+          ?.response?.data?.detail ||
+        (err as Error)?.message ||
+        'Auto-fill failed.'
+      toast({
+        title: 'Auto-fill failed',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setAutoFilling(false)
+    }
+  }, [selections, episodeProfiles, toast])
+
   const selectedNotebookSummaries = useMemo(() => {
     return notebooks.map((notebook) => {
       const selection = selections[notebook.id]
@@ -896,9 +970,30 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
 
           <div className="space-y-6">
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('podcasts.episodeSettings')}
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('podcasts.episodeSettings')}
+                </h3>
+                {/* v0.7.31 — heuristic auto-fill button. Calls
+                    /podcasts/suggest and populates profile + title +
+                    instructions with the recommendation. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutoFill}
+                  disabled={autoFilling || episodeProfiles.length === 0}
+                  className="h-8"
+                  title="Suggest profile, title, and briefing based on selected sources"
+                >
+                  {autoFilling ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Auto-fill from sources
+                </Button>
+              </div>
               {episodeProfilesQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> {t('podcasts.loadingProfiles')}
