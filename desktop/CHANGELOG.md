@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.62 (in flight)
+## Unreleased — v0.7.36 → v0.7.65 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -88,6 +88,25 @@ uncovered by a follow-up audit pass:
   exits cleanly even when requests are mid-flight. Plus one more
   asyncio.to_thread wrap on a sync surreal_commands.submit_command
   call in the run-transformation endpoint.
+- **v0.7.63** `require_encryption_key` + provider-status reporting
+  accept either OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) or
+  OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural rotation list), matching
+  the encryption utility and the lifespan check. Rotation-only
+  deployments no longer hit phantom "Encryption key not configured"
+  errors on migration endpoints.
+- **v0.7.64** NotebookPage contextSelections is now pruned to the
+  current sources/notes list on every render and fully cleared on
+  notebookId change — stale IDs from navigation or deletion no
+  longer leak into chat context-building. GET /insights/{id} now
+  returns 404 (not 500) when the referenced source has been
+  deleted out from under the insight (orphan-record case).
+- **v0.7.65** chat.py + source_chat.py size their LLM-budget
+  check against the actual message text (`.content` joined), not
+  `str(payload)`'s repr of the Message list. The wrapper repr
+  added ~80-120 chars of boilerplate per message — 50-turn
+  sessions overshot the 105k large_context cutoff by ~5k phantom
+  "tokens" and got rerouted to the long-context fallback model
+  earlier than necessary.
 
 ---
 
