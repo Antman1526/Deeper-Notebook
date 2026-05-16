@@ -501,7 +501,8 @@ async def _stream_chat_events(
         # Stream events from the LangGraph. astream_events yields a rich
         # event stream — we filter for `on_chat_model_stream` which fires
         # for each token chunk the LLM emits.
-        last_token_idx = 0
+        # v0.7.52 — removed dead `last_token_idx` counter (was incremented
+        # but never read).
         final_result: Optional[Dict[str, Any]] = None
         async for event in chat_graph.astream_events(
             input=state_values,  # type: ignore[arg-type]
@@ -533,15 +534,37 @@ async def _stream_chat_events(
                         "type": "token",
                         "content": content,
                     }) + "\n"
-                    last_token_idx += 1
             elif etype == "on_chain_end":
                 # The outer graph's on_chain_end carries the final state.
                 # We capture it to send the canonical messages list with
                 # the done event.
+                #
+                # v0.7.52 — accept either dict or Pydantic state. LangGraph
+                # graphs that declare a TypedDict yield dicts at chain
+                # boundaries; graphs that declare a Pydantic BaseModel
+                # yield model instances. Our graph happens to use a
+                # TypedDict today, but other graphs invoked through the
+                # same streaming machinery may not — and an upstream
+                # LangGraph release could legitimately change this. The
+                # previous `isinstance(output, dict)` guard silently
+                # dropped the final result for the Pydantic shape and
+                # the stream's `done` event would arrive with messages=[],
+                # causing the frontend to fall back to refetching the
+                # session — slow and racy.
                 data = event.get("data", {})
                 output = data.get("output")
-                if isinstance(output, dict) and "messages" in output:
-                    final_result = output
+                msgs = None
+                if isinstance(output, dict):
+                    msgs = output.get("messages")
+                else:
+                    msgs = getattr(output, "messages", None)
+                if msgs is not None:
+                    # Normalize to a dict either way so downstream code
+                    # can stay simple.
+                    final_result = (
+                        output if isinstance(output, dict)
+                        else {"messages": msgs}
+                    )
 
         # Final event with the canonical message list
         messages: list = []
