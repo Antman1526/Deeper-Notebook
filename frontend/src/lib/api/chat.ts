@@ -156,6 +156,17 @@ export const chatApi = {
         }
       }
     } finally {
+      // v0.7.50 — cancel BEFORE releaseLock so the underlying network
+      // stream is actually torn down (releaseLock alone doesn't close
+      // the response body). Without this, an aborted/iterator-break
+      // path leaves the HTTP connection open until GC, and FastAPI's
+      // `is_disconnected()` doesn't fire — the local LLM keeps
+      // producing tokens nobody will see.
+      try {
+        await reader.cancel().catch(() => {})
+      } catch {
+        // cancel can throw if the stream is already errored; ignore.
+      }
       try {
         reader.releaseLock()
       } catch {
