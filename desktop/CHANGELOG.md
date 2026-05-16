@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.78 (in flight)
+## Unreleased — v0.7.36 → v0.7.79 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -218,6 +218,14 @@ uncovered by a follow-up audit pass:
   memory note in when it directly helps the answer") since the
   source-chat system prompt already carries up to ~3.5k tokens
   of source + insight context.
+- **v0.7.79** Three bare setTimeout sites in the frontend now
+  cancel cleanly on unmount: EmbeddingModelChangeDialog's
+  500 ms pre-redirect timer, GeneratePodcastDialog's 500 ms
+  post-submit close timer, and SourceDetailContent's 5 s
+  insight-fallback refresh timer. Same defect pattern fixed in
+  SourceCard (v0.7.56) — without cleanup the timer fired
+  navigation / mutation / invalidate against an already-unmounted
+  component when the user dismissed mid-window.
 
 ---
 
