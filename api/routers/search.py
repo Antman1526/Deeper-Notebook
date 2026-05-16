@@ -59,13 +59,45 @@ async def search_knowledge_base(search_request: SearchRequest):
 
 
 async def stream_ask_response(
-    question: str, strategy_model: Model, answer_model: Model, final_answer_model: Model
+    question: str,
+    strategy_model: Model,
+    answer_model: Model,
+    final_answer_model: Model,
 ) -> AsyncGenerator[str, None]:
-    """Stream the ask response as Server-Sent Events."""
+    """Stream the ask response as Server-Sent Events.
+
+    v0.7.43 — final-answer phase now streams token-by-token. Previously
+    `stream_mode="updates"` emitted exactly one event per node
+    completion, so `write_final_answer` was a 20-60s wait followed by
+    one giant payload. The final synthesis is the longest single LLM
+    call in the whole app (consolidates multiple sub-answers) — the
+    slowest UX path on the local-deploy build.
+
+    Now using `astream_events(version="v2")`, which yields:
+      - on_chain_end events when a node completes (used to emit
+        the strategy and per-query answer events as before)
+      - on_chat_model_stream events for each token the LLM emits
+        (used to emit per-token deltas during the final-answer phase)
+
+    We filter on_chat_model_stream events to ONLY the write_final_answer
+    node — the per-query LLM calls inside provide_answer also emit
+    token events, but those would clutter the wire (we already deliver
+    them in batch as `answer` events on node completion). Filter
+    matches on the `metadata.langgraph_node` field LangGraph attaches.
+
+    Event types:
+      - `strategy`          — search strategy decided
+      - `answer`            — one sub-query's answer (batched per node)
+      - `final_answer_delta`— one token of the final synthesis (NEW)
+      - `final_answer`      — terminal canonical final-answer text
+      - `complete`          — done
+      - `error`             — failure
+    """
     try:
         final_answer = None
+        final_answer_buffer = ""
 
-        async for chunk in ask_graph.astream(
+        async for event in ask_graph.astream_events(
             input=dict(question=question),  # type: ignore[arg-type]
             config=dict(
                 configurable=dict(
@@ -74,32 +106,81 @@ async def stream_ask_response(
                     final_answer_model=final_answer_model.id,
                 )
             ),
-            stream_mode="updates",
+            version="v2",
         ):
-            if "agent" in chunk:
-                strategy_data = {
-                    "type": "strategy",
-                    "reasoning": chunk["agent"]["strategy"].reasoning,
-                    "searches": [
-                        {"term": search.term, "instructions": search.instructions}
-                        for search in chunk["agent"]["strategy"].searches
-                    ],
-                }
-                yield f"data: {json.dumps(strategy_data)}\n\n"
+            etype = event.get("event")
+            metadata = event.get("metadata", {})
+            node_name = metadata.get("langgraph_node")
 
-            elif "provide_answer" in chunk:
-                for answer in chunk["provide_answer"]["answers"]:
-                    answer_data = {"type": "answer", "content": answer}
-                    yield f"data: {json.dumps(answer_data)}\n\n"
+            # Per-token streaming for write_final_answer ONLY.
+            if (
+                etype == "on_chat_model_stream"
+                and node_name == "write_final_answer"
+            ):
+                chunk = event.get("data", {}).get("chunk")
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str) and content:
+                    final_answer_buffer += content
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "final_answer_delta",
+                            "content": content,
+                        })
+                        + "\n\n"
+                    )
 
-            elif "write_final_answer" in chunk:
-                final_answer = chunk["write_final_answer"]["final_answer"]
-                final_data = {"type": "final_answer", "content": final_answer}
-                yield f"data: {json.dumps(final_data)}\n\n"
+            # Node-completion events drive the existing strategy/answer
+            # events. `on_chain_end` fires with the node's output state.
+            elif etype == "on_chain_end":
+                output = event.get("data", {}).get("output")
+                if not isinstance(output, dict):
+                    continue
+                if node_name == "agent" and "strategy" in output:
+                    strategy = output["strategy"]
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "strategy",
+                            "reasoning": strategy.reasoning,
+                            "searches": [
+                                {"term": s.term, "instructions": s.instructions}
+                                for s in strategy.searches
+                            ],
+                        })
+                        + "\n\n"
+                    )
+                elif node_name == "provide_answer" and "answers" in output:
+                    for answer in output["answers"]:
+                        yield (
+                            "data: "
+                            + json.dumps({"type": "answer", "content": answer})
+                            + "\n\n"
+                        )
+                elif (
+                    node_name == "write_final_answer"
+                    and "final_answer" in output
+                ):
+                    final_answer = output["final_answer"]
+                    # Terminal canonical event — fallback for clients
+                    # that ignore deltas, and the final text after any
+                    # post-processing (e.g. clean_thinking_content stripped
+                    # tokens the streaming consumer saw).
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "final_answer",
+                            "content": final_answer,
+                        })
+                        + "\n\n"
+                    )
 
         # Send completion signal
-        completion_data = {"type": "complete", "final_answer": final_answer}
-        yield f"data: {json.dumps(completion_data)}\n\n"
+        yield (
+            "data: "
+            + json.dumps({"type": "complete", "final_answer": final_answer})
+            + "\n\n"
+        )
 
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
@@ -143,11 +224,17 @@ async def ask_knowledge_base(ask_request: AskRequest):
             )
 
         # For streaming response
+        # v0.7.43 — proxy-flush headers so each NDJSON line lands
+        # client-side immediately (same hint pair as /chat/stream).
         return StreamingResponse(
             stream_ask_response(
                 ask_request.question, strategy_model, answer_model, final_answer_model
             ),
             media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     except HTTPException:
