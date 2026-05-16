@@ -191,6 +191,14 @@ async def lifespan(app: FastAPI):
     # queries; with 4 cold slots, the first 4 concurrent calls each
     # pay the handshake too. Prefilling 2 slots eliminates this on the
     # critical first-impression path. Further growth stays lazy.
+    #
+    # v0.7.52 — bound each acquire with asyncio.wait_for(timeout=10).
+    # Previously a SurrealDB that came up cold or got stuck mid-handshake
+    # could block the lifespan handler indefinitely — the API would
+    # appear "starting" forever with no /readyz reachability. 10 s is
+    # generous: a healthy SurrealDB handshake takes ~200 ms; anything
+    # past 5 s already indicates trouble. We log the timeout and move
+    # on (degrades to lazy-warmup, same as the pre-0.7.44 behavior).
     try:
         from open_notebook.database.repository import (
             _acquire,
@@ -202,7 +210,16 @@ async def lifespan(app: FastAPI):
         warm_conns = []
         for _ in range(warmup_n):
             try:
-                warm_conns.append(await _acquire())
+                warm_conns.append(
+                    await asyncio.wait_for(_acquire(), timeout=10.0)
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "DB pool warmup acquire timed out after 10s — "
+                    "skipping remaining warmup, falling back to lazy "
+                    "initialization on first request"
+                )
+                break
             except Exception as exc:
                 # Pool warmup is best-effort — a failure here shouldn't
                 # prevent boot. The user can still recover via the
