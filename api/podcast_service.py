@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -92,8 +93,16 @@ class PodcastService:
                 logger.error(f"Failed to import podcast commands: {import_err}")
                 raise ValueError("Podcast commands not available")
 
-            # Submit command to surreal-commands
-            job_id = submit_command("open_notebook", "generate_podcast", command_args)
+            # v0.7.55 — surreal_commands.submit_command opens a SYNCHRONOUS
+            # SurrealDB WS connection (sign-in + use + create), which
+            # blocks the FastAPI event loop for the duration of the
+            # handshake. Under concurrent podcast submissions or general
+            # load this stalls every other in-flight request (chat
+            # streams, SSE polls, etc.). Move the blocking call onto a
+            # worker thread so the event loop stays responsive.
+            job_id = await asyncio.to_thread(
+                submit_command, "open_notebook", "generate_podcast", command_args
+            )
 
             # Convert RecordID to string if needed
             if not job_id:

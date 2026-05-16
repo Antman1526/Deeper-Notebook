@@ -265,7 +265,9 @@ async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
 
 
 @router.post("/search/ask/simple", response_model=AskResponse)
-async def ask_knowledge_base_simple(ask_request: AskRequest):
+async def ask_knowledge_base_simple(
+    ask_request: AskRequest, fastapi_request: Request
+):
     """Ask the knowledge base a question and return a simple response (non-streaming)."""
     try:
         # Validate models exist
@@ -297,6 +299,11 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
             )
 
         # Run the ask graph and get final result
+        # v0.7.55 — bail out if the client navigated away. The ask graph
+        # fans out to multiple LLM calls; without this the local LLM
+        # keeps generating answers nobody will see. Also guard the chunk
+        # subscript against future Pydantic-shaped states (same root
+        # cause as v0.7.52 chat.py fix).
         final_answer = None
         async for chunk in ask_graph.astream(
             input=dict(question=ask_request.question),  # type: ignore[arg-type]
@@ -309,8 +316,20 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
             ),
             stream_mode="updates",
         ):
-            if "write_final_answer" in chunk:
-                final_answer = chunk["write_final_answer"]["final_answer"]
+            if await fastapi_request.is_disconnected():
+                logger.info(
+                    "/search/ask/simple: client disconnected mid-stream; halting"
+                )
+                # Returning a non-200 here would 500 in middleware; instead
+                # raise the same HTTPException as the "no answer" path so
+                # the response flows through the existing error chain.
+                raise HTTPException(status_code=499, detail="Client disconnected")
+            node_output = chunk.get("write_final_answer") if isinstance(chunk, dict) else None
+            if node_output is not None:
+                if isinstance(node_output, dict):
+                    final_answer = node_output.get("final_answer")
+                else:
+                    final_answer = getattr(node_output, "final_answer", None)
 
         if not final_answer:
             raise HTTPException(status_code=500, detail="No answer generated")
