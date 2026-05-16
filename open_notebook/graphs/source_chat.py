@@ -1,6 +1,5 @@
 import asyncio
 import os
-import sqlite3
 from typing import Annotated, Dict, List, Optional
 
 from ai_prompter import Prompter
@@ -20,6 +19,7 @@ from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import ContextBuilder
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.message_history import trim_message_history
+from open_notebook.utils.sqlite_checkpoint import get_checkpoint_connection
 from open_notebook.utils.text_utils import extract_text_content
 
 
@@ -338,11 +338,11 @@ def _format_source_context(context_data: Dict) -> str:
     return "\n".join(context_parts)
 
 
-# Create SQLite checkpointer
-conn = sqlite3.connect(
-    LANGGRAPH_CHECKPOINT_FILE,
-    check_same_thread=False,
-)
+# v0.7.32 — shared WAL-tuned, integrity-checked checkpoint connection.
+# Both this module and chat.py target the same DB file; the shared
+# helper returns the SAME connection so we don't race two writers.
+# See open_notebook.utils.sqlite_checkpoint docstring for details.
+conn = get_checkpoint_connection(LANGGRAPH_CHECKPOINT_FILE)
 memory = SqliteSaver(conn)
 
 # Create the StateGraph
