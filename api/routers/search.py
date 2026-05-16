@@ -1,7 +1,7 @@
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
@@ -63,6 +63,7 @@ async def stream_ask_response(
     strategy_model: Model,
     answer_model: Model,
     final_answer_model: Model,
+    fastapi_request: Optional[Request] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the ask response as Server-Sent Events.
 
@@ -108,6 +109,21 @@ async def stream_ask_response(
             ),
             version="v2",
         ):
+            # v0.7.53 — bail out if the HTTP client went away. The ask
+            # graph fans out to multiple LLM calls (one per sub-query
+            # plus the final synthesis) and on the local-deploy build
+            # the whole thing can take a couple of minutes. Without this
+            # check, navigating away from the search page leaves all
+            # those models grinding out tokens nobody will ever see —
+            # wasted CPU/GPU and battery on the desktop app. The chat
+            # stream already does this; the ask stream needs the same
+            # treatment.
+            if fastapi_request is not None and await fastapi_request.is_disconnected():
+                logger.info(
+                    "ask stream: client disconnected mid-stream; halting"
+                )
+                return
+
             etype = event.get("event")
             metadata = event.get("metadata", {})
             node_name = metadata.get("langgraph_node")
@@ -192,7 +208,7 @@ async def stream_ask_response(
 
 
 @router.post("/search/ask")
-async def ask_knowledge_base(ask_request: AskRequest):
+async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
     """Ask the knowledge base a question using AI models."""
     try:
         # Validate models exist
@@ -228,7 +244,11 @@ async def ask_knowledge_base(ask_request: AskRequest):
         # client-side immediately (same hint pair as /chat/stream).
         return StreamingResponse(
             stream_ask_response(
-                ask_request.question, strategy_model, answer_model, final_answer_model
+                ask_request.question,
+                strategy_model,
+                answer_model,
+                final_answer_model,
+                fastapi_request=fastapi_request,
             ),
             media_type="text/plain",
             headers={
