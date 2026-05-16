@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import AsyncGenerator, List, Optional
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -415,12 +415,35 @@ async def delete_source_chat_session(
 
 
 async def stream_source_chat_response(
-    session_id: str, source_id: str, message: str, model_override: Optional[str] = None
+    session_id: str,
+    source_id: str,
+    message: str,
+    model_override: Optional[str] = None,
+    fastapi_request: Optional["Request"] = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream the source chat response as Server-Sent Events."""
+    """Stream the source chat response as Server-Sent Events.
+
+    v0.7.42 — REAL token streaming. The previous implementation called
+    `await source_chat_graph.ainvoke(...)` which blocked until the
+    entire AI message was built, then yielded one
+    `{"type":"ai_message", "content": <full>}` event. For local 5-30
+    tok/s LLMs a 400-token answer hung the source-chat UI 13-80s with
+    no incremental output. Mirrors the notebook-chat streaming wired
+    in v0.7.38.
+
+    Event types emitted:
+      - `user_message`         — confirms the user message landed
+      - `ai_message_delta`     — one LLM token chunk (concat to build)
+      - `ai_message`           — terminal full text (canonical final
+                                  value once streaming finishes; also
+                                  acts as a fallback for clients that
+                                  ignore deltas)
+      - `context_indicators`   — final source/insight references
+      - `complete`             — done
+      - `error`                — terminal failure
+    """
     try:
-        # Get current state
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
+        # Get current state — SqliteSaver.get_state is still sync.
         current_state = await asyncio.to_thread(
             source_chat_graph.get_state,
             config=RunnableConfig(configurable={"thread_id": session_id}),
@@ -440,51 +463,92 @@ async def stream_source_chat_response(
         user_event = {"type": "user_message", "content": message, "timestamp": None}
         yield f"data: {json.dumps(user_event)}\n\n"
 
-        # v0.7.37 — native async (replaces the v0.6.10 asyncio.to_thread
-        # wrapper). The source_chat_graph node is now `async def`, so
-        # ainvoke() routes directly without thread bridging.
-        result = await source_chat_graph.ainvoke(
+        # v0.7.42 — token streaming via LangGraph astream_events. The
+        # source_chat_graph node is `async def` (v0.7.37) so this
+        # routes natively. We collect:
+        #   - on_chat_model_stream events → ai_message_delta events
+        #   - on_chain_end terminal event with final state → context_indicators
+        accumulated_content = ""
+        final_state: Optional[dict] = None
+        async for event in source_chat_graph.astream_events(
             input=state_values,  # type: ignore[arg-type]
             config=RunnableConfig(
                 configurable={"thread_id": session_id, "model_id": model_override}
             ),
-        )
+            version="v2",
+        ):
+            # Early-cancel parity with /chat/stream — stop generation
+            # the moment the client gives up on the response.
+            if fastapi_request is not None and await fastapi_request.is_disconnected():
+                logger.info(
+                    "source chat stream: client disconnected for "
+                    "session %s; halting", session_id,
+                )
+                return
 
-        # Stream the complete AI response
-        if "messages" in result:
-            for msg in result["messages"]:
-                if hasattr(msg, "type") and msg.type == "ai":
-                    ai_event = {
-                        "type": "ai_message",
-                        "content": msg.content if hasattr(msg, "content") else str(msg),
-                        "timestamp": None,
-                    }
-                    yield f"data: {json.dumps(ai_event)}\n\n"
+            etype = event.get("event")
+            if etype == "on_chat_model_stream":
+                chunk = event.get("data", {}).get("chunk")
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str) and content:
+                    accumulated_content += content
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "ai_message_delta",
+                            "content": content,
+                        })
+                        + "\n\n"
+                    )
+            elif etype == "on_chain_end":
+                # Capture the outer chain's final state — has
+                # context_indicators + canonical messages.
+                output = event.get("data", {}).get("output")
+                if isinstance(output, dict):
+                    final_state = output
+
+        # Emit the terminal ai_message event so clients that ignore
+        # the deltas still see a single canonical "full message" event
+        # (back-compat with anything written for the v0.6.x SSE
+        # contract before v0.7.42).
+        if accumulated_content:
+            yield (
+                "data: "
+                + json.dumps({
+                    "type": "ai_message",
+                    "content": accumulated_content,
+                    "timestamp": None,
+                })
+                + "\n\n"
+            )
 
         # Stream context indicators
-        if "context_indicators" in result:
-            context_event = {
-                "type": "context_indicators",
-                "data": result["context_indicators"],
-            }
-            yield f"data: {json.dumps(context_event)}\n\n"
+        if final_state and "context_indicators" in final_state:
+            yield (
+                "data: "
+                + json.dumps({
+                    "type": "context_indicators",
+                    "data": final_state["context_indicators"],
+                })
+                + "\n\n"
+            )
 
         # Send completion signal
-        completion_event = {"type": "complete"}
-        yield f"data: {json.dumps(completion_event)}\n\n"
+        yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 
-        _, user_message = classify_error(e)
+        _, user_friendly_message = classify_error(e)
         logger.error(f"Error in source chat streaming: {str(e)}")
-        error_event = {"type": "error", "message": user_message}
+        error_event = {"type": "error", "message": user_friendly_message}
         yield f"data: {json.dumps(error_event)}\n\n"
 
 
 @router.post("/sources/{source_id}/chat/sessions/{session_id}/messages")
 async def send_message_to_source_chat(
     request: SendMessageRequest,
+    fastapi_request: Request,
     source_id: str = Path(..., description="Source ID"),
     session_id: str = Path(..., description="Session ID"),
 ):
@@ -540,12 +604,17 @@ async def send_message_to_source_chat(
                 source_id=full_source_id,
                 message=request.message,
                 model_override=model_override,
+                fastapi_request=fastapi_request,
             ),
             media_type="text/plain",
             headers={
-                "Cache-Control": "no-cache",
+                # v0.7.42 — same proxy-flush hints v0.7.38 uses on
+                # /chat/stream so each SSE event lands client-side
+                # immediately, not buffered.
+                "Cache-Control": "no-cache, no-transform",
                 "Connection": "keep-alive",
                 "Content-Type": "text/plain; charset=utf-8",
+                "X-Accel-Buffering": "no",
             },
         )
 

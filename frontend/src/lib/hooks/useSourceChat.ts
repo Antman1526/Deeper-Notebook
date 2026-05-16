@@ -167,8 +167,9 @@ export function useSourceChat(sourceId: string) {
             try {
               const data = JSON.parse(line.slice(6))
               
-              if (data.type === 'ai_message') {
-                // Create AI message on first content chunk to avoid empty bubble
+              if (data.type === 'ai_message_delta') {
+                // v0.7.42 — per-token delta event. Append to the
+                // streaming message (create on first delta).
                 if (!aiMessage) {
                   aiMessage = {
                     id: `ai-${Date.now()}`,
@@ -179,6 +180,32 @@ export function useSourceChat(sourceId: string) {
                   setMessages(prev => [...prev, aiMessage!])
                 } else {
                   aiMessage.content += data.content || ''
+                  setMessages(prev =>
+                    prev.map(msg => msg.id === aiMessage!.id
+                      ? { ...msg, content: aiMessage!.content }
+                      : msg
+                    )
+                  )
+                }
+              } else if (data.type === 'ai_message') {
+                // v0.7.42 — terminal canonical message. Replaces (not
+                // appends) the streamed buffer with the server's final
+                // string. Important: the backend emits BOTH the delta
+                // stream AND a final `ai_message` so clients that
+                // ignore deltas still get the full reply. Once we've
+                // consumed deltas, the terminal event is just a
+                // confirmation — but we still respect it as the
+                // canonical value to fix any incremental drift.
+                if (!aiMessage) {
+                  aiMessage = {
+                    id: `ai-${Date.now()}`,
+                    type: 'ai',
+                    content: data.content || '',
+                    timestamp: new Date().toISOString()
+                  }
+                  setMessages(prev => [...prev, aiMessage!])
+                } else {
+                  aiMessage.content = data.content || aiMessage.content
                   setMessages(prev =>
                     prev.map(msg => msg.id === aiMessage!.id
                       ? { ...msg, content: aiMessage!.content }
