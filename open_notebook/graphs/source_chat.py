@@ -21,7 +21,6 @@ from open_notebook.utils.message_history import trim_message_history
 from open_notebook.utils.sqlite_checkpoint import get_checkpoint_connection
 from open_notebook.utils.text_utils import extract_text_content
 
-
 # v0.7.12 — context-budget caps for the source-chat formatter.
 #
 # `_format_source_context` previously had ONE cap (source full_text @

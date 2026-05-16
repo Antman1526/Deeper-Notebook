@@ -9,7 +9,6 @@ import pytest
 from desktop.auto_register.assigner import SLOTS, assign_all, pick_for_slot
 from desktop.auto_register.capability import ModelDescriptor, score_model
 
-
 # ---------------------------------------------------------- capability.py
 # Each row: (model_name, expected_kind, expected_source, expected_min_score_axis)
 # expected_min_score_axis is a (axis, min_value) tuple — None to skip score check.
@@ -249,6 +248,7 @@ def test_ram_probe_falls_back_to_sysconf_when_psutil_missing(monkeypatch):
     """If psutil isn't importable (super-minimal env), the sysconf path
     still works on Mac/Linux."""
     import sys
+
     from desktop.auto_register import assigner
 
     # Hide psutil from the lookup
@@ -265,6 +265,7 @@ def test_ram_probe_falls_back_to_sysconf_when_psutil_missing(monkeypatch):
 def test_ram_probe_returns_none_when_everything_fails(monkeypatch):
     """Caller (_get_chat_ram_ceiling_gb) relies on None → 4.0 fallback."""
     import sys
+
     from desktop.auto_register import assigner
 
     monkeypatch.setitem(sys.modules, "psutil", None)

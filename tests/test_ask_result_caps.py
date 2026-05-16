@@ -16,7 +16,6 @@ import pytest
 
 from open_notebook.graphs import ask
 
-
 # ---------------------------------------------------------------------------
 # _truncate_ask_results — pure function tests
 # ---------------------------------------------------------------------------

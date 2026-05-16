@@ -135,6 +135,5 @@ def test_missing_home_falls_back_to_container_path(monkeypatch, tmp_path):
     monkeypatch.delenv("USERPROFILE", raising=False)
     monkeypatch.chdir(tmp_path)  # cwd should NOT be used
 
-    from pathlib import Path
     result = onp_logging.default_log_dir()
     assert result == Path("/var/log/open-notebook-plus")

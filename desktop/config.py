@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
+
 def _toml_string(v: str) -> str:
     """TOML-safe string serialization.
 

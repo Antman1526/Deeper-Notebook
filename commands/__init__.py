@@ -63,6 +63,8 @@ _memory_summarize_session = None
 try:
     from .memory_commands import (  # noqa: F401
         memory_extract_turn as _memory_extract_turn,
+    )
+    from .memory_commands import (
         memory_summarize_session as _memory_summarize_session,
     )
 except ImportError:

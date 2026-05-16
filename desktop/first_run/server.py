@@ -108,6 +108,7 @@ def build_app(config_path: Path, on_done: Callable[[], None],
         time the user clicks "dismiss".
         """
         from dataclasses import replace as _dc_replace
+
         from desktop.config import load_or_create
         cfg = load_or_create(config_path)
         new_cfg = _dc_replace(cfg, openchronicle_choice="skip")

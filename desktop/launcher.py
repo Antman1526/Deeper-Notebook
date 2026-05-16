@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 from desktop.config import Config
 from desktop.ports import find_free_ports
 
-
 # v0.6.5 — debugging supervised-child failures was painful: every optional
 # service had `except Exception: pass`, so a misconfigured Piper voice path
 # (or a missing whisper binary, or an OOM-killed llama.cpp) produced only

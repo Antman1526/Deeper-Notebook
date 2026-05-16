@@ -26,7 +26,11 @@ import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List, Optional  # noqa: F401  (List kept for back-compat consumers)
+from typing import (  # noqa: F401  (List kept for back-compat consumers)
+    Dict,
+    List,
+    Optional,
+)
 from urllib.parse import urlencode
 
 import httpx
@@ -35,7 +39,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from open_notebook.domain.gmail import GmailIntegration
-
 
 log = logging.getLogger(__name__)
 

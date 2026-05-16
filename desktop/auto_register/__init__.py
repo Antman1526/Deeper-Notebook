@@ -36,8 +36,6 @@ import logging
 
 import httpx
 
-from desktop.config import Config
-
 # Re-export sub-module public symbols so existing imports/patches keep working.
 from desktop.auto_register._http import (  # noqa: F401
     _ensure_credential,
@@ -46,14 +44,18 @@ from desktop.auto_register._http import (  # noqa: F401
     _list_local_ggufs,
     _list_ollama_models,
 )
-from desktop.auto_register.episode_profile import register_default_episode_profile  # noqa: F401
-from desktop.auto_register.speaker_profile import register_default_speaker_profile  # noqa: F401
+from desktop.auto_register.assigner import SLOTS, assign_all
+from desktop.auto_register.capability import ModelDescriptor, score_model
+from desktop.auto_register.episode_profile import (
+    register_default_episode_profile,  # noqa: F401
+)
 from desktop.auto_register.llamacpp import register_llamacpp_models
 from desktop.auto_register.ollama import register_ollama_models
+from desktop.auto_register.speaker_profile import (
+    register_default_speaker_profile,  # noqa: F401
+)
 from desktop.auto_register.voice import register_voice_models  # noqa: F401
-
-from desktop.auto_register.assigner import SLOTS, assign_all
-from desktop.auto_register.capability import score_model
+from desktop.config import Config
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +109,9 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
 
     # Build a pool of scored descriptors, tagging each with its upstream `id` so
     # we can PUT the id back to /defaults.
-    pool: list[tuple[dict, "ModelDescriptor"]] = []  # type: ignore[name-defined]
+    # v0.7.48 — ModelDescriptor imported at module top now (was only used
+    # as a string-quoted forward reference before).
+    pool: list[tuple[dict, ModelDescriptor]] = []
     for m in all_models:
         name = m.get("name", "")
         if not name:

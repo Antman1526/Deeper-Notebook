@@ -23,7 +23,6 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
-    gmail as gmail_router,
     insights,
     languages,
     models,
@@ -40,8 +39,10 @@ from api.routers import (
     transformations,
 )
 from api.routers import commands as commands_router
+from api.routers import (
+    gmail as gmail_router,
+)
 from open_notebook.database.async_migrate import AsyncMigrationManager
-from open_notebook.logging import configure_logging
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -52,6 +53,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     RateLimitError,
 )
+from open_notebook.logging import configure_logging
 from open_notebook.utils.encryption import get_secret_from_env
 
 

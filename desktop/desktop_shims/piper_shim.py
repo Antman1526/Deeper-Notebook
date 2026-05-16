@@ -22,7 +22,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-
 # v0.7.7 — Cap on input text length for one TTS request. 50,000 chars
 # ≈ 10 minutes of synthesized audio at typical speech rates (~150 wpm,
 # ~5 chars/word). Plenty for any legitimate single segment of a

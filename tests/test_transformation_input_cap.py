@@ -14,7 +14,6 @@ import pytest
 
 from open_notebook.graphs import transformation
 
-
 # ---------------------------------------------------------------------------
 # _truncate_transformation_input — pure function tests
 # ---------------------------------------------------------------------------
