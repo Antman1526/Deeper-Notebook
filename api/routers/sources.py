@@ -943,10 +943,18 @@ async def retry_source_processing(source_id: str):
                 )
                 # Continue with retry if we can't check status
 
-        # Get notebooks that this source belongs to
-        query = "SELECT notebook FROM reference WHERE source = $source_id"
-        references = await repo_query(query, {"source_id": source_id})
-        notebook_ids = [str(ref["notebook"]) for ref in references]
+        # Get notebooks that this source belongs to.
+        # v0.7.60 — fixed the query columns. The `reference` table is a
+        # SurrealDB edge with only `in`/`out` (and `id`), NOT `source` /
+        # `notebook` columns. The previous query always returned [], so
+        # every retry hit "Source is not associated with any notebooks"
+        # 400 and the retry endpoint was effectively dead. Also pass a
+        # RecordID, not the raw string.
+        query = "SELECT VALUE out FROM reference WHERE in = $source_id"
+        references = await repo_query(
+            query, {"source_id": ensure_record_id(source_id)}
+        )
+        notebook_ids = [str(r) for r in references]
 
         if not notebook_ids:
             raise HTTPException(
