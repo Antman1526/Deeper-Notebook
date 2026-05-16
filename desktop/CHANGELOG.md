@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.79 (in flight)
+## Unreleased — v0.7.36 → v0.7.80 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -226,6 +226,14 @@ uncovered by a follow-up audit pass:
   SourceCard (v0.7.56) — without cleanup the timer fired
   navigation / mutation / invalidate against an already-unmounted
   component when the user dismissed mid-window.
+- **v0.7.80** `insightsApi.waitForCommand` now accepts an
+  AbortSignal and uses an abortable-sleep helper between polling
+  attempts. SourceDetailContent wires a per-component
+  AbortController that gets aborted on unmount, so navigating
+  away mid-poll stops the 4-minute polling loop within
+  milliseconds instead of continuing to hit
+  `/commands/jobs/{id}` and triggering downstream cache
+  invalidation on a dead React subtree.
 
 ---
 
