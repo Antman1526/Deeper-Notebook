@@ -27,6 +27,18 @@ When a user asks you a question, analyze both the source content and the availab
 {{ context }}
 {% endif %}
 
+{% if memory_block %}
+# WHAT YOU REMEMBER ABOUT THE USER
+
+These notes were captured automatically from previous chat turns. Treat them as
+soft hints about preferences and tone — never as authoritative claims about
+the current question. Stay focused on the source above; only weave a memory
+note in when it directly helps the answer (e.g. tailoring language complexity
+to a stated preference).
+
+{{ memory_block }}
+{% endif %}
+
 # CITING INSTRUCTIONS
 
 When referencing information from the source or its insights, always include citations using the document IDs. This helps users track the specific content you're referencing.
