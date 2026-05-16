@@ -113,6 +113,15 @@ class PodcastService:
             )
             return job_id_str
 
+        except ValueError as e:
+            # v0.7.58 — distinguish user-input errors (missing profile,
+            # missing content, "commands not available") from genuine
+            # 500s. Previously the broad `except Exception` mapped every
+            # one of these to HTTP 500 "Server error", which is wrong:
+            # they're caller mistakes, the user should see a 400 with
+            # the actual reason ("Episode profile 'X' not found").
+            logger.warning(f"Podcast submission rejected: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to submit podcast generation job: {e}")
             raise HTTPException(
