@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.73 (in flight)
+## Unreleased — v0.7.36 → v0.7.76 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -173,6 +173,32 @@ uncovered by a follow-up audit pass:
   relating; same query direction as the HTTP endpoint so behavior
   is symmetric. (Existing dupes in old DBs are NOT cleaned by
   this commit; that would be a separate migration.)
+- **v0.7.74** 14 new unit tests for v0.7.71's memory_recall
+  (pure-render path). Tests caught a real bug in `_coerce_text` —
+  `{"text": None}` returned the string "None" because the dict
+  branch unconditionally `str()`-coerced the inner value. Now
+  explicit None check ⇒ empty string ⇒ filtered out upstream so
+  the prompt never gets a `- None` bullet line. Backend suite
+  now 416 passing.
+- **v0.7.75** Finishing sweep of v0.7.65's str(payload) sizing
+  fix: transformation.py + prompt.py both still passed
+  `str(payload)` to provision_langchain_model, overcounting by
+  the same ~80-120 chars of wrapper boilerplate per message.
+  Both now extract `.content` per message and pass the plain
+  string. /transformations/execute endpoint also gets the
+  isinstance/getattr dual-path output access from v0.7.52/55/56
+  for symmetry.
+- **v0.7.76** Domain hardening in open_notebook/domain/notebook.py:
+  Source.vectorize, Source.add_insight, and Note.save all called
+  the sync surreal_commands.submit_command directly inside
+  `async def` (same blocking-event-loop bug as v0.7.55/57/62) —
+  all three now wrap in asyncio.to_thread. Plus Source.delete
+  now cascades `reference` edges (was already cleaning
+  source_embedding + source_insight) so the notebook sources
+  view doesn't crash on `Source(**None)` after a delete. Note
+  gets a new delete override that cascades `artifact` edges +
+  `note_embedding` rows — symmetric to Source and to the v0.7.61
+  Notebook.delete chat_session cascade.
 
 ---
 
