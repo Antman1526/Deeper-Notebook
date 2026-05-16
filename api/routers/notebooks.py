@@ -256,9 +256,19 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        # Check if reference already exists (idempotency)
+        # Check if reference already exists (idempotency).
+        # v0.7.60 — query columns were swapped: the `RELATE
+        # $source_id->reference->$notebook_id` below produces an edge
+        # with `in=source, out=notebook`, so the idempotency check has
+        # to match that direction. The previous version checked
+        # `out=source, in=notebook` (always empty), so EVERY call
+        # created a fresh edge. `source_count` then inflated without
+        # bound and the symmetric DELETE on line 301 (which uses the
+        # correct direction) only removed a single edge per call,
+        # leaving the rest as junk. Matches the delete-query orientation
+        # now.
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE out = $notebook_id AND in = $source_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
