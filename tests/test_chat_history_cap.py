@@ -94,14 +94,25 @@ def test_trim_drops_oldest_when_over_cap(monkeypatch):
 
 
 def test_trim_keeps_last_message_even_if_oversize(monkeypatch):
-    """A single oversize current-turn message is kept regardless —
-    dropping it would break the conversation. (Per-message truncation
-    is a separate concern handled by v0.7.10 etc.)"""
+    """A single oversize current-turn message is KEPT (we never drop
+    the most recent), but as of v0.7.66 its content is now truncated
+    to the per-message cap so a 50k-char paste can't blow past a
+    local LLM's 16k context. Dropping the message would still break
+    the conversation; truncating it preserves the turn while
+    respecting the model's budget.
+    """
     monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
-    huge = HumanMessage(content="X" * 30_000)  # 2.5x the cap on its own
+    monkeypatch.delenv("ONP_CHAT_MESSAGE_CHAR_CAP", raising=False)
+    huge = HumanMessage(content="X" * 30_000)  # 2.5x the history cap
     out = chat._trim_message_history([huge])
-    # No marker because nothing was dropped (only one message in, only one out)
-    assert out == [huge]
+    # Still exactly one message, no history marker prepended (nothing dropped).
+    assert len(out) == 1
+    assert isinstance(out[0], HumanMessage)
+    # Content was truncated to the default 24k per-message cap.
+    assert len(out[0].content) < 30_000
+    assert len(out[0].content) <= 24_000 + 200  # marker padding
+    # Marker is appended so the model knows content was cut.
+    assert "content truncated" in out[0].content
 
 
 def test_trim_respects_env_var_higher(monkeypatch):
