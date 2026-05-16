@@ -196,11 +196,23 @@ export function useAsk() {
         })
       }
     } finally {
-      // Release the reader's lock so the underlying stream can be GC'd.
-      try {
-        reader?.releaseLock()
-      } catch {
-        // Reader may already be released (cancellation path); ignore.
+      // v0.7.54 — cancel the reader BEFORE releasing the lock so the
+      // underlying HTTP response body is actually torn down. Just
+      // releaseLock() leaves the connection open until GC and the
+      // backend's `is_disconnected()` doesn't fire — the ask graph
+      // (multiple LLM calls) keeps generating answers nobody will see.
+      // Mirrors v0.7.50 chat.ts.
+      if (reader) {
+        try {
+          await reader.cancel()
+        } catch {
+          // cancel can throw if the stream is already errored; ignore.
+        }
+        try {
+          reader.releaseLock()
+        } catch {
+          // Reader may already be released (cancellation path); ignore.
+        }
       }
       // Clear the controller ref if it's still ours (i.e. nobody started
       // a newer ask in the meantime).
