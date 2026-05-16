@@ -22,10 +22,12 @@
 'use client'
 
 import { useState, useCallback, useRef, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic } from 'lucide-react'
+import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft } from 'lucide-react'
 
+import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -208,16 +210,31 @@ export default function StudioPage() {
   }
 
   // ----- Render -----
+  // v0.7.23 — wrap in AppShell so the persistent left sidebar is visible
+  // (matches every other dashboard page). Studio previously rendered a
+  // bare <div> with no nav — users had no way back to the main page short
+  // of the browser back button. Also adds an explicit "Back to Notebooks"
+  // header link as a one-click escape hatch independent of the sidebar.
   return (
-    <div className="container mx-auto p-6 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-1">Studio</h1>
-        <p className="text-sm text-muted-foreground">
-          Upload one or more documents (PDF, DOCX, MD, TXT, HTML, PPTX) and
-          generate either a structured study notebook or a two-host podcast
-          episode, grounded in your sources.
-        </p>
-      </div>
+    <AppShell>
+      <div className="flex-1 overflow-y-auto">
+        <div className="container mx-auto p-6 max-w-3xl">
+          <div className="mb-4">
+            <Link href="/notebooks">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Notebooks
+              </Button>
+            </Link>
+          </div>
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold mb-1">Studio</h1>
+            <p className="text-sm text-muted-foreground">
+              Upload one or more documents (PDF, DOCX, MD, TXT, HTML, PPTX) and
+              generate either a structured study notebook or a two-host podcast
+              episode, grounded in your sources.
+            </p>
+          </div>
 
       <Card className="mb-6">
         <CardHeader>
@@ -396,18 +413,20 @@ export default function StudioPage() {
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={onGenerate} disabled={!canSubmit} size="lg">
-          {mutation.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              {mode === 'notebook' ? 'Generating study notebook…' : 'Submitting podcast job…'}
-            </>
-          ) : (
-            <>Generate {mode === 'notebook' ? 'Notebook' : 'Podcast'}</>
-          )}
-        </Button>
+          <div className="flex justify-end">
+            <Button onClick={onGenerate} disabled={!canSubmit} size="lg">
+              {mutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  {mode === 'notebook' ? 'Generating study notebook…' : 'Submitting podcast job…'}
+                </>
+              ) : (
+                <>Generate {mode === 'notebook' ? 'Notebook' : 'Podcast'}</>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
-    </div>
+    </AppShell>
   )
 }
