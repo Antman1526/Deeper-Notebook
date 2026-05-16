@@ -16,6 +16,16 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
 import { SourceCard } from '@/components/sources/SourceCard'
+import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
+
+// v0.7.45 — virtualize the sources list only when it gets large
+// enough to feel the cost of full rendering. Below the threshold the
+// plain map keeps SSR-friendly behavior + zero virtualization overhead.
+const VIRTUALIZE_THRESHOLD = 50
+// Each SourceCard is variable-height (depends on title length, status
+// badges, etc.). 96px is the median in practice — close-to-real means
+// fewer scroll jumps as the virtualizer measures real heights.
+const SOURCE_CARD_ESTIMATE_PX = 96
 import { useDeleteSource, useRetrySource, useRemoveSourceFromNotebook } from '@/lib/hooks/use-sources'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
@@ -182,6 +192,15 @@ export function SourcesColumn({
             </div>
           </CardHeader>
 
+          {/* v0.7.45 — body splits into three render paths:
+              1. Loading: spinner (unchanged)
+              2. Empty: EmptyState (unchanged)
+              3a. Small list (<50 sources): standard `.map()` rendering
+                  (SSR-friendly, zero virtualization overhead)
+              3b. Large list (>=50): VirtualizedListAuto — only viewport
+                  rows + overscan are kept in the DOM. Infinite-scroll
+                  hook fires via the virtualizer's onScroll instead of
+                  the old addEventListener pattern. */}
           <CardContent ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
@@ -192,6 +211,37 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
+              />
+            ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
+              <VirtualizedListAuto
+                items={sources}
+                estimateSize={SOURCE_CARD_ESTIMATE_PX}
+                className="h-full"
+                getItemKey={(source) => source.id}
+                onScroll={handleScroll}
+                renderItem={(source) => (
+                  <div className="pb-3">
+                    <SourceCard
+                      source={source}
+                      onClick={handleSourceClick}
+                      onDelete={handleDeleteClick}
+                      onRetry={handleRetry}
+                      onRemoveFromNotebook={handleRemoveFromNotebook}
+                      onRefresh={onRefresh}
+                      showRemoveFromNotebook={true}
+                      contextMode={contextSelections?.[source.id]}
+                      onContextModeChange={onContextModeChange
+                        ? (mode) => onContextModeChange(source.id, mode)
+                        : undefined
+                      }
+                    />
+                  </div>
+                )}
+                footer={isFetchingNextPage ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : undefined}
               />
             ) : (
               <div className="space-y-3">
