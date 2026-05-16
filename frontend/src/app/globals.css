@@ -155,8 +155,11 @@
     @apply transition-all duration-200 ease-out;
   }
 
+  /* v0.7.25 — removed `scale-[1.02]`. Sidebar items are `w-full`;
+     scaling caused a 1-2px overflow tear into the main pane on
+     every hover. The bg + shadow already convey hover state without
+     the layout-affecting transform. */
   .sidebar-menu-item:hover {
-    @apply scale-[1.02];
     background-color: var(--sidebar-accent) !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }

@@ -9,6 +9,7 @@ import {
   CommandDialog,
   CommandInput,
   CommandList,
+  CommandEmpty,
   CommandGroup,
   CommandItem,
   CommandSeparator,
@@ -178,6 +179,11 @@ export function CommandPalette() {
         autoComplete="off"
       />
       <CommandList>
+        {/* v0.7.25 — show empty state when the user's query matches
+            nothing. Without this, a zero-match query rendered a
+            completely blank list with no signal that the search ran. */}
+        <CommandEmpty>{t('common.noResults', 'No results found.')}</CommandEmpty>
+
         {/* Search/Ask - show FIRST when there's a query with no command match */}
         {showSearchFirst && (
           <CommandGroup heading={t('searchPage.searchAndAsk')} forceMount>
@@ -214,26 +220,32 @@ export function CommandPalette() {
           ))}
         </CommandGroup>
 
-        {/* Notebooks */}
-        <CommandGroup heading={t('notebooks.title')}>
-          {notebooksLoading ? (
-            <CommandItem disabled>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{t('common.loading')}</span>
-            </CommandItem>
-          ) : notebooks && notebooks.length > 0 ? (
-            notebooks.map((notebook) => (
-              <CommandItem
-                key={notebook.id}
-                value={`notebook ${notebook.name} ${notebook.description || ''}`}
-                onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}
-              >
-                <Book className="h-4 w-4" />
-                <span>{notebook.name}</span>
+        {/* Notebooks
+            v0.7.25 — conditionally render the whole group only when
+            there are notebooks (or we're loading). Previously, with
+            zero notebooks, the heading "Notebooks" still rendered
+            above nothing — an orphan label in the palette. */}
+        {(notebooksLoading || (notebooks && notebooks.length > 0)) && (
+          <CommandGroup heading={t('notebooks.title')}>
+            {notebooksLoading ? (
+              <CommandItem disabled>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{t('common.loading')}</span>
               </CommandItem>
-            ))
-          ) : null}
-        </CommandGroup>
+            ) : (
+              notebooks!.map((notebook) => (
+                <CommandItem
+                  key={notebook.id}
+                  value={`notebook ${notebook.name} ${notebook.description || ''}`}
+                  onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}
+                >
+                  <Book className="h-4 w-4" />
+                  <span>{notebook.name}</span>
+                </CommandItem>
+              ))
+            )}
+          </CommandGroup>
+        )}
 
         {/* Create */}
         <CommandGroup heading={t('navigation.create')}>

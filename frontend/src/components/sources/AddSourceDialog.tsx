@@ -458,7 +458,9 @@ export function AddSourceDialog({
 
     return (
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-[500px]" showCloseButton={true}>
+        {/* v0.7.25 — added max-h + overflow for long filename lists
+            in batch progress views. */}
+        <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto" showCloseButton={true}>
           <DialogHeader>
             <DialogTitle>
               {batchProgress ? t('sources.processingFiles') : t('sources.statusProcessing')}
@@ -534,15 +536,19 @@ export function AddSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[700px] p-0">
-        <DialogHeader className="px-6 pt-6 pb-0">
+      {/* v0.7.25 — added max-h-[90vh] + flex layout. Without this,
+          a long URL list (up to 50) or many validation errors pushed
+          the wizard's Next/Done buttons below the fold with no
+          scrollbar. Header stays pinned; form body scrolls. */}
+      <DialogContent className="sm:max-w-[700px] p-0 max-h-[90vh] flex flex-col">
+        <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
           <DialogTitle>{t('sources.addNew')}</DialogTitle>
           <DialogDescription>
             {t('sources.processDescription')}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0">
+        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 flex-1 overflow-y-auto">
           <WizardContainer
             currentStep={currentStep}
             steps={WIZARD_STEPS}

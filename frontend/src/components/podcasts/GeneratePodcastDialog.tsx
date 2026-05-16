@@ -861,15 +861,21 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         resetState()
       }
     }}>
-      <DialogContent className="w-[80vw] max-w-[1080px] max-h-[90vh] overflow-hidden">
-        <DialogHeader>
+      {/* v0.7.25 — was `overflow-hidden` which clipped the bottom on
+          short viewports (≤900px tall): the ContentSelectionPanel +
+          buttons stayed in flow but couldn't scroll, so Cancel/Generate
+          fell below the fold on laptops. Switched to a flex-column
+          layout where the body scrolls and the header/footer stay
+          pinned. */}
+      <DialogContent className="w-[80vw] max-w-[1080px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{t('podcasts.generateEpisode')}</DialogTitle>
           <DialogDescription>
             {t('podcasts.generateEpisodeDesc')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr]">
+        <div className="grid gap-6 md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr] flex-1 overflow-y-auto min-h-0">
           <ContentSelectionPanel
             notebooks={notebooks}
             isLoading={notebooksQuery.isLoading}

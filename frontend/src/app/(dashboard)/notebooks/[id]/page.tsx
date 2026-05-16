@@ -108,10 +108,16 @@ export default function NotebookPage() {
   }
 
   if (notebookLoading) {
+    // v0.7.25 — wrap loading state in AppShell so the sidebar doesn't
+    // disappear during the notebook fetch. Previously this returned a
+    // bare <div>, causing a visible layout flash on every navigation
+    // and a UX dead-end if the request hung.
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
+      <AppShell>
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </AppShell>
     )
   }
 
@@ -199,9 +205,15 @@ export default function NotebookPage() {
             'flex-row'
           )}>
             {/* Sources Column */}
+            {/* v0.7.25 — was `flex-none basis-1/3` which doesn't shrink.
+                Two of those + chat's flex-1 + sidebar + gap-6 ×2 + p-6
+                overflowed the viewport at the lg breakpoint (1024px),
+                triggering the parent's overflow-x-auto and giving a
+                horizontal scrollbar on common laptop sizes. Switched to
+                flex-1 basis-0 min-w-0 so columns shrink proportionally. */}
             <div className={cn(
               'transition-all duration-150',
-              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-1/3'
+              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-1 basis-0 min-w-0'
             )}>
               <SourcesColumn
                 sources={sources}
@@ -220,7 +232,7 @@ export default function NotebookPage() {
             {/* Notes Column */}
             <div className={cn(
               'transition-all duration-150',
-              notesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-1/3'
+              notesCollapsed ? 'w-12 flex-shrink-0' : 'flex-1 basis-0 min-w-0'
             )}>
               <NotesColumn
                 notes={notes}
@@ -231,8 +243,11 @@ export default function NotebookPage() {
               />
             </div>
 
-            {/* Chat Column - always expanded, takes remaining space */}
-            <div className="transition-all duration-150 flex-1 min-w-0 lg:pr-6 lg:-mr-6">
+            {/* Chat Column - always expanded, takes remaining space.
+                v0.7.25 — removed the `lg:-mr-6` negative margin that
+                cancelled `lg:pr-6` for no visible benefit, just to
+                clip focus rings. */}
+            <div className="transition-all duration-150 flex-[2] min-w-0">
               <ChatColumn
                 notebookId={notebookId}
                 contextSelections={contextSelections}
