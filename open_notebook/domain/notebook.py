@@ -517,16 +517,49 @@ class Source(ObjectModel):
         """Delete source and clean up associated file, embeddings, and insights.
 
         v0.6.34 — verifies the file_path is INSIDE UPLOADS_FOLDER before
-        unlinking. Previously the path came from the DB unchecked, so a
-        tampered asset.file_path (raw SurrealQL access, an unrelated bug
-        in another endpoint that allows setting Asset fields directly,
-        future API additions that don't enforce containment) could cause
-        Source.delete() to remove arbitrary files the API process has
-        write access to.
+        unlinking.
 
-        The create path (api/routers/sources.py:358) already does this
-        check; the symmetric check on delete had been missing.
+        v0.7.32 — also cancels any in-flight processing command. Without
+        this, deleting a source mid-embed left the worker running
+        against a now-dead source, writing fresh source_embedding rows
+        pointing at the deleted source. Orphan data + wasted GPU.
         """
+        # v0.7.32 — cancel any in-flight worker command FIRST so the
+        # worker doesn't race us to write embeddings on a source we're
+        # about to delete. Best-effort: if the cancel fails (command
+        # already completed, surreal_commands API change, etc.), we
+        # continue with deletion — the legacy orphan-data path is no
+        # worse than before this fix.
+        if self.command:
+            try:
+                from surreal_commands import get_command_status
+                from surreal_commands.core.service import get_command_service
+
+                status = await get_command_status(str(self.command))
+                # `status` is a CommandResult enum value or string. Only
+                # nudge active jobs; completed/failed jobs need no action.
+                status_str = getattr(status, "value", str(status)).lower()
+                if status_str in {"new", "running", "queued"}:
+                    svc = get_command_service()
+                    await svc.update_command_result(
+                        str(self.command),
+                        status="canceled",
+                        result={},
+                        error_message=(
+                            f"Source {self.id} was deleted by the user "
+                            f"before processing completed."
+                        ),
+                    )
+                    logger.info(
+                        f"Cancelled in-flight command {self.command} for "
+                        f"source {self.id} (was {status_str})"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Could not cancel command {self.command} for source "
+                    f"{self.id}: {e}. Continuing with deletion."
+                )
+
         # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)

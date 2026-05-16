@@ -47,6 +47,7 @@ from desktop.auto_register._http import (  # noqa: F401
     _list_ollama_models,
 )
 from desktop.auto_register.episode_profile import register_default_episode_profile  # noqa: F401
+from desktop.auto_register.speaker_profile import register_default_speaker_profile  # noqa: F401
 from desktop.auto_register.llamacpp import register_llamacpp_models
 from desktop.auto_register.ollama import register_ollama_models
 from desktop.auto_register.voice import register_voice_models  # noqa: F401
@@ -256,6 +257,12 @@ def _do_register(
             existing_cred_names=existing_cred_names,
             existing_model_keys=existing_model_keys,
         )
+        # v0.7.32 — register local-Piper speaker profiles BEFORE episode
+        # profiles. The episode profiles assume the Piper voices exist;
+        # the speaker profiles depend on them but are independent of
+        # episode_profile. Order doesn't strictly matter, but speaker
+        # first reads more naturally in the bootstrap log.
+        register_default_speaker_profile(client)
         register_default_episode_profile(client)
         registered_any = True
 
