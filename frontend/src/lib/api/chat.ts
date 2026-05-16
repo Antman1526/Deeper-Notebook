@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { getApiUrl } from '@/lib/config'
 import {
   NotebookChatSession,
   NotebookChatSessionWithMessages,
@@ -9,6 +10,14 @@ import {
   BuildContextRequest,
   BuildContextResponse,
 } from '@/lib/types/api'
+
+// v0.7.38 — streaming chat events. One discriminated union per
+// type emitted by /chat/stream's NDJSON wire format.
+export type ChatStreamEvent =
+  | { type: 'start'; session_id: string }
+  | { type: 'token'; content: string }
+  | { type: 'done'; messages: NotebookChatMessage[] }
+  | { type: 'error'; detail: string }
 
 export const chatApi = {
   // Session management
@@ -57,6 +66,103 @@ export const chatApi = {
       data
     )
     return response.data
+  },
+
+  // v0.7.38 — streaming variant. Returns an async iterable of
+  // ChatStreamEvent so callers can yield-loop over the stream:
+  //
+  //   for await (const event of chatApi.streamMessage(data, signal)) {
+  //     if (event.type === 'token') ...
+  //   }
+  //
+  // The fetch API is used directly (not axios) because axios doesn't
+  // expose a streaming Response body in a usable shape. Auth header is
+  // copied from the same localStorage location apiClient reads from
+  // (no Zustand dependency at this level).
+  streamMessage: async function* (
+    data: SendNotebookChatMessageRequest,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatStreamEvent, void, unknown> {
+    const apiUrl = await getApiUrl()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+    }
+    if (typeof window !== 'undefined') {
+      const authStorage = localStorage.getItem('auth-storage')
+      if (authStorage) {
+        try {
+          const { state } = JSON.parse(authStorage)
+          if (state?.token) headers.Authorization = `Bearer ${state.token}`
+        } catch {
+          // Ignore parse failure — request will go out unauthenticated
+          // and 401 will redirect to /login per the standard flow.
+        }
+      }
+    }
+
+    const resp = await fetch(`${apiUrl}/api/chat/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+      signal,
+    })
+    if (!resp.ok || !resp.body) {
+      const errBody = await resp.text().catch(() => '')
+      throw new Error(
+        `chat/stream returned HTTP ${resp.status}${errBody ? `: ${errBody}` : ''}`,
+      )
+    }
+
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    // v0.7.38 — defensive buffer cap. A pathological stream that never
+    // emits a newline would grow unbounded. 4 MiB is generous (typical
+    // chat response is <50 KiB) and well under heap pressure.
+    const BUFFER_MAX = 4 * 1024 * 1024
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        if (buffer.length > BUFFER_MAX) {
+          throw new Error('stream buffer exceeded 4 MiB without a newline')
+        }
+        let nl = buffer.indexOf('\n')
+        while (nl !== -1) {
+          const line = buffer.slice(0, nl).trim()
+          buffer = buffer.slice(nl + 1)
+          if (line) {
+            try {
+              yield JSON.parse(line) as ChatStreamEvent
+            } catch {
+              // Malformed line — skip it, keep going. Errors are
+              // surfaced separately as {"type":"error"} events.
+            }
+          }
+          nl = buffer.indexOf('\n')
+        }
+      }
+      // Flush any trailing partial line (server should always end on a
+      // newline, but defensive).
+      const tail = buffer.trim()
+      if (tail) {
+        try {
+          yield JSON.parse(tail) as ChatStreamEvent
+        } catch {
+          // Same as above — silently drop unparseable trailing data
+        }
+      }
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        // ReadableStream lock release can no-op if the stream is
+        // already locked elsewhere; not worth surfacing.
+      }
+    }
   },
 
   buildContext: async (data: BuildContextRequest) => {
