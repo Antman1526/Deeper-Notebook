@@ -369,13 +369,31 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
             return R()
 
     register_default_episode_profile(FakeClient())
-    assert len(posted_episode_profiles) == 1
-    profile = posted_episode_profiles[0]
-    assert profile["chat_model_id"] == "model:qwen", (
-        f"chat model should be Qwen, got {profile['chat_model_id']}"
+    # v0.7.30 — preset library expanded from 1 → 9 presets. Each gets
+    # POSTed when no existing profiles match. All must share the same
+    # chat model + speaker IDs.
+    from desktop.auto_register.episode_profile import _PRESETS
+    assert len(posted_episode_profiles) == len(_PRESETS), (
+        f"expected {len(_PRESETS)} preset POSTs, got {len(posted_episode_profiles)}"
     )
-    assert profile["speakers"][0]["tts_model_id"] == "model:amy"
-    assert profile["speakers"][1]["tts_model_id"] == "model:ryan"
+    for profile in posted_episode_profiles:
+        assert profile["chat_model_id"] == "model:qwen", (
+            f"chat model should be Qwen, got {profile['chat_model_id']}"
+        )
+        assert profile["speakers"][0]["tts_model_id"] == "model:amy"
+        assert profile["speakers"][1]["tts_model_id"] == "model:ryan"
+        # Each preset must carry its purpose-built briefing + segments.
+        assert profile["default_briefing"], (
+            f"preset {profile['name']!r} has no briefing"
+        )
+        assert 3 <= profile["num_segments"] <= 20, (
+            f"preset {profile['name']!r} has out-of-range num_segments"
+        )
+    # Names are unique
+    names = [p["name"] for p in posted_episode_profiles]
+    assert len(set(names)) == len(names), "duplicate preset names"
+    # Default preset is still in the set (back-compat)
+    assert "Open Notebook Plus Local" in names
 
 
 def test_episode_profile_skips_bge_embedding_in_chat_pick():
@@ -417,6 +435,56 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
     register_default_episode_profile(FakeClient())
     assert posted[0]["chat_model_id"] == "model:qwen7", (
         "should skip bge-* embedding and pick the real chat model"
+    )
+
+
+def test_episode_profile_library_is_idempotent():
+    """v0.7.30 — re-running registration when SOME presets already exist
+    only creates the missing ones. Customised existing profiles are
+    never overwritten (we POST, not PUT)."""
+    from desktop.auto_register.episode_profile import (
+        register_default_episode_profile,
+        _PRESETS,
+    )
+
+    posted: list[dict] = []
+    # Simulate a partial install: the user already has "Deep Dive" and
+    # "Quick Brief" (perhaps from a prior run, or hand-edited copies).
+    existing_names = {"Deep Dive", "Quick Brief"}
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode_profiles":
+                        return [{"name": n} for n in existing_names]
+                    if path == "/api/models":
+                        return [
+                            {"name": "Qwen-7B-chat", "id": "model:q"},
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                        ]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/episode_profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    expected_new = len(_PRESETS) - len(existing_names)
+    assert len(posted) == expected_new, (
+        f"expected {expected_new} new POSTs (skipping existing), got {len(posted)}"
+    )
+    posted_names = {p["name"] for p in posted}
+    # The skipped presets are NOT in the POSTed set
+    assert not (existing_names & posted_names), (
+        f"presets that existed got re-posted: {existing_names & posted_names}"
     )
 
 
