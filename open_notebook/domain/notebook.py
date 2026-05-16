@@ -476,13 +476,19 @@ class Source(ObjectModel):
             DatabaseOperationError: If job submission fails
         """
         logger.info(f"Submitting embed_source job for source {self.id}")
+        # v0.7.76 — same to_thread treatment as v0.7.55/57/62/68/70.
+        # surreal_commands.submit_command opens a synchronous SurrealDB
+        # WebSocket; running it directly inside this `async def` blocks
+        # the FastAPI event loop for the handshake duration. Move it
+        # to a worker thread.
 
         try:
             if not self.full_text or not self.full_text.strip():
                 raise ValueError(f"Source {self.id} has no text to vectorize")
 
             # Submit the embed_source command
-            command_id = submit_command(
+            command_id = await asyncio.to_thread(
+                submit_command,
                 "open_notebook",
                 "embed_source",
                 {"source_id": str(self.id)},
@@ -533,7 +539,9 @@ class Source(ObjectModel):
         try:
             # Submit create_insight command (fire-and-forget)
             # Command handles retries internally for transaction conflicts
-            command_id = submit_command(
+            # v0.7.76 — to_thread the sync submit_command, see vectorize().
+            command_id = await asyncio.to_thread(
+                submit_command,
                 "open_notebook",
                 "create_insight",
                 {
@@ -656,7 +664,21 @@ class Source(ObjectModel):
                 "DELETE source_insight WHERE source = $source_id",
                 {"source_id": source_id},
             )
-            logger.debug(f"Deleted embeddings and insights for source {self.id}")
+            # v0.7.76 — also delete the `reference` edges that point this
+            # source at notebooks. Without this, get_sources via
+            # `select in as source from reference where out=$id fetch source`
+            # would fetch null sources (the rows are still there even
+            # after the source record is deleted), and Source(**None)
+            # crashes the notebook view. Symmetric to the v0.7.61 fix
+            # for Notebook.delete -> chat_session edges.
+            await repo_query(
+                "DELETE reference WHERE in = $source_id",
+                {"source_id": source_id},
+            )
+            logger.debug(
+                f"Deleted embeddings, insights, and reference edges for "
+                f"source {self.id}"
+            )
         except Exception as e:
             logger.warning(
                 f"Failed to delete embeddings/insights for source {self.id}: {e}. "
@@ -695,7 +717,9 @@ class Note(ObjectModel):
 
         # Submit embedding command (fire-and-forget) if note has content
         if self.id and self.content and self.content.strip():
-            command_id = submit_command(
+            # v0.7.76 — to_thread the sync submit_command, see vectorize().
+            command_id = await asyncio.to_thread(
+                submit_command,
                 "open_notebook",
                 "embed_note",
                 {"note_id": str(self.id)},
@@ -723,6 +747,47 @@ class Note(ObjectModel):
         if existing:
             return existing[0]
         return await self.relate("artifact", notebook_id)
+
+    async def delete(self) -> bool:
+        """Delete the note and cascade artifact edges + note_embedding rows.
+
+        v0.7.76 — base ObjectModel.delete only deletes the note record.
+        Without explicit cascade, the `artifact` edges pointing at the
+        note survive: get_notes on the parent notebook does
+        `select in as note from artifact where out=$id fetch note`,
+        which would then `fetch note` → null and crash on `Note(**None)`.
+        Symmetric to Source.delete (v0.6.34 / v0.7.32) and the
+        Notebook.delete chat_session cascade (v0.7.61).
+        """
+        if self.id is None:
+            from open_notebook.exceptions import InvalidInputError as _IIE
+            raise _IIE("Cannot delete note without an ID")
+        try:
+            note_id = ensure_record_id(self.id)
+            # Delete artifact edges first so the FETCH path in
+            # get_notes can't race a half-deleted note.
+            await repo_query(
+                "DELETE artifact WHERE in = $note_id",
+                {"note_id": note_id},
+            )
+            # Also drop note_embedding rows so vector search doesn't
+            # return ghosts. Tolerant: table may not exist on very old
+            # databases.
+            try:
+                await repo_query(
+                    "DELETE note_embedding WHERE note = $note_id",
+                    {"note_id": note_id},
+                )
+            except Exception as exc:
+                logger.debug(
+                    f"Skipping note_embedding cleanup for {self.id}: {exc}"
+                )
+        except Exception as exc:
+            logger.warning(
+                f"Failed to cascade-clean artifact/embeddings for note "
+                f"{self.id}: {exc}. Continuing with note deletion."
+            )
+        return await super().delete()
 
     def get_context(
         self, context_size: Literal["short", "long"] = "short"
