@@ -1,5 +1,4 @@
 import asyncio
-import sqlite3
 from typing import Annotated, Optional
 
 from ai_prompter import Prompter
@@ -21,6 +20,7 @@ from open_notebook.utils.message_history import (
     msg_char_len as _msg_char_len,  # re-exported for tests
     trim_message_history,
 )
+from open_notebook.utils.sqlite_checkpoint import get_checkpoint_connection
 from open_notebook.utils.text_utils import extract_text_content
 
 
@@ -116,10 +116,13 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
         raise error_class(user_message) from e
 
 
-conn = sqlite3.connect(
-    LANGGRAPH_CHECKPOINT_FILE,
-    check_same_thread=False,
-)
+# v0.7.32 — use the shared, WAL-tuned, integrity-checked connection.
+# The previous direct sqlite3.connect created a separate connection
+# in each graph module and ran without WAL or busy_timeout — concurrent
+# chat sessions could hit "database is locked". See the
+# open_notebook.utils.sqlite_checkpoint docstring for the full
+# rationale.
+conn = get_checkpoint_connection(LANGGRAPH_CHECKPOINT_FILE)
 memory = SqliteSaver(conn)
 
 agent_state = StateGraph(ThreadState)

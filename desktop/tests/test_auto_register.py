@@ -438,6 +438,134 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
     )
 
 
+def test_speaker_profile_registers_local_piper_library():
+    """v0.7.32 — auto-register seeds 4 local-Piper speaker profiles
+    so the GeneratePodcastDialog has working defaults instead of the
+    cloud-only presets from migration 7.surrealql."""
+    from desktop.auto_register.speaker_profile import (
+        register_default_speaker_profile,
+        _build_presets,
+    )
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/speaker-profiles":
+                        return []  # nothing exists yet
+                    if path == "/api/models":
+                        return [
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                            {"name": "Qwen-7B-chat", "id": "model:q"},
+                        ]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/speaker-profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_speaker_profile(FakeClient())
+
+    # Library matches the source-of-truth presets
+    expected = _build_presets("model:amy", "model:ryan")
+    assert len(posted) == len(expected)
+    names = {p["name"] for p in posted}
+    assert names == {"Local Duo", "Local Solo", "Local Debate",
+                     "Local Interview"}
+
+    # All presets use the piper model IDs (profile-level + per-speaker)
+    for profile in posted:
+        assert profile["voice_model"] in {"model:amy", "model:ryan"}
+        for speaker in profile["speakers"]:
+            assert speaker["voice_model"] in {"model:amy", "model:ryan"}
+            assert speaker["name"]
+            assert speaker["backstory"]
+            assert speaker["personality"]
+
+
+def test_speaker_profile_registration_is_idempotent():
+    """Re-running with some presets already present only creates the
+    missing ones."""
+    from desktop.auto_register.speaker_profile import (
+        register_default_speaker_profile,
+    )
+
+    posted: list[dict] = []
+    existing = {"Local Duo", "Local Solo"}
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/speaker-profiles":
+                        return [{"name": n} for n in existing]
+                    if path == "/api/models":
+                        return [
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                        ]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/speaker-profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_speaker_profile(FakeClient())
+    # Only the 2 missing ones
+    posted_names = {p["name"] for p in posted}
+    assert posted_names == {"Local Debate", "Local Interview"}
+    # Pre-existing ones are NOT re-posted
+    assert not (posted_names & existing)
+
+
+def test_speaker_profile_skips_when_piper_voices_missing():
+    """If Piper isn't registered (yet / at all), do nothing — don't
+    create broken profiles."""
+    from desktop.auto_register.speaker_profile import (
+        register_default_speaker_profile,
+    )
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/speaker-profiles":
+                        return []
+                    if path == "/api/models":
+                        # NO piper voices — Piper disabled, or first-run
+                        # mid-flight.
+                        return [{"name": "Qwen-7B-chat", "id": "model:q"}]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            posted.append(json)
+            class R:
+                status_code = 201
+                def json(self): return {}
+            return R()
+
+    register_default_speaker_profile(FakeClient())
+    assert posted == [], "should not create speaker profiles without piper voices"
+
+
 def test_episode_profile_library_is_idempotent():
     """v0.7.30 — re-running registration when SOME presets already exist
     only creates the missing ones. Customised existing profiles are
