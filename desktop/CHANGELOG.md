@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.80 (in flight)
+## Unreleased — v0.7.36 → v0.7.81 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -234,6 +234,17 @@ uncovered by a follow-up audit pass:
   milliseconds instead of continuing to hit
   `/commands/jobs/{id}` and triggering downstream cache
   invalidation on a dead React subtree.
+- **v0.7.81** Two more reliability fixes. `_send_digest_now` now
+  wraps the post-send `g.save()` in try/except so a successful
+  Gmail send followed by a DB persist failure doesn't cause the
+  scheduler to send the same digest again on the next tick (the
+  email already went out; the duplicate-send window is bounded
+  to one tick instead of every tick until DB recovery).
+  `notes.create_note` AI-title generation now uses the
+  `isinstance(result, dict)` → `.get` / `getattr` dual-path on
+  the prompt graph's ainvoke output, matching the standing
+  state-shape guard pattern in chat.py / search.py /
+  source_chat.py / transformations.py.
 
 ---
 
