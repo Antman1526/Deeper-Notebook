@@ -203,7 +203,12 @@ export function ChatPanel({
                           onReferenceClick={handleReferenceClick}
                         />
                       ) : (
-                        <p className="text-sm break-all">{message.content}</p>
+                        // v0.7.25 — `break-all` breaks between any two
+                        // characters, so normal English wrapped mid-word
+                        // ("perfor-mance"). `break-words` only wraps
+                        // at word boundaries (with overflow-wrap for
+                        // unbreakable URLs/tokens).
+                        <p className="text-sm break-words">{message.content}</p>
                       )}
                     </div>
                     {message.type === 'ai' && (
@@ -339,8 +344,12 @@ function AIMessageContent({
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
 
+  // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
+  // hardcoded blue-600 fails WCAG AA against the dark muted
+  // background in dark themes (~3.2:1), and break-all hyphenates
+  // URLs mid-character. Theme-aware token + break-words.
   return (
-    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-blue-600 prose-a:break-all prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
