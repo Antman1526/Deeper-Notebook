@@ -117,8 +117,16 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
       })
+      // v0.7.34 — if the user deleted the session they're currently
+      // in, jump directly to the next-best session instead of leaving
+      // them in a transient null state. The auto-select effect at
+      // line 65 would eventually pick one anyway, but only AFTER the
+      // sessions query refetches — in the meantime ChatPanel renders
+      // a blank "no session" state for a frame or two, scroll resets,
+      // and the user sees a jarring flicker.
       if (currentSessionId === deletedId) {
-        setCurrentSessionId(null)
+        const next = sessions.find((s) => s.id !== deletedId)
+        setCurrentSessionId(next?.id ?? null)
         setMessages([])
       }
       toast.success(t('chat.sessionDeleted'))
