@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import ReactMarkdown from 'react-markdown'
@@ -92,6 +92,24 @@ export function SourceDetailContent({
   const [creatingInsight, setCreatingInsight] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // v0.7.79 — track the 5-second insight-fallback timer so it can be
+  // cancelled on unmount. The fallback path runs only when the API
+  // didn't return a command_id (older sources or non-async insight
+  // creates), but in that case a 5-second wait is plenty long for the
+  // user to navigate away from the source detail. Without cleanup the
+  // setTimeout would still fire `fetchInsights()` and
+  // `queryClient.invalidateQueries` on an unmounted component, leaving
+  // a React warning in the console and an unnecessary refetch.
+  const insightFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (insightFallbackTimerRef.current) {
+        clearTimeout(insightFallbackTimerRef.current)
+        insightFallbackTimerRef.current = null
+      }
+    }
+  }, [])
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
@@ -179,8 +197,13 @@ export function SourceDetailContent({
           console.error('Error waiting for insight command:', err)
         })
       } else {
-        // Fallback: refresh after delay if no command_id
-        setTimeout(() => {
+        // Fallback: refresh after delay if no command_id.
+        // v0.7.79 — stash the handle in the ref so unmount can cancel it.
+        if (insightFallbackTimerRef.current) {
+          clearTimeout(insightFallbackTimerRef.current)
+        }
+        insightFallbackTimerRef.current = setTimeout(() => {
+          insightFallbackTimerRef.current = null
           void fetchInsights()
           // Also invalidate sources queries
           queryClient.invalidateQueries({ queryKey: ['sources'] })
