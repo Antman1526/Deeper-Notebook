@@ -18,13 +18,40 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.41 (in flight)
+## Unreleased — v0.7.36 → v0.7.56 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
 splitting for the four 500+ LOC files (v0.7.40), and sub-`lg`
 responsive polish (v0.7.41). Tuned for local-LLM deploys with 2–5
 test users.
+
+Hardening run (v0.7.49–v0.7.56) closed eight reliability bugs
+uncovered by a follow-up audit pass:
+
+- **v0.7.49** useSourceChat streaming — TextDecoder `{stream:true}`
+  for UTF-8, cross-read line buffer, per-send `crypto.randomUUID()`
+  IDs, AbortError filter by exact id pair, 4 MiB defensive cap.
+- **v0.7.50** useNotebookChat — AbortController + mid-stream
+  mountedRef guard; chat.ts `reader.cancel()` before `releaseLock()`
+  so FastAPI's `is_disconnected()` actually fires.
+- **v0.7.51** SourcesColumn infinite-scroll — read scroll metrics
+  from `e.currentTarget` instead of a ref pinned to CardContent;
+  fixes silently-dead infinite scroll past the 50-source
+  virtualization threshold.
+- **v0.7.52** API lifespan + chat graph — `asyncio.wait_for(timeout=10)`
+  around DB pool warm-up acquires; chat-stream `on_chain_end` accepts
+  Pydantic state shape via `getattr` fallback; dead `last_token_idx`
+  removed.
+- **v0.7.53** /search/ask — `is_disconnected()` per astream_events
+  tick (parity with /chat/stream).
+- **v0.7.54** Propagate v0.7.49/v0.7.50 fixes to useSourceChat error
+  path + use-ask reader.cancel.
+- **v0.7.55** podcast_service + command_service — `asyncio.to_thread`
+  wrap around synchronous `submit_command`; /search/ask/simple gets
+  disconnect check + state-shape guard.
+- **v0.7.56** source_chat state-shape guard; SourceCard
+  refresh-timeout ref+cleanup.
 
 ---
 
