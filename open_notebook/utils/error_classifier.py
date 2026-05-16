@@ -42,11 +42,41 @@ _CLASSIFICATION_RULES: list[tuple[list[str], type[OpenNotebookError], str | None
         ConfigurationError,
         None,
     ),
-    # Network errors
+    # v0.7.66 — local-LLM "still loading" / "not ready" cases. The
+    # bundled llama-cpp-python server returns HTTP 503 during model
+    # load (cold-start can take 10-30 s for a 14B Q4 GGUF on M-series
+    # silicon). Some OpenAI-compatible servers (LM Studio, vLLM)
+    # return a 200 with a JSON `error` body saying "model not loaded".
+    # The classifier saw those as a generic "AI service error" before;
+    # they're actually a clear, transient, user-actionable state.
+    (
+        [
+            "model not loaded",
+            "model is loading",
+            "still loading",
+            "model loading",
+            "model unavailable",
+            "no model loaded",
+            "not ready",
+            "warming up",
+        ],
+        ExternalServiceError,
+        "The local model is still loading. Please wait a few seconds and try again.",
+    ),
+    # Network errors. v0.7.66 — also catches the most common
+    # local-deploy failure mode: the LLM server (llama-cpp-python or
+    # Ollama) isn't running yet, so the very first request after launch
+    # gets a connection-refused. The previous generic message ("check
+    # your network connection") was misleading on a local-only build;
+    # we now hint at the local server explicitly.
     (
         ["connecterror", "timeoutexception", "connection refused", "connection error", "timed out", "timeout"],
         NetworkError,
-        "Could not connect to the AI provider. Please check your network connection and provider URL.",
+        (
+            "Could not reach the AI model server. If you're using a local "
+            "model (llama.cpp / Ollama), make sure it's running. Otherwise "
+            "check your network connection and provider URL."
+        ),
     ),
     # Context length errors
     (
