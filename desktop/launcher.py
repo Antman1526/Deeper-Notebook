@@ -110,6 +110,14 @@ class Supervisor:
         self.progress = progress
         self._procs: list[subprocess.Popen] = []
         self._log_files: list[IO[bytes]] = []
+        # v0.7.58 — track drainer threads so stop_all can join them
+        # BEFORE closing the log files they're writing into. Without
+        # the join, daemon=True meant the OS reaped them at process
+        # exit without waiting — but if any line was mid-write at the
+        # moment we closed the log file, that buffered tail (often the
+        # crash cause) was lost or corrupted. A 1-2s join window is
+        # plenty given the drain loop is just iter(readline).
+        self._drain_threads: list[threading.Thread] = []
         self.session_env: dict[str, str] = {}
         self.frontend_url: str = ""
         self.embed_port: int = 0
@@ -223,11 +231,17 @@ class Supervisor:
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 
     def stop_all(self) -> None:
+        # v0.7.58 — log terminate/wait/close failures at debug level
+        # instead of swallowing silently. Previously a zombie child
+        # that survived terminate() was invisible; the launcher exited
+        # "clean" but the OS still had the worker holding the SurrealDB
+        # lock, and the next launch failed with a cryptic "address
+        # already in use".
         for p in reversed(self._procs):
             try:
                 p.terminate()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("terminate pid=%s failed: %s", p.pid, exc)
         deadline = time.monotonic() + 5
         for p in self._procs:
             try:
@@ -235,15 +249,25 @@ class Supervisor:
                 p.wait(timeout=remaining if remaining > 0 else 0.1)
             except subprocess.TimeoutExpired:
                 p.kill()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("wait pid=%s failed: %s", p.pid, exc)
+        # Join drainer threads with a short timeout BEFORE closing the
+        # log files they're writing into — otherwise the daemon threads
+        # could be mid-write when the file handle goes away. Buffered
+        # tails of surreal.log / api.log often hold the crash cause.
+        for t in self._drain_threads:
+            try:
+                t.join(timeout=2.0)
+            except Exception as exc:
+                log.debug("drain-thread join failed: %s", exc)
         for f in self._log_files:
             try:
                 f.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("log_file close failed: %s", exc)
         self._procs.clear()
         self._log_files.clear()
+        self._drain_threads.clear()
 
     def _spawn(
         self,
@@ -309,6 +333,8 @@ class Supervisor:
                 target=drain, args=(stream, prefix), name=f"drain-{name}", daemon=True
             )
             t.start()
+            # v0.7.58 — track for join-before-log-close in stop_all
+            self._drain_threads.append(t)
 
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
