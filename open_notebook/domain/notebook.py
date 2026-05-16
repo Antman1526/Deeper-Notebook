@@ -437,6 +437,24 @@ class Source(ObjectModel):
     async def add_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:
             raise InvalidInputError("Notebook ID must be provided")
+        # v0.7.73 — defensive dedup at the domain layer. The HTTP endpoint
+        # POST /notebooks/{notebook_id}/sources/{source_id} already has
+        # an idempotency check (fixed in v0.7.60), but direct domain
+        # calls (sources.py:493/572 upload flow, studio.py:375 batch
+        # upload, the Source.add_to_notebook path from the upcoming
+        # bulk-link feature) didn't. A duplicate call would create a
+        # second `reference` edge, inflating source_count and
+        # requiring multiple deletes-from-notebook clicks to remove
+        # the source.
+        existing = await repo_query(
+            "SELECT * FROM reference WHERE out = $notebook_id AND in = $source_id",
+            {
+                "notebook_id": ensure_record_id(notebook_id),
+                "source_id": ensure_record_id(self.id),
+            },
+        )
+        if existing:
+            return existing[0]
         return await self.relate("reference", notebook_id)
 
     async def vectorize(self) -> str:
@@ -690,6 +708,20 @@ class Note(ObjectModel):
     async def add_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:
             raise InvalidInputError("Notebook ID must be provided")
+        # v0.7.73 — defensive dedup at the domain layer. Same rationale
+        # as Source.add_to_notebook: the artifact-edge create was not
+        # idempotent, and `notes.py:90` (create_note flow) could
+        # double-link if the request was retried. Inflated note_count
+        # required multiple unlinks per note.
+        existing = await repo_query(
+            "SELECT * FROM artifact WHERE out = $notebook_id AND in = $note_id",
+            {
+                "notebook_id": ensure_record_id(notebook_id),
+                "note_id": ensure_record_id(self.id),
+            },
+        )
+        if existing:
+            return existing[0]
         return await self.relate("artifact", notebook_id)
 
     def get_context(
