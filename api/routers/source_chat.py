@@ -440,12 +440,10 @@ async def stream_source_chat_response(
         user_event = {"type": "user_message", "content": message, "timestamp": None}
         yield f"data: {json.dumps(user_event)}\n\n"
 
-        # v0.6.10 — wrap sync invoke in asyncio.to_thread so a slow LLM call
-        # doesn't freeze the event loop. Critical here: the function is an
-        # async SSE generator, so blocking on invoke() would freeze the
-        # heartbeat AND every other concurrent request through the API.
-        result = await asyncio.to_thread(
-            source_chat_graph.invoke,
+        # v0.7.37 — native async (replaces the v0.6.10 asyncio.to_thread
+        # wrapper). The source_chat_graph node is now `async def`, so
+        # ainvoke() routes directly without thread bridging.
+        result = await source_chat_graph.ainvoke(
             input=state_values,  # type: ignore[arg-type]
             config=RunnableConfig(
                 configurable={"thread_id": session_id, "model_id": model_override}

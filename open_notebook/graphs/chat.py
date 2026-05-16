@@ -1,4 +1,3 @@
-import asyncio
 from typing import Annotated, Optional
 
 from ai_prompter import Prompter
@@ -53,7 +52,26 @@ class ThreadState(TypedDict):
     model_override: Optional[str]
 
 
-def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
+async def call_model_with_messages(
+    state: ThreadState, config: RunnableConfig
+) -> dict:
+    """Async LangGraph node. v0.7.37 rewrite.
+
+    Previously this was sync and bridged into async via a per-call
+    `concurrent.futures.ThreadPoolExecutor` running a fresh
+    `asyncio.new_event_loop()`. The bridge was originally needed
+    because `provision_langchain_model` is async and the node was
+    declared sync. The bridge cost ~30ms/turn, killed httpx/aiohttp
+    keepalive pools, and was fragile on exception paths (the new
+    loop was closed before pending tasks drained).
+
+    The node is now natively async — LangGraph supports `async def`
+    nodes via `graph.ainvoke()` / `graph.astream_events()`. We call
+    `provision_langchain_model` directly with `await` and use
+    `model.ainvoke()` for the LLM round trip. This is also a
+    prerequisite for v0.7.38's token streaming, which uses
+    `astream_events` on the compiled graph.
+    """
     try:
         system_prompt = Prompter(prompt_template="chat/system").render(data=state)  # type: ignore[arg-type]
         # v0.7.11 — trim accumulated message history before building the
@@ -66,42 +84,11 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
             "model_override"
         )
 
-        # Handle async model provisioning from sync context
-        def run_in_new_loop():
-            """Run the async function in a new event loop"""
-            new_loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(new_loop)
-                return new_loop.run_until_complete(
-                    provision_langchain_model(
-                        str(payload), model_id, "chat", max_tokens=8192
-                    )
-                )
-            finally:
-                new_loop.close()
-                asyncio.set_event_loop(None)
+        model = await provision_langchain_model(
+            str(payload), model_id, "chat", max_tokens=8192
+        )
 
-        try:
-            # Try to get the current event loop
-            asyncio.get_running_loop()
-            # If we're in an event loop, run in a thread with a new loop
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(run_in_new_loop)
-                model = future.result()
-        except RuntimeError:
-            # No event loop running, safe to use asyncio.run()
-            model = asyncio.run(
-                provision_langchain_model(
-                    str(payload),
-                    model_id,
-                    "chat",
-                    max_tokens=8192,
-                )
-            )
-
-        ai_message = model.invoke(payload)
+        ai_message = await model.ainvoke(payload)
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
