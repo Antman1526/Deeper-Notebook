@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.70 (in flight)
+## Unreleased — v0.7.36 → v0.7.73 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -144,6 +144,35 @@ uncovered by a follow-up audit pass:
   AttributeError when `result is None`, masking a successful-but-
   transcript-less generation as a worker crash that retry=1
   couldn't recover from.
+- **v0.7.71** Memory READ path. Chat now injects the most recent
+  facts + preferences (capped 15 + 10) into the system prompt via
+  a new `# WHAT YOU REMEMBER ABOUT THE USER` section in
+  `chat/system.jinja`. With v0.7.68/70 the writer was already
+  populating `memory_fact` / `memory_preference` tables every
+  turn; this commit closes the loop so the assistant actually
+  recalls them on the next turn. Direct SurrealQL SELECT … LIMIT
+  for safety + speed (no embedder round-trip, tolerates missing
+  tables on fresh installs). Single-user deploys with tens of
+  facts get "what I've learned about you lately" — no semantic
+  filtering needed.
+- **v0.7.72** Podcast retry validates the referenced episode +
+  speaker profiles BEFORE the destructive audio/episode deletes.
+  Previously a rename or delete of the profile after the original
+  submission meant the user lost their failed episode record AND
+  couldn't retry — the 400 from submit_generation_job's
+  EpisodeProfile.get_by_name fired after the cleanup had already
+  run. Now the 400 lands without side effects, naming the missing
+  profile and pointing the user at the fix.
+- **v0.7.73** Defensive dedup at the domain layer for
+  `Source.add_to_notebook` and `Note.add_to_notebook`. v0.7.60
+  fixed the idempotency check on the HTTP endpoint but the domain
+  methods still called `self.relate()` unconditionally — direct
+  calls from upload / studio / notes-create paths could create
+  duplicate reference / artifact edges on retry. Now both check
+  for an existing edge with the same in/out pair before
+  relating; same query direction as the HTTP endpoint so behavior
+  is symmetric. (Existing dupes in old DBs are NOT cleaned by
+  this commit; that would be a separate migration.)
 
 ---
 
