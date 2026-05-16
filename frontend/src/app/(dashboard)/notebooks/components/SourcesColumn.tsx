@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, type UIEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -80,30 +80,28 @@ export function SourcesColumn({
     [toggleSources, t('navigation.sources')]
   )
 
-  // Scroll container ref for infinite scroll
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // Handle scroll for infinite loading
-  const handleScroll = useCallback(() => {
-    const container = scrollContainerRef.current
-    if (!container || !hasNextPage || isFetchingNextPage || !fetchNextPage) return
-
-    const { scrollTop, scrollHeight, clientHeight } = container
-    // Load more when user scrolls within 200px of the bottom
+  // v0.7.51 — read scroll metrics from `event.currentTarget`, NOT from a
+  // pinned ref. We render two different scroll surfaces depending on list
+  // size:
+  //   - small list: CardContent itself scrolls
+  //   - virtualized: the VirtualizedListAuto's inner `<div overflow-auto>`
+  //     scrolls; CardContent never sees the wheel events because the inner
+  //     element consumes them first.
+  // The old `scrollContainerRef` pinned to CardContent was correct for the
+  // small-list branch but stuck at scrollTop=0 forever in the virtualized
+  // branch — infinite scroll silently died past `VIRTUALIZE_THRESHOLD`.
+  // Using `e.currentTarget` lets the same handler work on whichever
+  // element fired the scroll event.
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage || !fetchNextPage) return
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    // Load more when user scrolls within 200px of the bottom.
     if (scrollHeight - scrollTop - clientHeight < 200) {
       fetchNextPage()
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  // Attach scroll listener
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
 
-    container.addEventListener('scroll', handleScroll)
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [handleScroll])
-  
   const handleDeleteClick = (sourceId: string) => {
     setSourceToDelete(sourceId)
     setDeleteDialogOpen(true)
@@ -201,7 +199,7 @@ export function SourcesColumn({
                   rows + overscan are kept in the DOM. Infinite-scroll
                   hook fires via the virtualizer's onScroll instead of
                   the old addEventListener pattern. */}
-          <CardContent ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
+          <CardContent onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
