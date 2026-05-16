@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Dict, List, Literal, Optional
 
@@ -503,8 +504,14 @@ async def create_insight_command(
         if not insight_id:
             raise ValueError("Failed to create insight - no ID in result")
 
-        # 2. Submit embedding command (fire-and-forget)
-        submit_command(
+        # 2. Submit embedding command (fire-and-forget).
+        # v0.7.77 — to_thread the sync submit_command, same root cause as
+        # v0.7.55/57/62/68/70/76. This handler runs in the surreal_commands
+        # worker process which DOES use an asyncio loop; blocking it
+        # synchronously here for every insight create slows other queued
+        # commands waiting on the same loop.
+        await asyncio.to_thread(
+            submit_command,
             "open_notebook",
             "embed_insight",
             {"insight_id": insight_id},
@@ -688,10 +695,14 @@ async def rebuild_embeddings_command(
         failed_submissions = 0
 
         # Submit embed_source commands for sources
+        # v0.7.77 — to_thread each submit so the worker's event loop
+        # stays responsive across hundreds of sequential submits during
+        # a full rebuild (each submit opens a fresh sync SurrealDB WS).
         logger.info(f"\nSubmitting {len(items['sources'])} source embedding jobs...")
         for idx, source_id in enumerate(items["sources"], 1):
             try:
-                submit_command(
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_source",
                     {"source_id": source_id},
@@ -711,7 +722,9 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['notes'])} note embedding jobs...")
         for idx, note_id in enumerate(items["notes"], 1):
             try:
-                submit_command(
+                # v0.7.77 — to_thread (see source-loop comment above).
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_note",
                     {"note_id": note_id},
@@ -731,7 +744,9 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['insights'])} insight embedding jobs...")
         for idx, insight_id in enumerate(items["insights"], 1):
             try:
-                submit_command(
+                # v0.7.77 — to_thread (see source-loop comment above).
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_insight",
                     {"insight_id": insight_id},
