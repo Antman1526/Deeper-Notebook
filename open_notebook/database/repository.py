@@ -151,15 +151,27 @@ async def _acquire() -> AsyncSurreal:
 
 
 async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
-    """Return a connection to the pool (or drop it if broken)."""
+    """Return a connection to the pool (or drop it if broken).
+
+    v0.7.57 — every `_pool_total` mutation now happens under
+    `_pool_lock`. The v0.7.24 acquire path moved the increment under
+    the lock, but the two release paths (broken close + QueueFull
+    overflow close) still decremented bare. Under concurrent broken
+    releases two coroutines could read the same `_pool_total`, both
+    write `total - 1`, and lose a decrement — total drifts UP from
+    reality, eventually hitting `_pool_cap` and wedging every future
+    acquire on `await _pool.get()`. Same root cause we fixed on the
+    acquire side; same fix here.
+    """
     global _pool_total
-    assert _pool is not None
+    assert _pool is not None and _pool_lock is not None
     if broken:
         try:
             await conn.close()
         except Exception:
             pass  # already broken; close failure is fine to swallow
-        _pool_total -= 1
+        async with _pool_lock:
+            _pool_total -= 1
         return
     try:
         _pool.put_nowait(conn)
@@ -170,7 +182,8 @@ async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
             await conn.close()
         except Exception:
             pass
-        _pool_total -= 1
+        async with _pool_lock:
+            _pool_total -= 1
 
 
 async def close_pool() -> None:
