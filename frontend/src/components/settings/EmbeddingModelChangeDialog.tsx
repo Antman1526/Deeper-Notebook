@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertDialog,
@@ -34,12 +34,28 @@ export function EmbeddingModelChangeDialog({
   const { t } = useTranslation()
   const router = useRouter()
   const [isConfirming, setIsConfirming] = useState(false)
+  // v0.7.79 — track the redirect timer in a ref so we can cancel it on
+  // unmount. Bare setTimeout without cleanup would fire router.push +
+  // setIsConfirming on an unmounted dialog if the user dismissed it
+  // (via the X / Escape / outside-click) within the 500 ms window.
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current)
+        redirectTimerRef.current = null
+      }
+    }
+  }, [])
 
   const handleConfirmAndRebuild = () => {
     setIsConfirming(true)
     onConfirm()
-    // Give a moment for the model to update, then redirect
-    setTimeout(() => {
+    // Give a moment for the model to update, then redirect.
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    redirectTimerRef.current = setTimeout(() => {
+      redirectTimerRef.current = null
       router.push('/advanced')
       onOpenChange(false)
       setIsConfirming(false)
