@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.65 (in flight)
+## Unreleased — v0.7.36 → v0.7.67 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -107,6 +107,22 @@ uncovered by a follow-up audit pass:
   sessions overshot the 105k large_context cutoff by ~5k phantom
   "tokens" and got rerouted to the long-context fallback model
   earlier than necessary.
+- **v0.7.66** Local-LLM hardening: per-message char cap
+  (default 24k chars ≈ 6k tokens, overridable via
+  ONP_CHAT_MESSAGE_CHAR_CAP) inside trim_message_history. A single
+  giant paste no longer crashes a 16k-context local model
+  mid-stream — the message is kept but its content is truncated
+  with a "[…content truncated…]" marker. Two new error_classifier
+  rules: explicit "model is still loading" mapping (HTTP 503 cold-
+  start during weight load, or 200 with JSON `{"error":"model not
+  loaded"}` from LM Studio / vLLM) → "Please wait a few seconds
+  and try again", and an updated NetworkError message that
+  mentions local servers explicitly.
+- **v0.7.67** Launcher now logs a clear WARNING when it skips
+  spawning the chat LLM server (no chat GGUF configured, or file
+  missing at the configured path). Previously it silently
+  returned and the user got no signal that memory-writer features
+  would be inert.
 
 ---
 
