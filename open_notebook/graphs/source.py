@@ -1,5 +1,5 @@
 import operator
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from content_core import extract_content
 from content_core.common import ProcessSourceState
@@ -146,11 +146,19 @@ def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[
     ]
 
 
-async def transform_content(state: TransformationState) -> Optional[dict]:
+async def transform_content(state: TransformationState) -> dict:
     source = state["source"]
     content = source.full_text
     if not content:
-        return None
+        # v0.7.61 — must return a state-shaped dict, not None. SourceState
+        # declares `transformation: Annotated[list, operator.add]` so
+        # LangGraph applies `current + returned` at merge time. With
+        # None, that became `[] + None` → TypeError, which killed the
+        # whole graph run mid-fan-out and left the source half-saved
+        # (asset + full_text persisted, transformations never applied,
+        # only a generic 500 surfaced to the user). Returning an empty
+        # transformations list cleanly no-ops this branch.
+        return {"transformation": []}
     transformation: Transformation = state["transformation"]
 
     logger.debug(f"Applying transformation {transformation.name}")
