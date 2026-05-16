@@ -114,6 +114,14 @@ interface VirtualizedListAutoProps<T> {
   className?: string
   overscan?: number
   getItemKey?: (item: T, index: number) => string | number
+  /** Forwarded to the scroll container's `onScroll`. Lets callers wire
+   * infinite-scroll loaders (load more when near bottom) into the
+   * same element the virtualizer is using as its scroll surface. */
+  onScroll?: React.UIEventHandler<HTMLDivElement>
+  /** Optional trailing element rendered AFTER the virtualized rows
+   * (e.g. a "Loading more..." spinner during infinite scroll). Not
+   * virtualized; always rendered when present. */
+  footer?: React.ReactNode
 }
 
 /**
@@ -129,6 +137,8 @@ export function VirtualizedListAuto<T>({
   className,
   overscan = 5,
   getItemKey,
+  onScroll,
+  footer,
 }: VirtualizedListAutoProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -146,7 +156,11 @@ export function VirtualizedListAuto<T>({
   const totalSize = virtualizer.getTotalSize()
 
   return (
-    <div ref={parentRef} className={cn('overflow-auto', className)}>
+    <div
+      ref={parentRef}
+      onScroll={onScroll}
+      className={cn('overflow-auto', className)}
+    >
       <div
         role="rowgroup"
         style={{
@@ -172,6 +186,7 @@ export function VirtualizedListAuto<T>({
           </div>
         ))}
       </div>
+      {footer}
     </div>
   )
 }
