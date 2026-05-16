@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
 
@@ -408,6 +408,20 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const [isBuildingContext, setIsBuildingContext] = useState(false)
   const [tokenCount, setTokenCount] = useState<number>(0)
   const [charCount, setCharCount] = useState<number>(0)
+  // v0.7.79 — track the post-submit "close after refetch" timer so it
+  // can be cancelled on unmount. Bare setTimeout used to fire
+  // onOpenChange(false) + resetState() on an already-unmounted dialog
+  // when the user dismissed within the 500 ms window.
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
+    }
+  }, [])
 
   const notebooksQuery = useNotebooks()
   const episodeProfilesQuery = useEpisodeProfiles()
@@ -899,8 +913,11 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         description: t('podcasts.podcastTaskStarted'),
       })
 
-      // Delay closing dialog slightly to ensure refetch completes
-      setTimeout(() => {
+      // Delay closing dialog slightly to ensure refetch completes.
+      // v0.7.79 — tracked via closeTimerRef so unmount cancels cleanly.
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null
         onOpenChange(false)
         resetState()
       }, 500)
