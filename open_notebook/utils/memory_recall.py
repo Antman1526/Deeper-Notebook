@@ -82,8 +82,15 @@ def _coerce_text(value: Any) -> str:
         return value.strip()
     if isinstance(value, dict):
         # Defensive: if the SELECT VALUE flattening didn't happen for
-        # some reason, recover the text field.
-        return str(value.get("text", "")).strip()
+        # some reason, recover the text field. `dict.get("text")` may
+        # return None on a row with a null text column — coerce that
+        # back to "" rather than the string "None" (caught by test).
+        inner = value.get("text")
+        if inner is None:
+            return ""
+        if isinstance(inner, str):
+            return inner.strip()
+        return str(inner).strip()
     return str(value).strip()
 
 
