@@ -34,6 +34,16 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
 
+  // v0.7.50 — AbortController for the v0.7.38 streaming send. Was
+  // missing — useSourceChat / use-ask both wire one and the streaming
+  // path's resource-leak class of bugs (LLM keeps generating after the
+  // user navigates away, setState on a dead component) was reintroduced
+  // when v0.7.38 added streaming for notebook chat. Mirrors the v0.6.32
+  // useSourceChat pattern. mountedRef is declared later (v0.6.24 used
+  // it for a separate race guard); we extend its existing cleanup to
+  // also abort the streaming controller.
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   // Fetch sessions for this notebook
   const {
     data: sessions = [],
@@ -237,6 +247,15 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     // LLMs at 5-30 tok/s where the full response would otherwise be a
     // 15-30s wall of blank.
     const streamingAiId = `streaming-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)}`
+
+    // v0.7.50 — bind a per-send AbortController. If a previous send is
+    // still in flight when this one starts, abort it (the second send
+    // wins). On unmount the effect's cleanup also aborts. Threaded
+    // through chatApi.streamMessage as the `signal` argument.
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
       const built = await buildContext()
 
@@ -257,7 +276,12 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         message,
         context: built.context,
         model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
-      })) {
+      }, controller.signal)) {
+        // v0.7.50 — bail mid-stream if the component unmounted. Avoids
+        // setState-on-dead-component warnings + extra setMessages
+        // batch updates after the React tree is gone.
+        if (!mountedRef.current) break
+
         if (event.type === 'token') {
           // Append token text to the placeholder AI message in-place.
           setMessages(prev =>
@@ -271,7 +295,13 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
           // Server's canonical message list — wins over our streamed
           // buffer (which lacks IDs, timestamps, and any pre-existing
           // messages from the session checkpoint).
-          canonicalMessages = event.messages
+          // v0.7.50 — only accept the canonical replacement if it
+          // actually has messages. An empty list comes from an outer
+          // chain output we couldn't parse (LangGraph state shape
+          // variance) and would otherwise WIPE the just-streamed reply.
+          if (event.messages && event.messages.length > 0) {
+            canonicalMessages = event.messages
+          }
         } else if (event.type === 'error') {
           streamError = event.detail
           break
@@ -300,6 +330,19 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         await refetchCurrentSession()
       }
     } catch (err: unknown) {
+      // v0.7.50 — AbortError = user navigated away mid-stream or a
+      // second send aborted us. Silent: don't toast (no real failure).
+      // Clean up only THIS send's IDs so the new send's optimistic
+      // message survives. mountedRef guard prevents setMessages on
+      // unmount.
+      if ((err as { name?: string }).name === 'AbortError') {
+        if (mountedRef.current) {
+          setMessages(prev =>
+            prev.filter(m => m.id !== tempId && m.id !== streamingAiId),
+          )
+        }
+        return
+      }
       const error = err as { response?: { data?: { detail?: string } }; message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
@@ -309,6 +352,12 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         prev.filter(m => m.id !== tempId && m.id !== streamingAiId),
       )
     } finally {
+      // v0.7.50 — clear the ref ONLY if it's still pointing at OUR
+      // controller. A second concurrent send would have replaced it
+      // already; we don't want to null out the live ref.
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
       setIsSending(false)
     }
   }, [
@@ -380,7 +429,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false }
+    return () => {
+      mountedRef.current = false
+      // v0.7.50 — abort any in-flight streaming send on unmount so the
+      // local LLM stops generating and the FastAPI is_disconnected()
+      // check fires. Otherwise the worker keeps producing tokens until
+      // it finishes the full response.
+      abortControllerRef.current?.abort()
+    }
   }, [])
 
   useEffect(() => {
