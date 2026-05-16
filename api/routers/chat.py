@@ -99,6 +99,60 @@ async def _fire_memory_extract_turn(
         )
 
 
+async def _fire_memory_summarize_session(chat_session_id: str) -> None:
+    """Submit the memory_summarize_session job fire-and-forget.
+
+    v0.7.70 — also wired up alongside the per-turn extractor. Fires
+    when a chat session is deleted: the user's explicit "end of
+    conversation" signal. We pull the full transcript from the
+    LangGraph SQLite checkpoint via chat_graph.get_state, render it
+    as a plain-text exchange, and queue the summarizer. The writer's
+    16k-char truncation guard kicks in for very long sessions.
+    """
+    if not _memory_extraction_configured():
+        return
+    try:
+        # Read messages from the graph checkpoint. Sync API; run on a
+        # worker thread to keep the FastAPI event loop free.
+        current_state = await asyncio.to_thread(
+            chat_graph.get_state,
+            config=RunnableConfig(configurable={"thread_id": chat_session_id}),
+        )
+        msgs = (current_state.values.get("messages", []) if current_state else [])
+        if not msgs:
+            return
+        # Render as "USER: ..." / "ASSISTANT: ..." lines so the
+        # summarize prompt sees a clean transcript regardless of how
+        # the upstream chat graph stored the messages.
+        lines = []
+        for m in msgs:
+            mtype = getattr(m, "type", None)
+            if mtype == "human":
+                lines.append(f"USER: {_extract_text(m)}")
+            elif mtype == "ai":
+                lines.append(f"ASSISTANT: {_extract_text(m)}")
+            # System messages and tool messages don't help the summary.
+        transcript = "\n\n".join(lines).strip()
+        if not transcript:
+            return
+        from surreal_commands import submit_command
+
+        await asyncio.to_thread(
+            submit_command,
+            "open_notebook",
+            "memory_summarize_session",
+            {
+                "chat_session_id": chat_session_id,
+                "transcript": transcript,
+            },
+        )
+    except Exception as exc:
+        logger.debug(
+            "memory_summarize_session submit failed (best-effort, ignored): %s",
+            exc,
+        )
+
+
 # Request/Response models
 class CreateSessionRequest(BaseModel):
     notebook_id: str = Field(..., description="Notebook ID to create session for")
@@ -397,6 +451,13 @@ async def delete_session(session_id: str):
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # v0.7.70 — fire the session-end summarizer BEFORE we delete the
+        # checkpoint. Session deletion is the explicit "end of
+        # conversation" signal: distill the transcript into one memory
+        # episode record before the underlying state goes away. Fire-
+        # and-forget — failure does not block the delete.
+        await _fire_memory_summarize_session(full_session_id)
 
         await session.delete()
 
