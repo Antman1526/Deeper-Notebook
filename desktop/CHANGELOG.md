@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.56 (in flight)
+## Unreleased — v0.7.36 → v0.7.59 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -52,6 +52,20 @@ uncovered by a follow-up audit pass:
   disconnect check + state-shape guard.
 - **v0.7.56** source_chat state-shape guard; SourceCard
   refresh-timeout ref+cleanup.
+- **v0.7.57** repository `_release` decrements `_pool_total` under
+  `_pool_lock` (matches v0.7.24 acquire-side discipline). Closed a
+  slow drift that could wedge the pool under concurrent broken
+  releases.
+- **v0.7.58** Launcher drain threads now joined before log files
+  close (preserves crash-cause tails of surreal/api logs). Bare
+  `except: pass` in stop_all replaced with debug logging.
+  podcast_service maps ValueError → 400 instead of swallowing into
+  500.
+- **v0.7.59** useTheme computes effectiveTheme client-side
+  post-mount (no more SSR hydration mismatch). NoteEditorDialog
+  MutationObserver scoped to the editor wrapper instead of
+  document.body. useNotebookChat deleteSession reads from the
+  TanStack cache instead of a stale outer closure.
 
 ---
 
