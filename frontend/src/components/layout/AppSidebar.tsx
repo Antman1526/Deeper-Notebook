@@ -93,7 +93,11 @@ export function AppSidebar() {
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
 
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
-  const [isMac, setIsMac] = useState(true) // Default to Mac for SSR
+  // v0.7.28 — `null` until the effect resolves. The previous `true`
+  // default caused every Windows/Linux user to see "⌘K" on first paint
+  // then flicker to "Ctrl+K" after hydration. With null we render the
+  // kbd hint only after the effect runs, eliminating the flash.
+  const [isMac, setIsMac] = useState<boolean | null>(null)
 
   // Detect platform for keyboard shortcut display
   useEffect(() => {
@@ -261,17 +265,39 @@ export function AppSidebar() {
                 )}
 
                 {section.items.map((item) => {
-                  const isActive = pathname?.startsWith(item.href) || false
+                  // v0.7.28 — exact-or-child match. The previous
+                  // `startsWith` made /sources highlight when on
+                  // /sources/{id}, which is correct, BUT also caused
+                  // false matches for unrelated routes that shared a
+                  // common prefix. Keep startsWith but force a path-
+                  // boundary check.
+                  const isActive = !!pathname && (
+                    pathname === item.href ||
+                    pathname.startsWith(item.href + '/')
+                  )
                   const button = (
                     <Button
                       variant={isActive ? 'secondary' : 'ghost'}
                       className={cn(
-                        'w-full gap-3 text-sidebar-foreground sidebar-menu-item',
-                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground',
+                        // v0.7.28 — refined active-state treatment:
+                        // - relative + before pseudo for a left-edge
+                        //   accent bar that doesn't affect layout
+                        //   (the old scale-[1.02] in globals.css was
+                        //   removed in v0.7.25 for overflow reasons;
+                        //   this fills that need without the bug).
+                        // - subtle font-weight bump on active.
+                        // - smoother transition via the new motion
+                        //   token (still falls back to duration-200
+                        //   for any reduced-motion edge).
+                        'relative w-full gap-3 text-sidebar-foreground sidebar-menu-item',
+                        'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
+                        'before:h-0 before:w-[3px] before:rounded-r before:bg-primary',
+                        'before:transition-[height] before:duration-200 before:ease-out',
+                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium before:h-6',
                         isCollapsed ? 'justify-center px-2' : 'justify-start'
                       )}
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className={cn('h-4 w-4', isActive && 'text-primary')} />
                       {!isCollapsed && <span>{item.name}</span>}
                     </Button>
                   )
@@ -314,9 +340,14 @@ export function AppSidebar() {
                   <Command className="h-3 w-3" />
                   {t('common.quickActions')}
                 </span>
-                <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                  {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
-                </kbd>
+                {/* v0.7.28 — only render after platform detection
+                    completes (isMac !== null). Avoids a flash of the
+                    wrong key on SSR/hydration. */}
+                {isMac !== null && (
+                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                    {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
+                  </kbd>
+                )}
               </div>
                <p className="mt-1 text-[10px] text-sidebar-foreground/40">
                 {t('common.quickActionsDesc')}
