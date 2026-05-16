@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -147,7 +147,13 @@ export function SourceCard({
     : (sourceWithStatus.command_id ? 'new' : 'completed')
 
 
-  // Track processing state and detect completion
+  // v0.7.56 — track the post-completion refresh timeout in a ref so
+  // unmount + rapid status flips don't leak a setTimeout that fires
+  // after the parent stopped caring. The previous bare `setTimeout`
+  // had no cleanup: filter changes, page nav, or back-to-back status
+  // flips queued multiple refreshes on a possibly-unmounted parent.
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const currentStatusFromData = statusData?.status || sourceWithStatus.status
 
@@ -162,10 +168,30 @@ export function SourceCard({
       setWasProcessing(false) // Stop polling
 
       if (onRefresh) {
-        setTimeout(() => onRefresh(), 500) // Small delay to ensure API is updated
+        // Clear any previously queued refresh so rapid flips don't
+        // pile up.
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current)
+        }
+        refreshTimeoutRef.current = setTimeout(() => {
+          refreshTimeoutRef.current = null
+          onRefresh()
+        }, 500) // Small delay to ensure API is updated
       }
     }
   }, [statusData, sourceWithStatus.status, wasProcessing, onRefresh, source.id])
+
+  // Cancel the pending refresh on unmount to avoid calling onRefresh
+  // against a stale parent (and avoid React's "state update on
+  // unmounted component" warnings on slow consumers).
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current)
+        refreshTimeoutRef.current = null
+      }
+    }
+  }, [])
   
   const statusConfig = statusConfigMap[currentStatus] || statusConfigMap.completed
   const StatusIcon = statusConfig.icon
