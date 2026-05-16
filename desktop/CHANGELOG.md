@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.67 (in flight)
+## Unreleased — v0.7.36 → v0.7.70 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -123,6 +123,27 @@ uncovered by a follow-up audit pass:
   missing at the configured path). Previously it silently
   returned and the user got no signal that memory-writer features
   would be inert.
+- **v0.7.68 + v0.7.70** Memory writer fully wired into the chat
+  router. The `memory_extract_turn` + `memory_summarize_session`
+  handlers were registered at the worker side since v0.7.47 but
+  NOTHING in the chat path ever submitted them — the feature was
+  inert. /chat/execute and /chat/stream now fire
+  memory_extract_turn fire-and-forget after each turn's
+  session.save(); DELETE /chat/sessions/{id} fires
+  memory_summarize_session before deleting the session record.
+  Both helpers gate on the MEMORY_* env vars being set so upstream
+  non-desktop builds silently no-op, run via asyncio.to_thread to
+  keep the event loop free, and swallow all failures at debug
+  level (memory is best-effort).
+- **v0.7.69** Hardened podcast `generate_podcast_command`'s return
+  block against None or partial-shape result from podcast-creator's
+  create_podcast(). The earlier `episode.audio_file = ...` block
+  was fixed in v0.7.3 but the function's terminal output
+  construction still used `result["transcript"]` / `result["outline"]`
+  subscript inside a `result.get(...)`-truthy ternary — would
+  AttributeError when `result is None`, masking a successful-but-
+  transcript-less generation as a worker crash that retry=1
+  couldn't recover from.
 
 ---
 
