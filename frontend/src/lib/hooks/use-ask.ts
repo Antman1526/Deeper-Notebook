@@ -133,10 +133,21 @@ export function useAsk() {
                   ...prev,
                   answers: [...prev.answers, data.content || '']
                 }))
-              } else if (data.type === 'final_answer') {
+              } else if (data.type === 'final_answer_delta') {
+                // v0.7.43 — per-token chunk for the final synthesis.
+                // Append to the running buffer; isStreaming stays true
+                // until the terminal `final_answer` event lands.
                 setState(prev => ({
                   ...prev,
-                  finalAnswer: data.content || '',
+                  finalAnswer: (prev.finalAnswer || '') + (data.content || ''),
+                }))
+              } else if (data.type === 'final_answer') {
+                // v0.7.43 — canonical terminal event. Replaces the
+                // streamed buffer with the server's final string
+                // (after any post-processing like clean_thinking_content).
+                setState(prev => ({
+                  ...prev,
+                  finalAnswer: data.content || prev.finalAnswer || '',
                   isStreaming: false
                 }))
               } else if (data.type === 'complete') {
