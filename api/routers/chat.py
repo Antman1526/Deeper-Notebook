@@ -1,8 +1,10 @@
 import asyncio
+import json
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -411,6 +413,181 @@ async def execute_chat(request: ExecuteChatRequest):
             f"  Traceback:\n{traceback.format_exc()}"
         )
         raise HTTPException(status_code=500, detail=f"Error executing chat: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# v0.7.38 — Streaming chat endpoint
+#
+# Streams tokens as the LLM emits them, instead of buffering the full
+# response and returning it as one payload. For local-LLM users (5-30
+# tok/s), this turns a 15-30s wall of blank screen into a typewriter-
+# style flow — dramatically improves perceived latency.
+#
+# Wire format: newline-delimited JSON (NDJSON), one event per line. Each
+# line is a complete JSON object the frontend can parse without buffering
+# partial bytes. Five event types:
+#
+#   {"type":"start", "session_id":"..."}
+#       First event. Signals SSE connection is established.
+#
+#   {"type":"token", "content":"hello"}
+#       One chunk of model output. Concatenate `content` values across
+#       all `token` events to reconstruct the message.
+#
+#   {"type":"done", "messages":[...]}
+#       Final event on success. `messages` is the same shape as
+#       /chat/execute's response — full history including the AI reply,
+#       so the frontend can replace its streaming buffer with canonical
+#       state.
+#
+#   {"type":"error", "detail":"..."}
+#       Terminal error. The frontend should surface the detail string.
+#
+# The endpoint is /chat/stream (alongside /chat/execute which is kept
+# for the non-streaming path: tests, scripted clients, OpenAPI consumers
+# that don't want SSE).
+# ---------------------------------------------------------------------------
+
+
+async def _stream_chat_events(
+    request: ExecuteChatRequest,
+    fastapi_request: Request,
+) -> AsyncGenerator[str, None]:
+    """Generator yielding NDJSON event lines for the streaming endpoint.
+
+    Errors are surfaced as {"type":"error"} events so a partial-stream
+    failure doesn't leave the client stuck waiting on a half-written
+    response. Client disconnects are detected between yields and stop
+    the stream early — important for local LLMs where cancelling a
+    long-running token stream actually saves compute.
+    """
+    try:
+        full_session_id = (
+            request.session_id
+            if request.session_id.startswith("chat_session:")
+            else f"chat_session:{request.session_id}"
+        )
+        session = await ChatSession.get(full_session_id)
+        if not session:
+            yield json.dumps({"type": "error", "detail": "Session not found"}) + "\n"
+            return
+
+        model_override = (
+            request.model_override
+            if request.model_override is not None
+            else getattr(session, "model_override", None)
+        )
+
+        # Get current state — same as /chat/execute
+        current_state = await asyncio.to_thread(
+            chat_graph.get_state,
+            config=RunnableConfig(configurable={"thread_id": full_session_id}),
+        )
+        state_values = current_state.values if current_state else {}
+        state_values["messages"] = state_values.get("messages", [])
+        state_values["context"] = request.context
+        state_values["model_override"] = model_override
+
+        from langchain_core.messages import HumanMessage
+
+        user_message = HumanMessage(content=request.message)
+        state_values["messages"].append(user_message)
+
+        yield json.dumps({
+            "type": "start",
+            "session_id": request.session_id,
+        }) + "\n"
+
+        # Stream events from the LangGraph. astream_events yields a rich
+        # event stream — we filter for `on_chat_model_stream` which fires
+        # for each token chunk the LLM emits.
+        last_token_idx = 0
+        final_result: Optional[Dict[str, Any]] = None
+        async for event in chat_graph.astream_events(
+            input=state_values,  # type: ignore[arg-type]
+            config=RunnableConfig(
+                configurable={
+                    "thread_id": full_session_id,
+                    "model_id": model_override,
+                }
+            ),
+            version="v2",
+        ):
+            # Stop the stream if the client disconnected — saves the
+            # local LLM from churning out tokens nobody will see.
+            if await fastapi_request.is_disconnected():
+                logger.info(
+                    "chat stream: client disconnected for session %s; "
+                    "halting", full_session_id,
+                )
+                return
+
+            etype = event.get("event")
+            if etype == "on_chat_model_stream":
+                # Event shape: {"event": "on_chat_model_stream",
+                #               "data": {"chunk": AIMessageChunk(content="...")}}
+                chunk = event.get("data", {}).get("chunk")
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str) and content:
+                    yield json.dumps({
+                        "type": "token",
+                        "content": content,
+                    }) + "\n"
+                    last_token_idx += 1
+            elif etype == "on_chain_end":
+                # The outer graph's on_chain_end carries the final state.
+                # We capture it to send the canonical messages list with
+                # the done event.
+                data = event.get("data", {})
+                output = data.get("output")
+                if isinstance(output, dict) and "messages" in output:
+                    final_result = output
+
+        # Final event with the canonical message list
+        messages: list = []
+        if final_result and "messages" in final_result:
+            for msg in final_result.get("messages", []):
+                messages.append({
+                    "id": getattr(msg, "id", f"msg_{len(messages)}"),
+                    "type": msg.type if hasattr(msg, "type") else "unknown",
+                    "content": msg.content if hasattr(msg, "content") else str(msg),
+                    "timestamp": None,
+                })
+
+        # Update session timestamp (same as /chat/execute)
+        try:
+            await session.save()
+        except Exception as exc:
+            logger.warning("chat stream: session save failed: %s", exc)
+
+        yield json.dumps({"type": "done", "messages": messages}) + "\n"
+
+    except NotFoundError:
+        yield json.dumps({"type": "error", "detail": "Session not found"}) + "\n"
+    except Exception as e:
+        logger.error(
+            "Error in /chat/stream for session %s: %s\n%s",
+            request.session_id, str(e), traceback.format_exc(),
+        )
+        yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+
+
+@router.post("/chat/stream")
+async def stream_chat(request: ExecuteChatRequest, fastapi_request: Request):
+    """Streaming variant of /chat/execute. NDJSON event stream — see
+    _stream_chat_events docstring for wire format."""
+    return StreamingResponse(
+        _stream_chat_events(request, fastapi_request),
+        media_type="application/x-ndjson",
+        # Disable HTTP/1.1 keep-alive buffering on the proxy side. Some
+        # reverse proxies (and the Next.js dev proxy) hold buffered
+        # responses until they hit a flush threshold; X-Accel-Buffering
+        # tells nginx-family proxies to disable that.
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache, no-transform",
+        },
+    )
 
 
 @router.post("/chat/context", response_model=BuildContextResponse)
