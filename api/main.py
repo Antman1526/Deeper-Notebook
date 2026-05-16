@@ -182,6 +182,41 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start digest scheduler (non-fatal): {e}")
 
+    # v0.7.44 — warm the DB connection pool before serving traffic.
+    # The pool grows lazily on first `_acquire`, so the FIRST chat turn
+    # after launch pays a ~150-300ms SurrealDB WS handshake before the
+    # graph even runs. ContextBuilder then fans out to dozens of repo
+    # queries; with 4 cold slots, the first 4 concurrent calls each
+    # pay the handshake too. Prefilling 2 slots eliminates this on the
+    # critical first-impression path. Further growth stays lazy.
+    try:
+        from open_notebook.database.repository import (
+            _acquire,
+            _db_pool_size,
+            _release,
+        )
+
+        warmup_n = min(2, _db_pool_size())
+        warm_conns = []
+        for _ in range(warmup_n):
+            try:
+                warm_conns.append(await _acquire())
+            except Exception as exc:
+                # Pool warmup is best-effort — a failure here shouldn't
+                # prevent boot. The user can still recover via the
+                # /readyz probe + a manual retry.
+                logger.warning("DB pool warmup acquire failed: {}", exc)
+                break
+        for c in warm_conns:
+            await _release(c)
+        if warm_conns:
+            logger.info(
+                "DB pool pre-warmed with {} idle connection(s)",
+                len(warm_conns),
+            )
+    except Exception as exc:
+        logger.warning("DB pool warmup encountered an error: {}", exc)
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
