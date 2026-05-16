@@ -102,8 +102,17 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         # `_truncate_transformation_input` docstring for rationale.
         content_str = _truncate_transformation_input(content_str)
         payload = [SystemMessage(content=system_prompt), HumanMessage(content=content_str)]
+        # v0.7.75 — size against the actual message text, not str(payload).
+        # Same fix as v0.7.65 chat.py/source_chat.py: Python's repr of a
+        # list of LangChain Message objects adds ~80-120 chars of
+        # wrapper boilerplate per message, which the 105k large_context
+        # cutoff in provision_langchain_model would then mis-trigger
+        # earlier than the actual prompt size warrants.
+        content_for_sizing = "\n".join(
+            extract_text_content(m.content) for m in payload
+        )
         chain = await provision_langchain_model(
-            str(payload),
+            content_for_sizing,
             config.get("configurable", {}).get("model_id"),
             "transformation",
             max_tokens=8192,
