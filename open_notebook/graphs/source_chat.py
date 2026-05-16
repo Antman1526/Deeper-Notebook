@@ -152,11 +152,26 @@ async def _call_model_with_source_context_inner(
     formatted_context = _format_source_context(context_data)
 
     # Build prompt data for the template
+    # v0.7.78 — recall memory facts/preferences for source-chat too. Same
+    # READ path as v0.7.71 in chat.py. Source-chat has tighter budget
+    # (system prompt already carries source + insights up to ~3.5k tokens)
+    # but tone-and-preference hints are still useful — the template emphasizes
+    # "stay focused on the source; only weave memory in when directly
+    # relevant". Failure is silent — recall_recent_memory returns empty on
+    # missing tables (fresh DB, upstream non-desktop build).
+    from open_notebook.utils.memory_recall import (
+        recall_recent_memory,
+        render_memory_block,
+    )
+    memory = await recall_recent_memory()
+    memory_block = render_memory_block(memory)
+
     prompt_data = {
         "source": source.model_dump() if source else None,
         "insights": [insight.model_dump() for insight in insights] if insights else [],
         "context": formatted_context,
         "context_indicators": context_indicators,
+        "memory_block": memory_block,
     }
 
     # Apply the source_chat prompt template
