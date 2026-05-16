@@ -288,6 +288,45 @@ async def retry_podcast_episode(episode_id: str):
                 detail="Cannot retry: episode or speaker profile name missing from stored data",
             )
 
+        # v0.7.72 — validate the referenced profiles still exist BEFORE
+        # we destructively delete the old episode + its audio file.
+        # Previous flow:
+        #   delete audio → delete record → submit (which validates
+        #   profile names via EpisodeProfile.get_by_name).
+        # If the user had renamed or deleted the profile after the
+        # original submission, submit_generation_job's ValueError →
+        # 400 (added in v0.7.58) would fire AFTER the old episode was
+        # already gone — they couldn't even see the failed entry to
+        # diagnose, and lost their stored content. Now we resolve
+        # profiles upfront so the 400 lands without side effects.
+        from open_notebook.podcasts.models import (
+            EpisodeProfile,
+            SpeakerProfile,
+        )
+
+        ep_profile_check = await EpisodeProfile.get_by_name(ep_profile_name)
+        if ep_profile_check is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot retry: the original episode profile "
+                    f"'{ep_profile_name}' no longer exists. Restore the "
+                    f"profile (or create a new one with the same name) "
+                    f"and retry."
+                ),
+            )
+        sp_profile_check = await SpeakerProfile.get_by_name(sp_profile_name)
+        if sp_profile_check is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot retry: the original speaker profile "
+                    f"'{sp_profile_name}' no longer exists. Restore the "
+                    f"profile (or create a new one with the same name) "
+                    f"and retry."
+                ),
+            )
+
         # Delete audio file if any. v0.7.2 — skip unlink for paths
         # outside _AUDIO_ROOT (None) instead of trusting the DB value.
         if episode.audio_file:
