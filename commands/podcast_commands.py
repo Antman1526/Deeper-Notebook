@@ -303,18 +303,37 @@ async def generate_podcast_command(
             f"Successfully generated podcast episode: {episode.id} in {processing_time:.2f}s"
         )
 
+        # v0.7.69 — harden against `result is None` and partial-result
+        # shapes. The earlier `episode.audio_file = ...` block (lines
+        # 286-298) was fixed in v0.7.3 to handle this, but THIS return
+        # block was missed — `result["transcript"]` / `result["outline"]`
+        # subscript access would AttributeError on a None result, masking
+        # what is otherwise a successful (but transcript/outline-less)
+        # generation as a worker crash that the user can't retry from
+        # (max_attempts=1). The earlier block uses the same `.get()`
+        # pattern below, applied uniformly.
+        transcript_payload = None
+        outline_payload = None
+        audio_path = None
+        if result:
+            audio_path = (
+                str(result.get("final_output_file_path"))
+                if result.get("final_output_file_path") is not None
+                else None
+            )
+            t = result.get("transcript")
+            if t is not None:
+                transcript_payload = {"transcript": full_model_dump(t)}
+            o = result.get("outline")
+            if o is not None:
+                outline_payload = full_model_dump(o)
+
         return PodcastGenerationOutput(
             success=True,
             episode_id=str(episode.id),
-            audio_file_path=str(result.get("final_output_file_path"))
-            if result
-            else None,
-            transcript={"transcript": full_model_dump(result["transcript"])}
-            if result.get("transcript")
-            else None,
-            outline=full_model_dump(result["outline"])
-            if result.get("outline")
-            else None,
+            audio_file_path=audio_path,
+            transcript=transcript_payload,
+            outline=outline_payload,
             processing_time=processing_time,
         )
 
