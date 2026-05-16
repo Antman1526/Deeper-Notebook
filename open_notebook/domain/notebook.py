@@ -214,6 +214,37 @@ class Notebook(ObjectModel):
                 f"exclusive sources for notebook {self.id}"
             )
 
+            # v0.7.61 — cascade-delete chat sessions linked via the
+            # refers_to edge. Without this, chat_session records survive
+            # with a dangling notebook reference: they show up in any
+            # "all sessions" listing and any attempt to open them
+            # returns a 404 indefinitely because the parent notebook is
+            # gone. The associated LangGraph SQLite checkpoint blobs are
+            # left behind (they're keyed by session id, no FK to clean
+            # up automatically) but become unreachable; we accept that
+            # as orphaned storage rather than complicate the cascade
+            # further.
+            #
+            # Order matters: delete the edge first so the session record
+            # delete can't race a parallel "open session" call.
+            chat_session_ids = await repo_query(
+                "SELECT VALUE in FROM refers_to WHERE out = $notebook_id",
+                {"notebook_id": notebook_id},
+            )
+            await repo_query(
+                "DELETE refers_to WHERE out = $notebook_id",
+                {"notebook_id": notebook_id},
+            )
+            if chat_session_ids:
+                await repo_query(
+                    "DELETE $ids",
+                    {"ids": chat_session_ids},
+                )
+                logger.info(
+                    f"Deleted {len(chat_session_ids)} chat session(s) for "
+                    f"notebook {self.id}"
+                )
+
             # 3. Delete the notebook record itself
             await super().delete()
             logger.info(f"Deleted notebook {self.id}")
