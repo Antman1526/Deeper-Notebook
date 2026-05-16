@@ -269,16 +269,32 @@ export function useSourceChat(sourceId: string) {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // Remove optimistic messages on error
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      // v0.7.54 — same fix as the AbortError branch above: filter ONLY
+      // THIS send's tempId + streamingAiId. The old `startsWith('temp-')`
+      // also wiped a concurrent retry's optimistic message because the
+      // prefix is shared across sends. Mirrors the v0.7.49 fix on the
+      // success-cancel path.
+      setMessages(prev =>
+        prev.filter(msg => msg.id !== tempId && msg.id !== streamingAiId)
+      )
     } finally {
       setIsStreaming(false)
-      // v0.6.32 — release the reader lock so the response body can be GC'd
-      // and the underlying HTTP connection returned to the pool.
-      try {
-        reader?.releaseLock()
-      } catch {
-        // Reader may already be released by abort/cancel path; ignore.
+      // v0.7.54 — cancel the reader BEFORE releasing the lock so the
+      // underlying HTTP response body is actually torn down. Just
+      // releaseLock() leaves the connection open until GC and FastAPI's
+      // `is_disconnected()` doesn't fire — the local LLM keeps
+      // generating tokens nobody will see. Mirrors v0.7.50 chat.ts.
+      if (reader) {
+        try {
+          await reader.cancel()
+        } catch {
+          // cancel can throw if the stream is already errored; ignore.
+        }
+        try {
+          reader.releaseLock()
+        } catch {
+          // Reader may already be released by abort/cancel path; ignore.
+        }
       }
       // Clear the controller ref if it's still ours.
       if (abortControllerRef.current === controller) {
