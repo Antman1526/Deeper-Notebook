@@ -503,9 +503,21 @@ async def stream_source_chat_response(
             elif etype == "on_chain_end":
                 # Capture the outer chain's final state — has
                 # context_indicators + canonical messages.
+                # v0.7.56 — accept both dict and Pydantic state shapes
+                # (same root cause as v0.7.52 chat.py fix). If LangGraph
+                # ever yields a model instance the SSE consumer would
+                # otherwise never see the terminal context_indicators
+                # event.
                 output = event.get("data", {}).get("output")
                 if isinstance(output, dict):
                     final_state = output
+                elif output is not None and hasattr(output, "messages"):
+                    final_state = {
+                        "messages": getattr(output, "messages", None),
+                        "context_indicators": getattr(
+                            output, "context_indicators", None
+                        ),
+                    }
 
         # Emit the terminal ai_message event so clients that ignore
         # the deltas still see a single canonical "full message" event
