@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.81 (in flight)
+## Unreleased — v0.7.36 → v0.7.86 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -245,6 +245,62 @@ uncovered by a follow-up audit pass:
   the prompt graph's ainvoke output, matching the standing
   state-shape guard pattern in chat.py / search.py /
   source_chat.py / transformations.py.
+- **v0.7.82** Cleanup pass: 7 ruff E702 errors in
+  desktop/tests/test_launcher.py fixed (split semicolon-style
+  multi-statement lines). Launcher stop_all log lines now use
+  `getattr(p, "pid", "?")` so MagicMock-spec'd Popens in the
+  desktop test suite stop raising AttributeError on teardown
+  (three desktop tests were broken since v0.7.58 — undetected
+  because `desktop/tests/` isn't in the main pytest path). Two
+  remaining cosmetic copy-success setTimeout sites
+  (MessageActions.tsx, SourceDetailContent.tsx:324) now use the
+  standard useRef + useEffect cleanup pattern — finishes the
+  setTimeout sweep so every timer in the frontend has unmount
+  cleanup.
+- **v0.7.83** Memory worker inherits the session model_override
+  (deferral #3 closed). `_fire_memory_extract_turn` and
+  `_fire_memory_summarize_session` now accept an optional
+  model_override and thread it through to the surreal_commands
+  payload; `memory_extract_turn` / `memory_summarize_session`
+  worker handlers accept it as an optional kwarg and pass it to
+  `_build_clients`. Resolution: caller override → ONP_CHAT_MODEL_NAME
+  → "default". Backward-compatible (older queued rows still
+  dispatch).
+- **v0.7.84** Semantic memory recall (deferral #2 closed). New
+  `recall_relevant_memory(query)` does cosine similarity over
+  mem0's embedding column using the same SurrealQL idiom
+  (`vector::similarity::cosine`) the mem0 retriever already uses.
+  New `recall_memory(query)` orchestrator picks recency vs
+  semantic based on `ONP_MEMORY_RECALL_MODE` (recent | semantic |
+  auto, default auto) and a row-count threshold (30) — small
+  stores stay on recency (saves an embed round trip), large stores
+  switch to semantic. Any semantic-path failure falls through to
+  recency so chat never breaks. 7 new orchestrator tests in
+  tests/test_memory_recall.py; total backend suite now 423.
+- **v0.7.85** Legacy edge deduplicator (deferral #1 closed).
+  New `open_notebook/database/dedup_edges.py` runs once per API
+  startup, finds duplicate (in, out) groups on the `reference` and
+  `artifact` edge tables, keeps the lexicographically-smallest id
+  per group, and deletes the rest. Idempotent (clean DB → no-op
+  one SELECT per table) and non-fatal (per-edge DELETE failures
+  don't abort the rest of the cleanup; per-table SELECT failures
+  don't block other tables). Runs in api/main.py lifespan after
+  schema + podcast migrations. 7 new tests in
+  tests/test_dedup_edges.py covering clean DB, single group,
+  partial failure, multi-table isolation, and idempotent re-run.
+  Backend suite now 430.
+- **v0.7.86** Model.delete clears DefaultModels references +
+  warns on profile use (improvement found during the models.py
+  router audit — no bugs uncovered in the router itself, all
+  standard patterns were clean). Previously deleting a model
+  left dangling references in the `default_models` singleton
+  and in any episode_profile / speaker_profile that used it.
+  Override clears default-fields proactively (lookups land on
+  the cleaner "no default configured" path instead of the
+  dangling-fetch path) and warn-logs each podcast profile that
+  still references the model — deliberately not auto-cleared
+  since reassigning a profile's model is a UX choice the user
+  should make.
 
 ---
 
