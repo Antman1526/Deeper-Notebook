@@ -1308,3 +1308,147 @@ def test_export_combined_refuses_directory_target(
     )
     assert r.status_code == 400
     assert "directory" in r.json()["detail"].lower()
+
+
+# ============================================================================
+# v0.7.117 — XSS hardening in markdown→HTML rendering
+# ============================================================================
+
+
+def test_html_export_escapes_raw_script_tag_in_note_content() -> None:
+    """v0.7.117 — Combined HTML / per-page HTML exports must escape raw
+    <script> tags rendered from markdown note content. Without this,
+    sharing a notebook export by email/Drive could execute the author's
+    script in the recipient's browser."""
+    from api.routers.exports import _markdown_to_html
+    payload = "Hello <script>alert(document.cookie)</script> world"
+    html = _markdown_to_html(payload)
+    # Literal <script> tag is escaped — does NOT appear as raw HTML
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    # The visible body still contains "Hello" and "world"
+    assert "Hello" in html
+    assert "world" in html
+
+
+def test_html_export_escapes_inline_xss_vectors() -> None:
+    """v0.7.117 — Common XSS vectors (img onerror, iframe, event handlers)
+    must all be rendered as escaped literal text, not active HTML."""
+    from api.routers.exports import _markdown_to_html
+    vectors = [
+        "<img src=x onerror=alert(1)>",
+        "<iframe src='javascript:alert(1)'></iframe>",
+        "<svg onload=alert(1)>",
+        "<a href='javascript:alert(1)'>click</a>",
+        "<object data='x' onerror=alert(1)></object>",
+    ]
+    for v in vectors:
+        html = _markdown_to_html(v)
+        # The dangerous tag must be escaped — no raw <iframe>, etc.
+        # We check for the lowercase tag name surrounded by angle brackets;
+        # if escaped, it'll look like &lt;iframe&gt; instead.
+        tag = v.split()[0].lstrip("<").rstrip(">/").lower()
+        assert f"<{tag}" not in html.lower(), (
+            f"Raw <{tag}> survived rendering — XSS vector! Output: {html!r}"
+        )
+
+
+def test_html_export_preserves_safe_markdown_after_xss_lockdown() -> None:
+    """v0.7.117 — XSS lockdown must NOT break legitimate markdown
+    rendering. Bold, code blocks, tables, lists, links, blockquotes
+    all still work."""
+    from api.routers.exports import _markdown_to_html
+    safe_md = """
+# Heading
+
+Some **bold** and *italic* and `inline code` and ~~strike~~.
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+- list item 1
+- list item 2
+
+> blockquote
+
+```python
+def foo():
+    pass
+```
+
+[Real link](https://example.com)
+"""
+    html = _markdown_to_html(safe_md)
+    # All the safe markdown features rendered
+    assert "<h1>Heading</h1>" in html
+    assert "<strong>bold</strong>" in html
+    assert "<em>italic</em>" in html
+    assert "<code>inline code</code>" in html
+    assert "<s>strike</s>" in html
+    assert "<table>" in html
+    assert "<ul>" in html
+    assert "<blockquote>" in html
+    assert "<pre>" in html
+    # Real (non-javascript) links still rendered
+    assert 'href="https://example.com"' in html
+
+
+def test_import_zip_rejects_symlink_entries(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """v0.7.117 — Zip imports must reject entries with the Unix symlink
+    mode bit (0o120000) set. A malicious zip with 'passwords.md' →
+    '/etc/passwd' would otherwise have its 'content' read as the
+    target path string."""
+    zip_path = tmp_path / "symlink-attack.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # Create a regular file first
+        zf.writestr("real.md", "---\ntitle: real\n---\nbody")
+        # Create a symlink entry by hand — set external_attr to 0o120777 << 16
+        info = zipfile.ZipInfo("evil-link.md")
+        info.external_attr = 0o120777 << 16  # symlink mode bits
+        zf.writestr(info, "/etc/passwd")  # "content" is the link target
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(zip_path), "mode": "new"},
+    )
+    assert r.status_code == 400, r.text
+    assert "not a regular file" in r.json()["detail"]
+
+
+def test_is_regular_file_entry_helper() -> None:
+    """v0.7.117 — Unit test on the file-type discriminator."""
+    from api.routers.exports import _is_regular_file_entry
+
+    # Regular file (S_IFREG = 0o100000)
+    reg = zipfile.ZipInfo("foo.md")
+    reg.external_attr = 0o100644 << 16
+    assert _is_regular_file_entry(reg) is True
+
+    # Directory (S_IFDIR = 0o040000)
+    d = zipfile.ZipInfo("subdir/")
+    d.external_attr = 0o040755 << 16
+    assert _is_regular_file_entry(d) is True
+
+    # Symlink (S_IFLNK = 0o120000)
+    link = zipfile.ZipInfo("link.md")
+    link.external_attr = 0o120777 << 16
+    assert _is_regular_file_entry(link) is False
+
+    # FIFO (S_IFIFO = 0o010000)
+    fifo = zipfile.ZipInfo("fifo")
+    fifo.external_attr = 0o010644 << 16
+    assert _is_regular_file_entry(fifo) is False
+
+    # No Unix mode (DOS attrs only) — accepted as regular
+    dos = zipfile.ZipInfo("dos.md")
+    dos.external_attr = 0  # all zero
+    assert _is_regular_file_entry(dos) is True
+
+    # Python zipfile.writestr default: permissions only, no S_IF* bits.
+    # This is the most common case and MUST be accepted.
+    py_default = zipfile.ZipInfo("py.md")
+    py_default.external_attr = 0o600 << 16
+    assert _is_regular_file_entry(py_default) is True

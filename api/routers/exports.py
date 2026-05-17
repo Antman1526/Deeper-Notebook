@@ -257,13 +257,28 @@ def _markdown_to_html(md_text: str) -> str:
     We avoid the "gfm-like" preset because it auto-enables linkify which
     needs the linkify-it-py package as a runtime dep; commonmark is in
     markdown-it-py's stdlib so this works with zero new dependencies.
+
+    v0.7.117 — 🔒 XSS hardening. `html=False` (the constructor option,
+    NOT the .disable("html_block") rule — those are separate) makes
+    markdown-it ESCAPE raw HTML tags inside markdown source. Without
+    this, `<script>alert(1)</script>` in a note's content would be
+    passed through verbatim. That's an XSS vector when the combined_html
+    export is shared by email / Drive / link — the recipient opens the
+    file and executes the author's script. Self-hosted single-user
+    deployments are mostly safe (the author IS the user) but multi-
+    user or "share with a colleague" workflows are exposed.
+    We also `.disable("html_inline")` to catch inline `<…>` patterns
+    that escape-on-block-render would miss. Net result: `<script>`,
+    `<img onerror=…>`, etc. are rendered as literal text, not HTML.
     """
     from markdown_it import MarkdownIt
 
     md = (
-        MarkdownIt("commonmark")
+        MarkdownIt("commonmark", {"html": False})
         .enable("table")
         .enable("strikethrough")
+        .disable("html_inline")
+        .disable("html_block")
     )
     return md.render(md_text)
 
@@ -1153,6 +1168,39 @@ def _validate_archive_member(name: str) -> Optional[str]:
     return None
 
 
+def _is_regular_file_entry(info: "zipfile.ZipInfo") -> bool:
+    """v0.7.117 — Reject non-regular-file zip entries (symlinks, devices,
+    FIFOs, sockets). A malicious zip with a symlink "passwords.md" →
+    "/etc/passwd" would otherwise have its 'content' read as the link
+    target string. Not directly exploitable (we don't extract to disk;
+    we just decode bytes to UTF-8 and store as a note), but it would
+    silently import nonsense and obscure debugging.
+
+    Unix file-mode bits live in the top 16 bits of external_attr.
+    Convention varies across zip tools:
+      * macOS Archive Utility / `zip` CLI  → `0o100644 << 16`
+        (S_IFREG | rw-r--r--) — full mode
+      * Python's `zipfile.writestr(name, ...)` → `0o600 << 16` —
+        permissions only, no S_IF* bits
+      * DOS-only zips → `external_attr = 0` (no Unix mode at all)
+
+    We REJECT only when an S_IF* bit-pattern is present AND it
+    indicates a non-regular file (symlink/FIFO/device/socket). When
+    no file-type bits are set we accept (permission-only or
+    DOS-only zip — the common case).
+    """
+    unix_mode = (info.external_attr >> 16) & 0xFFFF
+    if unix_mode == 0:
+        # No Unix mode info — treat as regular file (DOS attr only).
+        return True
+    file_type = unix_mode & 0o170000
+    if file_type == 0:
+        # Permission bits only (no S_IF*); writestr default. Regular.
+        return True
+    # Explicit S_IF* set — accept only regular file or directory.
+    return file_type in (0o100000, 0o040000)
+
+
 def _read_import_entries(source: Path) -> list[tuple[str, str]]:
     """Read all importable entries from a folder OR zip. Returns a list of
     (relative_path, content) pairs, sorted by relative_path. Cap-enforced.
@@ -1193,6 +1241,18 @@ def _read_import_entries(source: Path) -> list[tuple[str, str]]:
                             status_code=400, detail=f"Unsafe zip entry: {err}",
                         )
                     info = zf.getinfo(name)
+                    # v0.7.117 — Reject symlinks/devices/FIFOs/sockets. They
+                    # don't break us today (we read bytes, don't extract
+                    # to disk) but they'd silently import garbage.
+                    if not _is_regular_file_entry(info):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Unsafe zip entry: {name!r} is not a regular "
+                                "file (symlink / device / FIFO). Re-create the "
+                                "archive with regular file entries only."
+                            ),
+                        )
                     if info.file_size > _MAX_IMPORT_FILE_BYTES:
                         raise HTTPException(
                             status_code=413,

@@ -1,0 +1,155 @@
+// v0.7.117 — covers the three terminal states of the Setup Wizard:
+//   healthy   → Continue button is enabled, no Fix buttons rendered
+//   degraded  → Continue button enabled, Fix buttons surface
+//                   per-subsystem errors
+//   not_ready → Continue button disabled
+//
+// The wizard renders inside AppShell, which mounts SetupBanner and the
+// AppSidebar with their own hook dependencies — we stub the whole
+// AppShell so this test focuses on the wizard's own logic.
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import React from 'react'
+
+vi.mock('@/components/layout/AppShell', () => ({
+  AppShell: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', { 'data-testid': 'app-shell' }, children),
+}))
+
+vi.mock('@/lib/hooks/use-deep-health', () => ({
+  useDeepHealth: vi.fn(),
+  DEEP_HEALTH_QUERY_KEY: ['system', 'healthz', 'deep'],
+}))
+
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock, replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => '/setup-wizard',
+}))
+
+import { useDeepHealth } from '@/lib/hooks/use-deep-health'
+import SetupWizardPage, { WIZARD_COMPLETED_KEY } from './page'
+
+const HEALTHY = {
+  status: 'healthy' as const,
+  checks: {
+    database: { status: 'online', ok: true, error: null },
+    migrations: { status: 'applied', ok: true, error: null },
+    embedding_model: { status: 'configured', ok: true, error: null },
+    chat_model: { status: 'configured', ok: true, error: null },
+    command_registry: { status: 'loaded', ok: true, error: null },
+  },
+}
+
+const DEGRADED = {
+  status: 'degraded' as const,
+  checks: {
+    database: { status: 'online', ok: true, error: null },
+    migrations: { status: 'applied', ok: true, error: null },
+    embedding_model: {
+      status: 'missing',
+      ok: false,
+      error: 'No default embedding model assigned. Configure one in Settings.',
+    },
+    chat_model: { status: 'configured', ok: true, error: null },
+    command_registry: { status: 'loaded', ok: true, error: null },
+  },
+}
+
+const NOT_READY = {
+  status: 'not_ready' as const,
+  checks: {
+    database: {
+      status: 'offline',
+      ok: false,
+      error: 'SurrealDB unreachable at localhost:8000',
+    },
+    migrations: { status: 'error', ok: false, error: 'migration 14 failed' },
+    embedding_model: { status: 'missing', ok: false, error: null },
+    chat_model: { status: 'missing', ok: false, error: null },
+    command_registry: { status: 'error', ok: false, error: null },
+  },
+}
+
+function mockDeepHealth(data: unknown, overrides: Record<string, unknown> = {}) {
+  vi.mocked(useDeepHealth).mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+    ...overrides,
+  } as any)
+}
+
+describe('SetupWizardPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    pushMock.mockClear()
+    if (typeof window !== 'undefined') {
+      window.localStorage.clear()
+      document.cookie = `${WIZARD_COMPLETED_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+    }
+  })
+
+  it('renders the healthy state with Continue enabled and no fix buttons', () => {
+    mockDeepHealth(HEALTHY)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByText('setupWizard.title')).toBeInTheDocument()
+    expect(screen.getByText('setupWizard.statusHealthy')).toBeInTheDocument()
+
+    const continueBtn = screen.getByTestId('continue-button')
+    expect(continueBtn).not.toBeDisabled()
+
+    expect(screen.queryAllByText('setupWizard.fixButton')).toHaveLength(0)
+  })
+
+  it('renders the degraded state with a Fix button surfacing the actionable error', () => {
+    mockDeepHealth(DEGRADED)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByText('setupWizard.statusDegraded')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('subsystem-error-embedding_model'),
+    ).toHaveTextContent('No default embedding model assigned')
+
+    const fixButtons = screen.getAllByText('setupWizard.fixButton')
+    expect(fixButtons.length).toBeGreaterThanOrEqual(1)
+
+    // Embedding fix link should deep-link to /settings/models.
+    const fixLink = fixButtons[0].closest('a')
+    expect(fixLink).toHaveAttribute('href', '/settings/models')
+
+    expect(screen.getByTestId('continue-button')).not.toBeDisabled()
+  })
+
+  it('disables Continue when status is not_ready', () => {
+    mockDeepHealth(NOT_READY)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByText('setupWizard.statusNotReady')).toBeInTheDocument()
+    expect(screen.getByTestId('continue-button')).toBeDisabled()
+  })
+
+  it('triggers refetch when Re-check is clicked', () => {
+    const refetch = vi.fn()
+    mockDeepHealth(HEALTHY, { refetch })
+    render(<SetupWizardPage />)
+
+    fireEvent.click(screen.getByText('setupWizard.recheckButton'))
+    expect(refetch).toHaveBeenCalled()
+  })
+
+  it('marks wizard completed and navigates home on Continue', () => {
+    mockDeepHealth(HEALTHY)
+    render(<SetupWizardPage />)
+
+    fireEvent.click(screen.getByTestId('continue-button'))
+
+    expect(window.localStorage.getItem(WIZARD_COMPLETED_KEY)).toBe('1')
+    expect(document.cookie).toContain(`${WIZARD_COMPLETED_KEY}=1`)
+    expect(pushMock).toHaveBeenCalledWith('/')
+  })
+})
