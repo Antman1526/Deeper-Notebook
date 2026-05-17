@@ -1452,3 +1452,30 @@ def test_is_regular_file_entry_helper() -> None:
     py_default = zipfile.ZipInfo("py.md")
     py_default.external_attr = 0o600 << 16
     assert _is_regular_file_entry(py_default) is True
+
+
+def test_html_export_adds_rel_noopener_to_external_links() -> None:
+    """v0.7.118 — External links (http://, https://, mailto:) in
+    exported HTML must include rel='noopener noreferrer' to prevent
+    tabnabbing and Referer leak when the recipient clicks them.
+    Internal anchors (#section) and relative paths (./other.md) are
+    left untouched."""
+    from api.routers.exports import _markdown_to_html
+
+    # External http(s) and mailto get the rel attribute
+    for href in (
+        "https://example.com",
+        "http://example.com/path",
+        "mailto:foo@bar.com",
+    ):
+        html = _markdown_to_html(f"[click]({href})")
+        assert 'rel="noopener noreferrer"' in html, (
+            f"External link {href!r} missing rel attribute: {html!r}"
+        )
+
+    # Internal anchor + relative path do NOT get rel
+    for href in ("#section", "./other.md", "../sibling.md"):
+        html = _markdown_to_html(f"[ref]({href})")
+        assert "rel=" not in html, (
+            f"Internal/relative link {href!r} should not have rel: {html!r}"
+        )

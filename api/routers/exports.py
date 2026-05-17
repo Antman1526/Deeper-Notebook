@@ -270,6 +270,17 @@ def _markdown_to_html(md_text: str) -> str:
     We also `.disable("html_inline")` to catch inline `<…>` patterns
     that escape-on-block-render would miss. Net result: `<script>`,
     `<img onerror=…>`, etc. are rendered as literal text, not HTML.
+
+    v0.7.118 — 🔒 Add `rel="noopener noreferrer"` to all external
+    `<a>` tags via a custom token renderer. Two reasons:
+      1. Defense-in-depth tabnabbing protection if the user (or their
+         email client) opens the export with `target="_blank"`-like
+         behavior.
+      2. `noreferrer` prevents the recipient's browser leaking the
+         `Referer:` header on click — important when the export is a
+         local file://, since the referer would expose the local
+         filesystem path.
+    Internal anchor links (`#fragment`) keep their default rendering.
     """
     from markdown_it import MarkdownIt
 
@@ -280,6 +291,35 @@ def _markdown_to_html(md_text: str) -> str:
         .disable("html_inline")
         .disable("html_block")
     )
+
+    # Custom token renderer for link_open: append rel="noopener
+    # noreferrer" to any link whose href looks external.
+    default_link_open = md.renderer.rules.get(
+        "link_open",
+        lambda tokens, idx, opts, env: md.renderer.renderToken(tokens, idx, opts, env),
+    )
+
+    def _link_open_with_rel(tokens, idx, opts, env):
+        token = tokens[idx]
+        href = token.attrGet("href") or ""
+        # Only add rel for external-looking links. Skip pure
+        # fragment-internal links (#section) and same-page relative
+        # paths without a scheme.
+        is_external = (
+            href.startswith("http://")
+            or href.startswith("https://")
+            or href.startswith("mailto:")
+            or href.startswith("ftp://")
+        )
+        if is_external:
+            existing_rel = token.attrGet("rel") or ""
+            # Avoid duplicating rel values if already set
+            rel_tokens = set(existing_rel.split())
+            rel_tokens.update(["noopener", "noreferrer"])
+            token.attrSet("rel", " ".join(sorted(rel_tokens)))
+        return default_link_open(tokens, idx, opts, env)
+
+    md.renderer.rules["link_open"] = _link_open_with_rel
     return md.render(md_text)
 
 
