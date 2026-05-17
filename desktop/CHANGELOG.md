@@ -18,8 +18,65 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.95 (in flight)
+## Unreleased — v0.7.36 → v0.7.99 (in flight)
 
+- **v0.7.99** 🐛 **Audit-sweep timeouts on the last two unbounded LLM calls.**
+  Continuation of v0.7.93 + v0.7.95: a broader grep for unbounded
+  `ainvoke` calls turned up two more.
+
+  - **`api/routers/studio.py`** legacy single-note fallback path (the
+    one reached when the multi-page outline JSON fails to parse) was
+    still unbounded. Wrapped in `asyncio.wait_for` re-using
+    `_PAGE_TIMEOUT_SEC` (180s default). Timeout → 504 with
+    actionable detail + notebook_id preserved for recovery.
+  - **`api/routers/chat.py`** non-streaming `/chat` endpoint had no
+    timeout. Wrapped with `ONP_CHAT_TIMEOUT_SEC` (default 300s — chat
+    graphs do memory recall + tool calls + long generations). Timeout
+    → 504 with hint to use `/chat/stream` for token-by-token responses.
+  - The streaming SSE endpoints (`/chat/stream`, `/source/{id}/chat`,
+    `/search/ask`) are intentionally NOT wrapped — they're naturally
+    bounded by client-disconnect detection via `is_disconnected()`
+    (v0.7.50+) and `reader.cancel()` (v0.7.50).
+- **v0.7.98** ⚡ **Configurable zip compression for notebook export.**
+  `NotebookExportRequest.compression: 'deflated' | 'stored' | 'bzip2'
+  | 'lzma'` (default `'deflated'`, matching prior v0.7.90 behavior).
+  Useful when the zip will itself be compressed downstream
+  (`stored`), or when archive size matters more than write speed
+  (`bzip2`, `lzma`). All four algorithms are stdlib — zero new deps.
+  4 new tests cover each option + Pydantic rejection of typos.
+- **v0.7.97** ✨ **HTML export format for notebooks.** `format='html_folder'`
+  or `format='html_zip'` renders each note's markdown to HTML via
+  `markdown-it-py` (already a transitive dep — zero new deps). Each
+  file is a self-contained HTML5 document with a minimal stylesheet
+  (light + dark mode) so users can double-click and read in a browser
+  without a build step.
+
+  - GFM features: tables, strikethrough enabled. `linkify` deliberately
+    OFF because it requires an extra runtime package.
+  - Frontmatter rendered as a styled `<div class="onp-frontmatter">`
+    metadata block at the top — keeps parity with the markdown export.
+  - `_html_escape` applied to titles + asset paths to prevent
+    `<script>` injection through note titles.
+  - Folder and zip variants share the same renderer-selection logic
+    (`_retype` helper) so the on-disk layout matches the markdown
+    counterpart with `.html` instead of `.md`.
+  - 3 new tests cover html_folder + html_zip + attribute-position
+    escaping.
+- **v0.7.96** ✨ **Import preview endpoint (dry-run).** `POST
+  /api/notebooks/import/preview` reads the source bundle (folder /
+  zip / single .md), parses frontmatter, and returns the planned
+  imports WITHOUT touching the database. Lets the frontend show a
+  confirmation UI before the user commits.
+
+  - Same caps + safety rails as v0.7.94 import (50 MB total, 5 MB
+    per-file, 500-entry, zip-traversal rejection).
+  - Surfaces manifest-derived hints (`notebook_name_hint`,
+    `description_hint`) so the UI can pre-fill the rename form.
+  - Flags overview-shaped notes (`is_overview: true`) for special UI
+    treatment.
+  - 5 new tests: folder + zip + single-md detection, missing-path 404,
+    empty-bundle warning, and a test that asserts the preview NEVER
+    calls Notebook/Note/Source `save()` (raising-stub harness).
 - **v0.7.95** 🐛 **Timeouts on the two remaining unbounded LLM calls.**
   Audit pass after v0.7.93 found two more endpoints where a stuck
   local LLM could hang the request indefinitely (same class of bug,
