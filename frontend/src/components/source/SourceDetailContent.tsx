@@ -108,6 +108,10 @@ export function SourceDetailContent({
   // loop exits its abortable sleep within milliseconds instead of
   // continuing to hit /commands/jobs/{id} for the remaining 4 minutes.
   const insightPollAbortRef = useRef<AbortController | null>(null)
+  // v0.7.82 — track the 2-second URL-copy-indicator timer in a ref so
+  // it cancels cleanly on unmount. Short window, low risk, but
+  // finishes the standing setTimeout sweep.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
@@ -118,6 +122,10 @@ export function SourceDetailContent({
       if (insightPollAbortRef.current) {
         insightPollAbortRef.current.abort()
         insightPollAbortRef.current = null
+      }
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current)
+        copiedTimerRef.current = null
       }
     }
   }, [])
@@ -376,7 +384,12 @@ export function SourceDetailContent({
       navigator.clipboard.writeText(source.asset.url)
       setCopied(true)
       toast.success(t('sources.urlCopied'))
-      setTimeout(() => setCopied(false), 2000)
+      // v0.7.82 — tracked via copiedTimerRef so unmount cancels cleanly.
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+      copiedTimerRef.current = setTimeout(() => {
+        copiedTimerRef.current = null
+        setCopied(false)
+      }, 2000)
     }
   }, [source, t])
 

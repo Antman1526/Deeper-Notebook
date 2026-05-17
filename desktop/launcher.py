@@ -241,7 +241,12 @@ class Supervisor:
             try:
                 p.terminate()
             except Exception as exc:
-                log.debug("terminate pid=%s failed: %s", p.pid, exc)
+                # v0.7.82 — `getattr(p, "pid", "?")` instead of `p.pid` so
+                # mocked process objects in desktop/tests/test_launcher.py
+                # don't raise AttributeError during stop_all teardown.
+                # Real subprocess.Popen always has .pid; tests that
+                # MagicMock(spec=Popen) may not.
+                log.debug("terminate pid=%s failed: %s", getattr(p, "pid", "?"), exc)
         deadline = time.monotonic() + 5
         for p in self._procs:
             try:
@@ -250,7 +255,7 @@ class Supervisor:
             except subprocess.TimeoutExpired:
                 p.kill()
             except Exception as exc:
-                log.debug("wait pid=%s failed: %s", p.pid, exc)
+                log.debug("wait pid=%s failed: %s", getattr(p, "pid", "?"), exc)
         # Join drainer threads with a short timeout BEFORE closing the
         # log files they're writing into — otherwise the daemon threads
         # could be mid-write when the file handle goes away. Buffered
