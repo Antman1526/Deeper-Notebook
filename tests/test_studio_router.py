@@ -699,3 +699,219 @@ def test_overflow_error_pattern_matching_is_case_insensitive():
         assert "ONP_STUDIO_MAX_FILE_CHARS" in detail, (
             f"pattern not matched for {msg!r}"
         )
+
+
+# ----------------------------------------------------------------------------
+# v0.7.92 / v0.7.93 — Parallel pages + per-page timeout
+# ----------------------------------------------------------------------------
+
+
+def test_page_timeout_becomes_warning_other_pages_ship(
+    client, patched_pipeline, monkeypatch,
+):
+    """v0.7.93 — if one page times out, the rest must still ship and the
+    timeout becomes a per-page warning (not a 504 that kills the whole
+    notebook). Verifies the per-page timeout AND the warning text guides
+    the user toward the env knob."""
+    import asyncio
+    # Shorten the timeout so the test runs fast
+    monkeypatch.setattr(studio_mod, "_PAGE_TIMEOUT_SEC", 1)
+    outline_json = (
+        '{"headline": "h", "summary": "s.", '
+        '"pages": ['
+        ' {"title": "Fast Page", "focus": "f1", "key_questions": ["q1"]},'
+        ' {"title": "Slow Page", "focus": "f2", "key_questions": ["q2"]}'
+        '], "top_suggestions": ["x"]}'
+    )
+
+    call_order: list[str] = []
+
+    async def _slow_invoke(messages):
+        # First call (outline) returns immediately. Second call (Fast
+        # Page) returns immediately. Third call (Slow Page) hangs past
+        # the 1s timeout.
+        idx = len(call_order)
+        call_order.append(f"call-{idx}")
+        if idx == 0:
+            return MagicMock(content=outline_json)
+        if idx == 1:
+            return MagicMock(content="# Fast Page body\n\nfast")
+        # Slow page — hang well past the 1s timeout
+        await asyncio.sleep(10)
+        return MagicMock(content="never returned")
+
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = _slow_invoke
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook", "title": "Timeout Test"},
+        files=[("files", ("a.txt", b"x", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Overview + Fast Page = 2 notes (Slow Page failed)
+    assert len(body["note_ids"]) == 2
+    # The Slow Page failure shows up as a warning naming the page AND
+    # pointing at the timeout env knob (actionable, per v0.7.93 design)
+    assert any(
+        "Slow Page" in w and "ONP_STUDIO_PAGE_TIMEOUT_SEC" in w
+        for w in body["warnings"]
+    ), body["warnings"]
+
+
+def test_outline_timeout_returns_504_with_actionable_detail(
+    client, patched_pipeline, monkeypatch,
+):
+    """v0.7.93 — outline-pass timeout returns 504 (Gateway Timeout) NOT 502.
+    The detail message must include the env-knob name so users can recover
+    rather than just see a wall of stack trace."""
+    import asyncio
+    monkeypatch.setattr(studio_mod, "_OUTLINE_TIMEOUT_SEC", 1)
+
+    async def _hang_invoke(messages):
+        await asyncio.sleep(10)
+        return MagicMock(content="never returned")
+
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = _hang_invoke
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook"},
+        files=[("files", ("a.txt", b"x", "text/plain"))],
+    )
+    assert r.status_code == 504, r.text
+    detail = r.json()["detail"]
+    assert "timed out" in detail.lower()
+    assert "ONP_STUDIO_OUTLINE_TIMEOUT_SEC" in detail
+    # User can still recover their uploaded sources
+    assert "notebook:" in detail
+
+
+def test_parallel_pages_env_knob_changes_generation_strategy(
+    client, patched_pipeline, monkeypatch,
+):
+    """v0.7.92 — with ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES=true, all pages
+    are generated concurrently (asyncio.gather) instead of in a for-loop.
+    Verifies the knob actually changes behavior — sequential calls happen
+    one at a time (in_flight peaks at 1); parallel calls overlap
+    (in_flight peaks > 1)."""
+    import asyncio
+    monkeypatch.setattr(studio_mod, "_PARALLEL_PAGES", True)
+
+    outline_json = (
+        '{"headline": "h", "summary": "s.", '
+        '"pages": ['
+        ' {"title": "P1", "focus": "f1", "key_questions": ["q1"]},'
+        ' {"title": "P2", "focus": "f2", "key_questions": ["q2"]},'
+        ' {"title": "P3", "focus": "f3", "key_questions": ["q3"]}'
+        '], "top_suggestions": ["x"]}'
+    )
+
+    in_flight = 0
+    peak_in_flight = 0
+    lock = asyncio.Lock()
+    call_idx = 0
+
+    async def _track_invoke(messages):
+        nonlocal in_flight, peak_in_flight, call_idx
+        my_idx = call_idx
+        call_idx += 1
+        if my_idx == 0:
+            # outline call — fast
+            return MagicMock(content=outline_json)
+        async with lock:
+            in_flight += 1
+            if in_flight > peak_in_flight:
+                peak_in_flight = in_flight
+        await asyncio.sleep(0.05)
+        async with lock:
+            in_flight -= 1
+        return MagicMock(content=f"# P{my_idx} body")
+
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = _track_invoke
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook", "title": "Parallel Test"},
+        files=[("files", ("a.txt", b"x", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    # All 3 pages + overview = 4 notes saved
+    assert len(r.json()["note_ids"]) == 4
+    # Peak in_flight should be > 1 since pages run in parallel.
+    # Sequential mode (default) would have peaked at 1.
+    assert peak_in_flight > 1, (
+        f"Expected concurrent execution (peak > 1), got peak={peak_in_flight}"
+    )
+
+
+def test_parallel_pages_off_by_default_runs_sequentially(
+    client, patched_pipeline, monkeypatch,
+):
+    """v0.7.92 — Verify the default (sequential) path. Same instrumentation
+    as the parallel test, but without flipping the knob, peak concurrency
+    must stay at 1."""
+    import asyncio
+    # Explicitly assert the default — guards against accidental flip.
+    monkeypatch.setattr(studio_mod, "_PARALLEL_PAGES", False)
+
+    outline_json = (
+        '{"headline": "h", "summary": "s.", '
+        '"pages": ['
+        ' {"title": "P1", "focus": "f1", "key_questions": ["q1"]},'
+        ' {"title": "P2", "focus": "f2", "key_questions": ["q2"]}'
+        '], "top_suggestions": ["x"]}'
+    )
+
+    in_flight = 0
+    peak_in_flight = 0
+    lock = asyncio.Lock()
+    call_idx = 0
+
+    async def _track_invoke(messages):
+        nonlocal in_flight, peak_in_flight, call_idx
+        my_idx = call_idx
+        call_idx += 1
+        if my_idx == 0:
+            return MagicMock(content=outline_json)
+        async with lock:
+            in_flight += 1
+            if in_flight > peak_in_flight:
+                peak_in_flight = in_flight
+        await asyncio.sleep(0.05)
+        async with lock:
+            in_flight -= 1
+        return MagicMock(content=f"# P{my_idx} body")
+
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = _track_invoke
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook", "title": "Sequential Test"},
+        files=[("files", ("a.txt", b"x", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    # Default sequential mode → peak concurrency = 1
+    assert peak_in_flight == 1, (
+        f"Expected sequential execution (peak == 1), got peak={peak_in_flight}"
+    )

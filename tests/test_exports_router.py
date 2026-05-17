@@ -415,3 +415,352 @@ def test_export_refuses_system_destination(
         json={"destination": "/etc/onp-note.md"},
     )
     assert r.status_code == 403
+
+
+# ============================================================================
+# v0.7.94 — Notebook import (reverse of v0.7.90 export)
+# ============================================================================
+
+
+def test_import_creates_new_notebook_from_folder(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    """v0.7.94 happy path: a folder containing .md files (no manifest) is
+    imported into a fresh notebook. Notes save in alphabetical order so
+    '00-overview' sorts first."""
+    # Set up a tiny export-shaped folder
+    folder = tmp_path / "to-import"
+    folder.mkdir()
+    (folder / "00-overview.md").write_text(
+        "---\ntitle: Overview\ntype: ai\n---\nOverview body."
+    )
+    (folder / "01-arch.md").write_text(
+        "---\ntitle: Architecture\ntype: ai\n---\nArch body."
+    )
+
+    # Stub the domain layer — track save() calls
+    saved_notebooks: list = []
+    saved_notes: list = []
+    notebook_id = "notebook:imported-1"
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.name, self.description = name, description
+            self.id = notebook_id
+        async def save(self):
+            saved_notebooks.append(self)
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content, self.note_type = title, content, note_type
+            self.id = f"note:imp-{len(saved_notes)}"
+        async def save(self):
+            saved_notes.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(folder), "mode": "new"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "new"
+    assert body["notebook_id"] == notebook_id
+    assert len(body["note_ids"]) == 2
+    assert body["file_count"] == 2
+    # First note is the Overview — frontmatter title respected
+    assert saved_notes[0].title == "Overview"
+    assert "Overview body." in saved_notes[0].content
+
+
+def test_import_zip_archive(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    """v0.7.94 — .zip imports work the same as folder imports."""
+    zip_path = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(
+            "00-overview.md",
+            "---\ntitle: Z Overview\n---\nzip overview body",
+        )
+        zf.writestr(
+            "01-page.md",
+            "---\ntitle: Z Page\n---\nzip page body",
+        )
+        zf.writestr(
+            "manifest.json",
+            json.dumps({
+                "notebook": {"name": "From Manifest", "description": "from-zip"},
+            }),
+        )
+
+    saved_notebooks: list = []
+    saved_notes: list = []
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.name, self.description = name, description
+            self.id = "notebook:zip-1"
+        async def save(self):
+            saved_notebooks.append(self)
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content, self.note_type = title, content, note_type
+            self.id = f"note:zimp-{len(saved_notes)}"
+        async def save(self):
+            saved_notes.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(zip_path), "mode": "new"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Manifest's notebook.name wins over src.stem
+    assert saved_notebooks[0].name == "From Manifest"
+    assert body["file_count"] == 2  # manifest doesn't count
+
+
+def test_import_into_existing_notebook(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    """mode='into_existing' appends notes to an existing notebook —
+    Notebook.get returns the target rather than constructing a new one."""
+    folder = tmp_path / "to-add"
+    folder.mkdir()
+    (folder / "new-note.md").write_text("---\ntitle: Appended\n---\nbody")
+
+    existing = SimpleNamespace(
+        id="notebook:existing-1",
+        name="Existing NB",
+    )
+
+    saved_notes: list = []
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content = title, content
+            self.note_type = note_type
+            self.id = f"note:add-{len(saved_notes)}"
+        async def save(self):
+            saved_notes.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+
+    async def _get_notebook(_id):
+        return existing
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+    monkeypatch.setattr(exports_mod.Notebook, "get", staticmethod(_get_notebook))
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={
+            "source_path": str(folder),
+            "mode": "into_existing",
+            "target_notebook_id": "notebook:existing-1",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "into_existing"
+    assert body["notebook_id"] == "notebook:existing-1"
+    assert body["notebook_name"] == "Existing NB"
+    assert len(body["note_ids"]) == 1
+    assert saved_notes[0].title == "Appended"
+
+
+def test_import_into_existing_404_when_target_missing(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    folder = tmp_path / "x"
+    folder.mkdir()
+    (folder / "n.md").write_text("---\ntitle: x\n---\nbody")
+
+    async def _get_none(_id):
+        return None
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod.Notebook, "get", staticmethod(_get_none))
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={
+            "source_path": str(folder), "mode": "into_existing",
+            "target_notebook_id": "notebook:nope",
+        },
+    )
+    assert r.status_code == 404
+
+
+def test_import_400_when_into_existing_missing_target_id(
+    client: TestClient, tmp_path: Path,
+):
+    folder = tmp_path / "x"
+    folder.mkdir()
+    (folder / "n.md").write_text("---\ntitle: x\n---\nbody")
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(folder), "mode": "into_existing"},
+    )
+    assert r.status_code == 400
+    assert "target_notebook_id" in r.json()["detail"]
+
+
+def test_import_400_when_no_md_files_found(
+    client: TestClient, tmp_path: Path,
+):
+    folder = tmp_path / "empty"
+    folder.mkdir()
+    (folder / "not-markdown.txt").write_text("nope")
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(folder), "mode": "new"},
+    )
+    assert r.status_code == 400
+    assert "No .md files" in r.json()["detail"]
+
+
+def test_import_single_md_file_becomes_one_note_notebook(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    """A single .md file (not a folder, not a zip) becomes a one-note
+    notebook — useful for casual import of any markdown file."""
+    md = tmp_path / "lonely.md"
+    md.write_text("---\ntitle: Lone Note\n---\nbody")
+
+    notebook_id = "notebook:single-1"
+    saved_notes: list = []
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.name, self.description = name, description
+            self.id = notebook_id
+        async def save(self):
+            pass
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content = title, content
+            self.note_type = note_type
+            self.id = f"note:lonely-{len(saved_notes)}"
+        async def save(self):
+            saved_notes.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(md), "mode": "new"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["file_count"] == 1
+    assert saved_notes[0].title == "Lone Note"
+
+
+def test_import_zip_rejects_traversal_member(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """v0.7.94 security: a zip with a '../escape.md' member must be
+    rejected, not silently extracted to the parent directory."""
+    zip_path = tmp_path / "evil.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("../escape.md", "evil content")
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(zip_path), "mode": "new"},
+    )
+    assert r.status_code == 400
+    assert "Unsafe zip entry" in r.json()["detail"]
+
+
+def test_import_rejects_oversized_file(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """v0.7.94 — per-file cap (5 MB by default) prevents a single bloated
+    .md file from consuming all the API's memory during import."""
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "_MAX_IMPORT_FILE_BYTES", 100)
+    md = tmp_path / "big.md"
+    md.write_text("---\ntitle: x\n---\n" + ("a" * 500))
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(md), "mode": "new"},
+    )
+    assert r.status_code == 413
+    assert "per-file cap" in r.json()["detail"]
+
+
+def test_import_round_trip_export_then_import_preserves_titles(
+    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+):
+    """v0.7.94 — export → import round-trip preserves note titles.
+    Validates that _render_note_content's frontmatter matches what
+    _parse_frontmatter reads back."""
+    # Stage 1: export a notebook
+    notes = [
+        _FakeNote("note:1", "📋 00 · Demo — Overview", "Overview body."),
+        _FakeNote("note:2", "📄 01 · Section One", "Body one."),
+    ]
+    nb = _FakeNotebook("notebook:export-1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:export-1"] = nb
+
+    export_dir = tmp_path / "roundtrip"
+    r = client.post(
+        "/api/notebooks/notebook:export-1/export",
+        json={"destination": str(export_dir), "format": "folder"},
+    )
+    assert r.status_code == 200, r.text
+
+    # Stage 2: re-import the exported folder into a new notebook
+    saved_notes: list = []
+    new_notebook_id = "notebook:roundtrip-1"
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.name, self.description = name, description
+            self.id = new_notebook_id
+        async def save(self):
+            pass
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content = title, content
+            self.note_type = note_type
+            self.id = f"note:rt-{len(saved_notes)}"
+        async def save(self):
+            saved_notes.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={"source_path": str(export_dir), "mode": "new"},
+    )
+    assert r.status_code == 200, r.text
+    # Titles survive the round-trip
+    titles = [n.title for n in saved_notes]
+    assert "📋 00 · Demo — Overview" in titles
+    assert "📄 01 · Section One" in titles
