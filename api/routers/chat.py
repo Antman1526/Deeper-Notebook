@@ -60,7 +60,10 @@ def _extract_text(msg: Any) -> str:
 
 
 async def _fire_memory_extract_turn(
-    chat_session_id: str, user_text: str, assistant_text: str
+    chat_session_id: str,
+    user_text: str,
+    assistant_text: str,
+    model_override: Optional[str] = None,
 ) -> None:
     """Submit the memory_extract_turn job fire-and-forget.
 
@@ -68,6 +71,15 @@ async def _fire_memory_extract_turn(
     only queues the row. The worker picks it up asynchronously. We still wrap
     submit_command in asyncio.to_thread (matches v0.7.55/57/62 sites) because
     it opens a synchronous SurrealDB WebSocket.
+
+    v0.7.83 — `model_override` is now plumbed through to the worker. The
+    memory writer's LLM client previously always used the bundled chat
+    model (ONP_CHAT_MODEL_NAME env var or "default"). When the user
+    explicitly picked a different model for their chat session, the
+    memory extractor still ran against the bundled model, producing
+    facts that disagreed with the assistant's voice. Passing the
+    override here lets the worker fall through to it; absent → falls
+    back to the bundled model as before.
     """
     if not _memory_extraction_configured():
         # Upstream (non-desktop) build, or memory env vars not wired —
@@ -79,15 +91,18 @@ async def _fire_memory_extract_turn(
     try:
         from surreal_commands import submit_command
 
+        args = {
+            "chat_session_id": chat_session_id,
+            "user_text": user_text,
+            "assistant_text": assistant_text,
+        }
+        if model_override:
+            args["model_override"] = model_override
         await asyncio.to_thread(
             submit_command,
             "open_notebook",
             "memory_extract_turn",
-            {
-                "chat_session_id": chat_session_id,
-                "user_text": user_text,
-                "assistant_text": assistant_text,
-            },
+            args,
         )
     except Exception as exc:
         # Memory is best-effort. A failed submit_command (worker down,
@@ -99,7 +114,10 @@ async def _fire_memory_extract_turn(
         )
 
 
-async def _fire_memory_summarize_session(chat_session_id: str) -> None:
+async def _fire_memory_summarize_session(
+    chat_session_id: str,
+    model_override: Optional[str] = None,
+) -> None:
     """Submit the memory_summarize_session job fire-and-forget.
 
     v0.7.70 — also wired up alongside the per-turn extractor. Fires
@@ -108,6 +126,11 @@ async def _fire_memory_summarize_session(chat_session_id: str) -> None:
     LangGraph SQLite checkpoint via chat_graph.get_state, render it
     as a plain-text exchange, and queue the summarizer. The writer's
     16k-char truncation guard kicks in for very long sessions.
+
+    v0.7.83 — `model_override` plumbed through (see _fire_memory_extract_turn
+    for the rationale). For the summarizer, the right model is the same
+    one the chat session was using, so the episode record's voice
+    matches the chat's voice.
     """
     if not _memory_extraction_configured():
         return
@@ -137,14 +160,17 @@ async def _fire_memory_summarize_session(chat_session_id: str) -> None:
             return
         from surreal_commands import submit_command
 
+        args = {
+            "chat_session_id": chat_session_id,
+            "transcript": transcript,
+        }
+        if model_override:
+            args["model_override"] = model_override
         await asyncio.to_thread(
             submit_command,
             "open_notebook",
             "memory_summarize_session",
-            {
-                "chat_session_id": chat_session_id,
-                "transcript": transcript,
-            },
+            args,
         )
     except Exception as exc:
         logger.debug(
@@ -457,7 +483,12 @@ async def delete_session(session_id: str):
         # conversation" signal: distill the transcript into one memory
         # episode record before the underlying state goes away. Fire-
         # and-forget — failure does not block the delete.
-        await _fire_memory_summarize_session(full_session_id)
+        # v0.7.83 — pass the session's model_override so the summarizer
+        # uses the same model the chat was using.
+        await _fire_memory_summarize_session(
+            full_session_id,
+            model_override=getattr(session, "model_override", None),
+        )
 
         await session.delete()
 
@@ -552,10 +583,14 @@ async def execute_chat(request: ExecuteChatRequest):
             if mtype == "ai":
                 ai_text = _extract_text(msg)
                 break
+        # v0.7.83 — pass model_override (the same one we already
+        # resolved at line 348 for the chat graph itself) so the
+        # memory worker matches the chat's model.
         await _fire_memory_extract_turn(
             chat_session_id=full_session_id,
             user_text=request.message,
             assistant_text=ai_text,
+            model_override=model_override,
         )
 
         return ExecuteChatResponse(session_id=request.session_id, messages=messages)
@@ -745,6 +780,9 @@ async def _stream_chat_events(
         # the assistant's reply is the last AIMessage in the final
         # canonical state. Fire-and-forget; failure does NOT take the
         # stream down.
+        # v0.7.83 — pass model_override (already resolved as
+        # `model_override` in this handler) so memory writer matches
+        # the chat's model.
         ai_text = ""
         if final_result and "messages" in final_result:
             for msg in reversed(final_result["messages"]):
@@ -756,6 +794,7 @@ async def _stream_chat_events(
             chat_session_id=full_session_id,
             user_text=request.message,
             assistant_text=ai_text,
+            model_override=model_override,
         )
 
         yield json.dumps({"type": "done", "messages": messages}) + "\n"
