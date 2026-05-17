@@ -239,3 +239,70 @@ export interface BuildContextResponse {
   token_count: number
   char_count: number
 }
+
+// v0.7.105 — Filesystem + export schemas. Mirrors the v0.7.90 backend
+// routers (api/routers/filesystem.py, api/routers/exports.py) used by
+// the directory-picker / export-dialog UI.
+
+export interface FsEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  size: number | null
+  modified: string | null
+}
+
+export interface FsListResponse {
+  path: string
+  parent: string | null
+  entries: FsEntry[]
+  truncated: boolean
+  warnings: string[]
+}
+
+export interface FsHomeResponse {
+  home: string
+  desktop: string | null
+  documents: string | null
+  downloads: string | null
+  default_exports: string
+}
+
+export interface FsMkdirRequest {
+  path: string
+  parents?: boolean
+}
+
+export interface FsMkdirResponse {
+  path: string
+  created: boolean
+}
+
+export type FsListFilter = 'all' | 'dirs' | 'files'
+export type ExportFormat = 'folder' | 'zip'
+
+export interface NotebookExportRequest {
+  destination: string
+  format: ExportFormat
+  include_sources?: boolean
+  overwrite?: boolean
+}
+
+export interface NoteExportRequest {
+  destination: string
+  overwrite?: boolean
+}
+
+export interface ExportFileEntry {
+  relative_path: string
+  bytes: number
+}
+
+export interface ExportResponse {
+  destination: string
+  format: string
+  file_count: number
+  total_bytes: number
+  files: ExportFileEntry[]
+  warnings: string[]
+}
