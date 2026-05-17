@@ -249,7 +249,7 @@ def parse_source_form_data(
     return source_data, file
 
 
-@router.get("/sources", response_model=List[SourceListResponse])
+@router.get("/sources", response_model=list[SourceListResponse])
 async def get_sources(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
     limit: int = Query(
@@ -1148,7 +1148,7 @@ async def delete_source(source_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
 
 
-@router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])
+@router.get("/sources/{source_id}/insights", response_model=list[SourceInsightResponse])
 async def get_source_insights(source_id: str):
     """Get all insights for a specific source."""
     try:

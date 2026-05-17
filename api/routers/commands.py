@@ -15,7 +15,7 @@ class CommandExecutionRequest(BaseModel):
         ..., description="Command function name (e.g., 'process_text')"
     )
     app: str = Field(..., description="Application name (e.g., 'open_notebook')")
-    input: Dict[str, Any] = Field(..., description="Arguments to pass to the command")
+    input: dict[str, Any] = Field(..., description="Arguments to pass to the command")
 
 
 class CommandJobResponse(BaseModel):
@@ -27,11 +27,11 @@ class CommandJobResponse(BaseModel):
 class CommandJobStatusResponse(BaseModel):
     job_id: str
     status: str
-    result: Optional[Dict[str, Any]] = None
+    result: Optional[dict[str, Any]] = None
     error_message: Optional[str] = None
     created: Optional[str] = None
     updated: Optional[str] = None
-    progress: Optional[Dict[str, Any]] = None
+    progress: Optional[dict[str, Any]] = None
 
 
 @router.post("/commands/jobs", response_model=CommandJobResponse)
@@ -91,7 +91,7 @@ async def get_command_job_status(job_id: str):
         )
 
 
-@router.get("/commands/jobs", response_model=List[Dict[str, Any]])
+@router.get("/commands/jobs", response_model=list[dict[str, Any]])
 async def list_command_jobs(
     command_filter: Optional[str] = Query(None, description="Filter by command name"),
     status_filter: Optional[str] = Query(None, description="Filter by status"),

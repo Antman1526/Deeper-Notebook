@@ -162,7 +162,7 @@ def detect_content_type_from_extension(
         return None
 
 
-def detect_content_type_from_heuristics(text: str) -> Tuple[ContentType, float]:
+def detect_content_type_from_heuristics(text: str) -> tuple[ContentType, float]:
     """
     Detect content type using content heuristics.
 
@@ -365,7 +365,7 @@ def _get_plain_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
-def _apply_secondary_chunking(chunks: List[str]) -> List[str]:
+def _apply_secondary_chunking(chunks: list[str]) -> list[str]:
     """
     Apply secondary chunking to ensure no chunk exceeds CHUNK_SIZE tokens.
 
@@ -389,7 +389,7 @@ def chunk_text(
     text: str,
     content_type: Optional[ContentType] = None,
     file_path: Optional[str] = None,
-) -> List[str]:
+) -> list[str]:
     """
     Split text into chunks using appropriate splitter for content type.
 

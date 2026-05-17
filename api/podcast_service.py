@@ -149,7 +149,7 @@ class PodcastService:
             )
 
     @staticmethod
-    async def get_job_status(job_id: str) -> Dict[str, Any]:
+    async def get_job_status(job_id: str) -> dict[str, Any]:
         """Get status of a podcast generation job"""
         try:
             status = await get_command_status(job_id)

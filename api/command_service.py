@@ -12,8 +12,8 @@ class CommandService:
     async def submit_command_job(
         module_name: str,  # Actually app_name for surreal-commands
         command_name: str,
-        command_args: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        command_args: dict[str, Any],
+        context: Optional[dict[str, Any]] = None,
     ) -> str:
         """Submit a generic command job for background processing"""
         try:
@@ -69,7 +69,7 @@ class CommandService:
             raise
 
     @staticmethod
-    async def get_command_status(job_id: str) -> Optional[Dict[str, Any]]:
+    async def get_command_status(job_id: str) -> Optional[dict[str, Any]]:
         """Get status of any command job.
 
         v0.7.87 — returns `None` for missing jobs instead of a synthetic
@@ -105,7 +105,7 @@ class CommandService:
         command_filter: Optional[str] = None,
         status_filter: Optional[str] = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List command jobs with optional filtering.
 
         v0.7.87 — was a stub returning []. Now reads from the
@@ -117,7 +117,7 @@ class CommandService:
         from open_notebook.database.repository import repo_query
 
         clauses: list[str] = []
-        params: Dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
         if module_filter:
             clauses.append("app = $app")
             params["app"] = module_filter
@@ -140,7 +140,7 @@ class CommandService:
             return []
         if not rows:
             return []
-        out: list[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for row in rows:
             if not isinstance(row, dict):
                 continue

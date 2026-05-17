@@ -225,7 +225,7 @@ class ChatSessionResponse(BaseModel):
 
 
 class ChatSessionWithMessagesResponse(ChatSessionResponse):
-    messages: List[ChatMessage] = Field(
+    messages: list[ChatMessage] = Field(
         default_factory=list, description="Session messages"
     )
 
@@ -233,7 +233,7 @@ class ChatSessionWithMessagesResponse(ChatSessionResponse):
 class ExecuteChatRequest(BaseModel):
     session_id: str = Field(..., description="Chat session ID")
     message: str = Field(..., description="User message content")
-    context: Dict[str, Any] = Field(
+    context: dict[str, Any] = Field(
         ..., description="Chat context with sources and notes"
     )
     model_override: Optional[str] = Field(
@@ -243,16 +243,16 @@ class ExecuteChatRequest(BaseModel):
 
 class ExecuteChatResponse(BaseModel):
     session_id: str = Field(..., description="Session ID")
-    messages: List[ChatMessage] = Field(..., description="Updated message list")
+    messages: list[ChatMessage] = Field(..., description="Updated message list")
 
 
 class BuildContextRequest(BaseModel):
     notebook_id: str = Field(..., description="Notebook ID")
-    context_config: Dict[str, Any] = Field(..., description="Context configuration")
+    context_config: dict[str, Any] = Field(..., description="Context configuration")
 
 
 class BuildContextResponse(BaseModel):
-    context: Dict[str, Any] = Field(..., description="Built context data")
+    context: dict[str, Any] = Field(..., description="Built context data")
     token_count: int = Field(..., description="Estimated token count")
     char_count: int = Field(..., description="Character count")
 
@@ -262,7 +262,7 @@ class SuccessResponse(BaseModel):
     message: str = Field(..., description="Success message")
 
 
-@router.get("/chat/sessions", response_model=List[ChatSessionResponse])
+@router.get("/chat/sessions", response_model=list[ChatSessionResponse])
 async def get_sessions(notebook_id: str = Query(..., description="Notebook ID")):
     """Get all chat sessions for a notebook."""
     try:
@@ -761,7 +761,7 @@ async def _stream_chat_events(
         # for each token chunk the LLM emits.
         # v0.7.52 — removed dead `last_token_idx` counter (was incremented
         # but never read).
-        final_result: Optional[Dict[str, Any]] = None
+        final_result: Optional[dict[str, Any]] = None
         async for event in chat_graph.astream_events(
             input=state_values,  # type: ignore[arg-type]
             config=RunnableConfig(

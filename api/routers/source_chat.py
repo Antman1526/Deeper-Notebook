@@ -42,13 +42,13 @@ class ChatMessage(BaseModel):
 
 
 class ContextIndicator(BaseModel):
-    sources: List[str] = Field(
+    sources: list[str] = Field(
         default_factory=list, description="Source IDs used in context"
     )
-    insights: List[str] = Field(
+    insights: list[str] = Field(
         default_factory=list, description="Insight IDs used in context"
     )
-    notes: List[str] = Field(
+    notes: list[str] = Field(
         default_factory=list, description="Note IDs used in context"
     )
 
@@ -66,7 +66,7 @@ class SourceChatSessionResponse(BaseModel):
     )
 
 class SourceChatSessionWithMessagesResponse(SourceChatSessionResponse):
-    messages: List[ChatMessage] = Field(
+    messages: list[ChatMessage] = Field(
         default_factory=list, description="Session messages"
     )
     context_indicators: Optional[ContextIndicator] = Field(
@@ -134,7 +134,7 @@ async def create_source_chat_session(
 
 
 @router.get(
-    "/sources/{source_id}/chat/sessions", response_model=List[SourceChatSessionResponse]
+    "/sources/{source_id}/chat/sessions", response_model=list[SourceChatSessionResponse]
 )
 async def get_source_chat_sessions(source_id: str = Path(..., description="Source ID")):
     """Get all chat sessions for a source."""

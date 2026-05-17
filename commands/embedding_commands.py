@@ -558,14 +558,14 @@ async def collect_items_for_rebuild(
     include_sources: bool,
     include_notes: bool,
     include_insights: bool,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """
     Collect items to rebuild based on mode and include flags.
 
     Returns:
         Dict with keys: 'sources', 'notes', 'insights' containing lists of item IDs
     """
-    items: Dict[str, List[str]] = {"sources": [], "notes": [], "insights": []}
+    items: dict[str, list[str]] = {"sources": [], "notes": [], "insights": []}
 
     if include_sources:
         if mode == "existing":

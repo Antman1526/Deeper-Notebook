@@ -31,9 +31,9 @@ def full_model_dump(model):
 
 class SourceProcessingInput(CommandInput):
     source_id: str
-    content_state: Dict[str, Any]
-    notebook_ids: List[str]
-    transformations: List[str]
+    content_state: dict[str, Any]
+    notebook_ids: list[str]
+    transformations: list[str]
     embed: bool
 
 

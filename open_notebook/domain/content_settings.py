@@ -19,7 +19,7 @@ class ContentSettings(RecordModel):
     auto_delete_files: Optional[Literal["yes", "no"]] = Field(
         "yes", description="Auto Delete Uploaded Files"
     )
-    youtube_preferred_languages: Optional[List[str]] = Field(
+    youtube_preferred_languages: Optional[list[str]] = Field(
         ["en", "pt", "es", "de", "nl", "en-GB", "fr", "de", "hi", "ja"],
         description="Preferred languages for YouTube transcripts",
     )

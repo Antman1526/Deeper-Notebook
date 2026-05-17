@@ -69,7 +69,7 @@ def fake_graph(monkeypatch):
     yields the given iterable. Tests set `fake_graph.events`."""
 
     class _FakeGraph:
-        events: List[dict] = []
+        events: list[dict] = []
 
         def get_state(self, config):
             class _S:
@@ -100,7 +100,7 @@ def fake_session(monkeypatch):
     return sessions
 
 
-def _parse_ndjson(body: str) -> List[dict]:
+def _parse_ndjson(body: str) -> list[dict]:
     """Parse an NDJSON response body into a list of dicts."""
     return [json.loads(line) for line in body.splitlines() if line.strip()]
 
