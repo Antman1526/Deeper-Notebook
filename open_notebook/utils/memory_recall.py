@@ -28,6 +28,7 @@ embedder is misconfigured.
 
 from __future__ import annotations
 
+import asyncio  # v0.7.113 — wait_for around the chat-hot-path embed call
 import os
 from typing import Any
 
@@ -109,6 +110,15 @@ async def recall_relevant_memory(
     """
     if not query or not query.strip():
         return {"facts": [], "preferences": []}
+    # v0.7.113 — wrap the embed call in wait_for. recall_relevant_memory
+    # runs on the chat hot path (every user turn); a stuck embedding
+    # model (cold-start, OOM, misconfigured base_url) would otherwise
+    # hold up chat for up to ONP_CHAT_TIMEOUT_SEC (300s default before
+    # v0.7.99's outer wrap fires). 5s default keeps chat snappy; on
+    # timeout we fall through to recency recall which is DB-only.
+    _recall_embed_timeout = float(
+        os.environ.get("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5").strip() or 5
+    )
     try:
         # Lazy import to avoid pulling the model layer into module-load
         # for non-chat callers. If model_manager isn't configured (no
@@ -124,10 +134,19 @@ async def recall_relevant_memory(
             return {}
         # Esperanto's embedding interface: .aembed() takes a list,
         # returns list[list[float]]. Take the single result.
-        embeds = await embed_model.aembed([query.strip()])
+        embeds = await asyncio.wait_for(
+            embed_model.aembed([query.strip()]),
+            timeout=_recall_embed_timeout,
+        )
         if not embeds:
             return {}
         q_vec = embeds[0]
+    except asyncio.TimeoutError:
+        logger.debug(
+            "recall_relevant_memory: embedding timed out after {}s — "
+            "caller will fall back to recency", _recall_embed_timeout,
+        )
+        return {}
     except Exception as exc:
         logger.debug(
             "recall_relevant_memory: embedding step failed ({}) — "
