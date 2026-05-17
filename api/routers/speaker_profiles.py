@@ -14,7 +14,7 @@ class SpeakerProfileResponse(BaseModel):
     name: str
     description: str
     voice_model: Optional[str] = None
-    speakers: List[Dict[str, Any]]
+    speakers: list[dict[str, Any]]
     # Legacy fields (for display/migration awareness)
     tts_provider: Optional[str] = None
     tts_model: Optional[str] = None
@@ -32,7 +32,7 @@ def _profile_to_response(profile: SpeakerProfile) -> SpeakerProfileResponse:
     )
 
 
-@router.get("/speaker-profiles", response_model=List[SpeakerProfileResponse])
+@router.get("/speaker-profiles", response_model=list[SpeakerProfileResponse])
 async def list_speaker_profiles():
     """List all available speaker profiles"""
     try:
@@ -71,7 +71,7 @@ class SpeakerProfileCreate(BaseModel):
     name: str = Field(..., description="Unique profile name")
     description: str = Field("", description="Profile description")
     voice_model: Optional[str] = Field(None, description="Model record ID for TTS")
-    speakers: List[Dict[str, Any]] = Field(
+    speakers: list[dict[str, Any]] = Field(
         ..., description="Array of speaker configurations"
     )
     # Legacy fields (accepted but not required)

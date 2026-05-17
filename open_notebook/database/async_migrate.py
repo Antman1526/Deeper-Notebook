@@ -57,8 +57,8 @@ class AsyncMigrationRunner:
 
     def __init__(
         self,
-        up_migrations: List[AsyncMigration],
-        down_migrations: List[AsyncMigration],
+        up_migrations: list[AsyncMigration],
+        down_migrations: list[AsyncMigration],
     ) -> None:
         """Initialize runner with migration lists."""
         self.up_migrations = up_migrations
@@ -228,7 +228,7 @@ async def get_latest_version() -> int:
         return 0
 
 
-async def get_all_versions() -> List[dict]:
+async def get_all_versions() -> list[dict]:
     """Get all versions from the migrations table."""
     try:
         result = await repo_query("SELECT * FROM _sbl_migrations ORDER BY version;")

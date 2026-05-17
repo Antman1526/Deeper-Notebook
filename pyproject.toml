@@ -78,7 +78,10 @@ line_length = 88
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+# v0.7.116 — added UP006 (PEP 585: List → list, Dict → dict) and UP007
+# (PEP 604: Optional[X] → X | None, Union[A,B] → A | B) so future code
+# stays modernized. Python 3.11+ supports both.
+select = ["E", "F", "I", "UP006", "UP007"]
 ignore = [
     "E501",  # line too long
     "E402",  # module level import not at top of file (Streamlit requires this pattern)

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, TypeVar, Union
 from loguru import logger
 from surrealdb import AsyncSurreal, RecordID  # type: ignore
 
-T = TypeVar("T", Dict[str, Any], List[Dict[str, Any]])
+T = TypeVar("T", dict[str, Any], list[dict[str, Any]])
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ def parse_record_ids(obj: Any) -> Any:
     return obj
 
 
-def ensure_record_id(value: Union[str, RecordID]) -> RecordID:
+def ensure_record_id(value: str | RecordID) -> RecordID:
     """Ensure a value is a RecordID."""
     if isinstance(value, RecordID):
         return value
@@ -339,8 +339,8 @@ async def db_connection():
 
 
 async def repo_query(
-    query_str: str, vars: Optional[Dict[str, Any]] = None
-) -> List[Dict[str, Any]]:
+    query_str: str, vars: Optional[dict[str, Any]] = None
+) -> list[dict[str, Any]]:
     """Execute a SurrealQL query and return the results"""
 
     async with db_connection() as connection:
@@ -358,7 +358,7 @@ async def repo_query(
             raise
 
 
-async def repo_create(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
+async def repo_create(table: str, data: dict[str, Any]) -> dict[str, Any]:
     """Create a new record in the specified table"""
     # Remove 'id' attribute if it exists in data
     data.pop("id", None)
@@ -380,8 +380,8 @@ async def repo_create(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def repo_relate(
-    source: str, relationship: str, target: str, data: Optional[Dict[str, Any]] = None
-) -> List[Dict[str, Any]]:
+    source: str, relationship: str, target: str, data: Optional[dict[str, Any]] = None
+) -> list[dict[str, Any]]:
     """Create a relationship between two records with optional data"""
     if data is None:
         data = {}
@@ -397,8 +397,8 @@ async def repo_relate(
 
 
 async def repo_upsert(
-    table: str, id: Optional[str], data: Dict[str, Any], add_timestamp: bool = False
-) -> List[Dict[str, Any]]:
+    table: str, id: Optional[str], data: dict[str, Any], add_timestamp: bool = False
+) -> list[dict[str, Any]]:
     """Create or update a record in the specified table"""
     data.pop("id", None)
     if add_timestamp:
@@ -408,8 +408,8 @@ async def repo_upsert(
 
 
 async def repo_update(
-    table: str, id: str, data: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    table: str, id: str, data: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Update an existing record by table and id"""
     # If id already contains the table name, use it as is
     try:
@@ -431,7 +431,7 @@ async def repo_update(
         raise RuntimeError(f"Failed to update record: {str(e)}")
 
 
-async def repo_delete(record_id: Union[str, RecordID]):
+async def repo_delete(record_id: str | RecordID):
     """Delete a record by record id"""
 
     try:
@@ -443,8 +443,8 @@ async def repo_delete(record_id: Union[str, RecordID]):
 
 
 async def repo_insert(
-    table: str, data: List[Dict[str, Any]], ignore_duplicates: bool = False
-) -> List[Dict[str, Any]]:
+    table: str, data: list[dict[str, Any]], ignore_duplicates: bool = False
+) -> list[dict[str, Any]]:
     """Create a new record in the specified table"""
     try:
         async with db_connection() as connection:

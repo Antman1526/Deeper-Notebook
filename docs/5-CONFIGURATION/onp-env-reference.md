@@ -160,6 +160,72 @@ and shouldn't be set manually:
 
 ---
 
+## Studio multi-page generation (v0.7.89 → v0.7.101)
+
+Studio uploads produce a multi-page brief (overview + N pages w/ inline
+AI suggestions). Every LLM and file-extraction call is timeout-bounded.
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_STUDIO_NOTEBOOK_MULTIPAGE` | true | Kill switch back to single-note output |
+| `ONP_STUDIO_NOTEBOOK_PAGES_MAX` | 6 | Hard cap on page count (2..12) |
+| `ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES` | false | Run page LLM calls concurrently (cloud opt-in) |
+| `ONP_STUDIO_OUTLINE_TIMEOUT_SEC` | 90 | Outline-pass LLM call |
+| `ONP_STUDIO_PAGE_TIMEOUT_SEC` | 180 | Per-page LLM call (also covers legacy single-note fallback) |
+| `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` | 60 | `content_core.extract_content()` per file |
+
+## LLM-call timeouts (v0.7.93, v0.7.95, v0.7.99)
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_NOTE_TITLE_TIMEOUT_SEC` | 60 | Auto-title generation on `POST /notes` |
+| `ONP_TRANSFORMATION_TIMEOUT_SEC` | 180 | `POST /transformations/execute` |
+| `ONP_CHAT_TIMEOUT_SEC` | 300 | Non-streaming `/chat/execute` (streaming `/chat/stream` is naturally bounded by SSE disconnect) |
+
+## Memory-recall timeouts (v0.7.113 + v0.7.114)
+
+`recall_memory()` runs on every chat turn; unbounded embed-or-query
+calls would stall chat. Timeout falls through to recency-only recall
+so chat never blocks.
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` | 5 | Embed call on the recall query string |
+| `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` | 5 | Each SurrealQL query in the recall path |
+
+## Connection-test + discover (v0.7.100 + v0.7.110 + v0.7.116)
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>` | per-provider | Override for one provider (e.g. `..._OLLAMA=120`) |
+| `ONP_CONNECTION_TEST_TIMEOUT_SEC` | varies | Global override (applies to all providers) |
+| `ONP_DISCOVER_MODELS_TIMEOUT_SEC` | 30 | `/credentials/{id}/discover` provider list-models |
+
+Per-provider defaults (v0.7.116): cloud APIs (openai, anthropic,
+google, groq, mistral, deepseek, xai, voyage) → 10s. Slower
+cloud-routing providers (openrouter, elevenlabs, azure, vertex,
+dashscope, minimax) → 15s. Local-server providers (ollama,
+openai_compatible) → 60s for cold-start model-load latency.
+
+## Search + bulk endpoint caps (v0.7.102 + v0.7.110)
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_SEARCH_TIMEOUT_SEC` | 60 | `/search` text + vector queries |
+| `ONP_BULK_VECTORIZE_MAX_SOURCES` | 500 | Per-request cap on `POST /notebooks/{id}/vectorize_sources` |
+
+## Command-queue submission (v0.7.115)
+
+Async job submission (embeddings, podcasts, source extract) opens a
+sync SurrealDB WS handshake. Already wrapped in `asyncio.to_thread`
+(v0.7.55); v0.7.115 adds a timeout around the `await`.
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_SUBMIT_COMMAND_TIMEOUT_SEC` | 10 | `submit_command` blocking handshake |
+
+---
+
 ## Version history of caps
 
 | Version | What changed |
@@ -177,3 +243,16 @@ and shouldn't be set manually:
 | v0.7.16 | Source upload byte cap |
 | v0.7.17 | Encryption key rotation (`OPEN_NOTEBOOK_ENCRYPTION_KEYS`) |
 | v0.7.18 | DB pool size + disable flag |
+| v0.7.89 | Studio multi-page generation env vars |
+| v0.7.92 | `ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES` |
+| v0.7.93 | Studio outline + per-page timeouts |
+| v0.7.95 | `ONP_NOTE_TITLE_TIMEOUT_SEC`, `ONP_TRANSFORMATION_TIMEOUT_SEC` |
+| v0.7.99 | `ONP_CHAT_TIMEOUT_SEC` for non-streaming chat |
+| v0.7.100 | `ONP_CONNECTION_TEST_TIMEOUT_SEC` (global) |
+| v0.7.101 | `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` |
+| v0.7.102 | `ONP_SEARCH_TIMEOUT_SEC` |
+| v0.7.110 | `ONP_DISCOVER_MODELS_TIMEOUT_SEC`, `ONP_BULK_VECTORIZE_MAX_SOURCES` |
+| v0.7.113 | `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` |
+| v0.7.114 | `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` |
+| v0.7.115 | `ONP_SUBMIT_COMMAND_TIMEOUT_SEC` |
+| v0.7.116 | Per-provider `ONP_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>` |

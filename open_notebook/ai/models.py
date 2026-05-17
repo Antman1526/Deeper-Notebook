@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, Optional, Union
+from typing import Any, ClassVar, Optional
 
 from esperanto import (
     AIFactory,
@@ -13,7 +13,9 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel, RecordModel
 from open_notebook.exceptions import ConfigurationError
 
-ModelType = Union[LanguageModel, EmbeddingModel, SpeechToTextModel, TextToSpeechModel]
+# v0.7.116 — PEP 604 union syntax (Python 3.10+). Was `Union[...]`
+# (PEP 484); equivalent semantics, less import noise.
+ModelType = LanguageModel | EmbeddingModel | SpeechToTextModel | TextToSpeechModel
 
 
 class Model(ObjectModel):
@@ -40,7 +42,7 @@ class Model(ObjectModel):
         )
         return [Model(**model) for model in models]
 
-    def _prepare_save_data(self) -> Dict[str, Any]:
+    def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()
         if data.get("credential"):
             data["credential"] = ensure_record_id(data["credential"])

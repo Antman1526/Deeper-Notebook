@@ -39,7 +39,7 @@ def remove_non_printable(text: str) -> str:
     return re.sub(r"[^\w\s.,!?\-\n\t]", "", text, flags=re.UNICODE)
 
 
-def parse_thinking_content(content: str) -> Tuple[str, str]:
+def parse_thinking_content(content: str) -> tuple[str, str]:
     """
     Parse message content to extract thinking content from <think> tags.
 

@@ -19,13 +19,76 @@ from open_notebook.domain.credential import Credential
 
 # v0.7.100 — Per-test timeout. The endpoint that calls this is
 # /credentials/{id}/test which the user clicks from the Settings UI;
-# they expect feedback within seconds, not minutes. 30s is generous
-# for any healthy provider (even cold-start Ollama load); slow models
-# that genuinely take longer should be configured separately rather
-# than via a test endpoint.
-_CONNECTION_TEST_TIMEOUT_SEC = float(
-    os.environ.get("ONP_CONNECTION_TEST_TIMEOUT_SEC", "30").strip() or 30
-)
+# they expect feedback within seconds, not minutes.
+#
+# v0.7.116 — Per-provider tuning. Local providers (ollama,
+# openai_compatible, llama-cpp via desktop bundle) commonly need
+# more time to cold-start a model; cloud APIs typically respond in
+# <2s. The legacy global ONP_CONNECTION_TEST_TIMEOUT_SEC still
+# overrides everything when set; otherwise we pick per-provider
+# defaults from _PROVIDER_DEFAULT_TIMEOUTS, and individual providers
+# can be tuned via ONP_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>
+# (e.g. ONP_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA=120).
+
+# Per-provider defaults in seconds. Cloud APIs are snappy; local
+# servers can take a long time to first-load a model on a cold cache.
+_PROVIDER_DEFAULT_TIMEOUTS: dict[str, float] = {
+    # Cloud APIs — usually <2s, 10s is plenty
+    "openai": 10.0,
+    "anthropic": 10.0,
+    "google": 10.0,
+    "groq": 10.0,
+    "mistral": 10.0,
+    "deepseek": 10.0,
+    "xai": 10.0,
+    "openrouter": 15.0,   # OpenRouter sometimes routes via slow upstreams
+    "voyage": 10.0,
+    "elevenlabs": 15.0,
+    "azure": 15.0,
+    "vertex": 15.0,
+    "dashscope": 15.0,
+    "minimax": 15.0,
+    # Local-ish (self-hosted servers) — cold-start can be slow
+    "ollama": 60.0,
+    "openai_compatible": 60.0,
+}
+_FALLBACK_CONNECTION_TIMEOUT_SEC = 30.0
+
+
+def _connection_timeout_for(provider: str) -> float:
+    """Resolve the connection-test timeout for a specific provider.
+
+    Lookup order:
+      1. Provider-specific env: ONP_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>
+      2. Global override env:    ONP_CONNECTION_TEST_TIMEOUT_SEC
+      3. Per-provider default:   _PROVIDER_DEFAULT_TIMEOUTS[provider]
+      4. Fallback:               30s
+    """
+    p = (provider or "").lower()
+    # 1. Provider-specific env
+    per_env = os.environ.get(
+        f"ONP_CONNECTION_TEST_TIMEOUT_SEC_{p.upper()}", ""
+    ).strip()
+    if per_env:
+        try:
+            return float(per_env)
+        except ValueError:
+            logger.warning(
+                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC_{}: {!r}; falling through",
+                p.upper(), per_env,
+            )
+    # 2. Global override
+    global_env = os.environ.get("ONP_CONNECTION_TEST_TIMEOUT_SEC", "").strip()
+    if global_env:
+        try:
+            return float(global_env)
+        except ValueError:
+            logger.warning(
+                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC: {!r}; falling through",
+                global_env,
+            )
+    # 3. Per-provider default
+    return _PROVIDER_DEFAULT_TIMEOUTS.get(p, _FALLBACK_CONNECTION_TIMEOUT_SEC)
 
 # Test models for each provider - uses minimal/cheapest models for testing
 # Format: (model_name, model_type)
@@ -54,7 +117,7 @@ async def _test_azure_connection(
     endpoint: Optional[str] = None,
     api_key: Optional[str] = None,
     api_version: Optional[str] = None,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Test Azure OpenAI connectivity by listing models.
 
@@ -107,7 +170,7 @@ async def _test_azure_connection(
         return False, f"Connection error: {str(e)[:100]}"
 
 
-async def _test_ollama_connection(base_url: str) -> Tuple[bool, str]:
+async def _test_ollama_connection(base_url: str) -> tuple[bool, str]:
     """Test Ollama server connectivity."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -142,7 +205,7 @@ async def _test_ollama_connection(base_url: str) -> Tuple[bool, str]:
         return False, f"Connection error: {str(e)[:100]}"
 
 
-async def _test_openai_compatible_connection(base_url: str, api_key: Optional[str] = None) -> Tuple[bool, str]:
+async def _test_openai_compatible_connection(base_url: str, api_key: Optional[str] = None) -> tuple[bool, str]:
     """Test OpenAI-compatible server connectivity."""
     try:
         headers = {}
@@ -182,7 +245,7 @@ async def _test_openai_compatible_connection(base_url: str, api_key: Optional[st
 
 async def test_provider_connection(
     provider: str, model_type: str = "language", config_id: Optional[str] = None
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Test if a provider's API key is valid by making a minimal API call.
 
@@ -263,8 +326,11 @@ async def test_provider_connection(
 
         # Try to create the model and make a minimal call
         # v0.7.100 — wrap in wait_for so a misconfigured slow provider
-        # can't hang the Settings UI's "Test connection" button for
-        # minutes. 30s default; raise via env if needed.
+        # can't hang the Settings UI's "Test connection" button.
+        # v0.7.116 — per-provider timeout via _connection_timeout_for().
+        # Cloud APIs get 10-15s; local servers (ollama,
+        # openai_compatible) get 60s for cold-start model loads.
+        _timeout = _connection_timeout_for(provider)
         if test_model_type == "language":
             model = AIFactory.create_language(model_name=model_to_use, provider=provider)
             # Convert to LangChain and make a minimal call
@@ -272,14 +338,16 @@ async def test_provider_connection(
             try:
                 await asyncio.wait_for(
                     lc_model.ainvoke("Hi"),
-                    timeout=_CONNECTION_TEST_TIMEOUT_SEC,
+                    timeout=_timeout,
                 )
             except asyncio.TimeoutError:
                 return False, (
-                    f"Connection test timed out after {_CONNECTION_TEST_TIMEOUT_SEC:.0f}s. "
+                    f"Connection test timed out after {_timeout:.0f}s. "
                     "The provider may be slow, the model may be loading, or "
-                    "the endpoint is unreachable. Raise ONP_CONNECTION_TEST_TIMEOUT_SEC "
-                    "if your model legitimately takes longer than 30s for a 'Hi' prompt."
+                    "the endpoint is unreachable. Raise "
+                    f"ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    "if your model legitimately takes longer than that for "
+                    "a 'Hi' prompt."
                 )
             return True, "Connection successful"
 
@@ -289,12 +357,13 @@ async def test_provider_connection(
             try:
                 await asyncio.wait_for(
                     model.aembed(["test"]),
-                    timeout=_CONNECTION_TEST_TIMEOUT_SEC,
+                    timeout=_timeout,
                 )
             except asyncio.TimeoutError:
                 return False, (
-                    f"Embedding test timed out after {_CONNECTION_TEST_TIMEOUT_SEC:.0f}s. "
-                    "Raise ONP_CONNECTION_TEST_TIMEOUT_SEC or check provider status."
+                    f"Embedding test timed out after {_timeout:.0f}s. "
+                    f"Raise ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    "or check provider status."
                 )
             return True, "Connection successful"
 
@@ -382,7 +451,7 @@ def _generate_test_wav() -> io.BytesIO:
     return buf
 
 
-def _normalize_error_message(error_msg: str) -> Tuple[bool, str]:
+def _normalize_error_message(error_msg: str) -> tuple[bool, str]:
     """Normalize common error patterns into user-friendly messages."""
     lower = error_msg.lower()
 
@@ -402,7 +471,7 @@ def _normalize_error_message(error_msg: str) -> Tuple[bool, str]:
     return False, error_msg
 
 
-async def test_individual_model(model) -> Tuple[bool, str]:
+async def test_individual_model(model) -> tuple[bool, str]:
     """
     Test a specific model configuration end-to-end by making a real API call.
 

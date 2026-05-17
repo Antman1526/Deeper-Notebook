@@ -55,7 +55,7 @@ _GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 # CSRF protection: ephemeral state token in-memory. ONP is single-user, single-
 # process so this dict is safe; in a multi-tenant API it'd need to move to
 # session/redis.
-_oauth_states: Dict[str, datetime] = {}
+_oauth_states: dict[str, datetime] = {}
 
 
 # ────────────────────────────────────────────────────────────────────────────────

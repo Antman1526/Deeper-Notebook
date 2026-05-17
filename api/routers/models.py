@@ -54,7 +54,7 @@ class ProviderSyncResponse(BaseModel):
 class AllProvidersSyncResponse(BaseModel):
     """Response model for syncing all providers."""
 
-    results: Dict[str, ProviderSyncResponse]
+    results: dict[str, ProviderSyncResponse]
     total_discovered: int
     total_new: int
 
@@ -63,16 +63,16 @@ class ProviderModelCountResponse(BaseModel):
     """Response model for provider model counts."""
 
     provider: str
-    counts: Dict[str, int]
+    counts: dict[str, int]
     total: int
 
 
 class AutoAssignResult(BaseModel):
     """Response model for auto-assign operation."""
 
-    assigned: Dict[str, str]  # slot_name -> model_id
-    skipped: List[str]  # slots already assigned
-    missing: List[str]  # slots with no available models
+    assigned: dict[str, str]  # slot_name -> model_id
+    skipped: list[str]  # slots already assigned
+    missing: list[str]  # slots with no available models
 
 
 class ModelTestResponse(BaseModel):
@@ -166,7 +166,7 @@ def _check_openai_compatible_support(mode: str) -> bool:
     return generic or specific or generic_key or specific_key
 
 
-@router.get("/models", response_model=List[ModelResponse])
+@router.get("/models", response_model=list[ModelResponse])
 async def get_models(
     type: Optional[str] = Query(None, description="Filter by model type"),
 ):
@@ -489,7 +489,7 @@ async def get_provider_availability():
 
 
 @router.get(
-    "/models/discover/{provider}", response_model=List[DiscoveredModelResponse]
+    "/models/discover/{provider}", response_model=list[DiscoveredModelResponse]
 )
 async def discover_models(provider: str):
     """
@@ -607,7 +607,7 @@ async def get_model_count(provider: str):
         )
 
 
-@router.get("/models/by-provider/{provider}", response_model=List[ModelResponse])
+@router.get("/models/by-provider/{provider}", response_model=list[ModelResponse])
 async def get_models_by_provider(provider: str):
     """
     Get all registered models for a specific provider.
@@ -642,8 +642,8 @@ async def get_models_by_provider(provider: str):
 
 
 def _get_preferred_model(
-    models: List[Dict], provider_priority: List[str], model_preferences: Dict
-) -> Optional[Dict]:
+    models: list[dict], provider_priority: list[str], model_preferences: dict
+) -> Optional[dict]:
     """
     Select the best model from a list based on provider priority and model preferences.
 
@@ -659,7 +659,7 @@ def _get_preferred_model(
         return None
 
     # Group models by provider
-    by_provider: Dict[str, List[Dict]] = {}
+    by_provider: dict[str, list[dict]] = {}
     for model in models:
         provider = model.get("provider", "")
         if provider not in by_provider:
@@ -713,7 +713,7 @@ async def auto_assign_defaults():
         )
 
         # Group models by type
-        models_by_type: Dict[str, List[Dict]] = {
+        models_by_type: dict[str, list[dict]] = {
             "language": [],
             "embedding": [],
             "text_to_speech": [],
@@ -738,9 +738,9 @@ async def auto_assign_defaults():
             ("default_speech_to_text_model", "speech_to_text", defaults.default_speech_to_text_model),  # type: ignore[attr-defined]
         ]
 
-        assigned: Dict[str, str] = {}
-        skipped: List[str] = []
-        missing: List[str] = []
+        assigned: dict[str, str] = {}
+        skipped: list[str] = []
+        missing: list[str] = []
 
         for slot_name, model_type, current_value in slot_configs:
             if current_value:
@@ -837,9 +837,9 @@ async def auto_assign_capability(force: bool = False):
         name_to_model = {m.get("name", ""): m for m in all_models}
 
         defaults = await DefaultModels.get_instance()
-        assigned: Dict[str, str] = {}
-        skipped: List[str] = []
-        missing: List[str] = []
+        assigned: dict[str, str] = {}
+        skipped: list[str] = []
+        missing: list[str] = []
 
         for slot in SLOTS:
             field = slot_to_field.get(slot)

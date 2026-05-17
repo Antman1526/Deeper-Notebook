@@ -57,7 +57,7 @@ from loguru import logger
 # Module-level cache of (path → Connection). Two graphs sharing the
 # same checkpoint file get the same connection — eliminates the
 # "two-writer race on one file" failure mode.
-_CONNECTIONS: Dict[str, sqlite3.Connection] = {}
+_CONNECTIONS: dict[str, sqlite3.Connection] = {}
 
 
 def _verify_integrity(conn: sqlite3.Connection) -> bool:

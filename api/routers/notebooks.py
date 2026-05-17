@@ -17,7 +17,7 @@ from open_notebook.exceptions import InvalidInputError
 router = APIRouter()
 
 
-@router.get("/notebooks", response_model=List[NotebookResponse])
+@router.get("/notebooks", response_model=list[NotebookResponse])
 async def get_notebooks(
     archived: Optional[bool] = Query(None, description="Filter by archived status"),
     order_by: str = Query("updated desc", description="Order by field and direction"),

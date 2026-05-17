@@ -21,7 +21,7 @@ class ChatService:
         if password:
             self.headers["Authorization"] = f"Bearer {password}"
 
-    async def get_sessions(self, notebook_id: str) -> List[Dict[str, Any]]:
+    async def get_sessions(self, notebook_id: str) -> list[dict[str, Any]]:
         """Get all chat sessions for a notebook"""
         try:
             async with httpx.AsyncClient() as client:
@@ -41,10 +41,10 @@ class ChatService:
         notebook_id: str,
         title: Optional[str] = None,
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new chat session"""
         try:
-            data: Dict[str, Any] = {"notebook_id": notebook_id}
+            data: dict[str, Any] = {"notebook_id": notebook_id}
             if title is not None:
                 data["title"] = title
             if model_override is not None:
@@ -62,7 +62,7 @@ class ChatService:
             logger.error(f"Error creating chat session: {str(e)}")
             raise
 
-    async def get_session(self, session_id: str) -> Dict[str, Any]:
+    async def get_session(self, session_id: str) -> dict[str, Any]:
         """Get a specific session with messages"""
         try:
             async with httpx.AsyncClient() as client:
@@ -81,10 +81,10 @@ class ChatService:
         session_id: str,
         title: Optional[str] = None,
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update session properties"""
         try:
-            data: Dict[str, Any] = {}
+            data: dict[str, Any] = {}
             if title is not None:
                 data["title"] = title
             if model_override is not None:
@@ -107,7 +107,7 @@ class ChatService:
             logger.error(f"Error updating session: {str(e)}")
             raise
 
-    async def delete_session(self, session_id: str) -> Dict[str, Any]:
+    async def delete_session(self, session_id: str) -> dict[str, Any]:
         """Delete a chat session"""
         try:
             async with httpx.AsyncClient() as client:
@@ -125,9 +125,9 @@ class ChatService:
         self,
         session_id: str,
         message: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a chat request"""
         try:
             data = {"session_id": session_id, "message": message, "context": context}
@@ -147,8 +147,8 @@ class ChatService:
             raise
 
     async def build_context(
-        self, notebook_id: str, context_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, notebook_id: str, context_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Build context for a notebook"""
         try:
             data = {"notebook_id": notebook_id, "context_config": context_config}

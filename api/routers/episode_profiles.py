@@ -44,7 +44,7 @@ def _profile_to_response(profile: EpisodeProfile) -> EpisodeProfileResponse:
     )
 
 
-@router.get("/episode-profiles", response_model=List[EpisodeProfileResponse])
+@router.get("/episode-profiles", response_model=list[EpisodeProfileResponse])
 async def list_episode_profiles():
     """List all available episode profiles"""
     try:

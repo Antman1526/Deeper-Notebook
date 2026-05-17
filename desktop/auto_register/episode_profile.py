@@ -50,7 +50,7 @@ _NON_CHAT_PREFIXES = ("piper-", "whisper-", "nomic-", "Local Embeddings")
 # themselves: clear voice, no LLM jargon, no "AI assistant" framing —
 # the outline LLM reads this as a creative brief, not as instructions
 # to itself.
-_PRESETS: List[Dict[str, Any]] = [
+_PRESETS: list[dict[str, Any]] = [
     {
         "name": "Open Notebook Plus Local",
         "description": "Two-voice podcast using local Piper TTS",
