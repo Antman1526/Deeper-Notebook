@@ -18,8 +18,43 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.111 (in flight)
+## Unreleased — v0.7.36 → v0.7.112 (in flight)
 
+- **v0.7.112** ✨ **Deep healthcheck endpoint (`/healthz/deep`).**
+  Existing `/livez` and `/readyz` cover liveness + must-have deps
+  (DB, migrations). v0.7.112 adds a deeper probe that lets operators
+  answer "is vector search broken?" / "is chat broken?" without
+  grepping logs.
+
+  - Probes each subsystem independently with a short timeout:
+    - **Database** (must-have, 2s)
+    - **Migrations** (must-have, 3s)
+    - **Embedding model** (optional, 2s) — needed for vector search +
+      chat-with-sources
+    - **Chat model** (optional, 2s) — needed for `/chat`, `/studio`,
+      `/search/ask`
+    - **Command registry** (optional) — needed for async jobs
+      (embeddings, podcast generation, source extract)
+  - Returns three overall states:
+    - `healthy` (200) — all subsystems up
+    - `degraded` (200) — optional subsystems missing, must-haves OK
+    - `not_ready` (503) — DB or migrations failed
+  - Each subsystem report includes an **actionable error string**
+    when broken. E.g. missing chat model: "Configure one in
+    Settings → Models — without it, /chat, /studio, and /search/ask
+    cannot generate responses."
+  - Auth-exempt (added to `excluded_paths`) so monitoring tools and
+    first-launch wizards can poll without credentials. Same exemption
+    rationale as `/readyz`.
+  - Audit pass during the build:
+    - 0 sync I/O calls in async functions
+    - 0 `time.sleep` in async paths
+    - 0 unguarded `result[0]` accesses (all `if result:` checked)
+    - 0 log-secret-leak patterns (api_key / password / secret never
+      f-string'd into log messages)
+  - 6 new tests cover healthy / not-ready (DB offline + migrations
+    pending) / degraded (missing embedding / missing chat) / auth-
+    exempt-status.
 - **v0.7.111** ✨ **Combined single-file notebook export.** Two new
   formats: `combined_md` and `combined_html` concatenate every page
   (plus optional sources) into a single file rather than a
