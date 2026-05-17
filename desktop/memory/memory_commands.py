@@ -14,7 +14,7 @@ import os
 from surreal_commands import command
 
 
-def _build_clients():
+def _build_clients(model_override: str | None = None):
     """Lazily build the LLM + memory clients at command-invocation time.
 
     Avoids importing heavy deps at module load (worker discovery).
@@ -23,6 +23,12 @@ def _build_clients():
     spawning the worker. We use a private namespace (MEMORY_*) instead of
     OPENAI_COMPATIBLE_BASE_URL to avoid conflicting with the upstream
     esperanto/Ollama configuration the user picked for regular chat.
+
+    v0.7.83 — optional `model_override` lets the caller (the command
+    handlers below) pin the LLM to a specific model name when the user
+    picked a per-session override in chat. Defaults to whatever
+    ONP_CHAT_MODEL_NAME / "default" resolves to so existing behavior is
+    preserved when the caller doesn't pass an override.
     """
     from desktop.config import default_config_path, load_or_create
     from desktop.memory.client import build_memory_client
@@ -66,7 +72,17 @@ def _build_clients():
     import httpx
 
     chat_timeout_s = float(os.environ.get("ONP_CHAT_TIMEOUT_S", "30"))
-    chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")
+    # v0.7.83 — caller-provided model_override takes precedence over
+    # the env-var fallback. The local llama-cpp-python server echoes
+    # whatever model name we send back as the active model regardless
+    # of the value (it serves a single loaded GGUF), so this only
+    # affects OpenAI-compatible third-party servers (LM Studio, vLLM)
+    # that actually route by model name.
+    chat_model_name = (
+        model_override
+        or os.environ.get("ONP_CHAT_MODEL_NAME")
+        or "default"
+    )
 
     class _LLM:
         def __init__(self, base_url, model):
@@ -146,11 +162,18 @@ def _build_clients():
 
 @command(name="memory_extract_turn")
 def memory_extract_turn(chat_session_id: str, user_text: str,
-                         assistant_text: str) -> dict:
-    """Per-turn fact extractor. Best-effort; no exceptions propagate."""
+                         assistant_text: str,
+                         model_override: str | None = None) -> dict:
+    """Per-turn fact extractor. Best-effort; no exceptions propagate.
+
+    v0.7.83 — accepts optional `model_override` (defaults to None for
+    backward compatibility with any in-flight rows queued by older API
+    versions). When set, the writer's LLM client uses that model name
+    instead of the bundled ONP_CHAT_MODEL_NAME / "default".
+    """
     try:
         from desktop.memory.writer import extract_turn
-        llm, mem_client = _build_clients()
+        llm, mem_client = _build_clients(model_override=model_override)
         extract_turn(
             llm=llm, mem_client=mem_client,
             chat_session_id=chat_session_id,
@@ -162,11 +185,15 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
 
 
 @command(name="memory_summarize_session")
-def memory_summarize_session(chat_session_id: str, transcript: str) -> dict:
-    """Per-session episode summarizer."""
+def memory_summarize_session(chat_session_id: str, transcript: str,
+                              model_override: str | None = None) -> dict:
+    """Per-session episode summarizer.
+
+    v0.7.83 — see memory_extract_turn for the model_override contract.
+    """
     try:
         from desktop.memory.writer import summarize_session
-        llm, mem_client = _build_clients()
+        llm, mem_client = _build_clients(model_override=model_override)
         summarize_session(
             llm=llm, mem_client=mem_client,
             chat_session_id=chat_session_id,
