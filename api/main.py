@@ -23,6 +23,8 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
+    exports,  # v0.7.90 — notebook/note export to host filesystem
+    filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
     languages,
     models,
@@ -447,6 +449,11 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(source_chat.router, prefix="/api", tags=["source-chat"])
 app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+# v0.7.90 — Host filesystem listing/mkdir + notebook/note export endpoints.
+# These let the frontend present a directory-picker UI and write notebook
+# contents out to disk as markdown (folder or .zip).
+app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
+app.include_router(exports.router, prefix="/api", tags=["exports"])
 
 
 @app.get("/")
