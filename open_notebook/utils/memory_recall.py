@@ -130,7 +130,7 @@ async def recall_relevant_memory(
         q_vec = embeds[0]
     except Exception as exc:
         logger.debug(
-            "recall_relevant_memory: embedding step failed (%s) — "
+            "recall_relevant_memory: embedding step failed ({}) — "
             "caller will fall back to recency",
             exc,
         )
@@ -260,7 +260,7 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
     except Exception as exc:
         # debug — every chat turn would log otherwise; the empty path
         # is the expected case on fresh installs.
-        logger.debug("memory recall query failed (returning empty): %s", exc)
+        logger.debug("memory recall query failed (returning empty): {}", exc)
         return []
 
 

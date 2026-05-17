@@ -482,7 +482,7 @@ async def stream_source_chat_response(
             if fastapi_request is not None and await fastapi_request.is_disconnected():
                 logger.info(
                     "source chat stream: client disconnected for "
-                    "session %s; halting", session_id,
+                    "session {}; halting", session_id,
                 )
                 return
 

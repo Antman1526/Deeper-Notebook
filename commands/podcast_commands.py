@@ -267,12 +267,12 @@ async def generate_podcast_command(
                 if output_dir.exists() and not any(output_dir.iterdir()):
                     output_dir.rmdir()
                     logger.info(
-                        "Cleaned up empty output dir after failure: %s",
+                        "Cleaned up empty output dir after failure: {}",
                         output_dir,
                     )
             except Exception as cleanup_exc:
                 logger.warning(
-                    "Could not clean up output dir %s after failure: %s",
+                    "Could not clean up output dir {} after failure: {}",
                     output_dir, cleanup_exc,
                 )
             raise

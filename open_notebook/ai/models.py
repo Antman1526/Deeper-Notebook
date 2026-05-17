@@ -124,8 +124,8 @@ class Model(ObjectModel):
             )
             for name in referencing_eps or []:
                 logger.warning(
-                    "Model %s deleted while still referenced by episode "
-                    "profile %r — profile retry/regeneration will 400 "
+                    "Model {} deleted while still referenced by episode "
+                    "profile {!r} — profile retry/regeneration will 400 "
                     "until the profile is reassigned.",
                     self.id, name,
                 )
@@ -136,15 +136,15 @@ class Model(ObjectModel):
             )
             for name in referencing_sps or []:
                 logger.warning(
-                    "Model %s deleted while still referenced by speaker "
-                    "profile %r — profile retry/regeneration will 400 "
+                    "Model {} deleted while still referenced by speaker "
+                    "profile {!r} — profile retry/regeneration will 400 "
                     "until the profile is reassigned.",
                     self.id, name,
                 )
         except Exception as exc:
             logger.debug(
-                "Could not scan podcast profile references for %s "
-                "(non-fatal): %s", self.id, exc,
+                "Could not scan podcast profile references for {} "
+                "(non-fatal): {}", self.id, exc,
             )
 
         return await super().delete()
