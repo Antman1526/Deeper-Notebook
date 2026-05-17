@@ -312,6 +312,7 @@ app.add_middleware(
         "/health",
         "/livez",
         "/readyz",
+        "/healthz/deep",   # v0.7.112 — operators need to poll without auth
         "/docs",
         "/openapi.json",
         "/redoc",
@@ -531,3 +532,166 @@ async def readyz():
     }
     status_code = 200 if ready else 503
     return JSONResponse(content=body, status_code=status_code)
+
+
+# v0.7.112 — Deep healthcheck. /readyz checks only the must-have-to-serve-
+# anything dependencies (DB + migrations); /healthz/deep additionally
+# probes feature-tier dependencies (embedding model, chat model
+# defaults, command worker) so an operator can answer "is search broken
+# right now?" without grepping logs.
+#
+# Each subsystem reports independently — vector search being broken
+# (no embedding model) doesn't make /healthz/deep itself return 503,
+# because chat-only deployments are valid. The overall status is
+# "healthy" if must-haves pass and "degraded" if any optional subsystem
+# is missing/broken. Returns 200 unless a must-have fails (DB or
+# migrations).
+@app.get("/healthz/deep")
+async def healthz_deep():
+    """v0.7.112 — Deep dependency check.
+
+    Probes each subsystem independently with a short timeout and
+    reports per-feature status. Useful for:
+      - Operators answering "is search broken?" / "is chat broken?"
+      - First-launch wizards verifying setup before showing the
+        notebook UI
+      - Monitoring dashboards that need to differentiate "down" from
+        "missing optional config"
+
+    Response shape:
+      {
+        "status": "healthy" | "degraded" | "not_ready",
+        "checks": {
+          "database": {...},
+          "migrations": {...},
+          "embedding_model": {...},
+          "chat_model": {...},
+          "command_registry": {...},
+        }
+      }
+
+    Status codes:
+      200 → healthy or degraded (some optional features unavailable)
+      503 → not_ready (DB or migrations failed — nothing works)
+    """
+    from api.routers.config import check_database_health
+    from open_notebook.database import async_migrate
+
+    checks: dict[str, dict] = {}
+
+    # MUST-HAVE: Database
+    db_health = await check_database_health()
+    db_status = db_health.get("status", "unknown")
+    checks["database"] = {
+        "status": db_status,
+        "ok": db_status == "online",
+        "error": db_health.get("error"),
+    }
+
+    # MUST-HAVE: Migrations
+    try:
+        manager = async_migrate.AsyncMigrationManager()
+        pending = await asyncio.wait_for(manager.needs_migration(), timeout=3.0)
+        checks["migrations"] = {
+            "status": "applied" if not pending else "pending",
+            "ok": not pending,
+            "error": None,
+        }
+    except asyncio.TimeoutError:
+        checks["migrations"] = {
+            "status": "timeout", "ok": False,
+            "error": "needs_migration() took longer than 3s",
+        }
+    except Exception as exc:
+        checks["migrations"] = {
+            "status": "error", "ok": False, "error": str(exc),
+        }
+
+    # OPTIONAL: Embedding model (required for vector search + chat-with-sources)
+    try:
+        from open_notebook.ai.models import model_manager
+        emb = await asyncio.wait_for(
+            model_manager.get_embedding_model(), timeout=2.0,
+        )
+        checks["embedding_model"] = {
+            "status": "configured" if emb else "missing",
+            "ok": bool(emb),
+            "error": None if emb else (
+                "No default embedding model. Configure one in "
+                "Settings → Models to enable vector search."
+            ),
+        }
+    except asyncio.TimeoutError:
+        checks["embedding_model"] = {
+            "status": "timeout", "ok": False,
+            "error": "embedding model lookup took longer than 2s",
+        }
+    except Exception as exc:
+        checks["embedding_model"] = {
+            "status": "error", "ok": False, "error": str(exc),
+        }
+
+    # OPTIONAL: Default chat model (required for /chat, /studio, /ask, etc.)
+    try:
+        from open_notebook.ai.models import model_manager
+        chat = await asyncio.wait_for(
+            model_manager.get_default_model("chat"), timeout=2.0,
+        )
+        checks["chat_model"] = {
+            "status": "configured" if chat else "missing",
+            "ok": bool(chat),
+            "error": None if chat else (
+                "No default chat model. Configure one in "
+                "Settings → Models — without it, /chat, /studio, and "
+                "/search/ask cannot generate responses."
+            ),
+        }
+    except asyncio.TimeoutError:
+        checks["chat_model"] = {
+            "status": "timeout", "ok": False,
+            "error": "chat model lookup took longer than 2s",
+        }
+    except Exception as exc:
+        checks["chat_model"] = {
+            "status": "error", "ok": False, "error": str(exc),
+        }
+
+    # OPTIONAL: Command registry (required for async embedding +
+    # podcast generation + Studio extract). Importing the command
+    # modules is the same check the routers do before submitting jobs;
+    # if these imports fail, async jobs can't be queued.
+    try:
+        import commands.embedding_commands  # noqa: F401
+        import commands.podcast_commands  # noqa: F401
+        import commands.source_commands  # noqa: F401
+        checks["command_registry"] = {
+            "status": "loaded", "ok": True, "error": None,
+        }
+    except Exception as exc:
+        checks["command_registry"] = {
+            "status": "error", "ok": False,
+            "error": (
+                f"Failed to import command modules: {exc}. Async jobs "
+                "(podcast generation, embeddings) will fail to queue. "
+                "Check that the worker process is running."
+            ),
+        }
+
+    must_have_ok = (
+        checks["database"]["ok"] and checks["migrations"]["ok"]
+    )
+    all_ok = all(c["ok"] for c in checks.values())
+    if not must_have_ok:
+        overall = "not_ready"
+        status_code = 503
+    elif not all_ok:
+        overall = "degraded"
+        status_code = 200
+    else:
+        overall = "healthy"
+        status_code = 200
+
+    return JSONResponse(
+        content={"status": overall, "checks": checks},
+        status_code=status_code,
+    )
