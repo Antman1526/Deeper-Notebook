@@ -159,11 +159,18 @@ async def _call_model_with_source_context_inner(
     # "stay focused on the source; only weave memory in when directly
     # relevant". Failure is silent — recall_recent_memory returns empty on
     # missing tables (fresh DB, upstream non-desktop build).
+    # v0.7.84 — uses the orchestrator (auto recency vs semantic). Pass
+    # the latest user turn as the query for the semantic path.
     from open_notebook.utils.memory_recall import (
-        recall_recent_memory,
+        recall_memory,
         render_memory_block,
     )
-    memory = await recall_recent_memory()
+    last_user_text = ""
+    for m in reversed(state.get("messages", [])):
+        if getattr(m, "type", None) == "human":
+            last_user_text = extract_text_content(m.content)
+            break
+    memory = await recall_memory(query=last_user_text)
     memory_block = render_memory_block(memory)
 
     prompt_data = {
