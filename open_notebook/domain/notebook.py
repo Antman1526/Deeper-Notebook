@@ -155,11 +155,35 @@ class Notebook(ObjectModel):
             deleted_sources = 0
             unlinked_sources = 0
 
-            # 1. Get and delete all notes linked to this notebook
+            # 1. Get and delete all notes linked to this notebook.
+            # v0.7.107 — parallelize per-note deletes. For v0.7.89
+            # multi-page notebooks with N notes, the old sequential loop
+            # was N+1 round-trips serialized; with asyncio.gather they
+            # interleave concurrently against the connection pool.
+            # Each note.delete() still runs its own cascade (artifact
+            # edges + note_embedding rows, per v0.7.76), so we retain
+            # the per-note observability without the sequential wait.
+            # return_exceptions=True keeps one failed note from
+            # cancelling the others — a partial cleanup is still
+            # better than aborting halfway and leaving orphan rows.
+            import asyncio as _asyncio_for_delete  # local alias avoids name shadowing
             notes = await self.get_notes()
-            for note in notes:
-                await note.delete()
-                deleted_notes += 1
+            if notes:
+                results = await _asyncio_for_delete.gather(
+                    *(note.delete() for note in notes),
+                    return_exceptions=True,
+                )
+                for note, result in zip(notes, results):
+                    if isinstance(result, BaseException):
+                        logger.warning(
+                            "Notebook delete: note {} failed to delete: {}",
+                            note.id, result,
+                        )
+                        # Skip counting failed deletes; the top-level
+                        # `DELETE artifact WHERE out=$notebook_id`
+                        # below will at least unlink the orphan.
+                        continue
+                    deleted_notes += 1
             logger.info(f"Deleted {deleted_notes} notes for notebook {self.id}")
 
             # Delete artifact relationships

@@ -105,6 +105,10 @@ async def generate_podcast(request: PodcastGenerationRequest):
             episode_name=request.episode_name,
         )
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error generating podcast: {str(e)}")
         raise HTTPException(
@@ -119,6 +123,10 @@ async def get_podcast_job_status(job_id: str):
         status_data = await PodcastService.get_job_status(job_id)
         return status_data
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching podcast job status: {str(e)}")
         raise HTTPException(
@@ -146,6 +154,10 @@ async def list_podcast_episodes():
                     detail = await episode.get_job_detail()
                     job_status = detail["status"]
                     error_message = detail["error_message"]
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception:
                     job_status = "unknown"
             else:
@@ -179,6 +191,10 @@ async def list_podcast_episodes():
 
         return response_episodes
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error listing podcast episodes: {str(e)}")
         raise HTTPException(
@@ -200,6 +216,10 @@ async def get_podcast_episode(episode_id: str):
                 detail = await episode.get_job_detail()
                 job_status = detail["status"]
                 error_message = detail["error_message"]
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 job_status = "unknown"
         else:
@@ -227,6 +247,10 @@ async def get_podcast_episode(episode_id: str):
             error_message=error_message,
         )
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching podcast episode: {str(e)}")
         raise HTTPException(status_code=404, detail="Episode not found")
@@ -340,6 +364,10 @@ async def retry_podcast_episode(episode_id: str):
             elif audio_path.exists():
                 try:
                     audio_path.unlink()
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Failed to delete audio file {audio_path}: {e}")
 
@@ -388,6 +416,10 @@ async def delete_podcast_episode(episode_id: str):
                 try:
                     audio_path.unlink()
                     logger.info(f"Deleted audio file: {audio_path}")
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Failed to delete audio file {audio_path}: {e}")
 
@@ -553,6 +585,10 @@ async def suggest_episode(req: SuggestRequest):
                 notebook_title = nb_rows[0].get("name")
             elif isinstance(nb_rows, dict):
                 notebook_title = nb_rows.get("name")
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("suggest: notebook fetch failed: {}", exc)
         try:
@@ -568,6 +604,10 @@ async def suggest_episode(req: SuggestRequest):
             elif isinstance(ref_rows, dict):
                 ids = ref_rows.get("source_ids") or []
             source_ids.extend([str(s) for s in ids])
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("suggest: notebook source fetch failed: {}", exc)
 
@@ -596,6 +636,10 @@ async def suggest_episode(req: SuggestRequest):
                 chars = r.get("chars")
                 if isinstance(chars, (int, float)):
                     total_chars += int(chars)
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("suggest: source fetch failed: {}", exc)
 
@@ -614,6 +658,10 @@ async def suggest_episode(req: SuggestRequest):
         available_presets = {
             r.get("name") for r in prof_rows or [] if r.get("name")
         }
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.warning("suggest: episode_profile list failed: {}", exc)
 

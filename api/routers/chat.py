@@ -104,6 +104,10 @@ async def _fire_memory_extract_turn(
             "memory_extract_turn",
             args,
         )
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         # Memory is best-effort. A failed submit_command (worker down,
         # SurrealDB blip, command not registered on this build) MUST
@@ -172,6 +176,10 @@ async def _fire_memory_summarize_session(
             "memory_summarize_session",
             args,
         )
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.debug(
             "memory_summarize_session submit failed (best-effort, ignored): {}",
@@ -288,6 +296,10 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
         return results
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
         raise HTTPException(
@@ -326,6 +338,10 @@ async def create_session(request: CreateSessionRequest):
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
         raise HTTPException(
@@ -403,6 +419,10 @@ async def get_session(session_id: str):
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching session: {str(e)}")
@@ -459,6 +479,10 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error updating session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating session: {str(e)}")
@@ -495,6 +519,10 @@ async def delete_session(session_id: str):
         return SuccessResponse(success=True, message="Session deleted successfully")
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
@@ -625,6 +653,15 @@ async def execute_chat(request: ExecuteChatRequest):
         return ExecuteChatResponse(session_id=request.session_id, messages=messages)
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        # v0.7.108 — Pre-existing bug exposed by the timeout test:
+        # `except Exception as e` below was swallowing the v0.7.99
+        # HTTPException(504) raise and re-wrapping it as a 500. Now
+        # we re-raise typed HTTPExceptions (404, 504, etc.) so the
+        # client sees the right status code + actionable detail.
+        # Same fix pattern applies anywhere with `except Exception`
+        # around an inner `raise HTTPException(...)`.
+        raise
     except Exception as e:
         # Log detailed error with context for debugging
         logger.error(
@@ -801,6 +838,10 @@ async def _stream_chat_events(
         # Update session timestamp (same as /chat/execute)
         try:
             await session.save()
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("chat stream: session save failed: {}", exc)
 
@@ -830,6 +871,10 @@ async def _stream_chat_events(
 
     except NotFoundError:
         yield json.dumps({"type": "error", "detail": "Session not found"}) + "\n"
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(
             "Error in /chat/stream for session {}: {}\n{}",
@@ -885,6 +930,10 @@ async def build_context(request: BuildContextRequest):
 
                     try:
                         source = await Source.get(full_source_id)
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         continue
 
@@ -896,6 +945,10 @@ async def build_context(request: BuildContextRequest):
                         source_context = await source.get_context(context_size="long")
                         context_data["sources"].append(source_context)
                         total_content += str(source_context)
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Error processing source {source_id}: {str(e)}")
                     continue
@@ -918,6 +971,10 @@ async def build_context(request: BuildContextRequest):
                         note_context = note.get_context(context_size="long")
                         context_data["notes"].append(note_context)
                         total_content += str(note_context)
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Error processing note {note_id}: {str(e)}")
                     continue
@@ -929,6 +986,10 @@ async def build_context(request: BuildContextRequest):
                     source_context = await source.get_context(context_size="short")
                     context_data["sources"].append(source_context)
                     total_content += str(source_context)
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Error processing source {source.id}: {str(e)}")
                     continue
@@ -939,6 +1000,10 @@ async def build_context(request: BuildContextRequest):
                     note_context = note.get_context(context_size="short")
                     context_data["notes"].append(note_context)
                     total_content += str(note_context)
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as e:
                     logger.warning(f"Error processing note {note.id}: {str(e)}")
                     continue
