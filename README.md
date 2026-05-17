@@ -172,9 +172,50 @@ make build-mac
 | Release notes | [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) |
 | Standing AI-agent workflow | [`CLAUDE.md`](CLAUDE.md) |
 
-## Hardening Summary (v0.7.49 → v0.7.87)
+## Hardening Summary (v0.7.49 → v0.7.114)
 
-47 fix commits across the hardening run, addressing:
+70+ fix commits across the hardening run. v0.7.49–v0.7.87 covered the
+original reliability sweep; v0.7.88+ added structured outputs,
+filesystem I/O, and end-to-end timeout coverage.
+
+**v0.7.88 → v0.7.114 highlights:**
+
+- **Studio multi-page notebooks** (v0.7.89) — uploads produce an
+  overview + N pages with inline AI suggestions per page, instead of
+  one blob. Outline-pass + per-page generation with sequential
+  (default) or parallel (`ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES=true`)
+  execution.
+- **Studio `mode="both"`** (v0.7.88) — single upload generates BOTH
+  notebook AND podcast in one shot. Either half can fail independently.
+- **Filesystem export + import** (v0.7.90, v0.7.94, v0.7.96, v0.7.111)
+  — notebooks save out as folder / zip / single-file (markdown OR
+  HTML, with print CSS) and reload back via import endpoint with
+  dry-run preview. `/api/fs/{home,list,mkdir}` endpoints back the
+  directory picker UI. Frontend Export UI ships in v0.7.105.
+- **End-to-end timeout coverage** (v0.7.93, v0.7.95, v0.7.99, v0.7.100,
+  v0.7.101, v0.7.102, v0.7.110, v0.7.113, v0.7.114) — every async
+  LLM/embed/DB call on a user-facing path is wrapped with
+  `asyncio.wait_for`. Timeout returns either 504 with actionable
+  detail OR graceful fallback (e.g. memory recall → recency
+  fallback). Thirteen env knobs let operators tune per provider.
+- **`HTTPException` clobber fix** (v0.7.109) — 25 functions across 13
+  router files were silently rewrapping typed 400/404/504/etc as
+  generic 500. 89 `except HTTPException: raise` guards added — typed
+  errors now reach the client.
+- **Bulk operations** (v0.7.106, v0.7.110) — bulk source vectorize
+  endpoint (capped at 500/call) for recovering from import-time
+  vectorize failures or after switching embedding models.
+- **Deep healthcheck** (v0.7.112) — `/healthz/deep` probes DB,
+  migrations, embedding model, chat model, command registry
+  independently. Returns `healthy` / `degraded` / `not_ready` with
+  actionable per-subsystem messages.
+- **Import vectorize bug** (v0.7.104) — imported sources weren't
+  getting embeddings (`Source.save()` doesn't auto-embed). Real
+  regression-class bug that broke "import then chat-with-sources".
+- **Loguru `%s` format fix** (v0.7.91) — 18 occurrences across 8
+  files were logging literal `%s` since v0.7.0.
+
+**v0.7.49 → v0.7.87 (earlier sweep):**
 
 - **Streaming hooks** — UTF-8 cross-read buffering, per-send UUID temp IDs, AbortController + reader.cancel(), exact-id error filtering (chat, source-chat, ask)
 - **SSE endpoints** — `is_disconnected()` per tick, dict-vs-Pydantic state-shape dual-path guards (4 endpoints)
@@ -190,12 +231,47 @@ make build-mac
 
 See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) for the full per-version log.
 
+## API surface (post-v0.7.114)
+
+| Endpoint | Method | What it does |
+|---|---|---|
+| `/api/studio/generate` | POST | Upload + generate notebook / podcast / both (multi-page, multi-file) |
+| `/api/notebooks/{id}/export` | POST | Export notebook as `folder` / `zip` / `html_folder` / `html_zip` / `combined_md` / `combined_html` (with optional compression) |
+| `/api/notes/{id}/export` | POST | Export a single note as `.md` |
+| `/api/notebooks/import` | POST | Reverse of export — folder / zip / single-md → new or existing notebook |
+| `/api/notebooks/import/preview` | POST | Dry-run import: show planned imports without committing |
+| `/api/notebooks/{id}/vectorize_sources` | POST | Bulk re-embed sources after import-time failure or embedding-model swap |
+| `/api/fs/home` | GET | User home + Desktop / Documents / Downloads / default-exports paths |
+| `/api/fs/list` | GET | Directory listing (dirs first, capped at 500, hidden excluded by default) |
+| `/api/fs/mkdir` | POST | Idempotent `mkdir -p` with path safety |
+| `/healthz/deep` | GET | Per-subsystem probe (DB, migrations, embedding model, chat model, worker) — auth-exempt |
+
+## Configurable timeouts + caps (`ONP_*` env vars)
+
+| Env var | Default | What it bounds |
+|---|---:|---|
+| `ONP_STUDIO_OUTLINE_TIMEOUT_SEC` | 90 | Studio outline LLM call |
+| `ONP_STUDIO_PAGE_TIMEOUT_SEC` | 180 | Studio per-page LLM call |
+| `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` | 60 | content_core file extraction per file |
+| `ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES` | false | Run page LLM calls concurrently (cloud opt-in) |
+| `ONP_STUDIO_NOTEBOOK_PAGES_MAX` | 6 | Hard cap on multi-page count |
+| `ONP_STUDIO_NOTEBOOK_MULTIPAGE` | true | Kill switch back to single-note |
+| `ONP_NOTE_TITLE_TIMEOUT_SEC` | 60 | Auto-title LLM call on `POST /notes` |
+| `ONP_TRANSFORMATION_TIMEOUT_SEC` | 180 | Per-transformation LLM call |
+| `ONP_CHAT_TIMEOUT_SEC` | 300 | Non-streaming `/chat/execute` |
+| `ONP_CONNECTION_TEST_TIMEOUT_SEC` | 30 | "Test connection" button in Settings |
+| `ONP_DISCOVER_MODELS_TIMEOUT_SEC` | 30 | Provider model-discovery (paginated list) |
+| `ONP_SEARCH_TIMEOUT_SEC` | 60 | `/search` text + vector queries |
+| `ONP_BULK_VECTORIZE_MAX_SOURCES` | 500 | Per-request cap on bulk vectorize |
+| `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` | 5 | Chat-hot-path semantic recall embed |
+| `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` | 5 | Chat-hot-path memory SurrealQL queries |
+
 ## Testing
 
 | Suite | Count | Runtime |
 |---|---:|---:|
-| Backend (pytest) | **430** | ~15 s |
-| Frontend (vitest) | **35** | ~17 s |
+| Backend (pytest) | **517** | ~22 s |
+| Frontend (vitest) | **45** | ~26 s |
 | Desktop launcher | **14** | ~7 s |
 
 All pass at HEAD. ruff is clean across `api/`, `open_notebook/`, `commands/`, `desktop/`, `tests/`.
