@@ -18,8 +18,78 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.99 (in flight)
+## Unreleased — v0.7.36 → v0.7.105 (in flight)
 
+- **v0.7.105** ✨ **Frontend Export UI for notebooks + notes.** Wires the
+  v0.7.90 `/api/fs/*` and `/api/*/export` endpoints into the Next.js
+  dashboard so users no longer need to curl the API to get their notes
+  onto disk.
+
+  - **NotebookHeader** grows an "Export" button next to the existing
+    Archive / Delete affordances. Opens a new `ExportNotebookDialog`
+    with format toggle (folder | zip), destination picker, include-
+    sources + overwrite checkboxes.
+  - **NotesColumn** dropdown gains an "Export" item next to Delete on
+    each note, opening `ExportNoteDialog` (single-file `.md`).
+  - **`DirectoryPicker`** (`components/notebooks/DirectoryPicker.tsx`):
+    reusable shortcuts + manual-path + dir tree + mkdir, with the
+    `truncated` flag surfaced as a banner so users know listings are
+    capped at 500 entries.
+  - **Hooks**: `useFsHome`, `useFsList`, `useFsMkdir`, `useExportNotebook`,
+    `useExportNote` — standard TanStack Query wrappers with the same
+    toast + error-handler pattern as `use-notebooks.ts`.
+  - **i18n**: 39 new keys added across all 10 locales (en-US, fr-FR,
+    es-ES, pt-BR, it-IT, ja-JP, zh-CN, zh-TW, ru-RU, bn-IN). Locale-
+    parity test passes.
+  - **Tests**: 10 new vitest tests covering happy-path export submission,
+    pending-state disable, directory navigation, mkdir flow, and the
+    truncated-listing banner. Full frontend suite now 45 tests, all
+    passing.
+- **v0.7.104** 🐛 **Imported sources weren't getting embeddings.**
+  v0.7.94 import created Source records via `await source.save()` but
+  never called `await source.vectorize()`. Per
+  `open_notebook/domain/CLAUDE.md`, `Source.save()` does NOT auto-embed
+  (unlike `Note.save()` which does) — so imported sources were saved
+  + linked but invisible to vector_search. The "import then chat-with-
+  sources" promise was broken for vector-mode chat. Fix: added
+  `await source.vectorize()` after `source.add_to_notebook()` with a
+  non-fatal try/except wrapper. If the embedding backend is down, the
+  import still succeeds with a warning that says how to backfill
+  embeddings from Settings → Embeddings later. 2 new regression tests
+  (vectorize called on success, vectorize failure surfaces actionable
+  warning).
+- **v0.7.103** 🛠 **Notebook delete cascade audit (multi-page output).**
+  Verified that `Notebook.delete()` correctly cascades through the
+  v0.7.89 multi-page notes by walking `self.get_notes()` and calling
+  `note.delete()` per note. Each `Note.delete()` (v0.7.76) handles its
+  own artifact-edge + note_embedding cascade. Defensive top-level
+  `DELETE artifact WHERE out=$notebook_id` then handles any
+  detached-but-edged notes. **No regression found.** Documented as
+  audited; no code change.
+- **v0.7.102** 🐛 **Timeouts on `/search` text + vector endpoints.**
+  Vector search makes an embedding-model call on the query string
+  (inherits provider-latency risk from v0.7.100); text search hits
+  SurrealDB and can hang if the pool is overloaded. Both wrapped in
+  `asyncio.wait_for` with `ONP_SEARCH_TIMEOUT_SEC` (default 60s).
+  Timeout → 504 with the env-knob name in the detail.
+- **v0.7.101** 🐛 **Per-file timeout on Studio `extract_content`.**
+  `content_core.extract_content()` can hang on pathological inputs
+  (encrypted PDFs missing a password handler, embedded JS in PPTX,
+  slow OCR fallback). One bad upload would otherwise pin the entire
+  Studio request. Wrapped per-file in `asyncio.wait_for` with
+  `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` (default 60s). Timeout → warning
+  on that file, other files keep processing.
+- **v0.7.100** 🐛 **Timeout on `/credentials/{id}/test`.** The Settings
+  UI's "Test connection" button calls
+  `connection_tester.test_provider_connection()` which invokes
+  `lc_model.ainvoke("Hi")` or `model.aembed(["test"])` against the
+  provider. A misconfigured slow provider (e.g. wrong base_url) hung
+  the test endpoint indefinitely. Both wrapped with
+  `ONP_CONNECTION_TEST_TIMEOUT_SEC` (default 30s — generous for any
+  healthy provider including cold-start Ollama). Timeout returns
+  `(False, "Connection test timed out…")` with hint to raise the env
+  knob if the model legitimately takes longer than 30s for a "Hi"
+  prompt.
 - **v0.7.99** 🐛 **Audit-sweep timeouts on the last two unbounded LLM calls.**
   Continuation of v0.7.93 + v0.7.95: a broader grep for unbounded
   `ainvoke` calls turned up two more.
