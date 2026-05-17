@@ -18,8 +18,46 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.109 (in flight)
+## Unreleased — v0.7.36 → v0.7.111 (in flight)
 
+- **v0.7.111** ✨ **Combined single-file notebook export.** Two new
+  formats: `combined_md` and `combined_html` concatenate every page
+  (plus optional sources) into a single file rather than a
+  folder/zip of per-page files. Better for share-by-email,
+  Drive/Dropbox upload, print-to-PDF from the browser, or import
+  into paperless-gpt as one entry.
+
+  - **Markdown variant** (`combined_md`): cover page with notebook
+    name + description, table of contents listing every page,
+    each note rendered with horizontal-rule separators that act as
+    page breaks in print-to-PDF.
+  - **HTML variant** (`combined_html`): self-contained HTML5
+    document with light/dark CSS, a styled cover page, TOC,
+    `<hr class="onp-page-break">` separators, and **print CSS** that
+    forces each note onto its own page when the user prints-to-PDF
+    via their browser — getting most of the "PDF export" deferred
+    item done without bundling weasyprint / wkhtmltopdf.
+  - File extension auto-corrected if the caller omits one
+    (`/exports/combined` → `combined.md` or `combined.html`).
+  - 5 new tests cover happy-path markdown + html, auto-extension,
+    include_sources, and directory-target rejection.
+- **v0.7.110** 🐛 **Per-request caps + timeouts on bulk endpoints.**
+  Audit-uncovered scaling/timeout gaps not present in earlier sweeps.
+
+  - **Bulk vectorize** (`POST /notebooks/{id}/vectorize_sources`)
+    capped at `ONP_BULK_VECTORIZE_MAX_SOURCES` sources per call
+    (default 500). Truncation surfaces an actionable warning naming
+    the env knob, so a 10k-source notebook can't pin the request.
+  - **Discover models** (`POST /credentials/{id}/discover`) wrapped
+    in `asyncio.wait_for` with `ONP_DISCOVER_MODELS_TIMEOUT_SEC`
+    (default 30s). OpenRouter's list-models endpoint can paginate
+    slowly through 300+ models; this prevents a stuck discovery
+    from hanging the Settings UI. Timeout → 504 with env-knob hint.
+  - Broader audit of `except Exception` clobber-pattern beyond
+    routers (graph code, services, commands) found **0 additional
+    instances** — v0.7.109's fix was complete for the typed-error
+    surface. Documented in the source.
+  - +1 new test (cap truncation warning).
 - **v0.7.109** 🐛 **Widespread anti-pattern: `except Exception` clobbered
   typed `HTTPException(404/400/504/etc)` into generic 500s.** Found by
   v0.7.108's chat-timeout test — the v0.7.99 504 was being silently
