@@ -764,3 +764,282 @@ def test_import_round_trip_export_then_import_preserves_titles(
     titles = [n.title for n in saved_notes]
     assert "📋 00 · Demo — Overview" in titles
     assert "📄 01 · Section One" in titles
+
+
+# ============================================================================
+# v0.7.96 — Import preview (dry-run)
+# ============================================================================
+
+
+def test_import_preview_folder_returns_plan_without_touching_db(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """Preview must NOT call Notebook.save / Note.save. We assert that
+    by setting them to a raising-stub — if the endpoint accidentally
+    invokes them, the test fails."""
+    folder = tmp_path / "preview-folder"
+    folder.mkdir()
+    (folder / "00-overview.md").write_text(
+        "---\ntitle: My Overview\n---\nbody"
+    )
+    (folder / "01-arch.md").write_text(
+        "---\ntitle: Architecture\n---\nbody"
+    )
+    (folder / "manifest.json").write_text(
+        json.dumps({"notebook": {"name": "Hint Name", "description": "Hint Desc"}})
+    )
+
+    # If the preview accidentally calls these, the test fails loudly.
+    class _RaisingDomain:
+        def __init__(self, *_a, **_kw):
+            raise AssertionError("preview must NOT instantiate domain models")
+        async def save(self):
+            raise AssertionError("preview must NOT save")
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _RaisingDomain)
+    monkeypatch.setattr(exports_mod, "Note", _RaisingDomain)
+    monkeypatch.setattr(exports_mod, "Source", _RaisingDomain)
+
+    r = client.post(
+        "/api/notebooks/import/preview", json={"source_path": str(folder)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detected_kind"] == "folder"
+    assert body["notebook_name_hint"] == "Hint Name"
+    assert body["description_hint"] == "Hint Desc"
+    assert body["has_manifest"] is True
+    titles = [n["title"] for n in body["notes"]]
+    assert "My Overview" in titles
+    assert "Architecture" in titles
+    # Overview note flagged so the UI can render it specially
+    overview_items = [n for n in body["notes"] if n["is_overview"]]
+    assert len(overview_items) == 1
+    assert overview_items[0]["title"] == "My Overview"
+
+
+def test_import_preview_zip_detects_kind(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    zip_path = tmp_path / "p.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("a.md", "---\ntitle: A\n---\nbody")
+
+    r = client.post(
+        "/api/notebooks/import/preview", json={"source_path": str(zip_path)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detected_kind"] == "zip"
+    assert body["has_manifest"] is False
+    assert len(body["notes"]) == 1
+
+
+def test_import_preview_single_md(client: TestClient, tmp_path: Path):
+    md = tmp_path / "single.md"
+    md.write_text("---\ntitle: Single\n---\nbody")
+    r = client.post(
+        "/api/notebooks/import/preview", json={"source_path": str(md)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detected_kind"] == "single_md"
+    assert body["notes"][0]["title"] == "Single"
+
+
+def test_import_preview_warns_on_empty_bundle(
+    client: TestClient, tmp_path: Path,
+):
+    folder = tmp_path / "empty"
+    folder.mkdir()
+    (folder / "ignored.txt").write_text("not markdown")
+    # No .md files → preview still returns 200 but warns
+    r = client.post(
+        "/api/notebooks/import/preview", json={"source_path": str(folder)},
+    )
+    # An empty folder has no md/json → _read_import_entries returns [] →
+    # preview reports no notes/sources, with a helpful warning.
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["notes"] == []
+    assert body["sources"] == []
+    assert any("No notes" in w for w in body["warnings"])
+
+
+def test_import_preview_404_when_path_missing(
+    client: TestClient, tmp_path: Path,
+):
+    r = client.post(
+        "/api/notebooks/import/preview",
+        json={"source_path": str(tmp_path / "does-not-exist")},
+    )
+    assert r.status_code == 404
+
+
+# ============================================================================
+# v0.7.97 — HTML export
+# ============================================================================
+
+
+def test_export_notebook_html_folder_writes_html_files(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [
+        _FakeNote("note:1", "📋 00 · Demo — Overview", "# Heading\n\n**bold** body"),
+        _FakeNote("note:2", "📄 01 · Section", "| a | b |\n|---|---|\n| 1 | 2 |"),
+    ]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "html-export"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "html_folder"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["format"] == "html_folder"
+    # .html extensions on each note file
+    assert (target / "00-overview.html").exists()
+    assert (target / "01-section.html").exists()
+    # The HTML wrapper includes our minimal stylesheet
+    overview_html = (target / "00-overview.html").read_text()
+    assert "<!doctype html>" in overview_html.lower()
+    assert "<style>" in overview_html
+    assert "<h1>Heading</h1>" in overview_html
+    assert "<strong>bold</strong>" in overview_html
+    # The frontmatter block survives as a metadata div
+    assert "onp-frontmatter" in overview_html
+    assert "📋 00 · Demo — Overview" in overview_html  # title escaped
+
+
+def test_export_notebook_html_zip(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [_FakeNote("note:1", "📄 01 · Section", "**body**")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "out.zip"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "html_zip"},
+    )
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(target) as zf:
+        names = sorted(zf.namelist())
+        # HTML extensions only — no .md leftover
+        assert any(n.endswith(".html") for n in names)
+        assert not any(n.endswith(".md") for n in names)
+        # manifest.json always preserves its name
+        assert "manifest.json" in names
+        # Body of one html file confirms rendering
+        html_member = next(n for n in names if n.endswith(".html"))
+        content = zf.read(html_member).decode()
+        assert "<strong>body</strong>" in content
+
+
+def test_html_export_escapes_attribute_positions(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """v0.7.97 — Note titles can contain <, >, ", which would break the
+    <title> tag if not escaped. Verify _html_escape is applied."""
+    notes = [_FakeNote("note:1", 'Has <script>"x"</script> title', "body")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "esc"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "html_folder"},
+    )
+    assert r.status_code == 200, r.text
+    html = next(target.glob("*.html")).read_text()
+    # The literal <script> must NOT appear inside <title>
+    assert "<title>Has &lt;script&gt;" in html
+    assert "<script>" not in html.split("</head>")[0]  # no raw script in head
+
+
+# ============================================================================
+# v0.7.98 — Zip compression options
+# ============================================================================
+
+
+def test_export_zip_default_compression_is_deflated(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [_FakeNote("note:1", "T", "body")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+    target = tmp_path / "default.zip"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "zip"},
+    )
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(target) as zf:
+        info = zf.infolist()[0]
+        assert info.compress_type == zipfile.ZIP_DEFLATED
+
+
+def test_export_zip_with_stored_compression(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """v0.7.98 — compression='stored' must produce an uncompressed zip
+    (compress_size == file_size for stored entries)."""
+    notes = [_FakeNote("note:1", "T", "a" * 1000)]  # compressible
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+    target = tmp_path / "stored.zip"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={
+            "destination": str(target), "format": "zip",
+            "compression": "stored",
+        },
+    )
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(target) as zf:
+        infos = zf.infolist()
+        # All entries are stored, not deflated
+        for info in infos:
+            assert info.compress_type == zipfile.ZIP_STORED
+            # Stored entries don't shrink the data
+            assert info.compress_size == info.file_size
+
+
+def test_export_zip_with_bzip2_compression(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [_FakeNote("note:1", "T", "x" * 5000)]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+    target = tmp_path / "bz2.zip"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={
+            "destination": str(target), "format": "zip",
+            "compression": "bzip2",
+        },
+    )
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(target) as zf:
+        info = zf.infolist()[0]
+        assert info.compress_type == zipfile.ZIP_BZIP2
+
+
+def test_export_zip_rejects_invalid_compression_via_pydantic(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """Pydantic Literal validation catches typos before the request
+    reaches our handler — verifies the request schema actually constrains
+    the field."""
+    r = client.post(
+        "/api/notebooks/notebook:nope/export",
+        json={
+            "destination": str(tmp_path / "x.zip"), "format": "zip",
+            "compression": "nonsense",
+        },
+    )
+    assert r.status_code == 422  # Pydantic validation failure

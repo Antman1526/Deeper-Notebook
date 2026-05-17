@@ -1119,12 +1119,35 @@ async def _dispatch_notebook_mode_singlenote(
         chain = await provision_langchain_model(
             combined_context, None, "chat", max_tokens=8192,
         )
-        response = await chain.ainvoke(
-            [SystemMessage(content=NOTEBOOK_SYSTEM_PROMPT),
-             HumanMessage(content=combined_context)]
+        # v0.7.99 — same timeout protection as the multi-page paths.
+        # Before this, the legacy fallback was the one ainvoke in this
+        # module that could still hang indefinitely on a stuck local
+        # LLM. Re-uses _PAGE_TIMEOUT_SEC (180s default) since the
+        # output budget is comparable.
+        response = await asyncio.wait_for(
+            chain.ainvoke(
+                [SystemMessage(content=NOTEBOOK_SYSTEM_PROMPT),
+                 HumanMessage(content=combined_context)]
+            ),
+            timeout=_PAGE_TIMEOUT_SEC,
         )
         raw_text = extract_text_content(response.content)
         clean_text = clean_thinking_content(raw_text)
+    except asyncio.TimeoutError as exc:
+        logger.warning(
+            "Studio notebook (single-note fallback): timed out after {}s",
+            _PAGE_TIMEOUT_SEC,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Notebook generation timed out after {_PAGE_TIMEOUT_SEC}s. "
+                "The chat model may be loading or overloaded. Raise "
+                "ONP_STUDIO_PAGE_TIMEOUT_SEC, switch to a faster model, "
+                f"or try again. Notebook {notebook_id} was created and "
+                f"contains your {len(source_ids)} uploaded source(s)."
+            ),
+        ) from exc
     except Exception as exc:
         logger.exception("Studio notebook (single-note fallback): LLM call failed")
         raise HTTPException(
