@@ -18,8 +18,26 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.113 (in flight)
+## Unreleased — v0.7.36 → v0.7.114 (in flight)
 
+- **v0.7.114** 🐛 **Chat-hot-path memory-recall query timeout.**
+  Companion to v0.7.113. `_safe_select()` (the helper that runs
+  every memory-recall SurrealQL query — recency + semantic both
+  fire two queries each) had no timeout. An overloaded connection
+  pool, DB pause, or runaway vector-similarity scan could stall
+  every chat turn waiting for the pool's own timeout (much longer
+  than the 5s budget we want for memory).
+
+  Wrapped with `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` (default 5s).
+  Combined with v0.7.113's embed timeout, the whole memory-recall
+  path is now bounded by ~15s worst-case before falling through to
+  empty.
+
+  README + CHANGELOG updated with the full env-knob inventory + the
+  new API surface added since v0.7.87. Test count: 517 backend / 45
+  frontend.
+
+  2 new tests (timeout falls through to empty, fast query succeeds).
 - **v0.7.113** 🐛 **Chat-hot-path memory-recall embed timeout.**
   `recall_relevant_memory()` runs on every chat turn (`recall_memory`
   orchestrator picks it once memory rows pass the semantic threshold).

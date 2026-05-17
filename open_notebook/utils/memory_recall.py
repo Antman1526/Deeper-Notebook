@@ -270,11 +270,30 @@ def _coerce_text(value: Any) -> str:
 async def _safe_select(query: str, vars: dict) -> list[Any]:
     """Run a SurrealQL query and never raise. Memory tables may not
     exist on a fresh DB (no chat turns yet, or upstream build with the
-    memory feature disabled) — empty list is the right answer."""
+    memory feature disabled) — empty list is the right answer.
+
+    v0.7.114 — Per-query timeout. Memory recall runs on every chat
+    turn; an overloaded connection pool would otherwise stall the
+    request for up to the pool's own timeout. 5s default matches
+    v0.7.113's embed timeout — combined, the whole memory-recall
+    path is bounded by ~15s worst-case (one embed + two queries)
+    before falling through to empty.
+    """
+    _query_timeout = float(
+        os.environ.get("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5").strip() or 5
+    )
     try:
-        result = await repo_query(query, vars)
+        result = await asyncio.wait_for(
+            repo_query(query, vars), timeout=_query_timeout,
+        )
         if isinstance(result, list):
             return result
+        return []
+    except asyncio.TimeoutError:
+        logger.debug(
+            "memory recall query timed out after {}s (returning empty)",
+            _query_timeout,
+        )
         return []
     except Exception as exc:
         # debug — every chat turn would log otherwise; the empty path

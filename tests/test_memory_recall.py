@@ -311,3 +311,45 @@ def test_recall_relevant_memory_completes_when_embed_returns_in_time(
     # preferences, since we stubbed the DB to return nothing).
     assert "facts" in result
     assert "preferences" in result
+
+
+# ============================================================================
+# v0.7.114 — _safe_select query timeout (hot path bound)
+# ============================================================================
+
+
+def test_safe_select_returns_empty_on_query_timeout(monkeypatch):
+    """v0.7.114 — _safe_select runs on every chat turn (recall_recent
+    fires two queries, recall_relevant fires two more). An overloaded
+    connection pool must NOT stall chat; _safe_select returns [] on
+    timeout so the caller treats it the same as a missing table."""
+    monkeypatch.setenv("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "0.1")
+
+    async def _hanging_query(q, params):
+        await _asyncio_for_timeout_test.sleep(5)
+        return []
+
+    from open_notebook.utils import memory_recall
+    monkeypatch.setattr(memory_recall, "repo_query", _hanging_query)
+
+    result = _asyncio_for_timeout_test.run(
+        memory_recall._safe_select("SELECT 1", {})
+    )
+    assert result == []
+
+
+def test_safe_select_returns_results_when_query_fast(monkeypatch):
+    """v0.7.114 — negative-space check: a fast query is NOT
+    spuriously timeout-killed."""
+    monkeypatch.setenv("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5")
+
+    async def _fast_query(q, params):
+        return [{"text": "ok"}]
+
+    from open_notebook.utils import memory_recall
+    monkeypatch.setattr(memory_recall, "repo_query", _fast_query)
+
+    result = _asyncio_for_timeout_test.run(
+        memory_recall._safe_select("SELECT 1", {})
+    )
+    assert result == [{"text": "ok"}]
