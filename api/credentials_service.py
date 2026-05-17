@@ -283,11 +283,25 @@ def create_credential_from_env(provider: str) -> Credential:
             credentials_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
         )
     elif provider == "azure":
+        # v0.7.115 — defensive .get() on AZURE_OPENAI_API_KEY. Safe-by-
+        # construction today because check_env_configured("azure")
+        # gates this branch on `required = [API_KEY, ENDPOINT,
+        # API_VERSION]`. But a future refactor of PROVIDER_ENV_CONFIG
+        # could remove API_KEY from the required list and silently
+        # turn this into a KeyError that 500s the migrate-from-env
+        # endpoint. Explicit .get() + early-fail keeps the bug
+        # impossible.
+        azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        if not azure_api_key:
+            raise ValueError(
+                "AZURE_OPENAI_API_KEY is required to migrate the Azure "
+                "credential from env vars but was not set in the environment."
+            )
         return Credential(
             name=name,
             provider=provider,
             modalities=modalities,
-            api_key=SecretStr(os.environ["AZURE_OPENAI_API_KEY"]),
+            api_key=SecretStr(azure_api_key),
             endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
             api_version=os.environ.get("AZURE_OPENAI_API_VERSION"),
             endpoint_llm=os.environ.get("AZURE_OPENAI_ENDPOINT_LLM"),

@@ -100,9 +100,28 @@ class PodcastService:
             # load this stalls every other in-flight request (chat
             # streams, SSE polls, etc.). Move the blocking call onto a
             # worker thread so the event loop stays responsive.
-            job_id = await asyncio.to_thread(
-                submit_command, "open_notebook", "generate_podcast", command_args
+            # v0.7.115 — also wrap in wait_for so a hung pool can't
+            # pin the podcast-generation endpoint. Same env knob as
+            # CommandService.submit_command_job for consistency.
+            import os as _os_for_timeout
+            _submit_timeout = float(
+                _os_for_timeout.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                or 10
             )
+            try:
+                job_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command, "open_notebook",
+                        "generate_podcast", command_args,
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Podcast submission timed out after {_submit_timeout:.0f}s. "
+                    "The SurrealDB pool may be saturated. Raise "
+                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                ) from exc
 
             # Convert RecordID to string if needed
             if not job_id:
