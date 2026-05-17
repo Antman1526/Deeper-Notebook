@@ -20,7 +20,7 @@ from open_notebook.graphs.transformation import graph as transformation_graph
 router = APIRouter()
 
 
-@router.get("/transformations", response_model=List[TransformationResponse])
+@router.get("/transformations", response_model=list[TransformationResponse])
 async def get_transformations():
     """Get all transformations."""
     try:

@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from open_notebook.ai.models import ModelManager
 
 
-async def mean_pool_embeddings(embeddings: List[List[float]]) -> List[float]:
+async def mean_pool_embeddings(embeddings: list[list[float]]) -> list[float]:
     """
     Combine multiple embeddings into a single embedding using mean pooling.
 
@@ -109,8 +109,8 @@ async def mean_pool_embeddings(embeddings: List[List[float]]) -> List[float]:
 
 
 async def generate_embeddings(
-    texts: List[str], command_id: Optional[str] = None
-) -> List[List[float]]:
+    texts: list[str], command_id: Optional[str] = None
+) -> list[list[float]]:
     """
     Generate embeddings for multiple texts with automatic batching and retry.
 
@@ -168,7 +168,7 @@ async def generate_embeddings(
         lambda: _get_size_metrics()[3],
     )
 
-    all_embeddings: List[List[float]] = []
+    all_embeddings: list[list[float]] = []
     total_batches = (len(texts) + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE
 
     for batch_idx in range(total_batches):
@@ -211,7 +211,7 @@ async def generate_embedding(
     content_type: Optional[ContentType] = None,
     file_path: Optional[str] = None,
     command_id: Optional[str] = None,
-) -> List[float]:
+) -> list[float]:
     """
     Generate a single embedding for text, handling large content via chunking and mean pooling.
 

@@ -25,8 +25,8 @@ class _FakeAudioChunk:
     audio_float_array: np.ndarray = field(
         default_factory=lambda: np.zeros(100, dtype=np.float32)
     )
-    phonemes: List[str] = field(default_factory=list)
-    phoneme_ids: List[int] = field(default_factory=list)
+    phonemes: list[str] = field(default_factory=list)
+    phoneme_ids: list[int] = field(default_factory=list)
 
 
 def _fake_piper_voices():

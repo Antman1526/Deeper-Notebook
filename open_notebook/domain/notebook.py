@@ -26,7 +26,7 @@ class Notebook(ObjectModel):
             raise InvalidInputError("Notebook name cannot be empty")
         return v
 
-    async def get_sources(self) -> List["Source"]:
+    async def get_sources(self) -> list["Source"]:
         try:
             srcs = await repo_query(
                 """
@@ -43,7 +43,7 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def get_notes(self) -> List["Note"]:
+    async def get_notes(self) -> list["Note"]:
         try:
             srcs = await repo_query(
                 """
@@ -60,7 +60,7 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def get_chat_sessions(self) -> List["ChatSession"]:
+    async def get_chat_sessions(self) -> list["ChatSession"]:
         try:
             srcs = await repo_query(
                 """
@@ -85,7 +85,7 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def get_delete_preview(self) -> Dict[str, Any]:
+    async def get_delete_preview(self) -> dict[str, Any]:
         """
         Get counts of items that would be affected by deleting this notebook.
 
@@ -135,7 +135,7 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def delete(self, delete_exclusive_sources: bool = False) -> Dict[str, int]:
+    async def delete(self, delete_exclusive_sources: bool = False) -> dict[str, int]:
         """
         Delete notebook with cascade deletion of notes and optional source deletion.
 
@@ -346,9 +346,9 @@ class Source(ObjectModel):
     table_name: ClassVar[str] = "source"
     asset: Optional[Asset] = None
     title: Optional[str] = None
-    topics: Optional[List[str]] = Field(default_factory=list)
+    topics: Optional[list[str]] = Field(default_factory=list)
     full_text: Optional[str] = None
-    command: Optional[Union[str, RecordID]] = Field(
+    command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands processing job"
     )
 
@@ -384,7 +384,7 @@ class Source(ObjectModel):
             logger.warning(f"Failed to get command status for {self.command}: {e}")
             return "unknown"
 
-    async def get_processing_progress(self) -> Optional[Dict[str, Any]]:
+    async def get_processing_progress(self) -> Optional[dict[str, Any]]:
         """Get detailed processing information for the associated command"""
         if not self.command:
             return None
@@ -415,7 +415,7 @@ class Source(ObjectModel):
 
     async def get_context(
         self, context_size: Literal["short", "long"] = "short"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         insights_list = await self.get_insights()
         insights = [insight.model_dump() for insight in insights_list]
         if context_size == "long":
@@ -444,7 +444,7 @@ class Source(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(f"Failed to count chunks for source: {str(e)}")
 
-    async def get_insights(self) -> List[SourceInsight]:
+    async def get_insights(self) -> list[SourceInsight]:
         try:
             result = await repo_query(
                 """
@@ -815,7 +815,7 @@ class Note(ObjectModel):
 
     def get_context(
         self, context_size: Literal["short", "long"] = "short"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if context_size == "long":
             return dict(id=self.id, title=self.title, content=self.content)
         else:

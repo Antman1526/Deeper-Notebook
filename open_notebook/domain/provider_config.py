@@ -189,7 +189,7 @@ class ProviderConfig(RecordModel):
 
     # Store credentials organized by provider name
     # Structure: {"openai": [ProviderCredential, ...], "anthropic": [...], ...}
-    credentials: Dict[str, List[ProviderCredential]] = Field(
+    credentials: dict[str, list[ProviderCredential]] = Field(
         default_factory=dict,
         description="Provider credentials organized by provider name",
     )
@@ -221,7 +221,7 @@ class ProviderConfig(RecordModel):
             data = {}
 
         # Initialize credentials from database data
-        credentials: Dict[str, List[ProviderCredential]] = {}
+        credentials: dict[str, list[ProviderCredential]] = {}
         creds_data = data.get("credentials")
         if creds_data and isinstance(creds_data, dict):
             for provider, provider_creds in creds_data.items():

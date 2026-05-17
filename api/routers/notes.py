@@ -10,7 +10,7 @@ from open_notebook.exceptions import InvalidInputError
 router = APIRouter()
 
 
-@router.get("/notes", response_model=List[NoteResponse])
+@router.get("/notes", response_model=list[NoteResponse])
 async def get_notes(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
 ):

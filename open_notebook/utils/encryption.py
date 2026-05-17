@@ -59,7 +59,7 @@ def get_secret_from_env(var_name: str) -> Optional[str]:
     return os.environ.get(var_name)
 
 
-def _get_encryption_keys_from_env() -> List[str]:
+def _get_encryption_keys_from_env() -> list[str]:
     """
     Return all configured encryption-key strings, primary first.
 
@@ -114,10 +114,10 @@ def _get_or_create_encryption_key() -> str:
 
 # Lazy-loaded key list: initialized on first use, not at import time.
 # Avoids crashing other modules at import if the key isn't yet set.
-_ENCRYPTION_KEYS: Optional[List[str]] = None
+_ENCRYPTION_KEYS: Optional[list[str]] = None
 
 
-def _get_encryption_keys() -> List[str]:
+def _get_encryption_keys() -> list[str]:
     """Get the list of encryption keys (primary first).
 
     v0.7.24 — no caching. Previously this was a process-lifetime

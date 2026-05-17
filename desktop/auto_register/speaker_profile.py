@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 # TTS Model registry id is passed via per-speaker `voice_model` so
 # different speakers in the same profile can override the profile's
 # default voice_model.
-def _build_presets(amy_model_id: str, ryan_model_id: str) -> List[Dict[str, Any]]:
+def _build_presets(amy_model_id: str, ryan_model_id: str) -> list[dict[str, Any]]:
     return [
         {
             "name": "Local Duo",

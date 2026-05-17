@@ -29,7 +29,7 @@ from open_notebook.utils.encryption import get_secret_from_env
 # - "required": ALL listed env vars must be set for the provider to be considered configured.
 # - "required_any": at least ONE of the listed env vars must be set.
 # - "optional": additional env vars used during migration but not required.
-PROVIDER_ENV_CONFIG: Dict[str, dict] = {
+PROVIDER_ENV_CONFIG: dict[str, dict] = {
     "openai": {"required": ["OPENAI_API_KEY"]},
     "anthropic": {"required": ["ANTHROPIC_API_KEY"]},
     "google": {"required_any": ["GOOGLE_API_KEY", "GEMINI_API_KEY"]},
@@ -61,7 +61,7 @@ PROVIDER_ENV_CONFIG: Dict[str, dict] = {
     "minimax": {"required": ["MINIMAX_API_KEY"]},
 }
 
-PROVIDER_MODALITIES: Dict[str, List[str]] = {
+PROVIDER_MODALITIES: dict[str, list[str]] = {
     "openai": ["language", "embedding", "speech_to_text", "text_to_speech"],
     "anthropic": ["language"],
     "google": ["language", "embedding"],
@@ -256,7 +256,7 @@ def check_env_configured(provider: str) -> bool:
     return False
 
 
-def get_default_modalities(provider: str) -> List[str]:
+def get_default_modalities(provider: str) -> list[str]:
     """Get default modalities for a provider."""
     return PROVIDER_MODALITIES.get(provider.lower(), ["language"])
 
@@ -361,8 +361,8 @@ async def get_provider_status() -> dict:
         or get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
     )
 
-    configured: Dict[str, bool] = {}
-    source: Dict[str, str] = {}
+    configured: dict[str, bool] = {}
+    source: dict[str, str] = {}
 
     for provider in PROVIDER_ENV_CONFIG:
         env_configured = check_env_configured(provider)
@@ -388,9 +388,9 @@ async def get_provider_status() -> dict:
     }
 
 
-async def get_env_status() -> Dict[str, bool]:
+async def get_env_status() -> dict[str, bool]:
     """Check what's configured via environment variables."""
-    env_status: Dict[str, bool] = {}
+    env_status: dict[str, bool] = {}
     for provider in PROVIDER_ENV_CONFIG:
         env_status[provider] = check_env_configured(provider)
     return env_status
@@ -508,7 +508,7 @@ async def test_credential(credential_id: str) -> dict:
             return {"provider": provider, "success": False, "message": f"Error: {truncated}"}
 
 
-async def discover_with_config(provider: str, config: dict) -> List[dict]:
+async def discover_with_config(provider: str, config: dict) -> list[dict]:
     """
     Discover models using explicit config instead of env vars.
 
@@ -519,7 +519,7 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
     base_url = config.get("base_url")
 
     # Static model lists for providers without a listing API
-    STATIC_MODELS: Dict[str, List[str]] = {
+    STATIC_MODELS: dict[str, list[str]] = {
         "anthropic": [
             "claude-opus-4-20250514",
             "claude-sonnet-4-20250514",

@@ -134,7 +134,7 @@ async def get_podcast_job_status(job_id: str):
         )
 
 
-@router.get("/podcasts/episodes", response_model=List[PodcastEpisodeResponse])
+@router.get("/podcasts/episodes", response_model=list[PodcastEpisodeResponse])
 async def list_podcast_episodes():
     """List all podcast episodes"""
     try:
@@ -464,7 +464,7 @@ class SuggestRequest(BaseModel):
     notebook_id: Optional[str] = Field(
         None, description="Notebook ID; sources + notes from it are analyzed"
     )
-    source_ids: Optional[List[str]] = Field(
+    source_ids: Optional[list[str]] = Field(
         None, description="Explicit source IDs to analyze"
     )
 
@@ -485,7 +485,7 @@ class SuggestResponse(BaseModel):
     reasoning: str = Field(
         ..., description="One-line plain-English why-we-picked-this"
     )
-    matched_signals: Dict[str, int] = Field(
+    matched_signals: dict[str, int] = Field(
         default_factory=dict,
         description=(
             "Heuristic scores per preset, for transparency / debugging. "
@@ -497,7 +497,7 @@ class SuggestResponse(BaseModel):
 # Keyword signals: each list is OR'd; matching titles / topics nudges the
 # corresponding preset's score. Tuned for low false-positive rate — only
 # strong, near-unambiguous indicators.
-_SIGNALS: Dict[str, List[str]] = {
+_SIGNALS: dict[str, list[str]] = {
     "Tutorial": [
         "how to", "how-to", "tutorial", "guide", "walkthrough", "getting started",
         "step-by-step", "step by step", "beginners", "intro to", "introduction to",
@@ -531,10 +531,10 @@ _SIGNALS: Dict[str, List[str]] = {
 }
 
 
-def _score_signals(text: str) -> Dict[str, int]:
+def _score_signals(text: str) -> dict[str, int]:
     """Return a {preset_name: hit_count} score map from a corpus string."""
     lower = text.lower()
-    scores: Dict[str, int] = {}
+    scores: dict[str, int] = {}
     for preset, keywords in _SIGNALS.items():
         scores[preset] = sum(1 for kw in keywords if kw in lower)
     return scores
@@ -571,7 +571,7 @@ async def suggest_episode(req: SuggestRequest):
          Deep Dive, mid → Open Notebook Plus Local (the safe default).
     """
     # ---- 1. Resolve content from the request ----
-    source_ids: List[str] = list(req.source_ids or [])
+    source_ids: list[str] = list(req.source_ids or [])
     notebook_title: Optional[str] = None
 
     if req.notebook_id:
@@ -598,7 +598,7 @@ async def suggest_episode(req: SuggestRequest):
                 "FROM ONLY $id;",
                 {"id": req.notebook_id},
             )
-            ids: List[str] = []
+            ids: list[str] = []
             if isinstance(ref_rows, list) and ref_rows:
                 ids = ref_rows[0].get("source_ids") or []
             elif isinstance(ref_rows, dict):
@@ -615,8 +615,8 @@ async def suggest_episode(req: SuggestRequest):
     seen = set()
     source_ids = [s for s in source_ids if not (s in seen or seen.add(s))]
 
-    titles: List[str] = []
-    topics_corpus: List[str] = []
+    titles: list[str] = []
+    topics_corpus: list[str] = []
     total_chars = 0
     if source_ids:
         try:

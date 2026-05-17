@@ -34,7 +34,7 @@ class LanguageResponse(BaseModel):
     name: str
 
 
-@router.get("/languages", response_model=List[LanguageResponse])
+@router.get("/languages", response_model=list[LanguageResponse])
 async def list_languages():
     """List available languages as BCP 47 locale codes (e.g. pt-BR, en-US)."""
     likely_subtags = get_global("likely_subtags")

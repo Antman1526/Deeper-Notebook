@@ -51,7 +51,7 @@ class Credential(ObjectModel):
 
     name: str
     provider: str
-    modalities: List[str] = []
+    modalities: list[str] = []
     api_key: Optional[SecretStr] = None
     decryption_error: Optional[str] = None
     base_url: Optional[str] = None
@@ -65,14 +65,14 @@ class Credential(ObjectModel):
     location: Optional[str] = None
     credentials_path: Optional[str] = None
 
-    def to_esperanto_config(self) -> Dict[str, Any]:
+    def to_esperanto_config(self) -> dict[str, Any]:
         """
         Build config dict for AIFactory.create_*() calls.
 
         Returns a dict that can be passed as the 'config' parameter to
         Esperanto's AIFactory methods, overriding env var lookup.
         """
-        config: Dict[str, Any] = {}
+        config: dict[str, Any] = {}
         if self.api_key:
             config["api_key"] = self.api_key.get_secret_value()
         if self.base_url:
@@ -101,7 +101,7 @@ class Credential(ObjectModel):
         return config
 
     @classmethod
-    async def get_by_provider(cls, provider: str) -> List["Credential"]:
+    async def get_by_provider(cls, provider: str) -> list["Credential"]:
         """Get all credentials for a provider."""
         results = await repo_query(
             "SELECT * FROM credential WHERE string::lowercase(provider) = string::lowercase($provider) ORDER BY created ASC",
@@ -133,7 +133,7 @@ class Credential(ObjectModel):
         return instance
 
     @classmethod
-    async def get_all(cls, order_by=None) -> List["Credential"]:
+    async def get_all(cls, order_by=None) -> list["Credential"]:
         """Override get_all() to handle api_key decryption with per-row error handling."""
         order_clause = f" ORDER BY {order_by}" if order_by else ""
         results = await repo_query(
@@ -188,7 +188,7 @@ class Credential(ObjectModel):
         )
         return [Model(**row) for row in results]
 
-    def _prepare_save_data(self) -> Dict[str, Any]:
+    def _prepare_save_data(self) -> dict[str, Any]:
         """Override to encrypt api_key before storage."""
         data = {}
         for key, value in self.model_dump().items():

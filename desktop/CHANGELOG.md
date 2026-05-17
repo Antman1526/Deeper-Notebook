@@ -18,8 +18,42 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.115 (in flight)
+## Unreleased — v0.7.36 → v0.7.116 (in flight)
 
+- **v0.7.116** ✨🛠 **Per-provider connection-test timeouts + typing
+  modernization + delete-cascade test + docs sync.** Four deferred
+  improvements shipped together.
+
+  - **Per-provider connection-test timeouts.** Replaces the v0.7.100
+    single global `ONP_CONNECTION_TEST_TIMEOUT_SEC` (30s) with a
+    three-tier resolver: per-provider env (`ONP_CONNECTION_TEST_
+    TIMEOUT_SEC_<UPPER>`) → global env → per-provider default.
+    Defaults: cloud APIs 10-15s, local servers (ollama,
+    openai_compatible) 60s for cold-start. Local-bundle Ollama
+    users get a working "Test connection" button OOTB.
+  - **`typing.List/Dict/Optional` modernization.** Ran ruff with
+    UP006 + UP007 — 293 auto-fixes across 13 files. Final non-auto
+    fix: `Union[...]` alias in `open_notebook/ai/models.py`
+    converted manually. Added `UP006,UP007` to `pyproject.toml`
+    permanent rule set so future code stays modernized. Python
+    3.10+ supports both PEP 585 generics and PEP 604 unions.
+  - **Bulk delete-cascade integration test.** Added
+    `tests/test_notebook_delete_cascade.py` with 5 tests covering
+    v0.7.107's parallel cascade: every note gets `delete()`, one
+    failure doesn't cancel siblings, calls run concurrently (peak
+    in-flight > 1), defensive top-level `DELETE artifact` runs
+    after the loop, empty notebook is safe. Uses class-level
+    monkeypatching (Pydantic v2 doesn't allow instance attr
+    assignment) + stubs `repo_query` + `repo_delete` so no real
+    SurrealDB is needed.
+  - **`docs/5-CONFIGURATION/onp-env-reference.md` sync.** Added 6
+    new sections documenting the 16 env knobs introduced in
+    v0.7.89-v0.7.115, plus a version-history row for each. Doc
+    now matches the README's env-knob table.
+
+  Test count: 517 → 522 backend (+5 delete-cascade tests). Frontend
+  Setup Wizard task spawned for the remaining deferred frontend
+  work.
 - **v0.7.115** 🐛 **Submit-command timeout + defensive Azure migration.**
   Two more audit-uncovered issues.
 

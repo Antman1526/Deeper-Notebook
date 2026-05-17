@@ -18,9 +18,9 @@ from open_notebook.graphs.transformation import graph as transform_graph
 
 class SourceState(TypedDict):
     content_state: ProcessSourceState
-    apply_transformations: List[Transformation]
+    apply_transformations: list[Transformation]
     source_id: str
-    notebook_ids: List[str]
+    notebook_ids: list[str]
     source: Source
     transformation: Annotated[list, operator.add]
     embed: bool
@@ -49,7 +49,7 @@ async def content_process(state: SourceState) -> dict:
             "ja",
         ],
     )
-    content_state: Dict[str, Any] = state["content_state"]  # type: ignore[assignment]
+    content_state: dict[str, Any] = state["content_state"]  # type: ignore[assignment]
 
     content_state["url_engine"] = (
         content_settings.default_content_processing_engine_url or "auto"
@@ -127,7 +127,7 @@ async def save_source(state: SourceState) -> dict:
     return {"source": source}
 
 
-def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[Send]:
+def trigger_transformations(state: SourceState, config: RunnableConfig) -> list[Send]:
     if len(state["apply_transformations"]) == 0:
         return []
 

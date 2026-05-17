@@ -429,7 +429,7 @@ class StudioGenerateResponse(BaseModel):
 
 @router.post("/generate", response_model=StudioGenerateResponse)
 async def studio_generate(
-    files: List[UploadFile] = File(..., description="One or more documents to ingest"),
+    files: list[UploadFile] = File(..., description="One or more documents to ingest"),
     mode: str = Form(..., description="'notebook', 'podcast', or 'both'"),
     title: Optional[str] = Form(None, description="Notebook title; auto-generated if absent"),
     episode_profile_name: Optional[str] = Form(

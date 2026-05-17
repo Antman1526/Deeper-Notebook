@@ -41,7 +41,7 @@ class SearchRequest(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    results: List[Dict[str, Any]] = Field(..., description="Search results")
+    results: list[dict[str, Any]] = Field(..., description="Search results")
     total_count: int = Field(..., description="Total number of results")
     search_type: str = Field(..., description="Type of search performed")
 
@@ -96,9 +96,9 @@ class DefaultModelsResponse(BaseModel):
 
 
 class ProviderAvailabilityResponse(BaseModel):
-    available: List[str] = Field(..., description="List of available providers")
-    unavailable: List[str] = Field(..., description="List of unavailable providers")
-    supported_types: Dict[str, List[str]] = Field(
+    available: list[str] = Field(..., description="List of available providers")
+    unavailable: list[str] = Field(..., description="List of unavailable providers")
+    supported_types: dict[str, list[str]] = Field(
         ..., description="Provider to supported model types mapping"
     )
 
@@ -263,7 +263,7 @@ class SettingsResponse(BaseModel):
     default_content_processing_engine_url: Optional[str] = None
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
-    youtube_preferred_languages: Optional[List[str]] = None
+    youtube_preferred_languages: Optional[list[str]] = None
 
 
 class SettingsUpdate(BaseModel):
@@ -271,7 +271,7 @@ class SettingsUpdate(BaseModel):
     default_content_processing_engine_url: Optional[str] = None
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
-    youtube_preferred_languages: Optional[List[str]] = None
+    youtube_preferred_languages: Optional[list[str]] = None
 
 
 # Sources API models
@@ -286,7 +286,7 @@ class SourceCreate(BaseModel):
         None, description="Notebook ID to add the source to (deprecated, use notebooks)"
     )
     # New multi-notebook support
-    notebooks: Optional[List[str]] = Field(
+    notebooks: Optional[list[str]] = Field(
         None, description="List of notebook IDs to add the source to"
     )
     # Required fields
@@ -295,7 +295,7 @@ class SourceCreate(BaseModel):
     file_path: Optional[str] = Field(None, description="File path for upload type")
     content: Optional[str] = Field(None, description="Text content for text type")
     title: Optional[str] = Field(None, description="Source title")
-    transformations: Optional[List[str]] = Field(
+    transformations: Optional[list[str]] = Field(
         default_factory=list, description="Transformation IDs to apply"
     )
     embed: bool = Field(False, description="Whether to embed content for vector search")
@@ -329,13 +329,13 @@ class SourceCreate(BaseModel):
 
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
-    topics: Optional[List[str]] = Field(None, description="Source topics")
+    topics: Optional[list[str]] = Field(None, description="Source topics")
 
 
 class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
-    topics: Optional[List[str]]
+    topics: Optional[list[str]]
     asset: Optional[AssetModel]
     full_text: Optional[str]
     embedded: bool
@@ -346,15 +346,15 @@ class SourceResponse(BaseModel):
     # New fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[Dict] = None
+    processing_info: Optional[dict] = None
     # Notebook associations
-    notebooks: Optional[List[str]] = None
+    notebooks: Optional[list[str]] = None
 
 
 class SourceListResponse(BaseModel):
     id: str
     title: Optional[str]
-    topics: Optional[List[str]]
+    topics: Optional[list[str]]
     asset: Optional[AssetModel]
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
@@ -365,15 +365,15 @@ class SourceListResponse(BaseModel):
     # Status fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[Dict[str, Any]] = None
+    processing_info: Optional[dict[str, Any]] = None
 
 
 # Context API models
 class ContextConfig(BaseModel):
-    sources: Dict[str, str] = Field(
+    sources: dict[str, str] = Field(
         default_factory=dict, description="Source inclusion config {source_id: level}"
     )
-    notes: Dict[str, str] = Field(
+    notes: dict[str, str] = Field(
         default_factory=dict, description="Note inclusion config {note_id: level}"
     )
 
@@ -387,8 +387,8 @@ class ContextRequest(BaseModel):
 
 class ContextResponse(BaseModel):
     notebook_id: str
-    sources: List[Dict[str, Any]] = Field(..., description="Source context data")
-    notes: List[Dict[str, Any]] = Field(..., description="Note context data")
+    sources: list[dict[str, Any]] = Field(..., description="Source context data")
+    notes: list[dict[str, Any]] = Field(..., description="Note context data")
     total_tokens: Optional[int] = Field(None, description="Estimated token count")
 
 
@@ -429,7 +429,7 @@ class CreateSourceInsightRequest(BaseModel):
 class SourceStatusResponse(BaseModel):
     status: Optional[str] = Field(None, description="Processing status")
     message: str = Field(..., description="Descriptive message about the status")
-    processing_info: Optional[Dict[str, Any]] = Field(
+    processing_info: Optional[dict[str, Any]] = Field(
         None, description="Detailed processing information"
     )
     command_id: Optional[str] = Field(None, description="Command ID if available")
@@ -510,10 +510,10 @@ class SetApiKeyRequest(BaseModel):
 class ApiKeyStatusResponse(BaseModel):
     """Response showing which providers are configured and their source."""
 
-    configured: Dict[str, bool] = Field(
+    configured: dict[str, bool] = Field(
         ..., description="Map of provider name to whether it is configured"
     )
-    source: Dict[str, Literal["database", "environment", "none"]] = Field(
+    source: dict[str, Literal["database", "environment", "none"]] = Field(
         ...,
         description="Map of provider name to configuration source (database, environment, or none)",
     )
@@ -543,13 +543,13 @@ class MigrationResult(BaseModel):
     """Response from migrating API keys from environment to database."""
 
     message: str = Field(..., description="Summary message")
-    migrated: List[str] = Field(
+    migrated: list[str] = Field(
         default_factory=list, description="Providers successfully migrated"
     )
-    skipped: List[str] = Field(
+    skipped: list[str] = Field(
         default_factory=list, description="Providers skipped (already in DB)"
     )
-    errors: List[str] = Field(
+    errors: list[str] = Field(
         default_factory=list, description="Migration errors by provider"
     )
 
@@ -561,7 +561,7 @@ class CreateCredentialRequest(BaseModel):
 
     name: str = Field(..., description="Credential name")
     provider: str = Field(..., description="Provider name (openai, anthropic, etc.)")
-    modalities: List[str] = Field(
+    modalities: list[str] = Field(
         default_factory=list,
         description="Supported modalities (language, embedding, text_to_speech, speech_to_text)",
     )
@@ -584,7 +584,7 @@ class UpdateCredentialRequest(BaseModel):
     """Request to update an existing credential."""
 
     name: Optional[str] = Field(None, description="Credential name")
-    modalities: Optional[List[str]] = Field(None, description="Supported modalities")
+    modalities: Optional[list[str]] = Field(None, description="Supported modalities")
     api_key: Optional[str] = Field(None, description="API key (stored encrypted)")
     base_url: Optional[str] = Field(None, description="Base URL")
     endpoint: Optional[str] = Field(None, description="Endpoint URL")
@@ -604,7 +604,7 @@ class CredentialResponse(BaseModel):
     id: str
     name: str
     provider: str
-    modalities: List[str]
+    modalities: list[str]
     base_url: Optional[str] = None
     endpoint: Optional[str] = None
     api_version: Optional[str] = None
@@ -643,7 +643,7 @@ class DiscoverModelsResponse(BaseModel):
 
     credential_id: str
     provider: str
-    discovered: List[DiscoveredModelResponse]
+    discovered: list[DiscoveredModelResponse]
 
 
 class RegisterModelData(BaseModel):
@@ -657,7 +657,7 @@ class RegisterModelData(BaseModel):
 class RegisterModelsRequest(BaseModel):
     """Request to register discovered models."""
 
-    models: List[RegisterModelData]
+    models: list[RegisterModelData]
 
 
 class RegisterModelsResponse(BaseModel):

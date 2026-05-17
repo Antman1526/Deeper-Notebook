@@ -8,7 +8,7 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 
 
-async def _resolve_model_config(model_id: str) -> Tuple[str, str, dict]:
+async def _resolve_model_config(model_id: str) -> tuple[str, str, dict]:
     """Load Model record, resolve credential -> (provider, model_name, config_dict).
 
     Used by resolve_outline_config, resolve_transcript_config, resolve_tts_config,
@@ -94,7 +94,7 @@ class EpisodeProfile(ObjectModel):
             data["transcript_llm"] = ensure_record_id(data["transcript_llm"])
         return data
 
-    async def resolve_outline_config(self) -> Tuple[str, str, dict]:
+    async def resolve_outline_config(self) -> tuple[str, str, dict]:
         """Resolve outline model -> (provider, model_name, config_dict)"""
         if not self.outline_llm:
             raise ValueError(
@@ -103,7 +103,7 @@ class EpisodeProfile(ObjectModel):
             )
         return await _resolve_model_config(self.outline_llm)
 
-    async def resolve_transcript_config(self) -> Tuple[str, str, dict]:
+    async def resolve_transcript_config(self) -> tuple[str, str, dict]:
         """Resolve transcript model -> (provider, model_name, config_dict)"""
         if not self.transcript_llm:
             raise ValueError(
@@ -151,7 +151,7 @@ class SpeakerProfile(ObjectModel):
         None, description="Model record ID for TTS"
     )
 
-    speakers: List[Dict[str, Any]] = Field(
+    speakers: list[dict[str, Any]] = Field(
         ..., description="Array of speaker configurations"
     )
 
@@ -179,7 +179,7 @@ class SpeakerProfile(ObjectModel):
                     speaker["voice_model"] = ensure_record_id(speaker["voice_model"])
         return data
 
-    async def resolve_tts_config(self) -> Tuple[str, str, dict]:
+    async def resolve_tts_config(self) -> tuple[str, str, dict]:
         """Resolve TTS model -> (provider, model_name, config_dict)"""
         if not self.voice_model:
             raise ValueError(
@@ -205,10 +205,10 @@ class PodcastEpisode(ObjectModel):
     table_name: ClassVar[str] = "episode"
 
     name: str = Field(..., description="Episode name")
-    episode_profile: Dict[str, Any] = Field(
+    episode_profile: dict[str, Any] = Field(
         ..., description="Episode profile used (stored as object)"
     )
-    speaker_profile: Dict[str, Any] = Field(
+    speaker_profile: dict[str, Any] = Field(
         ..., description="Speaker profile used (stored as object)"
     )
     briefing: str = Field(..., description="Full briefing used for generation")
@@ -216,13 +216,13 @@ class PodcastEpisode(ObjectModel):
     audio_file: Optional[str] = Field(
         default=None, description="Path to generated audio file"
     )
-    transcript: Optional[Dict[str, Any]] = Field(
+    transcript: Optional[dict[str, Any]] = Field(
         default_factory=dict, description="Generated transcript"
     )
-    outline: Optional[Dict[str, Any]] = Field(
+    outline: Optional[dict[str, Any]] = Field(
         default_factory=dict, description="Generated outline"
     )
-    command: Optional[Union[str, RecordID]] = Field(
+    command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands job"
     )
 

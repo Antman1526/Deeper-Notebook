@@ -107,7 +107,7 @@ async def get_env_status():
 # =============================================================================
 
 
-@router.get("", response_model=List[CredentialResponse])
+@router.get("", response_model=list[CredentialResponse])
 async def list_credentials(
     provider: Optional[str] = Query(None, description="Filter by provider"),
 ):
@@ -134,7 +134,7 @@ async def list_credentials(
         raise HTTPException(status_code=500, detail="Failed to list credentials")
 
 
-@router.get("/by-provider/{provider}", response_model=List[CredentialResponse])
+@router.get("/by-provider/{provider}", response_model=list[CredentialResponse])
 async def list_credentials_by_provider(provider: str):
     """List all credentials for a specific provider."""
     try:
