@@ -10,6 +10,51 @@ This file provides architectural guidance for contributors working on Open Noteb
 
 ---
 
+## Standing Workflow For Every Prompt
+
+These instructions apply to **every** prompt this assistant receives in this repository, not just prompts that explicitly ask for testing, debugging, or refactoring. They are a baseline behavior; the user's specific request layers on top.
+
+On every prompt, you must:
+
+### 1. Test and find bugs/issues first
+
+Before (or alongside) addressing the user's stated request, actively audit the code paths you are about to touch and the closely related ones:
+
+- Read the files you intend to modify and the modules that consume or feed them.
+- Run the relevant test suite (`uv run pytest tests/` for backend, `pnpm test --run` from `frontend/` for frontend) when changes could affect behavior. If running tests is impractical, reason through them in writing.
+- Look for: real bugs (incorrect logic, wrong query direction, swallowed exceptions, race conditions), regressions, edge cases (None values, empty collections, multi-byte UTF-8, concurrency), broken behavior, dead code, security issues (unscoped queries, missing auth checks, leaked secrets), and reliability issues (event-loop blocks, missing timeouts, unhandled disconnects, resource leaks).
+- Pay specific attention to recurring patterns this codebase has been bitten by: sync `surreal_commands.submit_command` called inside `async def` (must be wrapped in `asyncio.to_thread`); LangGraph state-shape variance (`isinstance(output, dict)` vs Pydantic — accept both via `getattr` fallback); SSE handlers missing `is_disconnected()` checks; readers released without `cancel()` first; SurrealDB edge tables (`reference`, `artifact`, `refers_to`) where `in`/`out` direction is easy to invert; missing delete cascades; and `str(payload)` overcounting when sizing LLM context.
+
+### 2. Fix the issues you find
+
+Resolve identified bugs as part of the current response, not as a deferred follow-up:
+
+- Apply the fixes inline, in the same change set as the user's request.
+- Each fix gets a clear inline code comment naming the version (e.g. `# v0.7.NN — ...`) and explaining what was broken and why the new code is correct. This convention matches the rest of the codebase.
+- Add or update tests when the bug is testable without a live SurrealDB / running services. Run the suite afterward and confirm it passes.
+- Update `desktop/CHANGELOG.md` ("Unreleased" section) with one bullet per logical fix.
+
+### 3. Make improvements where warranted — with judgment
+
+Apply targeted improvements that materially help the codebase:
+
+- Good targets: readability, correctness, error handling, type safety, accessibility, security, observability, production-readiness, removing dead code, replacing string-typed magic with constants, breaking apart large files when you're already inside them.
+- **Stay in scope.** Do not perform unrelated refactors or sweeping reformatting. If a file you're touching has problems outside the current request, surface them in the response and either (a) fix them only if they're tightly related and low-risk, or (b) explicitly defer them as a note. Sprawl is worse than progress.
+- Match existing patterns. This codebase has established conventions for error classification, async/await, edge-table queries, fire-and-forget command submission, and frontend hook composition — follow them rather than inventing new ones.
+
+### Reporting requirements
+
+Every response that involves code changes must clearly call out, in plain language:
+
+- **(a) Bugs / issues found** during the audit, with file:line references.
+- **(b) Fixes applied**, with a short description of what each fix changes.
+- **(c) Improvements made**, distinct from bug fixes, with rationale.
+- **(d) Anything intentionally deferred** — issues you noticed but did not address this turn, with one line on why (out of scope, requires a migration, etc.). Never silently ignore something significant.
+
+If the audit found nothing worth fixing, say so explicitly ("Audited X, Y, Z; no issues found") rather than omitting the section.
+
+---
+
 ## Three-Tier Architecture
 
 ```
