@@ -18,7 +18,7 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.86 (in flight)
+## Unreleased — v0.7.36 → v0.7.87 (in flight)
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
@@ -301,6 +301,18 @@ uncovered by a follow-up audit pass:
   still references the model — deliberately not auto-cleared
   since reassigning a profile's model is a UX choice the user
   should make.
+- **v0.7.87** commands router audit uncovered three stub
+  implementations returning success without doing the work:
+  `cancel_command_job` was a no-op (frontend trusted "cancelled:
+  true" and removed the job from the UI while the command kept
+  running); `list_command_jobs` was a stub returning [] so the
+  jobs panel was always empty; `get_command_status` returned a
+  synthetic `{"status": "unknown"}` for missing jobs so the
+  router served fake-OK 200 responses. Now: cancel writes the
+  `canceled` signal via the same pattern Source.delete uses
+  (v0.7.32), list queries the `command` table with SurrealQL
+  filters, and missing jobs return real 404 (status endpoint)
+  or 404/409 (cancel endpoint).
 
 ---
 
