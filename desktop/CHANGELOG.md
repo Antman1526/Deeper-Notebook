@@ -18,8 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.104 (in flight)
+## Unreleased — v0.7.36 → v0.7.109 (in flight)
 
+- **v0.7.109** 🐛 **Widespread anti-pattern: `except Exception` clobbered
+  typed `HTTPException(404/400/504/etc)` into generic 500s.** Found by
+  v0.7.108's chat-timeout test — the v0.7.99 504 was being silently
+  rewrapped as 500 by the outer `except Exception` in `execute_chat`.
+
+  A grep audit turned up **25 functions across 13 router files** with
+  the same shape:
+    ```python
+    try:
+        ...
+        raise HTTPException(status_code=404, ...)   # never reaches client
+        ...
+    except Exception as e:                          # catches the 404
+        raise HTTPException(status_code=500, ...)   # ←  always 500
+    ```
+  Status codes that would have been lost: 400, 404, 413, 502, 504.
+  This bug masked every typed error in the codebase since v0.6.x —
+  the frontend's i18n error mapping (`getApiErrorMessage`) couldn't
+  match on detail strings, so every failure looked the same.
+
+  Fix: mechanical insertion of `except HTTPException: raise` before
+  each unguarded `except Exception` — 89 guards added across
+  `chat.py`, `credentials.py`, `embedding.py`, `exports.py`,
+  `gmail.py`, `notebooks.py`, `onp.py`, `podcasts.py`, `search.py`,
+  `source_chat.py`, `sources.py`, `studio.py`, `transformations.py`.
+- **v0.7.108** ✨ **Test for v0.7.99 chat timeout path.** Was deferred —
+  added `tests/test_chat_execute_timeout.py` with two tests:
+  the 504 path (with env-knob + `/chat/stream` hint validated) and
+  the negative-space happy path (fast response is NOT spuriously
+  timeout-killed). Caught v0.7.109's pre-existing 500-clobber bug.
+- **v0.7.107** ⚡ **Bulk-delete cascade optimization for notebooks.**
+  `Notebook.delete()` was sequential `for note in notes: await
+  note.delete()` — N+1 serialized roundtrips against the connection
+  pool. Replaced with `asyncio.gather(*..., return_exceptions=True)`
+  so per-note deletes interleave concurrently. Each `note.delete()`
+  still does its own cascade (artifact + note_embedding) per v0.7.76,
+  so observability + correctness are preserved. Failed note deletes
+  log a warning but don't cancel siblings — partial cleanup is
+  better than mid-cascade abort.
+- **v0.7.106** ✨ **Bulk per-notebook source vectorize endpoint.**
+  `POST /api/notebooks/{id}/vectorize_sources` body
+  `{only_missing: bool}`. Recovers from cases where a notebook's
+  sources didn't get embedded — v0.7.94 import-time vectorize
+  failure, embedding model swap, upgrade from a version without
+  semantic search.
+
+  - Skips sources that already have embeddings by default
+    (`only_missing=true`); pass `false` to force re-embed.
+  - Skips sources with no `full_text` and emits an actionable
+    warning ("re-process the source first").
+  - Submit failures degrade gracefully — a single source's failure
+    becomes a warning, others still queue.
+  - Pre-flight check rejects 400 if no embedding model is
+    configured (better than letting every queued job fail
+    asynchronously).
+  - Returns per-source entries with command_ids the caller can
+    poll. 6 new tests cover 404 / 400 / only_missing on/off / no-text
+    skip / submit-failure resilience.
+- **v0.7.105** ✨ **Frontend Export UI** (committed separately by the
+  spawned task — see commit 7b0aa34). Wires the v0.7.90 endpoints
+  into the dashboard with a directory picker.
 - **v0.7.104** 🐛 **Imported sources weren't getting embeddings.**
   v0.7.94 import created Source records via `await source.save()` but
   never called `await source.vectorize()`. Per

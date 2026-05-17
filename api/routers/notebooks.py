@@ -108,6 +108,10 @@ async def create_notebook(notebook: NotebookCreate):
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
         raise HTTPException(

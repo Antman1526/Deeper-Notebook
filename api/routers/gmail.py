@@ -269,6 +269,10 @@ async def callback(
             })
             r.raise_for_status()
             tok = r.json()
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             log.exception("Gmail OAuth token exchange failed")
             return _result_page(
@@ -298,6 +302,10 @@ async def callback(
             )
             ui.raise_for_status()
             email = ui.json().get("email", "")
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             log.warning("Gmail userinfo fetch failed (non-fatal): %s", exc)
             email = ""
@@ -324,6 +332,10 @@ async def send_test() -> SendResult:
         raise HTTPException(status_code=400, detail="Gmail not connected")
     try:
         ok, msg, n = await _send_digest_now(g, label="Test")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return SendResult(ok=ok, message=msg, items_included=n)
@@ -397,6 +409,10 @@ async def _refresh_access_token(g: GmailIntegration) -> bool:
             })
             r.raise_for_status()
             tok = r.json()
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             log.warning("Gmail token refresh failed: %s", exc)
             return False
@@ -465,6 +481,10 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
     g.last_sent_at = datetime.now(timezone.utc)
     try:
         await g.save()
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as save_exc:
         log.exception(
             "Gmail send succeeded but persist of last_sent_at failed — "
