@@ -18,8 +18,52 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.116 (in flight)
+## Unreleased — v0.7.36 → v0.7.117 (in flight)
 
+- **v0.7.117** 🔒 **XSS hardening + zip-symlink rejection** (two real
+  security findings from another audit pass).
+
+  - **XSS via raw HTML in markdown notes** — `_markdown_to_html()`
+    (used by v0.7.97 per-page + v0.7.111 combined HTML exports)
+    rendered `<script>` and other raw HTML tags VERBATIM. Self-
+    hosted single-user is mostly safe (author == user), but the
+    combined_html export is specifically designed for share-by-
+    email / Drive / link, so a malicious note author could craft
+    payloads that execute when a recipient opens the file.
+
+    Fix: pass `html=False` to MarkdownIt constructor AND disable
+    both `html_inline` and `html_block` rules. Raw `<script>`,
+    `<iframe>`, `<img onerror>`, `<svg onload>`, etc. are now
+    rendered as escaped literal text. Legitimate markdown (bold,
+    code, tables, lists, blockquotes, real https:// links) still
+    works.
+
+  - **Zip-symlink import** — `_validate_archive_member()` blocked
+    path-traversal `..` segments but didn't check the Unix mode
+    bits. A zip with a symlink "passwords.md" → "/etc/passwd"
+    would have its 'content' read as the link-target string —
+    silently importing garbage. Not directly exploitable (we
+    don't extract to disk) but bad UX.
+
+    Fix: new `_is_regular_file_entry()` discriminator inspects
+    the S_IF* bits in `external_attr` and rejects symlinks
+    (0o120000), FIFOs (0o010000), devices, sockets. Accepts
+    regular files, directories, AND entries with no S_IF* bits
+    set (Python `zipfile.writestr` default + DOS-only zips).
+
+  - **Other audit angles verified clean:**
+    - Edge-table direction (`reference`/`artifact`/`refers_to`):
+      `in=child, out=notebook` consistent across `relate` →
+      `get_X` traversals.
+    - Password comparison uses `secrets.compare_digest` (v0.6.7
+      already, confirmed still in place).
+    - Connection pool warmup + shutdown drain still bounded.
+    - No `eval`/`exec`/`pickle.loads` on user input.
+    - No bare `except:` clauses.
+
+  6 new tests: 3 for the XSS escaping, 2 for symlink rejection,
+  1 unit test on the file-type discriminator. Full suite:
+  527 pass (was 522).
 - **v0.7.116** ✨🛠 **Per-provider connection-test timeouts + typing
   modernization + delete-cascade test + docs sync.** Four deferred
   improvements shipped together.
