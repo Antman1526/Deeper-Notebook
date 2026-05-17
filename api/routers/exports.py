@@ -1157,6 +1157,30 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
                 source.full_text = body
                 await source.save()
                 await source.add_to_notebook(notebook_id)
+                # v0.7.104 — Real bug fix: Source.save() does NOT auto-embed
+                # (per open_notebook/domain/CLAUDE.md). Without this
+                # vectorize() call, imported sources were saved but never
+                # got embeddings, which meant vector_search() couldn't find
+                # them — breaking the "import then chat-with-sources"
+                # promise of v0.7.94. Note.save() DOES auto-embed, which is
+                # why imported notes worked; Source is the inconsistent
+                # one. Fire-and-forget (returns command_id we don't need).
+                try:
+                    await source.vectorize()
+                except Exception as exc:
+                    # Vector backend might be unavailable; the source is
+                    # still saved + text-searchable. Warn but don't fail
+                    # the import.
+                    logger.warning(
+                        "Import: source vectorize failed for {!r} (non-fatal): {}",
+                        rel, _brief(exc),
+                    )
+                    warnings.append(
+                        f"Source {rel!r} imported but embedding queue failed: "
+                        f"{_brief(exc)}. Text search still works; rebuild "
+                        "embeddings from Settings → Embeddings to enable "
+                        "vector search."
+                    )
             except Exception as exc:
                 logger.warning(
                     "Notebook import: could not import source {!r}: {}", rel, _brief(exc),

@@ -17,6 +17,18 @@ router = APIRouter()
 @router.post("/search", response_model=SearchResponse)
 async def search_knowledge_base(search_request: SearchRequest):
     """Search the knowledge base using text or vector search."""
+    # v0.7.102 — Per-call timeout. The underlying SurrealDB queries are
+    # async but unbounded — a hung pool or a pathological vector index
+    # state can pin the request indefinitely. Vector search ALSO calls
+    # the embedding model on the query string, so it inherits the
+    # provider-latency risk that v0.7.100 wrapped for connection tests.
+    # 60s default is generous for any healthy DB + small embedding;
+    # raise via env if you've intentionally over-loaded the box.
+    import asyncio
+    import os
+    _search_timeout = float(
+        os.environ.get("ONP_SEARCH_TIMEOUT_SEC", "60").strip() or 60
+    )
     try:
         if search_request.type == "vector":
             # Check if embedding model is available for vector search
@@ -26,21 +38,47 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail="Vector search requires an embedding model. Please configure one in the Models section.",
                 )
 
-            results = await vector_search(
-                keyword=search_request.query,
-                results=search_request.limit,
-                source=search_request.search_sources,
-                note=search_request.search_notes,
-                minimum_score=search_request.minimum_score,
-            )
+            try:
+                results = await asyncio.wait_for(
+                    vector_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                        minimum_score=search_request.minimum_score,
+                    ),
+                    timeout=_search_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        f"Vector search timed out after {_search_timeout:.0f}s. "
+                        "The embedding model may be slow, or the database "
+                        "pool is overloaded. Raise ONP_SEARCH_TIMEOUT_SEC."
+                    ),
+                )
         else:
             # Text search
-            results = await text_search(
-                keyword=search_request.query,
-                results=search_request.limit,
-                source=search_request.search_sources,
-                note=search_request.search_notes,
-            )
+            try:
+                results = await asyncio.wait_for(
+                    text_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                    ),
+                    timeout=_search_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        f"Text search timed out after {_search_timeout:.0f}s. "
+                        "The database pool may be overloaded. Raise "
+                        "ONP_SEARCH_TIMEOUT_SEC."
+                    ),
+                )
 
         return SearchResponse(
             results=results or [],

@@ -5,6 +5,7 @@ This module provides functionality to test if a provider's API key is valid
 by making minimal API calls to each provider, and to test individual model
 configurations end-to-end.
 """
+import asyncio  # v0.7.100 — wait_for around the test ainvoke / aembed
 import io
 import os
 import struct
@@ -15,6 +16,16 @@ from esperanto.factory import AIFactory
 from loguru import logger
 
 from open_notebook.domain.credential import Credential
+
+# v0.7.100 — Per-test timeout. The endpoint that calls this is
+# /credentials/{id}/test which the user clicks from the Settings UI;
+# they expect feedback within seconds, not minutes. 30s is generous
+# for any healthy provider (even cold-start Ollama load); slow models
+# that genuinely take longer should be configured separately rather
+# than via a test endpoint.
+_CONNECTION_TEST_TIMEOUT_SEC = float(
+    os.environ.get("ONP_CONNECTION_TEST_TIMEOUT_SEC", "30").strip() or 30
+)
 
 # Test models for each provider - uses minimal/cheapest models for testing
 # Format: (model_name, model_type)
@@ -251,17 +262,40 @@ async def test_provider_connection(
             os.environ[f"{provider.upper()}_API_KEY"] = api_key
 
         # Try to create the model and make a minimal call
+        # v0.7.100 — wrap in wait_for so a misconfigured slow provider
+        # can't hang the Settings UI's "Test connection" button for
+        # minutes. 30s default; raise via env if needed.
         if test_model_type == "language":
             model = AIFactory.create_language(model_name=model_to_use, provider=provider)
             # Convert to LangChain and make a minimal call
             lc_model = model.to_langchain()
-            await lc_model.ainvoke("Hi")
+            try:
+                await asyncio.wait_for(
+                    lc_model.ainvoke("Hi"),
+                    timeout=_CONNECTION_TEST_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                return False, (
+                    f"Connection test timed out after {_CONNECTION_TEST_TIMEOUT_SEC:.0f}s. "
+                    "The provider may be slow, the model may be loading, or "
+                    "the endpoint is unreachable. Raise ONP_CONNECTION_TEST_TIMEOUT_SEC "
+                    "if your model legitimately takes longer than 30s for a 'Hi' prompt."
+                )
             return True, "Connection successful"
 
         elif test_model_type == "embedding":
             model = AIFactory.create_embedding(model_name=model_to_use, provider=provider)
             # Embed a single short test string
-            await model.aembed(["test"])
+            try:
+                await asyncio.wait_for(
+                    model.aembed(["test"]),
+                    timeout=_CONNECTION_TEST_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                return False, (
+                    f"Embedding test timed out after {_CONNECTION_TEST_TIMEOUT_SEC:.0f}s. "
+                    "Raise ONP_CONNECTION_TEST_TIMEOUT_SEC or check provider status."
+                )
             return True, "Connection successful"
 
         elif test_model_type == "text_to_speech":
