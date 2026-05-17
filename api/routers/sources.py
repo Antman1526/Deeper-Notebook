@@ -169,6 +169,10 @@ async def save_uploaded_file(
 
         logger.info(f"Saved uploaded file to: {file_path}")
         return file_path
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Failed to save uploaded file: {e}")
         # Clean up partial file if it exists
@@ -234,6 +238,10 @@ def parse_source_form_data(
             async_processing=async_processing_bool,
         )
         pass  # SourceCreate instance created successfully
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Failed to create SourceCreate instance: {e}")
         raise
@@ -412,6 +420,10 @@ async def create_source(
                     raise HTTPException(status_code=413, detail=msg)
                 logger.error(f"File upload failed: {exc}")
                 raise HTTPException(status_code=400, detail=f"File upload failed: {msg}")
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"File upload failed: {e}")
                 raise HTTPException(
@@ -534,17 +546,29 @@ async def create_source(
                     processing_info={"async": True, "queued": True},
                 )
 
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"Failed to submit async processing command: {e}")
                 # Clean up source record on command submission failure
                 try:
                     await source.delete()
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception:
                     pass
                 # Clean up uploaded file if we created it
                 if file_path and upload_file:
                     try:
                         os.unlink(file_path)
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                 raise HTTPException(
@@ -596,12 +620,20 @@ async def create_source(
                     # Clean up source record
                     try:
                         await source.delete()
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                     # Clean up uploaded file if we created it
                     if file_path and upload_file:
                         try:
                             os.unlink(file_path)
+                        except HTTPException:
+                            # v0.7.108 — re-raise typed HTTPExceptions so the next
+                            # `except Exception` doesn't clobber them to 500.
+                            raise
                         except Exception:
                             pass
                     raise HTTPException(
@@ -641,12 +673,20 @@ async def create_source(
                     # No command_id or status for sync processing (legacy behavior)
                 )
 
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"Sync processing failed: {e}")
                 # Clean up uploaded file if we created it
                 if file_path and upload_file:
                     try:
                         os.unlink(file_path)
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                 raise
@@ -656,6 +696,10 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
         raise
@@ -664,6 +708,10 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
         raise HTTPException(status_code=400, detail=str(e))
@@ -673,6 +721,10 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
@@ -740,6 +792,10 @@ async def get_source(source_id: str):
             try:
                 status = await source.get_status()
                 processing_info = await source.get_processing_progress()
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.warning(f"Failed to get status for source {source_id}: {e}")
                 status = "unknown"
@@ -859,6 +915,10 @@ async def get_source_status(source_id: str):
                 command_id=str(source.command) if source.command else None,
             )
 
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as e:
             logger.warning(f"Failed to get status for source {source_id}: {e}")
             return SourceStatusResponse(
@@ -937,6 +997,10 @@ async def retry_source_processing(source_id: str):
                         status_code=400,
                         detail="Source is already processing. Cannot retry while processing is active.",
                     )
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.warning(
                     f"Failed to check current status for source {source_id}: {e}"
@@ -1045,6 +1109,10 @@ async def retry_source_processing(source_id: str):
                 processing_info={"retry": True, "queued": True},
             )
 
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as e:
             logger.error(
                 f"Failed to submit retry processing command for source {source_id}: {e}"

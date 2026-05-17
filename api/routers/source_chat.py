@@ -122,6 +122,10 @@ async def create_source_chat_session(
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
         raise HTTPException(
@@ -183,6 +187,10 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
         return sessions
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
         raise HTTPException(
@@ -280,6 +288,10 @@ async def get_source_chat_session(
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source or session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
         raise HTTPException(
@@ -352,6 +364,10 @@ async def update_source_chat_session(
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source or session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
         raise HTTPException(
@@ -407,6 +423,10 @@ async def delete_source_chat_session(
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source or session not found")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
         raise HTTPException(
@@ -548,6 +568,10 @@ async def stream_source_chat_response(
         # Send completion signal
         yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 

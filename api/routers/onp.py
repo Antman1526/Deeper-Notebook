@@ -89,6 +89,10 @@ async def set_theme(body: ThemeRequest) -> ThemeResponse:
     try:
         new_cfg = _dc_replace(cfg, theme=body.theme)
         new_cfg.save(path)
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return ThemeResponse(theme=body.theme, available=sorted(_VALID_THEMES))

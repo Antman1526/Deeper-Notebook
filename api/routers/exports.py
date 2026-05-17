@@ -1111,6 +1111,10 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
         try:
             notebook = Notebook(name=name[:200], description=description)
             await notebook.save()
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.exception("Notebook import: failed to create notebook")
             raise HTTPException(
@@ -1131,6 +1135,10 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
                 fallback_title=fallback_title,
                 notebook_id=notebook_id,
             )
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning(
                 "Notebook import: could not import note {!r}: {}", rel, _brief(exc),
@@ -1167,6 +1175,10 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
                 # one. Fire-and-forget (returns command_id we don't need).
                 try:
                     await source.vectorize()
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception as exc:
                     # Vector backend might be unavailable; the source is
                     # still saved + text-searchable. Warn but don't fail
@@ -1181,6 +1193,10 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
                         "embeddings from Settings → Embeddings to enable "
                         "vector search."
                     )
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as exc:
                 logger.warning(
                     "Notebook import: could not import source {!r}: {}", rel, _brief(exc),

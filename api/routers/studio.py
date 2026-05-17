@@ -503,6 +503,10 @@ async def studio_generate(
         await notebook.save()
     except InvalidInputError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.exception("Studio: failed to create notebook")
         raise HTTPException(status_code=500, detail=f"Could not create notebook: {exc}")
@@ -524,6 +528,10 @@ async def studio_generate(
             # uploads can't bypass the size cap (UploadFile.size is None
             # for those, so the pre-check above silently skips).
             saved_path = await save_uploaded_file(upload, max_bytes=_MAX_FILE_BYTES)
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("Studio: save_uploaded_file failed for {!r}: {}", filename, exc)
             warnings.append(f"Could not save {filename!r}: {_brief(exc)}")
@@ -538,6 +546,10 @@ async def studio_generate(
             await source.save()
             await source.add_to_notebook(notebook_id)
             source_ids.append(str(source.id))
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.warning("Studio: source create failed for {!r}: {}", filename, exc)
             warnings.append(f"Could not create source for {filename!r}: {_brief(exc)}")
@@ -592,8 +604,16 @@ async def studio_generate(
             # Fire-and-forget vectorize so chat can use it later
             try:
                 await source.vectorize()
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as exc:
                 logger.warning("Studio: vectorize failed (non-fatal) for {!r}: {}", filename, exc)
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             logger.exception("Studio: extract_content failed for {!r}", filename)
             warnings.append(f"Could not parse {filename!r}: {_brief(exc)}")
@@ -818,6 +838,10 @@ async def _generate_outline(
                 f"{source_count} uploaded source(s)."
             ),
         ) from exc
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.exception("Studio multi-page: outline pass failed")
         raise HTTPException(
@@ -962,6 +986,10 @@ async def _generate_all_pages(
                 notebook_title=notebook_title,
                 page_spec=page_spec,
             )
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as exc:
             _on_page_failure(i, page_spec, exc)
             continue
@@ -1094,6 +1122,10 @@ async def _dispatch_notebook_mode(
             notebook_id=notebook_id,
             notes_to_save=notes_to_save,
         )
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         # Saving even the Overview note failed — surface a 500 so the
         # frontend doesn't claim success. Notebook + sources are intact.
@@ -1170,6 +1202,10 @@ async def _dispatch_notebook_mode_singlenote(
                 f"contains your {len(source_ids)} uploaded source(s)."
             ),
         ) from exc
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.exception("Studio notebook (single-note fallback): LLM call failed")
         raise HTTPException(
@@ -1186,6 +1222,10 @@ async def _dispatch_notebook_mode_singlenote(
         )
         await note.save()
         await note.add_to_notebook(notebook_id)
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as exc:
         logger.exception("Studio notebook (single-note fallback): could not save Note")
         raise HTTPException(

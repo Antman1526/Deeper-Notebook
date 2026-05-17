@@ -91,6 +91,10 @@ async def search_knowledge_base(search_request: SearchRequest):
     except DatabaseOperationError as e:
         logger.error(f"Database error during search: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
@@ -236,6 +240,10 @@ async def stream_ask_response(
             + "\n\n"
         )
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 

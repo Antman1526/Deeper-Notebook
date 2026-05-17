@@ -1,12 +1,51 @@
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
+from pydantic import BaseModel, Field
 
 from api.command_service import CommandService
 from api.models import EmbedRequest, EmbedResponse
 from open_notebook.ai.models import model_manager
-from open_notebook.domain.notebook import Note, Source
+from open_notebook.domain.notebook import Note, Notebook, Source
 
 router = APIRouter()
+
+
+# v0.7.106 — Bulk per-notebook vectorize. Recovers from cases where a
+# notebook's sources didn't get embedded (e.g. v0.7.94 import-time
+# vectorize failure, embedding model swap, upgrade from a version
+# without semantic search). Submits one embed_source command per
+# source; fire-and-forget so the response returns immediately with
+# command_ids the caller can poll.
+class NotebookVectorizeRequest(BaseModel):
+    only_missing: bool = Field(
+        True,
+        description=(
+            "Skip sources that already have embeddings. Default True so "
+            "re-running this endpoint is safe and fast. Set False to "
+            "force re-embedding (useful after switching embedding models)."
+        ),
+    )
+
+
+class NotebookVectorizeSourceEntry(BaseModel):
+    source_id: str
+    title: str
+    queued: bool
+    command_id: Optional[str] = None
+    skip_reason: Optional[str] = None    # set when queued=False
+
+
+class NotebookVectorizeResponse(BaseModel):
+    notebook_id: str
+    notebook_name: str
+    total_sources: int
+    queued: int
+    skipped: int
+    failed: int
+    sources: list[NotebookVectorizeSourceEntry]   # capped at 100
+    warnings: list[str] = []
 
 
 @router.post("/embed", response_model=EmbedResponse)
@@ -62,6 +101,10 @@ async def embed_content(embed_request: EmbedRequest):
                     command_id=command_id,
                 )
 
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"Failed to submit async embedding command: {e}")
                 raise HTTPException(
@@ -111,3 +154,149 @@ async def embed_content(embed_request: EmbedRequest):
         raise HTTPException(
             status_code=500, detail=f"Error embedding content: {str(e)}"
         )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/vectorize_sources",
+    response_model=NotebookVectorizeResponse,
+)
+async def vectorize_notebook_sources(
+    notebook_id: str, req: NotebookVectorizeRequest,
+) -> NotebookVectorizeResponse:
+    """v0.7.106 — Bulk re-embed every Source attached to a notebook.
+
+    Submits one `embed_source` command per source (fire-and-forget) and
+    returns immediately with the queued command_ids. The actual embedding
+    happens in the background worker; poll `/commands/{command_id}` for
+    per-source progress.
+
+    With `only_missing=true` (default), sources that already have
+    embeddings are skipped — re-running is a no-op. Set `only_missing
+    =false` to force re-embedding (useful after switching embedding
+    models in Settings → Models).
+    """
+    notebook = await Notebook.get(notebook_id)
+    if not notebook:
+        raise HTTPException(
+            status_code=404, detail=f"Notebook {notebook_id!r} not found",
+        )
+
+    # Embedding model must be configured before we queue anything —
+    # otherwise the worker would just fail per source and the user
+    # wouldn't know why until they polled each command.
+    if not await model_manager.get_embedding_model():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No embedding model configured. Set one in Settings → "
+                "Models before calling this endpoint, otherwise every "
+                "queued embed_source job would fail."
+            ),
+        )
+
+    sources = await notebook.get_sources()
+    entries: list[NotebookVectorizeSourceEntry] = []
+    queued = 0
+    skipped = 0
+    failed = 0
+    warnings: list[str] = []
+
+    # Ensure embedding_commands is importable for surreal_commands.
+    try:
+        import commands.embedding_commands  # noqa: F401
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except Exception as exc:
+        # Worker registry not available — fail loudly so the user knows
+        # to check the worker process is running.
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Could not load embedding command registry: {exc}. "
+                "Check that the surreal_commands worker is running."
+            ),
+        )
+
+    for source in sources:
+        sid = str(source.id) if source.id else ""
+        title = source.title or "(untitled)"
+        # Skip-if-already-embedded path. We check the `embedded_chunks`
+        # field if present (set by the embed_source command). A source
+        # without that field has never been embedded.
+        already_embedded = (
+            getattr(source, "embedded_chunks", 0) or 0
+        ) > 0
+        if req.only_missing and already_embedded:
+            entries.append(
+                NotebookVectorizeSourceEntry(
+                    source_id=sid, title=title, queued=False,
+                    skip_reason="already_embedded",
+                )
+            )
+            skipped += 1
+            continue
+
+        # No full_text → embed_source job would no-op (or error). Skip
+        # with a diagnostic warning so the user knows which sources
+        # need re-extraction first.
+        if not (source.full_text or "").strip():
+            entries.append(
+                NotebookVectorizeSourceEntry(
+                    source_id=sid, title=title, queued=False,
+                    skip_reason="no_text",
+                )
+            )
+            skipped += 1
+            warnings.append(
+                f"Source {title!r} ({sid}) has no extracted text — "
+                "re-process the source first (Sources → re-extract) "
+                "before embedding."
+            )
+            continue
+
+        try:
+            command_id = await source.vectorize()
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Bulk vectorize: {} ({}) failed to queue: {}",
+                title, sid, exc,
+            )
+            entries.append(
+                NotebookVectorizeSourceEntry(
+                    source_id=sid, title=title, queued=False,
+                    skip_reason=f"submit_failed: {exc}",
+                )
+            )
+            failed += 1
+            warnings.append(
+                f"Could not queue embedding for {title!r}: {exc}"
+            )
+            continue
+        entries.append(
+            NotebookVectorizeSourceEntry(
+                source_id=sid, title=title, queued=True,
+                command_id=str(command_id) if command_id else None,
+            )
+        )
+        queued += 1
+
+    logger.info(
+        "Bulk vectorize: notebook={} total={} queued={} skipped={} failed={}",
+        notebook_id, len(sources), queued, skipped, failed,
+    )
+    return NotebookVectorizeResponse(
+        notebook_id=notebook_id,
+        notebook_name=notebook.name,
+        total_sources=len(sources),
+        queued=queued,
+        skipped=skipped,
+        failed=failed,
+        sources=entries[:100],
+        warnings=warnings,
+    )

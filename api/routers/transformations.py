@@ -39,6 +39,10 @@ async def get_transformations():
             )
             for transformation in transformations
         ]
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching transformations: {str(e)}")
         raise HTTPException(
@@ -71,6 +75,10 @@ async def create_transformation(transformation_data: TransformationCreate):
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error creating transformation: {str(e)}")
         raise HTTPException(
@@ -162,6 +170,10 @@ async def get_default_prompt():
             transformation_instructions=default_prompts.transformation_instructions
             or ""
         )
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching default prompt: {str(e)}")
         raise HTTPException(
@@ -183,6 +195,10 @@ async def update_default_prompt(prompt_update: DefaultPromptUpdate):
         return DefaultPromptResponse(
             transformation_instructions=default_prompts.transformation_instructions
         )
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error updating default prompt: {str(e)}")
         raise HTTPException(
