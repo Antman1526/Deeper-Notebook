@@ -546,7 +546,29 @@ async def studio_generate(
         # Extract content via content_core (handles pdf/docx/pptx/html/md/txt)
         try:
             cs = ProcessSourceState(file_path=saved_path, output_format="markdown")
-            processed = await extract_content(cs)
+            # v0.7.101 — extract_content can hang on pathological inputs:
+            # encrypted PDFs missing the password handler, embedded JS in
+            # PPTX, slow OCR fallback paths. A single bad upload would
+            # otherwise pin the request indefinitely. 60s default per file
+            # — generous for normal PDFs/docx; tunable via env.
+            _extract_timeout = float(
+                os.environ.get("ONP_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+            )
+            try:
+                processed = await asyncio.wait_for(
+                    extract_content(cs), timeout=_extract_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Studio: extract_content timed out for {!r} after {}s",
+                    filename, _extract_timeout,
+                )
+                warnings.append(
+                    f"Parsing {filename!r} timed out after {_extract_timeout:.0f}s. "
+                    "The file may be malformed or password-protected. Raise "
+                    "ONP_STUDIO_EXTRACT_TIMEOUT_SEC or upload a cleaner copy."
+                )
+                continue
             text = (processed.content or "").strip()
             if not text:
                 warnings.append(

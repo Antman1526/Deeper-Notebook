@@ -1043,3 +1043,137 @@ def test_export_zip_rejects_invalid_compression_via_pydantic(
         },
     )
     assert r.status_code == 422  # Pydantic validation failure
+
+
+# ============================================================================
+# v0.7.104 — Import calls source.vectorize() (regression for the v0.7.94 bug)
+# ============================================================================
+
+
+def test_import_vectorizes_imported_sources(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """v0.7.104 regression: imported Source records must have vectorize()
+    called after save() so they get embeddings and become searchable
+    via vector_search. Before this fix, sources from imports were
+    text-only — visible in the UI but invisible to vector search,
+    breaking 'import then chat-with-sources'."""
+    folder = tmp_path / "with-sources"
+    folder.mkdir()
+    (folder / "00-overview.md").write_text("---\ntitle: Overview\n---\nbody")
+    sources_dir = folder / "sources"
+    sources_dir.mkdir()
+    (sources_dir / "src-1.md").write_text("---\ntitle: First Source\n---\nimported source text")
+    (sources_dir / "src-2.md").write_text("---\ntitle: Second Source\n---\nmore text")
+
+    saved_sources: list = []
+    vectorize_calls: list = []
+
+    class _SourceStub:
+        def __init__(self, *, title=None):
+            self.title = title
+            self.full_text = None
+            self.id = f"source:imp-{len(saved_sources)}"
+        async def save(self):
+            saved_sources.append(self)
+        async def add_to_notebook(self, _id):
+            pass
+        async def vectorize(self):
+            vectorize_calls.append(self.id)
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.name, self.description = name, description
+            self.id = "notebook:vec-1"
+        async def save(self):
+            pass
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.title, self.content = title, content
+            self.note_type = note_type
+            self.id = "note:vec-1"
+        async def save(self):
+            pass
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+    monkeypatch.setattr(exports_mod, "Source", _SourceStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={
+            "source_path": str(folder), "mode": "new", "import_sources": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    # Both sources got vectorize() called — they're now searchable.
+    assert len(vectorize_calls) == 2
+    assert set(vectorize_calls) == {s.id for s in saved_sources}
+
+
+def test_import_vectorize_failure_is_non_fatal(
+    client: TestClient, monkeypatch, tmp_path: Path,
+):
+    """v0.7.104 — If vectorize fails (e.g. embedding backend down),
+    the import must still succeed: source is saved + text-searchable,
+    and a warning surfaces explaining how to backfill embeddings later."""
+    folder = tmp_path / "vec-fail"
+    folder.mkdir()
+    (folder / "n.md").write_text("---\ntitle: x\n---\nbody")
+    (folder / "sources").mkdir()
+    (folder / "sources" / "src.md").write_text("---\ntitle: S\n---\ntext")
+
+    class _SourceStub:
+        def __init__(self, *, title=None):
+            self.title = title
+            self.full_text = None
+            self.id = "source:vec-fail-1"
+        async def save(self):
+            pass
+        async def add_to_notebook(self, _id):
+            pass
+        async def vectorize(self):
+            raise RuntimeError("embedding backend unavailable")
+
+    class _NotebookStub:
+        def __init__(self, *, name, description=None):
+            self.id = "notebook:vec-fail-1"
+            self.name = name
+        async def save(self):
+            pass
+
+    class _NoteStub:
+        def __init__(self, *, title=None, content=None, note_type=None):
+            self.id = "note:vec-fail-1"
+            self.title = title
+            self.content = content
+            self.note_type = note_type
+        async def save(self):
+            pass
+        async def add_to_notebook(self, _id):
+            pass
+
+    import api.routers.exports as exports_mod
+    monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
+    monkeypatch.setattr(exports_mod, "Note", _NoteStub)
+    monkeypatch.setattr(exports_mod, "Source", _SourceStub)
+
+    r = client.post(
+        "/api/notebooks/import",
+        json={
+            "source_path": str(folder), "mode": "new", "import_sources": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Source still got imported (1 source in source_ids)
+    assert len(body["source_ids"]) == 1
+    # Warning surfaced with the actionable hint
+    assert any(
+        "embedding queue failed" in w and "rebuild" in w.lower()
+        for w in body["warnings"]
+    ), body["warnings"]
