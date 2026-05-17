@@ -188,12 +188,27 @@ def test_podcast_mode_requires_profiles(client, patched_pipeline):
 
 
 def test_notebook_mode_generates_and_saves_note(client, patched_pipeline, monkeypatch):
-    # Mock the LLM chain returned by provision_langchain_model
-    fake_response = MagicMock()
-    fake_response.content = "# Study Notebook\n\n## Overview\nGenerated content here."
+    """v0.7.89 — notebook mode is now multi-page: one outline pass (JSON)
+    then one ainvoke per page. We verify the overall shape (status 200,
+    note_ids list populated, both sources mentioned in context, notes
+    saved) without coupling tightly to call counts."""
+    # First ainvoke must return outline JSON; subsequent ainvokes return
+    # page Markdown. Use side_effect to feed them in order.
+    outline_json = (
+        '{"headline": "test headline", "summary": "test summary paragraph.", '
+        '"pages": ['
+        '  {"title": "Page A", "focus": "First topic", "key_questions": ["q1"]},'
+        '  {"title": "Page B", "focus": "Second topic", "key_questions": ["q2"]}'
+        '], "top_suggestions": ["do thing one", "do thing two"]}'
+    )
+    page_markdown = "# Page Body\n\n## Key concepts\n- foo\n\n## 💡 AI Suggestions for this page\n- Verify foo"
 
     fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=fake_response)
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content=outline_json),
+        MagicMock(content=page_markdown),
+        MagicMock(content=page_markdown),
+    ])
 
     async def _provision(*args, **kwargs):
         return fake_chain
@@ -212,26 +227,102 @@ def test_notebook_mode_generates_and_saves_note(client, patched_pipeline, monkey
     body = r.json()
     assert body["mode"] == "notebook"
     assert body["notebook_id"].startswith("notebook:")
-    assert body["note_id"].startswith("note:")
+    assert body["note_id"].startswith("note:")  # overview note (back-compat)
+    assert isinstance(body["note_ids"], list)
+    # 1 overview + 2 pages = 3 notes
+    assert len(body["note_ids"]) == 3
+    assert body["note_ids"][0] == body["note_id"]  # overview is first
     assert len(body["source_ids"]) == 2
     assert body["title"] == "My Test"
 
-    # The LLM was actually invoked
-    fake_chain.ainvoke.assert_called_once()
-    # Combined context contains BOTH source filenames
-    invoke_args = fake_chain.ainvoke.call_args[0][0]
-    combined = invoke_args[1].content  # HumanMessage content
+    # The LLM was invoked at least three times (outline + 2 pages)
+    assert fake_chain.ainvoke.call_count == 3
+    # The first call carried the outline prompt; subsequent calls carried
+    # page-generation prompts. We don't assert literal strings (prompts
+    # may evolve); we DO confirm the source filenames reached the LLM.
+    first_call_messages = fake_chain.ainvoke.call_args_list[0][0][0]
+    combined = first_call_messages[1].content  # HumanMessage content
     assert "doc1.txt" in combined
     assert "doc2.md" in combined
 
-    # The note was saved with the LLM response
-    assert len(patched_pipeline["notes"]) == 1
-    assert "Study Notebook" in patched_pipeline["notes"][0]["content"]
+    # Three notes saved (overview + 2 pages). The overview must contain
+    # the headline; each page note must contain the page markdown body.
+    assert len(patched_pipeline["notes"]) == 3
+    overview_note = patched_pipeline["notes"][0]
+    assert "test headline" in overview_note["content"]
+    assert "Page A" in overview_note["content"]
+    assert "Page B" in overview_note["content"]
+    for page_note in patched_pipeline["notes"][1:]:
+        assert "💡 AI Suggestions" in page_note["content"]
+
+
+def test_notebook_mode_falls_back_to_single_note_when_outline_unparseable(
+    client, patched_pipeline, monkeypatch
+):
+    """v0.7.89 — if the outline pass returns un-parseable JSON, the
+    pipeline must NOT 502. It falls back to legacy single-note generation
+    and surfaces a warning so the user knows what happened."""
+    fake_chain = MagicMock()
+    # First call (outline): not JSON. Second call (single-note fallback):
+    # plain markdown. Subsequent ainvokes shouldn't happen.
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content="Sorry, I cannot follow JSON instructions."),
+        MagicMock(content="# Fallback Study Notes\n\nFallback content."),
+    ])
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook", "title": "Fallback Test"},
+        files=[("files", ("a.txt", b"content", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "notebook"
+    assert len(body["note_ids"]) == 1  # single fallback note
+    assert any("fell back" in w.lower() or "outline" in w.lower() for w in body["warnings"])
+    assert "Fallback Study Notes" in patched_pipeline["notes"][0]["content"]
+
+
+def test_notebook_mode_single_note_when_multipage_disabled(
+    client, patched_pipeline, monkeypatch
+):
+    """v0.7.89 — ONP_STUDIO_NOTEBOOK_MULTIPAGE=false routes to the
+    legacy single-note path immediately, no outline call."""
+    monkeypatch.setattr(studio_mod, "_MULTIPAGE_ENABLED", False)
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = AsyncMock(return_value=MagicMock(
+        content="# Disabled-mode Notes\n\nbody",
+    ))
+    monkeypatch.setattr(
+        studio_mod, "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook"},
+        files=[("files", ("a.txt", b"content", "text/plain"))],
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["note_ids"]) == 1
+    # Only one LLM call — the legacy single-note path
+    assert fake_chain.ainvoke.call_count == 1
+    assert "Disabled-mode Notes" in patched_pipeline["notes"][0]["content"]
 
 
 def test_notebook_mode_title_auto_defaults_from_filename(client, patched_pipeline, monkeypatch):
-    fake_response = MagicMock(content="ok")
-    fake_chain = MagicMock(ainvoke=AsyncMock(return_value=fake_response))
+    """v0.7.89 — outline can return un-parseable text and we'll fall back
+    to single-note (still 200). The title-from-filename behavior is what
+    we're verifying here, not the LLM output shape."""
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content="not json"),                # outline → triggers fallback
+        MagicMock(content="# Fallback notes"),         # single-note pass
+    ])
     monkeypatch.setattr(
         studio_mod, "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
@@ -358,8 +449,18 @@ def test_partial_extraction_still_generates_with_warning(
     fake_cc = SimpleNamespace(extract_content=_extract_one_fails)
     monkeypatch.setitem(sys.modules, "content_core", fake_cc)
 
-    fake_response = MagicMock(content="generated study notes")
-    fake_chain = MagicMock(ainvoke=AsyncMock(return_value=fake_response))
+    # v0.7.89 — outline first, then one page (we only need the *generation
+    # path* to succeed; the warning under test is about file parsing).
+    fake_chain = MagicMock()
+    outline_json = (
+        '{"headline": "h", "summary": "s.", '
+        '"pages": [{"title": "P", "focus": "f", "key_questions": ["q"]}], '
+        '"top_suggestions": ["x"]}'
+    )
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content=outline_json),
+        MagicMock(content="# P\n\n## 💡 AI Suggestions for this page\n- act"),
+    ])
     monkeypatch.setattr(
         studio_mod, "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
@@ -375,7 +476,7 @@ def test_partial_extraction_still_generates_with_warning(
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["note_id"] is not None  # generation succeeded
+    assert body["note_id"] is not None  # generation succeeded (overview)
     # The bad file's failure shows up in warnings
     assert any("bad.pdf" in w for w in body["warnings"])
     # Both sources were created even though one failed parsing
@@ -433,7 +534,17 @@ def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
     monkeypatch.setattr(studio_mod, "Note", _NoteMock)
     monkeypatch.setattr(studio_mod, "Asset", lambda **kw: SimpleNamespace(**kw))
 
-    fake_chain = MagicMock(ainvoke=AsyncMock(return_value=MagicMock(content="ok")))
+    # v0.7.89 — outline + at-least-one page in the multi-page flow.
+    fake_chain = MagicMock()
+    outline_json = (
+        '{"headline": "h", "summary": "s.", '
+        '"pages": [{"title": "P", "focus": "f", "key_questions": ["q"]}], '
+        '"top_suggestions": ["x"]}'
+    )
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content=outline_json),
+        MagicMock(content="# P body"),
+    ])
     monkeypatch.setattr(
         studio_mod, "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
