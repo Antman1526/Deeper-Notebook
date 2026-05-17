@@ -43,13 +43,17 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
         # Check more specific patterns first — `surreal-commands-worker` would
         # otherwise match the bare-`surreal` arm.
         if "worker" in joined:
-            started.append("worker"); return procs["worker"]
+            started.append("worker")
+            return procs["worker"]
         if "surreal-darwin" in first or "surreal-windows" in first or first.endswith("/surreal"):
-            started.append("surreal"); return procs["surreal"]
+            started.append("surreal")
+            return procs["surreal"]
         if "uvicorn" in joined:
-            started.append("api"); return procs["api"]
+            started.append("api")
+            return procs["api"]
         if "node" in first or "next" in joined:
-            started.append("next"); return procs["next"]
+            started.append("next")
+            return procs["next"]
         raise AssertionError(f"unexpected popen: {args}")
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
@@ -149,9 +153,12 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    embed = tmp_path / "nomic.gguf"; embed.write_bytes(b"x" * 2_000_000)
-    whisper = tmp_path / "whisper.bin"; whisper.write_bytes(b"x" * 2_000_000)
-    amy = tmp_path / "amy.onnx"; amy.write_bytes(b"x" * 200_000)
+    embed = tmp_path / "nomic.gguf"
+    embed.write_bytes(b"x" * 2_000_000)
+    whisper = tmp_path / "whisper.bin"
+    whisper.write_bytes(b"x" * 2_000_000)
+    amy = tmp_path / "amy.onnx"
+    amy.write_bytes(b"x" * 200_000)
 
     sv = Supervisor(
         cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
