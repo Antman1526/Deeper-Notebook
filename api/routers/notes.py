@@ -53,15 +53,45 @@ async def create_note(note_data: NoteCreate):
         # Auto-generate title if not provided and it's an AI note
         title = note_data.title
         if not title and note_data.note_type == "ai" and note_data.content:
+            import asyncio
+            import os
+
             from open_notebook.graphs.prompt import graph as prompt_graph
 
             prompt = "Based on the Note below, please provide a Title for this content, with max 15 words"
-            result = await prompt_graph.ainvoke(
-                {  # type: ignore[arg-type]
-                    "input_text": note_data.content,
-                    "prompt": prompt,
-                }
+            # v0.7.95 — wrap the LLM call in wait_for so a hung local model
+            # (loading, mid-eval, OOM) can't block note creation. Title
+            # generation is the only thing this LLM call does; if it
+            # times out, fall back to a content-derived title rather than
+            # erroring the whole create-note request. 60s default is
+            # generous for a one-sentence prompt; tunable via env.
+            _title_timeout = float(
+                os.environ.get("ONP_NOTE_TITLE_TIMEOUT_SEC", "60").strip() or 60
             )
+            result = None
+            try:
+                result = await asyncio.wait_for(
+                    prompt_graph.ainvoke(
+                        {  # type: ignore[arg-type]
+                            "input_text": note_data.content,
+                            "prompt": prompt,
+                        }
+                    ),
+                    timeout=_title_timeout,
+                )
+            except asyncio.TimeoutError:
+                # v0.7.95 — Graceful degradation. Fall back to first line
+                # of content as the title rather than 500ing the create-note
+                # request. Local LLMs hang; the user still gets their note.
+                logger.warning(
+                    "Note auto-title timed out after {}s; using first-line fallback",
+                    _title_timeout,
+                )
+                first_line = (
+                    note_data.content.strip().splitlines()[0]
+                    if note_data.content else "Untitled"
+                )
+                title = first_line[:80] or "Untitled Note"
             # v0.7.81 — same dict-vs-Pydantic dual-path guard we apply to
             # other LangGraph ainvoke results (chat.py v0.7.52,
             # search.py v0.7.55, source_chat.py v0.7.56,
@@ -72,10 +102,13 @@ async def create_note(note_data: NoteCreate):
             # spot. Apply the dual-path now so a future LangGraph
             # release that returns a Pydantic state can't 500 the
             # note-create endpoint.
-            if isinstance(result, dict):
-                title = result.get("output") or "Untitled Note"
-            else:
-                title = getattr(result, "output", None) or "Untitled Note"
+            # v0.7.95 — only execute the dual-path if we have a result
+            # (timeout fallback already set `title`).
+            if result is not None:
+                if isinstance(result, dict):
+                    title = result.get("output") or "Untitled Note"
+                else:
+                    title = getattr(result, "output", None) or "Untitled Note"
 
         # Validate note_type
         note_type: Optional[Literal["human", "ai"]] = None
