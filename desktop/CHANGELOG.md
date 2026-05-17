@@ -18,8 +18,30 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.112 (in flight)
+## Unreleased — v0.7.36 → v0.7.113 (in flight)
 
+- **v0.7.113** 🐛 **Chat-hot-path memory-recall embed timeout.**
+  `recall_relevant_memory()` runs on every chat turn (`recall_memory`
+  orchestrator picks it once memory rows pass the semantic threshold).
+  Its `aembed([query])` call had no timeout — a stuck local
+  embedding model (cold-start, OOM, misconfigured base_url) would
+  delay chat by up to `ONP_CHAT_TIMEOUT_SEC` (300s default before
+  v0.7.99's outer wrap fires).
+
+  Wrapped in `asyncio.wait_for(timeout=
+  ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC)` (default 5s). On timeout we
+  fall through to `recall_recent_memory()` which is DB-only — chat
+  loses semantic recall for that turn but doesn't stall. This makes
+  the memory feature truly **best-effort** end to end: read path
+  matches the v0.7.68/v0.7.70 write path's fire-and-forget posture.
+
+  2 new tests: timeout falls through to recency, fast embed
+  completes normally.
+
+  Audit context: scanned the rest of the memory pipeline (writer
+  command submission already non-blocking via `asyncio.to_thread`,
+  read-only SurrealQL queries already defensive with empty-on-
+  failure). This was the last hot-path call without a timeout.
 - **v0.7.112** ✨ **Deep healthcheck endpoint (`/healthz/deep`).**
   Existing `/livez` and `/readyz` cover liveness + must-have deps
   (DB, migrations). v0.7.112 adds a deeper probe that lets operators

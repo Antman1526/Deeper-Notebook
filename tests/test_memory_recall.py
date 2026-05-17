@@ -237,3 +237,77 @@ async def test_orchestrator_unknown_mode_falls_through_to_auto(
     stub_count["count"] = 0
     result = await memory_recall.recall_memory(query="anything")
     assert result == recent_marker
+
+
+# ============================================================================
+# v0.7.113 — Embed timeout on the chat hot path
+# ============================================================================
+
+
+import asyncio as _asyncio_for_timeout_test
+
+
+def test_recall_relevant_memory_falls_through_on_embed_timeout(
+    monkeypatch,
+):
+    """v0.7.113 — recall_relevant_memory runs on every chat turn. If the
+    embedding model is stuck (cold-start, OOM, misconfigured base_url),
+    chat must NOT block waiting for it — recall_relevant_memory returns
+    {} so the orchestrator falls through to recency recall (DB-only)."""
+    monkeypatch.setenv("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "0.1")
+
+    class _HangingEmbedModel:
+        async def aembed(self, texts):
+            await _asyncio_for_timeout_test.sleep(5)
+            return [[0.0] * 768]
+
+    async def _get_emb():
+        return _HangingEmbedModel()
+
+    from open_notebook.ai import models as ai_models
+    monkeypatch.setattr(
+        ai_models.model_manager, "get_embedding_model", _get_emb,
+    )
+
+    from open_notebook.utils.memory_recall import recall_relevant_memory
+    result = _asyncio_for_timeout_test.run(
+        recall_relevant_memory("what is my favorite color")
+    )
+    # Empty dict signals "fall back to recency" to the caller
+    assert result == {}
+
+
+def test_recall_relevant_memory_completes_when_embed_returns_in_time(
+    monkeypatch,
+):
+    """v0.7.113 — negative-space check: a fast embed call must NOT be
+    spuriously timeout-killed."""
+    monkeypatch.setenv("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5")
+
+    class _FastEmbedModel:
+        async def aembed(self, texts):
+            return [[0.1] * 768]
+
+    async def _get_emb():
+        return _FastEmbedModel()
+
+    async def _safe_select_empty(*args, **kwargs):
+        # DB returns no facts/preferences — keeps the test focused on
+        # the embed timeout path, not on SurrealQL semantics.
+        return []
+
+    from open_notebook.ai import models as ai_models
+    monkeypatch.setattr(
+        ai_models.model_manager, "get_embedding_model", _get_emb,
+    )
+    from open_notebook.utils import memory_recall
+    monkeypatch.setattr(memory_recall, "_safe_select", _safe_select_empty)
+
+    from open_notebook.utils.memory_recall import recall_relevant_memory
+    result = _asyncio_for_timeout_test.run(
+        recall_relevant_memory("what is my favorite color")
+    )
+    # NOT timeout-killed → returns the expected shape (empty facts +
+    # preferences, since we stubbed the DB to return nothing).
+    assert "facts" in result
+    assert "preferences" in result
