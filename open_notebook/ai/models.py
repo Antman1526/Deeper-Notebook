@@ -58,6 +58,97 @@ class Model(ObjectModel):
             logger.warning(f"Could not load credential {self.credential} for model {self.id}")
             return None
 
+    async def delete(self) -> bool:
+        """Delete the model and clear any DefaultModels fields that
+        pointed at it.
+
+        v0.7.86 — base ObjectModel.delete leaves dangling references on
+        the singleton `default_models` record and on every
+        `episode_profile` / `speaker_profile` that used this model.
+        Default-model lookups (provision_langchain_model resolving
+        "chat", "transformation", etc.) then fail with a generic
+        ConfigurationError until the user manually reassigns. We clear
+        the default-fields proactively here so the failure mode after
+        a delete becomes the "no model configured" path that the UI
+        explicitly handles, instead of the dangling-reference path.
+        Podcast profile fields are NOT auto-cleared because reassigning
+        a profile's model is a deliberate UX choice — but we log a
+        warning naming each affected profile so the user can act on it.
+        """
+        if self.id is None:
+            return False
+        model_id = ensure_record_id(self.id)
+
+        # Clear any DefaultModels field pointing at this model. The
+        # `default_models` row is a singleton with seven optional
+        # `model` reference fields; null out only the ones matching
+        # this id.
+        try:
+            await repo_query(
+                """
+                UPDATE open_notebook:default_models
+                MERGE {
+                    default_chat_model:
+                        IF default_chat_model = $mid THEN NONE ELSE default_chat_model END,
+                    default_transformation_model:
+                        IF default_transformation_model = $mid THEN NONE ELSE default_transformation_model END,
+                    large_context_model:
+                        IF large_context_model = $mid THEN NONE ELSE large_context_model END,
+                    default_text_to_speech_model:
+                        IF default_text_to_speech_model = $mid THEN NONE ELSE default_text_to_speech_model END,
+                    default_speech_to_text_model:
+                        IF default_speech_to_text_model = $mid THEN NONE ELSE default_speech_to_text_model END,
+                    default_embedding_model:
+                        IF default_embedding_model = $mid THEN NONE ELSE default_embedding_model END,
+                    default_tools_model:
+                        IF default_tools_model = $mid THEN NONE ELSE default_tools_model END
+                };
+                """,
+                {"mid": model_id},
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not clear DefaultModels references to {self.id} "
+                f"(non-fatal, will fall through to ConfigurationError on "
+                f"next resolution): {exc}"
+            )
+
+        # Warn-log any podcast profiles that still reference this
+        # model so the user knows to fix them. Don't auto-clear —
+        # reassigning a profile's model is a UX choice.
+        try:
+            referencing_eps = await repo_query(
+                "SELECT VALUE name FROM episode_profile "
+                "WHERE outline_llm = $mid OR transcript_llm = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_eps or []:
+                logger.warning(
+                    "Model %s deleted while still referenced by episode "
+                    "profile %r — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id, name,
+                )
+            referencing_sps = await repo_query(
+                "SELECT VALUE name FROM speaker_profile "
+                "WHERE voice_model = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_sps or []:
+                logger.warning(
+                    "Model %s deleted while still referenced by speaker "
+                    "profile %r — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id, name,
+                )
+        except Exception as exc:
+            logger.debug(
+                "Could not scan podcast profile references for %s "
+                "(non-fatal): %s", self.id, exc,
+            )
+
+        return await super().delete()
+
 
 class DefaultModels(RecordModel):
     record_id: ClassVar[str] = "open_notebook:default_models"
