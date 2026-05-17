@@ -109,7 +109,7 @@ async def _fire_memory_extract_turn(
         # SurrealDB blip, command not registered on this build) MUST
         # NOT take the chat response down with it.
         logger.debug(
-            "memory_extract_turn submit failed (best-effort, ignored): %s",
+            "memory_extract_turn submit failed (best-effort, ignored): {}",
             exc,
         )
 
@@ -174,7 +174,7 @@ async def _fire_memory_summarize_session(
         )
     except Exception as exc:
         logger.debug(
-            "memory_summarize_session submit failed (best-effort, ignored): %s",
+            "memory_summarize_session submit failed (best-effort, ignored): {}",
             exc,
         )
 
@@ -710,7 +710,7 @@ async def _stream_chat_events(
             # local LLM from churning out tokens nobody will see.
             if await fastapi_request.is_disconnected():
                 logger.info(
-                    "chat stream: client disconnected for session %s; "
+                    "chat stream: client disconnected for session {}; "
                     "halting", full_session_id,
                 )
                 return
@@ -773,7 +773,7 @@ async def _stream_chat_events(
         try:
             await session.save()
         except Exception as exc:
-            logger.warning("chat stream: session save failed: %s", exc)
+            logger.warning("chat stream: session save failed: {}", exc)
 
         # v0.7.68 — fire the memory extractor. Same logic as
         # /chat/execute: the user's text is the inbound request.message,
@@ -803,7 +803,7 @@ async def _stream_chat_events(
         yield json.dumps({"type": "error", "detail": "Session not found"}) + "\n"
     except Exception as e:
         logger.error(
-            "Error in /chat/stream for session %s: %s\n%s",
+            "Error in /chat/stream for session {}: {}\n{}",
             request.session_id, str(e), traceback.format_exc(),
         )
         yield json.dumps({"type": "error", "detail": str(e)}) + "\n"

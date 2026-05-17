@@ -18,7 +18,19 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.90 (in flight)
+## Unreleased — v0.7.36 → v0.7.91 (in flight)
+
+- **v0.7.91** 🐛 Fix loguru %-format bug across the codebase — 18
+  occurrences in 8 files (`api/routers/studio.py`,
+  `api/routers/chat.py`, `api/routers/podcasts.py`,
+  `api/routers/source_chat.py`, `commands/podcast_commands.py`,
+  `open_notebook/database/dedup_edges.py`,
+  `open_notebook/utils/memory_recall.py`,
+  `open_notebook/ai/models.py`) were logging the literal `%s` / `%r` /
+  `%d` since v0.7.0 because loguru uses `str.format()` (`{}`-style),
+  not `%`-style. Converted to `{}`-style placeholders with `{!r}` for
+  repr. No behavior change beyond accurate log output. Full suite
+  (469 tests) still passes.
 
 - **v0.7.90** ✨ **Filesystem export + native directory access.** Users can
   now save notebooks and individual pages out of the app to anywhere on

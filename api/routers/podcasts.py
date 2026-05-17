@@ -73,8 +73,8 @@ def _resolve_audio_path(audio_file: str) -> Optional[Path]:
     # AND the sibling-prefix bug that v0.6.31 fixed in model_manager.
     if not resolved.is_relative_to(_AUDIO_ROOT):
         logger.warning(
-            "Refusing audio_file path outside _AUDIO_ROOT: %s "
-            "(expected under %s). DB may be corrupted.",
+            "Refusing audio_file path outside _AUDIO_ROOT: {} "
+            "(expected under {}). DB may be corrupted.",
             raw, _AUDIO_ROOT,
         )
         return None
@@ -334,7 +334,7 @@ async def retry_podcast_episode(episode_id: str):
             if audio_path is None:
                 logger.warning(
                     "Retry: skipping audio cleanup — episode.audio_file "
-                    "(%s) is outside the podcast output root",
+                    "({}) is outside the podcast output root",
                     episode.audio_file,
                 )
             elif audio_path.exists():
@@ -381,7 +381,7 @@ async def delete_podcast_episode(episode_id: str):
             if audio_path is None:
                 logger.warning(
                     "Delete: skipping audio cleanup — episode.audio_file "
-                    "(%s) is outside the podcast output root",
+                    "({}) is outside the podcast output root",
                     episode.audio_file,
                 )
             elif audio_path.exists():
@@ -554,7 +554,7 @@ async def suggest_episode(req: SuggestRequest):
             elif isinstance(nb_rows, dict):
                 notebook_title = nb_rows.get("name")
         except Exception as exc:
-            logger.warning("suggest: notebook fetch failed: %s", exc)
+            logger.warning("suggest: notebook fetch failed: {}", exc)
         try:
             # Sources are linked via a reference edge (`reference`).
             ref_rows = await repo_query(
@@ -569,7 +569,7 @@ async def suggest_episode(req: SuggestRequest):
                 ids = ref_rows.get("source_ids") or []
             source_ids.extend([str(s) for s in ids])
         except Exception as exc:
-            logger.warning("suggest: notebook source fetch failed: %s", exc)
+            logger.warning("suggest: notebook source fetch failed: {}", exc)
 
     # Dedupe while preserving order
     seen = set()
@@ -597,7 +597,7 @@ async def suggest_episode(req: SuggestRequest):
                 if isinstance(chars, (int, float)):
                     total_chars += int(chars)
         except Exception as exc:
-            logger.warning("suggest: source fetch failed: %s", exc)
+            logger.warning("suggest: source fetch failed: {}", exc)
 
     # ---- 2. Score presets against the corpus ----
     corpus = " ".join(filter(None, [notebook_title] + titles + topics_corpus))
@@ -615,7 +615,7 @@ async def suggest_episode(req: SuggestRequest):
             r.get("name") for r in prof_rows or [] if r.get("name")
         }
     except Exception as exc:
-        logger.warning("suggest: episode_profile list failed: %s", exc)
+        logger.warning("suggest: episode_profile list failed: {}", exc)
 
     source_count = len(source_ids)
     if top_preset[1] >= 2 and top_preset[0] in available_presets:
