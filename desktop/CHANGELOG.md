@@ -18,8 +18,32 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.114 (in flight)
+## Unreleased — v0.7.36 → v0.7.115 (in flight)
 
+- **v0.7.115** 🐛 **Submit-command timeout + defensive Azure migration.**
+  Two more audit-uncovered issues.
+
+  - **`CommandService.submit_command_job`** (`api/command_service.py:31`)
+    and **`PodcastService.submit_generation_job`**
+    (`api/podcast_service.py:103`) — both wrapped `submit_command` in
+    `asyncio.to_thread` per v0.7.55 (good — doesn't block event loop),
+    but had **no timeout** around the `await`. A hung SurrealDB pool
+    or stuck WS handshake would cause the awaiting endpoint to wait
+    indefinitely. Wrapped both in `asyncio.wait_for` with
+    `ONP_SUBMIT_COMMAND_TIMEOUT_SEC` (default 10s — submits are
+    normally <500ms; 10s is generous). Timeout → `ValueError` with
+    actionable hint.
+  - **`create_credential_from_env`** (`api/credentials_service.py:290`)
+    used `os.environ["AZURE_OPENAI_API_KEY"]` (subscript) instead of
+    `.get()`. Safe-by-construction today — `check_env_configured`
+    gates the branch on all three required env vars being set — but
+    a future refactor of `PROVIDER_ENV_CONFIG` could silently turn
+    this into a 500. Replaced with `.get()` + explicit `ValueError`
+    so the bug surface is closed.
+  - Broader audit pass scanned `os.environ[...]` subscript-reads
+    across the codebase: only this one was a bare read; the 10 other
+    matches are all WRITES (setting env vars from DB credentials in
+    `key_provider.py`) which are safe.
 - **v0.7.114** 🐛 **Chat-hot-path memory-recall query timeout.**
   Companion to v0.7.113. `_safe_select()` (the helper that runs
   every memory-recall SurrealQL query — recency + semantic both
