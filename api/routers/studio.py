@@ -501,7 +501,7 @@ async def studio_generate(
             # for those, so the pre-check above silently skips).
             saved_path = await save_uploaded_file(upload, max_bytes=_MAX_FILE_BYTES)
         except Exception as exc:
-            logger.warning("Studio: save_uploaded_file failed for %r: %s", filename, exc)
+            logger.warning("Studio: save_uploaded_file failed for {!r}: {}", filename, exc)
             warnings.append(f"Could not save {filename!r}: {_brief(exc)}")
             continue
 
@@ -515,7 +515,7 @@ async def studio_generate(
             await source.add_to_notebook(notebook_id)
             source_ids.append(str(source.id))
         except Exception as exc:
-            logger.warning("Studio: source create failed for %r: %s", filename, exc)
+            logger.warning("Studio: source create failed for {!r}: {}", filename, exc)
             warnings.append(f"Could not create source for {filename!r}: {_brief(exc)}")
             continue
 
@@ -533,7 +533,7 @@ async def studio_generate(
             # Truncate per-file
             if len(text) > _MAX_EXTRACT_CHARS_PER_FILE:
                 logger.info(
-                    "Studio: truncating %r from %d → %d chars",
+                    "Studio: truncating {!r} from {} → {} chars",
                     filename, len(text), _MAX_EXTRACT_CHARS_PER_FILE,
                 )
                 text = text[:_MAX_EXTRACT_CHARS_PER_FILE] + "\n\n[…truncated…]"
@@ -547,9 +547,9 @@ async def studio_generate(
             try:
                 await source.vectorize()
             except Exception as exc:
-                logger.warning("Studio: vectorize failed (non-fatal) for %r: %s", filename, exc)
+                logger.warning("Studio: vectorize failed (non-fatal) for {!r}: {}", filename, exc)
         except Exception as exc:
-            logger.exception("Studio: extract_content failed for %r", filename)
+            logger.exception("Studio: extract_content failed for {!r}", filename)
             warnings.append(f"Could not parse {filename!r}: {_brief(exc)}")
 
     if not extracted:
