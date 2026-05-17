@@ -548,3 +548,435 @@ async def export_note(note_id: str, req: NoteExportRequest) -> ExportResponse:
         files=[ExportFileEntry(relative_path=os.path.basename(str(target)), bytes=len(payload))],
         warnings=[],
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.7.94 — Notebook IMPORT (reverse of export)
+# ---------------------------------------------------------------------------
+# Closes the loop on v0.7.90 export: a folder of .md files (with optional
+# manifest.json) or a .zip archive can be read back into the running ONP
+# instance as a Notebook + Notes + Sources. Enables:
+#   - Backup/restore workflows
+#   - Cross-machine transfer (export from machine A, import on machine B)
+#   - Manual editing of exported markdown in any text editor, then
+#     re-importing to keep ONP in sync
+#   - Bulk import of preexisting markdown libraries (Obsidian vaults,
+#     Logseq exports) into ONP for chat-with-sources
+
+
+# Cap to prevent malicious / accidental DoS via huge import targets.
+# A 50 MB zip is plenty for a deep notebook with hundreds of pages;
+# legitimate use exceeding this is the user importing their entire
+# Obsidian vault, which is out of scope.
+_MAX_IMPORT_BYTES = 50 * 1024 * 1024
+# Per-file cap inside an import — same rationale as the Studio upload cap.
+_MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024
+# Cap entries in an imported folder/zip so a malicious archive with
+# millions of empty files can't pin the API.
+_MAX_IMPORT_ENTRIES = 500
+
+
+class NotebookImportRequest(BaseModel):
+    source_path: str = Field(
+        ...,
+        description=(
+            "Absolute path to either a directory containing .md files "
+            "(optionally with a manifest.json) or a .zip archive. "
+            "Single .md files are also accepted and become a one-note "
+            "notebook. ~/-expansion supported."
+        ),
+    )
+    mode: Literal["new", "into_existing"] = Field(
+        "new",
+        description=(
+            "'new' creates a fresh Notebook; 'into_existing' appends notes "
+            "to an existing one (target_notebook_id required)."
+        ),
+    )
+    target_notebook_id: Optional[str] = Field(
+        None,
+        description="Required when mode='into_existing'.",
+    )
+    new_name: Optional[str] = Field(
+        None,
+        description=(
+            "Notebook name when mode='new'. Falls back to manifest.json's "
+            "notebook.name, then the source folder/zip stem."
+        ),
+    )
+    import_sources: bool = Field(
+        True,
+        description=(
+            "If the import contains a sources/ subfolder (from a prior "
+            "include_sources=true export), recreate those as Source "
+            "records too."
+        ),
+    )
+
+
+class ImportedItemEntry(BaseModel):
+    kind: Literal["note", "source"]
+    id: str
+    title: str
+    bytes: int
+
+
+class NotebookImportResponse(BaseModel):
+    notebook_id: str
+    notebook_name: str
+    mode: str                       # "new" | "into_existing"
+    note_ids: list[str]
+    source_ids: list[str]
+    file_count: int                 # total .md files processed
+    items: list[ImportedItemEntry]  # capped at 100
+    warnings: list[str] = []
+
+
+# Frontmatter parser: capture the YAML-ish block at the top of a .md file
+# (between leading "---" and trailing "---") so we can recover title,
+# note_type, created/updated, etc. Falls back to filename if absent.
+_FRONTMATTER_RE = re.compile(
+    r"^---\s*\n(?P<yaml>.*?)\n---\s*\n(?P<body>.*)$", re.DOTALL,
+)
+
+
+def _parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
+    """Parse a YAML-ish frontmatter block off the top of a markdown file.
+    Returns (metadata, body). If no frontmatter, returns ({}, content).
+    We use a hand-rolled parser rather than PyYAML to avoid the dep —
+    we only need flat key:value lines, which is what _render_note_content
+    writes."""
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return {}, content
+    yaml_block = m.group("yaml")
+    body = m.group("body")
+    meta: dict[str, str] = {}
+    for line in yaml_block.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        meta[k.strip()] = v.strip().strip("'\"")
+    return meta, body
+
+
+async def _import_note_from_text(
+    *, content: str, fallback_title: str, notebook_id: str,
+) -> tuple[Note, int]:
+    """Build + save a Note from a markdown string. Returns (note, bytes_read)."""
+    meta, body = _parse_frontmatter(content)
+    title = meta.get("title") or fallback_title
+    note_type = meta.get("type", "ai")
+    if note_type not in ("ai", "human"):
+        note_type = "ai"
+    # Ensure non-empty content — Note.content_must_not_be_empty rejects
+    # whitespace-only. Preserve original body even if frontmatter is all
+    # there is.
+    if not body.strip():
+        body = "(no content)"
+    note = Note(title=title[:200], content=body, note_type=note_type)  # type: ignore[arg-type]
+    await note.save()
+    await note.add_to_notebook(notebook_id)
+    return note, len(content.encode("utf-8"))
+
+
+def _validate_archive_member(name: str) -> Optional[str]:
+    """Reject zip entries that would escape the extraction directory.
+    Returns None if safe, else an error string."""
+    # Drop absolute paths and any traversal segment after normalization.
+    norm = os.path.normpath(name)
+    if name.startswith("/") or name.startswith("\\"):
+        return f"absolute path member: {name!r}"
+    if ".." in norm.split(os.sep):
+        return f"traversal member: {name!r}"
+    return None
+
+
+def _read_import_entries(source: Path) -> list[tuple[str, str]]:
+    """Read all importable entries from a folder OR zip. Returns a list of
+    (relative_path, content) pairs, sorted by relative_path. Cap-enforced.
+
+    Raises HTTPException on:
+      - source too large
+      - too many entries
+      - per-file too large
+      - zip traversal members
+    """
+    entries: list[tuple[str, str]] = []
+    if source.is_file() and source.suffix.lower() == ".zip":
+        if source.stat().st_size > _MAX_IMPORT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Zip is {source.stat().st_size} bytes; cap is "
+                    f"{_MAX_IMPORT_BYTES} bytes (~{_MAX_IMPORT_BYTES // 1024 // 1024} MB)."
+                ),
+            )
+        try:
+            with zipfile.ZipFile(source, "r") as zf:
+                members = zf.namelist()
+                if len(members) > _MAX_IMPORT_ENTRIES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"Zip contains {len(members)} entries; cap is "
+                            f"{_MAX_IMPORT_ENTRIES}."
+                        ),
+                    )
+                for name in sorted(members):
+                    if not name.lower().endswith((".md", ".markdown", ".json")):
+                        continue
+                    err = _validate_archive_member(name)
+                    if err:
+                        raise HTTPException(
+                            status_code=400, detail=f"Unsafe zip entry: {err}",
+                        )
+                    info = zf.getinfo(name)
+                    if info.file_size > _MAX_IMPORT_FILE_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=(
+                                f"Zip member {name!r} is {info.file_size} bytes; "
+                                f"per-file cap is {_MAX_IMPORT_FILE_BYTES}."
+                            ),
+                        )
+                    try:
+                        data = zf.read(name)
+                    except zipfile.BadZipFile as exc:
+                        raise HTTPException(
+                            status_code=400, detail=f"Corrupt zip member {name!r}: {exc}",
+                        )
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        # Skip binary content silently — not importable.
+                        continue
+                    entries.append((name, text))
+        except zipfile.BadZipFile as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Not a valid zip: {exc}",
+            )
+        return entries
+
+    if source.is_file() and source.suffix.lower() in (".md", ".markdown"):
+        # Single .md file becomes one note.
+        if source.stat().st_size > _MAX_IMPORT_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"File is {source.stat().st_size} bytes; per-file cap is "
+                    f"{_MAX_IMPORT_FILE_BYTES}."
+                ),
+            )
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"File is not UTF-8: {exc}",
+            )
+        return [(source.name, text)]
+
+    if source.is_dir():
+        total_bytes = 0
+        for path in sorted(source.rglob("*")):
+            if path.is_dir():
+                continue
+            if path.suffix.lower() not in (".md", ".markdown", ".json"):
+                continue
+            if len(entries) >= _MAX_IMPORT_ENTRIES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Folder contains more than {_MAX_IMPORT_ENTRIES} "
+                        ".md/.json entries; aborting import."
+                    ),
+                )
+            size = path.stat().st_size
+            if size > _MAX_IMPORT_FILE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"File {path} is {size} bytes; per-file cap is "
+                        f"{_MAX_IMPORT_FILE_BYTES}."
+                    ),
+                )
+            total_bytes += size
+            if total_bytes > _MAX_IMPORT_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Folder total exceeds cap of {_MAX_IMPORT_BYTES} bytes."
+                    ),
+                )
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue  # skip non-UTF-8 silently
+            rel = str(path.relative_to(source))
+            entries.append((rel, text))
+        return entries
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Source path is neither a directory nor a .md/.zip file: {source}"
+        ),
+    )
+
+
+@router.post("/notebooks/import", response_model=NotebookImportResponse)
+async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
+    """Import a folder or .zip of markdown files (as produced by
+    POST /notebooks/{id}/export) into a fresh or existing Notebook.
+
+    See module docstring + NotebookImportRequest for option semantics.
+    """
+    src = _resolve_and_validate(req.source_path, must_exist=True)
+    if req.mode == "into_existing" and not req.target_notebook_id:
+        raise HTTPException(
+            status_code=400,
+            detail="mode='into_existing' requires target_notebook_id",
+        )
+
+    # Read all importable entries up-front so caps are enforced before
+    # we touch the database.
+    entries = _read_import_entries(src)
+    # Manifest (optional) gives us the original notebook name/description.
+    manifest: dict = {}
+    md_entries: list[tuple[str, str]] = []
+    sources_entries: list[tuple[str, str]] = []
+    for rel, text in entries:
+        if rel.endswith("manifest.json"):
+            try:
+                manifest = json.loads(text)
+            except json.JSONDecodeError as exc:
+                # Bad manifest is non-fatal — we'll fall back to filename
+                # and import the .md files anyway.
+                logger.warning(
+                    "Notebook import: ignoring corrupt manifest.json: {}", exc,
+                )
+            continue
+        if rel.startswith("sources/") or rel.startswith("sources" + os.sep):
+            sources_entries.append((rel, text))
+        else:
+            md_entries.append((rel, text))
+
+    if not md_entries:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No .md files found in {src}. Make sure the import "
+                "target contains exported markdown."
+            ),
+        )
+
+    # Resolve or create the destination notebook.
+    warnings: list[str] = []
+    notebook: Optional[Notebook]
+    if req.mode == "into_existing":
+        notebook = await Notebook.get(req.target_notebook_id)  # type: ignore[arg-type]
+        if not notebook:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Target notebook {req.target_notebook_id!r} not found",
+            )
+    else:
+        name = (
+            req.new_name
+            or (manifest.get("notebook") or {}).get("name")
+            or src.stem
+            or "Imported Notebook"
+        )
+        description = (
+            (manifest.get("notebook") or {}).get("description")
+            or f"Imported from {src.name}"
+        )
+        try:
+            notebook = Notebook(name=name[:200], description=description)
+            await notebook.save()
+        except Exception as exc:
+            logger.exception("Notebook import: failed to create notebook")
+            raise HTTPException(
+                status_code=500, detail=f"Could not create notebook: {exc}",
+            )
+
+    notebook_id = str(notebook.id)
+    note_ids: list[str] = []
+    source_ids: list[str] = []
+    items: list[ImportedItemEntry] = []
+
+    # Import notes first; sort by relative path so 00-overview lands first.
+    for rel, text in sorted(md_entries):
+        fallback_title = Path(rel).stem.replace("-", " ").replace("_", " ").title()
+        try:
+            note, n_bytes = await _import_note_from_text(
+                content=text,
+                fallback_title=fallback_title,
+                notebook_id=notebook_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Notebook import: could not import note {!r}: {}", rel, _brief(exc),
+            )
+            warnings.append(f"Could not import {rel!r}: {_brief(exc)}")
+            continue
+        note_ids.append(str(note.id))
+        items.append(
+            ImportedItemEntry(
+                kind="note", id=str(note.id), title=note.title or rel, bytes=n_bytes,
+            )
+        )
+
+    # Import sources only if requested and the import bundle has them.
+    if req.import_sources:
+        for rel, text in sources_entries:
+            meta, body = _parse_frontmatter(text)
+            title = meta.get("title") or Path(rel).stem
+            try:
+                # No on-disk file from the import — sources/*.md is a
+                # text dump, not the original binary. We store the
+                # text-only Source so chat-with-sources can use it.
+                source = Source(title=title[:200])  # type: ignore[arg-type]
+                source.full_text = body
+                await source.save()
+                await source.add_to_notebook(notebook_id)
+            except Exception as exc:
+                logger.warning(
+                    "Notebook import: could not import source {!r}: {}", rel, _brief(exc),
+                )
+                warnings.append(f"Could not import source {rel!r}: {_brief(exc)}")
+                continue
+            source_ids.append(str(source.id))
+            items.append(
+                ImportedItemEntry(
+                    kind="source", id=str(source.id),
+                    title=source.title or rel, bytes=len(text.encode("utf-8")),
+                )
+            )
+
+    logger.info(
+        "Notebook import: notebook={} notes={} sources={} → from {}",
+        notebook_id, len(note_ids), len(source_ids), str(src),
+    )
+    return NotebookImportResponse(
+        notebook_id=notebook_id,
+        notebook_name=notebook.name,
+        mode=req.mode,
+        note_ids=note_ids,
+        source_ids=source_ids,
+        file_count=len(md_entries),
+        items=items[:100],
+        warnings=warnings,
+    )
+
+
+# v0.7.94 — Tiny helper that mirrors studio._brief without forcing an
+# import (circular-import-safe even if studio's contents change).
+def _brief(exc: BaseException, *, max_len: int = 200) -> str:
+    s = str(exc)
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"

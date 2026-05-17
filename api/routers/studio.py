@@ -37,6 +37,7 @@ Flow:
 """
 from __future__ import annotations
 
+import asyncio  # v0.7.92 / v0.7.93 — wait_for + gather for parallel pages + timeouts
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -245,6 +246,29 @@ if _PAGES_MAX < 2:
     _PAGES_MAX = 2  # one overview + at least one detail page
 if _PAGES_MAX > 12:
     _PAGES_MAX = 12  # rate-limit defense; local 7B-9Bs would crawl past this
+
+# v0.7.92 — Optional parallel page generation. Default OFF because the
+# desktop bundle's local-LLM dual-server (llama-cpp embed + chat) has
+# limited concurrency and gathered ainvoke calls can OOM or starve
+# tokens. Cloud users (OpenAI, Anthropic, etc.) can opt in for ~Nx
+# speedup on multi-page generation. The trade-off: parallel calls
+# mean per-page failures can interleave in logs, but the final result
+# is identical (each page still gets its own warning on failure).
+_PARALLEL_PAGES = (
+    os.environ.get("ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+# v0.7.93 — Per-page generation timeout. Local LLMs (especially the
+# desktop bundle's llama-cpp chat server) can hang indefinitely when
+# the model is mid-loading, mid-prompt-eval, or the prompt overflows
+# context. Without a cap, ONE stuck page blocks the entire notebook
+# generation request — including subsequent pages, the response, and
+# the user's browser tab. Default: 180s, plenty for a 7B-9B at 8k
+# context. Cloud users with stable APIs can raise via env.
+_PAGE_TIMEOUT_SEC = _env_int("ONP_STUDIO_PAGE_TIMEOUT_SEC", 180)
+# Outline pass gets its own (shorter) timeout — JSON-only response,
+# small token budget, should be fast.
+_OUTLINE_TIMEOUT_SEC = _env_int("ONP_STUDIO_OUTLINE_TIMEOUT_SEC", 90)
 
 # Outline pass: small JSON response. Keep token budget tight — this prompt
 # does NOT need to expand on any topic, just identify the structure.
@@ -749,9 +773,29 @@ async def _generate_outline(
         chain = await provision_langchain_model(
             combined_context, None, "chat", max_tokens=2048,
         )
-        response = await chain.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+        # v0.7.93 — wrap in wait_for so a hung local LLM (stuck loading /
+        # mid-prompt-eval / overflowed context) becomes a typed 502 with
+        # an actionable hint instead of hanging the request indefinitely.
+        response = await asyncio.wait_for(
+            chain.ainvoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+            ),
+            timeout=_OUTLINE_TIMEOUT_SEC,
         )
+    except asyncio.TimeoutError as exc:
+        logger.warning(
+            "Studio multi-page: outline pass timed out after {}s", _OUTLINE_TIMEOUT_SEC,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Outline generation timed out after {_OUTLINE_TIMEOUT_SEC}s. "
+                "The chat model may be loading or overloaded. Try again, or "
+                "raise ONP_STUDIO_OUTLINE_TIMEOUT_SEC. "
+                f"Notebook {notebook_id} was created and contains your "
+                f"{source_count} uploaded source(s)."
+            ),
+        ) from exc
     except Exception as exc:
         logger.exception("Studio multi-page: outline pass failed")
         raise HTTPException(
@@ -795,7 +839,12 @@ async def _generate_page(
     notebook_title: str,
     page_spec: dict,
 ) -> str:
-    """Returns the page Markdown. Raises on LLM failure (caller turns into warning)."""
+    """Returns the page Markdown. Raises on LLM failure (caller turns into warning).
+
+    v0.7.93 — wrapped in asyncio.wait_for so a stuck local LLM becomes a
+    TimeoutError caught by the caller's per-page warning path instead of
+    blocking the whole notebook generation request.
+    """
     questions_md = "\n".join(f"  - {q}" for q in page_spec.get("key_questions", []))
     if not questions_md:
         questions_md = "  - (No specific questions listed; cover the focus area thoroughly.)"
@@ -808,11 +857,101 @@ async def _generate_page(
     chain = await provision_langchain_model(
         combined_context, None, "chat", max_tokens=3072,
     )
-    response = await chain.ainvoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+    response = await asyncio.wait_for(
+        chain.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+        ),
+        timeout=_PAGE_TIMEOUT_SEC,
     )
     raw = extract_text_content(response.content)
     return clean_thinking_content(raw).strip()
+
+
+# v0.7.92 / v0.7.93 — Generate every page in the outline, with sequential
+# (default) or parallel (env-opt-in) execution AND per-page timeouts.
+# Returns a list of (note_title, body) pairs in render order (page index
+# order — sequential trivially preserves it; parallel mode preserves it
+# via the result-zipping below). Failed pages become warnings; survivors
+# still ship.
+async def _generate_all_pages(
+    *,
+    combined_context: str,
+    notebook_title: str,
+    page_specs: list[dict],
+    warnings: list[str],
+) -> list[tuple[str, str]]:
+    page_contents: list[tuple[str, str]] = []
+
+    def _on_page_failure(i: int, page_spec: dict, exc: BaseException) -> None:
+        # v0.7.93 — TimeoutError gets a more actionable warning than a
+        # generic exception. The user needs to know "raise the timeout
+        # or pick a faster model", not just "something failed".
+        if isinstance(exc, asyncio.TimeoutError):
+            logger.warning(
+                "Studio multi-page: page {} ({!r}) timed out after {}s",
+                i, page_spec["title"], _PAGE_TIMEOUT_SEC,
+            )
+            warnings.append(
+                f"Page {i} ({page_spec['title']!r}) timed out after "
+                f"{_PAGE_TIMEOUT_SEC}s. Raise ONP_STUDIO_PAGE_TIMEOUT_SEC, "
+                "or switch to a faster chat model."
+            )
+        else:
+            logger.warning(
+                "Studio multi-page: page {} ({!r}) generation failed: {}",
+                i, page_spec["title"], _brief(exc),
+            )
+            warnings.append(
+                f"Page {i} ({page_spec['title']!r}) could not be generated: "
+                f"{_brief(exc)}"
+            )
+
+    if _PARALLEL_PAGES:
+        # All pages in flight at once. return_exceptions=True so a single
+        # failure doesn't cancel the rest mid-way.
+        coros = [
+            _generate_page(
+                combined_context=combined_context,
+                notebook_title=notebook_title,
+                page_spec=p,
+            )
+            for p in page_specs
+        ]
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        for i, (page_spec, result) in enumerate(zip(page_specs, results), start=1):
+            if isinstance(result, BaseException):
+                _on_page_failure(i, page_spec, result)
+                continue
+            if not result:
+                warnings.append(
+                    f"Page {i} ({page_spec['title']!r}) returned empty content."
+                )
+                continue
+            page_contents.append(
+                (f"📄 {i:02d} · {page_spec['title']}", result)
+            )
+        return page_contents
+
+    # Sequential (default, local-LLM-safe).
+    for i, page_spec in enumerate(page_specs, start=1):
+        try:
+            body = await _generate_page(
+                combined_context=combined_context,
+                notebook_title=notebook_title,
+                page_spec=page_spec,
+            )
+        except Exception as exc:
+            _on_page_failure(i, page_spec, exc)
+            continue
+        if not body:
+            warnings.append(
+                f"Page {i} ({page_spec['title']!r}) returned empty content."
+            )
+            continue
+        page_contents.append(
+            (f"📄 {i:02d} · {page_spec['title']}", body)
+        )
+    return page_contents
 
 
 # v0.7.89 — Save a list of (title, content) notes to the notebook. Returns
@@ -903,38 +1042,19 @@ async def _dispatch_notebook_mode(
             warnings=warnings,
         )
 
-    # 2. Per-page pass. Sequential rather than gathered — slamming
-    #    llama-cpp-python with concurrent requests degrades quality and
-    #    can OOM on the embed+chat dual-server desktop setup. Loss of
-    #    one page must not abort the rest.
+    # 2. Per-page pass. Default sequential — slamming llama-cpp-python with
+    #    concurrent requests degrades quality and can OOM the embed+chat
+    #    dual-server desktop setup. Cloud users (OpenAI/Anthropic/etc.)
+    #    can opt into v0.7.92's parallel mode via env knob. Either way,
+    #    one page failing must not abort the rest, and timeouts are
+    #    treated as failures (per-page warning) rather than fatal.
     page_specs = outline["pages"]
-    page_titles = [p["title"] for p in page_specs]
-    page_contents: list[tuple[str, str]] = []
-    for i, page_spec in enumerate(page_specs, start=1):
-        try:
-            body = await _generate_page(
-                combined_context=combined_context,
-                notebook_title=title,
-                page_spec=page_spec,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Studio multi-page: page {} ({!r}) generation failed: {}",
-                i, page_spec["title"], _brief(exc),
-            )
-            warnings.append(
-                f"Page {i} ({page_spec['title']!r}) could not be generated: "
-                f"{_brief(exc)}"
-            )
-            continue
-        if not body:
-            warnings.append(
-                f"Page {i} ({page_spec['title']!r}) returned empty content."
-            )
-            continue
-        page_contents.append(
-            (f"📄 {i:02d} · {page_spec['title']}", body)
-        )
+    page_contents = await _generate_all_pages(
+        combined_context=combined_context,
+        notebook_title=title,
+        page_specs=page_specs,
+        warnings=warnings,
+    )
 
     # 3. Persist. Overview always goes first so it sorts at the top of
     #    the notebook UI's notes list.
