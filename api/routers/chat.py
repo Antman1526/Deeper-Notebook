@@ -547,15 +547,44 @@ async def execute_chat(request: ExecuteChatRequest):
         # now `async def call_model_with_messages`. LangGraph routes
         # ainvoke() directly to the async node without re-bridging
         # through a thread pool.
-        result = await chat_graph.ainvoke(
-            input=state_values,  # type: ignore[arg-type]
-            config=RunnableConfig(
-                configurable={
-                    "thread_id": full_session_id,
-                    "model_id": model_override,
-                }
-            ),
+        # v0.7.99 — wrap in wait_for so a hung local chat model can't
+        # block the non-streaming /chat endpoint indefinitely. Default
+        # 300s is generous (chat graphs can do memory recall + tool
+        # calls + long generations); cloud users can lower, slow-LLM
+        # users can raise. The streaming endpoint /chat/stream is
+        # naturally bounded by SSE disconnect handling (v0.7.50+) and
+        # doesn't need this wrap.
+        _chat_timeout = float(
+            os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
         )
+        try:
+            result = await asyncio.wait_for(
+                chat_graph.ainvoke(
+                    input=state_values,  # type: ignore[arg-type]
+                    config=RunnableConfig(
+                        configurable={
+                            "thread_id": full_session_id,
+                            "model_id": model_override,
+                        }
+                    ),
+                ),
+                timeout=_chat_timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            logger.warning(
+                "Chat /chat: timed out after {}s for session {}",
+                _chat_timeout, full_session_id,
+            )
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Chat timed out after {_chat_timeout}s. The model may "
+                    "be loading, overloaded, or generating a very long "
+                    "response. Raise ONP_CHAT_TIMEOUT_SEC, switch to a "
+                    "faster model, or try /chat/stream for token-by-token "
+                    "responses that surface progress immediately."
+                ),
+            ) from exc
 
         # Update session timestamp
         await session.save()

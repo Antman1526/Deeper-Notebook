@@ -70,11 +70,15 @@ class NotebookExportRequest(BaseModel):
     destination: str = Field(
         ...,
         description=(
-            "Absolute path: a directory (for format='folder') or a .zip "
-            "file path (for format='zip'). User's home is auto-expanded."
+            "Absolute path: a directory (for format='folder' / 'html_folder') "
+            "or a file path (for format='zip' / 'html_zip'). User's home is "
+            "auto-expanded."
         ),
     )
-    format: Literal["folder", "zip"] = "folder"
+    # v0.7.97 — html_folder / html_zip render each note's markdown to HTML
+    # via markdown-it-py (already a transitive dep). Useful for sharing
+    # notebooks with non-markdown-aware tools (email, browsers, Drive).
+    format: Literal["folder", "zip", "html_folder", "html_zip"] = "folder"
     include_sources: bool = Field(
         False,
         description="Include each Source's full_text as sources/{source-id}.md",
@@ -82,6 +86,18 @@ class NotebookExportRequest(BaseModel):
     overwrite: bool = Field(
         False,
         description="Overwrite existing files / re-create existing folders.",
+    )
+    # v0.7.98 — Zip compression algorithm. "deflated" is the safe default
+    # (gzip-equivalent, good ratio, ~all readers support it). "stored" =
+    # no compression (fastest, biggest file — useful when the zip will
+    # itself be compressed downstream). "bzip2" and "lzma" trade speed
+    # for smaller archives. Ignored when format isn't a zip variant.
+    compression: Literal["deflated", "stored", "bzip2", "lzma"] = Field(
+        "deflated",
+        description=(
+            "Zip compression algorithm. Only meaningful when format=zip "
+            "or format=html_zip."
+        ),
     )
 
 
@@ -222,6 +238,171 @@ def _render_source_content(source: Source) -> str:
     return "\n".join(header_lines) + "\n" + body
 
 
+# v0.7.97 — Markdown → HTML conversion via markdown-it-py (already a
+# transitive dep through langchain_core). Lazy-import so non-html exports
+# don't pay the import cost. Renders GFM-flavored markdown (tables,
+# strikethrough, autolinks) which matches what the chat LLM produces.
+def _markdown_to_html(md_text: str) -> str:
+    """Render a markdown string to HTML. No external network calls.
+    Returns the raw HTML <body>-fragment, not a full document.
+
+    v0.7.97 — Uses the "commonmark" preset + table/strikethrough enabled.
+    We avoid the "gfm-like" preset because it auto-enables linkify which
+    needs the linkify-it-py package as a runtime dep; commonmark is in
+    markdown-it-py's stdlib so this works with zero new dependencies.
+    """
+    from markdown_it import MarkdownIt
+
+    md = (
+        MarkdownIt("commonmark")
+        .enable("table")
+        .enable("strikethrough")
+    )
+    return md.render(md_text)
+
+
+# v0.7.97 — Wrap rendered HTML in a minimal HTML5 document with a clean
+# default stylesheet so the user can double-click the file and read it
+# without a build step. CSS scoped to common readability defaults; no
+# external resources so the file works offline.
+_HTML_PAGE_TEMPLATE = """\
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    :root {{
+      --fg: #1a1a1a;
+      --bg: #fdfdfd;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --code-bg: #f3f4f6;
+      --border: #e5e7eb;
+    }}
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --fg: #e5e7eb; --bg: #0f172a; --muted: #9ca3af;
+        --accent: #60a5fa; --code-bg: #1e293b; --border: #334155;
+      }}
+    }}
+    body {{
+      max-width: 760px; margin: 2rem auto; padding: 0 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+                   "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.65; color: var(--fg); background: var(--bg);
+    }}
+    h1, h2, h3 {{ line-height: 1.25; margin-top: 2rem; }}
+    h1 {{ border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }}
+    a {{ color: var(--accent); }}
+    code {{
+      background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 3px;
+      font-size: 0.92em;
+    }}
+    pre {{
+      background: var(--code-bg); padding: 1rem; border-radius: 6px;
+      overflow-x: auto;
+    }}
+    pre code {{ background: transparent; padding: 0; }}
+    blockquote {{
+      border-left: 4px solid var(--border); margin: 1rem 0;
+      padding: 0.4rem 1rem; color: var(--muted);
+    }}
+    table {{ border-collapse: collapse; margin: 1rem 0; }}
+    th, td {{ border: 1px solid var(--border); padding: 0.5rem 0.8rem; }}
+    th {{ background: var(--code-bg); }}
+    .onp-frontmatter {{
+      font-size: 0.85rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 0.6rem 1rem; margin-bottom: 1.5rem;
+    }}
+    .onp-frontmatter dt {{ font-weight: 600; display: inline; }}
+    .onp-frontmatter dd {{ display: inline; margin-left: 0.3rem; }}
+    .onp-frontmatter dl {{ margin: 0; }}
+    .onp-frontmatter dl > * {{ display: block; }}
+  </style>
+</head>
+<body>
+{frontmatter_block}
+{body_html}
+</body>
+</html>
+"""
+
+
+def _render_note_as_html(note: Note) -> str:
+    """Build a full HTML5 document for a single note. Frontmatter is
+    rendered as a styled metadata block at the top so the user sees the
+    same info as the .md export, just in browser-readable form."""
+    title = note.title or "(untitled)"
+    meta_pairs: list[tuple[str, str]] = []
+    meta_pairs.append(("type", note.note_type or "human"))
+    if getattr(note, "created", None):
+        meta_pairs.append(("created", str(note.created)))
+    if getattr(note, "updated", None):
+        meta_pairs.append(("updated", str(note.updated)))
+    if getattr(note, "id", None):
+        meta_pairs.append(("id", str(note.id)))
+    fm_html = '<div class="onp-frontmatter"><dl>'
+    for k, v in meta_pairs:
+        fm_html += f"<dt>{k}:</dt><dd>{_html_escape(v)}</dd>"
+    fm_html += "</dl></div>"
+    body_html = _markdown_to_html(note.content or "(no content)")
+    return _HTML_PAGE_TEMPLATE.format(
+        title=_html_escape(title),
+        frontmatter_block=fm_html,
+        body_html=body_html,
+    )
+
+
+def _render_source_as_html(source: Source) -> str:
+    title = source.title or "(untitled source)"
+    asset_path = (
+        source.asset.file_path if source.asset and source.asset.file_path else None
+    )
+    asset_url = (
+        source.asset.url if source.asset and source.asset.url else None
+    )
+    meta_pairs: list[tuple[str, str]] = [("source_id", str(source.id))]
+    if asset_path:
+        meta_pairs.append(("original_file", asset_path))
+    if asset_url:
+        meta_pairs.append(("original_url", asset_url))
+    fm_html = '<div class="onp-frontmatter"><dl>'
+    for k, v in meta_pairs:
+        fm_html += f"<dt>{k}:</dt><dd>{_html_escape(v)}</dd>"
+    fm_html += "</dl></div>"
+    body_html = _markdown_to_html(source.full_text or "(no extracted text)")
+    return _HTML_PAGE_TEMPLATE.format(
+        title=_html_escape(title),
+        frontmatter_block=fm_html,
+        body_html=body_html,
+    )
+
+
+# Minimal HTML-escape for the few attribute/text positions we emit
+# directly. We don't escape body content because markdown-it does that.
+def _html_escape(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+# v0.7.98 — Zip compression algorithm mapping. Validated by Pydantic
+# at request time, so this dict only needs the four allowed names.
+_COMPRESSION_BY_NAME: dict[str, int] = {
+    "deflated": zipfile.ZIP_DEFLATED,
+    "stored": zipfile.ZIP_STORED,
+    "bzip2": zipfile.ZIP_BZIP2,
+    "lzma": zipfile.ZIP_LZMA,
+}
+
+
 def _build_manifest(
     notebook: Notebook, notes: list[Note], sources: list[Source],
 ) -> dict:
@@ -335,7 +516,32 @@ async def export_notebook(
     manifest = _build_manifest(notebook, notes_sorted, sources)
     warnings: list[str] = []
 
-    if req.format == "folder":
+    # v0.7.97 — Per-format renderer + extension selection. Markdown formats
+    # use the existing _render_*_content; HTML formats use the v0.7.97
+    # _render_*_as_html. file_ext determines the suffix on every emitted
+    # file (manifest.json stays .json regardless).
+    is_html = req.format.startswith("html_")
+    is_folder = req.format.endswith("folder")
+    if is_html:
+        note_renderer = _render_note_as_html
+        source_renderer = _render_source_as_html
+        file_ext = ".html"
+    else:
+        note_renderer = _render_note_content
+        source_renderer = _render_source_content
+        file_ext = ".md"
+
+    # Translate plan filenames from .md → .html when emitting HTML.
+    # _plan_filenames hardcodes .md; this re-suffixes without losing the
+    # 00-overview / 01-{slug} ordering.
+    def _retype(name: str) -> str:
+        if file_ext == ".md":
+            return name
+        if name.endswith(".md"):
+            return name[: -len(".md")] + file_ext
+        return name
+
+    if is_folder:
         target_dir = _resolve_and_validate(req.destination, must_exist=False)
         if target_dir.exists() and not target_dir.is_dir():
             raise HTTPException(
@@ -355,19 +561,20 @@ async def export_notebook(
         # 409 BEFORE writing half the notebook than half-way through.
         if not req.overwrite:
             for filename, _ in plan:
-                _check_overwrite(target_dir / filename, overwrite=False)
+                _check_overwrite(target_dir / _retype(filename), overwrite=False)
             if sources:
                 for s in sources:
                     sid = _notebook_record_id_part(str(s.id))
                     _check_overwrite(
-                        target_dir / "sources" / f"{sid}.md", overwrite=False,
+                        target_dir / "sources" / f"{sid}{file_ext}", overwrite=False,
                     )
 
         files_written: list[ExportFileEntry] = []
         total_bytes = 0
 
         for filename, note in plan:
-            content = _render_note_content(note)
+            filename = _retype(filename)
+            content = note_renderer(note)
             payload = content.encode("utf-8")
             target = target_dir / filename
             try:
@@ -385,11 +592,11 @@ async def export_notebook(
             sources_dir.mkdir(exist_ok=True)
             for s in sources:
                 sid = _notebook_record_id_part(str(s.id))
-                rel = f"sources/{sid}.md"
-                content = _render_source_content(s)
+                rel = f"sources/{sid}{file_ext}"
+                content = source_renderer(s)
                 payload = content.encode("utf-8")
                 try:
-                    (sources_dir / f"{sid}.md").write_bytes(payload)
+                    (sources_dir / f"{sid}{file_ext}").write_bytes(payload)
                 except OSError as exc:
                     warnings.append(f"Could not write {rel}: {exc}")
                     continue
@@ -410,26 +617,26 @@ async def export_notebook(
             warnings.append(f"Could not write manifest.json: {exc}")
 
         logger.info(
-            "Notebook export: notebook={} files={} bytes={} → {}",
-            notebook_id, len(files_written), total_bytes, str(target_dir),
+            "Notebook export: format={} notebook={} files={} bytes={} → {}",
+            req.format, notebook_id, len(files_written), total_bytes, str(target_dir),
         )
         return ExportResponse(
             destination=str(target_dir),
-            format="folder",
+            format=req.format,
             file_count=len(files_written),
             total_bytes=total_bytes,
             files=files_written[:100],
             warnings=warnings,
         )
 
-    # format == "zip"
+    # format ∈ ("zip", "html_zip")
     target_zip = _resolve_and_validate(req.destination, must_exist=False)
     if target_zip.exists() and target_zip.is_dir():
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Destination is a directory; pass a .zip file path for "
-                f"format=zip: {target_zip}"
+                f"format={req.format}: {target_zip}"
             ),
         )
     _check_overwrite(target_zip, overwrite=req.overwrite)
@@ -446,10 +653,16 @@ async def export_notebook(
 
     files_written = []
     total_bytes = 0
+    # v0.7.98 — Pick the compression algorithm from the request. Defaults
+    # to DEFLATED to match prior v0.7.90 behavior. ZIP_BZIP2 / ZIP_LZMA
+    # require the host's zlib/bz2/lzma to be available (stdlib on macOS
+    # + Windows + Linux), which they always are on the desktop bundle.
+    zip_compression = _COMPRESSION_BY_NAME[req.compression]
     try:
-        with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(target_zip, "w", compression=zip_compression) as zf:
             for filename, note in plan:
-                content = _render_note_content(note).encode("utf-8")
+                filename = _retype(filename)
+                content = note_renderer(note).encode("utf-8")
                 zf.writestr(filename, content)
                 files_written.append(
                     ExportFileEntry(relative_path=filename, bytes=len(content))
@@ -458,8 +671,8 @@ async def export_notebook(
             if sources:
                 for s in sources:
                     sid = _notebook_record_id_part(str(s.id))
-                    rel = f"sources/{sid}.md"
-                    payload = _render_source_content(s).encode("utf-8")
+                    rel = f"sources/{sid}{file_ext}"
+                    payload = source_renderer(s).encode("utf-8")
                     zf.writestr(rel, payload)
                     files_written.append(
                         ExportFileEntry(relative_path=rel, bytes=len(payload))
@@ -484,12 +697,13 @@ async def export_notebook(
         )
 
     logger.info(
-        "Notebook export (zip): notebook={} files={} bytes={} → {}",
-        notebook_id, len(files_written), total_bytes, str(target_zip),
+        "Notebook export (zip): format={} compression={} notebook={} files={} bytes={} → {}",
+        req.format, req.compression, notebook_id, len(files_written),
+        total_bytes, str(target_zip),
     )
     return ExportResponse(
         destination=str(target_zip),
-        format="zip",
+        format=req.format,
         file_count=len(files_written),
         total_bytes=total_bytes,
         files=files_written[:100],
@@ -969,6 +1183,120 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
         source_ids=source_ids,
         file_count=len(md_entries),
         items=items[:100],
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.7.96 — Import preview (dry-run)
+# ---------------------------------------------------------------------------
+# Returns what WOULD be imported by v0.7.94 import_notebook, without
+# committing anything to the database. Lets the frontend show the user
+# the parsed structure ("we'll create 5 notes, 2 sources, the notebook
+# will be named 'X'") before they confirm. Cheap — same _read_import_entries
+# call, same frontmatter parser, no domain layer touched.
+
+
+class NotebookImportPreviewRequest(BaseModel):
+    source_path: str = Field(
+        ..., description="Absolute path: directory, .zip, or single .md.",
+    )
+
+
+class NotebookImportPreviewItem(BaseModel):
+    relative_path: str
+    title: str
+    bytes: int
+    is_overview: bool = False     # detected v0.7.89 overview shape
+
+
+class NotebookImportPreviewResponse(BaseModel):
+    source_path: str
+    detected_kind: Literal["folder", "zip", "single_md"]
+    notebook_name_hint: Optional[str] = None
+    description_hint: Optional[str] = None
+    notes: list[NotebookImportPreviewItem]
+    sources: list[NotebookImportPreviewItem]
+    has_manifest: bool
+    total_bytes: int
+    warnings: list[str] = []
+
+
+def _detect_import_kind(src: Path) -> Literal["folder", "zip", "single_md"]:
+    if src.is_dir():
+        return "folder"
+    if src.is_file() and src.suffix.lower() == ".zip":
+        return "zip"
+    return "single_md"
+
+
+@router.post(
+    "/notebooks/import/preview", response_model=NotebookImportPreviewResponse,
+)
+def preview_import(req: NotebookImportPreviewRequest) -> NotebookImportPreviewResponse:
+    """Dry-run an import. Reads the source bundle, parses frontmatter,
+    and returns the planned import structure WITHOUT creating any
+    Notebook / Note / Source records. Same caps as the real import."""
+    src = _resolve_and_validate(req.source_path, must_exist=True)
+    detected = _detect_import_kind(src)
+    entries = _read_import_entries(src)
+
+    manifest: dict = {}
+    has_manifest = False
+    md_entries: list[tuple[str, str]] = []
+    sources_entries: list[tuple[str, str]] = []
+    warnings: list[str] = []
+
+    for rel, text in entries:
+        if rel.endswith("manifest.json"):
+            has_manifest = True
+            try:
+                manifest = json.loads(text)
+            except json.JSONDecodeError as exc:
+                warnings.append(f"manifest.json present but invalid: {exc}")
+            continue
+        if rel.startswith("sources/") or rel.startswith("sources" + os.sep):
+            sources_entries.append((rel, text))
+        else:
+            md_entries.append((rel, text))
+
+    notebook_meta = (manifest.get("notebook") or {}) if isinstance(manifest, dict) else {}
+    name_hint = notebook_meta.get("name") or src.stem or None
+    desc_hint = notebook_meta.get("description") or None
+
+    def _preview_note(rel: str, text: str) -> NotebookImportPreviewItem:
+        meta, _body = _parse_frontmatter(text)
+        title = meta.get("title") or Path(rel).stem.replace("-", " ").replace("_", " ").title()
+        is_overview = (
+            rel.endswith("00-overview.md")
+            or "overview" in (meta.get("title") or "").lower()
+        )
+        return NotebookImportPreviewItem(
+            relative_path=rel,
+            title=title,
+            bytes=len(text.encode("utf-8")),
+            is_overview=is_overview,
+        )
+
+    notes_preview = [_preview_note(rel, text) for rel, text in sorted(md_entries)]
+    sources_preview = [_preview_note(rel, text) for rel, text in sorted(sources_entries)]
+    total_bytes = sum(n.bytes for n in notes_preview) + sum(s.bytes for s in sources_preview)
+
+    if not notes_preview and not sources_preview:
+        warnings.append(
+            "No notes or sources detected. Make sure the path points at "
+            "exported markdown (folder, zip, or single .md)."
+        )
+
+    return NotebookImportPreviewResponse(
+        source_path=str(src),
+        detected_kind=detected,
+        notebook_name_hint=name_hint,
+        description_hint=desc_hint,
+        notes=notes_preview,
+        sources=sources_preview,
+        has_manifest=has_manifest,
+        total_bytes=total_bytes,
         warnings=warnings,
     )
 
