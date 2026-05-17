@@ -48,24 +48,31 @@ class CommandService:
             raise
 
     @staticmethod
-    async def get_command_status(job_id: str) -> Dict[str, Any]:
-        """Get status of any command job"""
+    async def get_command_status(job_id: str) -> Optional[Dict[str, Any]]:
+        """Get status of any command job.
+
+        v0.7.87 — returns `None` for missing jobs instead of a synthetic
+        `{"status": "unknown"}` payload, so the HTTP layer can return a
+        real 404 instead of a 200 with a fake-OK shape. The previous
+        behavior made the frontend special-case "unknown" everywhere
+        instead of using standard error handling.
+        """
         try:
             status = await get_command_status(job_id)
+            if status is None:
+                return None
             return {
                 "job_id": job_id,
-                "status": status.status if status else "unknown",
-                "result": status.result if status else None,
-                "error_message": getattr(status, "error_message", None)
-                if status
-                else None,
+                "status": status.status,
+                "result": status.result,
+                "error_message": getattr(status, "error_message", None),
                 "created": str(status.created)
-                if status and hasattr(status, "created") and status.created
+                if hasattr(status, "created") and status.created
                 else None,
                 "updated": str(status.updated)
-                if status and hasattr(status, "updated") and status.updated
+                if hasattr(status, "updated") and status.updated
                 else None,
-                "progress": getattr(status, "progress", None) if status else None,
+                "progress": getattr(status, "progress", None),
             }
         except Exception as e:
             logger.error(f"Failed to get command status: {e}")
@@ -78,18 +85,103 @@ class CommandService:
         status_filter: Optional[str] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
-        """List command jobs with optional filtering"""
-        # This will be implemented with proper SurrealDB queries
-        # For now, return empty list as this is foundation phase
-        return []
+        """List command jobs with optional filtering.
+
+        v0.7.87 — was a stub returning []. Now reads from the
+        `command` table populated by surreal_commands (every submitted
+        job lands there with status/result/error_message/timestamps).
+        Filters are applied in SurrealQL so we never load the whole
+        table into Python.
+        """
+        from open_notebook.database.repository import repo_query
+
+        clauses: list[str] = []
+        params: Dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
+        if module_filter:
+            clauses.append("app = $app")
+            params["app"] = module_filter
+        if command_filter:
+            clauses.append("name = $name")
+            params["name"] = command_filter
+        if status_filter:
+            clauses.append("status = $status")
+            params["status"] = status_filter
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        try:
+            rows = await repo_query(
+                f"SELECT id, app, name, status, error_message, created, updated "
+                f"FROM command{where} "
+                f"ORDER BY created DESC LIMIT $limit",
+                params,
+            )
+        except Exception as exc:
+            logger.warning(f"list_command_jobs query failed (returning []): {exc}")
+            return []
+        if not rows:
+            return []
+        out: list[Dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            out.append(
+                {
+                    "job_id": str(row.get("id", "")),
+                    "app": row.get("app"),
+                    "command": row.get("name"),
+                    "status": row.get("status"),
+                    "error_message": row.get("error_message"),
+                    "created": str(row.get("created")) if row.get("created") else None,
+                    "updated": str(row.get("updated")) if row.get("updated") else None,
+                }
+            )
+        return out
 
     @staticmethod
     async def cancel_command_job(job_id: str) -> bool:
-        """Cancel a running command job"""
+        """Cancel a running command job.
+
+        v0.7.87 — was a no-op stub that returned True without doing
+        anything; the frontend trusted the response, removed the job
+        from the UI, and the underlying command kept running. Now
+        marks the surreal_commands row as `canceled` via the same
+        pattern used in `Source.delete` (v0.7.32). Only nudges jobs
+        whose current status is in {new, queued, running} — completed
+        and already-canceled jobs need no action. Returns False if
+        the job wasn't found or wasn't in a cancellable state.
+
+        Note: surreal_commands' worker poll loop is what actually halts
+        execution — setting the row to `canceled` is the signal. For
+        jobs that are mid-execution the worker may finish the current
+        operation before noticing the cancel; that's the same
+        cooperative-cancellation contract as Source.delete.
+        """
         try:
-            # Implementation depends on surreal-commands cancellation support
-            # For now, just log the attempt
-            logger.info(f"Attempting to cancel job: {job_id}")
+            from surreal_commands import get_command_status as _gcs
+            from surreal_commands.core.service import (
+                get_command_service as _gcsvc,
+            )
+
+            status = await _gcs(job_id)
+            if status is None:
+                logger.info(f"cancel_command_job: {job_id} not found")
+                return False
+            status_str = getattr(status, "status", "")
+            if isinstance(status_str, str):
+                status_str = status_str.lower()
+            if status_str not in {"new", "queued", "running"}:
+                logger.info(
+                    f"cancel_command_job: {job_id} status={status_str!r} — "
+                    "not in a cancellable state, skipping"
+                )
+                return False
+            svc = _gcsvc()
+            await svc.update_command_result(
+                job_id,
+                status="canceled",
+                result={},
+                error_message="Cancelled by user via DELETE /commands/jobs/{job_id}",
+            )
+            logger.info(f"cancel_command_job: marked {job_id} as canceled")
             return True
         except Exception as e:
             logger.error(f"Failed to cancel command job: {e}")
