@@ -1177,3 +1177,134 @@ def test_import_vectorize_failure_is_non_fatal(
         "embedding queue failed" in w and "rebuild" in w.lower()
         for w in body["warnings"]
     ), body["warnings"]
+
+
+# ============================================================================
+# v0.7.111 — Combined single-file export
+# ============================================================================
+
+
+def test_export_combined_md_concatenates_pages_into_single_file(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """v0.7.111 — combined_md produces ONE .md file with all notes
+    concatenated, separated by horizontal rules so renderers paginate
+    cleanly on print-to-PDF."""
+    notes = [
+        _FakeNote("note:ov", "📋 00 · Demo — Overview", "Overview body."),
+        _FakeNote("note:p1", "📄 01 · Architecture", "Arch body."),
+        _FakeNote("note:p2", "📄 02 · Backend", "Backend body."),
+    ]
+    nb = _FakeNotebook("notebook:1", "Demo", notes,
+                       description="A test notebook")
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "combined.md"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "combined_md"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["format"] == "combined_md"
+    assert body["file_count"] == 1
+    assert target.exists()
+    content = target.read_text()
+    # Cover page with notebook title + description
+    assert "# 📚 Demo" in content
+    assert "A test notebook" in content
+    # Table of contents lists every note
+    assert "## Contents" in content
+    assert "Overview" in content
+    # Each note's body is included
+    assert "Overview body." in content
+    assert "Arch body." in content
+    assert "Backend body." in content
+    # Horizontal rules separate sections (page breaks for print)
+    assert content.count("\n---\n") >= 3
+
+
+def test_export_combined_html_includes_print_friendly_page_breaks(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """v0.7.111 — combined_html embeds print CSS so each note paginates
+    when the user prints-to-PDF from the browser."""
+    notes = [_FakeNote("note:1", "First", "**bold** body")]
+    nb = _FakeNotebook("notebook:1", "Demo HTML", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "combined.html"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "combined_html"},
+    )
+    assert r.status_code == 200, r.text
+    assert target.exists()
+    html = target.read_text()
+    # HTML5 wrapper
+    assert "<!doctype html>" in html.lower()
+    # Print CSS: page-break-after on .onp-page-break
+    assert "@media print" in html
+    assert "page-break-after" in html
+    # Each note rendered as actual HTML
+    assert "<strong>bold</strong>" in html
+    # Cover page block
+    assert "onp-cover" in html
+
+
+def test_export_combined_auto_corrects_file_extension(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    """v0.7.111 — caller passes 'combined' without an extension; we
+    must append .md or .html based on format. Otherwise the file is
+    indistinguishable from binary on macOS / Windows."""
+    notes = [_FakeNote("note:1", "T", "body")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "extensionless"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(target), "format": "combined_md"},
+    )
+    assert r.status_code == 200, r.text
+    # .md auto-appended
+    assert (tmp_path / "extensionless.md").exists()
+    assert not (tmp_path / "extensionless").exists()
+
+
+def test_export_combined_md_with_sources(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [_FakeNote("note:1", "Page", "body")]
+    sources = [_FakeSource("source:1", "Doc", "source text content")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes, sources=sources)
+    patched_domain["notebooks"]["notebook:1"] = nb
+
+    target = tmp_path / "with-sources.md"
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={
+            "destination": str(target), "format": "combined_md",
+            "include_sources": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    content = target.read_text()
+    # Sources section appears after pages
+    assert "# 📁 Sources" in content
+    assert "source text content" in content
+
+
+def test_export_combined_refuses_directory_target(
+    client: TestClient, patched_domain, tmp_path: Path,
+):
+    notes = [_FakeNote("note:1", "T", "body")]
+    nb = _FakeNotebook("notebook:1", "Demo", notes)
+    patched_domain["notebooks"]["notebook:1"] = nb
+    r = client.post(
+        "/api/notebooks/notebook:1/export",
+        json={"destination": str(tmp_path), "format": "combined_md"},
+    )
+    assert r.status_code == 400
+    assert "directory" in r.json()["detail"].lower()

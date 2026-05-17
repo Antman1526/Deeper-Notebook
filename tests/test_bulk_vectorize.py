@@ -205,3 +205,42 @@ def test_bulk_vectorize_continues_after_submit_failure(
     assert body["failed"] == 1
     # Warning surfaces the actual failure cause
     assert any("worker queue down" in w for w in body["warnings"])
+
+
+# ============================================================================
+# v0.7.110 — Per-request cap on source count
+# ============================================================================
+
+
+def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
+    client, patched_domain, monkeypatch,
+):
+    """v0.7.110 — Notebooks with more than ONP_BULK_VECTORIZE_MAX_SOURCES
+    must be truncated to the cap and a warning surfaced so the user
+    knows to call again. Without this cap a 10k-source notebook would
+    pin the request submitting 10k commands."""
+    monkeypatch.setenv("ONP_BULK_VECTORIZE_MAX_SOURCES", "3")
+    sources = [
+        _make_source(
+            f"source:{i}", f"Source {i}", full_text="x",
+            vectorize_returns=f"cmd:{i}",
+        )
+        for i in range(10)
+    ]
+    patched_domain["notebook"] = _make_notebook(sources)
+
+    r = client.post(
+        "/api/notebooks/notebook:test/vectorize_sources",
+        json={"only_missing": False},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Only the first 3 sources got queued
+    assert body["queued"] == 3
+    # Truncation warning surfaced with actionable hint
+    assert any(
+        "10 sources" in w and "ONP_BULK_VECTORIZE_MAX_SOURCES" in w
+        for w in body["warnings"]
+    ), body["warnings"]
+    # Per-source entries reflect only the processed subset
+    assert len(body["sources"]) == 3

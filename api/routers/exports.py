@@ -78,7 +78,14 @@ class NotebookExportRequest(BaseModel):
     # v0.7.97 — html_folder / html_zip render each note's markdown to HTML
     # via markdown-it-py (already a transitive dep). Useful for sharing
     # notebooks with non-markdown-aware tools (email, browsers, Drive).
-    format: Literal["folder", "zip", "html_folder", "html_zip"] = "folder"
+    # v0.7.111 — combined_md / combined_html concatenate every page into
+    # a single file. Better for read-only sharing (email attachment,
+    # Drive upload, print-to-PDF) where the user wants one artifact
+    # rather than a folder.
+    format: Literal[
+        "folder", "zip", "html_folder", "html_zip",
+        "combined_md", "combined_html",
+    ] = "folder"
     include_sources: bool = Field(
         False,
         description="Include each Source's full_text as sources/{source-id}.md",
@@ -403,6 +410,226 @@ _COMPRESSION_BY_NAME: dict[str, int] = {
 }
 
 
+# v0.7.111 — HTML wrapper for combined exports. Same stylesheet as
+# the per-page wrapper so the combined file is consistent, plus a
+# <hr class="onp-page-break"> separator + print CSS that forces each
+# note onto its own page when printing-to-PDF.
+_COMBINED_HTML_TEMPLATE = """\
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    :root {{
+      --fg: #1a1a1a;
+      --bg: #fdfdfd;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --code-bg: #f3f4f6;
+      --border: #e5e7eb;
+    }}
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --fg: #e5e7eb; --bg: #0f172a; --muted: #9ca3af;
+        --accent: #60a5fa; --code-bg: #1e293b; --border: #334155;
+      }}
+    }}
+    body {{
+      max-width: 820px; margin: 2rem auto; padding: 0 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+                   "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.65; color: var(--fg); background: var(--bg);
+    }}
+    h1, h2, h3 {{ line-height: 1.25; margin-top: 2rem; }}
+    h1 {{ border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }}
+    a {{ color: var(--accent); }}
+    code {{
+      background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 3px;
+      font-size: 0.92em;
+    }}
+    pre {{
+      background: var(--code-bg); padding: 1rem; border-radius: 6px;
+      overflow-x: auto;
+    }}
+    pre code {{ background: transparent; padding: 0; }}
+    blockquote {{
+      border-left: 4px solid var(--border); margin: 1rem 0;
+      padding: 0.4rem 1rem; color: var(--muted);
+    }}
+    table {{ border-collapse: collapse; margin: 1rem 0; }}
+    th, td {{ border: 1px solid var(--border); padding: 0.5rem 0.8rem; }}
+    th {{ background: var(--code-bg); }}
+    .onp-cover {{
+      text-align: center; margin: 3rem auto 4rem;
+      padding-bottom: 1rem; border-bottom: 2px solid var(--border);
+    }}
+    .onp-cover h1 {{ border: none; font-size: 2.2rem; margin: 0.5rem 0; }}
+    .onp-cover .onp-headline {{ color: var(--muted); font-size: 1.1rem; }}
+    .onp-page-break {{
+      border: none; border-top: 1px dashed var(--border);
+      margin: 3rem 0 2rem;
+    }}
+    .onp-toc {{ background: var(--code-bg); border-radius: 6px;
+                padding: 1rem 1.5rem; margin: 1.5rem 0 2.5rem; }}
+    .onp-toc ol {{ margin: 0.5rem 0 0 1.2rem; }}
+    @media print {{
+      .onp-page-break {{ page-break-after: always; border: none; }}
+      body {{ max-width: none; margin: 0; padding: 1rem; }}
+    }}
+  </style>
+</head>
+<body>
+{body_html}
+</body>
+</html>
+"""
+
+
+async def _write_combined_export(
+    *,
+    req: NotebookExportRequest,
+    notebook: Notebook,
+    notes_sorted: list[Note],
+    plan: list[tuple[str, Note]],
+    sources: list[Source],
+    manifest: dict,
+    warnings: list[str],
+    is_html: bool,
+) -> "ExportResponse":
+    """v0.7.111 — Single-file combined export. Concatenates every note
+    (in plan order, so Overview comes first) into one .md or .html.
+    Page breaks rendered as horizontal rules so print-to-PDF naturally
+    paginates each note onto its own page (via the print CSS in the
+    HTML wrapper)."""
+    target = _resolve_and_validate(req.destination, must_exist=False)
+    if target.exists() and target.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Destination is a directory; pass a file path for "
+                f"format={req.format}: {target}"
+            ),
+        )
+    _check_overwrite(target, overwrite=req.overwrite)
+    if not target.parent.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Parent directory does not exist: {target.parent}. "
+                "Create it via POST /api/fs/mkdir first."
+            ),
+        )
+
+    # Force the right extension if the caller forgot one.
+    desired_ext = ".html" if is_html else ".md"
+    if target.suffix.lower() != desired_ext:
+        target = target.with_suffix(desired_ext)
+        _check_overwrite(target, overwrite=req.overwrite)
+
+    notebook_title = notebook.name or "Untitled Notebook"
+
+    if not is_html:
+        # Combined Markdown — cover page + TOC + each note separated by
+        # a horizontal rule (renderers turn `---` into <hr>).
+        sections: list[str] = []
+        sections.append(f"# 📚 {notebook_title}\n")
+        if notebook.description:
+            sections.append(f"> {notebook.description}\n")
+        sections.append(f"_Generated by Open Notebook Plus · "
+                        f"{datetime.now(timezone.utc).isoformat()}_\n")
+        # Table of contents
+        toc_lines = ["## Contents\n"]
+        for i, (_filename, note) in enumerate(plan, start=1):
+            toc_lines.append(f"{i}. {note.title or '(untitled)'}")
+        sections.append("\n".join(toc_lines))
+        # Each note rendered as a markdown section
+        for _filename, note in plan:
+            sections.append("\n---\n")
+            sections.append(_render_note_content(note))
+        # Optionally include sources
+        if req.include_sources and sources:
+            sections.append("\n---\n")
+            sections.append("# 📁 Sources\n")
+            for s in sources:
+                sections.append("\n---\n")
+                sections.append(_render_source_content(s))
+        combined = "\n\n".join(sections)
+        payload = combined.encode("utf-8")
+    else:
+        # Combined HTML — same structure rendered as HTML5.
+        body_parts: list[str] = []
+        body_parts.append(
+            f'<div class="onp-cover">'
+            f"<h1>{_html_escape(notebook_title)}</h1>"
+        )
+        if notebook.description:
+            body_parts.append(
+                f'<p class="onp-headline">{_html_escape(notebook.description)}</p>'
+            )
+        body_parts.append(
+            f'<p class="onp-headline">Generated by Open Notebook Plus · '
+            f"{datetime.now(timezone.utc).isoformat()}</p></div>"
+        )
+        toc = ['<div class="onp-toc"><strong>Contents</strong><ol>']
+        for _filename, note in plan:
+            toc.append(f"<li>{_html_escape(note.title or '(untitled)')}</li>")
+        toc.append("</ol></div>")
+        body_parts.append("".join(toc))
+        for _filename, note in plan:
+            body_parts.append('<hr class="onp-page-break">')
+            # Reuse the per-note html renderer but strip its outer
+            # <html>/<head>/<body> so we have just the article fragment.
+            full_html = _render_note_as_html(note)
+            body_only = full_html
+            if "<body>" in body_only and "</body>" in body_only:
+                body_only = body_only.split("<body>", 1)[1]
+                body_only = body_only.rsplit("</body>", 1)[0]
+            body_parts.append(body_only)
+        if req.include_sources and sources:
+            body_parts.append('<hr class="onp-page-break">')
+            body_parts.append("<h1>📁 Sources</h1>")
+            for s in sources:
+                body_parts.append('<hr class="onp-page-break">')
+                full = _render_source_as_html(s)
+                body_only = full
+                if "<body>" in body_only and "</body>" in body_only:
+                    body_only = body_only.split("<body>", 1)[1]
+                    body_only = body_only.rsplit("</body>", 1)[0]
+                body_parts.append(body_only)
+        combined = _COMBINED_HTML_TEMPLATE.format(
+            title=_html_escape(notebook_title),
+            body_html="\n".join(body_parts),
+        )
+        payload = combined.encode("utf-8")
+
+    try:
+        target.write_bytes(payload)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to write {target}: {exc}",
+        )
+
+    logger.info(
+        "Notebook export (combined): format={} notebook={} bytes={} → {}",
+        req.format, notebook.id, len(payload), str(target),
+    )
+    return ExportResponse(
+        destination=str(target),
+        format=req.format,
+        file_count=1,
+        total_bytes=len(payload),
+        files=[
+            ExportFileEntry(
+                relative_path=os.path.basename(str(target)),
+                bytes=len(payload),
+            )
+        ],
+        warnings=warnings,
+    )
+
+
 def _build_manifest(
     notebook: Notebook, notes: list[Note], sources: list[Source],
 ) -> dict:
@@ -520,8 +747,9 @@ async def export_notebook(
     # use the existing _render_*_content; HTML formats use the v0.7.97
     # _render_*_as_html. file_ext determines the suffix on every emitted
     # file (manifest.json stays .json regardless).
-    is_html = req.format.startswith("html_")
+    is_html = req.format.startswith("html_") or req.format == "combined_html"
     is_folder = req.format.endswith("folder")
+    is_combined = req.format.startswith("combined_")
     if is_html:
         note_renderer = _render_note_as_html
         source_renderer = _render_source_as_html
@@ -530,6 +758,22 @@ async def export_notebook(
         note_renderer = _render_note_content
         source_renderer = _render_source_content
         file_ext = ".md"
+
+    # v0.7.111 — Combined single-file export. Concatenate every note (and
+    # optionally every source) into one Markdown or HTML file. Useful
+    # for share-by-email, print-to-PDF, or import into a single
+    # paperless-gpt entry. Bails out of the multi-file dispatch below.
+    if is_combined:
+        return await _write_combined_export(
+            req=req,
+            notebook=notebook,
+            notes_sorted=notes_sorted,
+            plan=plan,
+            sources=sources,
+            manifest=manifest,
+            warnings=warnings,
+            is_html=is_html,
+        )
 
     # Translate plan filenames from .md → .html when emitting HTML.
     # _plan_filenames hardcodes .md; this re-suffixes without losing the

@@ -390,12 +390,35 @@ async def test_credential(credential_id: str):
 @router.post("/{credential_id}/discover", response_model=DiscoverModelsResponse)
 async def discover_models_for_credential(credential_id: str):
     """Discover available models using this credential's API key."""
+    # v0.7.110 — wrap discover_with_config in wait_for. Discovery calls
+    # the provider's list-models endpoint which can paginate slowly for
+    # OpenRouter (300+ models) or hang if the base_url is misconfigured.
+    # Default 30s aligns with the connection-test timeout (v0.7.100).
+    import asyncio
+    import os
+    _discover_timeout = float(
+        os.environ.get("ONP_DISCOVER_MODELS_TIMEOUT_SEC", "30").strip() or 30
+    )
     try:
         cred = await Credential.get(credential_id)
         config = cred.to_esperanto_config()
         provider = cred.provider.lower()
 
-        discovered = await discover_with_config(provider, config)
+        try:
+            discovered = await asyncio.wait_for(
+                discover_with_config(provider, config),
+                timeout=_discover_timeout,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Model discovery timed out after {_discover_timeout:.0f}s. "
+                    "The provider may be slow or the base_url is unreachable. "
+                    "Raise ONP_DISCOVER_MODELS_TIMEOUT_SEC if discovery "
+                    "legitimately takes longer."
+                ),
+            )
 
         return DiscoverModelsResponse(
             credential_id=cred.id or "",

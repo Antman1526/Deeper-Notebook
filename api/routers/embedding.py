@@ -195,11 +195,32 @@ async def vectorize_notebook_sources(
         )
 
     sources = await notebook.get_sources()
+    # v0.7.110 — Hard cap on per-request size. A notebook with tens of
+    # thousands of sources would spam the worker queue and pin the
+    # request for a long time even though each submit is fast. 500 is
+    # plenty for realistic notebooks (the FsList endpoint uses the
+    # same cap); operators with bigger notebooks can raise via env or
+    # call the endpoint multiple times.
+    import os as _os_for_cap
+    _max_sources = int(
+        _os_for_cap.environ.get("ONP_BULK_VECTORIZE_MAX_SOURCES", "500").strip()
+        or 500
+    )
+    truncation_warning: Optional[str] = None
+    if len(sources) > _max_sources:
+        truncation_warning = (
+            f"Notebook has {len(sources)} sources; this call processed only "
+            f"the first {_max_sources}. Raise ONP_BULK_VECTORIZE_MAX_SOURCES "
+            "or call again to handle the rest."
+        )
+        sources = sources[:_max_sources]
     entries: list[NotebookVectorizeSourceEntry] = []
     queued = 0
     skipped = 0
     failed = 0
     warnings: list[str] = []
+    if truncation_warning:
+        warnings.append(truncation_warning)
 
     # Ensure embedding_commands is importable for surreal_commands.
     try:
