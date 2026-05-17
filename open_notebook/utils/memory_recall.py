@@ -15,21 +15,20 @@ This module gives the chat graph a tiny, safe read path that:
   - returns simple `{text, scope, kind}` dicts the Jinja template
     can iterate without knowing the SurrealDB schema
 
-We deliberately do NOT do vector-similarity search here even though
-the rows carry embeddings. Reasons:
-  1. The chat-graph node is hot path; we want the read to be a
-     single SurrealQL round-trip with no model-side embedding pass.
-  2. A typical single-user deploy has tens, not thousands, of
-     facts — dumping the 20 most recent gives the LLM "what I've
-     learned about you lately" without needing semantic relevance.
-  3. The mem0 retriever HTTP service that DOES do similarity search
-     isn't always reachable from the API (it's a sibling process in
-     the desktop launcher) and we don't want to make chat depend
-     on it.
+v0.7.84 — added `recall_relevant_memory(query)` which does cosine
+similarity over the `embedding` column populated by mem0. The chat
+node now calls `recall_memory(query=last_user_text)` — a thin
+orchestrator that picks `relevant` once memory tables grow past
+~10 rows (otherwise recency is fine and saves an embed round trip),
+with `auto` / `recent` / `semantic` overrides via
+`ONP_MEMORY_RECALL_MODE`. ANY failure in the semantic path falls
+through to the recency path so chat never breaks because the
+embedder is misconfigured.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from loguru import logger
@@ -43,17 +42,32 @@ from open_notebook.database.repository import repo_query
 _MAX_FACTS = 15
 _MAX_PREFERENCES = 10
 
+# v0.7.84 — once a user's memory tables grow past this row count, the
+# "most recent N" heuristic starts losing relevant older facts. Switch
+# to semantic search above this threshold (unless the env var forces a
+# specific mode). 30 is conservative: most single-user deploys after a
+# week of chats land in the 50-200 range.
+_SEMANTIC_THRESHOLD = 30
+
+# Minimum cosine score for a memory hit to be included. Below this the
+# match is too weak to be worth injecting (the local LLM is better off
+# without than with noise). Embedding models put unrelated text in the
+# 0.0-0.3 range, weakly related at 0.3-0.5, strongly related at 0.6+.
+_MIN_SCORE = 0.30
+
 
 async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
     """Return recent fact + preference rows for prompt injection.
 
     Shape:
-        {"facts": [{"text": "...", "scope": "user"}, ...],
-         "preferences": [...]}
+        {"facts": [{"text": "..."}],
+         "preferences": [{"text": "..."}]}
 
     Returns empty lists on any failure (table missing, DB blip,
     upstream non-desktop build). The caller treats empty == "no
-    memory section in the prompt".
+    memory section in the prompt". This is the original v0.7.71
+    recall path — v0.7.84's orchestrator (`recall_memory`) falls
+    through to here on any semantic-search failure.
     """
     facts = await _safe_select(
         "SELECT VALUE text FROM memory_fact "
@@ -71,6 +85,146 @@ async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
             {"text": _coerce_text(t)} for t in preferences if _coerce_text(t)
         ],
     }
+
+
+async def recall_relevant_memory(
+    query: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Cosine-similarity recall against the mem0 embedding column.
+
+    v0.7.84 — uses `vector::similarity::cosine(embedding, $q)` directly
+    against memory_fact / memory_preference tables (the same SurrealQL
+    idiom mem0's surreal_store.search() uses). Embeds the query via
+    `model_manager.get_embedding_model()`.
+
+    Falls through to {} on any failure (no embedding model, table
+    missing, embedding shape mismatch between mem0's writes and our
+    query's embedding) — the caller of `recall_memory()` retries with
+    `recall_recent_memory()` so chat never breaks on bad config.
+
+    The chat-graph node is on the hot path; one embed call + two
+    SurrealQL queries adds ~50-150 ms on a local embed server. Worth
+    it once the user has > _SEMANTIC_THRESHOLD facts because the
+    recency heuristic starts dropping relevant older facts.
+    """
+    if not query or not query.strip():
+        return {"facts": [], "preferences": []}
+    try:
+        # Lazy import to avoid pulling the model layer into module-load
+        # for non-chat callers. If model_manager isn't configured (no
+        # embedding model selected), this raises and we return empty.
+        from open_notebook.ai.models import model_manager
+
+        embed_model = await model_manager.get_embedding_model()
+        if embed_model is None:
+            logger.debug(
+                "recall_relevant_memory: no embedding model configured — "
+                "caller will fall back to recency"
+            )
+            return {}
+        # Esperanto's embedding interface: .aembed() takes a list,
+        # returns list[list[float]]. Take the single result.
+        embeds = await embed_model.aembed([query.strip()])
+        if not embeds:
+            return {}
+        q_vec = embeds[0]
+    except Exception as exc:
+        logger.debug(
+            "recall_relevant_memory: embedding step failed (%s) — "
+            "caller will fall back to recency",
+            exc,
+        )
+        return {}
+
+    # Cosine search against each table separately so the per-kind cap
+    # is enforced (preferences are more authoritative than facts —
+    # don't let one dominate the other).
+    facts = await _safe_select(
+        "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+        "FROM memory_fact "
+        "ORDER BY score DESC LIMIT $limit",
+        {"q": q_vec, "limit": _MAX_FACTS},
+    )
+    preferences = await _safe_select(
+        "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+        "FROM memory_preference "
+        "ORDER BY score DESC LIMIT $limit",
+        {"q": q_vec, "limit": _MAX_PREFERENCES},
+    )
+
+    def _filter(rows: list[Any]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            score = row.get("score")
+            text = _coerce_text(row.get("text"))
+            if not text:
+                continue
+            if isinstance(score, (int, float)) and score < _MIN_SCORE:
+                continue
+            out.append({"text": text})
+        return out
+
+    return {"facts": _filter(facts), "preferences": _filter(preferences)}
+
+
+async def _count_memory_rows() -> int:
+    """Approximate row count across both memory tables.
+
+    Used by `recall_memory()` to pick recency-vs-semantic when the env
+    var leaves it on `auto`. Tolerates missing tables.
+    """
+    rows = await _safe_select(
+        "SELECT VALUE count() FROM memory_fact GROUP ALL", {}
+    )
+    fact_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
+    rows = await _safe_select(
+        "SELECT VALUE count() FROM memory_preference GROUP ALL", {}
+    )
+    pref_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
+    return fact_n + pref_n
+
+
+async def recall_memory(
+    query: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Orchestrator. Picks semantic vs recency based on
+    ONP_MEMORY_RECALL_MODE or row-count.
+
+    Modes:
+      - "recent"  → always use recall_recent_memory()
+      - "semantic" → always use recall_relevant_memory(query); falls
+        through to recency on failure
+      - "auto" (default) → semantic if rows > _SEMANTIC_THRESHOLD,
+        else recency. Empty `query` always uses recency.
+
+    The fall-through is the safety net: any failure in the semantic
+    path returns {} from `recall_relevant_memory`, and we then call
+    `recall_recent_memory`. Chat never breaks because of a misconfigured
+    embedder.
+    """
+    mode = (os.environ.get("ONP_MEMORY_RECALL_MODE") or "auto").strip().lower()
+
+    if mode == "recent" or not query or not query.strip():
+        return await recall_recent_memory()
+
+    if mode == "semantic":
+        result = await recall_relevant_memory(query)
+        if not result or (not result.get("facts") and not result.get("preferences")):
+            # Empty (failure or genuinely no matches) — recency is the
+            # better default than an empty memory section.
+            return await recall_recent_memory()
+        return result
+
+    # auto
+    total = await _count_memory_rows()
+    if total <= _SEMANTIC_THRESHOLD:
+        return await recall_recent_memory()
+    result = await recall_relevant_memory(query)
+    if not result or (not result.get("facts") and not result.get("preferences")):
+        return await recall_recent_memory()
+    return result
 
 
 def _coerce_text(value: Any) -> str:

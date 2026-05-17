@@ -15,7 +15,7 @@ from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.memory_recall import (
-    recall_recent_memory,
+    recall_memory,
     render_memory_block,
 )
 from open_notebook.utils.message_history import (
@@ -80,15 +80,21 @@ async def call_model_with_messages(
     `astream_events` on the compiled graph.
     """
     try:
-        # v0.7.71 — pull recent memory facts + preferences for the
-        # system prompt. Companion to v0.7.68 / v0.7.70 (the WRITE
-        # path): without recall here, the assistant kept extracting
-        # facts every turn but never remembered them across sessions.
-        # `recall_recent_memory` returns empty on missing tables /
-        # upstream non-desktop builds, so the prompt block silently
-        # disappears when there's nothing to inject — no env-var
-        # gating needed.
-        memory = await recall_recent_memory()
+        # v0.7.71 — pull memory facts + preferences for the system
+        # prompt. Companion to v0.7.68 / v0.7.70 (the WRITE path):
+        # without recall here, the assistant kept extracting facts
+        # every turn but never remembered them across sessions.
+        # v0.7.84 — use the orchestrator. Below ~30 rows it does
+        # recency (saves an embed round trip); above that it does
+        # semantic search against the user's current message and
+        # falls back to recency on any failure. Override via
+        # ONP_MEMORY_RECALL_MODE = recent | semantic | auto.
+        last_user_text = ""
+        for m in reversed(state.get("messages", [])):
+            if getattr(m, "type", None) == "human":
+                last_user_text = extract_text_content(m.content)
+                break
+        memory = await recall_memory(query=last_user_text)
         memory_block = render_memory_block(memory)
         prompt_data: dict = dict(state)  # type: ignore[arg-type]
         prompt_data["memory_block"] = memory_block
