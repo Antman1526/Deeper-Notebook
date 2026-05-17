@@ -18,7 +18,50 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.87 (in flight)
+## Unreleased — v0.7.36 → v0.7.89 (in flight)
+
+- **v0.7.89** ✨ **Studio multi-page notebook output.** When the user uploads
+  one or more documents via `/studio/generate` (mode `notebook` or `both`),
+  the API now produces a **structured multi-page brief** instead of a single
+  blob of markdown.
+
+  - **Outline pass:** one LLM call → JSON `{headline, summary, pages[],
+    top_suggestions[]}`. Constrained to 3-{`ONP_STUDIO_NOTEBOOK_PAGES_MAX`,
+    default 6} distinct pages.
+  - **Per-page pass:** one LLM call per page (sequential — parallel would
+    starve llama-cpp-python on the desktop bundle), each ending with a
+    "💡 AI Suggestions for this page" block with 3-5 concrete recommendations.
+  - **Persistence:** N+1 notes saved to the notebook — "📋 00 · {title} —
+    Overview" (headline + executive summary + table of contents + top
+    suggestions) followed by "📄 NN · {page title}" for each page.
+  - **Graceful degradation:**
+    - Outline JSON un-parseable → fall back to legacy single-note output,
+      warning surfaced in response.
+    - Individual page LLM call fails → that page becomes a warning, other
+      pages still ship.
+    - `ONP_STUDIO_NOTEBOOK_MULTIPAGE=false` → bypass multi-page entirely
+      (kill switch for rollout).
+  - **Response shape:** `StudioGenerateResponse` gains `note_ids: list[str]`.
+    `note_id` still points at the Overview note for back-compat with the
+    v0.7.88 frontend.
+  - **Tests:** existing 19 studio router tests updated for the new
+    multi-pass flow; 3 new tests cover multi-page happy path, JSON fallback,
+    and the `_MULTIPAGE_ENABLED=False` kill switch. Full suite: **432 pass.**
+- **v0.7.88** ✨ **Studio `mode="both"`.** Single upload can now generate
+  BOTH a notebook AND a podcast. `_dispatch_both_modes` runs the notebook
+  pipeline synchronously then submits the podcast job; either half can fail
+  independently with the surviving artifact preserved and the failure
+  reported in `warnings`. Validation gate ensures podcast profile fields
+  are supplied when mode is `podcast` OR `both`. The frontend selects
+  this mode via the existing mode picker.
+- **v0.7.89 audit findings (intentionally noted, not fixed this turn):**
+  - `api/routers/studio.py` lines 375, 389, 406-410, 421, 423 use
+    `logger.{info,warning,exception}("…%s…%s…", a, b)` patterns — loguru
+    uses `{}` formatting, NOT `%`. These messages have been logging the
+    literal `%s` since v0.7.0. New v0.7.89 lines use `{}` correctly; the
+    legacy `%s` lines are a separate cleanup. Filed.
+
+
 
 Planned cycle covering native async LangGraph (v0.7.37), real token
 streaming via SSE (v0.7.38), list virtualization (v0.7.39), component
