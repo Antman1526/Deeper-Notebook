@@ -18,8 +18,62 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.91 (in flight)
+## Unreleased — v0.7.36 → v0.7.94 (in flight)
 
+- **v0.7.94** ✨ **Notebook import endpoint** (reverse of v0.7.90 export).
+  Folder, single .md, or .zip → new or existing Notebook. Closes the
+  loop on the export feature for backup/restore + cross-machine
+  workflows + Obsidian/Logseq library ingestion.
+
+  - **`POST /api/notebooks/import`** body `{source_path, mode: 'new' |
+    'into_existing', target_notebook_id?, new_name?, import_sources?}`
+    → `{notebook_id, notebook_name, mode, note_ids, source_ids,
+    file_count, items[], warnings[]}`
+  - **Frontmatter round-trips**: `_render_note_content` (export) and
+    `_parse_frontmatter` (import) agree on the YAML-ish title/type/
+    created/updated/id format, so an export → import cycle preserves
+    note titles (verified by a dedicated round-trip test).
+  - **Manifest-aware**: if the import bundle contains a `manifest.json`
+    (written by v0.7.90's export), the notebook's `name` and
+    `description` are seeded from it.
+  - **Safety caps**:
+    - 50 MB total source cap (`_MAX_IMPORT_BYTES`)
+    - 5 MB per-file cap (`_MAX_IMPORT_FILE_BYTES`)
+    - 500-entry cap inside a folder/zip
+    - Rejects zip members with absolute or `..` paths (traversal
+      defense)
+    - Skips non-UTF-8 files silently rather than crashing
+  - **`import_sources=true`** rebuilds Source records from any
+    `sources/` subfolder (text-only Sources, since the original binary
+    file isn't shipped in the export).
+  - **9 new tests**: happy-path folder/zip/single-md, mode='new' vs
+    'into_existing', 404 / 400 / 413 guard rails, traversal zip
+    rejected, round-trip preserves titles.
+- **v0.7.93** 🐛 **Per-page generation timeout for Studio multi-page.**
+  Local LLMs (especially the desktop bundle's llama-cpp chat server)
+  can hang indefinitely mid-prompt-eval or while loading. Without a
+  cap, ONE stuck page blocks the entire notebook-generation request
+  including subsequent pages, the response, and the user's browser.
+
+  - **Outline pass**: `asyncio.wait_for` with default 90s
+    (`ONP_STUDIO_OUTLINE_TIMEOUT_SEC`). Timeout → `504 Gateway Timeout`
+    with the env-knob name in the detail (actionable, not a wall of
+    stack trace).
+  - **Per-page generation**: default 180s (`ONP_STUDIO_PAGE_TIMEOUT_SEC`).
+    Timeout → that page becomes a warning naming the page AND pointing
+    at the env knob; other pages still ship.
+  - **3 new tests** cover page-timeout-becomes-warning, outline-timeout
+    returns 504 with actionable detail, and pre-existing pages survive
+    a sibling page's timeout.
+- **v0.7.92** ✨ **Optional parallel page generation for Studio.**
+  `ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES=true` runs page LLM calls
+  concurrently via `asyncio.gather(return_exceptions=True)` for ~Nx
+  speedup on cloud LLMs (OpenAI, Anthropic, etc.). Default OFF to
+  protect local llama-cpp dual-server setups from OOM / token
+  starvation. New `_generate_all_pages` helper extracted from
+  `_dispatch_notebook_mode` so the loop body is testable in isolation.
+  2 new tests verify the knob actually changes concurrency (peak
+  in-flight > 1 when on, == 1 when off).
 - **v0.7.91** 🐛 Fix loguru %-format bug across the codebase — 18
   occurrences in 8 files (`api/routers/studio.py`,
   `api/routers/chat.py`, `api/routers/podcasts.py`,
