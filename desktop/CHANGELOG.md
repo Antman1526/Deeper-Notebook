@@ -18,7 +18,58 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.89 (in flight)
+## Unreleased — v0.7.36 → v0.7.90 (in flight)
+
+- **v0.7.90** ✨ **Filesystem export + native directory access.** Users can
+  now save notebooks and individual pages out of the app to anywhere on
+  their host filesystem (the desktop bundle runs natively on macOS /
+  Windows so file access is unrestricted; Docker deployments work too,
+  bounded to mounted volumes).
+
+  - **`POST /api/notebooks/{id}/export`** writes a notebook as a folder
+    (one `.md` per note) or a single `.zip` archive.
+    - Folder layout: `00-overview.md` (auto-detected from v0.7.89's
+      "📋 00 · …" overview notes) + `01-{slug}.md` … `NN-{slug}.md` +
+      optional `sources/{source-id}.md` + `manifest.json`.
+    - Slug logic strips emoji, non-ASCII, AND leading numeric prefixes
+      so v0.7.89 page titles ("📄 01 · Architecture") don't end up
+      double-indexed (`01-01-architecture.md`).
+    - Pre-flight overwrite check: refuses to half-clobber existing files
+      unless `overwrite=true` is passed.
+    - Manifest captures notebook + per-note metadata for downstream
+      tools (Logseq, paperless-gpt, future ONP re-import).
+  - **`POST /api/notes/{id}/export`** writes a single note as a `.md`
+    file. Auto-appends `.md` if the caller omits the extension.
+  - **`GET /api/fs/list?path=…`** lists a directory on the host
+    filesystem (entries sorted dirs-first, capped at 500 to prevent
+    huge-directory DoS, hidden files excluded by default).
+  - **`GET /api/fs/home`** returns the user's home + Desktop /
+    Documents / Downloads / default-exports paths in one call so the
+    frontend picker doesn't have to figure them out per-platform.
+  - **`POST /api/fs/mkdir`** creates a directory (idempotent — re-runs
+    on an existing dir return `created=false`).
+  - **Safety:** all paths normalized via `Path.resolve()` and rejected
+    if they fall under a system-root prefix (`/etc`, `/System`, `/proc`,
+    `/Windows`, etc.). Not a security boundary — the user owns the
+    process — but prevents accidentally surfacing those locations in a
+    picker UI. All routes are auth-gated by the existing
+    `PasswordAuthMiddleware`.
+  - **Tests:** 33 new tests across `tests/test_filesystem_router.py`
+    and `tests/test_exports_router.py`. Folder + zip + single-note paths
+    each have happy-path + overwrite + 404 + 409 + 403 coverage. Full
+    suite: **465 pass, 0 fail.**
+- **v0.7.90 audit findings (during the build):**
+  - `api/routers/filesystem.py` deliberately exposes broad host-FS
+    access. This is appropriate for the desktop bundle (user owns the
+    machine) but **operators deploying the API publicly should ensure
+    `OPEN_NOTEBOOK_PASSWORD` is set to a strong value** — otherwise an
+    unauthenticated request can list arbitrary directories under the
+    API process's UID. Filed as a doc-update task; the README already
+    flags Docker compose as "set passwords + encryption key before
+    exposing" but the new filesystem endpoints make that warning more
+    pressing.
+
+
 
 - **v0.7.89** ✨ **Studio multi-page notebook output.** When the user uploads
   one or more documents via `/studio/generate` (mode `notebook` or `both`),
