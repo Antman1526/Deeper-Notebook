@@ -18,8 +18,41 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.117 (in flight)
+## Unreleased — v0.7.36 → v0.7.118 (in flight)
 
+- **v0.7.118** 🔒 **rel="noopener noreferrer" on external links in HTML
+  exports.** Follow-up to v0.7.117's XSS hardening.
+
+  HTML exports (`html_folder`, `html_zip`, `combined_html`) are
+  specifically designed to be shared — emailed, dropped into Drive,
+  printed to PDF. The rendered `<a href="https://...">` tags had no
+  `rel` attribute, which left two small but real risks for recipients:
+
+  1. **Tabnabbing** if the recipient's email client / browser opens
+     the export with `target="_blank"`-like behavior — the destination
+     site could manipulate `window.opener` and redirect the user's
+     browser back to a phishing page.
+  2. **Referer leak** when the export is opened locally (file://) and
+     the user clicks an external link — the browser would send a
+     `Referer: file:///Users/.../...` header to the destination,
+     exposing the recipient's local filesystem path.
+
+  Fix: Custom token renderer on markdown-it's `link_open` rule adds
+  `rel="noopener noreferrer"` to any link with `http://`, `https://`,
+  `mailto:`, or `ftp://` scheme. Internal anchors (`#section`) and
+  relative paths (`./other.md`) are left untouched.
+
+  Audit context — also verified clean in this pass:
+  - Frontend Setup Wizard middleware has explicit exempt prefixes
+    (`/setup-wizard`, `/login`, `/api`, `/_next`) so it can't
+    redirect-loop the wizard or block static assets.
+  - `Source.delete()` cascade fully cleans up: source_embedding,
+    source_insight, reference edges, in-flight commands cancelled,
+    uploaded file unlinked with UPLOADS_FOLDER containment check.
+  - `Note.delete()` cascades artifact + note_embedding (v0.7.76).
+
+  +1 test (external vs internal link rel attribute). Full suite:
+  528 pass (was 527).
 - **v0.7.117** 🔒 **XSS hardening + zip-symlink rejection** (two real
   security findings from another audit pass).
 
