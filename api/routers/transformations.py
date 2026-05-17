@@ -92,14 +92,37 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         if not model:
             raise HTTPException(status_code=404, detail="Model not found")
 
-        # Execute the transformation
-        result = await transformation_graph.ainvoke(
-            dict(  # type: ignore[arg-type]
-                input_text=execute_request.input_text,
-                transformation=transformation,
-            ),
-            config=dict(configurable={"model_id": execute_request.model_id}),
+        # v0.7.95 — wrap the LLM call in wait_for. Transformations are
+        # user-defined prompts of arbitrary length; a stuck local model
+        # would otherwise hang the request indefinitely. Default 180s
+        # matches the Studio per-page timeout (same class of LLM call);
+        # tunable via env for cloud users running heavy transformations.
+        import asyncio
+        import os
+
+        _xform_timeout = float(
+            os.environ.get("ONP_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
         )
+        try:
+            result = await asyncio.wait_for(
+                transformation_graph.ainvoke(
+                    dict(  # type: ignore[arg-type]
+                        input_text=execute_request.input_text,
+                        transformation=transformation,
+                    ),
+                    config=dict(configurable={"model_id": execute_request.model_id}),
+                ),
+                timeout=_xform_timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Transformation timed out after {_xform_timeout}s. "
+                    "The chat model may be loading or overloaded. Try again, "
+                    "or raise ONP_TRANSFORMATION_TIMEOUT_SEC."
+                ),
+            ) from exc
 
         # v0.7.75 — defensive access to `output`. The transformation graph
         # currently returns a TypedDict shape but the same generic chat

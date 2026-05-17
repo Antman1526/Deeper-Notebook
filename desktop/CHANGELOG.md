@@ -18,8 +18,27 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.94 (in flight)
+## Unreleased — v0.7.36 → v0.7.95 (in flight)
 
+- **v0.7.95** 🐛 **Timeouts on the two remaining unbounded LLM calls.**
+  Audit pass after v0.7.93 found two more endpoints where a stuck
+  local LLM could hang the request indefinitely (same class of bug,
+  scope was Studio-only before).
+
+  - **`POST /api/notes`** auto-title generation now wraps
+    `prompt_graph.ainvoke` in `asyncio.wait_for` (default 60s,
+    `ONP_NOTE_TITLE_TIMEOUT_SEC`). On timeout: graceful degradation
+    — falls back to the first line of the note's content as the
+    title rather than 500ing the create-note request. User still
+    gets their note.
+  - **`POST /api/transformations/execute`** wraps
+    `transformation_graph.ainvoke` (default 180s,
+    `ONP_TRANSFORMATION_TIMEOUT_SEC`). On timeout: returns 504
+    Gateway Timeout with the env-knob name in the detail.
+  - No new tests — existing transformation + notes tests don't mock
+    the graph (they go straight to the real graph which would be too
+    slow). The behavior is exercised by the same harness as v0.7.93
+    once the codebase grows graph-level integration tests.
 - **v0.7.94** ✨ **Notebook import endpoint** (reverse of v0.7.90 export).
   Folder, single .md, or .zip → new or existing Notebook. Closes the
   loop on the export feature for backup/restore + cross-machine
