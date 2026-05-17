@@ -28,12 +28,33 @@ class CommandService:
             # v0.7.55 — wrap blocking submit_command (sync SurrealDB WS
             # call) in asyncio.to_thread so it doesn't stall the event
             # loop. Same root cause as podcast_service.py.
-            cmd_id = await asyncio.to_thread(
-                submit_command,
-                module_name,  # This is actually the app name (e.g., "open_notebook")
-                command_name,  # Command name (e.g., "process_text")
-                command_args,  # Input data
+            # v0.7.115 — add a wait_for around the to_thread call.
+            # The blocking submit_command is normally <500ms, but if
+            # the SurrealDB pool is saturated or the WS handshake
+            # hangs, the request would otherwise wait indefinitely.
+            # 10s default is generous for a row-insert; tunable via
+            # ONP_SUBMIT_COMMAND_TIMEOUT_SEC.
+            import os
+            _submit_timeout = float(
+                os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                or 10
             )
+            try:
+                cmd_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command,
+                        module_name,  # actually the app name
+                        command_name,
+                        command_args,
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Command submission timed out after {_submit_timeout:.0f}s. "
+                    "The SurrealDB connection pool may be saturated. "
+                    "Raise ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                ) from exc
             # Convert RecordID to string if needed
             if not cmd_id:
                 raise ValueError("Failed to get cmd_id from submit_command")
