@@ -167,6 +167,20 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Podcast profile migration encountered errors: {e}")
         # Non-fatal: profiles can be migrated manually via UI
 
+    # v0.7.85 — one-shot legacy edge deduplicator. New duplicate edges are
+    # already impossible to create thanks to the v0.7.60 + v0.7.73
+    # idempotency fixes, but databases that ran older versions still
+    # carry orphan duplicates that inflate source_count/note_count and
+    # require multiple unlink clicks to actually remove a source. This
+    # runs once per startup, is idempotent (clean DB → no-op), and is
+    # non-fatal if it fails (we'll retry next boot).
+    try:
+        from open_notebook.database.dedup_edges import dedupe_legacy_edges
+
+        await dedupe_legacy_edges()
+    except Exception as e:
+        logger.warning(f"Edge deduplication encountered errors (non-fatal): {e}")
+
     # ONP v0.6.1 — Start Gmail digest scheduler background task.
     # The scheduler wakes every 5 minutes, checks GmailIntegration state, and
     # fires daily/weekly digests when due. Non-fatal if it fails to start —
