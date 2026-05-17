@@ -64,6 +64,27 @@ focused commit; each ships with regression tests.
   6 new tests: 3 for the XSS escaping, 2 for symlink rejection,
   1 unit test on the file-type discriminator. Full suite:
   527 pass (was 522).
+- **v0.7.117 (frontend)** ✨🎨 **First-launch Setup Wizard consuming
+  `/healthz/deep`.** Adds a `useDeepHealth` TanStack Query hook
+  (`refetchOnWindowFocus`, 30s stale, axios `validateStatus < 600`
+  so both 200 and 503 bodies are read) and a `/setup-wizard` route
+  that renders a traffic-light view of the v0.7.112 deep health
+  payload: ✅ for `ok: true`, ⚠️ for `missing`/`pending`,
+  ❌ otherwise. Per-subsystem "Fix this" buttons deep-link to
+  `/settings/models` (embedding + chat) or `/advanced` (command
+  registry); database + migrations show the raw error string
+  (no in-app fix). "Continue anyway" is disabled when overall
+  status is `not_ready` (DB / migrations down — nothing renders
+  past this gate) and sets a `wizard_completed` cookie +
+  localStorage on click. New `src/middleware.ts` redirects to
+  `/setup-wizard` on first launch when that cookie is absent.
+  The existing `SetupBanner` is extended to surface a
+  dismiss-for-the-session degraded banner pointing back at the
+  wizard (suppressed on the wizard route itself to avoid the
+  banner echoing the wizard's own card). All 14 new i18n leaf
+  keys added to every locale (10/10 parity preserved). 13 new
+  vitest tests (4 hook, 5 wizard, 4 banner); full frontend suite:
+  58 pass (was 45).
 - **v0.7.116** ✨🛠 **Per-provider connection-test timeouts + typing
   modernization + delete-cascade test + docs sync.** Four deferred
   improvements shipped together.
