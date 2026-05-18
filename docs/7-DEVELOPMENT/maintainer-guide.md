@@ -406,3 +406,106 @@ If you're unsure, it's perfectly fine to:
 ---
 
 **Remember**: Good maintainership is about balancing openness to contributions with protection of project vision. You're not being mean by saying "no" to things that don't fit - you're being a responsible steward of the project.
+
+---
+
+## Plus-Specific Hardening Reference (v0.7.88 → v0.7.118)
+
+This section is specific to the **open-notebook-Plus** desktop fork
+(not upstream). It surfaces the surface area added by the v0.7.88+
+hardening run so a new maintainer can answer "what knobs do I have
+when something breaks in prod?" without grepping the CHANGELOG.
+
+### Operational quick-reference
+
+| Symptom | Likely cause | Knob / fix |
+|---|---|---|
+| Studio request hangs forever | Local LLM stuck mid-eval | `ONP_STUDIO_PAGE_TIMEOUT_SEC` (default 180) |
+| Studio "outline" pass times out | Outline JSON model slow | `ONP_STUDIO_OUTLINE_TIMEOUT_SEC` (default 90) |
+| File-upload parse hangs | Pathological PDF / encrypted file | `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` (default 60) |
+| Non-streaming `/chat/execute` times out | Local chat model slow | `ONP_CHAT_TIMEOUT_SEC` (default 300) |
+| Memory recall slowing chat | Stuck embedder or DB pool | `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC`, `_QUERY_TIMEOUT_SEC` (5s each) |
+| `POST /notes` hangs on auto-title | Stuck title model | `ONP_NOTE_TITLE_TIMEOUT_SEC` (default 60) — falls back to first line |
+| `POST /transformations/execute` hangs | Stuck transformation graph | `ONP_TRANSFORMATION_TIMEOUT_SEC` (default 180) |
+| Settings UI "Test connection" hangs | Provider-specific slowness | `ONP_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>` (per-provider) |
+| `POST /credentials/{id}/discover` hangs | Provider list-models slow | `ONP_DISCOVER_MODELS_TIMEOUT_SEC` (default 30) |
+| `/search` hangs | DB pool saturated | `ONP_SEARCH_TIMEOUT_SEC` (default 60) |
+| Bulk vectorize floods worker | Notebook with too many sources | `ONP_BULK_VECTORIZE_MAX_SOURCES` (default 500) |
+| Async command submission hangs | Stuck SurrealDB pool | `ONP_SUBMIT_COMMAND_TIMEOUT_SEC` (default 10) |
+
+Full env-knob reference + per-provider connection-test defaults:
+[`docs/5-CONFIGURATION/onp-env-reference.md`](../5-CONFIGURATION/onp-env-reference.md).
+
+### Health-check endpoints
+
+| Endpoint | Auth | Use case |
+|---|---|---|
+| `GET /health` | exempt | Liveness (back-compat) |
+| `GET /livez` | exempt | Liveness — process is serving |
+| `GET /readyz` | exempt | Readiness — DB + migrations OK |
+| `GET /healthz/deep` | exempt | Per-subsystem probe (DB, migrations, embedding-model, chat-model, command-registry) — auto-consumed by the frontend Setup Wizard |
+
+`/healthz/deep` returns `healthy` / `degraded` / `not_ready`. Use it
+in monitoring dashboards: `degraded` is 200 (optional subsystems
+missing), `not_ready` is 503 (must-have subsystems failed).
+
+### Export / import endpoints (v0.7.90 → v0.7.111)
+
+Notebook export supports six formats and three layouts:
+- `folder` / `zip` — markdown
+- `html_folder` / `html_zip` — markdown rendered to HTML (XSS-hardened
+  per v0.7.117 + v0.7.118 — raw HTML escaped, external links carry
+  `rel="noopener noreferrer"`)
+- `combined_md` / `combined_html` — single file with all pages
+  concatenated (HTML variant has print CSS for browser-PDF export)
+
+Import accepts folder / `.zip` / single `.md` and is bounded by
+`_MAX_IMPORT_BYTES` (50 MB) / `_MAX_IMPORT_FILE_BYTES` (5 MB) /
+`_MAX_IMPORT_ENTRIES` (500). Zip entries are validated against
+path-traversal AND symlink/FIFO/device modes (v0.7.117).
+
+### `except HTTPException: raise` invariant (v0.7.109)
+
+Every router handler must re-raise `HTTPException` before its
+generic `except Exception` block. Without this, typed status codes
+(404, 400, 504, etc.) get silently rewrapped as 500. 89 guards were
+added in v0.7.109; check `api/routers/<router>.py` for the pattern
+when adding new handlers:
+
+```python
+try:
+    ...
+    raise HTTPException(404, "...")
+except HTTPException:
+    raise
+except Exception as e:
+    raise HTTPException(500, f"Internal error: {e}")
+```
+
+### Test suites
+
+| Suite | File pattern | Count | Runtime |
+|---|---|---:|---:|
+| Backend (pytest) | `tests/test_*.py` | **530+** | ~25 s |
+| Frontend (vitest) | `frontend/src/**/*.test.{ts,tsx}` | **58+** | ~30 s |
+| Desktop launcher | `desktop/tests/test_*.py` | **14** | ~7 s |
+
+Backend tests deliberately mock at the chain / domain boundary so
+no real SurrealDB or LLM is needed. Real-DB integration tests are
+intentionally deferred — they'd need a test-infra setup that's its
+own project.
+
+### Release checklist (Plus-specific)
+
+Before tagging a `v0.7.NN` release:
+
+1. `uv run pytest tests/ -q` — must pass
+2. `uv run ruff check api/ open_notebook/ commands/ desktop/ tests/` — clean
+3. `cd frontend && npx vitest run` — must pass (locale parity gate
+   in `src/lib/locales/index.test.ts` enforces 10-locale parity)
+4. `cd frontend && npx tsc --noEmit` — clean
+5. Update `desktop/CHANGELOG.md` "Unreleased" section
+6. `make build-mac-pyinstaller && make build-mac-dmg` — produces
+   `dist/Open Notebook Plus.dmg`
+7. Smoke-test: launch the .dmg, hit `http://localhost:5055/healthz/deep`,
+   verify `status: healthy` (or `degraded` with diagnostics)
