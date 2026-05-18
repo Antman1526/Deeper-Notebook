@@ -18,8 +18,70 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.119 (in flight)
+## Unreleased — v0.7.36 → v0.7.120 (in flight)
 
+- **v0.7.120** 🛠⚡🔒 **Cross-cutting middleware + slow-query log +
+  pre-commit.** One focused commit shipping five lightweight wins that
+  came out of the post-v0.7.119 audit. ~7 hours of work; high
+  signal-to-noise.
+
+  **1. Request-ID correlation** (`api/middleware/request_id.py`):
+  Every request gets a UUID4 (or accepts an inbound `X-Request-ID`
+  from upstream proxies, capped at 128 chars). The id is set as the
+  response `X-Request-ID` header AND bound into loguru's context via
+  `logger.contextualize(request_id=...)`. The log format
+  (`open_notebook/logging.py`) gained a `req=<id>` column, so every
+  log line during a request flow carries the same id. Operators can
+  `grep <id>` to follow a single request across files. Helper
+  `current_request_id()` lets handler code surface the id in error
+  responses or slow-query warnings.
+
+  **2. GZip middleware**: FastAPI's built-in
+  `GZipMiddleware(minimum_size=1000)`. Bodies ≥ 1 KB get compressed
+  when `Accept-Encoding: gzip` is set (every modern browser + httpx
+  client). Free perf win on notebook lists, search results, the
+  `/healthz/deep` body, OpenAPI spec.
+
+  **3. Security headers middleware**
+  (`api/middleware/security_headers.py`): Defense-in-depth baseline
+  on every API response: `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, and a strict `Content-Security-
+  Policy` (`default-src 'none'; script-src 'self'; …`) — skipped on
+  `/docs`, `/redoc`, `/openapi.json` because Swagger UI pulls CDN
+  resources. Uses set-if-absent semantics so handlers that build
+  their own JSONResponse with explicit headers aren't clobbered.
+
+  **4. Slow-query log threshold** (`repo_query` in
+  `open_notebook/database/repository.py`): Times every SurrealQL
+  query; logs a WARNING when elapsed exceeds
+  `ONP_SLOW_QUERY_LOG_MS` (default 500ms). Logs the elapsed time,
+  threshold, and a 300-char truncation of the query. The `finally:`
+  ensures slow queries that ALSO errored still log — timing info is
+  doubly useful when something's broken. Combined with v0.7.114's
+  silent memory-recall fall-through, this surfaces which queries are
+  actually slow without polluting normal logs.
+
+  **5. Pre-commit hooks** (`.pre-commit-config.yaml`): ruff check +
+  ruff format on staged Python files; check-yaml + check-json +
+  check-toml + end-of-file-fixer + trailing-whitespace +
+  check-merge-conflict + 1 MB file-size cap. Pytest deliberately
+  NOT in the gate (too slow); CI runs it. One-time setup: `uv run
+  pre-commit install`.
+
+  **Middleware order** (Starlette wraps in reverse of registration):
+  CORS (outermost) → RequestID → SecurityHeaders → GZip →
+  PasswordAuth (innermost) → handler. Documented inline in
+  `api/main.py`.
+
+  **Tests**: 14 new in `tests/test_middleware_v0_7_120.py` —
+  5 RequestID (inbound + cap + contextvar + outside-scope fallback),
+  4 SecurityHeaders (baseline + CSP on/off docs + idempotent
+  handler-overrides), 2 GZip (compress / skip), 3 slow-query
+  (warning / silent / error-still-logs).
+
+  Backend suite: **548 pass** (was 534, +14). Ruff clean. New env
+  knob `ONP_SLOW_QUERY_LOG_MS` (default 500).
 - **v0.7.119** ✅ **Wrap-up: regression-test gaps + maintainer docs +
   frontend polish.** Closes the testing + docs gaps left open after
   the v0.7.88 → v0.7.118 hardening run.

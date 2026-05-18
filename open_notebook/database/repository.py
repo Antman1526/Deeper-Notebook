@@ -341,21 +341,52 @@ async def db_connection():
 async def repo_query(
     query_str: str, vars: Optional[dict[str, Any]] = None
 ) -> list[dict[str, Any]]:
-    """Execute a SurrealQL query and return the results"""
+    """Execute a SurrealQL query and return the results.
 
-    async with db_connection() as connection:
-        try:
-            result = parse_record_ids(await connection.query(query_str, vars))
-            if isinstance(result, str):
-                raise RuntimeError(result)
-            return result
-        except RuntimeError as e:
-            # RuntimeError is raised for retriable transaction conflicts - log at debug to avoid noise
-            logger.debug(str(e))
-            raise
-        except Exception as e:
-            logger.exception(e)
-            raise
+    v0.7.120 — Slow-query observability. Times every query; logs a
+    WARNING when the elapsed wall time exceeds
+    ONP_SLOW_QUERY_LOG_MS (default 500ms). Without this, the v0.7.114
+    memory-recall timeouts that just return `[]` silently are
+    invisible — operators can't tell which query is timing out vs
+    which is fast-but-frequently-empty. Truncates the logged query to
+    300 chars so a multi-page UNION doesn't blow up the log line.
+    """
+    import os
+    import time
+
+    _slow_threshold_ms = float(
+        os.environ.get("ONP_SLOW_QUERY_LOG_MS", "500").strip() or 500
+    )
+    start = time.monotonic()
+    try:
+        async with db_connection() as connection:
+            try:
+                result = parse_record_ids(
+                    await connection.query(query_str, vars)
+                )
+                if isinstance(result, str):
+                    raise RuntimeError(result)
+                return result
+            except RuntimeError as e:
+                # RuntimeError is raised for retriable transaction conflicts
+                # — log at debug to avoid noise.
+                logger.debug(str(e))
+                raise
+            except Exception as e:
+                logger.exception(e)
+                raise
+    finally:
+        # Always log slow queries, even when the query failed — a slow
+        # query that ALSO errored is doubly worth surfacing.
+        elapsed_ms = (time.monotonic() - start) * 1000
+        if elapsed_ms > _slow_threshold_ms:
+            # The request_id from loguru's contextvar (set by
+            # RequestIDMiddleware in v0.7.120) is already injected via
+            # the format string — no need to thread it explicitly here.
+            logger.warning(
+                "slow query: {:.0f}ms (threshold {:.0f}ms) — {!r}",
+                elapsed_ms, _slow_threshold_ms, query_str[:300],
+            )
 
 
 async def repo_create(table: str, data: dict[str, Any]) -> dict[str, Any]:
