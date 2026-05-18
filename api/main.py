@@ -9,11 +9,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.auth import PasswordAuthMiddleware
+
+# v0.7.120 — cross-cutting middlewares split into api/middleware/.
+from api.middleware.request_id import RequestIDMiddleware
+from api.middleware.security_headers import SecurityHeadersMiddleware
 from api.routers import (
     auth,
     chat,
@@ -303,8 +308,26 @@ if CORS_IS_DEFAULT_WILDCARD:
 else:
     logger.info(f"CORS allowed origins: {CORS_ALLOWED_ORIGINS}")
 
-# Add password authentication middleware first
-# Exclude /api/auth/status and /api/config from authentication
+# Middleware order matters — Starlette wraps in REVERSE order of registration.
+# The OUTERMOST middleware (first to see request, last to see response) is
+# the one added LAST. So the call chain on a request looks like:
+#
+#   request → CORS → RequestID → SecurityHeaders → GZip → PasswordAuth → handler
+#                                                                              ↓
+#   response ← CORS ← RequestID ← SecurityHeaders ← GZip ← PasswordAuth ← handler
+#
+# Rationale:
+#  - PasswordAuth FIRST registered → innermost → only authenticated requests
+#    flow through the rest. Saves CPU on unauthed traffic.
+#  - GZip wraps PasswordAuth so 401 / 403 bodies also compress.
+#  - SecurityHeaders wraps GZip so headers land on every response including
+#    GZip's pre-encoded ones.
+#  - RequestID wraps SecurityHeaders so every log line + the
+#    `X-Request-ID` response header carries the same id even when an
+#    auth failure short-circuits early.
+#  - CORS is registered LAST → outermost → processes preflight OPTIONS
+#    requests before they hit PasswordAuth (which would 401 them).
+
 app.add_middleware(
     PasswordAuthMiddleware,
     excluded_paths=[
@@ -321,7 +344,24 @@ app.add_middleware(
     ],
 )
 
-# Add CORS middleware last (so it processes first)
+# v0.7.120 — gzip compression. Bodies ≥ 1000 bytes get compressed when
+# the client sends `Accept-Encoding: gzip` (every modern browser + httpx
+# does). Smaller bodies skip compression — the overhead exceeds the
+# savings for short payloads.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# v0.7.120 — defense-in-depth security headers. X-Content-Type-Options,
+# X-Frame-Options, Referrer-Policy, CSP (skipped on /docs paths).
+app.add_middleware(SecurityHeadersMiddleware)
+
+# v0.7.120 — request-ID correlation. Generates (or accepts) a UUID4
+# per request, binds it into loguru context, surfaces as
+# X-Request-ID response header. Lets operators grep a single request
+# across the codebase's log files.
+app.add_middleware(RequestIDMiddleware)
+
+# CORS is OUTERMOST so it sees preflight OPTIONS before any other
+# middleware short-circuits them.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOWED_ORIGINS,
