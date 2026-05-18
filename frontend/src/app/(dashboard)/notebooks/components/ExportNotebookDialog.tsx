@@ -94,6 +94,26 @@ const ALL_COMPRESSIONS: ExportCompression[] = [
   'lzma',
 ]
 
+// v0.7.119 — Explicit literal map so the locale-parity / unused-key test
+// (lib/locales/index.test.ts) can detect each key in the source corpus.
+// A dynamic `t(\`notebooks.exportFormat.${fmt}\`)` would leave the keys
+// orphaned and trip the "unused key" detection.
+const FORMAT_LABEL_KEYS: Record<ExportFormat, string> = {
+  folder: 'notebooks.exportFormat.folder',
+  zip: 'notebooks.exportFormat.zip',
+  html_folder: 'notebooks.export.format.html_folder',
+  html_zip: 'notebooks.export.format.html_zip',
+  combined_md: 'notebooks.export.format.combined_md',
+  combined_html: 'notebooks.export.format.combined_html',
+}
+
+const COMPRESSION_LABEL_KEYS: Record<ExportCompression, string> = {
+  deflated: 'notebooks.export.compression.deflated',
+  stored: 'notebooks.export.compression.stored',
+  bzip2: 'notebooks.export.compression.bzip2',
+  lzma: 'notebooks.export.compression.lzma',
+}
+
 // v0.7.119 — Which formats accept include_sources? combined_html flat-out
 // ignores it on the backend (single HTML doc doesn't carry binary sources);
 // everything else passes through.
@@ -212,7 +232,7 @@ export function ExportNotebookDialog({
                 <SelectContent>
                   {ALL_FORMATS.map((fmt) => (
                     <SelectItem key={fmt} value={fmt}>
-                      {t(`notebooks.exportFormat.${fmt}`)}
+                      {t(FORMAT_LABEL_KEYS[fmt])}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -267,7 +287,7 @@ export function ExportNotebookDialog({
             {showCompression && (
               <div className="space-y-2">
                 <Label htmlFor="export-compression-select">
-                  {t('notebooks.exportCompressionLabel')}
+                  {t('notebooks.export.compressionLabel')}
                 </Label>
                 <Select
                   value={compression}
@@ -279,14 +299,14 @@ export function ExportNotebookDialog({
                   <SelectTrigger
                     id="export-compression-select"
                     className="w-full"
-                    aria-label={t('notebooks.exportCompressionLabel')}
+                    aria-label={t('notebooks.export.compressionLabel')}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_COMPRESSIONS.map((c) => (
                       <SelectItem key={c} value={c}>
-                        {t(`notebooks.export.compression.${c}`)}
+                        {t(COMPRESSION_LABEL_KEYS[c])}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -321,7 +341,7 @@ export function ExportNotebookDialog({
                   {t('notebooks.exporting')}
                 </>
               ) : (
-                t('notebooks.export')
+                t('notebooks.export.button')
               )}
             </Button>
           </DialogFooter>

@@ -24,8 +24,9 @@ vi.mock('@/lib/hooks/use-deep-health', () => ({
 }))
 
 const pushMock = vi.fn()
+const replaceMock = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushMock, replace: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock, prefetch: vi.fn() }),
   usePathname: () => '/setup-wizard',
 }))
 
@@ -87,6 +88,7 @@ describe('SetupWizardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pushMock.mockClear()
+    replaceMock.mockClear()
     if (typeof window !== 'undefined') {
       window.localStorage.clear()
       document.cookie = `${WIZARD_COMPLETED_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
@@ -151,5 +153,30 @@ describe('SetupWizardPage', () => {
     expect(window.localStorage.getItem(WIZARD_COMPLETED_KEY)).toBe('1')
     expect(document.cookie).toContain(`${WIZARD_COMPLETED_KEY}=1`)
     expect(pushMock).toHaveBeenCalledWith('/')
+  })
+
+  // v0.7.119 — When the first deep-health response comes back healthy,
+  // the wizard self-dismisses via router.replace('/') and sets the
+  // wizard-completed cookie / localStorage flag so middleware stops
+  // redirecting on subsequent loads.
+  it('auto-advances to / when status is healthy', async () => {
+    mockDeepHealth(HEALTHY)
+    render(<SetupWizardPage />)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(replaceMock).toHaveBeenCalledWith('/')
+    expect(window.localStorage.getItem(WIZARD_COMPLETED_KEY)).toBe('1')
+    expect(document.cookie).toContain(`${WIZARD_COMPLETED_KEY}=1`)
+  })
+
+  it('does not auto-advance when status is degraded or not_ready', async () => {
+    mockDeepHealth(DEGRADED)
+    render(<SetupWizardPage />)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(replaceMock).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(WIZARD_COMPLETED_KEY)).toBeNull()
   })
 })

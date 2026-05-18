@@ -1,3 +1,7 @@
+// v0.7.119 — Refreshed to cover the expanded export dialog:
+//   • the new format Select (now offers 6 values) renders + submits
+//   • include_sources moved to the `notebooks.export.includeSources` key
+//   • the compression Select only appears for zip / html_zip formats
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ExportNotebookDialog } from './ExportNotebookDialog'
@@ -54,13 +58,16 @@ describe('ExportNotebookDialog', () => {
     vi.mocked(useFsHome).mockReturnValue(makeHomeMock())
   })
 
-  it('renders title and format options', () => {
+  it('renders title and the combined-format Select trigger', () => {
     vi.mocked(useExportNotebook).mockReturnValue(makeExportMock())
     render(<ExportNotebookDialog {...baseProps} />)
 
     expect(screen.getByText('notebooks.exportNotebook')).toBeInTheDocument()
+    // Trigger displays the default selected format label.
+    expect(
+      screen.getByLabelText('notebooks.exportFormatLabel'),
+    ).toBeInTheDocument()
     expect(screen.getByText('notebooks.exportFormat.folder')).toBeInTheDocument()
-    expect(screen.getByText('notebooks.exportFormat.zip')).toBeInTheDocument()
   })
 
   it('seeds destination from default_exports + slugified notebook name', async () => {
@@ -83,9 +90,11 @@ describe('ExportNotebookDialog', () => {
       expect(input.value).toContain('my-research-notes')
     })
 
-    fireEvent.click(screen.getByLabelText('notebooks.exportIncludeSources'))
+    // v0.7.119 — include_sources moved to the new `notebooks.export.includeSources`
+    // label. The folder format keeps the checkbox visible.
+    fireEvent.click(screen.getByLabelText('notebooks.export.includeSources'))
     fireEvent.click(screen.getByLabelText('notebooks.exportOverwrite'))
-    fireEvent.click(screen.getByText('notebooks.export'))
+    fireEvent.click(screen.getByText('notebooks.export.button'))
 
     await waitFor(() => {
       expect(exportMock.mutateAsync).toHaveBeenCalledWith({
@@ -97,6 +106,26 @@ describe('ExportNotebookDialog', () => {
         }),
       })
     })
+    // Folder format → no compression in the body.
+    const mockFn = exportMock.mutateAsync as unknown as ReturnType<typeof vi.fn>
+    const call = mockFn.mock.calls[0]?.[0] as
+      | { data: Record<string, unknown> }
+      | undefined
+    expect(call?.data).not.toHaveProperty('compression')
+  })
+
+  it('hides the compression row for non-zip formats (combined_md default-render)', () => {
+    vi.mocked(useExportNotebook).mockReturnValue(makeExportMock())
+    render(<ExportNotebookDialog {...baseProps} />)
+
+    // Default format is 'folder' — compression label must NOT be visible.
+    expect(
+      screen.queryByText('notebooks.export.compressionLabel'),
+    ).not.toBeInTheDocument()
+    // includeSources still renders for non-combined_html formats.
+    expect(
+      screen.getByLabelText('notebooks.export.includeSources'),
+    ).toBeInTheDocument()
   })
 
   it('disables submit while the export is in flight', () => {
@@ -119,7 +148,7 @@ describe('ExportNotebookDialog', () => {
       expect(input.value).toContain('my-research-notes')
     })
 
-    fireEvent.click(screen.getByText('notebooks.export'))
+    fireEvent.click(screen.getByText('notebooks.export.button'))
 
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false)
