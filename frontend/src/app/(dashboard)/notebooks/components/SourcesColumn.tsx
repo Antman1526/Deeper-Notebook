@@ -33,6 +33,9 @@ import { ContextMode } from '../[id]/page'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.119 — Bulk-vectorize button surfaces the per-notebook
+// vectorize_sources endpoint next to the existing "+" trigger.
+import { BulkVectorizeButton } from './BulkVectorizeButton'
 
 interface SourcesColumnProps {
   sources?: SourceListResponse[]
@@ -166,6 +169,7 @@ export function SourcesColumn({
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
               <div className="flex items-center gap-2">
+                <BulkVectorizeButton notebookId={notebookId} />
                 <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm">

@@ -50,15 +50,52 @@ focused commit; each ships with regression tests.
     `except HTTPException: raise` invariant explained, release
     checklist, test-suite catalog.
 
-  **Frontend** (spawned to a separate task, will land as v0.7.119
-  frontend commit): adds combined-format + include_sources +
-  compression to the Export dialog, new Import Preview dialog
-  consuming `POST /api/notebooks/import/preview`, Bulk Vectorize
-  button in the Sources column, Setup Wizard auto-advance when
-  `/healthz/deep` returns healthy.
+  **Frontend** (landed as the v0.7.119 frontend commit):
+
+  - **Export dialog**: format selector now exposes all six backend
+    formats (`folder` / `zip` / `html_folder` / `html_zip` /
+    `combined_md` / `combined_html`). New `include_sources` checkbox
+    (gated to formats that honour it) and `compression` Select
+    (gated to zip variants). Existing `overwrite` retained. Submit
+    body now only sends `compression` for zip formats and skips
+    `include_sources` for `combined_html` (backend ignores it
+    there anyway).
+  - **Import dialog** (`ImportNotebookDialog.tsx`, new): dry-run
+    preview flow consuming `POST /notebooks/import/preview` then
+    `POST /notebooks/import`. Surfaces detected kind badge,
+    editable notebook name / description (prefilled from manifest
+    hints), notes + sources lists with overview flag (📋), backend
+    warnings as a yellow Alert, and new-vs-existing mode selector.
+    On success, navigates to the new/target notebook.
+  - **Import entry point**: new "Import" button in the notebooks
+    list page header, next to "New Notebook".
+  - **Bulk vectorize** (`BulkVectorizeButton.tsx`, new): button in
+    the Sources column header opens a confirm dialog with the
+    `only_missing` checkbox (default true) and POSTs to
+    `/notebooks/{id}/vectorize_sources`. Toast surfaces the
+    `queued / skipped` tally plus any `warnings[]`.
+  - **Setup Wizard auto-advance**: when the first `/healthz/deep`
+    response comes back `healthy`, the wizard self-dismisses via
+    `router.replace('/')` and sets the wizard-completed cookie +
+    localStorage flag. Guarded by a `useRef` so the auto-advance
+    only fires once per mount (manual back-navigation won't loop).
+  - **DirectoryPicker**: gained a `selectionMode='any'` mode used
+    by the Import dialog — single-clicking a file (.zip / .md)
+    selects it; folders still navigate as before.
+  - **i18n**: ~37 new keys added to all 10 locales
+    (`notebooks.export.format.*`, `notebooks.export.compression.*`,
+    `notebooks.export.includeSources`, `notebooks.import.*`,
+    `notebooks.bulkVectorize.*`). The flat `notebooks.export`
+    button-label string was promoted to `notebooks.export.button`
+    so the new nested namespace can coexist; callsites updated.
+    Locale-parity + unused-key tests pass.
 
   Test counts (post v0.7.119 backend): 528 → **534** (+6).
-  Frontend: pending the spawned task.
+  Frontend tests: 57 → **65** (+8: 1 in `ExportNotebookDialog`
+  expansion, 2 in `ImportNotebookDialog`, 2 in
+  `BulkVectorizeButton`, 2 wizard auto-advance, plus refresh of
+  existing export-dialog assertions). `npx tsc --noEmit` clean,
+  `npm run lint` clean on touched files.
 
   **Deferred (truly):**
   - Real-SurrealDB integration test for delete cascade — needs

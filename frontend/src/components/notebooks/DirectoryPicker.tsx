@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ChevronLeft, Folder, FolderPlus, Home } from 'lucide-react'
+import { ChevronLeft, File, Folder, FolderPlus, Home } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useFsHome, useFsList, useFsMkdir } from '@/lib/hooks/use-fs'
 import { useToast } from '@/lib/hooks/use-toast'
@@ -33,8 +33,12 @@ interface DirectoryPickerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPath?: string
-  /** Returns the user-confirmed directory path. */
+  /** Returns the user-confirmed directory or file path. */
   onSelect: (path: string) => void
+  // v0.7.119 — When 'any', also list files in the entries pane and
+  // let the user pick a file (used by Import for .zip / .md targets).
+  // Default 'dir' preserves the original export-flow behavior.
+  selectionMode?: 'dir' | 'any'
 }
 
 export function DirectoryPicker({
@@ -42,6 +46,7 @@ export function DirectoryPicker({
   onOpenChange,
   initialPath,
   onSelect,
+  selectionMode = 'dir',
 }: DirectoryPickerProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -78,7 +83,7 @@ export function DirectoryPicker({
   }, [open, initialPath])
 
   const listQuery = useFsList(currentPath, {
-    only: 'dirs',
+    only: selectionMode === 'any' ? 'all' : 'dirs',
     enabled: open,
   })
 
@@ -232,18 +237,37 @@ export function DirectoryPicker({
                         )}
                       </p>
                     )}
-                    {listQuery.data.entries.map((entry) => (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        onDoubleClick={() => navigate(entry.path)}
-                        onClick={() => navigate(entry.path)}
-                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent flex items-center gap-2"
-                      >
-                        <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">{entry.name}</span>
-                      </button>
-                    ))}
+                    {listQuery.data.entries.map((entry) => {
+                      // v0.7.119 — In 'any' selectionMode, single-clicking
+                      // a file picks it (no nested navigation possible).
+                      // Folders still navigate as before.
+                      const isFile = !entry.is_dir
+                      const handleSelectFile = () => {
+                        if (!isFile) return
+                        onSelect(entry.path)
+                        onOpenChange(false)
+                      }
+                      return (
+                        <button
+                          key={entry.path}
+                          type="button"
+                          onDoubleClick={() =>
+                            entry.is_dir ? navigate(entry.path) : handleSelectFile()
+                          }
+                          onClick={() =>
+                            entry.is_dir ? navigate(entry.path) : handleSelectFile()
+                          }
+                          className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent flex items-center gap-2"
+                        >
+                          {entry.is_dir ? (
+                            <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : (
+                            <File className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                          <span className="truncate">{entry.name}</span>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </ScrollArea>
