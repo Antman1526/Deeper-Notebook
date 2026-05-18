@@ -34,6 +34,27 @@ _DEFAULT_LEVEL = "INFO"
 # available. (zstd would need a different rotation/compression mechanism.)
 _DEFAULT_COMPRESSION = "gz"
 
+# v0.7.120 — Custom log format with request_id column for correlation.
+# The RequestIDMiddleware (api/middleware/request_id.py) calls
+# `logger.contextualize(request_id=...)` to set `extra[request_id]`
+# for the duration of each HTTP request. Code paths outside a request
+# (startup, workers, scheduled tasks) emit with the process-wide
+# default `"-"` set via `logger.configure(extra=...)` below.
+#
+# Format renders as:
+#   2026-05-17 23:01:00.123 | INFO     | req=abc12345 | api.routers.studio:foo:42 - message
+#
+# The `:<8` width keeps columns aligned even when no request is in flight.
+_LOG_FORMAT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <8}</level> | "
+    "<yellow>req={extra[request_id]:<8}</yellow> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+    "<level>{message}</level>"
+)
+# The file sink doesn't render ANSI color tags, but loguru strips them
+# automatically when writing to a non-TTY sink.
+
 
 def default_log_dir() -> Path:
     """Resolve the log directory. Honors ONP_LOG_DIR if set, else uses
@@ -116,10 +137,19 @@ def configure_logging(
     # when uvicorn reloads or when tests configure logging repeatedly.
     logger.remove()
 
+    # v0.7.120 — Process-wide default for the request_id extra field.
+    # Without this, any log call outside a RequestIDMiddleware-wrapped
+    # request (startup, workers, scheduled tasks, tests) would raise
+    # KeyError when the format string tries to substitute
+    # extra[request_id]. The default "-" makes those lines self-evident
+    # as "not in a request context".
+    logger.configure(extra={"request_id": "-"})
+
     if keep_stderr:
         logger.add(
             sys.stderr,
             level=level,
+            format=_LOG_FORMAT,    # v0.7.120 — request_id column
             backtrace=False,
             diagnose=False,  # avoid leaking local variables in tracebacks
         )
@@ -129,6 +159,7 @@ def configure_logging(
     logger.add(
         text_path,
         level=level,
+        format=_LOG_FORMAT,        # v0.7.120 — request_id column
         rotation=rotation,
         retention=retention,
         compression=compression,
@@ -143,6 +174,9 @@ def configure_logging(
         logger.add(
             json_path,
             level=level,
+            # JSON sink uses serialize=True which produces a structured
+            # JSON object including the extra dict — no format string
+            # needed (request_id lands in the JSON automatically).
             rotation=rotation,
             retention=retention,
             compression=compression,
