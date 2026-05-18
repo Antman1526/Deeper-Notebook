@@ -2,6 +2,11 @@
 // destination path, whether to include source documents, and whether
 // to overwrite. Defaults destination to
 // `{default_exports}/{notebook-slug}` or `.zip` based on format.
+//
+// v0.7.119 — Expanded to surface all six backend formats
+// (folder / zip / html_folder / html_zip / combined_md / combined_html),
+// the zip compression knob, and tightened the include_sources / overwrite
+// visibility to only the formats where they're meaningful.
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -17,14 +22,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { FolderOpen } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useExportNotebook } from '@/lib/hooks/use-export'
 import { useFsHome } from '@/lib/hooks/use-fs'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { DirectoryPicker } from '@/components/notebooks/DirectoryPicker'
-import { ExportFormat } from '@/lib/types/api'
+import { ExportCompression, ExportFormat } from '@/lib/types/api'
 
 interface ExportNotebookDialogProps {
   open: boolean
@@ -46,6 +57,54 @@ function joinPath(dir: string, leaf: string): string {
   return `${dir.replace(/\/+$/, '')}/${leaf}`
 }
 
+// v0.7.119 — Match the destination shape to the chosen format:
+//   folder / html_folder       → directory
+//   zip / html_zip             → .zip file
+//   combined_md                → .md file
+//   combined_html              → .html file
+function leafFor(format: ExportFormat, slug: string): string {
+  switch (format) {
+    case 'zip':
+    case 'html_zip':
+      return `${slug}.zip`
+    case 'combined_md':
+      return `${slug}.md`
+    case 'combined_html':
+      return `${slug}.html`
+    case 'folder':
+    case 'html_folder':
+    default:
+      return slug
+  }
+}
+
+const ALL_FORMATS: ExportFormat[] = [
+  'folder',
+  'zip',
+  'html_folder',
+  'html_zip',
+  'combined_md',
+  'combined_html',
+]
+
+const ALL_COMPRESSIONS: ExportCompression[] = [
+  'deflated',
+  'stored',
+  'bzip2',
+  'lzma',
+]
+
+// v0.7.119 — Which formats accept include_sources? combined_html flat-out
+// ignores it on the backend (single HTML doc doesn't carry binary sources);
+// everything else passes through.
+function supportsIncludeSources(format: ExportFormat): boolean {
+  return format !== 'combined_html'
+}
+
+function isZipFormat(format: ExportFormat): boolean {
+  return format === 'zip' || format === 'html_zip'
+}
+
 export function ExportNotebookDialog({
   open,
   onOpenChange,
@@ -61,6 +120,7 @@ export function ExportNotebookDialog({
   const [destinationTouched, setDestinationTouched] = useState(false)
   const [includeSources, setIncludeSources] = useState(false)
   const [overwrite, setOverwrite] = useState(false)
+  const [compression, setCompression] = useState<ExportCompression>('deflated')
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const slug = useMemo(() => slugify(notebookName), [notebookName])
@@ -72,8 +132,7 @@ export function ExportNotebookDialog({
     if (destinationTouched) return
     if (!homeQuery.data) return
     const base = homeQuery.data.default_exports
-    const leaf = format === 'zip' ? `${slug}.zip` : slug
-    setDestination(joinPath(base, leaf))
+    setDestination(joinPath(base, leafFor(format, slug)))
   }, [open, destinationTouched, homeQuery.data, format, slug])
 
   // Reset state when dialog closes.
@@ -83,13 +142,13 @@ export function ExportNotebookDialog({
       setDestinationTouched(false)
       setIncludeSources(false)
       setOverwrite(false)
+      setCompression('deflated')
       setPickerOpen(false)
     }
   }, [open])
 
   const handlePickerSelect = (path: string) => {
-    const leaf = format === 'zip' ? `${slug}.zip` : slug
-    setDestination(joinPath(path, leaf))
+    setDestination(joinPath(path, leafFor(format, slug)))
     setDestinationTouched(true)
   }
 
@@ -101,8 +160,15 @@ export function ExportNotebookDialog({
         data: {
           destination: destination.trim(),
           format,
-          include_sources: includeSources,
+          // v0.7.119 — only send include_sources when the format honors
+          // it; otherwise the backend silently ignores it but we'd
+          // rather not lie in the request body.
+          include_sources: supportsIncludeSources(format)
+            ? includeSources
+            : false,
           overwrite,
+          // Only send compression when the destination is a zip.
+          ...(isZipFormat(format) ? { compression } : {}),
         },
       })
       onOpenChange(false)
@@ -112,6 +178,8 @@ export function ExportNotebookDialog({
   }
 
   const isPending = exportNotebook.isPending
+  const showIncludeSources = supportsIncludeSources(format)
+  const showCompression = isZipFormat(format)
 
   return (
     <>
@@ -126,25 +194,29 @@ export function ExportNotebookDialog({
 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>{t('notebooks.exportFormatLabel')}</Label>
-              <RadioGroup
+              <Label htmlFor="export-format-select">
+                {t('notebooks.exportFormatLabel')}
+              </Label>
+              <Select
                 value={format}
                 onValueChange={(value) => setFormat(value as ExportFormat)}
                 disabled={isPending}
               >
-                <div className="flex items-center space-x-3">
-                  <RadioGroupItem value="folder" id="export-fmt-folder" />
-                  <Label htmlFor="export-fmt-folder" className="text-sm cursor-pointer">
-                    {t('notebooks.exportFormat.folder')}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <RadioGroupItem value="zip" id="export-fmt-zip" />
-                  <Label htmlFor="export-fmt-zip" className="text-sm cursor-pointer">
-                    {t('notebooks.exportFormat.zip')}
-                  </Label>
-                </div>
-              </RadioGroup>
+                <SelectTrigger
+                  id="export-format-select"
+                  className="w-full"
+                  aria-label={t('notebooks.exportFormatLabel')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_FORMATS.map((fmt) => (
+                    <SelectItem key={fmt} value={fmt}>
+                      {t(`notebooks.exportFormat.${fmt}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -175,20 +247,52 @@ export function ExportNotebookDialog({
               </div>
             </div>
 
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="export-include-sources"
-                checked={includeSources}
-                onCheckedChange={(v) => setIncludeSources(v === true)}
-                disabled={isPending}
-              />
-              <Label
-                htmlFor="export-include-sources"
-                className="text-sm leading-tight cursor-pointer"
-              >
-                {t('notebooks.exportIncludeSources')}
-              </Label>
-            </div>
+            {showIncludeSources && (
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="export-include-sources"
+                  checked={includeSources}
+                  onCheckedChange={(v) => setIncludeSources(v === true)}
+                  disabled={isPending}
+                />
+                <Label
+                  htmlFor="export-include-sources"
+                  className="text-sm leading-tight cursor-pointer"
+                >
+                  {t('notebooks.export.includeSources')}
+                </Label>
+              </div>
+            )}
+
+            {showCompression && (
+              <div className="space-y-2">
+                <Label htmlFor="export-compression-select">
+                  {t('notebooks.exportCompressionLabel')}
+                </Label>
+                <Select
+                  value={compression}
+                  onValueChange={(value) =>
+                    setCompression(value as ExportCompression)
+                  }
+                  disabled={isPending}
+                >
+                  <SelectTrigger
+                    id="export-compression-select"
+                    className="w-full"
+                    aria-label={t('notebooks.exportCompressionLabel')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_COMPRESSIONS.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {t(`notebooks.export.compression.${c}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex items-start gap-3">
               <Checkbox
