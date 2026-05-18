@@ -1,6 +1,6 @@
 # Open Notebook Plus
 
-A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, end-to-end source ingestion + chat + podcast generation, and ~50 production-hardening fixes on top of upstream.
+A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, end-to-end source ingestion + chat + podcast generation, and **70+ production-hardening fixes** on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.11+ / 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
@@ -21,7 +21,7 @@ Upload PDFs, audio, video, web pages, or text. Take notes. Chat with AI grounded
 - **Bundled SurrealDB + Node.js runtime** — single .app, no separate installs.
 - **Local-model-first** — bundled `llama-cpp-python` + Ollama auto-detect. Cloud APIs are opt-in.
 - **Closed-loop memory** — per-turn facts written to mem0/SurrealDB, recalled in the system prompt of every future chat. Auto-switches between recency and semantic search at ~30 rows.
-- **Production hardening (v0.7.49 → v0.7.87)** — 50+ fixes across streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation, local-LLM resilience.
+- **Production hardening (v0.7.49 → v0.7.119)** — 70+ fixes across streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation, local-LLM resilience, **end-to-end timeout coverage** on every async LLM/embed/DB call, **XSS hardening** in HTML exports, **`/healthz/deep`** per-subsystem probe.
 
 ## Three-tier architecture
 
@@ -270,8 +270,8 @@ See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) for the full per-version log.
 
 | Suite | Count | Runtime |
 |---|---:|---:|
-| Backend (pytest) | **517** | ~22 s |
-| Frontend (vitest) | **45** | ~26 s |
+| Backend (pytest) | **534** | ~25 s |
+| Frontend (vitest) | **58** | ~30 s |
 | Desktop launcher | **14** | ~7 s |
 
 All pass at HEAD. ruff is clean across `api/`, `open_notebook/`, `commands/`, `desktop/`, `tests/`.
