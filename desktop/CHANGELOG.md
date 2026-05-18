@@ -18,7 +18,59 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.118 (in flight)
+## Unreleased — v0.7.36 → v0.7.119 (in flight)
+
+- **v0.7.119** ✅ **Wrap-up: regression-test gaps + maintainer docs +
+  frontend polish.** Closes the testing + docs gaps left open after
+  the v0.7.88 → v0.7.118 hardening run.
+
+  **Backend:**
+  - **`tests/test_transformation_execute_timeout.py`** — 4 new tests
+    covering v0.7.95's `/transformations/execute` timeout: 504 with
+    env-knob hint, fast-path returns 200, 404 for missing
+    transformation, 404 for missing model. Companion to v0.7.108's
+    `test_chat_execute_timeout.py`. The 404 tests also cover v0.7.109's
+    `except HTTPException: raise` invariant — typed status codes now
+    survive the outer `except Exception` block.
+  - **`tests/test_studio_e2e_multipage.py`** — 2 graph-level E2E
+    tests for the v0.7.89 multi-page Studio pipeline: full
+    overview-plus-N-pages plan rendered + saved in render order,
+    `note_id` back-compat with the v0.7.105 frontend (points at
+    Overview). Mocks at the LLM-provision + content-extract +
+    save boundaries — catches state-shape regressions in the four
+    stages (_generate_outline → _generate_all_pages →
+    _save_notebook_notes → _render_overview_note) that the per-unit
+    `test_studio_router.py` tests don't fully cover together.
+
+  **Docs:**
+  - **`docs/7-DEVELOPMENT/maintainer-guide.md`** — Plus-specific
+    "operational quick-reference" section appended: symptom-→-knob
+    table for every timeout / cap added in v0.7.88+, healthcheck
+    endpoint summary, export/import endpoint summary, the
+    `except HTTPException: raise` invariant explained, release
+    checklist, test-suite catalog.
+
+  **Frontend** (spawned to a separate task, will land as v0.7.119
+  frontend commit): adds combined-format + include_sources +
+  compression to the Export dialog, new Import Preview dialog
+  consuming `POST /api/notebooks/import/preview`, Bulk Vectorize
+  button in the Sources column, Setup Wizard auto-advance when
+  `/healthz/deep` returns healthy.
+
+  Test counts (post v0.7.119 backend): 528 → **534** (+6).
+  Frontend: pending the spawned task.
+
+  **Deferred (truly):**
+  - Real-SurrealDB integration test for delete cascade — needs
+    test-infra (docker-compose SurrealDB CI fixture). Mocked tests
+    in v0.7.116 cover the orchestration logic.
+  - README screenshots refresh — requires generating real images
+    of the running app; not feasible in a code-change PR.
+
+  **The v0.7.88 → v0.7.118 cycle is now release-ready.** Tag and
+  ship.
+
+
 
 - **v0.7.118** 🔒 **rel="noopener noreferrer" on external links in HTML
   exports.** Follow-up to v0.7.117's XSS hardening.

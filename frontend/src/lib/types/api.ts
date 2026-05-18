@@ -279,13 +279,107 @@ export interface FsMkdirResponse {
 }
 
 export type FsListFilter = 'all' | 'dirs' | 'files'
-export type ExportFormat = 'folder' | 'zip'
+// v0.7.119 — Expanded export formats. The backend (api/routers/exports.py
+// NotebookExportRequest) accepts these six values. Names match the
+// backend Literal so we don't have to translate on submit.
+export type ExportFormat =
+  | 'folder'
+  | 'zip'
+  | 'html_folder'
+  | 'html_zip'
+  | 'combined_md'
+  | 'combined_html'
+
+// v0.7.119 — Zip compression algorithm. Only meaningful when
+// `format` ends in `zip`. Defaults to 'deflated' to match the backend.
+export type ExportCompression = 'deflated' | 'stored' | 'bzip2' | 'lzma'
 
 export interface NotebookExportRequest {
   destination: string
   format: ExportFormat
   include_sources?: boolean
   overwrite?: boolean
+  compression?: ExportCompression
+}
+
+// v0.7.119 — Notebook import (dry-run preview + commit).
+// Mirrors api/routers/exports.py NotebookImportPreviewRequest/Response
+// and NotebookImportRequest/Response.
+export type ImportKind = 'folder' | 'zip' | 'single_md'
+export type ImportMode = 'new' | 'into_existing'
+
+export interface NotebookImportPreviewRequest {
+  source_path: string
+}
+
+export interface NotebookImportPreviewItem {
+  relative_path: string
+  title: string
+  bytes: number
+  is_overview: boolean
+}
+
+export interface NotebookImportPreviewResponse {
+  source_path: string
+  detected_kind: ImportKind
+  notebook_name_hint: string | null
+  description_hint: string | null
+  notes: NotebookImportPreviewItem[]
+  sources: NotebookImportPreviewItem[]
+  has_manifest: boolean
+  total_bytes: number
+  warnings: string[]
+}
+
+export interface NotebookImportRequest {
+  source_path: string
+  mode: ImportMode
+  target_notebook_id?: string | null
+  new_name?: string | null
+  import_sources?: boolean
+}
+
+export interface ImportedItemEntry {
+  kind: 'note' | 'source'
+  id: string
+  title: string
+  bytes: number
+}
+
+export interface NotebookImportResponse {
+  notebook_id: string
+  notebook_name: string
+  mode: string
+  note_ids: string[]
+  source_ids: string[]
+  file_count: number
+  items: ImportedItemEntry[]
+  warnings: string[]
+}
+
+// v0.7.119 — Bulk vectorize for a notebook's sources.
+// Mirrors api/routers/embedding.py NotebookVectorizeRequest/Response.
+export interface NotebookVectorizeRequest {
+  only_missing?: boolean
+}
+
+export interface NotebookVectorizeSourceEntry {
+  source_id: string
+  title: string
+  queued: boolean
+  command_id: string | null
+  skip_reason: string | null
+}
+
+export interface NotebookVectorizeResponse {
+  notebook_id: string
+  notebook_name: string
+  total_sources: number
+  queued: number
+  skipped: number
+  failed: number
+  sources: NotebookVectorizeSourceEntry[]
+  warnings: string[]
 }
 
 export interface NoteExportRequest {
