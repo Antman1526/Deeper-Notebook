@@ -10,6 +10,7 @@
 
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -139,6 +140,21 @@ export default function SetupWizardPage() {
 
   const overallStatus = data?.status ?? 'not_ready'
   const canContinue = overallStatus === 'healthy' || overallStatus === 'degraded'
+
+  // v0.7.119 — Auto-advance: when the first /healthz/deep response comes
+  // back healthy, skip the wizard entirely. Guard with a ref so we only
+  // fire once per mount — otherwise a user who manually navigates back
+  // to /setup-wizard would be redirected away again before they could
+  // re-check anything.
+  const autoAdvancedRef = useRef(false)
+  useEffect(() => {
+    if (autoAdvancedRef.current) return
+    if (!data) return
+    if (data.status !== 'healthy') return
+    autoAdvancedRef.current = true
+    markWizardCompleted()
+    router.replace('/')
+  }, [data, router])
 
   const handleContinue = () => {
     markWizardCompleted()

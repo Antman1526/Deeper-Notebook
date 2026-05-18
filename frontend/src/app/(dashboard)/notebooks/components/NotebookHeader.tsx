@@ -93,7 +93,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 onClick={() => setShowExportDialog(true)}
               >
                 <Download className="h-4 w-4 mr-2" />
-                {t('notebooks.export')}
+                {t('notebooks.export.button')}
               </Button>
               <Button
                 variant="outline"

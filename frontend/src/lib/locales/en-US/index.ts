@@ -256,7 +256,6 @@ export const enUS = {
     createSuccess: "Notebook created successfully",
     updateSuccess: "Notebook updated successfully",
     deleteSuccess: "Notebook deleted successfully",
-    export: "Export",
     exportNotebook: "Export Notebook",
     exportNotebookDesc: "Save \"{name}\" to a folder or zip on disk.",
     exportFormatLabel: "Format",
@@ -264,12 +263,69 @@ export const enUS = {
       folder: "Folder of Markdown files",
       zip: "Single .zip archive",
     },
+    // v0.7.119 — `notebooks.export` was a flat button-label string before;
+    // it's now a namespace that also holds the expanded format/compression
+    // keys. The original "Export" button label moved to
+    // `notebooks.export.button`. The remaining flat keys (exportNotebook,
+    // exportNotebookDesc, exportDestination, exportIncludeSources, etc.)
+    // stay where they were to keep diffs scoped.
+    export: {
+      button: "Export",
+      format: {
+        html_folder: "Folder of HTML pages",
+        html_zip: "Single .zip of HTML pages",
+        combined_md: "Single combined .md file",
+        combined_html: "Single combined .html file",
+      },
+      includeSources: "Include source documents",
+      compressionLabel: "Compression",
+      compression: {
+        deflated: "Deflated (default)",
+        stored: "Stored (no compression)",
+        bzip2: "Bzip2",
+        lzma: "LZMA",
+      },
+    },
     exportDestination: "Destination",
-    exportIncludeSources: "Include source documents",
     exportOverwrite: "Overwrite if files already exist",
     exportSuccess: "Notebook exported",
     exportFailure: "Export failed",
     exporting: "Exporting...",
+    // v0.7.119 — Import dialog (preview + commit).
+    import: {
+      button: "Import",
+      title: "Import Notebook",
+      description: "Import a previously exported folder, zip, or single Markdown file.",
+      sourcePathLabel: "Source path",
+      sourcePathPlaceholder: "/path/to/folder, /path/to/file.zip, or /path/to/note.md",
+      preview: "Preview",
+      previewLoading: "Previewing...",
+      detectedKind: "Detected:",
+      modeLabel: "Mode",
+      modeNew: "Create new notebook",
+      modeExisting: "Import into existing",
+      newNameLabel: "Notebook name",
+      descriptionLabel: "Description",
+      targetNotebookLabel: "Target notebook",
+      targetNotebookPlaceholder: "Select a notebook",
+      includeSourcesCheck: "Import sources if the bundle contains a sources/ folder",
+      notesHeading: "Notes",
+      sourcesHeading: "Sources",
+      empty: "Nothing to import in this list.",
+      confirm: "Confirm Import",
+      confirmLoading: "Importing...",
+      successToast: "Imported {notes} notes, {sources} sources",
+    },
+    // v0.7.119 — Bulk vectorize action surfaced in the Sources column.
+    bulkVectorize: {
+      button: "Embed all",
+      title: "Embed every source",
+      description: "Submit an embedding job for each source in this notebook. Existing embeddings are kept by default — uncheck below to force re-embedding.",
+      onlyMissingLabel: "Skip sources that already have embeddings",
+      confirm: "Queue embeddings",
+      submitting: "Queueing...",
+      successToast: "{queued} sources queued for embedding; {skipped} skipped",
+    },
   },
   notes: {
     export: "Export",
