@@ -102,7 +102,7 @@ User interactions trigger mutations/queries via hooks, which communicate with th
 - **Auto-refetch**: `refetchOnWindowFocus: true` on frequently-changing data (sources, notebooks)
 
 ### Auth & Protected Routes
-- **Proxy** (`src/proxy.ts`): Redirects root `/` to `/notebooks`
+- **Proxy** (`src/proxy.ts`): First-launch Setup Wizard redirect via `wizard_completed` cookie sentinel. Renamed from `middleware.ts` in Next.js 16 (v0.7.129i); same NextResponse API, same matcher shape — only the file/function name changed. The proxy does NOT enforce auth; that's the API interceptor's job.
 - **Auth store**: Validates token via `/notebooks` API call (actual validation, not JWT decode)
 - **Interceptor**: Adds `Bearer {token}` to all requests; 401 response clears auth and redirects to login
 
@@ -156,7 +156,7 @@ User interactions trigger mutations/queries via hooks, which communicate with th
 4. **Add API module** (if backend call needed): `lib/api/feature.ts` — resource-specific functions
 5. **Add types**: `lib/types/api.ts` — request/response shapes
 6. **Use UI components**: Import from `components/ui/` for consistent styling
-7. **Handle auth**: Middleware redirects unauthenticated users; no special handling needed in component
+7. **Handle auth**: API interceptor handles 401 → `/login` redirect; the Next 16 proxy (`src/proxy.ts`) handles first-launch wizard redirect via cookie sentinel. No special handling needed in component.
 
 ## Testing
 
