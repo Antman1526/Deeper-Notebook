@@ -229,10 +229,43 @@ async def run_transformation_command(
                 f"Transformation '{input_data.transformation_id}' not found"
             )
 
-        # Run transformation graph (includes LLM call + insight creation)
-        await transform_graph.ainvoke(
-            input=dict(source=source, transformation=transformation)
+        # Run transformation graph (includes LLM call + insight creation).
+        #
+        # v0.7.138 — bounded by ONP_TRANSFORMATION_TIMEOUT_SEC (default
+        # 180s, same env var as the HTTP-side /transformations/execute
+        # endpoint). Without this, a hung chat model pinned the worker
+        # slot indefinitely; surreal_commands retry would eventually
+        # mark the command failed, but the loop time was unbounded.
+        #
+        # A TimeoutError here propagates through the retry-eligible
+        # exception path: surreal_commands sees a non-ValueError /
+        # ConfigurationError exception and applies its exponential-
+        # jitter retry. After max_attempts retries (5) the command
+        # surfaces as failed with the user-facing message.
+        import asyncio
+        import os as _os
+        _xform_timeout = float(
+            _os.environ.get("ONP_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
         )
+        try:
+            await asyncio.wait_for(
+                transform_graph.ainvoke(
+                    input=dict(source=source, transformation=transformation)
+                ),
+                timeout=_xform_timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            # Re-raise as a regular exception (not ValueError) so the
+            # surreal_commands retry kicks in — a transient hang on
+            # one attempt shouldn't mark the whole transformation as
+            # permanently failed.
+            raise RuntimeError(
+                f"Transformation graph timed out after {_xform_timeout}s "
+                f"for source {input_data.source_id} / transformation "
+                f"{input_data.transformation_id}. Worker will retry; "
+                f"raise ONP_TRANSFORMATION_TIMEOUT_SEC if your model "
+                f"legitimately needs more time."
+            ) from exc
 
         processing_time = time.time() - start_time
         logger.info(
