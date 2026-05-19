@@ -114,6 +114,43 @@ checkpoint_prune_rows_deleted_total = Counter(
 
 
 # -------------------------------------------------------------------- #
+# v0.7.130 — Studio generation observability
+#
+# Three counters that together answer the Area for Review question
+# "under what conditions does the outline LLM produce non-JSON?" with
+# live data instead of guesses. Pair these with the Loguru warning
+# lines for the cleaned-LLM-output context (they're already there).
+# -------------------------------------------------------------------- #
+
+studio_generations_total = Counter(
+    "onp_studio_generations_total",
+    "Studio /generate invocations. `mode` is the request mode "
+    "('notebook', 'podcast', 'both'). `outcome` reflects the final "
+    "delivery: 'success' (both halves landed), 'partial' (one half "
+    "of `both` succeeded), 'failed' (no usable output).",
+    ["mode", "outcome"],
+)
+
+studio_outline_parse_failures_total = Counter(
+    "onp_studio_outline_parse_failures_total",
+    "Studio multi-page outline-LLM responses that couldn't be parsed "
+    "into a usable outline. `reason` is 'json_decode' (returned text "
+    "that wasn't valid JSON after _strip_json_wrapper) or 'validation' "
+    "(parsed JSON but failed _validate_outline schema/page-count check).",
+    ["reason"],
+)
+
+studio_single_note_fallbacks_total = Counter(
+    "onp_studio_single_note_fallbacks_total",
+    "Times Studio fell back from multi-page to single-note generation "
+    "because the outline pass produced unusable output. This is the "
+    "headline metric for 'is the local outline model good enough?' — "
+    "consistently elevated here means rebuild the prompt, swap the "
+    "model, or both.",
+)
+
+
+# -------------------------------------------------------------------- #
 # Helpers
 # -------------------------------------------------------------------- #
 
@@ -161,3 +198,25 @@ def record_memory_fallthrough(reason: str) -> None:
     reason. Reasons: 'embed_timeout', 'embed_error', 'query_timeout',
     'query_error'."""
     memory_recall_fallthrough_total.labels(reason=reason).inc()
+
+
+def record_studio_generation(mode: str, outcome: str) -> None:
+    """v0.7.130 — Bump studio_generations_total with the request mode +
+    outcome. Call sites pass the literal mode ('notebook' | 'podcast' |
+    'both') and outcome ('success' | 'partial' | 'failed'). Unknown
+    labels are still recorded — Prometheus tolerates anything, and a
+    surprise label value is the kind of thing we want to see in a
+    dashboard rather than silently swallow."""
+    studio_generations_total.labels(mode=mode, outcome=outcome).inc()
+
+
+def record_studio_outline_parse_failure(reason: str) -> None:
+    """v0.7.130 — Reason: 'json_decode' or 'validation'. Wrapper exists
+    so the studio router doesn't have to import the Counter directly."""
+    studio_outline_parse_failures_total.labels(reason=reason).inc()
+
+
+def record_studio_single_note_fallback() -> None:
+    """v0.7.130 — Increment when multi-page outline fails and Studio
+    falls back to legacy single-note generation."""
+    studio_single_note_fallbacks_total.inc()

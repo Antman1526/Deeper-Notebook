@@ -651,36 +651,87 @@ async def studio_generate(
     combined_context = "".join(combined_chunks).lstrip()
 
     # 5. Dispatch by mode.
-    if mode == "notebook":
-        return await _dispatch_notebook_mode(
-            notebook=notebook,
-            combined_context=combined_context,
-            title=title,
-            source_ids=source_ids,
-            warnings=warnings,
-        )
-    if mode == "podcast":
-        return await _dispatch_podcast_mode(
-            notebook_id=notebook_id,
-            episode_profile_name=episode_profile_name,  # type: ignore[arg-type]
-            speaker_profile_name=speaker_profile_name,  # type: ignore[arg-type]
-            title=title,
-            source_ids=source_ids,
-            warnings=warnings,
-        )
-    # v0.7.88 — mode == "both": run notebook synchronously, then submit
-    # the podcast job. Half-failures degrade gracefully — whichever
-    # half succeeded is preserved, and warnings carry the diagnostic.
-    return await _dispatch_both_modes(
-        notebook=notebook,
-        notebook_id=notebook_id,
-        combined_context=combined_context,
-        episode_profile_name=episode_profile_name,  # type: ignore[arg-type]
-        speaker_profile_name=speaker_profile_name,  # type: ignore[arg-type]
-        title=title,
-        source_ids=source_ids,
-        warnings=warnings,
-    )
+    #
+    # v0.7.130 — wrap the dispatch in a try/except so we can emit
+    # `studio_generations_total{mode, outcome}` even when the dispatcher
+    # itself raises. The `outcome` heuristic:
+    #   - 'success'  — dispatch returned with no warnings whose message
+    #                  starts with "Podcast " / "Notebook " (those are
+    #                  the partial-failure prefixes used inside
+    #                  _dispatch_both_modes when one half fails).
+    #   - 'partial'  — `both` mode where exactly one half succeeded.
+    #                  Detected by the presence of one of the prefixed
+    #                  warnings in the returned response.
+    #   - 'failed'   — dispatch raised, OR the response indicates both
+    #                  halves of a `both` request failed.
+    # Best-effort: a metric increment failure must NEVER mask the
+    # actual response (success or error) we're trying to give the user.
+    def _record_outcome(outcome: str) -> None:
+        try:
+            from api.metrics import record_studio_generation
+            record_studio_generation(mode, outcome)
+        except Exception:
+            pass
+
+    def _classify_outcome(resp: "StudioGenerateResponse") -> str:
+        # Look at the response warnings to decide success vs partial.
+        # In 'notebook' / 'podcast' mode there's no "partial" — either
+        # we returned a usable artifact or we raised. So success only.
+        # In 'both' mode, a half-failure produces a warning prefixed
+        # with "Podcast " or "Notebook " telling the user which side
+        # broke. If both halves broke, the dispatcher itself raises.
+        if mode != "both":
+            return "success"
+        partial_markers = ("Podcast ", "Notebook ")
+        for w in resp.warnings or []:
+            if any(w.startswith(p) for p in partial_markers):
+                return "partial"
+        return "success"
+
+    try:
+        if mode == "notebook":
+            response = await _dispatch_notebook_mode(
+                notebook=notebook,
+                combined_context=combined_context,
+                title=title,
+                source_ids=source_ids,
+                warnings=warnings,
+            )
+        elif mode == "podcast":
+            response = await _dispatch_podcast_mode(
+                notebook_id=notebook_id,
+                episode_profile_name=episode_profile_name,  # type: ignore[arg-type]
+                speaker_profile_name=speaker_profile_name,  # type: ignore[arg-type]
+                title=title,
+                source_ids=source_ids,
+                warnings=warnings,
+            )
+        else:
+            # v0.7.88 — mode == "both": run notebook synchronously, then
+            # submit the podcast job. Half-failures degrade gracefully —
+            # whichever half succeeded is preserved, and warnings carry
+            # the diagnostic.
+            response = await _dispatch_both_modes(
+                notebook=notebook,
+                notebook_id=notebook_id,
+                combined_context=combined_context,
+                episode_profile_name=episode_profile_name,  # type: ignore[arg-type]
+                speaker_profile_name=speaker_profile_name,  # type: ignore[arg-type]
+                title=title,
+                source_ids=source_ids,
+                warnings=warnings,
+            )
+    except HTTPException:
+        # Typed HTTPExceptions (400/422 etc.) — count as 'failed' for
+        # observability even though FastAPI returns them properly.
+        _record_outcome("failed")
+        raise
+    except Exception:
+        _record_outcome("failed")
+        raise
+
+    _record_outcome(_classify_outcome(response))
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -865,6 +916,13 @@ async def _generate_outline(
             "Studio multi-page: outline JSON parse failed ({}); raw={!r}",
             exc, cleaned[:500],
         )
+        # v0.7.130 — emit the Prometheus counter. Best-effort: a metrics
+        # import failure must not break the caller's fallback flow.
+        try:
+            from api.metrics import record_studio_outline_parse_failure
+            record_studio_outline_parse_failure("json_decode")
+        except Exception:
+            pass
         raise ValueError(f"outline JSON parse failed: {exc}")
     outline, err = _validate_outline(payload, max_pages=_PAGES_MAX)
     if not outline:
@@ -872,6 +930,13 @@ async def _generate_outline(
             "Studio multi-page: outline validation failed ({}); raw={!r}",
             err, cleaned[:500],
         )
+        # v0.7.130 — counterpart for the validation-failure path. Same
+        # try/except shield so observability can't break the request.
+        try:
+            from api.metrics import record_studio_outline_parse_failure
+            record_studio_outline_parse_failure("validation")
+        except Exception:
+            pass
         raise ValueError(f"outline validation failed: {err}")
     return outline
 
@@ -1080,6 +1145,15 @@ async def _dispatch_notebook_mode(
         logger.warning(
             "Studio multi-page: falling back to single-note ({})", exc,
         )
+        # v0.7.130 — emit the fallback counter. Specific outline-parse
+        # failure reason (json_decode vs validation) was already recorded
+        # inside _generate_outline; here we just track that we DID fall
+        # back rather than crashing or succeeding multi-page.
+        try:
+            from api.metrics import record_studio_single_note_fallback
+            record_studio_single_note_fallback()
+        except Exception:
+            pass
         warnings.append(
             "Multi-page outline could not be parsed; fell back to a single "
             "study-note. Try regenerating, or pick a stronger chat model."

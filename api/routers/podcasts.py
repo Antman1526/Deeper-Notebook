@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -135,8 +135,27 @@ async def get_podcast_job_status(job_id: str):
 
 
 @router.get("/podcasts/episodes", response_model=list[PodcastEpisodeResponse])
-async def list_podcast_episodes():
-    """List all podcast episodes"""
+async def list_podcast_episodes(
+    response: Response,
+    offset: int = Query(0, ge=0, description="Skip the first N completed episodes (default 0)"),
+    limit: int = Query(50, ge=1, le=200, description="Return at most N episodes (default 50, max 200)"),
+):
+    """List podcast episodes with offset/limit pagination.
+
+    v0.7.130 — pagination added without breaking the existing response
+    shape (still `list[PodcastEpisodeResponse]`). The total count is
+    returned in the `X-Total-Count` response header so clients that
+    need to render "X of N" can read it without a separate API call.
+    Existing callers that don't pass query params get the first 50
+    episodes — a sensible behavior change for any install with more
+    than 50 episodes that was previously loading every one on every
+    list call.
+
+    Filtering rules (unchanged): episodes with no `command` AND no
+    `audio_file` are skipped — those are in-flight failures that
+    never produced anything useful. The `total` header reflects the
+    count AFTER this filter is applied, not the raw row count.
+    """
     try:
         episodes = await PodcastService.list_episodes()
 
@@ -189,7 +208,19 @@ async def list_podcast_episodes():
                 )
             )
 
-        return response_episodes
+        # v0.7.130 — apply pagination AFTER filtering. The filter
+        # (`if not episode.command and not episode.audio_file: continue`)
+        # above strips never-started failed episodes; the X-Total-Count
+        # we emit is the count of episodes that pass that filter, not
+        # the raw row count. This matches what the client sees in the
+        # body and lets the UI render "Showing X-Y of N" accurately.
+        total = len(response_episodes)
+        paginated = response_episodes[offset : offset + limit]
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Offset"] = str(offset)
+        response.headers["X-Limit"] = str(limit)
+
+        return paginated
 
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
