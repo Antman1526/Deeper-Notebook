@@ -18,8 +18,71 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.125 (in flight)
+## Unreleased — v0.7.36 → v0.7.126 (in flight)
 
+- **v0.7.126** ✨ **Backup + restore tooling.** First-class disaster
+  recovery for the data directory. Closes a real operator-pain gap:
+  before this, the only way to snapshot an install was a manual
+  `tar czf` against directory paths the user often didn't know about.
+
+  **New script** (`scripts/backup_restore.py`): single-file Python
+  CLI with `backup` and `restore` subcommands. Walks the data root
+  (honors `ONP_DATA_DIR` or falls back to `./data/`), bundles
+  everything into a gzipped tar with a SHA-256 manifest.
+
+  **Coverage:**
+  - SurrealDB data directory
+  - Uploaded source files (`UPLOADS_FOLDER`)
+  - LangGraph SQLite checkpoints (post v0.7.125 pruning)
+  - tiktoken cache
+
+  **Deliberately excluded:**
+  - `.env` files (user's responsibility — may contain secrets)
+  - `.gguf` model weights (multi-GB, re-downloadable)
+  - Log files (`logs/`, `*.log`)
+  - Caches (`__pycache__`, `.pytest_cache`, `.lock`)
+  - OS noise (`.DS_Store`, `Thumbs.db`, `desktop.ini`)
+
+  **3 new Makefile targets** (`Makefile`):
+  ```
+  make backup                              # backups/onp-backup-YYYYMMDD-HHMMSS.tar.gz
+  make backup OUT=path/to/specific.tar.gz  # custom location
+  make verify-backup BUNDLE=path           # integrity check, no extraction
+  make restore BUNDLE=path                 # refuses to overwrite non-empty
+  make restore BUNDLE=path FORCE=1         # ⚠️ overwrites
+  ```
+
+  **Safety guarantees:**
+  - Atomic backup write — tarball is created at a `.tmp` sibling
+    path and renamed only on success, so a crash mid-archive
+    doesn't leave a half-written bundle.
+  - SHA-256 manifest of every file embedded in the bundle for
+    integrity verification.
+  - `verify-backup` re-hashes everything inside the tarball against
+    the manifest without touching disk — operators can confirm a
+    bundle is intact before relying on it.
+  - Restore REFUSES to overwrite a non-empty data dir unless
+    `FORCE=1` (prevents accidental destruction).
+  - Restore rejects bundles from a future format version with a
+    clear error (no confusing extraction failures).
+  - 50 GB total-size cap on backup (catches misconfigured paths
+    that try to bundle `/`).
+  - 1 GB per-file warning surfaces large uploads before they
+    silently bloat the archive.
+
+  **Streaming hashes** so the script doesn't OOM on multi-GB
+  uploaded files. `_MAX_BUNDLE_BYTES = 50 GB` matches realistic
+  install ceilings.
+
+  **9 new tests** in `tests/test_backup_restore_v0_7_126.py` using
+  tmp_path-rooted fake data directories: round-trip byte-for-byte,
+  skip patterns (logs/cache/.DS_Store/.lock excluded),
+  non-empty-data-dir refusal, FORCE override, verify-only mode,
+  corrupt-bundle detection (tampered file vs stored SHA-256),
+  future-version rejection, empty-data-dir error, missing-dir
+  error.
+
+  Backend suite: 582 → **591** (+9). Ruff clean.
 - **v0.7.125** ⚡ **LangGraph SQLite checkpoint pruning.** Without this,
   `~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite` grows
   unbounded — every chat turn appends rows that LangGraph never reads
