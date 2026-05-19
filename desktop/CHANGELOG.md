@@ -18,7 +18,67 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.131 (in flight)
+## Unreleased — v0.7.36 → v0.7.132 (in flight)
+
+- **v0.7.132** 🩺 **/healthz/deep upstream probe + smarter exception
+  truncation + Setup Wizard verification.** Three more Areas for
+  Review closed:
+
+  **`/healthz/deep?probe_providers=true` upstream probe (Area #12).**
+  Previously /healthz/deep only checked model abstractions (does a
+  default chat/embedding model exist in the DB?) but never actually
+  hit the upstream provider. A misconfigured API key would pass the
+  deep probe with a green light and only fail at first chat. Now an
+  opt-in `?probe_providers=true` flag runs every configured Credential
+  through the existing `connection_tester.test_provider_connection`
+  with a 5s timeout per probe (parallelized via `asyncio.gather`).
+  Failures are surfaced per-credential so operators see exactly which
+  provider is broken instead of a generic "providers degraded".
+
+  Off by default because each probe burns one cheap API call per
+  credential — fine on demand, expensive if a monitoring tool hits
+  this every 15 seconds. Recommended cadence: ≤ once per minute.
+  Failure of an upstream provider knocks the overall status to
+  'degraded' but doesn't flip to 'not_ready' (operator may have
+  intentionally configured a provider that's currently down for
+  scheduled maintenance).
+
+  Edge cases handled: no credentials configured at all is reported
+  as `status='no_credentials', ok=True` (it's a valid state, not an
+  error); credential-list query failure is caught and surfaced as
+  `status='error'` with the underlying exception message; each
+  per-credential probe is wrapped in its own try/except so one
+  raising provider doesn't gate the others.
+
+  **`_brief()` smarter truncation (Area #10).** Previously the
+  exception-message truncation in studio.py flat-truncated at byte
+  ~199, so multi-line exceptions (PyMuPDF stack traces, mammoth
+  error blocks, LangChain chained-cause sections) cut in the middle
+  of line 1 and lost the rest entirely. Now multi-line exceptions
+  preserve the first line verbatim (truncated only if itself over
+  budget) and append " (… N more lines)" so the operator sees the
+  actual error head plus how much was elided. Pluralization
+  correctly handled for the "1 more line" / "N more lines" case.
+
+  **Setup Wizard auto-advance verification (Area #14).** Code review
+  confirmed this was already implemented in v0.7.119 at
+  `frontend/src/app/(dashboard)/setup-wizard/page.tsx:165-173` via
+  `useEffect` + `autoAdvancedRef.current` guard. The Area for Review
+  doc had flagged it as "specced but unclear if landed"; verified
+  landed. No code change this release; closing the item.
+
+  **13 new hermetic tests** in `tests/test_v0_7_132.py`:
+    - 5 `_brief()` cases (single-line passthrough, single-line truncated,
+      multi-line preserves first, multi-line pluralization, multi-line
+      with over-budget first line)
+    - 6 `_probe_upstream_providers()` cases (no creds, list failure,
+      all healthy, mixed, timeout, raise-caught)
+    - 2 `/healthz/deep?probe_providers` integration tests verifying
+      the flag-driven key inclusion/exclusion
+
+  Backend suite: **637 passing** (was 624, +13).
+
+- **v0.7.131** 🔒 **Continued deferred-item improvements: Request-ID
 
 - **v0.7.131** 🔒 **Continued deferred-item improvements: Request-ID
   hardening + optional /metrics auth + dynamic integration-suite
