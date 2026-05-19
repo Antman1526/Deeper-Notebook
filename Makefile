@@ -1,4 +1,4 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart
+.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart backup restore verify-backup
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -135,6 +135,52 @@ full:
 
 api:
 	uv run --env-file .env run_api.py
+
+# v0.7.126 — Backup + restore targets.
+#
+# `make backup`           — snapshot the data directory to a timestamped
+#                            tarball at backups/onp-backup-YYYYMMDD-HHMMSS.tar.gz
+# `make backup OUT=path`  — write to a specific path
+# `make verify-backup BUNDLE=path`
+#                          — re-hash everything inside a bundle against its
+#                            manifest, without touching the data dir
+# `make restore BUNDLE=path`
+#                          — restore from a bundle. REFUSES if data dir is
+#                            non-empty unless FORCE=1 is also set.
+#
+# All three honor ONP_DATA_DIR so users with a custom install path don't
+# need to think about which directory to back up.
+
+OUT ?= backups/onp-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz
+
+backup:
+	@mkdir -p $(dir $(OUT))
+	@echo "Creating backup at $(OUT)..."
+	@uv run --env-file .env python scripts/backup_restore.py backup --output $(OUT)
+	@echo "✅ Backup complete: $(OUT)"
+
+verify-backup:
+	@if [ -z "$(BUNDLE)" ]; then \
+		echo "Usage: make verify-backup BUNDLE=path/to/backup.tar.gz"; \
+		exit 1; \
+	fi
+	@uv run --env-file .env python scripts/backup_restore.py restore $(BUNDLE) --verify-only
+
+restore:
+	@if [ -z "$(BUNDLE)" ]; then \
+		echo "Usage: make restore BUNDLE=path/to/backup.tar.gz [FORCE=1]"; \
+		echo ""; \
+		echo "DANGER: restoring overwrites the current data directory."; \
+		echo "        Run \`make verify-backup BUNDLE=...\` first to confirm integrity."; \
+		exit 1; \
+	fi
+	@if [ "$(FORCE)" = "1" ]; then \
+		echo "⚠️  FORCE=1 — will overwrite any existing data."; \
+		uv run --env-file .env python scripts/backup_restore.py restore $(BUNDLE) --force; \
+	else \
+		uv run --env-file .env python scripts/backup_restore.py restore $(BUNDLE); \
+	fi
+	@echo "✅ Restore complete from: $(BUNDLE)"
 
 .PHONY: worker worker-start worker-stop worker-restart
 
