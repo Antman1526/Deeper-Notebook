@@ -18,7 +18,65 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.130 (in flight)
+## Unreleased — v0.7.36 → v0.7.131 (in flight)
+
+- **v0.7.131** 🔒 **Continued deferred-item improvements: Request-ID
+  hardening + optional /metrics auth + dynamic integration-suite
+  truncation.** Closes three more Areas for Review from the AI-context
+  audit:
+
+  **Request-ID middleware character-set validation (Area #25).**
+  Previously the middleware only enforced length on inbound
+  `X-Request-ID` (cap at 128 chars). A caller could send
+  `X-Request-ID: prefix\n[CRITICAL] forged log entry` and we'd put it
+  in the loguru `req=` column verbatim — log-aggregation tools that
+  split on newlines would then treat the forged line as a separate,
+  freshly-attributed entry. Classic log injection.
+
+  Fix: regex `^[A-Za-z0-9_\-.:]+$` checked alongside the length cap.
+  The allowed punctuation set is deliberately small — UUID4 hyphens,
+  snake_case, period-segmented IDs, Datadog/OTel `trace-id:span-id`
+  composites. Anything else triggers a fresh UUID4 and a DEBUG log
+  noting why (without echoing the rejected value, since we don't
+  trust it). 5 unit tests cover the canonical injection payload plus
+  control-char variants.
+
+  **`/metrics` optional bearer-token auth (Area #19).**
+  The Prometheus endpoint was unauthenticated by design — scrapers
+  could hit it without credentials, which is the correct default for
+  a private network. But operators exposing the API publicly need a
+  scrape token, and putting nginx in front isn't always feasible for
+  desktop installs.
+
+  Added `ONP_METRICS_AUTH_TOKEN` env var. If set, `/metrics` requires
+  `Authorization: Bearer <token>` and rejects anything else with 401
+  + `WWW-Authenticate: Bearer realm="metrics"`. Comparison uses
+  `secrets.compare_digest` to avoid timing-attack oracles. If unset
+  (the default), behavior is identical to v0.7.130 — full backward
+  compat. Empty-string env var explicitly treated as unset to avoid
+  the footgun of `ONP_METRICS_AUTH_TOKEN=` accidentally locking
+  down the endpoint. 6 unit tests cover the open/closed/wrong-token/
+  malformed-header/empty-env matrix.
+
+  **Integration suite dynamic table truncation (Area #17).**
+  The `clean_namespace` fixture previously hardcoded a 7-element table
+  list (`notebook`, `source`, `note`, `reference`, `artifact`,
+  `refers_to`, `chat_session`). Every new migration that adds a
+  domain table silently invalidated this list — leftover rows from
+  test A could appear in test B's `SELECT *`.
+
+  Replaced with `INFO FOR DB`-driven discovery + a deny-list of
+  protected tables. The deny-list catches `_sbl_migrations` (truncating
+  it would force a migration re-run on the next test) plus any
+  underscore-prefixed system table — including future tables we
+  haven't planned for. Falls back to the original hardcoded list if
+  `INFO FOR DB` raises (degraded coverage is better than a broken
+  fixture). 4 unit tests pin the shape-parsing logic across v2 (`tables`)
+  and older (`tb`) SurrealDB response forms.
+
+  Net: **624 backend tests** (was 609, +15).
+
+- **v0.7.130** ✨ **Studio + Podcasts + Settings improvements.**
 
 - **v0.7.130** ✨ **Studio + Podcasts + Settings improvements.**
   Multi-surface improvement batch following the audit roadmap:
