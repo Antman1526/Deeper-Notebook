@@ -18,7 +18,89 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.138 (in flight)
+## Unreleased — v0.7.36 → v0.7.139 (in flight)
+
+- **v0.7.139** 🧪 **Live model benchmarking harness + model-resolution
+  audit.** User asked "test all models, determine which works best,
+  fix issues along the way". Running 26 models end-to-end takes
+  ~8-12 hours of wall-clock so doing it inline in a session isn't
+  feasible — instead delivering a reusable harness operators can run
+  themselves whenever they want to bake off models, PLUS fixing two
+  real model-resolution bugs found during the audit.
+
+  **`scripts/benchmark_models.py` — live benchmark harness.**
+  Exercises every configured language Model record against three
+  probes:
+    * **NOTEBOOK_CHAT** — source-grounded Q&A (basic chat path)
+    * **STUDIO_OUTLINE** — structured JSON outline (the v0.7.89
+      Studio multi-page path; lenient JSON extraction handles
+      code-fenced and preamble-wrapped responses)
+    * **PODCAST_TRANSCRIPT_TURN** — multi-speaker dialogue with
+      ALICE/BOB labels (case-insensitive detection)
+  Outputs `benchmark-report.md` with a ranked composite score
+  (0.7 × pass rate + 0.3 × latency-inverse), per-probe breakdown,
+  and failure-mode summary. Use `ONP_BENCHMARK_ONLY` env var or
+  `--only "<model name>"` to re-roll a single model.
+
+  **`make benchmark-models` Makefile target** — operator-facing
+  one-liner. Requires `make database` + `make api` + `make worker`
+  running first.
+
+  **`ModelManager.get_model` exception-discrimination audit fix.**
+  Found during this work: line 206 (pre-v0.7.139) had `except
+  Exception: raise ConfigurationError("Model with ID X not found")`
+  — this conflated three completely distinct situations:
+    1. Model record genuinely doesn't exist in DB
+    2. `NotFoundError` (typed) raised by `Model.get`
+    3. DB pool timeout / connection refused / generic operational
+       failure
+  All three produced the same misleading "not found" message.
+  Users would re-create perfectly valid models that were just
+  transiently unreachable. Now:
+    * Case 1 + 2 → `ConfigurationError` with actionable message
+    * Case 3 → `OpenNotebookError` (HTTP 500) with retry hint
+  Also catches the previously-silent case where `Model.get` returns
+  None instead of raising NotFoundError. Plus the invalid-type
+  branch now names the model + points to Settings → Models.
+
+  Exception-order subtlety the test caught: `NotFoundError` extends
+  `OpenNotebookError`, so the broad isinstance check matched FIRST
+  and the specific NotFoundError → ConfigurationError remapping
+  never ran. Fixed by reversing the check order. Documented inline.
+
+  **20 new hermetic tests** in `tests/test_v0_7_139.py`:
+    * 4 composite-score math tests (all-pass-fast, all-fail-slow,
+      pass-dominates-latency, partial-pass-ranking)
+    * 4 JSON extraction tests (clean, code-fenced, garbage, wrong-shape)
+    * 3 podcast speaker detection tests (both-speakers, one-speaker,
+      case-insensitive)
+    * 2 report rendering tests (zero models, three models)
+    * 5 get_model error-discrimination tests (None return,
+      NotFoundError, unexpected exception, typed passthrough,
+      invalid type field)
+    * 2 packaging tests (script is executable, Makefile target exists)
+
+  Backend suite: **734 passing** (was 714, +20).
+
+  **NOT in this release (deliberately):** actual benchmark RUN
+  results. Running 26 models would take 8-12 hours wall-clock and
+  burn significant local-GPU + cloud-API quota. The harness exists
+  so the operator can run it once, then keep `benchmark-report.md`
+  as a reproducible baseline they can re-run after upgrades.
+
+  **How to use:**
+  ```bash
+  # Ensure services are up
+  make database
+  make api          # in another terminal
+  make worker       # in another terminal
+
+  # Then:
+  make benchmark-models
+  open benchmark-report.md
+  ```
+
+- **v0.7.138** 🛡 **Final-sweep audit — every model-using path now
 
 - **v0.7.138** 🛡 **Final-sweep audit — every model-using path now
   bounded.** End-to-end walk of `/chat/stream`, `/search/ask`,
