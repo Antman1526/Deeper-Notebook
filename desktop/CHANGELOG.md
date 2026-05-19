@@ -18,7 +18,92 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.129f (in flight)
+## Unreleased — v0.7.36 → v0.7.130 (in flight)
+
+- **v0.7.130** ✨ **Studio + Podcasts + Settings improvements.**
+  Multi-surface improvement batch following the audit roadmap:
+
+  **Studio observability** — three new Prometheus counters answer
+  Area for Review #13 ("under what conditions does the outline LLM
+  produce non-JSON?") with live data:
+    * `onp_studio_generations_total{mode, outcome}` — labeled by
+      request mode ('notebook' / 'podcast' / 'both') and outcome
+      ('success' / 'partial' / 'failed'). `partial` is reserved for
+      `both` mode where exactly one half landed.
+    * `onp_studio_outline_parse_failures_total{reason}` — `json_decode`
+      (LLM produced non-JSON) or `validation` (JSON parsed but failed
+      schema check). The two reasons need different fixes — log-parse
+      failures usually need a stronger model; validation failures
+      usually need prompt rewording. Splitting the metric makes that
+      decision data-driven.
+    * `onp_studio_single_note_fallbacks_total` — headline metric for
+      "is the local outline model good enough?".
+    All increments are wrapped in try/except so a metrics import
+    failure can never break the actual user-facing flow.
+
+  **Podcasts pagination** — `GET /podcasts/episodes` now accepts
+  `?offset=` and `?limit=` query params (default 50, max 200, negative
+  rejected by FastAPI's Query validation). Response shape unchanged
+  (still `list[PodcastEpisodeResponse]`); total available count
+  returned via `X-Total-Count` response header so the UI can render
+  "Showing X-Y of N" without a separate API call. Existing callers
+  passing no params get the first 50 episodes — a behavior change
+  for installs with >50 episodes that were previously transferring
+  everything on every list call.
+
+  **Settings router cleanup** — Lifted four duplicate
+  `from typing import Literal, cast` imports out of the PUT handler
+  body to module level (they used to run inside `if … is not None`
+  branches, re-resolving on every request). Removed the redundant
+  `cast(Literal[…], value)` calls — they were static-only assertions
+  that did nothing at runtime since the request model declared the
+  same fields as `Optional[str]`. The cast pattern was masking that
+  the validation wasn't actually happening anywhere.
+
+  **Settings model tightened** — `SettingsUpdate` now uses
+  `Optional[Literal[…]]` instead of `Optional[str]` for the four
+  enum-style fields. FastAPI/Pydantic now rejects invalid values at
+  the request boundary with a 422 instead of letting them propagate
+  to `ContentSettings.update()` for a less-helpful error message.
+  The cast removal exposed that this validation gap existed in the
+  first place.
+
+  **New `/settings/observability` read-only endpoint** — returns the
+  current ONP_* env-derived configuration (slow-query threshold,
+  encryption KDF, checkpoint prune knobs, DB pool size, db_pool
+  disabled flag) so the UI can show operators their actual install
+  config without re-implementing env-var parsing client-side. Pairs
+  with the existing `/metrics` Prometheus endpoint. Includes defensive
+  `_env_int()` + `_env_bool()` helpers that warn-and-default-to-baseline
+  on unparseable values, so a typo in `.env` can't bring down the
+  endpoint.
+
+  **15 new hermetic tests** in `tests/test_v0_7_130.py` covering:
+  Prometheus counter increments + labels + render-to-text, podcasts
+  pagination default/offset/limit-cap/negative-rejection/beyond-total,
+  settings observability defaults / env round-trip / garbage-int
+  tolerance / boolean case-insensitivity, settings PUT Literal
+  rejection. Full backend suite now **609 passing** (was 594, +15).
+
+- **v0.7.129i** 🐛 **Frontend: migrate middleware.ts → proxy.ts for Next.js 16.**
+  Next.js 16 renamed `middleware` → `proxy`: same NextResponse API,
+  same matcher shape, only the file name + exported function name
+  changed. The repo had both files (the old `proxy.ts` was a v0.7.29
+  no-op stub; the real logic lived in `middleware.ts` for the v0.7.117
+  first-launch Setup Wizard redirect). With both present, Next 16
+  refused to build with:
+      Both middleware file ./src/middleware.ts and proxy file
+      ./src/proxy.ts are detected. Please use ./src/proxy.ts only.
+  Resolution: moved the wizard logic verbatim into `proxy.ts`
+  (renamed function `middleware` → `proxy`), deleted the obsolete
+  `middleware.ts`. Verified `npm run build` succeeds with 16 routes
+  generated. Also corrected two stale references in
+  `frontend/src/CLAUDE.md`: it claimed the proxy "redirects root /
+  to /notebooks" (not true since v0.7.29 when the proxy was a no-op,
+  and definitely not true now that it does the wizard redirect) and
+  it described middleware as enforcing auth (auth has always been
+  enforced by the API interceptor on 401 responses, not by the
+  Next-side proxy/middleware).
 
 - **v0.7.129f** 🛠 **CI: force Node 24 via FORCE_JAVASCRIPT_ACTIONS_TO_NODE24.**
   Belt-and-suspenders for `astral-sh/setup-uv@v6` which still ships a

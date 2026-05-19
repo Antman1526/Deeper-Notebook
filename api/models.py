@@ -266,11 +266,23 @@ class SettingsResponse(BaseModel):
     youtube_preferred_languages: Optional[list[str]] = None
 
 
+# v0.7.130 — tightened the literal fields from Optional[str] to
+# Optional[Literal[...]]. Previously SettingsUpdate accepted any string
+# (the handler's cast(Literal,...) was a static-only assertion that did
+# nothing at runtime — see settings.py for the cleanup). With this
+# change, FastAPI/Pydantic rejects invalid values at the request
+# boundary with a 422, surfacing the bad input immediately instead of
+# silently storing it then breaking ContentSettings.update() with a
+# less helpful error. Allowed values lifted directly from ContentSettings.
 class SettingsUpdate(BaseModel):
-    default_content_processing_engine_doc: Optional[str] = None
-    default_content_processing_engine_url: Optional[str] = None
-    default_embedding_option: Optional[str] = None
-    auto_delete_files: Optional[str] = None
+    default_content_processing_engine_doc: Optional[
+        Literal["auto", "docling", "simple"]
+    ] = None
+    default_content_processing_engine_url: Optional[
+        Literal["auto", "firecrawl", "jina", "simple"]
+    ] = None
+    default_embedding_option: Optional[Literal["ask", "always", "never"]] = None
+    auto_delete_files: Optional[Literal["yes", "no"]] = None
     youtube_preferred_languages: Optional[list[str]] = None
 
 
