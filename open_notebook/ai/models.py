@@ -197,14 +197,64 @@ class ModelManager:
         pass  # No caching needed
 
     async def get_model(self, model_id: str, **kwargs) -> Optional[ModelType]:
-        """Get a model by ID. Esperanto will cache the actual model instance."""
+        """Get a model by ID. Esperanto will cache the actual model instance.
+
+        v0.7.139 — Distinguish 'model record not in DB' (a real
+        ConfigurationError — user needs to reconfigure) from 'DB call
+        failed transiently' (operational failure that misleadingly
+        manifested as 'Model not found'). Previously both produced the
+        same misleading message and users would re-create models that
+        were perfectly valid but momentarily unreachable.
+        """
         if not model_id:
             return None
 
         try:
             model: Model = await Model.get(model_id)
-        except Exception:
-            raise ConfigurationError(f"Model with ID {model_id} not found")
+        except Exception as exc:
+            # Re-raise typed exceptions with appropriate remapping.
+            # Order matters: NotFoundError extends OpenNotebookError,
+            # so we must check the more-specific class FIRST before
+            # the broader passthrough catch — otherwise NotFoundError
+            # passes through unchanged instead of becoming a user-
+            # actionable ConfigurationError.
+            from open_notebook.exceptions import (
+                NotFoundError,
+                OpenNotebookError,
+            )
+            # NotFoundError from Model.get means the ID really doesn't
+            # exist in the DB — actionable for the user.
+            if isinstance(exc, NotFoundError):
+                raise ConfigurationError(
+                    f"Model with ID {model_id} not found. Re-check that "
+                    f"the model is configured in Settings → Models."
+                ) from exc
+            # Other typed OpenNotebookError subclasses (RateLimitError,
+            # AuthenticationError, etc.) propagate verbatim — they
+            # already have actionable messages and the right HTTP code.
+            if isinstance(exc, OpenNotebookError):
+                raise
+            # Anything else: log + surface as a generic operational
+            # error so the user sees "something broke" rather than
+            # being told to fix a configuration that's already correct.
+            logger.error(
+                f"get_model({model_id}): unexpected exception from "
+                f"Model.get(): {type(exc).__name__}: {exc}"
+            )
+            raise OpenNotebookError(
+                f"Could not load model {model_id}: {exc}. The DB or "
+                f"connection pool may be transiently unavailable; "
+                f"retry shortly."
+            ) from exc
+
+        if model is None:
+            # v0.7.139 — Model.get(...) returning None (not raising)
+            # has the same user-facing meaning as NotFoundError above:
+            # the model ID isn't in the DB.
+            raise ConfigurationError(
+                f"Model with ID {model_id} not found. Re-check that "
+                f"the model is configured in Settings → Models."
+            )
 
         if not model.type or model.type not in [
             "language",
@@ -212,7 +262,12 @@ class ModelManager:
             "speech_to_text",
             "text_to_speech",
         ]:
-            raise ConfigurationError(f"Invalid model type: {model.type}")
+            raise ConfigurationError(
+                f"Model {model.name or model_id} has invalid type "
+                f"{model.type!r}. Re-create the model in Settings → "
+                f"Models and select a valid type (language, embedding, "
+                f"speech_to_text, or text_to_speech)."
+            )
 
         # Build config from credential if linked, otherwise fall back to env vars
         config: dict = {}

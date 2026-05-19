@@ -198,6 +198,32 @@ test-integration:
 	@echo "Tests use a throwaway namespace; your real data is not touched."
 	SURREAL_INTEGRATION=1 uv run --env-file .env pytest tests/integration/ -v -m integration_surreal
 
+## v0.7.139 — Live model benchmark harness.
+##
+## Exercises every configured language Model against three real probes
+## (notebook chat, Studio JSON-outline, podcast multi-speaker turn) and
+## writes a ranked benchmark-report.md.
+##
+## Requires services running:
+##   1. make database     (SurrealDB)
+##   2. make api          (FastAPI :5055)
+##   3. make worker       (surreal-commands worker)
+## Then:
+##   make benchmark-models
+##
+## Single-model run:
+##   ONP_BENCHMARK_ONLY="My OpenAI gpt-4o-mini" make benchmark-models
+##
+## Custom per-call timeout (default 90s):
+##   ONP_BENCHMARK_PER_CALL_TIMEOUT_SEC=180 make benchmark-models
+.PHONY: benchmark-models
+benchmark-models:
+	@echo "Benchmarking models at $${ONP_BENCHMARK_API_BASE:-http://localhost:5055}..."
+	@echo "Requires API + worker + SurrealDB to be running. Use \`make status\` to verify."
+	uv run --env-file .env python scripts/benchmark_models.py --output benchmark-report.md
+	@echo ""
+	@echo "Report: ./benchmark-report.md"
+
 .PHONY: worker worker-start worker-stop worker-restart
 
 worker: worker-start
