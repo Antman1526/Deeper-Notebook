@@ -128,8 +128,43 @@ _MAX_WARNING_LEN = 200
 
 
 def _brief(exc: BaseException) -> str:
-    """Truncate exception text for safe inclusion in user-visible warnings."""
+    """Truncate exception text for safe inclusion in user-visible warnings.
+
+    v0.7.132 — Area for Review #10. The previous version did a flat
+    character truncation at byte ~199, which on multi-line exceptions
+    (PyMuPDF stack traces, mammoth error blocks with embedded paths,
+    LangChain provider errors with chained-cause sections) would cut
+    in the middle of line 1 and lose the rest entirely. The operator
+    saw "could not parse foo.pdf: TypeError: cannot conver…" — no
+    indication that the actual cause was 4 lines down.
+
+    New behavior:
+      * If exception text is single-line: same as before — truncate
+        at _MAX_WARNING_LEN with the ellipsis suffix.
+      * If exception text is multi-line: take the first line VERBATIM
+        (up to _MAX_WARNING_LEN-32 to leave room for the suffix), then
+        suffix with " (… N more lines)". The operator sees the actual
+        error head and knows how much was elided.
+
+    The 32-char headroom is sized for the longest realistic suffix
+    "(… 999 more lines)" with a leading space. We could be tighter
+    but 32 is a clean number and the loss is negligible for messages
+    that need this branch (they're invariably hundreds-of-chars long).
+    """
     s = str(exc)
+    # Multi-line path first — the more interesting case.
+    if "\n" in s:
+        lines = s.split("\n")
+        first = lines[0]
+        extra = len(lines) - 1
+        suffix = f" (… {extra} more line{'s' if extra != 1 else ''})"
+        # Leave room for the suffix when truncating the first line.
+        head_budget = _MAX_WARNING_LEN - len(suffix)
+        if len(first) > head_budget:
+            first = first[: head_budget - 1] + "…"
+        return first + suffix
+
+    # Single-line: original behavior.
     if len(s) <= _MAX_WARNING_LEN:
         return s
     return s[: _MAX_WARNING_LEN - 1] + "…"
