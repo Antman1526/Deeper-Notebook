@@ -18,7 +18,53 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.135 (in flight)
+## Unreleased — v0.7.36 → v0.7.136 (in flight)
+
+- **v0.7.136** ✨ **Frontend wires `/settings/observability` into UI.**
+  The backend endpoint shipped in v0.7.130 but had no UI consumer —
+  operators could `curl` it but the Settings page didn't show the
+  effective ONP_* config. v0.7.136 closes the loop:
+
+  **New API client method** (`frontend/src/lib/api/settings.ts`)
+    `settingsApi.getObservability()` — typed wrapper over GET
+    `/settings/observability`.
+
+  **New TypeScript type** (`frontend/src/lib/types/api.ts`)
+    `ObservabilityResponse` mirrors the backend `ObservabilityResponse`
+    Pydantic model field-for-field.
+
+  **New React Query hook** (`frontend/src/lib/hooks/use-settings.ts`)
+    `useObservabilitySettings()` with `refetchOnWindowFocus: true`
+    so a tab-switch after `.env` edit shows the new values without a
+    manual refresh. Separate `QUERY_KEYS.observabilitySettings` so it
+    doesn't get invalidated by writable-settings mutations.
+
+  **New ObservabilityCard component**
+  (`frontend/src/app/(dashboard)/settings/components/ObservabilityCard.tsx`)
+    Read-only card displaying every ONP_* env-derived value with
+    field-by-field description. `db_pool_disabled=true` gets a
+    red warning badge (debugging-only config left on in
+    production = footgun). Card footer links to the operator
+    handbook at `docs/operator/observability.md` (v0.7.134).
+
+  **Settings page** now renders both surfaces: the existing
+  writable `SettingsForm` (mutable, persisted to SurrealDB) AND
+  the new read-only `ObservabilityCard` (env-derived). The two
+  are intentionally separated in the UI because they have
+  different change paths.
+
+  **i18n keys** added under `settings.observability.*` in all 10
+  locale files (`bn-IN`, `en-US`, `es-ES`, `fr-FR`, `it-IT`,
+  `ja-JP`, `pt-BR`, `ru-RU`, `zh-CN`, `zh-TW`). Non-English
+  locales use English placeholders — the locale-parity test
+  passes because key sets match; native-speaker translations
+  can drop in any time.
+
+  Frontend suite: 65 passing (incl. locale parity test catching all
+  10 locales with matching keys). Backend suite unchanged at 691.
+  Production build: 16 routes, clean compile, no new warnings.
+
+- **v0.7.135** 🛡 **AST meta-test enforces HTTPException re-raise
 
 - **v0.7.135** 🛡 **AST meta-test enforces HTTPException re-raise
   convention (Area for Review #3).** Multiple v0.7.x commits have
