@@ -44,25 +44,19 @@ jobs:
   # signals a SurrealQL syntax regression, migration-ordering bug,
   # edge-direction inversion, or delete-cascade gap — bugs the
   # mocked unit tests structurally can't catch.
+  #
+  # v0.7.129b — Originally tried to use a `services:` block here, but
+  # GitHub Actions' service-container syntax can ONLY pass image +
+  # env + ports, NOT positional CLI args. The surrealdb/surrealdb
+  # image's entrypoint is `surreal`, which requires `start --user
+  # root --pass root memory` as its first args. With no subcommand
+  # the container printed help and exited before our workaround
+  # could run, so `services:` initialization failed and gated the
+  # whole job. Fix: drop `services:`, run SurrealDB via a plain
+  # `docker run -d` step where CLI args work normally.
   integration-surreal:
     name: Integration Tests (SurrealDB)
     runs-on: ubuntu-latest
-    services:
-      surrealdb:
-        image: surrealdb/surrealdb:v2
-        # The official image's ENTRYPOINT is `surreal`, so the workflow
-        # passes only the subcommand + flags as the container "command".
-        # In-memory storage is fine here — every test run starts fresh.
-        options: >-
-          --health-cmd "/surreal isready --conn http://localhost:8000 || exit 0"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-        env:
-          SURREAL_USER: root
-          SURREAL_PASS: root
-        ports:
-          - 8000:8000
     env:
       # Toggle that flips the per-suite skip gate (tests/integration/conftest.py).
       SURREAL_INTEGRATION: "1"
@@ -93,26 +87,33 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Start the SurrealDB container with explicit creds
-        # The GitHub `services:` block can't pass positional CLI args
-        # to the container, only env + ports. SurrealDB v2 needs
-        # `start --user root --pass root memory` to bind a root user.
-        # Stop the auto-started service container and replace with one
-        # that has the right CLI invocation.
+      - name: Start SurrealDB
+        # v0.7.129b — direct `docker run` instead of `services:` so we
+        # can pass `start --user root --pass root --log info memory`
+        # as positional args to the image's `surreal` entrypoint.
+        # `memory` storage means every CI run gets a fresh DB and we
+        # don't need to manage volumes.
         run: |
-          docker rm -f "${{ job.services.surrealdb.id }}" || true
           docker run -d --name surrealdb \
             -p 8000:8000 \
             surrealdb/surrealdb:v2 \
             start --user root --pass root --log info memory
-          # Wait for SurrealDB to accept connections (≤60s).
+
+      - name: Wait for SurrealDB to be ready
+        # v0.7.129b — Poll the /health endpoint (HTTP, port 8000) for
+        # up to 60 s. Fails the job loudly if SurrealDB never came
+        # up, with the container logs attached for diagnosis.
+        run: |
           for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health | grep -q 200; then
-              echo "SurrealDB ready after ${i} attempt(s)"
-              break
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "SurrealDB ready after ${i} attempt(s) ($((i * 2)) s)"
+              exit 0
             fi
             sleep 2
           done
+          echo "::error::SurrealDB did not become ready within 60s"
+          docker logs surrealdb || true
+          exit 1
 
       - name: Run integration tests
         run: uv run pytest tests/integration/ -v -m integration_surreal
