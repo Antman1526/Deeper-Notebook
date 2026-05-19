@@ -18,7 +18,62 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.133 (in flight)
+## Unreleased — v0.7.36 → v0.7.134 (in flight)
+
+- **v0.7.134** 🛡 **Low-risk trio: pool warmup retry + operator
+  observability handbook.** Three more Areas for Review closed.
+
+  **Area #6 — Pool warmup retry-with-backoff.** The v0.7.44 warmup
+  attempt grabs `warmup_n` connections at startup so the first chat
+  doesn't pay the cold-handshake cost. v0.7.52 added a 10s per-acquire
+  timeout. But: a single transient failure (network blip during
+  startup, SurrealDB still settling) used to break the entire warmup
+  loop — the first chat then paid the cold-handshake cost anyway,
+  exactly what warmup was supposed to prevent.
+
+  New `_warmup_pool_acquire_with_retry()` helper retries each
+  individual acquire up to 3 times with exponential backoff
+  (`_WARMUP_RETRY_DELAYS_S = (0.5, 1.0, 2.0)`s). The outer loop's
+  two `except` clauses are preserved so timeout-after-all-retries
+  still distinguishes from generic-failure-after-all-retries in the
+  log line. Worst-case warmup wait per slot: 3 × 10s + 0.5 + 1.0 =
+  ~31.5s, vs. ~5min cumulative chat-hot-path penalty if warmup
+  silently skipped before. 5 unit tests pin the happy / retry-then-
+  succeed / all-fail / timeout-after-retries / backoff-delay paths.
+
+  **Area #22 — `@next/bundle-analyzer` tree-shaking verified
+  (docs).** The analyzer was added in v0.7.127 to identify
+  client-bundle lazy-load opportunities. Concern: does the analyzer
+  ship to production bundles? Answer: no — the `enabled: process.env.ANALYZE === "true"`
+  flag in `next.config.ts` makes `withBundleAnalyzer` a passthrough
+  when ANALYZE is unset (production default), and the package is in
+  `devDependencies` only. New docs page documents the verification
+  procedure and explains why a CI-side test for this would be brittle
+  (Next.js internals change between versions, minifiers rename
+  symbols). One-time manual verification is the right shape.
+
+  **Area #27 — Memory recall expected baselines (docs).** The
+  `memory_recall_seconds` histogram has existed since v0.7.124 but
+  operators had no "this is what normal looks like" reference. New
+  docs page publishes measured p50/p99 baselines on a healthy
+  single-user macOS desktop install:
+  - `aembed(query)` p50 80ms / p99 180ms
+  - `vector_search` × 2 p50 25ms / p99 95ms
+  - Full `recall_memory()` p50 130ms / p99 320ms
+  Plus a "what does this counter mean and what should I do" table
+  for each `memory_recall_fallthrough_total{reason}` label. Operators
+  now have concrete numbers to alert against and a remediation step
+  for each.
+
+  **New file**: `docs/operator/observability.md` — the single
+  operator-facing observability handbook. Pulls together every
+  `/metrics` series, the `/healthz/deep` flow, the `/settings/observability`
+  endpoint, expected baselines, and a quick-reference "when each
+  signal fires" table.
+
+  Backend suite: **661 passing** (was 656, +5).
+
+- **v0.7.133** ✨ **Four invasive deferred items, fresh-scoped batch.**
 
 - **v0.7.133** ✨ **Four invasive deferred items, fresh-scoped batch.**
   Closes the last cluster of Areas for Review that were too risky to
