@@ -440,5 +440,93 @@ class TestEpisodeProfile:
         assert profile.num_segments == 5
 
 
+# ============================================================================
+# TEST SUITE: Note.save() resilience to surreal-commands registry misses
+# (v0.7.129 regression — found by the SurrealDB integration suite)
+# ============================================================================
+
+
+class TestNoteSaveResilience:
+    """v0.7.129 — Note.save() previously raised
+    `ValueError: Command not found: open_notebook.embed_note` whenever
+    the surreal-commands worker hadn't registered the embed_note
+    command (CI without a worker, fresh installs, restart windows).
+    Embedding is fire-and-forget by design, so a missing worker
+    must not fail the save itself.
+    """
+
+    @pytest.mark.asyncio
+    async def test_save_survives_command_not_found(self):
+        """submit_command raising 'Command not found' must be swallowed
+        with a warning; the note row itself is durable."""
+        note = Note(title="N", content="some content", note_type="human")
+
+        # Pretend super().save() ran fine and assigned an id.
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake123"
+
+        def _raise_not_found(*args, **kwargs):
+            raise ValueError("Command not found: open_notebook.embed_note")
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("open_notebook.domain.notebook.submit_command", _raise_not_found),
+        ):
+            # Should return None (no command_id), not raise.
+            result = await note.save()
+            assert result is None
+            assert note.id == "note:fake123"
+
+    @pytest.mark.asyncio
+    async def test_save_survives_generic_submission_exception(self):
+        """Any non-ValueError from submit_command (worker DB down,
+        network blip) must also be swallowed — the save must not be
+        gated on best-effort embedding submission."""
+        note = Note(title="N", content="some content", note_type="human")
+
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake456"
+
+        def _raise_runtime(*args, **kwargs):
+            raise RuntimeError("worker DB unreachable")
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("open_notebook.domain.notebook.submit_command", _raise_runtime),
+        ):
+            result = await note.save()
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_save_propagates_unrelated_value_errors(self):
+        """The narrow ValueError branch only swallows registry-miss
+        errors. Other ValueErrors (e.g. caller passed a malformed
+        argument, surreal-commands raises a different ValueError in
+        a future release) MUST propagate so they don't get silently
+        masked.
+
+        Python except-clause matching: once the `except ValueError`
+        branch matches and `raise`s, the exception leaves the try
+        block. The broader `except Exception` below it does NOT get
+        a second chance — that's the entire reason we narrow on
+        message content here. Re-raising preserves debuggability for
+        ValueErrors that aren't the known registry-miss case.
+        """
+        note = Note(title="N", content="some content", note_type="human")
+
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake789"
+
+        def _raise_bad_args(*args, **kwargs):
+            raise ValueError("Invalid note_id format")
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("open_notebook.domain.notebook.submit_command", _raise_bad_args),
+        ):
+            with pytest.raises(ValueError, match="Invalid note_id format"):
+                await note.save()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

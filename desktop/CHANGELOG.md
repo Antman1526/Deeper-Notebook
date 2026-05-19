@@ -18,7 +18,42 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.129 (in flight)
+## Unreleased — v0.7.36 → v0.7.129c (in flight)
+
+- **v0.7.129c** 🐛 **Note.save() no longer fails when surreal-commands
+  worker is down.** Found by the v0.7.129 integration suite on its
+  first CI run: `Note.save()` was unconditionally submitting an
+  `embed_note` command. When the worker hadn't imported the commands
+  module (CI without a worker, fresh installs, the moment after a
+  restart, anything pytest), `submit_command` raises
+  `ValueError: Command not found: open_notebook.embed_note` and the
+  entire save fails. The contract documented in
+  `open_notebook/domain/CLAUDE.md` is "fire-and-forget": embedding
+  is eventual-consistency, the row is what matters. Fix wraps the
+  submission in a narrow `except ValueError` catching only the
+  "Command not found" message plus a broad `except Exception` for
+  network / worker-DB outages — both log a warning and let the save
+  succeed. Non-registry ValueErrors still propagate so future
+  legitimate argument bugs don't get silently masked. 3 unit tests
+  added under `TestNoteSaveResilience` covering all three branches.
+  This brings `Note.save()` in line with `Source.add_insight()`,
+  which already had the broad-except pattern.
+
+- **v0.7.129b** 🛠 **CI: drop `services:` block for SurrealDB, use
+  `docker run -d` instead.** First CI run of v0.7.129 surfaced that
+  GitHub Actions' `services:` syntax can pass only image + env +
+  ports, not positional CLI args. The SurrealDB image's entrypoint
+  is `surreal` which needs `start --user root --pass root memory`
+  as args. With no subcommand the container exits immediately,
+  failing "Initialize containers" before any workaround step can
+  run. Switched to a plain `docker run -d` step with a dedicated
+  `curl /health` readiness probe.
+
+- **v0.7.129a** 🛠 **CI: fire Tests workflow on `desktop-app`
+  branch.** Previously gated to `branches:[main]` for both push and
+  PR triggers — meant the entire test suite only ran on
+  upstream-sync PRs, never on the actual working branch. Trivial
+  trigger extension.
 
 - **v0.7.129** 🛠 **Real-SurrealDB integration test fixture.** The
   hermetic backend suite (now 591 tests) catches a lot but is
