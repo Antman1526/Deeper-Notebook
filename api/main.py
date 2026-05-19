@@ -110,6 +110,62 @@ except Exception as e:
     logger.error(f"Failed to import commands in API process: {e}")
 
 
+# v0.7.134 — Pool warmup retry helper (Area for Review #6).
+#
+# Background: the v0.7.44 warmup attempt grabs `warmup_n` connections at
+# startup so the first chat doesn't pay the cold-handshake cost. The
+# v0.7.52 bound added asyncio.wait_for(timeout=10) so a hung SurrealDB
+# can't block boot indefinitely. But: a single transient failure (network
+# blip during startup, SurrealDB still settling) used to break the entire
+# warmup loop. The first chat would then pay the cold-handshake cost
+# anyway — exactly what warmup was supposed to prevent.
+#
+# Fix: retry each individual acquire with exponential backoff (0.5s,
+# 1.0s, 2.0s). After 3 attempts we give up on that connection and the
+# outer loop decides whether to bail entirely or continue with fewer
+# warm connections. Total worst-case warmup wait: 3 × 10s + 0.5 + 1.0
+# = ~31.5s per slot, vs. ~5min cumulative chat-hot-path penalty if
+# warmup silently skipped.
+_WARMUP_RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.0, 2.0)
+
+
+async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
+    """Acquire one pool connection with retry-on-failure.
+
+    Each attempt has its own ``asyncio.wait_for`` timeout (default
+    10s). Between attempts we ``asyncio.sleep`` per
+    ``_WARMUP_RETRY_DELAYS_S``. After all attempts fail, re-raises
+    the LAST exception so the caller can distinguish timeout from
+    other failures (current call site uses two ``except`` clauses).
+
+    Returns the acquired AsyncSurreal connection.
+    """
+    from open_notebook.database.repository import _acquire
+
+    last_exc: BaseException | None = None
+    for attempt, delay in enumerate(_WARMUP_RETRY_DELAYS_S):
+        try:
+            return await asyncio.wait_for(_acquire(), timeout=timeout_s)
+        except Exception as exc:
+            last_exc = exc
+            is_last = attempt == len(_WARMUP_RETRY_DELAYS_S) - 1
+            if not is_last:
+                logger.warning(
+                    "DB pool warmup attempt {}/{} failed ({}); retrying "
+                    "in {}s",
+                    attempt + 1, len(_WARMUP_RETRY_DELAYS_S), exc, delay,
+                )
+                await asyncio.sleep(delay)
+            # else: fall through, last_exc gets raised below
+    # All attempts exhausted. last_exc should always be set here
+    # (we only exit the loop after at least one failed attempt), but
+    # defend against the edge case where the loop body was somehow
+    # bypassed (e.g., empty _WARMUP_RETRY_DELAYS_S).
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("pool warmup failed with no exception captured")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -223,7 +279,6 @@ async def lifespan(app: FastAPI):
     # on (degrades to lazy-warmup, same as the pre-0.7.44 behavior).
     try:
         from open_notebook.database.repository import (
-            _acquire,
             _db_pool_size,
             _release,
         )
@@ -231,22 +286,29 @@ async def lifespan(app: FastAPI):
         warmup_n = min(2, _db_pool_size())
         warm_conns = []
         for _ in range(warmup_n):
+            # v0.7.134 — _warmup_pool_acquire_with_retry retries each
+            # acquire up to 3 times with exponential backoff before
+            # giving up. Outer except clauses unchanged: timeout-after-
+            # all-retries still distinguishes from generic-failure-after-
+            # all-retries for log clarity.
             try:
-                warm_conns.append(
-                    await asyncio.wait_for(_acquire(), timeout=10.0)
-                )
+                warm_conns.append(await _warmup_pool_acquire_with_retry())
             except asyncio.TimeoutError:
                 logger.warning(
-                    "DB pool warmup acquire timed out after 10s — "
-                    "skipping remaining warmup, falling back to lazy "
-                    "initialization on first request"
+                    "DB pool warmup acquire timed out after all retries "
+                    "({} attempts × 10s) — skipping remaining warmup, "
+                    "falling back to lazy initialization on first request",
+                    len(_WARMUP_RETRY_DELAYS_S),
                 )
                 break
             except Exception as exc:
                 # Pool warmup is best-effort — a failure here shouldn't
                 # prevent boot. The user can still recover via the
                 # /readyz probe + a manual retry.
-                logger.warning("DB pool warmup acquire failed: {}", exc)
+                logger.warning(
+                    "DB pool warmup acquire failed after all retries: {}",
+                    exc,
+                )
                 break
         for c in warm_conns:
             await _release(c)
