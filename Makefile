@@ -1,4 +1,4 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart backup restore verify-backup
+.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart backup restore verify-backup test test-integration
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -181,6 +181,22 @@ restore:
 		uv run --env-file .env python scripts/backup_restore.py restore $(BUNDLE); \
 	fi
 	@echo "✅ Restore complete from: $(BUNDLE)"
+
+## v0.7.129 — test runners.
+## `make test`             runs the hermetic backend suite (no external deps).
+## `make test-integration` runs the SurrealDB-backed integration suite. You
+##                         MUST have SurrealDB up — `make database` first —
+##                         and the test fixtures will mint a throwaway
+##                         namespace (onp_test_<uuid>) so your real data is
+##                         untouched.
+
+test:
+	uv run pytest tests/ -v --ignore=tests/integration
+
+test-integration:
+	@echo "Running integration tests against SurrealDB at $${SURREAL_URL:-ws://localhost:8000/rpc}..."
+	@echo "Tests use a throwaway namespace; your real data is not touched."
+	SURREAL_INTEGRATION=1 uv run --env-file .env pytest tests/integration/ -v -m integration_surreal
 
 .PHONY: worker worker-start worker-stop worker-restart
 

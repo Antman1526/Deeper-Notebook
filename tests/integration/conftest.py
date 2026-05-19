@@ -1,0 +1,296 @@
+"""v0.7.129 — pytest fixtures for the real-SurrealDB integration suite.
+
+Design goals (in priority order):
+
+  1. **Safe by default.** If `SURREAL_INTEGRATION` is unset, EVERY test
+     under `tests/integration/` is skipped at collection time — no
+     accidental connections from a normal `uv run pytest` run.
+
+  2. **Isolated from the developer's working namespace.** We never run
+     against `SURREAL_NAMESPACE=open_notebook` (the real app data).
+     Instead we mint a throwaway namespace `onp_test_<short-uuid>` per
+     pytest session, patch the env vars to point at it, run migrations
+     against it, and `REMOVE NAMESPACE` on teardown so the SurrealDB
+     volume stays clean across runs.
+
+  3. **No new fixtures in the hot path.** The fixture sets env vars
+     and relies on the same `open_notebook.database.repository` pool
+     the production code uses. That way every SurrealQL regression
+     these tests catch is one the production code can hit too.
+
+Connection params (read from env, with sensible local-dev defaults):
+
+  * `SURREAL_URL`       defaults to `ws://localhost:8000/rpc`
+  * `SURREAL_USER`      defaults to `root`
+  * `SURREAL_PASSWORD`  defaults to `root`
+
+Override any of these if your local SurrealDB uses different creds.
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+from collections.abc import AsyncIterator
+from typing import Any
+
+import pytest
+import pytest_asyncio
+from surrealdb import AsyncSurreal  # type: ignore[import-untyped]
+
+
+# ---------------------------------------------------------------------------
+# Collection-time skip gate
+#
+# Without this, a developer running `uv run pytest` with the integration
+# suite on disk but no DB available would burn ~30 s of timeouts before
+# bailing out. The pytest_collection_modifyitems hook skips every item
+# under this directory BEFORE the event loop starts — same UX as the
+# `pytest -m "not integration_surreal"` they'd otherwise have to type.
+# ---------------------------------------------------------------------------
+
+_INTEGRATION_ENV = "SURREAL_INTEGRATION"
+
+
+def _integration_enabled() -> bool:
+    return os.environ.get(_INTEGRATION_ENV, "").lower() in {"1", "true", "yes", "on"}
+
+
+def pytest_collection_modifyitems(config, items):  # type: ignore[no-untyped-def]
+    """Skip every test in this directory unless SURREAL_INTEGRATION=1.
+
+    We attach a single skip marker rather than deselecting items so the
+    skip reason shows up in the pytest summary (helpful when a CI run
+    is supposed to be running these and isn't).
+    """
+    if _integration_enabled():
+        return
+    skip_marker = pytest.mark.skip(
+        reason=(
+            f"set {_INTEGRATION_ENV}=1 (and start SurrealDB via `make database`) "
+            "to run real-SurrealDB integration tests"
+        )
+    )
+    for item in items:
+        # Only mark items that actually live under tests/integration/. This
+        # is defensive — pytest's rootdir + this conftest scope means the
+        # function is only ever called with items under this dir, but if
+        # someone moves the conftest we don't want it silently skipping
+        # other tests.
+        if "tests/integration" in str(item.fspath).replace("\\", "/"):
+            item.add_marker(skip_marker)
+
+
+# ---------------------------------------------------------------------------
+# Connection helpers — kept private so the only public surface is the
+# `surreal_db` fixture below.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_url() -> str:
+    """Mirror open_notebook.database.repository.get_database_url() defaults
+    for the integration suite. We don't import that function directly
+    because it has side effects on first call (and we want tests to be
+    able to override SURREAL_URL via env before the repo module touches
+    the pool)."""
+    url = os.environ.get("SURREAL_URL")
+    if url:
+        return url
+    return "ws://localhost:8000/rpc"
+
+
+def _resolve_creds() -> tuple[str, str]:
+    user = os.environ.get("SURREAL_USER", "root")
+    password = (
+        os.environ.get("SURREAL_PASSWORD")
+        or os.environ.get("SURREAL_PASS")
+        or "root"
+    )
+    return user, password
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped namespace fixture
+#
+# Strategy:
+#   1. Mint a per-session namespace + database name. Using BOTH a unique
+#      namespace AND a unique database is belt-and-suspenders — REMOVE
+#      NAMESPACE on teardown wipes everything inside regardless, but if
+#      teardown fails (kill -9, network blip), the next run still gets
+#      a fresh DB instead of inheriting half-migrated state.
+#   2. Patch SURREAL_NAMESPACE / SURREAL_DATABASE in os.environ BEFORE
+#      importing anything that touches the repo pool, so the pool's
+#      first connection (lazy) uses the test namespace.
+#   3. Run AsyncMigrationManager.run_migration_up() — same path as the
+#      production API startup. This is what catches schema-ordering
+#      regressions that pure SurrealQL-string unit tests can't.
+#   4. Yield.
+#   5. Teardown: close the repo pool, then connect as root and REMOVE
+#      NAMESPACE <ns> to nuke every record/edge/migration history.
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(scope="session")
+async def surreal_db() -> AsyncIterator[dict[str, Any]]:
+    """Bring up a throwaway namespace and run migrations against it.
+
+    Yields a dict with the connection metadata so tests that need to
+    open a side-channel connection (e.g. to verify edge-table contents
+    directly) can do so without re-parsing env vars.
+    """
+    if not _integration_enabled():
+        # Belt-and-suspenders — the collection hook above should have
+        # already skipped, but a `pytest tests/integration/foo.py::bar`
+        # invocation that bypasses collection-level modifications could
+        # still reach here. Skip loudly rather than try to connect.
+        pytest.skip(f"{_INTEGRATION_ENV} not set")
+
+    short = uuid.uuid4().hex[:8]
+    ns = f"onp_test_{short}"
+    db = f"onp_test_{short}"
+
+    url = _resolve_url()
+    user, password = _resolve_creds()
+
+    # Patch env BEFORE importing repo / migration modules so their first
+    # use of os.environ sees our throwaway namespace, not whatever the
+    # developer has set in `.env`.
+    # v0.7.129 — also explicitly clear the connection pool in case the
+    # repo module was already imported by some upstream conftest. The
+    # pool caches connections that have already called `USE NS/DB`, so
+    # without a reset they'd target the wrong namespace.
+    old_env = {
+        k: os.environ.get(k)
+        for k in (
+            "SURREAL_URL",
+            "SURREAL_USER",
+            "SURREAL_PASSWORD",
+            "SURREAL_NAMESPACE",
+            "SURREAL_DATABASE",
+        )
+    }
+    os.environ["SURREAL_URL"] = url
+    os.environ["SURREAL_USER"] = user
+    os.environ["SURREAL_PASSWORD"] = password
+    os.environ["SURREAL_NAMESPACE"] = ns
+    os.environ["SURREAL_DATABASE"] = db
+
+    # Import here, after env is patched, so the pool's lazy init reads
+    # the test namespace on first acquire.
+    from open_notebook.database import repository as repo_mod
+    from open_notebook.database.async_migrate import AsyncMigrationManager
+
+    await repo_mod.close_pool()  # idempotent if not yet initialized
+
+    # Verify connectivity with a direct connection BEFORE migrations
+    # run — a clear "couldn't reach SurrealDB" error is much more
+    # actionable than a half-migrated namespace and a confusing query
+    # failure later.
+    probe = AsyncSurreal(url)
+    try:
+        await probe.signin({"username": user, "password": password})
+        # Bootstrap the namespace + database. SurrealDB auto-creates
+        # them on first `USE` with root creds, but doing it explicitly
+        # surfaces auth/permission errors here, not deep inside a
+        # migration query.
+        await probe.use(ns, db)
+        # Touch a no-op query to make sure auth landed.
+        await probe.query("INFO FOR DB;")
+    finally:
+        try:
+            await probe.close()
+        except Exception:
+            pass
+
+    # Run all forward migrations against the fresh namespace.
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+
+    meta = {
+        "url": url,
+        "user": user,
+        "password": password,
+        "namespace": ns,
+        "database": db,
+    }
+
+    try:
+        yield meta
+    finally:
+        # Teardown order matters:
+        #   1. Drain the production pool so no in-flight queries hold
+        #      a reference to the namespace we're about to nuke.
+        #   2. Open a fresh root-level connection and REMOVE NAMESPACE.
+        #      (REMOVE NAMESPACE cascades to every database / table /
+        #      record / edge inside, so we don't have to enumerate.)
+        #   3. Restore the original env vars so subsequent test files
+        #      in the same session (if any) start from a clean slate.
+        try:
+            await repo_mod.close_pool()
+        except Exception:
+            pass
+
+        cleanup = AsyncSurreal(url)
+        try:
+            await cleanup.signin({"username": user, "password": password})
+            # REMOVE NAMESPACE must run at root scope (no USE first),
+            # so we don't `await cleanup.use(...)` here.
+            await cleanup.query(f"REMOVE NAMESPACE IF EXISTS {ns};")
+        except Exception:
+            # We never want a teardown failure to mask a real test
+            # failure. Log and move on — the next session's per-uuid
+            # namespace name means leftover state can't poison it.
+            pass
+        finally:
+            try:
+                await cleanup.close()
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+@pytest_asyncio.fixture
+async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """Per-test wipe of all user-data tables.
+
+    The session fixture sets up the schema once (expensive — runs 14
+    migrations). This fixture keeps that schema but truncates the
+    domain tables between tests so test_A's leftover notebook doesn't
+    show up in test_B's `SELECT * FROM notebook`.
+
+    Add table names here as new integration tests start touching them.
+    Keep the list narrow — wiping `_sbl_migrations` would force the
+    migration runner to re-execute on the next test.
+    """
+    from open_notebook.database.repository import repo_query
+
+    # Domain tables this suite currently exercises. Edge tables
+    # (reference, artifact, refers_to) auto-cascade on `DELETE FROM
+    # <node-table>` because SurrealDB removes edges pointing at deleted
+    # records — but we list them explicitly so a test that creates an
+    # orphan edge directly still gets a clean slate.
+    tables = [
+        "reference",
+        "artifact",
+        "refers_to",
+        "source",
+        "note",
+        "notebook",
+        "chat_session",
+    ]
+    for tbl in tables:
+        try:
+            await repo_query(f"DELETE {tbl};")
+        except Exception:
+            # Table may not exist yet (migrations are forward-only
+            # and a test could be running before the table is added).
+            # Silent skip — the test will fail on its own if the
+            # table really is required.
+            pass
+
+    yield surreal_db
