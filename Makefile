@@ -126,11 +126,19 @@ tag:
 	git push origin "v$$version"
 
 
+# v0.7.140 — Both `dev` and `full` previously referenced compose files
+# (`docker-compose.dev.yml`, `docker-compose.full.yml`) that do not
+# exist in the repo. Only `docker-compose.yml` ships. Running either
+# target failed with:
+#     open docker-compose.dev.yml: no such file or directory
+# Switched both to the actual file. Until/unless the dev / full
+# variants are reintroduced they're aliases of the same single
+# compose file.
 dev:
-	docker compose -f docker-compose.dev.yml up --build 
+	docker compose -f docker-compose.yml up --build
 
 full:
-	docker compose -f docker-compose.full.yml up --build 
+	docker compose -f docker-compose.yml up --build
 
 
 api:
@@ -244,10 +252,32 @@ worker-restart: worker-stop
 start-all:
 	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
 	@echo "📊 Starting SurrealDB..."
-	@docker compose -f docker-compose.dev.yml up -d surrealdb
-	@sleep 3
+	# v0.7.140 — was docker-compose.dev.yml (didn't exist).
+	@docker compose -f docker-compose.yml up -d surrealdb
+	# v0.7.140 — poll SurrealDB /health instead of a flat sleep 3s.
+	# Cold-start with a fresh volume can exceed 3s on slower disks;
+	# the polling loop bails after 30s with a clear error rather
+	# than letting the API fail its first migration silently.
+	@echo -n "   Waiting for SurrealDB"
+	@for i in $$(seq 1 30); do \
+		if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then \
+			echo " ✓"; break; \
+		fi; \
+		echo -n "."; \
+		sleep 1; \
+		if [ "$$i" = "30" ]; then \
+			echo ""; echo "❌ SurrealDB did not become ready within 30s"; \
+			docker compose -f docker-compose.yml logs surrealdb | tail -20; \
+			exit 1; \
+		fi; \
+	done
 	@echo "🔧 Starting API backend..."
-	@uv run run_api.py &
+	# v0.7.140 — added --env-file .env (was missing). Without it,
+	# run_api.py didn't see OPEN_NOTEBOOK_ENCRYPTION_KEY +
+	# SURREAL_URL / SURREAL_PASSWORD from .env (which the worker
+	# line below already loads correctly). Symptom: API came up
+	# but credential decryption failed on the first auth call.
+	@uv run --env-file .env run_api.py &
 	@sleep 3
 	@echo "⚙️ Starting background worker..."
 	@uv run --env-file .env surreal-commands-worker --import-modules commands &
