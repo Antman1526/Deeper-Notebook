@@ -6,6 +6,78 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
+
+
+# v0.7.133 — Notebook delete bulk-SQL threshold (Area for Review #4).
+_DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD = 25
+
+
+def _notebook_delete_bulk_threshold() -> int:
+    """Return the note-count threshold above which `Notebook.delete()`
+    switches from per-note gather to bulk-SQL. Configurable via
+    `ONP_NOTEBOOK_DELETE_BULK_THRESHOLD`. Defaults to 25.
+
+    Rationale for the default: with ONP_DB_POOL_SIZE=4 (default), 25
+    concurrent per-note DELETEs serialize into ~6-7 round-trip batches.
+    Bulk does it in 3 statements total, so the breakeven is somewhere
+    in the 10-25 range depending on pool latency. 25 is the safer
+    default — bigger speedup with no observability loss on small
+    notebooks where the per-note log lines actually help.
+
+    Set to 1 (or 0) to force bulk on every delete; set to a huge
+    number to force the per-note path. Useful for debugging.
+    """
+    raw = (os.environ.get("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD") or "").strip()
+    if not raw:
+        return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
+    try:
+        val = int(raw)
+        if val < 0:
+            logger.warning(
+                "ONP_NOTEBOOK_DELETE_BULK_THRESHOLD={} negative; using default {}",
+                raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
+            )
+            return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
+        return val
+    except ValueError:
+        logger.warning(
+            "ONP_NOTEBOOK_DELETE_BULK_THRESHOLD={!r} not an int; using "
+            "default {}", raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
+        )
+        return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
+
+
+def _is_command_registered(command_id: str) -> bool:
+    """v0.7.133 — Check whether a surreal-commands command is in the
+    process registry. Replaces the previous string-match against the
+    `ValueError: Command not found` message that submit_command()
+    raises when the registry is empty.
+
+    Returns True if the command is registered (submit will succeed at
+    the registry-check stage), False otherwise. Lazy-import the
+    registry so an absent surreal_commands install doesn't break
+    module load. Wrapped in a try/except because the registry API
+    surface could change between minor versions and we want this
+    pre-check to fail-closed (treat as "not registered, log + skip")
+    rather than break Note.save.
+
+    Why a pre-check beats catching the ValueError after the fact:
+      - No string-content brittleness — surreal_commands could rename
+        the exception message and this still works.
+      - We never have to distinguish "registry miss" ValueError from
+        a real argument-validation ValueError inside the command
+        handler. The pre-check answers exactly the question we care
+        about.
+      - Faster: skips the cross-process DB roundtrip submit_command
+        does before discovering the registry is empty.
+    """
+    try:
+        from surreal_commands import registry
+        return registry.get_command_by_id(command_id) is not None
+    except Exception:
+        # Registry API change, attribute missing, or surreal_commands
+        # absent. Fail-closed.
+        return False
 from surrealdb import RecordID
 
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -156,6 +228,7 @@ class Notebook(ObjectModel):
             unlinked_sources = 0
 
             # 1. Get and delete all notes linked to this notebook.
+            #
             # v0.7.107 — parallelize per-note deletes. For v0.7.89
             # multi-page notebooks with N notes, the old sequential loop
             # was N+1 round-trips serialized; with asyncio.gather they
@@ -166,24 +239,43 @@ class Notebook(ObjectModel):
             # return_exceptions=True keeps one failed note from
             # cancelling the others — a partial cleanup is still
             # better than aborting halfway and leaving orphan rows.
+            #
+            # v0.7.133 — Bulk-SQL path for notebooks above the
+            # ONP_NOTEBOOK_DELETE_BULK_THRESHOLD (default 25) note
+            # threshold (Area for Review #4). Even with gather, the
+            # per-note path is N concurrent DELETEs hitting a
+            # connection pool of size 4 (ONP_DB_POOL_SIZE default) —
+            # they queue up. For a 100-note notebook that's 100 ÷ 4 =
+            # ~25 round-trip-batches serialized, plus per-call overhead.
+            # The bulk path does 3 SurrealQL statements regardless of N.
+            #
+            # Trade-off: bulk loses the per-note observability log line
+            # ("note X failed to delete"). For small notebooks that's a
+            # diagnostic loss not worth the speedup; for large notebooks
+            # the speedup is huge AND a per-note log per failure was
+            # always noise. Threshold is tunable.
             import asyncio as _asyncio_for_delete  # local alias avoids name shadowing
             notes = await self.get_notes()
             if notes:
-                results = await _asyncio_for_delete.gather(
-                    *(note.delete() for note in notes),
-                    return_exceptions=True,
-                )
-                for note, result in zip(notes, results):
-                    if isinstance(result, BaseException):
-                        logger.warning(
-                            "Notebook delete: note {} failed to delete: {}",
-                            note.id, result,
-                        )
-                        # Skip counting failed deletes; the top-level
-                        # `DELETE artifact WHERE out=$notebook_id`
-                        # below will at least unlink the orphan.
-                        continue
-                    deleted_notes += 1
+                bulk_threshold = _notebook_delete_bulk_threshold()
+                if len(notes) > bulk_threshold:
+                    deleted_notes = await self._bulk_delete_notes(notes)
+                else:
+                    results = await _asyncio_for_delete.gather(
+                        *(note.delete() for note in notes),
+                        return_exceptions=True,
+                    )
+                    for note, result in zip(notes, results):
+                        if isinstance(result, BaseException):
+                            logger.warning(
+                                "Notebook delete: note {} failed to delete: {}",
+                                note.id, result,
+                            )
+                            # Skip counting failed deletes; the top-level
+                            # `DELETE artifact WHERE out=$notebook_id`
+                            # below will at least unlink the orphan.
+                            continue
+                        deleted_notes += 1
             logger.info(f"Deleted {deleted_notes} notes for notebook {self.id}")
 
             # Delete artifact relationships
@@ -283,6 +375,61 @@ class Notebook(ObjectModel):
             logger.error(f"Error deleting notebook {self.id}: {e}")
             logger.exception(e)
             raise DatabaseOperationError(f"Failed to delete notebook: {e}")
+
+    async def _bulk_delete_notes(self, notes: list["Note"]) -> int:
+        """v0.7.133 — Bulk-SQL cascade-delete for notes in this notebook.
+
+        Three statements, regardless of N notes:
+          1. DELETE artifact   WHERE in IN $note_ids           (edges)
+          2. DELETE note_embedding WHERE note IN $note_ids     (embeddings)
+          3. DELETE note       WHERE id IN $note_ids           (rows)
+
+        Trade-offs vs the per-note gather path:
+          + 3 round-trips total instead of ~N/pool_size batches.
+          + No per-note connection-pool contention.
+          - Lose per-note "note X failed to delete" log line — if a
+            single statement fails, the entire batch fails.
+          - Bypasses any per-note logic Note.delete() might add in
+            future. Currently Note.delete() does exactly the same
+            DELETE statements we're issuing here, just per-note.
+            Worth a code review if Note.delete() ever grows
+            per-note side effects (e.g., file cleanup).
+
+        Returns the count of notes successfully deleted (i.e. that
+        existed before this call). Best-effort: any failure logs and
+        returns 0 — the surrounding `Notebook.delete()` then proceeds
+        with edge cleanup (DELETE artifact WHERE out=$notebook_id),
+        which at minimum unlinks the orphans.
+        """
+        note_ids = [ensure_record_id(n.id) for n in notes if n.id]
+        if not note_ids:
+            return 0
+        try:
+            await repo_query(
+                "DELETE artifact WHERE in IN $note_ids",
+                {"note_ids": note_ids},
+            )
+            await repo_query(
+                "DELETE note_embedding WHERE note IN $note_ids",
+                {"note_ids": note_ids},
+            )
+            await repo_query(
+                "DELETE note WHERE id IN $note_ids",
+                {"note_ids": note_ids},
+            )
+            logger.info(
+                "Bulk-deleted {} notes for notebook {}",
+                len(note_ids), self.id,
+            )
+            return len(note_ids)
+        except Exception as e:
+            logger.warning(
+                "Bulk delete of {} notes failed for notebook {}: {}. "
+                "Outer Notebook.delete() will still unlink artifact "
+                "edges (DELETE artifact WHERE out=$notebook_id).",
+                len(note_ids), self.id, e,
+            )
+            return 0
 
 
 class Asset(BaseModel):
@@ -678,8 +825,8 @@ class Source(ObjectModel):
                 )
 
         # Delete associated embeddings and insights to prevent orphaned records
+        source_id = ensure_record_id(self.id)
         try:
-            source_id = ensure_record_id(self.id)
             await repo_query(
                 "DELETE source_embedding WHERE source = $source_id",
                 {"source_id": source_id},
@@ -710,7 +857,53 @@ class Source(ObjectModel):
             )
 
         # Call parent delete to remove database record
-        return await super().delete()
+        result = await super().delete()
+
+        # v0.7.133 — Race-window post-sweep (Area for Review #11).
+        #
+        # The cancel above (`svc.update_command_result(status="canceled")`)
+        # writes a row to the surreal_commands tracking table but does
+        # NOT actually stop the running worker — surreal_commands has no
+        # cancellation-token mechanism. So between the pre-sweep above
+        # and this point (single-digit ms in practice, but the worker
+        # could complete a write iteration during that window), the
+        # worker could insert one or more fresh `source_embedding` rows
+        # pointing at the now-deleted source.
+        #
+        # We re-run the sweep AFTER super().delete(). The DELETE matches
+        # by `source = $source_id`, and SurrealDB doesn't enforce the
+        # source-existence constraint, so even after the source row is
+        # gone we can still purge by ID. Idempotent + cheap.
+        #
+        # We don't re-sweep `reference` — those edges require an
+        # explicit `Source.add_to_notebook` call which can't race against
+        # a deleted source (the call path goes through Source.id which
+        # is already None post-delete on this instance).
+        try:
+            await repo_query(
+                "DELETE source_embedding WHERE source = $source_id",
+                {"source_id": source_id},
+            )
+            await repo_query(
+                "DELETE source_insight WHERE source = $source_id",
+                {"source_id": source_id},
+            )
+            logger.debug(
+                "Race-window post-sweep cleared any stragglers for source {}",
+                self.id,
+            )
+        except Exception as e:
+            # Best-effort: if this fails the orphan rows are present but
+            # not user-visible (no source row to associate them with).
+            # Log + continue; periodic cleanup or a future migration
+            # can sweep them up.
+            logger.warning(
+                "Race-window post-sweep failed for source {}: {}. Orphan "
+                "embeddings/insights may exist but are unreachable via "
+                "the API.", self.id, e,
+            )
+
+        return result
 
 
 class Note(ObjectModel):
@@ -747,16 +940,30 @@ class Note(ObjectModel):
             # registry entry (worker not running yet, worker not
             # importing the `commands` module, integration tests with
             # no worker process at all) doesn't fail an otherwise
-            # successful save. The contract documented in
-            # domain/CLAUDE.md is "fire-and-forget": embedding is
-            # eventual-consistency, the note row itself is what matters.
+            # successful save. Per the "fire-and-forget" contract
+            # documented in domain/CLAUDE.md, embedding is
+            # eventual-consistency — the note row itself is what
+            # matters.
             #
-            # The original code surfaced `ValueError: Command not
-            # found: open_notebook.embed_note` to callers, which
-            # meant Note creation broke whenever surreal-commands
-            # hadn't started or hadn't been imported with
-            # `--import-modules commands`. Tests, CI, fresh installs,
-            # and the moment-after-restart window all hit this.
+            # v0.7.133 — replaced fragile string-match against the
+            # exception message ("Command not found") with a direct
+            # registry-introspection pre-check. The previous code did
+            # `except ValueError: if "Command not found" in str(e)`,
+            # which would silently break if surreal_commands ever
+            # changed its error message (the library just raises plain
+            # ValueError, no typed exception class). Now we ask the
+            # registry directly via `registry.get_command_by_id()` —
+            # returns None if the command isn't registered, no
+            # exception. Cleaner intent + no string brittleness.
+            if not _is_command_registered("open_notebook.embed_note"):
+                logger.warning(
+                    f"embed_note not in surreal-commands registry — "
+                    f"note {self.id} saved without embedding. Embedding "
+                    f"will run when the worker starts and the note is "
+                    f"re-saved, or via a manual re-embed."
+                )
+                return None
+
             try:
                 command_id = await asyncio.to_thread(
                     submit_command,
@@ -768,22 +975,20 @@ class Note(ObjectModel):
                     f"Submitted embed_note command {command_id} for {self.id}"
                 )
                 return command_id
-            except ValueError as e:
-                # Specifically catches the registry-miss case; broader
-                # ValueErrors from inside the command handler itself
-                # would have surfaced at execution time, not submission.
-                if "Command not found" in str(e):
-                    logger.warning(
-                        f"embed_note not in surreal-commands registry — "
-                        f"note {self.id} saved without embedding. "
-                        f"Embedding will run when the worker starts and "
-                        f"the note is re-saved, or via a manual re-embed."
-                    )
-                    return None
+            except ValueError:
+                # v0.7.133 — Narrow propagation for ValueError. The
+                # registry-miss case was already filtered by the
+                # `_is_command_registered` pre-check above, so a
+                # ValueError reaching here represents a real bug
+                # (bad argument from caller, validation in
+                # surreal_commands itself) that should surface, not
+                # silently turn into "note saved without embedding".
+                # Pinned by test_save_propagates_unrelated_value_errors.
                 raise
             except Exception as e:
-                # Connection failure, worker DB unreachable, etc. The
-                # save is durable; embedding is best-effort.
+                # Connection failure, worker DB unreachable, transient
+                # surreal_commands DB write error — the save is durable;
+                # embedding is best-effort.
                 logger.warning(
                     f"Failed to submit embed_note for {self.id}: {e}. "
                     f"Note saved; embedding will retry on next save."

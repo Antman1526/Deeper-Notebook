@@ -453,35 +453,45 @@ class TestNoteSaveResilience:
     command (CI without a worker, fresh installs, restart windows).
     Embedding is fire-and-forget by design, so a missing worker
     must not fail the save itself.
+
+    v0.7.133 — Updated to reflect the registry-introspection refactor.
+    The behaviors these tests pin (save-survives-no-worker,
+    save-survives-generic-failures, save-propagates-real-ValueErrors)
+    are unchanged; only the implementation path is cleaner. Each test
+    now patches `_is_command_registered` to control whether the
+    pre-check skips or proceeds to submit_command.
     """
 
     @pytest.mark.asyncio
     async def test_save_survives_command_not_found(self):
-        """submit_command raising 'Command not found' must be swallowed
-        with a warning; the note row itself is durable."""
+        """When the registry doesn't have embed_note (worker not
+        running), `_is_command_registered` returns False and we skip
+        submit entirely. The note row is durable."""
         note = Note(title="N", content="some content", note_type="human")
 
-        # Pretend super().save() ran fine and assigned an id.
         async def _fake_super_save(self):  # noqa: ARG001
             self.id = "note:fake123"
 
-        def _raise_not_found(*args, **kwargs):
-            raise ValueError("Command not found: open_notebook.embed_note")
-
         with (
             patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
-            patch("open_notebook.domain.notebook.submit_command", _raise_not_found),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=False,
+            ),
+            patch("open_notebook.domain.notebook.submit_command") as submit_mock,
         ):
-            # Should return None (no command_id), not raise.
             result = await note.save()
             assert result is None
             assert note.id == "note:fake123"
+            # The whole point of the pre-check: submit_command never
+            # got called, so no roundtrip and no exception to swallow.
+            submit_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_save_survives_generic_submission_exception(self):
-        """Any non-ValueError from submit_command (worker DB down,
-        network blip) must also be swallowed — the save must not be
-        gated on best-effort embedding submission."""
+        """When the registry HAS embed_note but submit_command itself
+        raises a non-ValueError (worker DB down, network blip), the
+        save must still complete and return None."""
         note = Note(title="N", content="some content", note_type="human")
 
         async def _fake_super_save(self):  # noqa: ARG001
@@ -492,6 +502,10 @@ class TestNoteSaveResilience:
 
         with (
             patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=True,
+            ),
             patch("open_notebook.domain.notebook.submit_command", _raise_runtime),
         ):
             result = await note.save()
@@ -499,18 +513,16 @@ class TestNoteSaveResilience:
 
     @pytest.mark.asyncio
     async def test_save_propagates_unrelated_value_errors(self):
-        """The narrow ValueError branch only swallows registry-miss
-        errors. Other ValueErrors (e.g. caller passed a malformed
-        argument, surreal-commands raises a different ValueError in
-        a future release) MUST propagate so they don't get silently
-        masked.
+        """v0.7.133 — Real ValueErrors (e.g. bad argument validation
+        inside surreal_commands itself, future library changes) MUST
+        propagate so they don't get silently masked. The pre-check
+        already filtered the registry-miss case, so a ValueError at
+        submit time is a real bug — surface it.
 
         Python except-clause matching: once the `except ValueError`
         branch matches and `raise`s, the exception leaves the try
         block. The broader `except Exception` below it does NOT get
-        a second chance — that's the entire reason we narrow on
-        message content here. Re-raising preserves debuggability for
-        ValueErrors that aren't the known registry-miss case.
+        a second chance.
         """
         note = Note(title="N", content="some content", note_type="human")
 
@@ -522,6 +534,10 @@ class TestNoteSaveResilience:
 
         with (
             patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=True,
+            ),
             patch("open_notebook.domain.notebook.submit_command", _raise_bad_args),
         ):
             with pytest.raises(ValueError, match="Invalid note_id format"):
