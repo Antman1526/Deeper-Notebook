@@ -17,6 +17,14 @@ on:
 permissions:
   contents: read
 
+# v0.7.129f — force every JavaScript action to run on Node 24 even
+# if the action's own manifest still pins Node 20. As of this commit
+# astral-sh/setup-uv@v6 still ships Node 20 (the only remaining
+# warning). This env var is GitHub's documented escape hatch; can be
+# removed once every transitive action is rebuilt on Node 24.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   backend:
     name: Backend Tests
