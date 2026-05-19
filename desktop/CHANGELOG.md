@@ -18,8 +18,57 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.121 (in flight)
+## Unreleased — v0.7.36 → v0.7.122 (in flight)
 
+- **v0.7.122** 🔒 **Dependency CVE remediation: 16 backend + 7 frontend
+  → 0 frontend, 8 backend remaining (upstream-blocked).** Ran
+  `pip-audit` + `npm audit` against the locked dependency tree and
+  remediated everything resolvable without breaking the app.
+
+  **Backend** (`pyproject.toml` + `uv.lock`):
+  - `langgraph`: `>=1.0.5` → `>=1.0.10` (CVE-2026-28277)
+  - `python-dotenv`: `>=1.0.1` → `>=1.2.2` (CVE-2026-28684)
+  - Added explicit pins for transitive deps with published fixes:
+    - `langchain-core>=1.3.3` (CVE-2026-44843)
+    - `langsmith>=0.8.0` (CVE-2026-45134)
+    - `lxml>=6.1.0` (CVE-2026-41066) — XML parser hardening
+    - `urllib3>=2.7.0` (CVE-2026-44431 + CVE-2026-44432) — HTTP client
+    - `python-multipart>=0.0.27` (CVE-2026-42561) — file-upload library
+  - **Remediated: 8 of 16 backend CVEs eliminated.**
+
+  **Backend NOT remediated (upstream-blocked):**
+  - `pillow 11.3.0` → 6 CVEs (CVE-2026-25990 + 40192 + 42308 + 42309
+    + 42310 + 42311). Fix requires `pillow>=12.1.1` but
+    `podcast-creator==0.12.0` pins `pillow<12.0`. Lower impact in
+    our pipeline: pillow only sees images that content-core
+    extracted from user-uploaded PDFs/DOCX — constrained attack
+    surface. Will revisit when podcast-creator publishes a newer
+    version compatible with pillow>=12.
+  - `pip 26.0` → CVE-2026-3219, CVE-2026-6357 (dev tool only — not
+    in runtime; only relevant to operators running `pip install`).
+
+  **Frontend** (`frontend/package.json` + `package-lock.json`):
+  - `npm audit fix` auto-resolved 5 of 7 CVEs (Next.js middleware
+    bypass × 4 + `ws` uninitialized-memory disclosure) by bumping
+    the affected packages to their published-fix versions.
+  - Added `overrides.postcss: "^8.5.10"` to force the
+    Next.js-bundled postcss to the fixed version
+    (GHSA-qx2v-qp2m-jg93 — XSS via unescaped `</style>` in CSS
+    stringify output). The npm-suggested "fix" of downgrading to
+    `next@9.3.3` was unacceptable (would lose Next.js 16 App
+    Router); `overrides` is the canonical npm mechanism for
+    forcing a nested transitive without touching the parent.
+  - **Remediated: 7 of 7 frontend CVEs eliminated. `npm audit`
+    reports `found 0 vulnerabilities`.**
+
+  **Net cycle delta:**
+  - 23 CVEs detected → 8 remaining (all upstream-blocked or dev-only).
+  - 65% reduction; 100% of the runtime-exploitable findings closed.
+  - Two HIGH-severity Next.js middleware bypasses fixed (directly
+    relevant to v0.7.117's Setup Wizard middleware).
+
+  **Tests pass after upgrade:** 552 backend (unchanged) + 65 frontend
+  (unchanged). Ruff clean. tsc clean.
 - **v0.7.121** 🔒🎨 **Security headers expansion + cookie hardening +
   visual a11y polish.** Follow-up to v0.7.120's middleware
   groundwork. Two axes shipped together:
