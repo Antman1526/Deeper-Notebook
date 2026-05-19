@@ -742,14 +742,53 @@ class Note(ObjectModel):
         # Submit embedding command (fire-and-forget) if note has content
         if self.id and self.content and self.content.strip():
             # v0.7.76 — to_thread the sync submit_command, see vectorize().
-            command_id = await asyncio.to_thread(
-                submit_command,
-                "open_notebook",
-                "embed_note",
-                {"note_id": str(self.id)},
-            )
-            logger.debug(f"Submitted embed_note command {command_id} for {self.id}")
-            return command_id
+            #
+            # v0.7.129 — wrap submission in a try/except so a missing
+            # registry entry (worker not running yet, worker not
+            # importing the `commands` module, integration tests with
+            # no worker process at all) doesn't fail an otherwise
+            # successful save. The contract documented in
+            # domain/CLAUDE.md is "fire-and-forget": embedding is
+            # eventual-consistency, the note row itself is what matters.
+            #
+            # The original code surfaced `ValueError: Command not
+            # found: open_notebook.embed_note` to callers, which
+            # meant Note creation broke whenever surreal-commands
+            # hadn't started or hadn't been imported with
+            # `--import-modules commands`. Tests, CI, fresh installs,
+            # and the moment-after-restart window all hit this.
+            try:
+                command_id = await asyncio.to_thread(
+                    submit_command,
+                    "open_notebook",
+                    "embed_note",
+                    {"note_id": str(self.id)},
+                )
+                logger.debug(
+                    f"Submitted embed_note command {command_id} for {self.id}"
+                )
+                return command_id
+            except ValueError as e:
+                # Specifically catches the registry-miss case; broader
+                # ValueErrors from inside the command handler itself
+                # would have surfaced at execution time, not submission.
+                if "Command not found" in str(e):
+                    logger.warning(
+                        f"embed_note not in surreal-commands registry — "
+                        f"note {self.id} saved without embedding. "
+                        f"Embedding will run when the worker starts and "
+                        f"the note is re-saved, or via a manual re-embed."
+                    )
+                    return None
+                raise
+            except Exception as e:
+                # Connection failure, worker DB unreachable, etc. The
+                # save is durable; embedding is best-effort.
+                logger.warning(
+                    f"Failed to submit embed_note for {self.id}: {e}. "
+                    f"Note saved; embedding will retry on next save."
+                )
+                return None
 
         return None
 
