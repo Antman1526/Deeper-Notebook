@@ -666,7 +666,7 @@ async def readyz():
 # timing histogram itself (we don't want scrapes appearing as user
 # traffic).
 @app.get("/metrics")
-async def metrics():
+async def metrics(request: Request):
     """v0.7.124 — Prometheus metrics exposition endpoint.
 
     Returns the global metric registry in the standard text format
@@ -680,16 +680,66 @@ async def metrics():
       - onp_db_slow_queries_total
       - onp_memory_recall_fallthrough_total{reason}
       - onp_memory_recall_duration_seconds
+      - onp_studio_generations_total{mode, outcome}                  (v0.7.130)
+      - onp_studio_outline_parse_failures_total{reason}              (v0.7.130)
+      - onp_studio_single_note_fallbacks_total                       (v0.7.130)
       - (plus the default process_* + python_gc_* metrics from
         prometheus-client)
 
-    The endpoint is auth-exempt — see api/main.py PasswordAuthMiddleware
-    excluded_paths. Recommended scrape interval: 15s for high-traffic
-    deployments, 60s for single-user desktop installs.
+    Auth (v0.7.131 — Area for Review #19):
+      - By default the endpoint is auth-exempt (still in
+        PasswordAuthMiddleware excluded_paths) so a default install
+        works with Prometheus out of the box.
+      - Set ONP_METRICS_AUTH_TOKEN=<random-secret> to require a
+        bearer token: scrapers must send `Authorization: Bearer
+        <token>`. The token is compared with `secrets.compare_digest`
+        to keep timing-attacks out. The Authorization header is
+        validated HERE inside the handler rather than via the
+        general PasswordAuthMiddleware so the password ≠ the metrics
+        scrape token (different rotation cadences, different
+        operational owners).
+      - Unset (the default) → no token check, behavior identical to
+        v0.7.130 and earlier.
+
+    Recommended scrape interval: 15s for high-traffic deployments,
+    60s for single-user desktop installs.
     """
+    import os
+    import secrets
+
+    from fastapi import HTTPException
     from fastapi.responses import Response
 
     from api.metrics import render_prometheus
+
+    # v0.7.131 — optional token gate. Read at request time (not
+    # startup) so operators can rotate the token via .env reload
+    # without restarting the API. Cost is a single dict lookup;
+    # negligible vs the actual metric rendering.
+    expected_token = os.environ.get("ONP_METRICS_AUTH_TOKEN", "").strip()
+    if expected_token:
+        # Authorization parsing is intentionally strict — no
+        # case-insensitive 'bearer ' match, no fallback to a query
+        # string, no chained header. Prometheus + standard scrapers
+        # all send the canonical form.
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Missing or malformed Authorization header",
+                headers={"WWW-Authenticate": 'Bearer realm="metrics"'},
+            )
+        provided = auth_header[len("Bearer ") :].strip()
+        # Constant-time compare guards against timing-based oracle
+        # attacks on the token value. compare_digest also handles
+        # the length-mismatch case safely.
+        if not secrets.compare_digest(provided, expected_token):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid metrics token",
+                headers={"WWW-Authenticate": 'Bearer realm="metrics"'},
+            )
+
     body, content_type = render_prometheus()
     return Response(content=body, media_type=content_type)
 

@@ -254,35 +254,95 @@ async def surreal_db() -> AsyncIterator[dict[str, Any]]:
                 os.environ[k] = v
 
 
+# v0.7.131 — Tables we must NEVER truncate between tests, even though
+# they live in the test namespace. `_sbl_migrations` tracks which
+# migrations have been applied; wiping it would force the migration
+# runner to re-execute on the next test (slow, and could fail if the
+# schema is already in place). Any other underscore-prefixed table is
+# treated as a SurrealDB system / internal table.
+_PROTECTED_TABLE_PREFIXES = ("_",)
+_PROTECTED_TABLE_NAMES = frozenset({
+    "_sbl_migrations",  # explicit guard even though the prefix catches it
+})
+
+
+async def _discover_tables() -> list[str]:
+    """v0.7.131 — Query SurrealDB's INFO FOR DB to discover the live
+    table set. Replaces the previous hardcoded 7-element list, which
+    silently went stale every time a migration added a new domain
+    table.
+
+    Returns the list of non-system table names. Edge tables (reference,
+    artifact, refers_to) show up here alongside node tables; DELETE on
+    them works the same way.
+    """
+    from open_notebook.database.repository import repo_query
+
+    rows = await repo_query("INFO FOR DB;")
+    # SurrealDB's INFO FOR DB returns a dict-shaped result. The exact
+    # shape varies slightly across versions, so we navigate it
+    # defensively. v2 form:
+    #   [{"tables": {"notebook": "...", "source": "...", ...}, ...}]
+    # Older forms returned a top-level "tb" dict. Accept either.
+    if not rows:
+        return []
+    head = rows[0] if isinstance(rows, list) else rows
+    tables_section = (
+        head.get("tables")
+        or head.get("tb")
+        or {}
+    )
+    discovered = list(tables_section.keys())
+
+    # Apply the deny-list. We do this AFTER discovery so an unknown
+    # underscore-prefixed table (a future migration adds, say,
+    # `_audit_log`) is automatically excluded without requiring a
+    # conftest edit.
+    return [
+        name for name in discovered
+        if name not in _PROTECTED_TABLE_NAMES
+        and not any(name.startswith(p) for p in _PROTECTED_TABLE_PREFIXES)
+    ]
+
+
 @pytest_asyncio.fixture
 async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Per-test wipe of all user-data tables.
 
-    The session fixture sets up the schema once (expensive — runs 14
-    migrations). This fixture keeps that schema but truncates the
-    domain tables between tests so test_A's leftover notebook doesn't
-    show up in test_B's `SELECT * FROM notebook`.
+    The session fixture sets up the schema once (expensive — runs all
+    forward migrations). This fixture keeps that schema but truncates
+    the domain tables between tests so test_A's leftover notebook
+    doesn't show up in test_B's `SELECT * FROM notebook`.
 
-    Add table names here as new integration tests start touching them.
-    Keep the list narrow — wiping `_sbl_migrations` would force the
-    migration runner to re-execute on the next test.
+    v0.7.131 — table discovery is now dynamic via `INFO FOR DB`. The
+    previous hardcoded 7-element list silently went stale whenever a
+    migration added a new domain table (Area for Review #17). Edge
+    tables (reference, artifact, refers_to) are discovered alongside
+    node tables; DELETE works on both. Migration tracking tables
+    (`_sbl_migrations` and any other underscore-prefixed system
+    table) are explicitly protected — wiping them would force a
+    migration re-run on the next test.
     """
     from open_notebook.database.repository import repo_query
 
-    # Domain tables this suite currently exercises. Edge tables
-    # (reference, artifact, refers_to) auto-cascade on `DELETE FROM
-    # <node-table>` because SurrealDB removes edges pointing at deleted
-    # records — but we list them explicitly so a test that creates an
-    # orphan edge directly still gets a clean slate.
-    tables = [
-        "reference",
-        "artifact",
-        "refers_to",
-        "source",
-        "note",
-        "notebook",
-        "chat_session",
-    ]
+    try:
+        tables = await _discover_tables()
+    except Exception:
+        # If INFO FOR DB fails for any reason, fall back to a small
+        # known-good list. Better degraded coverage than no isolation
+        # at all. Don't crash the suite — the per-test test logic
+        # will catch missing-isolation bugs faster than a broken
+        # fixture would.
+        tables = [
+            "reference",
+            "artifact",
+            "refers_to",
+            "source",
+            "note",
+            "notebook",
+            "chat_session",
+        ]
+
     for tbl in tables:
         try:
             await repo_query(f"DELETE {tbl};")
