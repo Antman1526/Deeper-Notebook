@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Response
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,18 @@ class NotebookVectorizeResponse(BaseModel):
     failed: int
     sources: list[NotebookVectorizeSourceEntry]   # capped at 100
     warnings: list[str] = []
+    # v0.7.137 — Pagination fields so callers can systematically work
+    # through notebooks with more sources than the per-request limit.
+    # Before this release the request silently truncated after
+    # ONP_BULK_VECTORIZE_MAX_SOURCES (default 500) and there was no
+    # way to reach the remaining sources without raising the env var
+    # OR running the endpoint multiple times against the same first-500
+    # slice (which would re-process them, not paginate).
+    offset: int = 0
+    limit: int = 500
+    # has_more lets a caller easily decide whether to continue paging
+    # without computing `offset + limit < total_sources` themselves.
+    has_more: bool = False
 
 
 @router.post("/embed", response_model=EmbedResponse)
@@ -161,7 +173,26 @@ async def embed_content(embed_request: EmbedRequest):
     response_model=NotebookVectorizeResponse,
 )
 async def vectorize_notebook_sources(
-    notebook_id: str, req: NotebookVectorizeRequest,
+    notebook_id: str,
+    req: NotebookVectorizeRequest,
+    response: Response,
+    offset: int = Query(
+        0, ge=0,
+        description=(
+            "Skip the first N sources. Use to paginate through "
+            "notebooks with more sources than the per-request limit. "
+            "Default 0 (first page)."
+        ),
+    ),
+    limit: int = Query(
+        500, ge=1, le=2000,
+        description=(
+            "Process at most N sources in this call. Default 500, max 2000. "
+            "The hard ceiling exists so a single misclick can't spam the "
+            "worker queue with tens of thousands of submissions; operators "
+            "with larger notebooks should paginate with offset."
+        ),
+    ),
 ) -> NotebookVectorizeResponse:
     """v0.7.106 — Bulk re-embed every Source attached to a notebook.
 
@@ -174,6 +205,16 @@ async def vectorize_notebook_sources(
     embeddings are skipped — re-running is a no-op. Set `only_missing
     =false` to force re-embedding (useful after switching embedding
     models in Settings → Models).
+
+    v0.7.137 — Pagination added. Previously the endpoint silently
+    truncated to ONP_BULK_VECTORIZE_MAX_SOURCES (default 500) and
+    there was no way to reach beyond that without raising the env
+    var. Now callers can use `?offset=` to step through notebooks
+    of any size; the response includes `total_sources`, `offset`,
+    `limit`, and `has_more` so the next page is trivial to request.
+    `ONP_BULK_VECTORIZE_MAX_SOURCES` still acts as a hard per-call
+    ceiling — if `limit` exceeds it, we clamp down + emit a warning
+    so a misconfigured caller doesn't accidentally spam the worker.
     """
     notebook = await Notebook.get(notebook_id)
     if not notebook:
@@ -194,33 +235,47 @@ async def vectorize_notebook_sources(
             ),
         )
 
-    sources = await notebook.get_sources()
-    # v0.7.110 — Hard cap on per-request size. A notebook with tens of
-    # thousands of sources would spam the worker queue and pin the
-    # request for a long time even though each submit is fast. 500 is
-    # plenty for realistic notebooks (the FsList endpoint uses the
-    # same cap); operators with bigger notebooks can raise via env or
-    # call the endpoint multiple times.
+    all_sources = await notebook.get_sources()
+    total_sources = len(all_sources)
+
+    # v0.7.110 / v0.7.137 — Hard env-driven cap defends against
+    # misconfigured callers passing massive `limit` values. Default
+    # 500 unchanged. If the caller's `limit` exceeds the cap, clamp
+    # down with a warning rather than reject — backward compat.
     import os as _os_for_cap
-    _max_sources = int(
+    _max_sources_cap = int(
         _os_for_cap.environ.get("ONP_BULK_VECTORIZE_MAX_SOURCES", "500").strip()
         or 500
     )
-    truncation_warning: Optional[str] = None
-    if len(sources) > _max_sources:
-        truncation_warning = (
-            f"Notebook has {len(sources)} sources; this call processed only "
-            f"the first {_max_sources}. Raise ONP_BULK_VECTORIZE_MAX_SOURCES "
-            "or call again to handle the rest."
+    effective_limit = min(limit, _max_sources_cap)
+
+    warnings: list[str] = []
+    if effective_limit < limit:
+        warnings.append(
+            f"Requested limit {limit} exceeds the per-call cap "
+            f"({_max_sources_cap}); clamped down. Raise "
+            "ONP_BULK_VECTORIZE_MAX_SOURCES if you need bigger batches, "
+            "or use pagination (?offset=) to walk the notebook in chunks."
         )
-        sources = sources[:_max_sources]
+
+    # v0.7.137 — slice with offset+limit. Sources past `offset + limit`
+    # are NOT processed in this call; the caller paginates with the
+    # next offset value. The response's `has_more` field surfaces
+    # whether continuation is needed.
+    sources = all_sources[offset : offset + effective_limit]
+    has_more = (offset + len(sources)) < total_sources
+
     entries: list[NotebookVectorizeSourceEntry] = []
     queued = 0
     skipped = 0
     failed = 0
-    warnings: list[str] = []
-    if truncation_warning:
-        warnings.append(truncation_warning)
+
+    # Set pagination response headers matching the v0.7.130 podcasts
+    # endpoint convention so frontends + curl users get consistent
+    # affordances.
+    response.headers["X-Total-Count"] = str(total_sources)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(effective_limit)
 
     # Ensure embedding_commands is importable for surreal_commands.
     try:
@@ -314,10 +369,17 @@ async def vectorize_notebook_sources(
     return NotebookVectorizeResponse(
         notebook_id=notebook_id,
         notebook_name=notebook.name,
-        total_sources=len(sources),
+        # v0.7.137 — `total_sources` is the FULL notebook count, not the
+        # slice we processed. Before pagination it conflated both
+        # values; now `queued + skipped + failed` reflects this page's
+        # work while total_sources tells the caller how much remains.
+        total_sources=total_sources,
         queued=queued,
         skipped=skipped,
         failed=failed,
         sources=entries[:100],
         warnings=warnings,
+        offset=offset,
+        limit=effective_limit,
+        has_more=has_more,
     )
