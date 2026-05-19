@@ -18,7 +18,30 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.129c (in flight)
+## Unreleased — v0.7.36 → v0.7.129f (in flight)
+
+- **v0.7.129f** 🛠 **CI: force Node 24 via FORCE_JAVASCRIPT_ACTIONS_TO_NODE24.**
+  Belt-and-suspenders for `astral-sh/setup-uv@v6` which still ships a
+  Node 20 manifest as of this commit. GitHub's documented escape
+  hatch set at workflow level forces the runner to launch every JS
+  action on Node 24 regardless of manifest pin. Annotation language
+  changes from "may not work as expected" (warning) to "being forced
+  to run on Node.js 24" (informational). Remove once upstream rebuilds.
+
+- **v0.7.129e** 🛠 **CI: bump action major versions for Node 24 era.**
+  Six-action sweep across all six workflows (test, build-desktop,
+  build-and-release, build-dev, claude, claude-code-review):
+  `actions/checkout` v4→v5, `setup-node` v4→v5, `upload-artifact`
+  v4→v5, `download-artifact` v4→v5, `cache` v3→v4, `setup-uv` v4→v6.
+  Silences the Node 20 deprecation warning that would otherwise
+  hard-fail starting Jun 2 2026.
+
+- **v0.7.129d** 🐛 **Integration test: pin actual `Notebook.delete()`
+  summary keys.** Caught by the v0.7.129c CI run: the cascade test
+  asserted on invented `artifact_count` / `reference_count` keys.
+  Actual contract documented on `notebook.py:147` is `deleted_notes`,
+  `deleted_sources`, `unlinked_sources`. Tighter assertions now also
+  pin `deleted_sources == 0` when `delete_exclusive_sources=False`.
 
 - **v0.7.129c** 🐛 **Note.save() no longer fails when surreal-commands
   worker is down.** Found by the v0.7.129 integration suite on its
