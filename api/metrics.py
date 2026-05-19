@@ -95,6 +95,25 @@ memory_recall_seconds = Histogram(
 
 
 # -------------------------------------------------------------------- #
+# v0.7.125 — LangGraph SQLite checkpoint pruning metrics
+# -------------------------------------------------------------------- #
+
+checkpoint_prune_runs_total = Counter(
+    "onp_checkpoint_prune_runs_total",
+    "Number of times the LangGraph SQLite checkpoint-pruning task "
+    "has executed (default cadence: every 24h, configurable via "
+    "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS).",
+)
+
+checkpoint_prune_rows_deleted_total = Counter(
+    "onp_checkpoint_prune_rows_deleted_total",
+    "Number of rows deleted by the LangGraph SQLite checkpoint-pruning "
+    "task, labeled by table ('checkpoints' or 'writes').",
+    ["table"],
+)
+
+
+# -------------------------------------------------------------------- #
 # Helpers
 # -------------------------------------------------------------------- #
 
