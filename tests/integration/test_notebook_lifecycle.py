@@ -217,10 +217,23 @@ async def test_notebook_delete_cascades_edges_but_keeps_records(clean_namespace)
     )
     assert len(src_rows) == 1, "Source row was incorrectly deleted on notebook teardown"
 
-    # The summary dict should report exactly what was nuked.
+    # The summary dict should report exactly what was nuked, using
+    # the documented keys from Notebook.delete()'s docstring:
+    # `deleted_notes`, `deleted_sources`, `unlinked_sources`.
+    # (Original draft used invented `artifact_count` / `reference_count`
+    # keys — caught by the first real CI run on v0.7.129c.)
     assert isinstance(summary, dict)
-    assert summary.get("artifact_count", 0) >= 1
-    assert summary.get("reference_count", 0) >= 1
+    assert summary.get("deleted_notes") == 1, (
+        f"Expected 1 deleted note, got summary={summary}"
+    )
+    assert summary.get("unlinked_sources") == 1, (
+        f"Expected 1 unlinked source, got summary={summary}"
+    )
+    # With delete_exclusive_sources=False, the source must NOT be in
+    # deleted_sources — only unlinked.
+    assert summary.get("deleted_sources") == 0, (
+        f"Source was incorrectly deleted (should only be unlinked): {summary}"
+    )
 
 
 # ---------------------------------------------------------------------------
