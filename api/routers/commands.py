@@ -64,6 +64,11 @@ async def execute_command(request: CommandExecutionRequest):
             message=f"Command '{request.command}' submitted successfully",
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error submitting command: {str(e)}")
         raise HTTPException(
@@ -104,6 +109,11 @@ async def list_command_jobs(
         )
         return jobs
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error listing command jobs: {str(e)}")
         raise HTTPException(
