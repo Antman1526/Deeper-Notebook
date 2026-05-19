@@ -243,4 +243,38 @@
   .clickable-card * {
     cursor: pointer !important;
   }
+
+  /* v0.7.121 — Respect the user's OS-level "reduce motion" preference.
+     People with vestibular disorders or who simply find animation
+     distracting can set this in their OS (macOS → System Settings
+     → Accessibility → Display → Reduce motion). Without this rule,
+     every transform / transition / animation our 82 motion utilities
+     produce ignores their preference. WCAG 2.1 success criterion
+     2.3.3 (Animation from Interactions) explicitly requires this.
+
+     We slam ALL animations + transitions to near-zero duration
+     globally, but instant transitions that wouldn't have visible
+     motion anyway (e.g. background-color swaps on hover) remain
+     functional — the rule only zeros the duration, not the
+     destination state. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* v0.7.121 — Stronger focus-visible ring for keyboard users.
+     The default Tailwind / shadcn focus ring is 2px solid; some users
+     (especially those with low vision) need more contrast. This
+     bumps the ring to 3px and adds an outline offset so the ring
+     remains visible even on hover-darkened backgrounds. Only applies
+     to :focus-visible (keyboard/programmatic focus) — not :focus
+     (which fires on mouse click too and would be visually noisy). */
+  :focus-visible {
+    outline: 3px solid var(--ring) !important;
+    outline-offset: 2px !important;
+  }
 }
