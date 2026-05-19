@@ -1,13 +1,15 @@
 # Open Notebook Plus
 
-A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, end-to-end source ingestion + chat + podcast generation, and **70+ production-hardening fixes** on top of upstream.
+A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, end-to-end source ingestion + chat + podcast generation, complete observability, and **80+ production-hardening commits** on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.11+ / 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
 ![Node 22](https://img.shields.io/badge/Node-22-green)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![FastAPI 0.104+](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
-![SurrealDB](https://img.shields.io/badge/SurrealDB-1.x-ff5722)
+![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
+![Tests](https://img.shields.io/badge/tests-594%20%2B%2058%20%2B%206-success)
+![CVEs](https://img.shields.io/badge/CVEs%20closed-23-success)
 
 ---
 
@@ -17,11 +19,12 @@ Upload PDFs, audio, video, web pages, or text. Take notes. Chat with AI grounded
 
 ## What's different from upstream
 
-- **Native desktop app** — Mac `.dmg` (Windows on the roadmap). No Docker, no terminal.
-- **Bundled SurrealDB + Node.js runtime** — single .app, no separate installs.
+- **Native desktop app** — Mac `.dmg` (Windows in progress). No Docker, no terminal.
+- **Bundled SurrealDB + Node.js runtime** — single `.app`, no separate installs.
 - **Local-model-first** — bundled `llama-cpp-python` + Ollama auto-detect. Cloud APIs are opt-in.
 - **Closed-loop memory** — per-turn facts written to mem0/SurrealDB, recalled in the system prompt of every future chat. Auto-switches between recency and semantic search at ~30 rows.
-- **Production hardening (v0.7.49 → v0.7.119)** — 70+ fixes across streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation, local-LLM resilience, **end-to-end timeout coverage** on every async LLM/embed/DB call, **XSS hardening** in HTML exports, **`/healthz/deep`** per-subsystem probe.
+- **Complete observability** — request-ID correlation in every log line, Prometheus `/metrics` endpoint, slow-query log, checkpoint-prune metrics, memory-recall fallthrough metrics.
+- **80+ production-hardening commits (v0.7.49 → v0.7.129)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, XSS hardening in HTML exports, `/healthz/deep` per-subsystem probe, real-SurrealDB integration tests, CVE remediation across backend + frontend.
 
 ## Three-tier architecture
 
@@ -35,10 +38,11 @@ Upload PDFs, audio, video, web pages, or text. Take notes. Chat with AI grounded
 |  API       FastAPI 0.104 + Python 3.12 :5055           |
 |  LangGraph 1.0 workflows, Esperanto 14-provider model  |
 |  layer, surreal_commands job queue, Pydantic v2        |
+|  Prometheus /metrics, request-ID middleware            |
 +-----------------------+--------------------------------+
                         |  SurrealQL (AsyncSurreal pool)
 +-----------------------v--------------------------------+
-|  Database  SurrealDB 1.x :8000                         |
+|  Database  SurrealDB v2 :8000                          |
 |  Graph + vector + JSON + KV in one engine              |
 |  HNSW indexes; native vector::similarity::cosine       |
 +--------------------------------------------------------+
@@ -64,7 +68,7 @@ git clone https://github.com/Antman1526/open-notebook-Plus
 cd open-notebook-Plus
 cp .env.template .env                    # fill in passwords + encryption key
 docker compose --profile multi up -d
-# UI: http://localhost:3000, API: http://localhost:5055
+# UI: http://localhost:3000, API: http://localhost:5055, Metrics: http://localhost:5055/metrics
 ```
 
 ### Local development
@@ -78,20 +82,19 @@ uv sync                                  # creates .venv via uv
 cp .env.template .env                    # set SURREAL_*, OPEN_NOTEBOOK_PASSWORD, ENCRYPTION_KEY
 
 # Frontend
-cd frontend && pnpm install && cd ..
+cd frontend && npm ci && cd ..
 
 # Run (3 terminals)
-make surreal                              # terminal 1: SurrealDB
+make database                             # terminal 1: SurrealDB via docker-compose
 make api                                  # terminal 2: FastAPI :5055
 make frontend                             # terminal 3: Next.js :3000
 ```
 
-Run the test suite:
+Run the test suites:
 
 ```bash
-uv run pytest tests/ -q                       # 430 backend tests
-cd frontend && pnpm test --run                # 35 frontend tests
-uv run pytest desktop/tests/test_launcher.py  # 14 launcher tests
+make test                                 # 594 hermetic backend tests + frontend
+make test-integration                     # 6 SurrealDB integration tests (requires `make database`)
 ```
 
 ## First run
@@ -108,7 +111,7 @@ uv run pytest desktop/tests/test_launcher.py  # 14 launcher tests
 
 ## Configuration
 
-All env vars documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) and in the dedicated [doc 09](https://github.com/Antman1526/open-notebook-Plus/blob/desktop-app/desktop/CHANGELOG.md). Critical minimum:
+All env vars documented in [`CONFIGURATION.md`](CONFIGURATION.md). Critical minimum:
 
 ```bash
 SURREAL_URL=ws://localhost:8000/rpc
@@ -120,7 +123,41 @@ OPEN_NOTEBOOK_PASSWORD=open-notebook-change-me   # CHANGE
 OPEN_NOTEBOOK_ENCRYPTION_KEY=any-passphrase      # required to store credentials
 # OR rotation form:
 # OPEN_NOTEBOOK_ENCRYPTION_KEYS=new-key,old-key
+
+# v0.7.123+ optional — switches encryption from raw-Fernet to PBKDF2-HMAC-SHA256 (600k iter):
+# ONP_ENCRYPTION_KDF=pbkdf2
+
+# v0.7.124+ optional — pushes /metrics auth-free for Prometheus scrapers:
+# (just hit GET /metrics; no env var needed, but consider nginx auth_basic in front)
+
+# v0.7.125+ optional — LangGraph SQLite checkpoint pruning:
+# ONP_CHECKPOINT_KEEP_PER_THREAD=50
+# ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS=24
+
+# v0.7.120+ optional — log + counter queries exceeding threshold:
+# ONP_SLOW_QUERY_LOG_MS=500
 ```
+
+## Observability
+
+Every response carries an `X-Request-ID` header (UUID4 if not inbound). Every log line includes `req=<8-char-id>`. Hit `http://localhost:5055/metrics` for Prometheus exposition format:
+
+```
+# HELP http_requests_total HTTP requests
+http_requests_total{method="GET",route="/notebooks/{notebook_id}",status="200"} 142
+# HELP http_request_duration_seconds HTTP request latency
+http_request_duration_seconds_bucket{le="0.05",method="POST",route="/chat/stream"} 38
+# HELP db_query_duration_seconds DB query latency
+db_query_duration_seconds_bucket{le="0.1"} 4823
+# HELP db_slow_queries_total Queries exceeding ONP_SLOW_QUERY_LOG_MS
+db_slow_queries_total 12
+# HELP memory_recall_fallthrough_total Memory recall fell through to recency-only
+memory_recall_fallthrough_total{reason="embed_timeout"} 3
+# HELP checkpoint_prune_runs_total LangGraph checkpoint prune cycles
+checkpoint_prune_runs_total 7
+```
+
+See [`16_v0.7.120_to_v0.7.129_Update.md`](../16_v0.7.120_to_v0.7.129_Update.md) for the full metric catalogue.
 
 ## Memory feature
 
@@ -142,7 +179,28 @@ User deletes session
   → writer produces one memory_episode record from the transcript
 ```
 
-Configure via `ONP_MEMORY_RECALL_MODE = recent | semantic | auto`.
+Configure via `ONP_MEMORY_RECALL_MODE = recent | semantic | auto`. All four memory-recall failure modes (`embed_timeout`, `embed_error`, `query_timeout`, `query_error`) emit Prometheus counters so you can see when recall falls through to recency-only.
+
+## Backup & restore
+
+```bash
+make backup                                         # OUT=backups/onp-backup-<ts>.tar.gz
+make backup OUT=path/to/backup.tar.gz                # explicit path
+make verify-backup BUNDLE=path/to/backup.tar.gz      # integrity check only
+make restore BUNDLE=path/to/backup.tar.gz            # refuses non-empty data/
+make restore BUNDLE=path/to/backup.tar.gz FORCE=1    # nukes existing data/
+```
+
+Atomic `.tmp`-then-rename write semantics. SHA-256 manifest embedded in the tarball. 50 GB total cap, 1 GB per-file warning. Bundle format is versioned — a v1 backup will fail to restore on a future v2-only CLI to prevent silent corruption.
+
+## Frontend bundle analysis
+
+```bash
+cd frontend && npm run build:analyze
+open .next/analyze/client.html
+```
+
+Interactive treemap of the client bundle. Operator-facing guide at [`frontend/docs/BUNDLE_ANALYSIS.md`](frontend/docs/BUNDLE_ANALYSIS.md). Known lazy-load candidates already identified — operator chooses whether to wrap them in `dynamic()`.
 
 ## Building from source
 
@@ -162,6 +220,7 @@ make build-mac
 | Doc | Where |
 |---|---|
 | User documentation | [`docs/`](docs/) |
+| Configuration | [`CONFIGURATION.md`](CONFIGURATION.md) |
 | Backend architecture | [`open_notebook/CLAUDE.md`](open_notebook/CLAUDE.md) |
 | Frontend architecture | [`frontend/src/CLAUDE.md`](frontend/src/CLAUDE.md) |
 | API structure | [`api/CLAUDE.md`](api/CLAUDE.md) |
@@ -169,123 +228,48 @@ make build-mac
 | LangGraph workflows | [`open_notebook/graphs/CLAUDE.md`](open_notebook/graphs/CLAUDE.md) |
 | AI / Esperanto integration | [`open_notebook/ai/CLAUDE.md`](open_notebook/ai/CLAUDE.md) |
 | Database layer | [`open_notebook/database/CLAUDE.md`](open_notebook/database/CLAUDE.md) |
+| Frontend bundle analysis | [`frontend/docs/BUNDLE_ANALYSIS.md`](frontend/docs/BUNDLE_ANALYSIS.md) |
 | Release notes | [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) |
 | Standing AI-agent workflow | [`CLAUDE.md`](CLAUDE.md) |
+| Project-knowledge docs (15 reconstruction docs) | `~/Desktop/OpenNotebook/0[1-9]_*.md` + `1[0-6]_*.md` (outside the repo) |
+| AI-reviewer context | `~/Desktop/OpenNotebook/open-notebook-Plus-AI-Context.md` |
+| Full technology audit | `~/Desktop/OpenNotebook/open-notebook-Plus-Technology-Audit.md` |
 
-## Hardening Summary (v0.7.49 → v0.7.114)
+## Hardening Summary (v0.7.49 → v0.7.129)
 
-70+ fix commits across the hardening run. v0.7.49–v0.7.87 covered the
-original reliability sweep; v0.7.88+ added structured outputs,
-filesystem I/O, and end-to-end timeout coverage.
+80+ patch commits across the hardening run.
 
-**v0.7.88 → v0.7.114 highlights:**
+**v0.7.49 → v0.7.87** — original reliability sweep: streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades.
 
-- **Studio multi-page notebooks** (v0.7.89) — uploads produce an
-  overview + N pages with inline AI suggestions per page, instead of
-  one blob. Outline-pass + per-page generation with sequential
-  (default) or parallel (`ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES=true`)
-  execution.
-- **Studio `mode="both"`** (v0.7.88) — single upload generates BOTH
-  notebook AND podcast in one shot. Either half can fail independently.
-- **Filesystem export + import** (v0.7.90, v0.7.94, v0.7.96, v0.7.111)
-  — notebooks save out as folder / zip / single-file (markdown OR
-  HTML, with print CSS) and reload back via import endpoint with
-  dry-run preview. `/api/fs/{home,list,mkdir}` endpoints back the
-  directory picker UI. Frontend Export UI ships in v0.7.105.
-- **End-to-end timeout coverage** (v0.7.93, v0.7.95, v0.7.99, v0.7.100,
-  v0.7.101, v0.7.102, v0.7.110, v0.7.113, v0.7.114) — every async
-  LLM/embed/DB call on a user-facing path is wrapped with
-  `asyncio.wait_for`. Timeout returns either 504 with actionable
-  detail OR graceful fallback (e.g. memory recall → recency
-  fallback). Thirteen env knobs let operators tune per provider.
-- **`HTTPException` clobber fix** (v0.7.109) — 25 functions across 13
-  router files were silently rewrapping typed 400/404/504/etc as
-  generic 500. 89 `except HTTPException: raise` guards added — typed
-  errors now reach the client.
-- **Bulk operations** (v0.7.106, v0.7.110) — bulk source vectorize
-  endpoint (capped at 500/call) for recovering from import-time
-  vectorize failures or after switching embedding models.
-- **Deep healthcheck** (v0.7.112) — `/healthz/deep` probes DB,
-  migrations, embedding model, chat model, command registry
-  independently. Returns `healthy` / `degraded` / `not_ready` with
-  actionable per-subsystem messages.
-- **Import vectorize bug** (v0.7.104) — imported sources weren't
-  getting embeddings (`Source.save()` doesn't auto-embed). Real
-  regression-class bug that broke "import then chat-with-sources".
-- **Loguru `%s` format fix** (v0.7.91) — 18 occurrences across 8
-  files were logging literal `%s` since v0.7.0.
+**v0.7.88 → v0.7.119** — structured outputs, filesystem I/O, end-to-end timeout coverage on every async LLM/embed/DB call, XSS hardening, `/healthz/deep`, encryption rotation, Studio multi-page notebooks.
 
-**v0.7.49 → v0.7.87 (earlier sweep):**
+**v0.7.120 → v0.7.129** — observability + supply chain + integration testing:
 
-- **Streaming hooks** — UTF-8 cross-read buffering, per-send UUID temp IDs, AbortController + reader.cancel(), exact-id error filtering (chat, source-chat, ask)
-- **SSE endpoints** — `is_disconnected()` per tick, dict-vs-Pydantic state-shape dual-path guards (4 endpoints)
-- **Event-loop unblocking** — 14 sync `submit_command` sites wrapped in `asyncio.to_thread`
-- **Connection pool** — warm-up timeout, `_pool_total` lock discipline on both acquire/release, graceful shutdown drain
-- **Delete cascades** — Notebook → chat_session, Source → reference + embeddings + insights, Note → artifact + note_embedding, Model → default_models references
-- **Memory feature** — wired write (extract + summarize) + recall (recency + semantic) end-to-end. Was dead code before v0.7.68.
-- **Local-LLM resilience** — per-message char cap, classifier rules for "model still loading", launcher warnings for missing GGUF
-- **Edge-table query correctness** — inverted idempotency check fixed (v0.7.60); retry endpoint dead-query fixed (v0.7.60); legacy duplicate cleanup (v0.7.85)
-- **Frontend lifecycle** — all setTimeout/setInterval sites tracked with refs + unmount cleanup; insight-poll AbortSignal
-- **Encryption rotation parity** — both `OPEN_NOTEBOOK_ENCRYPTION_KEY` and `OPEN_NOTEBOOK_ENCRYPTION_KEYS` accepted
-- **Commands router** — three stub implementations replaced with real impls (v0.7.87)
+- **v0.7.120** — Request-ID middleware, GZip, security headers baseline, slow-query log, pre-commit hook
+- **v0.7.121** — HSTS (HTTPS-only), Permissions-Policy, cookie hardening, prefers-reduced-motion + focus-visible
+- **v0.7.122** — **23 CVEs closed** (16 backend + 7 frontend); 8 remaining are upstream-blocked (pillow via podcast-creator)
+- **v0.7.123** — PBKDF2 key-derivation option (`ONP_ENCRYPTION_KDF=pbkdf2`, 600k iter)
+- **v0.7.124** — Prometheus `/metrics` endpoint with 7 metric series; cardinality protection via route templates
+- **v0.7.125** — LangGraph SQLite checkpoint pruning background loop (per-thread retention via `ROW_NUMBER() OVER (PARTITION BY ...)`)
+- **v0.7.126** — Backup + restore tooling with atomic write + SHA-256 manifest + format versioning
+- **v0.7.127** — Frontend bundle analyzer (`@next/bundle-analyzer`); operator-facing guide
+- **v0.7.128** — Documented deferral of `studio.py` / `exports.py` split (CHANGELOG-only)
+- **v0.7.129** — **Real-SurrealDB integration test fixture** that caught a real `Note.save()` bug on its first CI run; CI bumped to Node 24-era action versions; tests workflow now fires on `desktop-app` branch
 
-See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) for the full per-version log.
+### CI status at v0.7.129g
 
-## API surface (post-v0.7.114)
+All three Tests jobs green: **594 backend tests + 58 frontend tests + 6 SurrealDB integration tests**. Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml).
 
-| Endpoint | Method | What it does |
-|---|---|---|
-| `/api/studio/generate` | POST | Upload + generate notebook / podcast / both (multi-page, multi-file) |
-| `/api/notebooks/{id}/export` | POST | Export notebook as `folder` / `zip` / `html_folder` / `html_zip` / `combined_md` / `combined_html` (with optional compression) |
-| `/api/notes/{id}/export` | POST | Export a single note as `.md` |
-| `/api/notebooks/import` | POST | Reverse of export — folder / zip / single-md → new or existing notebook |
-| `/api/notebooks/import/preview` | POST | Dry-run import: show planned imports without committing |
-| `/api/notebooks/{id}/vectorize_sources` | POST | Bulk re-embed sources after import-time failure or embedding-model swap |
-| `/api/fs/home` | GET | User home + Desktop / Documents / Downloads / default-exports paths |
-| `/api/fs/list` | GET | Directory listing (dirs first, capped at 500, hidden excluded by default) |
-| `/api/fs/mkdir` | POST | Idempotent `mkdir -p` with path safety |
-| `/healthz/deep` | GET | Per-subsystem probe (DB, migrations, embedding model, chat model, worker) — auth-exempt |
+## Support
 
-## Configurable timeouts + caps (`ONP_*` env vars)
-
-| Env var | Default | What it bounds |
-|---|---:|---|
-| `ONP_STUDIO_OUTLINE_TIMEOUT_SEC` | 90 | Studio outline LLM call |
-| `ONP_STUDIO_PAGE_TIMEOUT_SEC` | 180 | Studio per-page LLM call |
-| `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` | 60 | content_core file extraction per file |
-| `ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES` | false | Run page LLM calls concurrently (cloud opt-in) |
-| `ONP_STUDIO_NOTEBOOK_PAGES_MAX` | 6 | Hard cap on multi-page count |
-| `ONP_STUDIO_NOTEBOOK_MULTIPAGE` | true | Kill switch back to single-note |
-| `ONP_NOTE_TITLE_TIMEOUT_SEC` | 60 | Auto-title LLM call on `POST /notes` |
-| `ONP_TRANSFORMATION_TIMEOUT_SEC` | 180 | Per-transformation LLM call |
-| `ONP_CHAT_TIMEOUT_SEC` | 300 | Non-streaming `/chat/execute` |
-| `ONP_CONNECTION_TEST_TIMEOUT_SEC` | 30 | "Test connection" button in Settings |
-| `ONP_DISCOVER_MODELS_TIMEOUT_SEC` | 30 | Provider model-discovery (paginated list) |
-| `ONP_SEARCH_TIMEOUT_SEC` | 60 | `/search` text + vector queries |
-| `ONP_BULK_VECTORIZE_MAX_SOURCES` | 500 | Per-request cap on bulk vectorize |
-| `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` | 5 | Chat-hot-path semantic recall embed |
-| `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` | 5 | Chat-hot-path memory SurrealQL queries |
-
-## Testing
-
-| Suite | Count | Runtime |
-|---|---:|---:|
-| Backend (pytest) | **534** | ~25 s |
-| Frontend (vitest) | **58** | ~30 s |
-| Desktop launcher | **14** | ~7 s |
-
-All pass at HEAD. ruff is clean across `api/`, `open_notebook/`, `commands/`, `desktop/`, `tests/`.
-
-## Contributing
-
-PRs welcome. Standing workflow for AI agents is documented in [`CLAUDE.md`](CLAUDE.md): on every prompt, audit relevant code for bugs first, fix what you find, apply judgment-bound improvements, report bugs/fixes/improvements/deferred items.
-
-For human contributors: ruff + pytest must pass locally before pushing. CHANGELOG entry expected for non-trivial changes.
-
-## Credits
-
-Forked from [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) (MIT). Upstream README preserved at [`README.upstream.md`](README.upstream.md). All "Plus" wrapper / hardening code lives in `desktop/`, `api/`, `open_notebook/`, `commands/`, and the v0.7.x CHANGELOG entries.
+- **Plus fork issues**: https://github.com/Antman1526/open-notebook-Plus/issues
+- **Upstream issues**: https://github.com/lfnovo/open-notebook/issues
+- **Upstream Discord**: https://discord.gg/37XJPXfz2w
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT (see [LICENSE](LICENSE)). Same license as upstream.
+
+## Acknowledgements
+
+This is a downstream fork. All upstream credit goes to [@lfnovo](https://github.com/lfnovo). The Plus delta is maintained by [@Antman1526](https://github.com/Antman1526).
