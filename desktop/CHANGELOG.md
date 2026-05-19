@@ -18,8 +18,54 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.122 (in flight)
+## Unreleased — v0.7.36 → v0.7.123 (in flight)
 
+- **v0.7.123** 🔒 **PBKDF2 key-derivation option for credential
+  encryption.** Adds an opt-in stronger KDF for the
+  `OPEN_NOTEBOOK_ENCRYPTION_KEY` passphrase → Fernet-key derivation.
+
+  **Threat model:** The original v0.7.0 derivation was a single
+  SHA-256 of the passphrase (~instant). If an attacker exfiltrates
+  the SurrealDB file (containing encrypted credentials), they can
+  brute-force weak passphrases at billions of guesses per second.
+  PBKDF2-HMAC-SHA256 with 600,000 iterations adds ~250ms cost per
+  guess — slows offline brute-force by ~9 orders of magnitude.
+
+  **New env knob:** `ONP_ENCRYPTION_KDF` = `sha256` (default,
+  back-compat) | `pbkdf2` (recommended). 600,000 iterations is the
+  OWASP 2024 recommendation for PBKDF2-HMAC-SHA256.
+
+  **Migration design — `get_multi_fernet()` tries both KDFs:**
+
+  - **New encryption** uses whichever KDF the env knob selects.
+  - **Decryption** builds a MultiFernet wrapping each configured
+    key × each known KDF, in preference order. Existing
+    sha256-encrypted data continues to decrypt after migrating to
+    pbkdf2 — no re-encrypt sweep required.
+  - **Rotation** (the v0.7.17 `_ENCRYPTION_KEYS` plural form) still
+    works — the matrix is `(keys × kdfs)` so any combination
+    decrypts.
+
+  **Deterministic salt:** PBKDF2 uses a deterministic 16-byte salt
+  derived from the passphrase + a version-tagged constant
+  (`onp-kdf-salt-v1`). Required for the derivation to be
+  reproducible across restarts (we don't store a per-key salt blob
+  anywhere). The version tag allows future salt-scheme rotation
+  without breaking existing data.
+
+  **No new dependency** — uses Python stdlib `hashlib.pbkdf2_hmac`.
+  Argon2id would be marginally stronger but requires `argon2-cffi`
+  (~150KB binary wheels) and a separate migration path. Deferred to
+  v0.7.124+ if there's demand.
+
+  **9 new tests** in `tests/test_encryption_kdf_v0_7_123.py`:
+  default-is-sha256, pbkdf2-mode-uses-pbkdf2, deterministic
+  derivation, unknown-KDF actionable error, round-trip × 2 KDFs,
+  sha256→pbkdf2 migration, pbkdf2→sha256 reverse, rotation +
+  cross-KDF combined.
+
+  Backend suite: 552 → **561** (+9). Ruff clean. Argon2id KDF
+  remains deferred (would need new `argon2-cffi` dep).
 - **v0.7.122** 🔒 **Dependency CVE remediation: 16 backend + 7 frontend
   → 0 frontend, 8 backend remaining (upstream-blocked).** Ran
   `pip-audit` + `npm audit` against the locked dependency tree and

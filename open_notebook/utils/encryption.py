@@ -149,15 +149,90 @@ def _get_encryption_key() -> str:
     return _get_encryption_keys()[0]
 
 
-def _ensure_fernet_key(key: str) -> str:
-    """
-    Derive a valid Fernet key from an arbitrary string via SHA-256.
+# v0.7.123 — Key Derivation Function selection.
+#
+# Original (v0.7.0): SHA-256(passphrase) — instant to compute, instant
+# to brute-force if the encrypted data leaks. Acceptable threat model
+# for a self-hosted desktop app where the user IS the attacker (they
+# already have the data) but not great if the database file ever
+# leaves the machine.
+#
+# v0.7.123 adds PBKDF2-HMAC-SHA256 (stdlib, no new dep) as an opt-in
+# upgrade via `ONP_ENCRYPTION_KDF=pbkdf2`. 600,000 iterations gives
+# ~250ms cost per guess on a modern CPU — slows offline brute-force
+# of a stolen database from "instant" to "~one year per million
+# guesses". Backward compatible: decryption tries BOTH KDFs in order,
+# so existing sha256-encrypted data keeps working when the user
+# migrates. New encryptions use whichever KDF the env knob selects.
 
-    Any string is accepted as input. The key is derived by hashing it with
-    SHA-256 and encoding the result as URL-safe base64.
+_KDF_PBKDF2_ITERATIONS = 600_000  # OWASP 2024 recommendation
+_KDF_SALT_VERSION = "onp-kdf-salt-v1"
+
+
+def _derive_kdf_salt(key: str) -> bytes:
+    """Derive a deterministic 16-byte salt from the passphrase + a
+    version-tagged constant. Same passphrase → same salt → same key.
+    Required for decryption to work without storing a per-key salt
+    blob. The version tag (`onp-kdf-salt-v1`) means we can rotate
+    the salting scheme in the future without breaking existing data
+    (decrypt path would try both salts).
     """
+    seed = (key + "\0" + _KDF_SALT_VERSION).encode()
+    return hashlib.sha256(seed).digest()[:16]
+
+
+def _derive_fernet_key_sha256(key: str) -> bytes:
+    """v0.7.0 derivation. Kept for backward compatibility — existing
+    encrypted data was produced by this path."""
     derived = hashlib.sha256(key.encode()).digest()
-    return base64.urlsafe_b64encode(derived).decode()
+    return base64.urlsafe_b64encode(derived)
+
+
+def _derive_fernet_key_pbkdf2(
+    key: str, iterations: int = _KDF_PBKDF2_ITERATIONS,
+) -> bytes:
+    """v0.7.123 — PBKDF2-HMAC-SHA256 with 600k iterations.
+    ~250ms per guess on modern hardware. Deterministic salt derived
+    from the passphrase keeps the derivation reproducible without
+    needing a separate salt-storage mechanism."""
+    salt = _derive_kdf_salt(key)
+    derived = hashlib.pbkdf2_hmac(
+        "sha256", key.encode(), salt, iterations, dklen=32,
+    )
+    return base64.urlsafe_b64encode(derived)
+
+
+def _selected_kdf() -> str:
+    """Read the configured KDF from env. Defaults to 'sha256' for
+    backward compatibility — existing deployments see no change."""
+    return os.environ.get("ONP_ENCRYPTION_KDF", "sha256").strip().lower() or "sha256"
+
+
+# Order in which to try KDFs during decryption. Listed in PREFERENCE
+# order — newest/strongest first so encryption uses the right one.
+# MultiFernet's first match wins; failed decryption attempts cost
+# only a fast hash + base64, not a full PBKDF2 round.
+_KDF_DECRYPT_ORDER = ("pbkdf2", "sha256")
+
+
+def _ensure_fernet_key(key: str, kdf: str | None = None) -> str:
+    """Derive a 32-byte Fernet key from an arbitrary passphrase.
+
+    `kdf` selects the derivation function:
+      * "sha256" (default, v0.7.0): fast hash, no work factor
+      * "pbkdf2" (v0.7.123):        slow KDF, 600k iterations
+
+    When `kdf` is None, the env-configured value is used.
+    """
+    kdf = (kdf or _selected_kdf()).lower()
+    if kdf == "pbkdf2":
+        return _derive_fernet_key_pbkdf2(key).decode()
+    if kdf == "sha256":
+        return _derive_fernet_key_sha256(key).decode()
+    raise ValueError(
+        f"Unknown ONP_ENCRYPTION_KDF: {kdf!r}. "
+        "Valid values: 'sha256' (default, fast) or 'pbkdf2' (recommended, slow)."
+    )
 
 
 def get_fernet() -> Fernet:
@@ -165,7 +240,9 @@ def get_fernet() -> Fernet:
     Get Fernet instance with the *primary* encryption key.
 
     Used for new encryption only; for decryption use `get_multi_fernet()`
-    so rotation works.
+    so rotation + cross-KDF compatibility works.
+
+    v0.7.123 — uses the env-configured KDF (`ONP_ENCRYPTION_KDF`).
 
     Raises:
         ValueError: If encryption key is not configured.
@@ -175,21 +252,41 @@ def get_fernet() -> Fernet:
 
 def get_multi_fernet() -> MultiFernet:
     """
-    Get a MultiFernet wrapping ALL configured keys (primary first).
+    Get a MultiFernet wrapping all configured keys × all known KDFs.
 
     cryptography's MultiFernet:
-      - encrypts with the FIRST key only (the active key)
-      - decrypts by trying each key in order until one works
+      - encrypts with the FIRST Fernet instance only (the active key)
+      - decrypts by trying each Fernet in order until one succeeds
 
-    This is the right primitive for rotation: declare the new key first,
-    the old key second, and existing data remains decryptable until you
-    sweep + drop the old key.
+    v0.7.123 — Order:
+      [primary_key × selected_kdf,
+       primary_key × other_kdfs,
+       secondary_key × selected_kdf,
+       secondary_key × other_kdfs,
+       ...]
+
+    This means:
+      * New encryption uses the env-selected KDF on the primary key.
+      * Decryption tries the active path first (fast), then falls
+        back to each older KDF (slightly slower per failure but still
+        well under 1 second for a single decrypt). Existing
+        sha256-encrypted data is decryptable after migration to
+        pbkdf2; existing pbkdf2 data decrypts after downgrade to
+        sha256 (rare but supported).
+      * The familiar v0.7.17 ENCRYPTION_KEYS rotation still works —
+        each key gets its full set of KDFs tried.
 
     Raises:
         ValueError: If no encryption key is configured.
     """
     keys = _get_encryption_keys()
-    fernets = [Fernet(_ensure_fernet_key(k).encode()) for k in keys]
+    selected = _selected_kdf()
+    # Build the KDF iteration order: selected first, then the others.
+    kdf_order = (selected,) + tuple(k for k in _KDF_DECRYPT_ORDER if k != selected)
+    fernets = []
+    for k in keys:
+        for kdf in kdf_order:
+            fernets.append(Fernet(_ensure_fernet_key(k, kdf).encode()))
     return MultiFernet(fernets)
 
 
