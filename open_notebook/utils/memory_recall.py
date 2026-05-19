@@ -219,6 +219,52 @@ async def _count_memory_rows() -> int:
     return fact_n + pref_n
 
 
+# v0.7.133 — Outer budget for the whole memory-recall flow.
+#
+# Background: the existing per-step timeouts are ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC
+# (default 5s) + ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC (default 5s). The
+# semantic path does 1 embed + 2 queries (facts + preferences) and can
+# fall through to a recency-only path that does 2 more queries. Worst
+# case: 5 + 5 + 5 + 5 + 5 = 25s before chat sees an empty memory section,
+# and ONP_CHAT_TIMEOUT_SEC won't fire until later.
+#
+# Area for Review #2 asked: should this be a single budget instead of
+# stacked timeouts? Answer: BOTH. Keep the per-step timeouts as defense
+# in depth (they're useful when the embedder is hung but mem0 is fine —
+# you get fast fall-through to query-only without paying the embed wait),
+# and add an outer wall via ONP_MEMORY_RECALL_BUDGET_SEC (default 12s)
+# so total recall NEVER exceeds the budget.
+#
+# 12s default chosen because:
+#   * Healthy hot path: ~200ms embed + ~100ms × 2 queries = under 1s.
+#   * Worst legit case: cold embedder + cold DB pool — maybe 8s.
+#   * 12s leaves headroom but caps the absolute worst-case at well
+#     under ONP_CHAT_TIMEOUT_SEC (300s default), so chat still has time
+#     to actually do something useful with what memory it does have.
+_DEFAULT_RECALL_BUDGET_SEC = 12.0
+
+
+def _recall_budget_sec() -> float:
+    raw = (os.environ.get("ONP_MEMORY_RECALL_BUDGET_SEC") or "").strip()
+    if not raw:
+        return _DEFAULT_RECALL_BUDGET_SEC
+    try:
+        val = float(raw)
+        if val <= 0:
+            logger.warning(
+                "ONP_MEMORY_RECALL_BUDGET_SEC={} must be positive; "
+                "using default {}s", raw, _DEFAULT_RECALL_BUDGET_SEC,
+            )
+            return _DEFAULT_RECALL_BUDGET_SEC
+        return val
+    except ValueError:
+        logger.warning(
+            "ONP_MEMORY_RECALL_BUDGET_SEC={!r} not a float; using default {}s",
+            raw, _DEFAULT_RECALL_BUDGET_SEC,
+        )
+        return _DEFAULT_RECALL_BUDGET_SEC
+
+
 async def recall_memory(
     query: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
@@ -232,11 +278,47 @@ async def recall_memory(
       - "auto" (default) → semantic if rows > _SEMANTIC_THRESHOLD,
         else recency. Empty `query` always uses recency.
 
+    v0.7.133 — Wrapped in an outer ONP_MEMORY_RECALL_BUDGET_SEC budget
+    (default 12s). Per-step timeouts (embed: 5s, query: 5s) still apply
+    individually, but the budget guarantees the whole orchestration
+    completes within the bound regardless of how steps cascade. On
+    budget exhaustion we return an empty memory dict — chat still works,
+    just without the memory section for this turn.
+
     The fall-through is the safety net: any failure in the semantic
     path returns {} from `recall_relevant_memory`, and we then call
     `recall_recent_memory`. Chat never breaks because of a misconfigured
     embedder.
     """
+    budget = _recall_budget_sec()
+    try:
+        return await asyncio.wait_for(
+            _recall_memory_inner(query), timeout=budget,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "memory recall exceeded outer budget of {}s; returning empty "
+            "(per-step timeouts probably already fired — check "
+            "memory_recall_fallthrough_total{{reason}} metrics)",
+            budget,
+        )
+        # Best-effort metric emission. If the metrics module fails to
+        # import we silently drop — the chat path must NEVER break
+        # because observability broke.
+        try:
+            from api.metrics import record_memory_fallthrough
+            record_memory_fallthrough("outer_budget")
+        except Exception:
+            pass
+        return {"facts": [], "preferences": []}
+
+
+async def _recall_memory_inner(
+    query: str | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """v0.7.133 — Extracted inner so the public `recall_memory` can
+    wrap with a single asyncio.wait_for. Behavior unchanged from the
+    pre-budget version."""
     mode = (os.environ.get("ONP_MEMORY_RECALL_MODE") or "auto").strip().lower()
 
     if mode == "recent" or not query or not query.strip():
