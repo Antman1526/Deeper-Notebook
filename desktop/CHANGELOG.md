@@ -18,8 +18,71 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.123 (in flight)
+## Unreleased — v0.7.36 → v0.7.124 (in flight)
 
+- **v0.7.124** ⚡ **Prometheus `/metrics` endpoint + v0.7.121 CORS
+  regression test.** Operators can finally answer "is anything broken
+  right now?" without grepping logs.
+
+  **New observability surface:**
+
+  - **`/metrics` endpoint** in standard Prometheus exposition format.
+    Auth-exempt (added to `excluded_paths`) so Prometheus / Grafana /
+    Victoria Metrics / any OpenMetrics-compatible scraper polls
+    without `OPEN_NOTEBOOK_PASSWORD`.
+
+  - **Metrics surfaced** (`api/metrics.py`):
+    - `onp_http_requests_total{method, route, status_code}` —
+      classic RED-method request counter.
+    - `onp_http_request_duration_seconds{method, route}` — latency
+      histogram with buckets 5ms..30s (tuned for the realistic API
+      latency range, including timed-out 504s).
+    - `onp_db_query_duration_seconds` — SurrealQL latency histogram
+      with buckets 1ms..5s.
+    - `onp_db_slow_queries_total` — counter for queries that
+      exceeded `ONP_SLOW_QUERY_LOG_MS` (matches the v0.7.120 log
+      line one-for-one — graph this against time to see slow-query
+      regressions).
+    - `onp_memory_recall_fallthrough_total{reason}` — counter with
+      4 labeled reasons (`embed_timeout`, `embed_error`,
+      `query_timeout`, `query_error`). If this rises, the
+      embedding model or DB pool is unhealthy and chat is silently
+      degrading on the v0.7.113/v0.7.114 fallback paths.
+    - `onp_memory_recall_duration_seconds` — histogram bounded by
+      the ~15s worst-case ceiling.
+    - Plus the default `process_*` + `python_gc_*` metrics that
+      `prometheus-client` ships.
+
+  **Route-label cardinality protection** in the middleware: the
+  route label is the FastAPI route TEMPLATE
+  (`/api/notebooks/{notebook_id}`), NOT the literal URL
+  (`/api/notebooks/notebook:abc123`). Otherwise every notebook ID
+  creates a new cardinality bucket and Prometheus storage explodes
+  on long-running deployments. Verified via dedicated test.
+
+  **Scrape-traffic exclusion**: `/metrics` paths short-circuit the
+  request-timing middleware so Prometheus polls don't appear as
+  user traffic in dashboards.
+
+  **Best-effort observability hooks**: every wire-up site
+  (`repo_query`, `recall_relevant_memory`, `_safe_select`) wraps the
+  metrics-module import + counter increment in `try/except` so a
+  metrics failure can never break the underlying DB / memory path.
+
+  **v0.7.121 regression test (deferred until now)**: added a test
+  asserting the `DANGEROUS CONFIG` ERROR-level log fires when
+  `CORS_ORIGINS='*'` AND `OPEN_NOTEBOOK_PASSWORD` is unset, plus a
+  negative-space check that it does NOT fire when password is set.
+
+  **New dep**: `prometheus-client>=0.20.0` (~30 KB, pure Python).
+  The official client; no native compilation.
+
+  **Tests**: 11 new — 8 in `tests/test_metrics_v0_7_124.py` +
+  2 v0.7.121 regression + 1 follow-up. Backend suite: 561 → **572**
+  (+11). Ruff clean.
+
+  **Recommended scrape interval**: 15s for high-traffic
+  deployments, 60s for single-user desktop installs.
 - **v0.7.123** 🔒 **PBKDF2 key-derivation option for credential
   encryption.** Adds an opt-in stronger KDF for the
   `OPEN_NOTEBOOK_ENCRYPTION_KEY` passphrase → Fernet-key derivation.

@@ -146,6 +146,15 @@ async def recall_relevant_memory(
             "recall_relevant_memory: embedding timed out after {}s — "
             "caller will fall back to recency", _recall_embed_timeout,
         )
+        # v0.7.124 — Prometheus counter for visibility into how often
+        # the timeout path actually fires. If this counter rises,
+        # the embedding model is unhealthy and chat is silently
+        # degrading.
+        try:
+            from api.metrics import record_memory_fallthrough
+            record_memory_fallthrough("embed_timeout")
+        except Exception:
+            pass
         return {}
     except Exception as exc:
         logger.debug(
@@ -153,6 +162,11 @@ async def recall_relevant_memory(
             "caller will fall back to recency",
             exc,
         )
+        try:
+            from api.metrics import record_memory_fallthrough
+            record_memory_fallthrough("embed_error")
+        except Exception:
+            pass
         return {}
 
     # Cosine search against each table separately so the per-kind cap
@@ -294,11 +308,25 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
             "memory recall query timed out after {}s (returning empty)",
             _query_timeout,
         )
+        # v0.7.124 — Prometheus counter for the timeout path.
+        try:
+            from api.metrics import record_memory_fallthrough
+            record_memory_fallthrough("query_timeout")
+        except Exception:
+            pass
         return []
     except Exception as exc:
         # debug — every chat turn would log otherwise; the empty path
         # is the expected case on fresh installs.
         logger.debug("memory recall query failed (returning empty): {}", exc)
+        # v0.7.124 — Prometheus counter for the error path (distinct
+        # from timeout — useful for differentiating "table missing"
+        # vs "pool overloaded").
+        try:
+            from api.metrics import record_memory_fallthrough
+            record_memory_fallthrough("query_error")
+        except Exception:
+            pass
         return []
 
 

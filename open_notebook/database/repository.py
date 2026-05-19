@@ -378,7 +378,23 @@ async def repo_query(
     finally:
         # Always log slow queries, even when the query failed — a slow
         # query that ALSO errored is doubly worth surfacing.
-        elapsed_ms = (time.monotonic() - start) * 1000
+        elapsed_s = time.monotonic() - start
+        elapsed_ms = elapsed_s * 1000
+
+        # v0.7.124 — Prometheus metrics. Record every query into the
+        # duration histogram regardless of speed; bump the slow-query
+        # counter only when over threshold. Done in a try/except so a
+        # metrics-module import failure can't break the DB path.
+        try:
+            from api.metrics import db_query_duration_seconds, record_slow_query
+            db_query_duration_seconds.observe(elapsed_s)
+            if elapsed_ms > _slow_threshold_ms:
+                record_slow_query()
+        except Exception:
+            # Metrics are best-effort. Never let an observability
+            # failure interfere with the actual DB result.
+            pass
+
         if elapsed_ms > _slow_threshold_ms:
             # The request_id from loguru's contextvar (set by
             # RequestIDMiddleware in v0.7.120) is already injected via
