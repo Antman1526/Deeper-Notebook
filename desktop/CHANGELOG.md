@@ -18,7 +18,94 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.132 (in flight)
+## Unreleased — v0.7.36 → v0.7.133 (in flight)
+
+- **v0.7.133** ✨ **Four invasive deferred items, fresh-scoped batch.**
+  Closes the last cluster of Areas for Review that were too risky to
+  wedge into the multi-area v0.7.130–v0.7.132 batches. Each touches
+  race-condition or library-boundary territory; all four landed
+  together because they share test infrastructure.
+
+  **Area #16 — Note.save() registry introspection.** The v0.7.129
+  fix wrapped `submit_command` in `except ValueError: if "Command
+  not found" in str(e)`. String-matching against an exception message
+  is brittle: surreal_commands could rename the message in any
+  minor release. The library does expose a typed `registry`
+  attribute with `get_command_by_id()`, so the cleaner solution is
+  a pre-check: ask "is this command registered?" before submitting,
+  return None (with a warning) if not. New helper
+  `_is_command_registered()` lazy-imports the registry and
+  fail-closes on any AttributeError — defensive in case the
+  registry API shape changes upstream. A narrow `except ValueError:
+  raise` is preserved AFTER submit_command for any non-registry
+  ValueError that still leaks through (the pre-check filters the
+  known case, so a real ValueError at submit time is a real bug
+  and should surface).
+
+  **Area #2 — Memory-recall outer budget.** Existing per-step
+  timeouts (`ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC`, 5s default,
+  `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC`, 5s default) could stack:
+  embed (5s) + facts query (5s) + preferences query (5s) +
+  fall-through recency facts (5s) + fall-through recency
+  preferences (5s) = 25s worst-case before chat saw an empty
+  memory section. Added `ONP_MEMORY_RECALL_BUDGET_SEC` (default
+  12s) as a hard outer wall: `asyncio.wait_for()` around the
+  whole `recall_memory()` orchestration. Per-step timeouts stay
+  as defense in depth — useful when the embedder is hung but
+  mem0 itself is fine (fast fall-through). New
+  `memory_recall_fallthrough_total{reason="outer_budget"}`
+  metric label tracks when the outer wall fires so operators can
+  tell whether their budget needs raising.
+
+  **Area #11 — Source.delete() race-window post-sweep.** When a
+  source is deleted mid-embed, `Source.delete()` cancels the
+  worker command via `svc.update_command_result(status="canceled")`.
+  But surreal_commands has no cancellation-token mechanism — the
+  cancel just writes a row to the tracking table; the worker may
+  not check status before its next write. Between our cancel and
+  our pre-sweep `DELETE source_embedding WHERE source = $id`, the
+  worker could insert a fresh embedding row. v0.7.133 adds a
+  second sweep AFTER `super().delete()`: same DELETE statements,
+  matched by source_id (still works after the source row is gone
+  since SurrealDB doesn't enforce the FK). Cheap (~2 round-trips),
+  idempotent, and narrows the orphan-row window from "until next
+  housekeeping" to "the few ms between worker write and our
+  post-sweep query". Best-effort try/except so a sweep failure
+  doesn't break the user's delete.
+
+  **Area #4 — Notebook.delete() bulk-SQL above threshold.** Even
+  after the v0.7.107 parallelization (asyncio.gather over
+  per-note deletes), notebook deletion is N concurrent DELETEs
+  hitting a pool of size 4 — they serialize into ~N/4 batches. For
+  a 100-note notebook that's ~25 round-trip batches. New
+  `_bulk_delete_notes()` method does 3 statements total (DELETE
+  artifact + DELETE note_embedding + DELETE note WHERE IN
+  $note_ids) regardless of N. Threshold tunable via
+  `ONP_NOTEBOOK_DELETE_BULK_THRESHOLD` (default 25). Below the
+  threshold the per-note flow is retained for observability
+  ("note X failed to delete" log lines); above, bulk wins.
+
+  **New env vars:**
+  - `ONP_MEMORY_RECALL_BUDGET_SEC` (default 12.0)
+  - `ONP_NOTEBOOK_DELETE_BULK_THRESHOLD` (default 25)
+
+  **Tests:** 19 new in `tests/test_v0_7_133.py` covering:
+  - `_is_command_registered()` registered/unregistered/import-failure cases
+  - Note.save() registry pre-check controls submit / propagates ValueError
+  - Memory-recall budget default / env override / garbage tolerance /
+    within-budget / over-budget cases
+  - Source.delete() pre-sweep + post-sweep ordering + post-sweep
+    failure tolerance
+  - Notebook bulk-delete threshold / 3-statement bulk path / failure
+    handling / empty-list edge case
+
+  Three v0.7.129 tests updated to match the new code structure
+  (they pinned the OLD string-match flow; now they pin the
+  registry-introspection flow with the same behaviors).
+
+  Backend suite: **656 passing** (was 637, +19).
+
+- **v0.7.132** 🩺 **/healthz/deep upstream probe + smarter exception
 
 - **v0.7.132** 🩺 **/healthz/deep upstream probe + smarter exception
   truncation + Setup Wizard verification.** Three more Areas for

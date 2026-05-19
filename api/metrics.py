@@ -81,8 +81,11 @@ db_slow_queries_total = Counter(
 memory_recall_fallthrough_total = Counter(
     "onp_memory_recall_fallthrough_total",
     "Number of times chat-hot-path memory recall hit a timeout or "
-    "error and fell through to empty (v0.7.113 / v0.7.114 paths).",
-    ["reason"],   # 'embed_timeout' | 'embed_error' | 'query_timeout' | 'query_error'
+    "error and fell through to empty. Reasons: 'embed_timeout' / "
+    "'embed_error' / 'query_timeout' / 'query_error' (per-step, "
+    "v0.7.113 / v0.7.114), 'outer_budget' (v0.7.133 outer "
+    "ONP_MEMORY_RECALL_BUDGET_SEC wall fired).",
+    ["reason"],
 )
 
 memory_recall_seconds = Histogram(
