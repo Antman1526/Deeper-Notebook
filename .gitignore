@@ -151,3 +151,7 @@ desktop/bin/
 !desktop/build/**
 # Local build venv created by `make build-mac` (separate from .venv used for tests)
 .build-venv/
+# v0.7.126 — Default output dir for `make backup`. Tarballs can be
+# multi-GB; never commit them.
+backups/
+*.tar.gz
