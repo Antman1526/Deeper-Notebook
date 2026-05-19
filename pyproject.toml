@@ -128,3 +128,10 @@ ignore_errors = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["desktop/tests", "tests"]
+# v0.7.129 — Custom markers. Tests marked `integration_surreal` run
+# against a real SurrealDB instance (started via docker compose by
+# CI) and are SKIPPED by default in local pytest runs. Run them with
+# `SURREAL_INTEGRATION=1 uv run pytest -m integration_surreal`.
+markers = [
+    "integration_surreal: requires a live SurrealDB (skipped unless SURREAL_INTEGRATION=1)",
+]

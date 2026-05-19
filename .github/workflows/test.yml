@@ -33,7 +33,85 @@ jobs:
         run: uv sync
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --ignore=tests/integration
+
+  # v0.7.129 — opt-in real-SurrealDB integration suite.
+  # Runs in parallel with the hermetic backend job. Failure here
+  # signals a SurrealQL syntax regression, migration-ordering bug,
+  # edge-direction inversion, or delete-cascade gap — bugs the
+  # mocked unit tests structurally can't catch.
+  integration-surreal:
+    name: Integration Tests (SurrealDB)
+    runs-on: ubuntu-latest
+    services:
+      surrealdb:
+        image: surrealdb/surrealdb:v2
+        # The official image's ENTRYPOINT is `surreal`, so the workflow
+        # passes only the subcommand + flags as the container "command".
+        # In-memory storage is fine here — every test run starts fresh.
+        options: >-
+          --health-cmd "/surreal isready --conn http://localhost:8000 || exit 0"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        env:
+          SURREAL_USER: root
+          SURREAL_PASS: root
+        ports:
+          - 8000:8000
+    env:
+      # Toggle that flips the per-suite skip gate (tests/integration/conftest.py).
+      SURREAL_INTEGRATION: "1"
+      SURREAL_URL: ws://localhost:8000/rpc
+      SURREAL_USER: root
+      SURREAL_PASSWORD: root
+      # Namespace + database get overridden per-session by the fixture
+      # (onp_test_<uuid>). These exist so any code path that reads them
+      # at import time has a non-empty value.
+      SURREAL_NAMESPACE: open_notebook
+      SURREAL_DATABASE: open_notebook
+      # The encryption module fails closed without a key. The actual
+      # value doesn't matter for these tests (no credentials are stored)
+      # — but it must be present so module import succeeds.
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-integration-test-key-not-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Start the SurrealDB container with explicit creds
+        # The GitHub `services:` block can't pass positional CLI args
+        # to the container, only env + ports. SurrealDB v2 needs
+        # `start --user root --pass root memory` to bind a root user.
+        # Stop the auto-started service container and replace with one
+        # that has the right CLI invocation.
+        run: |
+          docker rm -f "${{ job.services.surrealdb.id }}" || true
+          docker run -d --name surrealdb \
+            -p 8000:8000 \
+            surrealdb/surrealdb:v2 \
+            start --user root --pass root --log info memory
+          # Wait for SurrealDB to accept connections (≤60s).
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health | grep -q 200; then
+              echo "SurrealDB ready after ${i} attempt(s)"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration/ -v -m integration_surreal
 
   frontend:
     name: Frontend Tests

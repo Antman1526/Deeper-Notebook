@@ -18,7 +18,86 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.127 (in flight)
+## Unreleased — v0.7.36 → v0.7.129 (in flight)
+
+- **v0.7.129** 🛠 **Real-SurrealDB integration test fixture.** The
+  hermetic backend suite (now 591 tests) catches a lot but is
+  structurally blind to a class of bugs: SurrealQL syntax regressions
+  in raw query strings, migration ordering issues, edge-table
+  direction inversions (`reference`/`artifact`/`refers_to` — the
+  classic `in` vs `out` bug we've shipped before), and delete-cascade
+  gaps. Pure-mock unit tests can't see any of those.
+
+  This release adds an opt-in second suite that runs against a real
+  SurrealDB instance:
+
+  - New `pyproject.toml` marker `integration_surreal` registered so
+    pytest doesn't warn on usage.
+  - New `tests/integration/conftest.py` — session-scoped fixture that
+    skips by default unless `SURREAL_INTEGRATION=1` is set, then
+    mints a throwaway namespace (`onp_test_<8-char-uuid>`), runs
+    every forward migration against it via `AsyncMigrationManager`,
+    and `REMOVE NAMESPACE`s on teardown so nothing leaks between
+    runs. Patches env vars BEFORE importing repo so the connection
+    pool's lazy init targets the test namespace.
+  - New `tests/integration/test_notebook_lifecycle.py` — 6 tests
+    exercising: edge-direction sanity (source → notebook reference
+    edge), idempotent `add_to_notebook`, artifact-edge direction
+    (note → notebook), cascade-deletes-edges-but-keeps-records, and
+    `delete_exclusive_sources=True` orphan-pruning behavior.
+  - New `.github/workflows/test.yml` job `integration-surreal` —
+    spins up `surrealdb/surrealdb:v2` with root creds in an in-memory
+    container, sets `SURREAL_INTEGRATION=1`, runs the suite. Parallel
+    to the existing backend job so a Surreal flake can't gate the
+    hermetic suite.
+  - New `make test-integration` target for local runs; `make test`
+    explicitly ignores the integration dir to keep the default
+    workflow hermetic.
+
+  What this catches that mocks can't:
+  - **`select in as source from reference where out=$id` direction**
+    — assert against actual stored edges.
+  - **Migration 1..N applied to an empty namespace** — schema-order
+    bugs surface here, not in production.
+  - **`Notebook.delete()` cascade** — counts the surviving rows in
+    `reference` / `artifact` / `source` tables; mocks can't verify
+    rows that should have been deleted by `DELETE WHERE` against the
+    real engine.
+
+  Cost: ~30 s for the SurrealDB container to come up in CI, plus
+  ~3-5 s test time. Trade-off worth it for the class of bugs this
+  catches once a quarter.
+
+- **v0.7.128** 📋 **Deliberately deferred: `studio.py` + `exports.py` split.**
+  The original audit roadmap (post-v0.7.119) listed splitting these
+  two routers as a maintainability improvement. After re-evaluating
+  during v0.7.128 planning:
+
+  - **studio.py**: 1374 LOC, **exports.py**: 1694 LOC. Combined ~3000.
+  - **22+ tests directly import internal helpers** (e.g.
+    `_markdown_to_html`, `_is_regular_file_entry`, `_strip_json_wrapper`).
+  - **All endpoints stable, well-tested**: 591 backend tests pass;
+    no behavioral changes warranted.
+
+  **The risk/value calculation**: a structural refactor across 3000
+  LOC of working code introduces real regression surface (test
+  imports, circular-dep risk, subtle reflection patterns) without
+  changing behavior or shipping a feature. The "fits in one head"
+  intuition that motivated the refactor is real but mild — both
+  files have clear internal section headers + sectional comments
+  added during the v0.7.88→v0.7.127 cycle, so navigation isn't
+  actually blocked.
+
+  **Better use of the cycle time** is shipping items 4-5 of the
+  remaining roadmap, which DO change behavior + DO have user value:
+  v0.7.127 shipped bundle analysis, v0.7.129 ships real-SurrealDB
+  integration tests.
+
+  If/when these files grow past ~2500 LOC each (i.e., another major
+  feature lands), revisit. For now, both have clear section
+  markers (`# ---...---` comments grouping helpers, prompts,
+  schemas, endpoints) and an in-file philosophy that's easy to
+  follow.
 
 - **v0.7.127** ⚡ **Frontend bundle-analysis tooling.** Ships the
   measurement infrastructure to identify code-splitting opportunities;
