@@ -23,6 +23,11 @@ export const QUERY_KEYS = {
   sourcesInfinite: (notebookId: string) => ['sources', 'infinite', notebookId] as const,
   source: (id: string) => ['sources', id] as const,
   settings: ['settings'] as const,
+  // v0.7.136 — Read-only observability config from /settings/observability.
+  // Separate key from `settings` because the underlying endpoint is
+  // env-derived and shouldn't be invalidated when the writable
+  // settings change.
+  observabilitySettings: ['settings', 'observability'] as const,
   sourceChatSessions: (sourceId: string) => ['source-chat', sourceId, 'sessions'] as const,
   sourceChatSession: (sourceId: string, sessionId: string) => ['source-chat', sourceId, 'sessions', sessionId] as const,
   notebookChatSessions: (notebookId: string) => ['notebook-chat', notebookId, 'sessions'] as const,

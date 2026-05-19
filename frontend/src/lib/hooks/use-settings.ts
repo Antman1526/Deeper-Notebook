@@ -13,6 +13,19 @@ export function useSettings() {
   })
 }
 
+// v0.7.136 — Hook for the read-only observability snapshot. Separate
+// query key so it doesn't get invalidated when writable settings
+// change (the underlying values come from env, not from /settings
+// mutations). `refetchOnWindowFocus: true` so a tab-switch after
+// editing .env shows the new values without a manual refresh.
+export function useObservabilitySettings() {
+  return useQuery({
+    queryKey: QUERY_KEYS.observabilitySettings,
+    queryFn: () => settingsApi.getObservability(),
+    refetchOnWindowFocus: true,
+  })
+}
+
 export function useUpdateSettings() {
   const queryClient = useQueryClient()
   const { toast } = useToast()

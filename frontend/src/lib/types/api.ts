@@ -60,6 +60,20 @@ export interface SettingsResponse {
   youtube_preferred_languages?: string[]
 }
 
+// v0.7.136 — Read-only observability config from GET /settings/observability
+// (backend added in v0.7.130). Mirrors api/routers/settings.py:ObservabilityResponse.
+// Every field reflects an ONP_* env var read at request time, so the UI
+// shows operators what their running process is actually seeing.
+export interface ObservabilityResponse {
+  slow_query_log_ms: number | null
+  encryption_kdf: string
+  checkpoint_keep_per_thread: number
+  checkpoint_prune_interval_hours: number
+  db_pool_size: number
+  db_pool_disabled: boolean
+  metrics_endpoint_path: string
+}
+
 export interface CreateNotebookRequest {
   name: string
   description?: string
