@@ -18,8 +18,65 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.124 (in flight)
+## Unreleased — v0.7.36 → v0.7.125 (in flight)
 
+- **v0.7.125** ⚡ **LangGraph SQLite checkpoint pruning.** Without this,
+  `~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite` grows
+  unbounded — every chat turn appends rows that LangGraph never reads
+  again (it only queries the latest checkpoint per thread when
+  resuming). A single-user install with moderate use (20 turns/day)
+  accumulates ~7300 rows/year; over multi-year deployments the file
+  hits hundreds of MB.
+
+  **New module** (`open_notebook/utils/checkpoint_prune.py`):
+
+  - **`prune_old_checkpoints(path, keep_per_thread=None)`** — one-shot
+    callable. Opens the sqlite DB with the same WAL+busy_timeout
+    tuning as the rest of the codebase, runs a single-transaction
+    `DELETE` using a `ROW_NUMBER() OVER (PARTITION BY thread_id
+    ORDER BY checkpoint_id DESC)` window function to identify
+    everything past the per-thread retention cap, then cascade-
+    deletes orphan rows from the `writes` table. Finally runs
+    `PRAGMA incremental_vacuum(1000)` to reclaim freed pages.
+  - **`run_prune_loop(stop_event)`** — async background loop that
+    runs prune once on entry, then sleeps for
+    `ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS` (default 24), then prunes
+    again. Cancellation-aware via `wait_for(stop_event.wait(),
+    timeout=interval)` so shutdown is snappy. Wraps each prune call
+    in `asyncio.to_thread()` so the sync sqlite3 driver doesn't
+    block the event loop.
+
+  **Lifespan wiring** (`api/main.py`): mirror the v0.6.1 digest-
+  scheduler pattern — `asyncio.create_task(...)` on entry, signal
+  + `wait_for(timeout=10) → cancel fallback` on shutdown. Non-fatal
+  if it fails to start; chat still works, just grows.
+
+  **2 new env knobs:**
+
+  | Env var | Default | What |
+  |---|---|---|
+  | `ONP_CHECKPOINT_KEEP_PER_THREAD` | 50 | Most-recent checkpoints retained per thread_id |
+  | `ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS` | 24 | How often the loop fires |
+
+  **Prometheus metrics** (added to `api/metrics.py`):
+
+  - `onp_checkpoint_prune_runs_total` — counter, increments per loop iteration
+  - `onp_checkpoint_prune_rows_deleted_total{table="checkpoints" | "writes"}` —
+    counter labeled by which table the rows came from. Graph this
+    against time to see steady-state churn vs the first-run backlog.
+
+  Both wrapped in `try/except` so a metrics-module import failure
+  can never break the prune path (consistent with v0.7.124).
+
+  **10 new tests** in `tests/test_checkpoint_prune_v0_7_125.py` using
+  a tmp_path-backed sqlite file with the actual LangGraph schema:
+  no-op-when-file-missing, no-op-when-tables-missing,
+  keeps-most-recent-N-per-thread, multi-thread-independence,
+  cascades-orphan-writes, honors-env-knob, invalid-env-falls-back,
+  negative-env-falls-back, idempotent (second run finds nothing),
+  returns-elapsed-ms.
+
+  Backend suite: 572 → **582** (+10). Ruff clean.
 - **v0.7.124** ⚡ **Prometheus `/metrics` endpoint + v0.7.121 CORS
   regression test.** Operators can finally answer "is anything broken
   right now?" without grepping logs.

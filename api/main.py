@@ -258,10 +258,56 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("DB pool warmup encountered an error: {}", exc)
 
+    # v0.7.125 — LangGraph SQLite checkpoint pruning. Without this,
+    # ~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite grows
+    # unbounded — every chat turn appends rows that LangGraph never
+    # reads again (it only queries the latest checkpoint per thread
+    # when resuming). After a year of moderate use on a single-user
+    # install, the file is hundreds of MB. The prune loop keeps the
+    # N most recent checkpoints per thread (default 50) and runs
+    # every ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS (default 24).
+    # Non-fatal if it fails to start — chat still works, just grows.
+    checkpoint_prune_stop_event: asyncio.Event = asyncio.Event()
+    checkpoint_prune_task: asyncio.Task | None = None
+    try:
+        from open_notebook.utils.checkpoint_prune import (
+            run_prune_loop as _checkpoint_prune_loop,
+        )
+
+        checkpoint_prune_task = asyncio.create_task(
+            _checkpoint_prune_loop(checkpoint_prune_stop_event),
+            name="onp-checkpoint-prune",
+        )
+        logger.info("LangGraph checkpoint-prune task started")
+    except Exception as e:
+        logger.warning(
+            f"Failed to start checkpoint-prune task (non-fatal): {e}",
+        )
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
     yield
+
+    # v0.7.125 — Stop the checkpoint-prune task FIRST (it's the most
+    # likely to be mid-sleep so cancelling is quick), then the digest
+    # scheduler. Both use the same wait_for(timeout=10) + cancel
+    # fallback pattern as v0.6.1.
+    if checkpoint_prune_task is not None:
+        logger.info("Signalling checkpoint-prune task to stop...")
+        checkpoint_prune_stop_event.set()
+        try:
+            await asyncio.wait_for(checkpoint_prune_task, timeout=10)
+            logger.info("Checkpoint-prune task stopped cleanly")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Checkpoint-prune task did not stop in 10s — cancelling"
+            )
+            checkpoint_prune_task.cancel()
+            try:
+                await checkpoint_prune_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     # Shutdown: signal the digest scheduler to stop and wait for it briefly.
     if digest_scheduler_task is not None:
