@@ -18,7 +18,56 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.139 (in flight)
+## Unreleased — v0.7.36 → v0.7.140 (in flight)
+
+- **v0.7.140** 🐛 **Makefile fixes — `make start-all` now actually
+  works on a fresh clone.** User hit three real bugs the moment
+  they ran `make start-all` for the first time, all caught + fixed:
+
+  **Bug #1 — Three targets named compose files that don't exist.**
+  `make dev`, `make full`, and `make start-all` all referenced
+  `docker-compose.dev.yml` (and one referenced `docker-compose.full.yml`)
+  but only `docker-compose.yml` ships in the repo. Running any of
+  them produced:
+  ```
+  open docker-compose.dev.yml: no such file or directory
+  make: *** [start-all] Error 1
+  ```
+  Fix: pointed all three at `docker-compose.yml`. Until/unless the
+  dev/full variants are reintroduced, they're aliases.
+
+  **Bug #2 — `start-all` invoked the API without `--env-file .env`.**
+  Line was `uv run run_api.py &` while the worker line right below it
+  correctly used `uv run --env-file .env surreal-commands-worker ...`.
+  Without the flag the API booted, but didn't see
+  `OPEN_NOTEBOOK_ENCRYPTION_KEY` / `SURREAL_PASSWORD` from `.env` —
+  credential decryption silently failed on the first auth call. The
+  worker line was correct; the API line was missed. Fixed both to
+  match.
+
+  **Bug #3 — Hardcoded `sleep 3` between SurrealDB start and API
+  start.** Cold-start with a fresh volume can exceed 3 s on slower
+  disks. Replaced with a polling loop that hits `/health` up to
+  30 times at 1-second intervals, then bails with the last 20 lines
+  of `docker compose logs surrealdb` so the operator sees what
+  failed rather than a downstream API migration error.
+
+  **4 new hermetic Makefile-hygiene tests** in
+  `tests/test_v0_7_140_makefile.py`:
+    * `test_every_compose_file_referenced_actually_exists` — regex
+      scan; every `-f docker-compose*.yml` flag must name a file that
+      exists. Catches the dev.yml/full.yml ghost-reference class.
+    * `test_start_all_passes_env_file_to_api` — walks the `start-all`
+      block, asserts every `uv run` invocation of `run_api.py` and
+      `surreal-commands-worker` includes `--env-file`.
+    * `test_makefile_parses_clean` — `make -n status` exit-code check
+      (catches parse errors a regex test would miss).
+    * `test_dev_and_full_targets_use_existing_compose_file` — pins
+      the dev/full naming.
+
+  Backend suite: **738 passing** (was 734, +4).
+
+- **v0.7.139** 🧪 **Live model benchmarking harness + model-resolution
 
 - **v0.7.139** 🧪 **Live model benchmarking harness + model-resolution
   audit.** User asked "test all models, determine which works best,
