@@ -308,6 +308,26 @@ if CORS_IS_DEFAULT_WILDCARD:
 else:
     logger.info(f"CORS allowed origins: {CORS_ALLOWED_ORIGINS}")
 
+# v0.7.121 — Escalate from WARNING to ERROR-level log when the user has
+# the DANGEROUS combination: CORS=* AND no password set. In that state
+# *any* origin on the internet can hit the API with credential-less
+# requests and read every notebook/source/note. The password
+# middleware short-circuits at startup if `OPEN_NOTEBOOK_PASSWORD` is
+# unset (auth becomes a no-op), so CORS=* + no-password = open API
+# wide open to the world. This is a foot-gun the README warns about
+# but it's worth surfacing at process boot too — operators tail logs.
+_password_is_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+if CORS_IS_DEFAULT_WILDCARD and not _password_is_set:
+    logger.error(
+        "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD is "
+        "unset. Any origin can call this API without credentials. ANYONE "
+        "with the API URL can read/write every notebook. This is fine ONLY "
+        "for local development. For ANY exposed deployment (Docker, "
+        "Kubernetes, public IP), set BOTH: "
+        "CORS_ORIGINS=https://your-frontend.example.com AND "
+        "OPEN_NOTEBOOK_PASSWORD=<strong-password>."
+    )
+
 # Middleware order matters — Starlette wraps in REVERSE order of registration.
 # The OUTERMOST middleware (first to see request, last to see response) is
 # the one added LAST. So the call chain on a request looks like:

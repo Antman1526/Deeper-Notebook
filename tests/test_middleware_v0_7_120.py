@@ -339,3 +339,67 @@ def test_slow_query_logs_even_when_query_errors(monkeypatch):
 
     assert any("slow query" in msg for msg in captured), \
         f"Slow-query warning should fire even on error; captured: {captured}"
+
+
+# --------------------------------------------------------------------- #
+# v0.7.121 — Additional security headers (HSTS / Permissions-Policy / XSS)
+# --------------------------------------------------------------------- #
+
+
+def test_security_headers_permissions_policy_present(app_with_security_headers):
+    """v0.7.121 — Permissions-Policy disables browser features the API
+    has no business using (camera, mic, geolocation, etc.)."""
+    with TestClient(app_with_security_headers) as client:
+        r = client.get("/api/data")
+    policy = r.headers.get("Permissions-Policy")
+    assert policy is not None
+    # Spot-check a few critical denials
+    assert "camera=()" in policy
+    assert "microphone=()" in policy
+    assert "geolocation=()" in policy
+    assert "payment=()" in policy
+
+
+def test_security_headers_xss_protection_disabled(app_with_security_headers):
+    """v0.7.121 — X-XSS-Protection: 0 is the modern best-practice value.
+    The legacy IE-era filter caused universal-XSS in older browsers and
+    has zero benefit in modern ones; explicitly disable it."""
+    with TestClient(app_with_security_headers) as client:
+        r = client.get("/api/data")
+    assert r.headers.get("X-XSS-Protection") == "0"
+
+
+def test_security_headers_hsts_absent_on_http():
+    """v0.7.121 — HSTS must NOT be sent on plaintext HTTP responses.
+    Sending it would teach the browser to force-upgrade future requests
+    to HTTPS even when no TLS terminator exists, causing every request
+    to fail. TestClient uses http:// by default."""
+    a = FastAPI()
+    a.add_middleware(SecurityHeadersMiddleware)
+
+    @a.get("/x")
+    def x():
+        return {"ok": True}
+
+    with TestClient(a) as client:
+        r = client.get("/x")
+    assert "Strict-Transport-Security" not in r.headers
+
+
+def test_security_headers_hsts_present_on_https():
+    """v0.7.121 — HSTS IS set when the request scheme is https://. The
+    starlette TestClient supports base_url="https://..." for this.
+    We assert the value matches the OWASP-recommended max-age + flags."""
+    a = FastAPI()
+    a.add_middleware(SecurityHeadersMiddleware)
+
+    @a.get("/x")
+    def x():
+        return {"ok": True}
+
+    with TestClient(a, base_url="https://testserver") as client:
+        r = client.get("/x")
+    hsts = r.headers.get("Strict-Transport-Security")
+    assert hsts is not None
+    assert "max-age=63072000" in hsts  # 2 years
+    assert "includeSubDomains" in hsts

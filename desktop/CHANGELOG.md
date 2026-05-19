@@ -18,8 +18,77 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.120 (in flight)
+## Unreleased — v0.7.36 → v0.7.121 (in flight)
 
+- **v0.7.121** 🔒🎨 **Security headers expansion + cookie hardening +
+  visual a11y polish.** Follow-up to v0.7.120's middleware
+  groundwork. Two axes shipped together:
+
+  **Security:**
+
+  1. **HSTS conditional on HTTPS** — `Strict-Transport-Security:
+     max-age=63072000; includeSubDomains` set ONLY when the request
+     scheme is `https://`. Plaintext HTTP responses get no HSTS
+     header (sending it on HTTP would teach the browser to
+     force-upgrade future requests even when no TLS terminator
+     exists). Respects `X-Forwarded-Proto` via uvicorn's
+     `--proxy-headers`.
+
+  2. **Permissions-Policy** denies browser features the API has no
+     business using: camera, microphone, geolocation, payment,
+     accelerometer, gyroscope, USB, MIDI, display-capture, XR. 14
+     features explicitly disabled.
+
+  3. **X-XSS-Protection: 0** — modern best practice. The legacy
+     IE-era heuristic filter caused universal-XSS in older browsers
+     and has zero benefit in modern ones; explicitly disabling tells
+     browsers not to attempt heuristic sanitization.
+
+  4. **Wizard cookie hardened** — `wizard_completed` cookie now
+     written with `SameSite=Strict` (was Lax) and `Secure` (when on
+     HTTPS, detected via `window.location.protocol`). Skipped on
+     `http://localhost` to keep dev unbroken (browsers reject
+     Secure cookies on plaintext localhost).
+
+  5. **Dangerous-config ERROR at startup** — when `CORS_ORIGINS='*'`
+     AND `OPEN_NOTEBOOK_PASSWORD` is unset, the API logs an
+     ERROR-level message naming the foot-gun. That combo means
+     anyone on the internet can read/write every notebook. Existing
+     v0.6.7 WARNING for just-CORS-default was preserved; the new
+     ERROR fires only on the dangerous overlap.
+
+  **Visual (accessibility):**
+
+  6. **`prefers-reduced-motion` respect** in `globals.css` —
+     slams all animations + transitions to ~0ms duration when the
+     user has the OS-level reduce-motion setting on. Satisfies WCAG
+     2.1 SC 2.3.3 (Animation from Interactions). Without this, every
+     hover transform, page transition, and shadcn animation ignored
+     the user's preference.
+
+  7. **Stronger `:focus-visible` ring** — 3px outline + 2px offset
+     for keyboard users. Only applies to `:focus-visible` (keyboard
+     focus), not `:focus` (which fires on mouse click). Helps users
+     with low vision distinguish the focused element.
+
+  **Audit context (verified clean this pass):**
+  - No bare `except:` clauses anywhere
+  - No SQL injection via f-string in repo_query
+  - No log-secret-leak patterns
+  - Password comparison still uses `secrets.compare_digest` (v0.6.7)
+  - Zip-symlink rejection still in place (v0.7.117)
+  - `rel="noopener noreferrer"` still on external HTML-export links
+    (v0.7.118)
+  - No frontend `aria-label` regressions on icon-only buttons
+
+  **Tests:** 4 new in `tests/test_middleware_v0_7_120.py`:
+  - Permissions-Policy present + names key denials
+  - X-XSS-Protection: 0 set
+  - HSTS absent on http://
+  - HSTS present on https:// with correct max-age + includeSubDomains
+
+  Backend suite: 548 → **552** (+4). Frontend: 65 pass (unchanged,
+  no test-affecting changes). Ruff + tsc clean.
 - **v0.7.120** 🛠⚡🔒 **Cross-cutting middleware + slow-query log +
   pre-commit.** One focused commit shipping five lightweight wins that
   came out of the post-v0.7.119 audit. ~7 hours of work; high
