@@ -1,3 +1,5 @@
+import asyncio
+import os
 import time
 import uuid
 from pathlib import Path
@@ -250,15 +252,60 @@ async def generate_podcast_command(
         # might still be useful for diagnostics.
         logger.info("Starting podcast generation with podcast-creator...")
 
+        # v0.7.138 — Bound the whole podcast-creator call with a
+        # generous timeout. Real podcast generation has many phases
+        # (outline LLM → transcript LLM × N segments → TTS × N speakers)
+        # and can legitimately take 5-30 minutes on a local-deploy
+        # install. Default 1800s (30 minutes) is large but bounded;
+        # without this, a hung TTS provider or wedged local model
+        # could pin a worker slot indefinitely (the @command
+        # `max_attempts: 1` means there's no retry — a hang is forever
+        # unless we cap it).
+        #
+        # Tunable via ONP_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
+        # propagates as a regular exception → @command framework
+        # marks the episode as failed → episode.delete() cleanup
+        # path below fires, including the empty-output-dir sweep.
+        _podcast_timeout = float(
+            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
+            or 1800
+        )
         try:
-            result = await create_podcast(
-                content=input_data.content,
-                briefing=briefing,
-                episode_name=episode_dir_name,
-                output_dir=str(output_dir),
-                speaker_config=speaker_profile.name,
-                episode_profile=episode_profile.name,
+            result = await asyncio.wait_for(
+                create_podcast(
+                    content=input_data.content,
+                    briefing=briefing,
+                    episode_name=episode_dir_name,
+                    output_dir=str(output_dir),
+                    speaker_config=speaker_profile.name,
+                    episode_profile=episode_profile.name,
+                ),
+                timeout=_podcast_timeout,
             )
+        except asyncio.TimeoutError as exc:
+            # Treat the timeout as a generation failure for output-dir
+            # cleanup purposes: fall through to the existing
+            # empty-dir-cleanup logic and re-raise as a clear
+            # message. Don't raise as ValueError (which surreal_commands
+            # treats as permanent) — a timeout is operationally
+            # transient even if @command retries are disabled.
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+                    logger.info(
+                        "Cleaned up empty output dir after timeout: {}",
+                        output_dir,
+                    )
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Podcast generation timed out after {_podcast_timeout}s for "
+                f"episode {input_data.episode_name!r}. The outline / "
+                f"transcript LLM or TTS provider may be hung or "
+                f"significantly slower than expected. Raise "
+                f"ONP_PODCAST_GENERATION_TIMEOUT_SEC if your provider "
+                f"legitimately needs more time, or check provider health."
+            ) from exc
         except Exception:
             # Leave non-empty dirs alone — those have partial output
             # (transcript file, intermediate WAVs) that the user can

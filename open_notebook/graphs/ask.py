@@ -1,3 +1,4 @@
+import asyncio
 import operator
 import os
 from typing import Annotated, List
@@ -13,10 +14,73 @@ from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.notebook import vector_search
-from open_notebook.exceptions import OpenNotebookError
+from open_notebook.exceptions import (
+    ExternalServiceError,
+    OpenNotebookError,
+)
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.7.138 — Per-node LLM-call timeout for the ask graph (final-sweep
+# audit finding #1). Each of the three nodes (strategy, provide_answer,
+# write_final_answer) calls `model.ainvoke()` once. Before this
+# release, NONE of them had a timeout — a hung provider (e.g., local
+# llama-cpp-python that wedges mid-generation, cloud provider with a
+# brief outage) would pin the whole /search/ask stream indefinitely.
+# The outer SSE handler has `is_disconnected()` checks but no total-
+# time wall.
+#
+# Default 120s per node — generous because the final-answer node
+# synthesizes across multiple sub-answers and can legitimately need
+# 60-90s on a 16k-context local model. Tunable per-deployment.
+_DEFAULT_ASK_NODE_TIMEOUT_SEC = 120.0
+
+
+def _ask_node_timeout_sec() -> float:
+    raw = (os.environ.get("ONP_ASK_NODE_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+    try:
+        val = float(raw)
+        if val <= 0:
+            logger.warning(
+                "ONP_ASK_NODE_TIMEOUT_SEC={} must be positive; using "
+                "default {}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+            )
+            return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+        return val
+    except ValueError:
+        logger.warning(
+            "ONP_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default "
+            "{}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+        )
+        return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+
+
+async def _ask_invoke(model, payload, *, node: str):
+    """v0.7.138 — Wrap a single ask-node LLM invocation with the
+    per-node timeout. A TimeoutError becomes ExternalServiceError
+    (HTTP 502 at the global handler) with a message naming the
+    failing node, so users see actionable info rather than a generic
+    500 + stack trace.
+
+    Why ExternalServiceError specifically: the failure mode is
+    upstream (the LLM provider hung), and 502 Bad Gateway is the
+    canonical status for "I tried to talk to an upstream service
+    and it didn't respond properly".
+    """
+    timeout = _ask_node_timeout_sec()
+    try:
+        return await asyncio.wait_for(model.ainvoke(payload), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        raise ExternalServiceError(
+            f"Ask graph: {node!r} node LLM call timed out after "
+            f"{timeout:.0f}s. Try a smaller/faster model, raise "
+            f"ONP_ASK_NODE_TIMEOUT_SEC, or check that the provider "
+            f"is responsive."
+        ) from exc
 
 # v0.7.9 — Per-result content cap for the Ask graph.
 #
@@ -147,8 +211,9 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             structured=dict(type="json"),
         )
         # model = model.bind_tools(tools)
-        # First get the raw response from the model
-        ai_message = await model.ainvoke(system_prompt)
+        # First get the raw response from the model.
+        # v0.7.138 — bounded by _ask_invoke instead of bare ainvoke.
+        ai_message = await _ask_invoke(model, system_prompt, node="strategy")
 
         # Clean the thinking content from the response
         message_content = extract_text_content(ai_message.content)
@@ -204,7 +269,8 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
             "tools",
             max_tokens=2000,
         )
-        ai_message = await model.ainvoke(system_prompt)
+        # v0.7.138 — bounded by _ask_invoke instead of bare ainvoke.
+        ai_message = await _ask_invoke(model, system_prompt, node="provide_answer")
         ai_content = extract_text_content(ai_message.content)
         return {"answers": [clean_thinking_content(ai_content)]}
     except OpenNotebookError:
@@ -223,7 +289,12 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
             "tools",
             max_tokens=2000,
         )
-        ai_message = await model.ainvoke(system_prompt)
+        # v0.7.138 — bounded by _ask_invoke. The final-answer node
+        # synthesizes across multiple sub-answers and is typically the
+        # slowest node in the graph; the default 120s budget should
+        # cover it, but operators with bigger contexts can raise
+        # ONP_ASK_NODE_TIMEOUT_SEC.
+        ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
         final_content = extract_text_content(ai_message.content)
         return {"final_answer": clean_thinking_content(final_content)}
     except OpenNotebookError:

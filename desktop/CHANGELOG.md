@@ -18,7 +18,76 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.137 (in flight)
+## Unreleased — v0.7.36 → v0.7.138 (in flight)
+
+- **v0.7.138** 🛡 **Final-sweep audit — every model-using path now
+  bounded.** End-to-end walk of `/chat/stream`, `/search/ask`,
+  notebook editing (transformations + insights), and podcast
+  generation. Found three places where a hung LLM provider could
+  pin a worker or stream indefinitely. Fixed all three.
+
+  **Finding #1 — Ask graph nodes had no per-node `asyncio.wait_for`.**
+  The `open_notebook/graphs/ask.py` strategy / provide_answer /
+  write_final_answer nodes each called `model.ainvoke()` without a
+  timeout. The `/search/ask` outer SSE handler had `is_disconnected()`
+  checks but no total-time wall — if the strategy node hung, the
+  client could disconnect but the LLM call kept grinding tokens on
+  the server.
+
+  **Fix:** new `_ask_invoke(model, payload, *, node=...)` helper wraps
+  every `model.ainvoke()` with `ONP_ASK_NODE_TIMEOUT_SEC` (default
+  120s). Timeout raises `ExternalServiceError` (mapped to HTTP 502
+  by the global exception handler) with a message naming the
+  failing node + the actual timeout value, so users see actionable
+  info rather than a generic 500.
+
+  **Finding #2 — `run_transformation_command` worker had no timeout.**
+  The HTTP-side `/transformations/execute` got a 180s bound back in
+  v0.7.95, but the worker path (used when sources have transformations
+  attached at creation time) called `transform_graph.ainvoke()`
+  unbounded. A hung chat model meant a worker slot pinned until the
+  surreal_commands retry timeout fired out-of-band.
+
+  **Fix:** worker now uses the same `ONP_TRANSFORMATION_TIMEOUT_SEC`
+  env var (default 180s) via `asyncio.wait_for()`. Timeout re-raises
+  as `RuntimeError` (NOT `ValueError`) so the @command retry kicks
+  in — a transient hang on one attempt shouldn't mark the whole
+  transformation as permanently failed.
+
+  **Finding #3 — `generate_podcast_command` had no timeout on
+  `create_podcast()`.** The @command config has `max_attempts: 1`
+  (intentional — duplicate episodes are worse than a failed one),
+  so a hung TTS / LLM call had nothing to bail it out. A worker
+  slot lost forever until process restart.
+
+  **Fix:** new `ONP_PODCAST_GENERATION_TIMEOUT_SEC` env var (default
+  1800s = 30 minutes — generous because real generation legitimately
+  takes 5-30 min) wraps the `create_podcast()` call. Timeout cleans
+  up the empty output directory (so disk fill doesn't accumulate)
+  and re-raises as `RuntimeError` with an actionable message.
+
+  **New env vars:**
+  - `ONP_ASK_NODE_TIMEOUT_SEC` (default 120)
+  - `ONP_PODCAST_GENERATION_TIMEOUT_SEC` (default 1800)
+  - (`ONP_TRANSFORMATION_TIMEOUT_SEC` already existed from v0.7.95;
+    just now applies to the worker path too)
+
+  **Tests:** 14 new in `tests/test_v0_7_138.py`:
+  - 6 ask-node timeout cases (default, env override, garbage env,
+    zero/negative env, hung-invoke raises ExternalServiceError,
+    fast-invoke passes through)
+  - 2 worker transformation timeout cases (hung → RuntimeError for
+    retry, fast → success)
+  - 1 podcast generation timeout sanity test
+  - 5 cross-cutting meta-tests confirming each of the 5 model-using
+    files (chat router, transformation router, ask graph, source
+    worker, podcast worker) has either an outer-wrap or per-call
+    timeout. A future refactor that drops a timeout breaks the
+    meta-test, surfacing the regression immediately.
+
+  Backend suite: **714 passing** (was 700, +14).
+
+- **v0.7.137** ✨ **Bulk vectorize endpoint gets real pagination (Area
 
 - **v0.7.137** ✨ **Bulk vectorize endpoint gets real pagination (Area
   for Review #8).** Before this release, `POST /notebooks/{id}/
