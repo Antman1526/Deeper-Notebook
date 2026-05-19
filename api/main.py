@@ -745,7 +745,7 @@ async def metrics(request: Request):
 
 
 @app.get("/healthz/deep")
-async def healthz_deep():
+async def healthz_deep(probe_providers: bool = False):
     """v0.7.112 — Deep dependency check.
 
     Probes each subsystem independently with a short timeout and
@@ -765,12 +765,25 @@ async def healthz_deep():
           "embedding_model": {...},
           "chat_model": {...},
           "command_registry": {...},
+          "upstream_providers": {...}   ← only when ?probe_providers=true
         }
       }
 
     Status codes:
       200 → healthy or degraded (some optional features unavailable)
       503 → not_ready (DB or migrations failed — nothing works)
+
+    v0.7.132 — `?probe_providers=true` (Area for Review #12) enables
+    a per-credential upstream probe via the existing connection_tester
+    module. OFF by default because each probe burns one cheap API call
+    against the provider (free in some plans, fractions of a cent in
+    others), so we don't want a monitoring system hitting this every
+    15 seconds and quietly running up the bill. Recommended cadence:
+    once per minute at most. Each credential probe runs in parallel
+    with a 5s timeout; a single slow provider doesn't gate the whole
+    response. Failure modes (network error, quota exceeded, auth fail)
+    are surfaced per-credential so operators see exactly which one is
+    broken instead of a generic "providers degraded".
     """
     from api.routers.config import check_database_health
     from open_notebook.database import async_migrate
@@ -875,9 +888,22 @@ async def healthz_deep():
             ),
         }
 
+    # v0.7.132 — Optional: probe upstream providers (Area for Review
+    # #12). Only runs when caller passes ?probe_providers=true, since
+    # this burns one API call per credential. Each probe is its own
+    # coroutine + 5s timeout, gathered with return_exceptions=True so
+    # one bad provider doesn't gate the response.
+    if probe_providers:
+        upstream = await _probe_upstream_providers(timeout_seconds=5.0)
+        checks["upstream_providers"] = upstream
+
     must_have_ok = (
         checks["database"]["ok"] and checks["migrations"]["ok"]
     )
+    # v0.7.132 — `upstream_providers` is informational. A failing
+    # provider knocks the overall to 'degraded' but doesn't flip to
+    # 'not_ready'; an operator may have intentionally configured a
+    # provider that's currently down (e.g., scheduled maintenance).
     all_ok = all(c["ok"] for c in checks.values())
     if not must_have_ok:
         overall = "not_ready"
@@ -893,3 +919,112 @@ async def healthz_deep():
         content={"status": overall, "checks": checks},
         status_code=status_code,
     )
+
+
+# -------------------------------------------------------------------- #
+# v0.7.132 — Upstream provider probing helper for /healthz/deep
+#
+# Lives outside the route handler so it can be called from tests in
+# isolation and so the route handler stays readable.
+# -------------------------------------------------------------------- #
+
+
+async def _probe_upstream_providers(*, timeout_seconds: float = 5.0) -> dict:
+    """Probe every configured Credential via connection_tester and
+    return a dict suitable for inclusion in /healthz/deep.
+
+    Returns shape:
+      {
+        "status": "ok" | "degraded" | "no_credentials" | "error",
+        "ok": bool,
+        "error": str | None,
+        "credentials": [
+          {
+            "provider": "openai",
+            "name": "My OpenAI Key",
+            "ok": true,
+            "message": "Connection successful",
+          },
+          ...
+        ]
+      }
+
+    Edge cases handled:
+      - No credentials configured at all → status='no_credentials',
+        ok=True (it's a valid state, not an error)
+      - Credential-list query failed → status='error', ok=False
+      - One credential failed mid-probe → that entry has ok=False,
+        but the overall response is still emitted with the others
+    """
+    from open_notebook.ai.connection_tester import test_provider_connection
+    from open_notebook.domain.credential import Credential
+
+    try:
+        creds = await Credential.get_all()
+    except Exception as exc:
+        # We never want the probe to wedge the whole healthz response.
+        return {
+            "status": "error",
+            "ok": False,
+            "error": f"Could not list credentials: {exc}",
+            "credentials": [],
+        }
+
+    if not creds:
+        return {
+            "status": "no_credentials",
+            "ok": True,
+            "error": None,
+            "credentials": [],
+        }
+
+    async def _probe_one(cred) -> dict:
+        # `test_provider_connection` accepts `config_id` to scope the
+        # probe to a specific credential record (the same path used by
+        # POST /credentials/{id}/test). Returns (success, message).
+        #
+        # Always-timeout pattern so a hung provider can't block the
+        # whole probe. The tester has its own per-attempt timeouts but
+        # the outer wait_for is the backstop.
+        try:
+            success, message = await asyncio.wait_for(
+                test_provider_connection(
+                    provider=cred.provider,
+                    config_id=str(cred.id) if cred.id else None,
+                ),
+                timeout=timeout_seconds,
+            )
+            return {
+                "provider": cred.provider,
+                "name": cred.name,
+                "ok": bool(success),
+                "message": message,
+            }
+        except asyncio.TimeoutError:
+            return {
+                "provider": cred.provider,
+                "name": cred.name,
+                "ok": False,
+                "message": f"Timed out after {timeout_seconds}s",
+            }
+        except Exception as exc:
+            return {
+                "provider": cred.provider,
+                "name": cred.name,
+                "ok": False,
+                "message": f"Probe raised: {exc}",
+            }
+
+    # Run all probes in parallel.
+    probe_results = await asyncio.gather(
+        *(_probe_one(c) for c in creds),
+        return_exceptions=False,  # _probe_one already catches everything
+    )
+
+    all_ok = all(p["ok"] for p in probe_results)
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "ok": all_ok,
+        "error": None,
+        "credentials": probe_results,
+    }
