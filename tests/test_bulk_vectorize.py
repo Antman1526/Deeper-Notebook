@@ -215,10 +215,15 @@ def test_bulk_vectorize_continues_after_submit_failure(
 def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
     client, patched_domain, monkeypatch,
 ):
-    """v0.7.110 — Notebooks with more than ONP_BULK_VECTORIZE_MAX_SOURCES
-    must be truncated to the cap and a warning surfaced so the user
-    knows to call again. Without this cap a 10k-source notebook would
-    pin the request submitting 10k commands."""
+    """v0.7.110 — Notebooks larger than ONP_BULK_VECTORIZE_MAX_SOURCES
+    get clamped to the cap with a warning. v0.7.137 reframed this as
+    a `limit` clamp: the default request `limit=500` is clamped down
+    to the env cap, sources beyond `offset + effective_limit` aren't
+    processed in this call, and `has_more=True` signals the caller
+    can paginate.
+
+    Without the cap a 10k-source notebook would pin the request
+    submitting 10k commands."""
     monkeypatch.setenv("ONP_BULK_VECTORIZE_MAX_SOURCES", "3")
     sources = [
         _make_source(
@@ -235,12 +240,22 @@ def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    # Only the first 3 sources got queued
+    # Only the first 3 sources got queued (env cap)
     assert body["queued"] == 3
-    # Truncation warning surfaced with actionable hint
+    # v0.7.137 — Clamp warning surfaced with actionable hint.
+    # The wording changed from "Notebook has X sources; processed
+    # only first Y" to "Requested limit N exceeds the per-call cap
+    # (M); clamped". Both mention how to escape: raise the env var
+    # or paginate.
     assert any(
-        "10 sources" in w and "ONP_BULK_VECTORIZE_MAX_SOURCES" in w
+        "clamped" in w and "ONP_BULK_VECTORIZE_MAX_SOURCES" in w
         for w in body["warnings"]
     ), body["warnings"]
     # Per-source entries reflect only the processed subset
     assert len(body["sources"]) == 3
+    # v0.7.137 — has_more must be True since 10 > 3 and we processed
+    # only the first 3. Caller can call again with offset=3.
+    assert body["has_more"] is True
+    assert body["total_sources"] == 10
+    assert body["offset"] == 0
+    assert body["limit"] == 3  # clamped down from default 500
