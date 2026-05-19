@@ -77,7 +77,23 @@ function markWizardCompleted() {
   }
   // Cookie is what middleware reads (localStorage isn't visible on the
   // edge). 1-year expiry; cleared if the user wipes site data.
-  document.cookie = `${WIZARD_COMPLETED_KEY}=1; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`
+  // v0.7.121 — Cookie security flags:
+  //   SameSite=Strict — the cookie carries no security-sensitive
+  //     value (it's just "user has finished the wizard"), but Strict
+  //     prevents cross-site requests from triggering the redirect-
+  //     loop bypass any future feature might add to the wizard path.
+  //   Secure — only sent over HTTPS. Skipped on localhost / dev
+  //     because browsers reject Secure cookies on http://localhost
+  //     and the wizard would loop forever in dev. Detect via
+  //     window.location.protocol.
+  //   HttpOnly is NOT set — can't be, because we set the cookie from
+  //     JS (document.cookie doesn't support HttpOnly).
+  const secureFlag = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = (
+    `${WIZARD_COMPLETED_KEY}=1; path=/; ` +
+    `max-age=${60 * 60 * 24 * 365}; ` +
+    `SameSite=Strict${secureFlag}`
+  )
 }
 
 function StatusIcon({ ok, status }: { ok: boolean; status: string }) {
