@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from api.auth import PasswordAuthMiddleware
 
 # v0.7.120 — cross-cutting middlewares split into api/middleware/.
+from api.middleware.metrics import PrometheusMetricsMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 from api.middleware.security_headers import SecurityHeadersMiddleware
 from api.routers import (
@@ -361,6 +362,7 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        "/metrics",   # v0.7.124 — Prometheus scrapes without auth
     ],
 )
 
@@ -373,6 +375,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # v0.7.120 — defense-in-depth security headers. X-Content-Type-Options,
 # X-Frame-Options, Referrer-Policy, CSP (skipped on /docs paths).
 app.add_middleware(SecurityHeadersMiddleware)
+
+# v0.7.124 — Prometheus request-timing capture. Records every request's
+# method + route + status_code + duration into the metrics module's
+# counter + histogram, exposed at /metrics. /metrics itself is
+# excluded from capture so scrapes don't show up as user traffic.
+app.add_middleware(PrometheusMetricsMiddleware)
 
 # v0.7.120 — request-ID correlation. Generates (or accepts) a UUID4
 # per request, binds it into loguru context, surfaces as
@@ -606,6 +614,40 @@ async def readyz():
 # "healthy" if must-haves pass and "degraded" if any optional subsystem
 # is missing/broken. Returns 200 unless a must-have fails (DB or
 # migrations).
+# v0.7.124 — Prometheus metrics endpoint. Returns the registry in
+# the standard exposition format. Auth-exempt (operators / Prometheus
+# scrapers poll without credentials). Excluded from the request-
+# timing histogram itself (we don't want scrapes appearing as user
+# traffic).
+@app.get("/metrics")
+async def metrics():
+    """v0.7.124 — Prometheus metrics exposition endpoint.
+
+    Returns the global metric registry in the standard text format
+    consumed by Prometheus / Grafana / Victoria Metrics / any
+    OpenMetrics-compatible scraper.
+
+    Metrics surfaced:
+      - onp_http_requests_total{method, route, status_code}
+      - onp_http_request_duration_seconds{method, route}
+      - onp_db_query_duration_seconds
+      - onp_db_slow_queries_total
+      - onp_memory_recall_fallthrough_total{reason}
+      - onp_memory_recall_duration_seconds
+      - (plus the default process_* + python_gc_* metrics from
+        prometheus-client)
+
+    The endpoint is auth-exempt — see api/main.py PasswordAuthMiddleware
+    excluded_paths. Recommended scrape interval: 15s for high-traffic
+    deployments, 60s for single-user desktop installs.
+    """
+    from fastapi.responses import Response
+
+    from api.metrics import render_prometheus
+    body, content_type = render_prometheus()
+    return Response(content=body, media_type=content_type)
+
+
 @app.get("/healthz/deep")
 async def healthz_deep():
     """v0.7.112 — Deep dependency check.

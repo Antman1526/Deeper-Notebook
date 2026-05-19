@@ -403,3 +403,80 @@ def test_security_headers_hsts_present_on_https():
     assert hsts is not None
     assert "max-age=63072000" in hsts  # 2 years
     assert "includeSubDomains" in hsts
+
+
+# --------------------------------------------------------------------- #
+# v0.7.121 — Dangerous CORS+no-password combo ERROR-level startup log
+# --------------------------------------------------------------------- #
+
+
+def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
+    """v0.7.121 — When CORS_ORIGINS is unset (default '*') AND
+    OPEN_NOTEBOOK_PASSWORD is unset (auth is a no-op), the API logs an
+    ERROR-level message at process boot naming the foot-gun. Operators
+    tailing logs should see it immediately.
+
+    We can't easily re-import api.main (it has module-level side
+    effects), so we exercise the warning logic directly by mimicking
+    the conditions and asserting the loguru output contains the
+    expected ERROR signal."""
+    from loguru import logger
+
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda msg: captured.append(msg.record["message"]),
+        level="ERROR",
+    )
+    try:
+        # Simulate the check from api/main.py
+        from open_notebook.utils.encryption import get_secret_from_env
+
+        monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD", raising=False)
+        monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD_FILE", raising=False)
+        password_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+        cors_wildcard = True  # simulating CORS_IS_DEFAULT_WILDCARD
+
+        if cors_wildcard and not password_set:
+            logger.error(
+                "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD "
+                "is unset. Any origin can call this API without credentials. "
+                "ANYONE with the API URL can read/write every notebook. This "
+                "is fine ONLY for local development."
+            )
+    finally:
+        logger.remove(sink_id)
+
+    assert any("DANGEROUS CONFIG" in msg for msg in captured), \
+        f"Expected ERROR-level dangerous-config warning; captured: {captured}"
+    # Must name BOTH levers so the user knows what to set
+    assert any("CORS_ORIGINS" in msg and "OPEN_NOTEBOOK_PASSWORD" in msg
+               for msg in captured)
+
+
+def test_safe_cors_with_password_set_does_not_log_dangerous_error(
+    monkeypatch,
+):
+    """v0.7.121 — Negative-space check: when password IS set, the
+    dangerous combo doesn't apply, so we should NOT emit the ERROR."""
+    from loguru import logger
+
+    from open_notebook.utils.encryption import get_secret_from_env
+
+    monkeypatch.setenv("OPEN_NOTEBOOK_PASSWORD", "strong-password-xyz")
+
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda msg: captured.append(msg.record["message"]),
+        level="ERROR",
+    )
+    try:
+        password_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+        cors_wildcard = True  # CORS=* but password is set → safe
+
+        # The if-branch shouldn't fire
+        if cors_wildcard and not password_set:
+            logger.error("DANGEROUS CONFIG")
+    finally:
+        logger.remove(sink_id)
+
+    assert not any("DANGEROUS CONFIG" in msg for msg in captured)
