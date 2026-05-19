@@ -2,9 +2,13 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, desktop-app]
+  # v0.7.129 — also fire on pushes to `desktop-app`. This is the
+  # working branch for the Plus fork; gating Tests to `main` only
+  # means changes sit untested for weeks until a sync PR. Triggering
+  # here gives every commit a green/red signal at the moment it lands.
   push:
-    branches: [main]
+    branches: [main, desktop-app]
     paths-ignore:
       - '**.md'
       - 'docs/**'
