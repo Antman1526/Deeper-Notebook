@@ -18,7 +18,70 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.136 (in flight)
+## Unreleased — v0.7.36 → v0.7.137 (in flight)
+
+- **v0.7.137** ✨ **Bulk vectorize endpoint gets real pagination (Area
+  for Review #8).** Before this release, `POST /notebooks/{id}/
+  vectorize_sources` silently truncated to the first
+  `ONP_BULK_VECTORIZE_MAX_SOURCES` sources (default 500) and emitted
+  a warning. The caller had no way to reach sources beyond #500
+  without either raising the env var globally OR calling the endpoint
+  multiple times against the same first-500 slice (re-processing,
+  not paginating).
+
+  Now the endpoint accepts `?offset=` and `?limit=` query params,
+  matching the v0.7.130 podcasts pagination pattern:
+
+      POST /api/notebooks/{id}/vectorize_sources?offset=0&limit=500
+      POST /api/notebooks/{id}/vectorize_sources?offset=500&limit=500
+      POST /api/notebooks/{id}/vectorize_sources?offset=1000&limit=500
+      ...
+
+  Defaults preserve pre-v0.7.137 behavior (`offset=0, limit=500`),
+  so existing callers without query params get the first 500. The
+  response model gains three fields:
+
+  - `total_sources` — full notebook source count (previously was
+    confusingly populated with the SLICE count post-truncation)
+  - `offset` / `limit` — what was actually used (after env-cap
+    clamping)
+  - `has_more` — boolean so the caller doesn't have to compute
+    `offset + len(slice) < total_sources` themselves
+
+  Plus three response headers matching the v0.7.130 podcasts
+  convention: `X-Total-Count`, `X-Offset`, `X-Limit`.
+
+  **Framework-level Query validation** rejects:
+  - `offset < 0` (422)
+  - `limit < 1` (422)
+  - `limit > 2000` (422 — sanity ceiling so a misconfigured caller
+    can't request a million-source page)
+
+  **`ONP_BULK_VECTORIZE_MAX_SOURCES` still acts as a per-call hard
+  ceiling.** If a caller passes `limit=1500` but the env var is set
+  to 500, `effective_limit` clamps to 500 and a warning surfaces
+  the conflict ("Requested limit 1500 exceeds the per-call cap
+  (500); clamped. Raise ONP_BULK_VECTORIZE_MAX_SOURCES if you need
+  bigger batches, or use pagination."). The env var is the
+  operator's safety lever; the framework cap (2000) is the
+  not-even-with-misconfig sanity ceiling.
+
+  **9 new hermetic tests** in `tests/test_v0_7_137.py` covering:
+  defaults preserve behavior, large notebook pages correctly,
+  offset slicing math, offset beyond total returns empty,
+  limit-over-env-cap clamps with warning, env cap can be raised,
+  query validation (negative offset / zero limit / huge limit).
+  Plus one existing v0.7.110 test updated to reflect the new
+  warning wording + assert `has_more` is now part of the contract.
+
+  **Backend suite: 700 passing** (was 691, +9 net).
+
+  Frontend wiring: out of scope for this release. The UI doesn't
+  currently expose this endpoint as a "process all sources" button,
+  so there's nothing to update. When that button lands, it should
+  loop on `has_more` rather than calling once and ignoring the rest.
+
+- **v0.7.136** ✨ **Frontend wires `/settings/observability` into UI.**
 
 - **v0.7.136** ✨ **Frontend wires `/settings/observability` into UI.**
   The backend endpoint shipped in v0.7.130 but had no UI consumer —
