@@ -18,8 +18,55 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.126 (in flight)
+## Unreleased — v0.7.36 → v0.7.127 (in flight)
 
+- **v0.7.127** ⚡ **Frontend bundle-analysis tooling.** Ships the
+  measurement infrastructure to identify code-splitting opportunities;
+  defers concrete optimizations to evidence-based decisions instead
+  of speculation.
+
+  **What landed:**
+
+  - `@next/bundle-analyzer` added as a devDependency.
+  - `next.config.ts` wraps the export with `withBundleAnalyzer()`,
+    gated on `ANALYZE=true` env var so production builds aren't
+    affected.
+  - New npm script: `npm run build:analyze` → runs a production
+    build that writes interactive HTML reports to
+    `.next/analyze/{client,server,edge}.html`.
+  - **`frontend/docs/BUNDLE_ANALYSIS.md`** — operator-facing guide
+    documenting how to run the analyzer, what to look for, known
+    lazy-load candidates with size estimates (CommandPalette ~30 KB,
+    Studio dialogs ~15 KB, Import preview ~10 KB), already-handled
+    cases (the markdown editor is already lazy via `dynamic()`),
+    and the rationale for why we ship the tool rather than apply
+    optimizations blindly.
+
+  **Why no concrete splits in this commit:** Bundle-size decisions
+  depend on usage patterns. Lazy-loading CommandPalette is a clear
+  win if users rarely press Cmd+K but net-negative if most of them
+  do within 5 seconds of page load. Without analyzer-grounded data
+  AND telemetry on user behavior, "optimization" is just guessing.
+
+  The proposed-next-steps section in `BUNDLE_ANALYSIS.md` gives the
+  next maintainer a concrete playbook: run analyzer → identify
+  candidates → wrap in `next/dynamic` → re-measure. Each step
+  evidence-driven.
+
+  **Proposed bundle-size budgets** (informational, not yet
+  CI-enforced):
+
+  | Bundle | Budget (gzipped) |
+  |---|---:|
+  | First-load JS | < 200 KB |
+  | Largest route chunk | < 50 KB |
+  | Total client JS | < 1 MB |
+
+  Enforcement is deferred until we have real numbers — adding
+  arbitrary thresholds without baselines is theater.
+
+  **Tests:** No new tests (no behavior change; tooling-only). Full
+  frontend suite still passes: 65 tests. TS clean.
 - **v0.7.126** ✨ **Backup + restore tooling.** First-class disaster
   recovery for the data directory. Closes a real operator-pain gap:
   before this, the only way to snapshot an install was a manual
