@@ -38,6 +38,11 @@ async def list_speaker_profiles():
     try:
         profiles = await SpeakerProfile.get_all(order_by="name asc")
         return [_profile_to_response(p) for p in profiles]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profiles: {e}")
         raise HTTPException(
@@ -95,6 +100,11 @@ async def create_speaker_profile(profile_data: SpeakerProfileCreate):
         await profile.save()
         return _profile_to_response(profile)
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to create speaker profile: {e}")
         raise HTTPException(

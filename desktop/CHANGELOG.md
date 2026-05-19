@@ -18,7 +18,51 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.134 (in flight)
+## Unreleased — v0.7.36 → v0.7.135 (in flight)
+
+- **v0.7.135** 🛡 **AST meta-test enforces HTTPException re-raise
+  convention (Area for Review #3).** Multiple v0.7.x commits have
+  retroactively added `except HTTPException: raise` clauses (search
+  the changelog for "v0.7.108 — re-raise typed HTTPExceptions"
+  and similar). The convention exists because the natural-feeling
+  pattern
+
+      try:
+          await fetch(id)          # raises HTTPException(404) on miss
+      except Exception as e:
+          raise HTTPException(500, detail=str(e))
+
+  silently clobbers the typed 404 to a generic 500 — users see
+  "Internal Server Error" instead of "Not Found", and the actual
+  status disappears from the log line.
+
+  v0.7.135 mechanically enforces the convention via a new pytest
+  parametrized meta-test (`tests/test_v0_7_135_meta.py`). The
+  test walks the AST of every `api/routers/*.py` file, finds any
+  try/except chain whose generic `except Exception` clause re-raises
+  as `HTTPException`, and fails the test for that file if no
+  `except HTTPException: raise` clause precedes it. Operators can
+  whitelist a specific intentional case with `# noqa: HTTP_RAISE`
+  on the `except` line.
+
+  Running the test against the existing codebase caught **18 real
+  bug patterns** across 6 routers (commands.py × 2, embedding_rebuild.py,
+  episode_profiles.py × 2, models.py × 9, settings.py, speaker_profiles.py × 2).
+  All 18 fixed in the same commit — each gets a `v0.7.135` inline
+  comment explaining the enforcement.
+
+  The fix is two lines per handler (`except HTTPException:\n    raise`),
+  applied in front of the generic `except Exception` clause. Behavior
+  change: HTTP routes that previously returned 500 on every kind of
+  error now return the correct typed status (404, 422, etc.) when an
+  underlying call already raised an HTTPException.
+
+  Tests: 4 walker self-tests (synthetic-violation detection,
+  correct-pattern acceptance, noqa whitelist, non-handler ignore)
+  + 26 parametrized real-router checks. **691 backend tests passing**
+  (was 661, +30).
+
+- **v0.7.134** 🛡 **Low-risk trio: pool warmup retry + operator
 
 - **v0.7.134** 🛡 **Low-risk trio: pool warmup retry + operator
   observability handbook.** Three more Areas for Review closed.
