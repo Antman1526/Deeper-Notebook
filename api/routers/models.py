@@ -189,6 +189,11 @@ async def get_models(
             )
             for model in models
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching models: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
@@ -306,6 +311,11 @@ async def get_default_models():
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
             default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
         raise HTTPException(
@@ -476,6 +486,11 @@ async def get_provider_availability():
             unavailable=unavailable_providers,
             supported_types=supported_types,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error checking provider availability: {str(e)}")
         raise HTTPException(
@@ -512,6 +527,11 @@ async def discover_models(provider: str):
             )
             for m in discovered
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error discovering models for {provider}: {str(e)}")
         raise HTTPException(
@@ -541,6 +561,11 @@ async def sync_models(provider: str):
             new=new,
             existing=existing,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error syncing models for {provider}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error syncing models. Check server logs for details.")
@@ -577,6 +602,11 @@ async def sync_all_models():
             total_discovered=total_discovered,
             total_new=total_new,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error syncing all models: {str(e)}")
         raise HTTPException(
@@ -600,6 +630,11 @@ async def get_model_count(provider: str):
             counts=counts,
             total=total,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error getting model count for {provider}: {str(e)}")
         raise HTTPException(
@@ -634,6 +669,11 @@ async def get_models_by_provider(provider: str):
             )
             for model in models
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching models for {provider}: {str(e)}")
         raise HTTPException(
@@ -775,6 +815,11 @@ async def auto_assign_defaults():
             missing=missing,
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error auto-assigning defaults: {str(e)}")
         raise HTTPException(
@@ -870,6 +915,11 @@ async def auto_assign_capability(force: bool = False):
             missing=missing,
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error in capability-aware auto-assign: {str(e)}")
         raise HTTPException(
