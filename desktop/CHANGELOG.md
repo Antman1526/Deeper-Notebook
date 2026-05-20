@@ -18,7 +18,90 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.141 (in flight)
+## Unreleased — v0.7.36 → v0.7.142 (in flight)
+
+- **v0.7.142** 🛡 **Launcher singleton + orphan reaper — no more
+  zombie process accumulation.** Direct fix for the bug the user
+  hit today: they double-clicked `Open Notebook Plus.app` ~5 times
+  during debugging, each click started a fresh launcher with new
+  dynamic ports, and closing the Chromium window didn't kill the
+  launcher tree behind it. After several cycles they had:
+
+    - 4 zombie Next.js processes (PIDs 35217, 37678, 85061, 94829)
+    - 3 zombie surreal-commands workers from May 11
+    - 1 live + several zombie API processes
+    - Browser window attached to a zombie whose API had been overwritten
+
+  Symptom: "Unable to Connect to API Server" pointing at a dead port.
+  Root cause: no singleton enforcement + no process-tree cleanup on
+  launcher crash.
+
+  **`desktop/singleton.py` (NEW)** — two primitives covering the
+  failure modes:
+
+    1. `acquire_singleton(pid_file)` writes a PID file at boot using
+       `O_CREAT | O_EXCL` (race-safe). If another live launcher
+       already holds the lock, raises `AlreadyRunning(pid, pid_file)`
+       with both fields exposed for UI affordances ("Open Notebook
+       Plus is already running — kill it? [y/N]"). Stale PID files
+       (parent process is dead) and unparseable PID files (corrupted)
+       are silently cleaned and acquisition proceeds.
+    2. `reap_orphans(bundle_paths)` scans `ps -eo pid,ppid,command`
+       for processes whose executable path matches the bundled venv
+       or binary dir AND whose parent is dead. SIGTERMs each one.
+       This is the SIGKILL/segfault recovery path — atexit covered
+       graceful shutdown, this covers everything else.
+
+  Returns a `SingletonHandle` that:
+    - releases on explicit `.release()` (called by `stop_all()`)
+    - releases on `atexit` (called by normal `sys.exit()`)
+    - releases on SIGTERM / SIGINT (signal handlers installed at
+      acquire time — Force Quit + Ctrl+C both reap)
+    - does NOT release a PID file owned by a different (newer) PID,
+      so the late atexit of a crashed launcher can't erase the
+      replacement launcher's lock
+
+  **Wired into `desktop/launcher.py` `Supervisor.start_all()`**:
+    - Acquires singleton at start (raises `AlreadyRunning` for UI
+      to handle)
+    - Calls `reap_orphans` BEFORE `find_free_ports()` so we don't
+      race against zombies clinging to ports we want to bind
+    - `Supervisor.stop_all()` releases the singleton FIRST (idempotent
+      and safe even if start_all never ran) so a relaunch isn't
+      blocked while we're still tearing down
+
+  **27 hermetic tests** in `tests/test_v0_7_142_singleton.py`:
+    - 4 `_is_pid_alive` matrix (self, init/PID-1, negative, very-large)
+    - 5 `_read_pid_file` parser cases (missing, valid, garbage,
+      negative-or-zero, whitespace tolerance)
+    - 5 `acquire_singleton` happy + race paths (writes our PID,
+      creates parent dirs, rejects on live lock, cleans stale,
+      handles garbage file)
+    - 3 `SingletonHandle.release` semantics (removes file, idempotent,
+      doesn't clobber another instance's lock)
+    - 1 `default_pid_file` canonical location
+    - 2 `AlreadyRunning` exception shape (message + machine-readable
+      `.pid`)
+    - 3 `reap_orphans` safety properties (dry-run is no-op, never
+      kills self or parent, empty-match returns empty)
+    - 4 end-to-end (acquire→release round-trip, sequential acquires
+      work, callback runs after lock held, callback failure releases
+      lock)
+
+  Backend suite: **774 passing** (was 747, +27).
+
+  **What's still NOT fixed (deferred)**:
+    - **UI for the AlreadyRunning case** — currently the exception
+      propagates to whatever caller wraps `start_all()`. A polished
+      desktop bundle would catch it and show a "Quit existing app?
+      [Quit and Relaunch] [Cancel]" dialog. Out of scope for the
+      backend fix; needs corresponding UI work in `desktop/app.py`.
+    - **Cross-platform reaper** — `reap_orphans` uses `ps -eo`
+      which is POSIX-only. Windows bundles get the singleton check
+      (works via os.kill(0)) but no orphan sweep. Acceptable for
+      now since Windows bundles aren't shipping yet.
+
+- **v0.7.141** 🐛 **The real bundle-bootstrap fix: stale lockfile +
 
 - **v0.7.141** 🐛 **The real bundle-bootstrap fix: stale lockfile +
   defensive depcheck.** A user hit this today: rebuilt the macOS
