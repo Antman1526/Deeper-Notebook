@@ -318,27 +318,65 @@ def reap_orphans(
     `bundle_paths` (typically `~/.open-notebook-plus/venv` and
     `desktop/bin/`) and whose parent is no longer this launcher.
 
-    Best-effort: uses `ps -ef` on POSIX. Returns list of orphans
-    found. If `dry_run=False`, also SIGTERMs each. Callers should
-    `time.sleep(0.5)` after a non-dry run to let the OS reap.
+    Cross-platform: uses `ps -ef` on POSIX, `tasklist /v /fo csv` on
+    Windows. Returns list of orphans found. If `dry_run=False`, also
+    SIGTERMs each (POSIX) or `taskkill /pid` (Windows). Callers
+    should `time.sleep(0.5)` after a non-dry run to let the OS reap.
 
     Why this is best-effort:
-      - `ps` output format varies subtly across macOS versions
-      - We can only kill processes we own (UID match)
-      - A determined orphan can ignore SIGTERM — but the next
-        SIGKILL is up to the operator
+      - process-listing format varies subtly across OS versions
+      - we can only kill processes we own (UID match on POSIX,
+        same-session match on Windows)
+      - a determined orphan can ignore SIGTERM — the next SIGKILL
+        is up to the operator
 
-    This is the "kill -9 me" safety net; the primary defense is
-    the SingletonHandle which prevents accumulation under normal
-    conditions.
+    This is the "kill -9 me" / Force-Quit safety net; the primary
+    defense is the SingletonHandle which prevents accumulation
+    under normal conditions.
     """
+    # v0.7.143 — dispatch to platform-specific scanner. Both return
+    # the same (pid, ppid, cmdline) tuple shape; the filtering +
+    # kill loop below is shared.
+    if sys.platform == "win32":
+        candidates = _list_processes_windows()
+    else:
+        candidates = _list_processes_posix()
+
+    if not candidates:
+        return []
+
     orphans: list[OrphanProcess] = []
     own_pid = os.getpid()
     parent_pid = os.getppid()
+    path_strs = [str(p.resolve()) for p in bundle_paths]
 
+    for pid, ppid, cmdline in candidates:
+        # Don't kill ourselves / our parent
+        if pid in (own_pid, parent_pid):
+            continue
+        # Check if cmdline mentions any of our bundle paths
+        if not any(p in cmdline for p in path_strs):
+            continue
+        # Narrow to "real" orphans: ppid in {0, 1} (init/system) or
+        # the parent PID is no longer alive (dead sibling launcher).
+        # If the parent is alive AND not us, leave it alone — that's
+        # a different running instance's child.
+        if ppid not in (0, 1) and _is_pid_alive(ppid):
+            continue
+        orphans.append(OrphanProcess(pid=pid, cmdline=cmdline))
+
+    if not dry_run:
+        for orphan in orphans:
+            _kill_orphan(orphan.pid, orphan.cmdline)
+
+    return orphans
+
+
+def _list_processes_posix() -> list[tuple[int, int, str]]:
+    """Return [(pid, ppid, cmdline), ...] using `ps -eo`. Empty list on
+    any failure (ps not available, parse error, timeout)."""
     import subprocess
     try:
-        # -o specifies columns: PID, PPID, command. Limit to user.
         result = subprocess.run(
             ["ps", "-eo", "pid,ppid,command"],
             capture_output=True, text=True, timeout=5,
@@ -346,11 +384,9 @@ def reap_orphans(
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         log.debug("ps not available for orphan reap: %s", exc)
         return []
-
     if result.returncode != 0:
         return []
-
-    path_strs = [str(p.resolve()) for p in bundle_paths]
+    out: list[tuple[int, int, str]] = []
     for line in result.stdout.splitlines()[1:]:  # skip header
         parts = line.strip().split(None, 2)
         if len(parts) < 3:
@@ -360,35 +396,142 @@ def reap_orphans(
             ppid = int(parts[1])
         except ValueError:
             continue
-        cmdline = parts[2]
-        # Don't kill ourselves / our parent
-        if pid in (own_pid, parent_pid):
-            continue
-        # Check if cmdline mentions any of our bundle paths
-        if not any(p in cmdline for p in path_strs):
-            continue
-        # Optionally narrow to "real" orphans: ppid==1 means parent
-        # is init. We INCLUDE non-orphans too because a dead-but-not-
-        # reaped sibling launcher would still have its old children
-        # showing up with that launcher's PID (which we can confirm
-        # is dead via _is_pid_alive).
-        if ppid not in (1, 0) and _is_pid_alive(ppid):
-            continue
-        orphans.append(OrphanProcess(pid=pid, cmdline=cmdline))
+        out.append((pid, ppid, parts[2]))
+    return out
 
-    if not dry_run:
-        for orphan in orphans:
-            try:
-                os.kill(orphan.pid, signal.SIGTERM)
-                log.info(
-                    "Reaped orphan %d: %s", orphan.pid, orphan.cmdline[:80],
-                )
-            except OSError as exc:
-                log.debug(
-                    "Could not SIGTERM orphan %d: %s", orphan.pid, exc,
-                )
 
-    return orphans
+def _list_processes_windows() -> list[tuple[int, int, str]]:
+    """Windows equivalent of _list_processes_posix.
+
+    Uses `wmic process get ProcessId,ParentProcessId,CommandLine /format:csv`
+    which is universally available since Windows 7. (Newer versions
+    deprecated wmic in favor of Get-CimInstance, but wmic still works
+    and is faster to invoke than spawning PowerShell.)
+
+    CSV columns: Node, CommandLine, ParentProcessId, ProcessId
+    Note that wmic prefixes with a Node column (the hostname) and the
+    column order may not match the requested order — we use header
+    parsing to be defensive.
+
+    If wmic isn't on PATH (Windows Server Core, very stripped-down
+    container images), we fall back to `tasklist /v /fo csv` which
+    gives us the PID + command but NOT the PPID. In that fallback
+    case, the ppid-aliveness check is skipped (we treat all matches
+    as candidates) — slightly more aggressive but still constrained
+    to our bundle paths.
+    """
+    import csv
+    import io
+    import subprocess
+
+    # First attempt: wmic with PPID for proper orphan detection.
+    try:
+        result = subprocess.run(
+            [
+                "wmic", "process", "get",
+                "ProcessId,ParentProcessId,CommandLine",
+                "/format:csv",
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return _parse_wmic_csv(result.stdout)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        log.debug("wmic unavailable: %s; falling back to tasklist", exc)
+
+    # Fallback: tasklist (no PPID).
+    try:
+        result = subprocess.run(
+            ["tasklist", "/v", "/fo", "csv", "/nh"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        log.debug("tasklist also unavailable: %s", exc)
+        return []
+    if result.returncode != 0:
+        return []
+
+    out: list[tuple[int, int, str]] = []
+    reader = csv.reader(io.StringIO(result.stdout))
+    for row in reader:
+        if len(row) < 2:
+            continue
+        try:
+            pid = int(row[1])
+        except (ValueError, IndexError):
+            continue
+        # tasklist columns vary across Windows versions; we just want
+        # the image name + window title which together usually contain
+        # enough of the cmdline for our path-match.
+        cmdline_proxy = " ".join(c for c in row if c)
+        # PPID unknown — pass 0 (init) so the ppid-liveness check
+        # treats this as a candidate regardless. Caller's bundle-path
+        # filter still constrains us.
+        out.append((pid, 0, cmdline_proxy))
+    return out
+
+
+def _parse_wmic_csv(text: str) -> list[tuple[int, int, str]]:
+    """Parse `wmic ... /format:csv` output.
+
+    wmic CSV is quirky: it emits a BOM, has blank lines between
+    records, and column order doesn't match the requested order
+    (it's alphabetical: CommandLine, Node, ParentProcessId, ProcessId).
+    We read the header row to map column names → indices.
+    """
+    import csv
+    import io
+
+    text = text.lstrip("﻿").strip()
+    if not text:
+        return []
+    reader = csv.reader(io.StringIO(text))
+    rows = [r for r in reader if r and any(cell.strip() for cell in r)]
+    if not rows:
+        return []
+    header = [h.strip() for h in rows[0]]
+    try:
+        i_pid = header.index("ProcessId")
+        i_ppid = header.index("ParentProcessId")
+        i_cmd = header.index("CommandLine")
+    except ValueError as exc:
+        log.debug("Unexpected wmic CSV header %r: %s", header, exc)
+        return []
+
+    out: list[tuple[int, int, str]] = []
+    for row in rows[1:]:
+        if len(row) <= max(i_pid, i_ppid, i_cmd):
+            continue
+        try:
+            pid = int(row[i_pid].strip())
+            ppid = int(row[i_ppid].strip())
+        except ValueError:
+            continue
+        out.append((pid, ppid, row[i_cmd].strip() or ""))
+    return out
+
+
+def _kill_orphan(pid: int, cmdline: str) -> None:
+    """Send SIGTERM (POSIX) or `taskkill /pid` (Windows). Best-effort —
+    log failures at debug since the orphan may have died on its own
+    between our enumeration + kill call."""
+    truncated = cmdline[:80]
+    if sys.platform == "win32":
+        import subprocess
+        try:
+            subprocess.run(
+                ["taskkill", "/pid", str(pid), "/t"],
+                capture_output=True, text=True, timeout=5,
+            )
+            log.info("Reaped orphan %d: %s", pid, truncated)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            log.debug("Could not taskkill %d: %s", pid, exc)
+    else:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            log.info("Reaped orphan %d: %s", pid, truncated)
+        except OSError as exc:
+            log.debug("Could not SIGTERM orphan %d: %s", pid, exc)
 
 
 def default_pid_file() -> Path:
