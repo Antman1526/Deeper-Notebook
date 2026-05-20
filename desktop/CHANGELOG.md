@@ -18,7 +18,84 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.142 (in flight)
+## Unreleased — v0.7.36 → v0.7.143 (in flight)
+
+- **v0.7.143** ✨ **Closes the v0.7.142 deferreds: AlreadyRunning UI
+  dialog + cross-platform reaper.** Two scoped pieces that complete
+  the zombie-process fix.
+
+  **Part 1 — Native dialog for AlreadyRunning.** Before this release,
+  the v0.7.142 `AlreadyRunning` exception just propagated to the
+  generic catch in `_phase_start_supervisor` and the user saw a
+  cryptic stack trace in the splash window. Now `desktop/app.py`
+  catches it and shows a friendly two-button dialog:
+    * **Quit & Relaunch** → SIGTERM the other launcher's PID, poll
+      until it actually exits (10 s deadline), clean up its stale
+      PID file, retry `start_all()` in-place. No restart needed.
+    * **Cancel** → exit cleanly (atexit handlers still fire).
+
+  Implementation uses Tkinter `messagebox.askyesno` (stdlib, bundled
+  with the desktop Python). If Tk fails to initialize (rare —
+  headless container, broken Tcl/Tk bundle), falls back to macOS
+  `osascript` with a native AppKit alert. If BOTH fail, we log a
+  warning and fall through to the original error path so the user
+  at least sees the underlying message in the launcher log.
+
+  Edge cases handled:
+    * `os.kill` raises ProcessLookupError (other PID already dead) →
+      treat as success, clean the stale lock, return True.
+    * Other PID doesn't die within the 10 s poll window → return
+      False (caller exits rather than risk a port-collision race).
+    * Tk + osascript both unavailable → return False (don't auto-kill
+      without explicit user consent).
+
+  **Part 2 — Windows `reap_orphans`.** v0.7.142 was POSIX-only:
+  `reap_orphans` used `ps -eo` which doesn't exist on Windows.
+  Acceptable then because Windows bundles weren't shipping; coming
+  back to it now to unblock that work.
+
+  New `_list_processes_windows()` uses `wmic process get
+  ProcessId,ParentProcessId,CommandLine /format:csv` which is
+  available on every Windows version since 7. Falls back to
+  `tasklist /v /fo csv` if wmic isn't on PATH (Windows Server Core,
+  stripped containers); the fallback loses PPID information so the
+  orphan-detection becomes "any process matching our bundle paths"
+  rather than "only those whose parent is dead" — slightly more
+  aggressive but still constrained.
+
+  `_parse_wmic_csv()` handles wmic's quirks: BOM prefix, blank
+  lines between records, alphabetical column order (CommandLine,
+  Node, ParentProcessId, ProcessId rather than the order we
+  requested). Header-row indexing makes the parser robust against
+  future Windows changes to that order.
+
+  `_kill_orphan()` dispatches to `signal.SIGTERM` on POSIX or
+  `taskkill /pid X /t` on Windows. The `/t` flag is critical — it
+  kills the whole tree under the orphan, not just the orphan itself
+  (Windows doesn't have process groups the way POSIX does).
+
+  **17 hermetic tests** in `tests/test_v0_7_143.py`:
+    * 5 `_handle_already_running` branches (cancel via Tk, accept +
+      dies, accept + won't die, accept + already dead, no dialog
+      primitive available)
+    * 5 `_parse_wmic_csv` cases (typical output, empty, missing
+      header columns, malformed row, blank cmdline)
+    * 2 `reap_orphans` dispatch tests (POSIX uses ps, Windows uses
+      wmic) — these run on ANY platform via mock since they only
+      verify which lister got called
+    * 4 `_kill_orphan` cases (POSIX signal path, Windows taskkill
+      path, both error-tolerant)
+    * 1 regression test for v0.7.142's self/parent-protection
+
+  Backend suite: **791 passing** (was 774, +17).
+
+  **What's still NOT done (final deferred item)**:
+    - **Inter-launcher coordination** ("send 'open new tab' to running
+      instance" instead of just refusing) — not needed for any
+      current feature; can be built on top of the singleton when
+      a use case appears.
+
+- **v0.7.142** 🛡 **Launcher singleton + orphan reaper — no more
 
 - **v0.7.142** 🛡 **Launcher singleton + orphan reaper — no more
   zombie process accumulation.** Direct fix for the bug the user
