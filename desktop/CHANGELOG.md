@@ -18,7 +18,81 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.143 (in flight)
+## Unreleased — v0.7.36 → v0.7.144 (in flight)
+
+- **v0.7.144** 🐛 **Real fix for "API config endpoint returned status
+  500" on launch.** User incident today (2026-05-20): bundled .app
+  opened, showed the connection-error screen with:
+  - Attempted URL: `http://127.0.0.1:53018/api/config`
+  - Technical Details: `API config endpoint returned status 500`
+
+  Diagnosis (~30 min of forensics):
+  - The API was running fine on port 53017, responding 200 to
+    `/api/config` with valid JSON
+  - The Next.js standalone server on 53018 was returning 500 from
+    the same `/api/config` request
+  - Cause: Next.js `rewrites()` config is evaluated **at BUILD time**
+    and the destination string baked into three manifest files:
+    `server.js`, `.next/required-server-files.json`, and
+    `.next/routes-manifest.json`. The build-time default in
+    `frontend/next.config.ts:33` is `http://localhost:5055`. The
+    launcher's runtime `INTERNAL_API_URL` env var (set to the
+    dynamic api_port) is **ignored** by the standalone server —
+    rewrites destinations are NOT re-evaluated from env at runtime.
+
+  Every `/api/*` request the frontend made was proxied to
+  `localhost:5055` (port not listening) → 500 from Next.js → user
+  saw the connection-error screen even though the API was healthy.
+
+  **Fix:** new `desktop/next_rewrites_patcher.py` module that runs
+  before `Supervisor._spawn_next()`. It:
+
+  1. Reads the dynamic `api_port` the launcher allocated
+  2. Creates `.orig` backups of the three baked manifest files on
+     first patch (idempotent — re-creates only if missing)
+  3. Replaces `localhost:5055` with `localhost:<api_port>` in each
+     file, reading FROM `.orig` (so re-patches across launches
+     never compound previous edits)
+  4. Returns the directory Next.js should be spawned from
+
+  **Read-only-bundle handling:** if the bundle's frontend dir is
+  read-only (`.app` installed under `/Applications` by another
+  user), the patcher falls back to copying the frontend to
+  `~/.open-notebook-plus/frontend-runtime/` and patching there.
+  Includes a recursive `_make_writable_recursive` helper because
+  `shutil.copytree` preserves source permissions — a read-only
+  source produced an unpatchable copy. The launcher's
+  `_spawn_next` accepts an optional `next_cwd` parameter to spawn
+  from the patched-copy location.
+
+  **Refuses to claim success silently:** if no manifest file
+  contains the build-time-default string, the patcher raises
+  `PatchError`. Catches the regression case where `next.config.ts`
+  gets refactored (e.g., default changed) — the launcher would
+  otherwise launch a Next.js that can't reach the API and the user
+  would see the same 500 error with no signal that the patcher
+  silently failed.
+
+  **11 new hermetic tests** in `tests/test_v0_7_143_rewrites_patcher.py`:
+  - Happy path: substitutes port in all three files
+  - First-patch creates .orig backups
+  - Repeated patches don't compound (always reads from .orig)
+  - Default port short-circuits (no I/O when api_port=5055)
+  - Error paths: refactored config (no localhost:5055 to find),
+    partial bundles (only some target files present)
+  - `restore_originals` round-trip works
+  - Writability detection: writable dirs detected, read-only
+    sources fall back to writable copy with proper chmod
+
+  **Long-term architectural note (deferred):** the right
+  cross-cutting fix is to have the frontend client always use the
+  absolute URL from `/config` instead of relying on Next.js
+  rewrites for `/api/*` proxying — that would skip rewrites
+  entirely. Requires API CORS + frontend client refactor. Tracked
+  as a follow-up. The patcher is the pragmatic unblock that works
+  with the existing build artifacts.
+
+  Backend suite: **802 passing** (was 774, +28).
 
 - **v0.7.143** ✨ **Closes the v0.7.142 deferreds: AlreadyRunning UI
   dialog + cross-platform reaper.** Two scoped pieces that complete
