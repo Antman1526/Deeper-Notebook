@@ -18,7 +18,53 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.144 (in flight)
+## Unreleased — v0.7.36 → v0.7.145 (in flight)
+
+- **v0.7.145** 🐛 **Fix launcher's `/api/episode_profiles` 404s
+  (underscore vs hyphen mismatch).** User reported recurring 404s
+  in their api.log every launch, with launcher.log line:
+
+      [desktop.auto_register.episode_profile] WARNING:
+      Could not list episode profiles: Client error '404 Not Found'
+      for url 'http://127.0.0.1:53437/api/episode_profiles'
+
+  Cause: `desktop/auto_register/episode_profile.py` calls
+  `client.get("/api/episode_profiles")` (underscore) but the
+  backend route is `@router.get("/episode-profiles")` (hyphen,
+  registered under /api prefix → `/api/episode-profiles`).
+
+  Fix: changed both call sites (lines 190, 245) to use the
+  hyphenated path. Updated the matching test fixtures in
+  `desktop/tests/test_auto_register.py` (6 occurrences) so the
+  18 auto_register tests stay green.
+
+  **What this does NOT fix (in this commit):**
+
+    1. **`POST /api/transcribe` 404 (the "STT failed" toast)** —
+       no file in the source tree calls this endpoint, and there
+       IS no /api/transcribe route on the backend. Likely a chunk
+       from a built minified bundle, or a feature whose
+       implementation was removed. Need deeper investigation to
+       find the call site. Out of scope; STT failure is a toast
+       that the user can dismiss.
+
+    2. **`GET /api/healthz/deep` 404 in api.log** — `health.ts`
+       already overrides baseURL to skip the /api prefix (correct
+       code). The 404s in api.log with `client.port=0` suggest
+       the request comes from Next.js's rewrite proxy intercepting
+       something else, not from the health.ts call directly.
+       Needs further trace to identify; the actual /healthz/deep
+       calls from the wizard work fine in practice.
+
+  Backend tests unchanged. desktop/tests/test_auto_register.py:
+  **18 passing** (was 18; fixture URLs updated alongside).
+
+  **Pre-existing failure noted but NOT caused by this commit:**
+  `desktop/tests/test_launcher.py::test_chat_llm_n_ctx_*` (18
+  failures) — verified by stashing this change and re-running;
+  failures persist. Separate bug, separate fix. Tracked.
+
+- **v0.7.144** 🐛 **Real fix for "API config endpoint returned status
 
 - **v0.7.144** 🐛 **Real fix for "API config endpoint returned status
   500" on launch.** User incident today (2026-05-20): bundled .app
