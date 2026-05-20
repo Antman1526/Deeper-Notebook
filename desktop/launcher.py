@@ -132,6 +132,47 @@ class Supervisor:
         self.openchronicle_port: int = 0
 
     def start_all(self) -> None:
+        # v0.7.142 — Singleton enforcement + orphan reaper.
+        # Before this release, double-clicking the .app twice spawned two
+        # complete process trees with independent dynamic ports. The user
+        # would end up with multiple "Unable to Connect" browser windows,
+        # each attached to a zombie launcher whose API had since been
+        # overwritten. See desktop/singleton.py docstring for the full
+        # incident.
+        #
+        # Now: acquire a PID-file lock at start. If another live instance
+        # holds it, AlreadyRunning propagates up to the app's UI which
+        # can show a friendly "Open Notebook Plus is already running"
+        # dialog. Then sweep any orphans from prior crashed launchers
+        # before we bind our own ports.
+        from desktop.singleton import (
+            acquire_singleton,
+            default_pid_file,
+            reap_orphans,
+        )
+        self._singleton = acquire_singleton(default_pid_file())
+        # Best-effort orphan reap. The bundle paths cover the two places
+        # our subprocess children live: the user-data venv (Python API +
+        # worker) and the bundled binary dir (Node, surreal, llama-cpp).
+        bundle_paths = [
+            Path.home() / ".open-notebook-plus" / "venv",
+            self.bin_dir,
+        ]
+        try:
+            orphans = reap_orphans(bundle_paths=bundle_paths)
+            if orphans:
+                log.warning(
+                    "Reaped %d orphaned process(es) from prior launch",
+                    len(orphans),
+                )
+                # Give the OS a moment to actually free the ports they
+                # were holding so find_free_ports below doesn't race
+                # against zombies clinging to them.
+                time.sleep(0.5)
+        except Exception as exc:
+            # Reap is best-effort — never let a scan failure block boot.
+            log.debug("Orphan reap failed (non-fatal): %s", exc)
+
         (surreal_port, api_port, frontend_port,
          embed_port, whisper_port, piper_port,
          chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
@@ -231,6 +272,19 @@ class Supervisor:
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 
     def stop_all(self) -> None:
+        # v0.7.142 — Release the singleton FIRST so a relaunch isn't
+        # blocked while we're still tearing down. The singleton release
+        # is idempotent (safe even if start_all never ran or already
+        # released). atexit also calls release independently, so the
+        # only thing this gets us is faster recovery for the "relaunch
+        # immediately after Cmd+Q" case.
+        singleton = getattr(self, "_singleton", None)
+        if singleton is not None:
+            try:
+                singleton.release()
+            except Exception as exc:
+                log.debug("singleton release failed: %s", exc)
+
         # v0.7.58 — log terminate/wait/close failures at debug level
         # instead of swallowing silently. Previously a zombie child
         # that survived terminate() was invisible; the launcher exited
