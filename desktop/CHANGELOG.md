@@ -18,7 +18,80 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.140 (in flight)
+## Unreleased — v0.7.36 → v0.7.141 (in flight)
+
+- **v0.7.141** 🐛 **The real bundle-bootstrap fix: stale lockfile +
+  defensive depcheck.** A user hit this today: rebuilt the macOS
+  bundle, double-clicked `Open Notebook Plus.app`, watched it silently
+  quit after 3 minutes. Root cause traced through three layers:
+
+  **What looked like the bug:** bundled Python venv at
+  `~/.open-notebook-plus/venv/` was missing `prometheus_client`,
+  so the API crashed at import time on `api/metrics.py:27`. Launcher
+  waited 180 s for `/readyz` that never came up, then gave up.
+
+  **What I diagnosed first (and was wrong about):** "bootstrap reuses
+  stale venvs across upgrades". Suggested user manually
+  `rm -rf ~/.open-notebook-plus/venv` and relaunch.
+
+  **The actual root cause (found while writing the "real fix"):**
+  `desktop/requirements.lock` itself is stale. It was last manually
+  regenerated in commit 90fbf8e — long before v0.7.124 added
+  `prometheus-client>=0.20.0` to `pyproject.toml`. The bundle builds
+  `dist/Open Notebook Plus.app` shipping the OLD lockfile. The
+  bootstrap (correctly!) hashes that lockfile, sees the venv's marker
+  matches, and reports "Environment is up to date". The hash math is
+  right; the input is wrong.
+
+  **Three-part fix:**
+
+  1. **New `build-mac-lock` Makefile target** runs `uv pip compile
+     pyproject.toml --python-version 3.12 -o desktop/requirements.lock`
+     to regenerate the lockfile from the current dependency manifest.
+     Promoted to a precondition of `build-mac` (added between
+     `build-mac-test` and `build-mac-venv` in the prereq chain), so
+     every full bundle build refreshes the lock automatically.
+
+  2. **`bootstrap.py` post-install depcheck.** After `uv pip install`
+     finishes against the lockfile, we now run each critical import
+     (`prometheus_client`, `surrealdb`, `fastapi`, `langgraph`,
+     `loguru`, `pydantic`) as a subprocess in the freshly-built
+     venv. If any fails, raise immediately with a clear actionable
+     message including the recovery commands. Belt-and-suspenders
+     for the case where (a) a future regression slips through the
+     Makefile fix or (b) someone hand-edits a lockfile and drops
+     a critical package — we fail at install time with a 1-line
+     cause instead of waiting 3 minutes for the API to crash.
+
+  3. **Improved "Environment is up to date" log message.** Was
+     misleading — it didn't tell the user how to force-rebuild when
+     things went wrong. Now reads `Environment is up to date (delete
+     /path/to/venv to force reinstall if the app fails to start)` so
+     a user hitting an edge case has a recovery path without needing
+     to read source code.
+
+  **Lockfile regenerated in this commit:** 656 packages, now
+  including the previously-missing prometheus-client==0.25.0.
+
+  **9 new hermetic tests** in `tests/test_v0_7_141_bootstrap.py`:
+    * 2 Makefile structure: `build-mac-lock` exists + invokes
+      `uv pip compile`
+    * 1 dependency ordering: `build-mac-lock` runs BEFORE
+      `build-mac-venv` in the `build-mac` prereq chain (critical —
+      reversed order would defeat the whole fix)
+    * 3 `_verify_critical_imports` cases: all-present, missing-modules,
+      bogus-python-binary
+    * 2 critical-import-list content: must include `prometheus_client`
+      (regression-test for the actual bug); must include all 6
+      load-bearing api.main imports
+    * 1 cross-cutting: `desktop/requirements.lock` actually contains
+      every direct dep listed in `pyproject.toml`. This caught the
+      stale lockfile in this very commit — the test failed first
+      run, I ran `make build-mac-lock`, it passed.
+
+  Backend suite: **747 passing** (was 738, +9).
+
+- **v0.7.140** 🐛 **Makefile fixes — `make start-all` now actually
 
 - **v0.7.140** 🐛 **Makefile fixes — `make start-all` now actually
   works on a fresh clone.** User hit three real bugs the moment

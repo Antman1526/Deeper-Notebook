@@ -187,7 +187,19 @@ def ensure_venv(
     progress = progress or (lambda msg: None)
 
     if is_venv_current(lock_path):
-        progress("Environment is up to date.")
+        # v0.7.141 — Message includes the recovery command so a user
+        # who hits the rare case of a hash-match-but-deps-broken
+        # situation (corrupted venv, manually mutated venv directory)
+        # can self-recover without needing to read source code. The
+        # post-install verification in `ensure_venv` catches most of
+        # this, but only on the first install. On subsequent
+        # "up to date" reuses we can't re-verify without paying the
+        # subprocess cost on every launch — so we document the manual
+        # path instead.
+        progress(
+            f"Environment is up to date (delete {venv_dir()} to force "
+            "reinstall if the app fails to start)."
+        )
         return venv_python()
 
     # Fresh venv. Wipe any partial state.
@@ -218,7 +230,84 @@ def ensure_venv(
         or (venv_dir() / "Lib" / "site-packages")  # Windows
     (site_packages / "open_notebook_upstream.pth").write_text(str(upstream_dir) + "\n")
 
+    # v0.7.141 — Defensive post-install verification (Area for Review,
+    # found by real user). Before this check existed, a stale bundled
+    # lockfile (e.g., prometheus-client added to pyproject.toml but
+    # desktop/requirements.lock never regenerated) would silently
+    # install the wrong package set. The first symptom was the API
+    # crashing 3 minutes into launch with a cryptic
+    # `ModuleNotFoundError: No module named 'prometheus_client'`,
+    # followed by the launcher timing out waiting for /readyz that
+    # never came up.
+    #
+    # The Makefile-side fix (v0.7.141 build-mac-lock target) prevents
+    # the lockfile from going stale in the first place. This check is
+    # belt-and-suspenders: if any future regression slips through (or
+    # someone hand-edits a lockfile and removes a critical dep), the
+    # bootstrap fails LOUDLY here with a 1-line cause + the recovery
+    # command, instead of waiting for the API to crash and the user
+    # to hunt through logs.
+    #
+    # The critical-import list intentionally only covers modules whose
+    # absence would crash `api.main` at import time. Optional deps
+    # (esperanto provider-specific clients, podcast-creator, etc.) are
+    # not checked here — they fail at use-time with their own clear
+    # errors via the credential / model layer.
+    _CRITICAL_IMPORTS = [
+        "prometheus_client",   # api/metrics.py — v0.7.124
+        "surrealdb",           # database layer
+        "fastapi",             # API framework itself
+        "langgraph",           # all graph workflows
+        "loguru",              # logging
+        "pydantic",            # request/response models
+    ]
+    progress("Verifying critical packages installed…")
+    missing = _verify_critical_imports(venv_python(), _CRITICAL_IMPORTS)
+    if missing:
+        raise RuntimeError(
+            "Bootstrap finished `uv pip install` against the bundled "
+            "lockfile, but the venv is missing critical packages: "
+            f"{', '.join(missing)}. The lockfile shipped in this bundle "
+            "is stale relative to the application code (most likely the "
+            "Makefile build skipped `build-mac-lock`).\n\n"
+            "Recover by force-rebuilding the venv on next launch:\n"
+            f"    rm -rf {venv_dir()} {venv_marker()}\n"
+            "    open 'Open Notebook Plus.app'\n\n"
+            "If the issue persists after rebuild, the bundled "
+            "requirements.lock itself is broken — rebuild the bundle "
+            "with `make build-mac` (which now includes the missing "
+            "`build-mac-lock` step automatically)."
+        )
+
     progress("Finalising…")
     venv_marker().write_text(_lock_hash(lock_path))
     progress("Done.")
     return venv_python()
+
+
+def _verify_critical_imports(
+    python_exe: Path, modules: list[str],
+) -> list[str]:
+    """v0.7.141 — Run each `import X` in the freshly-installed venv,
+    return the list of modules that failed.
+
+    Uses subprocess.run with a tiny one-shot script per module so a
+    failed import doesn't take down later checks. Returns [] when
+    every module imports cleanly.
+    """
+    failed: list[str] = []
+    for module in modules:
+        try:
+            proc = subprocess.run(
+                [str(python_exe), "-c", f"import {module}"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                failed.append(module)
+        except subprocess.TimeoutExpired:
+            failed.append(f"{module} (timeout)")
+        except Exception:
+            failed.append(f"{module} (exec failure)")
+    return failed

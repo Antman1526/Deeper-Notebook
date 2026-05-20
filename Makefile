@@ -351,7 +351,7 @@ BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
 # Detect CPU arch (arm64 vs x86_64) — drives the DMG filename.
 BUILD_ARCH := $(shell uname -m)
 
-build-mac: build-mac-test build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
+build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
 	@echo ""
 	@echo "✅ macOS build complete:"
 	@echo "    dist/Open Notebook Plus.app"
@@ -366,6 +366,32 @@ build-mac: build-mac-test build-mac-venv build-mac-frontend build-mac-runtimes b
 build-mac-test:
 	@echo "🧪 Running unit tests (precondition for build-mac)…"
 	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q 2>&1 | tail -3
+
+# v0.7.141 — Stage 0.5: regenerate desktop/requirements.lock from
+# pyproject.toml BEFORE the bundle venv installs against it.
+#
+# Why this exists: prior to v0.7.141, desktop/requirements.lock was
+# hand-maintained — last touched in commit 90fbf8e (pre-v0.7.124).
+# Any dep added to pyproject.toml between regen and bundle build
+# was silently dropped from the bundle. v0.7.124 added
+# `prometheus-client>=0.20.0` but the lockfile was never refreshed,
+# so the bundled venv installed without it, the API crashed at
+# import time ("ModuleNotFoundError: No module named 'prometheus_client'"),
+# and the launcher timed out waiting for /readyz.
+#
+# The user-facing symptom: `Open Notebook Plus.app` opens, shows
+# a splash, then silently quits after ~3 minutes with no UI ever
+# appearing.
+#
+# Now: every `make build-mac` regenerates the lock from current
+# pyproject.toml first. The header in desktop/requirements.lock
+# already documents the canonical command — we just promote it
+# to a Makefile target so it actually runs.
+build-mac-lock:
+	@echo "🔒 Regenerating desktop/requirements.lock from pyproject.toml..."
+	@uv pip compile pyproject.toml --python-version 3.12 \
+		-o desktop/requirements.lock --quiet
+	@echo "   Lockfile: $$(wc -l < desktop/requirements.lock) pinned packages"
 
 # Stage 1: isolated build venv with pinned deps (separate from .venv used for tests).
 build-mac-venv:
