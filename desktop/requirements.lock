@@ -237,6 +237,7 @@ langchain-community==0.4.1
     # via open-notebook (pyproject.toml)
 langchain-core==1.3.3
     # via
+    #   open-notebook (pyproject.toml)
     #   langchain
     #   langchain-anthropic
     #   langchain-classic
@@ -291,6 +292,7 @@ langgraph-sdk==0.3.14
     # via langgraph
 langsmith==0.8.3
     # via
+    #   open-notebook (pyproject.toml)
     #   langchain-classic
     #   langchain-community
     #   langchain-core
@@ -302,6 +304,7 @@ loguru==0.7.3
     #   surreal-commands
 lxml==6.1.0
     # via
+    #   open-notebook (pyproject.toml)
     #   lxml-html-clean
     #   python-docx
     #   python-pptx
@@ -388,6 +391,8 @@ podcast-creator==0.12.0
     # via open-notebook (pyproject.toml)
 proglog==0.1.12
     # via moviepy
+prometheus-client==0.25.0
+    # via open-notebook (pyproject.toml)
 propcache==0.5.2
     # via
     #   aiohttp
@@ -462,7 +467,9 @@ python-dotenv==1.2.2
     #   pydantic-settings
     #   surreal-commands
 python-multipart==0.0.28
-    # via mcp
+    # via
+    #   open-notebook (pyproject.toml)
+    #   mcp
 python-pptx==1.0.2
     # via content-core
 pytubefix==10.6.1
@@ -611,7 +618,9 @@ typing-inspection==0.4.2
 uncalled-for==0.3.2
     # via fastmcp
 urllib3==2.7.0
-    # via requests
+    # via
+    #   open-notebook (pyproject.toml)
+    #   requests
 uuid-utils==0.14.1
     # via
     #   langchain-core
@@ -645,24 +654,3 @@ zipp==3.23.1
     # via importlib-metadata
 zstandard==0.25.0
     # via langsmith
-
-# --- desktop-app additions (not in upstream pyproject.toml) ---
-# llama-cpp-python is needed in the venv so the launcher can spawn
-# `python -m llama_cpp.server` against local GGUF files.
-llama-cpp-python==0.3.5
-
-# v0.3 voice additions
-# faster-whisper replaces whisper-cpp-python (cmake compat issues on macOS 26+)
-faster-whisper==1.2.1
-av==17.0.1
-ctranslate2==4.7.1
-flatbuffers==25.12.19
-onnxruntime==1.25.1
-# protobuf bound by mem0ai==2.0.2's <7.0.0 cap; loosen so uv picks a v6
-# compatible with onnxruntime (validated to install 6.x cleanly).
-protobuf>=5.29.6,<7.0.0
-piper-tts==1.4.2
-
-# v0.4 memory additions
-mem0ai==2.0.2
-mcp==1.27.1
