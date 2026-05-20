@@ -347,7 +347,7 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
                 status_code = 200
                 def raise_for_status(self): pass
                 def json(self):
-                    if path == "/api/episode_profiles":
+                    if path == "/api/episode-profiles":
                         return []  # no existing profile
                     if path == "/api/models":
                         # Order matters — the function picks the first non-voice.
@@ -361,7 +361,7 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
             return R()
 
         def post(self, path, json=None):
-            if path == "/api/episode_profiles":
+            if path == "/api/episode-profiles":
                 posted_episode_profiles.append(json)
             class R:
                 status_code = 201
@@ -411,7 +411,7 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
             class R:
                 def raise_for_status(self): pass
                 def json(self):
-                    if path == "/api/episode_profiles":
+                    if path == "/api/episode-profiles":
                         return []
                     if path == "/api/models":
                         return [
@@ -426,7 +426,7 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
                     return []
             return R()
         def post(self, path, json=None):
-            if path == "/api/episode_profiles":
+            if path == "/api/episode-profiles":
                 posted.append(json)
             class R:
                 status_code = 201
@@ -586,7 +586,7 @@ def test_episode_profile_library_is_idempotent():
             class R:
                 def raise_for_status(self): pass
                 def json(self):
-                    if path == "/api/episode_profiles":
+                    if path == "/api/episode-profiles":
                         return [{"name": n} for n in existing_names]
                     if path == "/api/models":
                         return [
@@ -597,7 +597,7 @@ def test_episode_profile_library_is_idempotent():
                     return []
             return R()
         def post(self, path, json=None):
-            if path == "/api/episode_profiles":
+            if path == "/api/episode-profiles":
                 posted.append(json)
             class R:
                 status_code = 201

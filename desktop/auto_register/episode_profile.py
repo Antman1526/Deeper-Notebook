@@ -187,7 +187,7 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     (whether user-created or from a prior install). Never overwrites.
     """
     try:
-        r = client.get("/api/episode_profiles")
+        r = client.get("/api/episode-profiles")
         r.raise_for_status()
         existing = {p.get("name") for p in r.json() if p.get("name")}
     except Exception as exc:
@@ -242,7 +242,7 @@ def register_default_episode_profile(client: httpx.Client) -> None:
             "num_segments": preset["num_segments"],
         }
         try:
-            r = client.post("/api/episode_profiles", json=payload)
+            r = client.post("/api/episode-profiles", json=payload)
             if r.status_code in (200, 201):
                 log.info("Created episode profile %r", preset["name"])
                 created += 1
