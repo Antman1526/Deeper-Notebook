@@ -236,8 +236,32 @@ class Supervisor:
         time.sleep(0.5)
         self._progress("supervisor.worker", "done")
 
+        # v0.7.143 — Patch Next.js standalone build to use the launcher's
+        # dynamic API port. The rewrites destination is baked at BUILD
+        # time pointing at `localhost:5055`; without this patch, every
+        # /api/* request the frontend makes gets proxied to a port that
+        # doesn't exist and the user sees "API config endpoint returned
+        # status 500" with no API actually broken. See
+        # desktop/next_rewrites_patcher.py for the full incident write-up.
+        from desktop.next_rewrites_patcher import (
+            patch_rewrites_for_api_port,
+            PatchError,
+        )
+        next_cwd = self.repo_root / "frontend"
+        try:
+            next_cwd = patch_rewrites_for_api_port(next_cwd, api_port)
+        except PatchError as exc:
+            # Logging not raising — the launcher should keep trying;
+            # the user will get the same 500-on-/api/config error
+            # screen as before, which now includes a clearer error.
+            log.error(
+                "Could not patch Next.js rewrites for api_port=%d: %s. "
+                "Frontend will likely fail to reach the API.",
+                api_port, exc,
+            )
+
         self._progress("supervisor.next", "running")
-        self._spawn_next(frontend_port)
+        self._spawn_next(frontend_port, next_cwd=next_cwd)
         _wait_http(f"http://127.0.0.1:{frontend_port}/", timeout=120)
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
         self._progress("supervisor.next", "done")
@@ -438,15 +462,22 @@ class Supervisor:
         ]
         self._spawn(args, cwd=self.upstream_root, name="worker")
 
-    def _spawn_next(self, port: int) -> None:
+    def _spawn_next(self, port: int, *, next_cwd: Path | None = None) -> None:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
             "node.exe" if self.node_arch.startswith("windows") else "bin/node"
         )
         # The standalone build produces server.js with everything inlined.
         # PORT comes from session_env (Next.js convention).
+        #
+        # v0.7.143 — `next_cwd` defaults to the bundled frontend dir but
+        # the caller may override with a writable copy if the bundle
+        # itself is read-only (e.g., installed under /Applications).
+        # See next_rewrites_patcher.patch_rewrites_for_api_port.
+        if next_cwd is None:
+            next_cwd = self.repo_root / "frontend"
         self._spawn(
             [str(node_bin), "server.js"],
-            cwd=self.repo_root / "frontend",
+            cwd=next_cwd,
             name="next",
         )
 
