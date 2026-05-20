@@ -465,7 +465,42 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     )
     try:
         sv.start_all()
-    except Exception:
+    except Exception as exc:
+        # v0.7.143 — Special handling for AlreadyRunning. The v0.7.142
+        # singleton raises this when a previous launcher is still
+        # alive. Before the dialog handler below existed, the exception
+        # just propagated to the generic catch and the user got a
+        # cryptic stack trace in the splash window. Now we offer a
+        # native macOS dialog with two buttons:
+        #   - Quit & Relaunch: SIGTERM the other launcher, wait for it
+        #     to exit, then retry start_all() in-place.
+        #   - Cancel: exit cleanly without doing anything.
+        # If the dialog itself fails (e.g., no display available — Tk
+        # not on PATH in a headless context), we fall through to the
+        # original "log + raise" path so the user at least sees the
+        # underlying problem.
+        from desktop.singleton import AlreadyRunning
+        if isinstance(exc, AlreadyRunning):
+            if _handle_already_running(exc, ctx):
+                # User chose "Quit & Relaunch" and the cleanup worked.
+                # Retry start_all() — note we DON'T reset sv; same
+                # Supervisor instance is reusable per its design.
+                try:
+                    sv.start_all()
+                    ctx.sv = sv
+                    return
+                except Exception as retry_exc:
+                    # Retry failed for a DIFFERENT reason. Fall through
+                    # to the generic logging + raise path with the new
+                    # exception, not the original AlreadyRunning.
+                    exc = retry_exc
+            else:
+                # User chose Cancel. Exit cleanly — log + raise SystemExit
+                # so atexit handlers (including the singleton release if
+                # we somehow got that far) still fire.
+                import sys
+                sys.exit(0)
+
         # v0.6.25 — append, not overwrite. The old `.write_text(...)`
         # truncated launcher.log, wiping any prior failure traces and
         # the FileHandler's accumulated lines. Now we open in append
@@ -481,9 +516,147 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         except Exception:
             pass  # if logging itself fails, don't mask the original error
         sv.stop_all()
-        raise
+        raise exc
 
     ctx.sv = sv
+
+
+def _handle_already_running(exc, ctx) -> bool:
+    """v0.7.143 — Show a native dialog asking the user whether to
+    kill the other launcher and continue, or cancel.
+
+    Returns True if the user picked Quit & Relaunch AND the cleanup
+    succeeded (caller should retry start_all). Returns False if the
+    user cancelled OR the cleanup itself failed (caller should exit
+    cleanly).
+
+    We use Tk's messagebox (stdlib, no extra deps). On macOS Tk is
+    bundled with the system Python; in the desktop bundle it's
+    bundled via python-build-standalone. If for any reason Tk can't
+    initialize (headless server, missing Tcl/Tk libs in some
+    minimal Linux container), we log + return False so the caller
+    falls through to the generic error path.
+    """
+    import os
+    import signal
+    import time
+
+    log = logging.getLogger(__name__)
+    log.warning(
+        "AlreadyRunning detected: PID %d holds %s",
+        exc.pid, exc.pid_file,
+    )
+
+    # Try Tk first. macOS's `osascript` fallback below covers the
+    # case where Tk is broken in the bundled venv.
+    user_chose_quit = False
+    used_dialog = False
+    try:
+        import tkinter as tk
+        from tkinter import messagebox as _mb
+
+        # Create a root window we don't show (Tk requires a root for
+        # any dialog to render). withdraw() hides it.
+        root = tk.Tk()
+        root.withdraw()
+        # `askyesno` returns True for Yes, False for No.
+        user_chose_quit = _mb.askyesno(
+            title="Open Notebook Plus is already running",
+            message=(
+                f"Another instance is already running (PID {exc.pid}).\n\n"
+                "Do you want to quit the existing app and relaunch?"
+            ),
+            icon="question",
+        )
+        root.destroy()
+        used_dialog = True
+    except Exception as tk_exc:
+        log.debug("Tk dialog unavailable (%s); trying osascript", tk_exc)
+        # macOS fallback: use osascript to show a native AppKit dialog.
+        # If THAT also fails (non-macOS, or osascript missing), the
+        # `used_dialog` flag stays False and we return without
+        # showing anything — caller's generic error path takes over.
+        try:
+            import subprocess
+            script = (
+                'display dialog '
+                f'"Another Open Notebook Plus instance is already running '
+                f'(PID {exc.pid}).\\n\\nDo you want to quit the existing '
+                f'app and relaunch?" '
+                'buttons {"Cancel", "Quit & Relaunch"} '
+                'default button "Quit & Relaunch" '
+                'with title "Open Notebook Plus is already running" '
+                'with icon caution'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=120,
+            )
+            # osascript exits 1 when user clicks Cancel (or any
+            # non-default button), 0 when they click the default.
+            # The output contains "button returned:Quit & Relaunch"
+            # or similar.
+            user_chose_quit = (
+                "Quit & Relaunch" in result.stdout
+                and result.returncode == 0
+            )
+            used_dialog = True
+        except Exception as osa_exc:
+            log.debug("osascript fallback also failed: %s", osa_exc)
+
+    if not used_dialog:
+        # No dialog primitive worked. Be conservative: don't auto-kill.
+        # Returning False sends the caller to the generic error path
+        # which logs the exception + lets the user see "AlreadyRunning"
+        # in the launcher log. They can manually `pkill` and relaunch.
+        log.warning(
+            "Could not show AlreadyRunning dialog; user must manually "
+            "kill PID %d and relaunch.", exc.pid,
+        )
+        return False
+
+    if not user_chose_quit:
+        log.info("User cancelled AlreadyRunning dialog; exiting.")
+        return False
+
+    # User chose Quit & Relaunch. SIGTERM the other launcher and wait
+    # for it to actually exit (up to 10s). Then retry start_all in the
+    # caller. If the other process doesn't die within the wait window,
+    # we return False rather than risk a port-collision race.
+    log.info("User chose Quit & Relaunch; sending SIGTERM to PID %d", exc.pid)
+    try:
+        os.kill(exc.pid, signal.SIGTERM)
+    except OSError as kill_exc:
+        log.warning("SIGTERM to PID %d failed: %s", exc.pid, kill_exc)
+        # If we couldn't even send the signal, the other process is
+        # probably already dead — clean up the stale PID file ourselves
+        # and let the caller retry.
+        try:
+            exc.pid_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
+
+    # Poll until dead, max 10 seconds.
+    from desktop.singleton import _is_pid_alive
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if not _is_pid_alive(exc.pid):
+            log.info("Other launcher (PID %d) exited; proceeding to relaunch", exc.pid)
+            # Clean up its stale PID file if it didn't get to release
+            # cleanly (e.g., we forced it before it could atexit).
+            try:
+                exc.pid_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return True
+        time.sleep(0.25)
+
+    log.warning(
+        "PID %d still alive 10s after SIGTERM; aborting relaunch attempt",
+        exc.pid,
+    )
+    return False
 
 
 def _phase_auto_register(ctx: AppContext) -> None:
