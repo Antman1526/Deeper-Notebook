@@ -18,7 +18,59 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.154 (in flight)
+## Unreleased — v0.7.36 → v0.7.155 (in flight)
+
+- **v0.7.155** 🐛 **Fix 15 launcher-test failures — autouse stub for
+  `acquire_singleton` + `reap_orphans`.** Pre-existing test failures
+  tracked back through v0.7.145, originally reported as the "18
+  `chat_llm_n_ctx` failures" deferred item. Audit on 2026-05-21
+  identified the root cause:
+
+  Every Supervisor test that calls `start_all()` traversed the v0.7.142
+  singleton path at `desktop/launcher.py:153`:
+
+      self._singleton = acquire_singleton(default_pid_file())
+
+  `acquire_singleton()` writes to the REAL
+  `~/.open-notebook-plus/launcher.pid`. When the user's actual app
+  is running (PID 78740), the existing PID-file check raised
+  `AlreadyRunning` and every test using `start_all()` failed at this
+  line with:
+
+      desktop.singleton.AlreadyRunning: Another Open Notebook Plus
+        launcher is already running (PID 78740; lock at
+        /Users/Antman/.open-notebook-plus/launcher.pid).
+
+  This affected 15 tests, not 18 (the earlier count was off): all 11
+  `test_supervisor_*` tests (start_all_children_in_order,
+  stop_all_terminates_children, uses_venv_python_for_api_and_worker,
+  writes_session_env, spawns_v03_children_when_paths_set,
+  skips_v03_children_when_paths_missing,
+  spawns_chat_llm_and_memory_retriever, spawns_openchronicle_when_available,
+  skips_chat_llm_when_no_path,
+  logs_and_progresses_when_optional_service_fails, plus the new v0.7.147
+  injects_data_folder_absolute_path) and all 4 `test_chat_llm_n_ctx_*`
+  tests.
+
+  Fix (`desktop/tests/test_launcher.py`): added a module-scoped
+  `autouse=True` fixture `_stub_singleton` that monkeypatches
+  `desktop.singleton.acquire_singleton` to return a fake handle
+  with `.release()` and `desktop.singleton.reap_orphans` to return
+  an empty list. Both imports inside `Supervisor.start_all()` are
+  function-scoped (`from desktop.singleton import …`), so the
+  monkeypatch must target the SOURCE module (`desktop.singleton.*`)
+  rather than the consumer module (`desktop.launcher.*`) — that's
+  what the local-import binding resolves to at call time. Also
+  removed the redundant in-line stub I'd briefly added to
+  `_stub_launcher_io`; the autouse fixture covers every test in
+  the file with no per-call boilerplate.
+
+  Verification: `.venv/bin/python -m pytest desktop/tests/test_launcher.py
+  -q` now reports **15 passed in 7.80s** (was 0 passing while the
+  real app is running; intermittently passing when it wasn't).
+
+  This closes the last open item on the v0.7.145 "deferred / pre-
+  existing test failures noted but NOT caused by this commit" list.
 
 - **v0.7.154** 🐛 **Restore `llama-cpp-python` in the lockfile + downgrade
   DANGEROUS CONFIG log level.** Two BLOCKING audit findings from
