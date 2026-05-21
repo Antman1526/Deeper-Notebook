@@ -18,7 +18,76 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.164 (in flight)
+## Unreleased — v0.7.36 → v0.7.165 (in flight)
+
+- **v0.7.165** 🐛 **Production-readiness fixes — LangGraph state-shape
+  guards + asyncio task GC risk.** Three top-priority items from the
+  2026-05-21 code-improvement scan (round 2).
+
+  **(1) `api/routers/chat.py:632-649` — missing dual-path guard on
+  `result.get("messages", [])`** in the non-streaming /chat/execute
+  handler. The graph currently returns a TypedDict so this works,
+  but the streaming handler in the same file already applies the
+  dual dict-vs-Pydantic guard explicitly because past LangGraph
+  releases have shipped Pydantic-typed states. The CLAUDE.md
+  standing audit calls this out as a recurring footgun
+  (v0.7.52/55/56/75/81/95 are all prior fixes for the same pattern).
+
+  Fix: normalize once at the top of the handler:
+
+      result_messages = (
+          result.get("messages", []) if isinstance(result, dict)
+          else (getattr(result, "messages", None) or [])
+      )
+
+  Both downstream iteration sites (response-conversion loop +
+  memory-extractor) now read this local — same source of truth,
+  guarded once.
+
+  **(2) `open_notebook/graphs/source.py:165-176` — missing dual-path
+  guard on `result["output"]`** from `transform_graph.ainvoke`.
+  Same shape-variance footgun. Two consecutive uses (`source.
+  add_insight(transformation.title, result["output"])` and the
+  returned `{"output": result["output"]}`) would both KeyError /
+  AttributeError under a Pydantic state. Refactored to a single
+  `output_text = result["output"] if isinstance(result, dict)
+  else (getattr(result, "output", "") or "")` local.
+
+  **(3) `api/main.py:365` — bare `asyncio.create_task` for gmail
+  prewarm.** Python 3.11+ documented foot-gun: the asyncio loop
+  only keeps a WEAK reference to created tasks, so a task that
+  yields control immediately (our `await GmailIntegration.get()`
+  awaits a SurrealDB roundtrip) can be GC'd before it resumes —
+  silently dropping the pre-warm. The other two `create_task`
+  calls in this lifespan (digest_scheduler, checkpoint_prune)
+  already assign to local variables and cancel cleanly on
+  shutdown; gmail-prewarm was the outlier.
+
+  Fix: assign to `gmail_prewarm_task = asyncio.create_task(...)`,
+  add a shutdown-time `if not gmail_prewarm_task.done(): await
+  asyncio.wait_for(..., timeout=2)` (with cancel fallback) so the
+  task is held alive AND cleaned up on lifespan tear-down.
+
+  Tests at `tests/test_v0_7_165_state_shape_guards.py`: 5 new
+  AST-level regression tests that pin the dual-path normalization
+  pattern in both chat.py and source.py (look for
+  `isinstance(result, dict)` + `getattr(result, ...)` adjacent to
+  the read sites), plus syntax-validity guards on both edited
+  files and a check that the gmail-prewarm task is assigned to
+  a local variable. AST checks fail deterministically at collection
+  time on a future refactor that drops the guard.
+
+  Full backend suite: **835/835** (was 830).
+
+  Remaining scan items deferred to follow-up commits:
+    - GET /notebooks unbounded → pagination follow-through
+    - get_chat_sessions unbounded → bound the session list itself
+    - Frontend cache invalidation: source/note mutations don't
+      invalidate notebooks query (sidebar counts stale)
+    - HTTPException detail=f"{str(e)}" leakage across 40+ sites
+    - `archived` filter in notebooks.py applied in Python after
+      full table fetch (should be WHERE clause)
+    - datetime aware/naive normalization in repository.py + gmail.py
 
 - **v0.7.164** 🎨 **H1 hierarchy sweep — Notebooks, Transformations,
   Studio, Search pages match the v0.7.153 standard.** Top finding

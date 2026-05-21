@@ -165,11 +165,23 @@ async def transform_content(state: TransformationState) -> dict:
     result = await transform_graph.ainvoke(
         dict(input_text=content, transformation=transformation)  # type: ignore[arg-type]
     )
-    await source.add_insight(transformation.title, result["output"])
+    # v0.7.165 — LangGraph state-shape dual-path guard.
+    # `transform_graph` happens to return a TypedDict today, so
+    # `result["output"]` works — but CLAUDE.md's standing audit rule
+    # flags subscript / `.get()` against ainvoke output as a state-
+    # shape blind spot (the same pattern that produced the v0.7.52,
+    # 55, 56, 75, 81, 95 series of fixes). Normalize once so a future
+    # LangGraph release that returns a Pydantic state can't crash
+    # source ingestion with KeyError / AttributeError mid-transform.
+    output_text = (
+        result["output"] if isinstance(result, dict)
+        else (getattr(result, "output", "") or "")
+    )
+    await source.add_insight(transformation.title, output_text)
     return {
         "transformation": [
             {
-                "output": result["output"],
+                "output": output_text,
                 "transformation_name": transformation.name,
             }
         ]

@@ -362,13 +362,41 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.debug(f"Gmail cache pre-warm failed (non-fatal): {e}")
 
-    asyncio.create_task(_prewarm_gmail_cache(), name="onp-gmail-prewarm")
+    # v0.7.165 — Hold a strong reference to the task so Python's
+    # asyncio event loop can't GC it before it runs. The fire-and-
+    # forget `asyncio.create_task(...)` pattern only keeps a weak
+    # ref in the loop, which is documented foot-gun: under 3.11+ with
+    # GC pressure, a task that yields control immediately (e.g. our
+    # `await GmailIntegration.get()` which awaits a SurrealDB roundtrip)
+    # can be collected before it resumes — silently dropping the
+    # pre-warm. The other two create_task calls in this lifespan
+    # (digest_scheduler_task, checkpoint_prune_task) already assign
+    # to local variables and cancel cleanly on shutdown; this one
+    # was the outlier. Now matches that pattern.
+    gmail_prewarm_task = asyncio.create_task(
+        _prewarm_gmail_cache(), name="onp-gmail-prewarm",
+    )
     logger.info("Gmail TTL-cache pre-warm task scheduled")
 
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
     yield
+
+    # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
+    # still running. The task is short-lived (a single SurrealDB read)
+    # and almost always completes before shutdown, but if a slow
+    # SurrealDB held it open we'd otherwise leak it past the lifespan
+    # tear-down. wait_for(2s) is generous for a single-record fetch.
+    if not gmail_prewarm_task.done():
+        try:
+            await asyncio.wait_for(gmail_prewarm_task, timeout=2)
+        except asyncio.TimeoutError:
+            gmail_prewarm_task.cancel()
+            try:
+                await gmail_prewarm_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     # v0.7.125 — Stop the checkpoint-prune task FIRST (it's the most
     # likely to be mid-sleep so cancelling is quick), then the digest
