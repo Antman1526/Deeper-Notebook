@@ -36,7 +36,55 @@ class ObjectModel(BaseModel):
     updated: Optional[datetime] = None
 
     @classmethod
-    async def get_all(cls: type[T], order_by=None) -> list[T]:
+    async def get_all(
+        cls: type[T],
+        order_by=None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[T]:
+        """Fetch all rows of this model's table.
+
+        v0.7.159 — Optional `limit` and `offset` (SurrealQL `LIMIT … START …`)
+        let callers paginate. Previously this returned the entire table
+        unconditionally; `GET /notes` without a notebook filter, for example,
+        loaded every note (with content) into memory and serialized it to
+        JSON on a single request — multi-MB responses with hundreds of
+        notes, blocking the API for seconds. New callers should pass
+        `limit=` from the router; older callers that pass nothing keep
+        the previous unbounded semantics for backward compatibility.
+
+        Args:
+            order_by: optional `"field"`, `"field direction"`, or
+                comma-separated multi-clause string. Validated against
+                `[a-z_][a-z0-9_]*` field names and `{asc, desc}` directions.
+            limit: optional positive int for SurrealQL `LIMIT`.
+            offset: optional non-negative int for SurrealQL `START`.
+
+        Raises:
+            InvalidInputError: if `limit` or `offset` are not valid ints
+                in the allowed range. Raised BEFORE the database call so
+                the FastAPI exception handler maps it to HTTP 400 instead
+                of the generic 500 the outer `except` would produce.
+        """
+        # v0.7.159 — Validate pagination args before entering the try
+        # block so the InvalidInputError propagates cleanly to the
+        # FastAPI exception handler (mapped to HTTP 400). If it were
+        # raised inside the try, the catch-all below would re-wrap it
+        # as DatabaseOperationError → HTTP 500 — wrong status for what
+        # is plainly a client-side input error.
+        # `bool` is a subclass of int in Python; reject it explicitly so
+        # `limit=True` doesn't silently become `LIMIT 1`.
+        if limit is not None:
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+                raise InvalidInputError(
+                    f"limit must be a positive int, got {limit!r}"
+                )
+        if offset is not None:
+            if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                raise InvalidInputError(
+                    f"offset must be a non-negative int, got {offset!r}"
+                )
+
         try:
             # If called from a specific subclass, use its table_name
             if cls.table_name:
@@ -84,6 +132,17 @@ class ObjectModel(BaseModel):
                 query = f"SELECT * FROM {table_name} ORDER BY {validated_order_by}"
             else:
                 query = f"SELECT * FROM {table_name}"
+
+            # v0.7.159 — Append LIMIT … START … only when the caller asked.
+            # Inputs were already validated at the top of the method (must
+            # be positive int / non-negative int respectively), so we can
+            # interpolate without re-checking. SurrealQL is more permissive
+            # than SQL about literals; the up-front type+range check is the
+            # injection guard.
+            if limit is not None:
+                query = f"{query} LIMIT {limit}"
+            if offset is not None:
+                query = f"{query} START {offset}"
 
             result = await repo_query(query)
             objects = []

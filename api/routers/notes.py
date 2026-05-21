@@ -13,11 +13,31 @@ router = APIRouter()
 @router.get("/notes", response_model=list[NoteResponse])
 async def get_notes(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    # v0.7.159 — Pagination on the unfiltered branch. Previously
+    # `GET /notes` (no notebook_id) ran `SELECT * FROM note ORDER BY
+    # updated DESC` with NO limit, returning every note (with content)
+    # as JSON. A heavy user with thousands of notes hit by an API
+    # explorer call, stale React Query cache, or background sync
+    # would get a multi-MB response and burn one of 4 worker slots
+    # for seconds. Default cap = 200 newest; clients can paginate
+    # with `offset`. `limit` caps at 1000 so the per-call ceiling
+    # can't be bypassed even by curious callers.
+    limit: int = Query(
+        200, ge=1, le=1000,
+        description="Max rows to return (default 200, max 1000).",
+    ),
+    offset: int = Query(
+        0, ge=0,
+        description="Rows to skip for pagination (default 0).",
+    ),
 ):
     """Get all notes with optional notebook filtering."""
     try:
         if notebook_id:
-            # Get notes for a specific notebook
+            # Get notes for a specific notebook. The relationship traversal
+            # is naturally bounded by the notebook size, so no pagination
+            # is layered on top — that would require a separate change to
+            # Notebook.get_notes().
             from open_notebook.domain.notebook import Notebook
 
             notebook = await Notebook.get(notebook_id)
@@ -25,8 +45,10 @@ async def get_notes(
                 raise HTTPException(status_code=404, detail="Notebook not found")
             notes = await notebook.get_notes()
         else:
-            # Get all notes
-            notes = await Note.get_all(order_by="updated desc")
+            # v0.7.159 — paginated; see Query() defaults above.
+            notes = await Note.get_all(
+                order_by="updated desc", limit=limit, offset=offset,
+            )
 
         return [
             NoteResponse(
