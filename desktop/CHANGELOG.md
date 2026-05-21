@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.159 (in flight)
+## Unreleased — v0.7.36 → v0.7.160 (in flight)
+
+- **v0.7.160** 🐛⚡ **Typed-exception re-raise across 3 routers +
+  embedding_rebuild 6-query → 3-query parallel.** Low-risk improvement
+  batch from the v0.7.159 deferred list.
+
+  **(1) NotFoundError clobbered to 500** in 3 routers. Every endpoint
+  using `await Model.get(id)` pattern raises `NotFoundError` from
+  `open_notebook/domain/base.py:183` when the record is missing. A
+  global handler at `api/main.py:567` maps that to HTTP 404 — but
+  the per-router `except Exception as e: raise HTTPException(500)`
+  block was catching it first and clobbering the status to 500.
+
+  Affected paths (a stale frontend cache hitting a deleted record
+  used to surface as "Server error" rather than "Not found"):
+    - `GET / PUT / DELETE /notes/{id}` (3 endpoints,
+      `api/routers/notes.py`)
+    - `GET / DELETE / POST /insights/{id}` (3 endpoints,
+      `api/routers/insights.py`)
+    - `GET / PUT / DELETE /transformations/{id}` (3 endpoints,
+      `api/routers/transformations.py`)
+
+  Fix: import `NotFoundError` and add `except NotFoundError: raise`
+  between `except HTTPException` and `except Exception`. The
+  pattern matches v0.7.135's `except OpenNotebookError: raise` in
+  `transformations.execute_transformation` (already correct).
+  Nine endpoint handlers updated total.
+
+  **(2) embedding_rebuild stats: 6 sequential round-trips → 3
+  parallel.** `api/routers/embedding_rebuild.py:43-91` issued up to
+  6 sequential `repo_query` calls (sources/notes/insights ×
+  existing/all modes) on every rebuild submission. Each call paid
+  the full SurrealDB roundtrip latency.
+
+  Fix: factored each count into an async helper and ran the selected
+  branches concurrently via `asyncio.gather`. Three branches max →
+  3 roundtrips happen in parallel instead of sequentially. Helper
+  `_extract_count()` deduplicates the dict/int dual-path that was
+  copied three times verbatim. Behavior preserved exactly; only the
+  scheduling changed.
+
+  **Verification:** `pytest tests/ --ignore=tests/integration`
+  → **814 passed**. No new tests added — typed re-raise behavior is
+  best covered by integration tests against a live SurrealDB, and
+  the existing `tests/test_v0_7_135_meta.py` AST scan already
+  enforces this pattern for HTTPException; we extend it informally
+  here by following the same convention.
+
+  Audit note: `use-settings.ts:9` was flagged by the scan as
+  having `refetchOnWindowFocus: true` — verified false-positive
+  on re-read. `useSettings` uses the global default
+  (`refetchOnWindowFocus: false`). Only `useObservabilitySettings`
+  overrides to `true` with a documented justification (env-derived
+  values change outside the API). Leaving as-is.
 
 - **v0.7.159** ⚡ **Pagination on `ObjectModel.get_all` + frontend
   staleTime tuning.** Two improvement-scan findings, both quietly
