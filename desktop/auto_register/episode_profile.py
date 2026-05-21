@@ -277,7 +277,30 @@ def register_default_episode_profile(client: httpx.Client) -> None:
 
     created = 0
     skipped = 0
+    # v0.7.156 — Migration-seeded speaker profiles (from migration
+    # 7.surrealql) are all hardcoded to `tts_provider=openai` +
+    # `tts_model=gpt-4o-mini-tts`. On a Piper-only install with no
+    # OpenAI credential, any episode preset bound to one of those will
+    # 500 at podcast-generation TTS time. v0.7.149's "alphabetically-first
+    # fallback" path would silently pick `business_panel` (the
+    # alphabetically-first migration-seeded speaker) on a fresh install
+    # where Local Duo isn't yet registered — producing nine podcast
+    # presets that all break at generation time.
+    #
+    # Filter out the known-broken migration seeds from the fallback
+    # candidate pool. If the LOCAL-* profiles aren't yet registered,
+    # we'd rather skip the preset entirely (recoverable: re-run
+    # auto-register once Piper voices come online) than bind it to
+    # something that's guaranteed to 500 later.
+    _MIGRATION_SEEDED_SPEAKERS_REQUIRING_OPENAI = {
+        "tech_experts", "solo_expert", "business_panel",
+    }
+    safe_fallback_speakers = (
+        existing_speakers - _MIGRATION_SEEDED_SPEAKERS_REQUIRING_OPENAI
+    )
+
     degraded = 0
+    skipped_no_speaker = 0
     for preset in _PRESETS:
         if preset["name"] in existing:
             skipped += 1
@@ -286,21 +309,34 @@ def register_default_episode_profile(client: httpx.Client) -> None:
         # speaker profile isn't registered (e.g. piper voices missing →
         # only the migration-seeded `tech_experts` etc exist, none of
         # which we want as defaults). If even Local Duo is missing,
-        # try any existing profile name as last-resort, then skip.
+        # try any existing LOCAL-* profile as last-resort, then skip.
+        #
+        # v0.7.156 — Last-resort fallback now uses safe_fallback_speakers
+        # (migration seeds filtered out) instead of all existing_speakers,
+        # so a fresh install never silently binds a preset to an OpenAI-
+        # only seeded speaker.
         speaker_config = preset["speaker_profile"]
         if speaker_config not in existing_speakers:
             if "Local Duo" in existing_speakers:
                 speaker_config = "Local Duo"
                 degraded += 1
             else:
-                # Take the first available speaker profile alphabetically
-                # for deterministic test behavior.
-                fallback = sorted(existing_speakers)[0] if existing_speakers else None
+                # Pick the first available LOCAL-* speaker profile
+                # alphabetically for deterministic test behavior.
+                # Migration-seeded openai-only speakers are filtered out.
+                fallback = (
+                    sorted(safe_fallback_speakers)[0]
+                    if safe_fallback_speakers else None
+                )
                 if fallback is None:
                     log.warning(
-                        "Skipping preset %r: no speaker profile available",
+                        "Skipping preset %r: no LOCAL-* speaker profile "
+                        "available (only migration-seeded openai speakers "
+                        "exist — re-run auto-register once Piper voices "
+                        "are registered)",
                         preset["name"],
                     )
+                    skipped_no_speaker += 1
                     continue
                 speaker_config = fallback
                 degraded += 1
@@ -337,8 +373,10 @@ def register_default_episode_profile(client: httpx.Client) -> None:
 
     log.info(
         "Episode profile preset library: %d created, %d skipped (already "
-        "existed), %d created with degraded speaker_profile fallback",
+        "existed), %d created with degraded speaker_profile fallback, "
+        "%d skipped (no safe speaker_profile available)",
         created,
         skipped,
         degraded,
+        skipped_no_speaker,
     )

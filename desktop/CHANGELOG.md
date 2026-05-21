@@ -18,7 +18,58 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.155 (in flight)
+## Unreleased — v0.7.36 → v0.7.156 (in flight)
+
+- **v0.7.156** 🐛 **Filter migration-seeded OpenAI-only speakers from
+  the episode_profile fallback pool.** LIKELY-BLOCKING audit finding
+  from 2026-05-21.
+
+  Migration `migrations/7.surrealql` seeds three speaker profiles —
+  `tech_experts`, `solo_expert`, `business_panel` — all hardcoded to
+  `tts_provider=openai` + `tts_model=gpt-4o-mini-tts`. v0.7.149's
+  episode_profile bootstrap had a last-resort fallback chain:
+
+      1. preset["speaker_profile"] (e.g. "Local Debate")
+      2. "Local Duo" if registered
+      3. sorted(existing_speakers)[0]  ← THE BUG
+
+  On a fresh install where Piper voices aren't yet registered, the
+  Local-* speaker bootstrap is skipped → only the migration-seeded
+  speakers exist. Step 3 then alphabetically picks `business_panel`,
+  binds all 9 episode presets to it, and every podcast generation
+  attempt 500s at TTS time because no OpenAI credential exists.
+
+  The user's current install isn't affected (Piper voices ARE
+  registered) but ANY fresh install on a new machine would hit this.
+
+  Fix (`desktop/auto_register/episode_profile.py:268-298`):
+
+  1. Pre-compute `safe_fallback_speakers = existing_speakers -
+     {"tech_experts", "solo_expert", "business_panel"}`.
+  2. Step 3 now picks from `safe_fallback_speakers` only.
+  3. If `safe_fallback_speakers` is empty (only migration seeds
+     exist), skip the preset with a clear `WARNING` log line:
+
+         Skipping preset 'Deep Dive': no LOCAL-* speaker profile
+         available (only migration-seeded openai speakers exist —
+         re-run auto-register once Piper voices are registered)
+
+  4. The summary log adds a `skipped_no_speaker` counter so
+     operators can see at a glance how many presets were skipped:
+
+         Episode profile preset library: 0 created, 0 skipped
+         (already existed), 0 created with degraded speaker_profile
+         fallback, 9 skipped (no safe speaker_profile available)
+
+  Tests (`desktop/tests/test_auto_register.py`): one new regression
+  test `test_episode_profile_skips_when_only_migration_seeded_speakers_exist`
+  asserts zero POSTs when only the openai-only seeds are present.
+  21/21 auto_register tests pass.
+
+  Recovery: any user already affected can re-run auto-register
+  manually after Piper voices come online (currently happens
+  automatically on the next launch, as long as Piper successfully
+  starts).
 
 - **v0.7.155** 🐛 **Fix 15 launcher-test failures — autouse stub for
   `acquire_singleton` + `reap_orphans`.** Pre-existing test failures
