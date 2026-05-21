@@ -18,7 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.147 (in flight)
+## Unreleased — v0.7.36 → v0.7.148 (in flight)
+
+- **v0.7.148** 🐛 **Fix Setup Wizard stuck on "Loading..." — alias
+  `/api/healthz/deep` on the backend.** Follow-up to v0.7.147:
+  with the EROFS bug fixed the .app now launches and the Setup
+  Wizard renders, but the "Required subsystems are not ready /
+  Loading…" spinner spins forever and the user can't get past it
+  without clicking "Continue anyway".
+
+  Diagnosis: api.log showed the smoking gun side-by-side —
+
+      INFO: 127.0.0.1:54441 - "GET /readyz HTTP/1.1" 200 OK
+      INFO: 127.0.0.1:0     - "GET /api/healthz/deep HTTP/1.1" 404
+
+  `/readyz` (which the launcher polls directly) returns 200 fine.
+  But the wizard's `useDeepHealth` hook reaches the backend as
+  `/api/healthz/deep`, which the FastAPI app doesn't have a handler
+  for — only the root-mounted `/healthz/deep`. `client.port=0` in
+  the 404 log line confirms it's arriving via Next.js's `/api/*`
+  rewrite proxy, not a direct browser connection.
+
+  The frontend's `frontend/src/lib/api/health.ts` LOOKS correct —
+  it overrides `baseURL: apiUrl` so the request should target
+  `${apiUrl}/healthz/deep` directly, bypassing the `/api` interceptor
+  prefix. But in the production build the resolution chain (Next.js
+  proxy + runtime `getApiUrl()` + apiClient interceptor) ends up
+  routing the request through `/api/*` anyway, and untangling that
+  across the four layers is fragile.
+
+  The right fix is at the backend: register an alias route that does
+  the same thing. v0.7.145 used the same pattern for `/api/episode-
+  profiles`. Two changes to `api/main.py`:
+
+  1. **Line ~470 (auth-middleware excluded_paths)** — add
+     `"/api/healthz/deep"` alongside the existing `"/healthz/deep"`
+     entry so monitoring polls without auth headers work on both
+     paths.
+  2. **Line ~993 (new `healthz_deep_api_alias` handler)** — register
+     `@app.get("/api/healthz/deep")` that simply delegates to the
+     existing `healthz_deep()` coroutine, preserving the
+     `?probe_providers=true` query parameter. Same response shape,
+     same status codes, same auth-exempt treatment.
+
+  This is the most defensive fix: existing operators / monitoring
+  dashboards / curl recipes targeting `/healthz/deep` continue to
+  work unchanged. The frontend doesn't need to change. The wizard
+  immediately reads a 200 response on the next poll cycle and
+  auto-advances to `/notebooks`.
+
+  Regression tests at `tests/test_healthz_deep.py`:
+  - `test_api_alias_returns_same_payload` — both paths return
+    byte-identical JSON; alias is auth-exempt.
+  - `test_api_alias_passes_probe_providers_query` — the
+    `?probe_providers=` query arg is forwarded by the alias.
+  - 6 pre-existing tests still pass (8/8 total).
+
+  **Recovery for the user without rebuilding:** clicking "Continue
+  anyway" on the wizard still works as a manual override. v0.7.148
+  makes the auto-advance work, removing the click.
+
+  Same pattern recommended for the still-open `/api/transcribe` 404
+  (the STT toast) — separate commit since that endpoint genuinely
+  doesn't exist yet and needs route definition, not just an alias.
 
 - **v0.7.147** 🐛 **Fix the REAL "app won't open" root cause —
   `DATA_FOLDER = "./data"` was CWD-relative and crashed when launched
