@@ -18,7 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.152 (in flight)
+## Unreleased — v0.7.36 → v0.7.153 (in flight)
+
+- **v0.7.153** 🎨 **Visual rhythm refresh — Settings, Podcasts, Models
+  pages (spacing-only, no color changes).** Per the brainstorming on
+  2026-05-21 the user identified three pain points: inputs/labels
+  stacked too tightly, section headings not separating cleanly,
+  and buried primary CTAs. Layout choice: Settings roomy/centered
+  (~768px max-width), Models + Podcasts edge-to-edge wide. Theme
+  system preserved — only spacing, type-scale, and hierarchy moved.
+
+  Changes per page:
+
+  **`frontend/src/app/(dashboard)/settings/page.tsx`**
+    - Container: `p-6` → `px-6 py-10 sm:px-8`
+    - Width: `max-w-4xl` (896px) → `max-w-3xl mx-auto` (768px, centered)
+    - Vertical rhythm: `space-y-6` → `space-y-10` between sections
+    - Header: flat flex row → `<header>` with `space-y-2`, h1
+      promoted `text-2xl font-bold` → `text-3xl font-semibold
+      tracking-tight`, refresh button moved to right-aligned slot
+      via `flex items-start justify-between`
+
+  **`frontend/src/app/(dashboard)/podcasts/page.tsx`**
+    - Container: `px-6 py-6` → `px-6 py-10 sm:px-8`
+    - Vertical rhythm: outer `space-y-6` → `space-y-10`; tabs
+      inner `space-y-6` → `space-y-8`
+    - Header: h1 `text-2xl` → `text-3xl font-semibold tracking-tight`,
+      header `space-y-1` → `space-y-2` (title + subtitle no longer
+      touch)
+    - **Removed** the `text-xs uppercase tracking-wide` "CHOOSE A VIEW"
+      caption above the tabs. Two-tab toggles are self-explanatory;
+      the all-caps label was visual noise that directly contributed
+      to the cramped-stacking pain point. Translation key
+      `podcasts.chooseAView` is now unused (preserved in locales
+      for safety; will be removed in a future cleanup).
+
+  **`frontend/src/app/(dashboard)/settings/api-keys/page.tsx`** (the
+  "Models" route)
+    - Container: `p-6` → `px-6 py-10 sm:px-8`
+    - Vertical rhythm: outer `space-y-6` → `space-y-12` between
+      major sections; provider-card grid `gap-4` → `gap-5`
+    - Header: h1 `text-2xl font-bold` → `text-3xl font-semibold
+      tracking-tight`, icon `h-6 w-6` → `h-7 w-7`, gap-2 → gap-3
+    - **Section structure**: grouped the heterogeneous blocks
+      (Defaults + Reasoning, Email Digests, Providers) into
+      explicit `<section>` wrappers with hairline `border-t pt-12`
+      separators between them — the user can now visually scan
+      where one section ends and the next begins
+    - **Providers section gets an h2 heading** ("Providers") plus a
+      short description above the filter row — the heart of the
+      page is now visually labelled instead of buried under three
+      banners + a filter strip
+    - Help-link footer divider `pt-4` → `pt-6` for consistency
+
+  Frontend tsc clean. No locale changes (would require touching all
+  7 locale files to add new keys; spacing fixes don't need new
+  copy). No tests added — these are pure layout/spacing changes
+  with no behavior diff to assert against; visual review is the
+  appropriate validation.
+
+  After rebuild: each navigation page reads as cleanly-sectioned,
+  breathes properly on wide monitors, and brings the primary
+  Settings refresh / provider filter / podcast tab actions out of
+  the cramped flow.
 
 - **v0.7.152** 🐛 **Wire `voice_injection.js` to the real STT + TTS shim
   ports — no more "STT failed: HTTP 404" toast.** Final item from the
