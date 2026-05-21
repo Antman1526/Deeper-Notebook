@@ -18,7 +18,58 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.149 (in flight)
+## Unreleased — v0.7.36 → v0.7.150 (in flight)
+
+- **v0.7.150** 🐛 **Fix Piper voice config re-download spam — `min_bytes`
+  override for files where the MB-based threshold doesn't fit.** Carried
+  from v0.7.145 "what this does NOT fix" list.
+
+  Launcher.log on every launch (~21:18, 21:21, 21:28, 21:48, 21:52, ...):
+
+      WARNING: Existing en_US-amy-medium.onnx.json is only 4882 bytes
+        (expected >= 838860) — re-downloading
+      WARNING: Existing en_US-ryan-high.onnx.json is only 4166 bytes
+        (expected >= 838860) — re-downloading
+
+  Cause: the Piper voice config JSON descriptors (≈5 KB) were declared
+  with `expected_size_mb=1` in `desktop/model_downloads.py:46,61`. The
+  `_download_one` partial-download protection scales that to a threshold
+  of `1 MB × 0.80 = 838860 bytes`, which the real 5 KB files can't meet
+  → flagged as corrupt → re-downloaded → roughly 1-2 seconds wasted on
+  every launch, plus log-noise that obscured real problems.
+
+  Why the MB-based heuristic broke: it was designed for large weight
+  files (the embedding model is 273 MB, Piper voices are 30/78 MB) where
+  20% lower-bound tolerance catches partial downloads cleanly. For tiny
+  config files (5 KB) any MB-scaled threshold is unreachable.
+
+  Fix (`desktop/model_downloads.py`):
+
+  1. **New `min_bytes` kwarg on `_download_one`.** When supplied, it
+     directly sets the floor — no scaling. Takes precedence over
+     `expected_size_mb`. Threshold-selection order:
+       (1) explicit `min_bytes` if > 0
+       (2) `expected_size_mb × 0.80` if > 0
+       (3) legacy 100_000-byte floor
+  2. **`ensure_tts_model` + `ensure_secondary_tts_voice`** pass
+     `min_bytes=_PIPER_CONFIG_MIN_BYTES` (=2048) for the `.onnx.json`
+     downloads. 2 KB still filters out obvious HTML error pages
+     (<1 KB typical) while admitting the real ~5 KB JSON.
+  3. **No tuple-shape changes** — `PIPER_VOICE_CONFIG` and
+     `PIPER_RYAN_CONFIG` remain 4-tuples (their `expected_size_mb=1`
+     entry is now unused, kept for back-compat with existing
+     unpacking sites; could be cleaned up in a future refactor).
+
+  Tests (`desktop/tests/test_model_downloads.py`): 4 new — one each for
+    - real ~5 KB file accepted via min_bytes
+    - tiny HTML error page rejected
+    - min_bytes takes precedence over expected_size_mb
+    - end-to-end ensure_tts_model doesn't re-download a real config
+  All 16 tests pass (12 pre-existing + 4 new).
+
+  After rebuild + relaunch, the "Existing X is only N bytes" warnings
+  disappear from launcher.log and the duplicate downloads cluster on
+  each startup ends.
 
 - **v0.7.149** 🐛 **Fix `auto_register/episode_profile.py` payload
   schema drift — all 9 preset POSTs were returning HTTP 422 every
