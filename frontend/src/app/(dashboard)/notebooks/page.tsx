@@ -57,7 +57,15 @@ export default function NotebooksPage() {
         <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">{t('notebooks.title')}</h1>
+            {/* v0.7.164 — H1 hierarchy sweep. Page titles across the
+                dashboard previously shipped two competing styles:
+                `text-2xl font-bold` (notebooks/transformations/studio/
+                search) vs `text-3xl font-semibold tracking-tight`
+                (settings/podcasts/advanced/setup-wizard added in
+                v0.7.153). Unifying on the lighter v0.7.153 variant
+                — slightly larger, less heavy — for a cleaner read
+                that competes better with NotebookLM's typography. */}
+            <h1 className="text-3xl font-semibold tracking-tight">{t('notebooks.title')}</h1>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
