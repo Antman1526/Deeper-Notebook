@@ -18,7 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.156 (in flight)
+## Unreleased — v0.7.36 → v0.7.157 (in flight)
+
+- **v0.7.157** ⚡ **Cache `GmailIntegration.get()` + bounded-wait query
+  + lifespan pre-warm — eliminates the 4-8s "slow query" cluster on
+  every cold launch.** Carried from v0.7.156 deferred list.
+
+  Background: api.log showed two `slow query: 4247ms / 8613ms`
+  warnings on `'SELECT * FROM ONLY $rid'` clustered at every cold
+  start. The frontend mounts both `GmailSidebarButton` (polls
+  `/api/onp/gmail/status`) and `GmailIntegration` (the full setup
+  panel, also polls) — two concurrent requests, each blocked for
+  4-8s on the same single-record SurrealDB lookup. The "frozen API
+  after wizard" feeling was 100% attributable to this path.
+
+  The underlying SurrealDB slowness on `SELECT * FROM ONLY $rid`
+  for the gmail_integration:singleton record on cold-start isn't
+  fully diagnosed (SurrealDB pool warmup or query-planner first-touch
+  is the leading hypothesis), but the **read pattern is wrong
+  regardless** — the singleton's data only changes when the user
+  explicitly OAuth-connects/disconnects, but it was being re-fetched
+  + re-decrypted on every 60s poll.
+
+  Fix (`open_notebook/domain/gmail.py`):
+
+  1. **Process-level TTL cache.** Module-level `_CACHE` dict with
+     30-second TTL holds the fully-decrypted instance. First poll
+     pays the SurrealDB cost ONCE; subsequent polls within 30s are
+     free in-memory hits. Adaptive frontend polling (60s when
+     disconnected, 300s when connected) means at most 1-2 DB hits
+     per minute instead of the previous N concurrent slow queries
+     per render.
+  2. **3-second query timeout.** `asyncio.wait_for` wraps the
+     repo_query so a misbehaving SurrealDB can no longer hold a
+     request line for 8s+. On timeout we return a default instance
+     and log a warning; the next user request retries.
+  3. **Cache invalidation on `save()`.** After every write (OAuth
+     connect, settings toggle, disconnect, forget-credentials) the
+     cache is cleared so the next read sees fresh data — no UI lag
+     after a settings change.
+  4. **Empty-result caching.** Default-constructed instances (returned
+     when the singleton record doesn't exist yet — fresh installs)
+     are ALSO cached, so a brand-new user doesn't pay the slow query
+     repeatedly until they actually connect.
+  5. **Lifespan pre-warm task** (`api/main.py:lifespan`). At startup
+     a background task calls `GmailIntegration.get()` so the
+     cache is populated BEFORE the user's first page-load poll.
+     Cost is paid once during startup (non-blocking via
+     `asyncio.create_task`); user requests never see the cold
+     query.
+
+  Tests (`tests/test_gmail_cache.py`): 4 new regression tests:
+    - `test_cache_hit_skips_db_query_within_ttl` — second .get()
+      uses cache, not DB
+    - `test_save_invalidates_cache` — write-through invalidation
+    - `test_timeout_returns_default_instance` — bounded wait works
+    - `test_empty_db_result_is_still_cached` — fresh-install path
+  4/4 pass; existing gmail-router tests untouched (3/3 still pass).
+
+  Expected after rebuild: `slow query` warnings against
+  `'SELECT * FROM ONLY $rid'` disappear from api.log (replaced by
+  a single warmup-time DB hit), the Models / Settings pages no
+  longer feel frozen on first render, and the API is freed from
+  serving redundant per-poll DB roundtrips.
 
 - **v0.7.156** 🐛 **Filter migration-seeded OpenAI-only speakers from
   the episode_profile fallback pool.** LIKELY-BLOCKING audit finding
