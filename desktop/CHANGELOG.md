@@ -18,7 +18,61 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.158 (in flight)
+## Unreleased — v0.7.36 → v0.7.159 (in flight)
+
+- **v0.7.159** ⚡ **Pagination on `ObjectModel.get_all` + frontend
+  staleTime tuning.** Two improvement-scan findings, both quietly
+  expensive on heavy installs.
+
+  **(1) `Note.get_all()` was unbounded.**
+  `api/routers/notes.py:13-31` — `GET /notes` (no notebook filter)
+  resolved to `SELECT * FROM note ORDER BY updated DESC` with no
+  `LIMIT`. Hundreds of notes × full content = multi-MB JSON per
+  call. Same shape applies to any future caller of
+  `ObjectModel.get_all` (`open_notebook/domain/base.py:39`).
+
+  Fix:
+    - `ObjectModel.get_all(order_by, limit=None, offset=None)` gains
+      optional pagination args. Backward-compatible: existing callers
+      that pass nothing still get unbounded results.
+    - Defensive input validation BEFORE the try-block so
+      `InvalidInputError` propagates cleanly as HTTP 400 instead of
+      getting wrapped in `DatabaseOperationError` → HTTP 500.
+      `bool` is rejected explicitly (Python's bool-is-int trap).
+    - `api/routers/notes.py` adds `limit: int = Query(200, ge=1, le=1000)`
+      and `offset: int = Query(0, ge=0)` to the unfiltered branch.
+      Notebook-scoped notes are naturally bounded by the notebook's
+      size, so that branch is unchanged.
+
+  Tests at `tests/test_get_all_pagination.py` — 6 new:
+    - no-args → unchanged query (back-compat)
+    - `limit=200` → appends `LIMIT 200`
+    - `limit=50, offset=100` → both clauses in `LIMIT … START …` order
+    - negative limit → `InvalidInputError`
+    - non-int offset → `InvalidInputError`
+    - zero limit → `InvalidInputError`
+
+  **(2) `useSources` + `useNotebookSources` had 5s staleTime +
+  `refetchOnWindowFocus: true`.**
+  Each refetch fans out to per-source insights_count + embedded-LIMIT-1
+  subqueries (`api/routers/sources.py:288-310`); a 200-source notebook
+  ran ~200 subqueries per tab-back. Cmd-Tab back to the app felt
+  janky during typical multi-tab research workflows.
+
+  Fix (`frontend/src/lib/hooks/use-sources.ts:18-26, 32-55`):
+    - staleTime raised 5s → 60s on both hooks
+    - `refetchOnWindowFocus: true` → `false` on both hooks
+    - Mutations (create / update / delete) still invalidate the
+      query keys explicitly, so the user's own actions stay accurate
+    - `useSourceStatus` (the in-flight import polling hook) is
+      untouched — its 2s refetchInterval is what should drive that path
+
+  All previously-passing domain tests still pass; frontend `tsc`
+  clean.
+
+  Combined impact: tab switches stop firing heavy fan-out queries,
+  `GET /notes` can no longer return multi-MB blobs, and a clearly-bad
+  query param (`?limit=-5`) returns 400 instead of 500.
 
 - **v0.7.158** ⚡🐛 **Reliability sweep — httpx timeouts, log dedup,
   RebuildEmbeddings stale-closure cleanup.** Three findings from the

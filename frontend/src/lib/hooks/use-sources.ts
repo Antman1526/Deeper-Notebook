@@ -20,8 +20,18 @@ export function useSources(notebookId?: string) {
     queryKey: QUERY_KEYS.sources(notebookId),
     queryFn: () => sourcesApi.list({ notebook_id: notebookId }),
     enabled: !!notebookId,
-    staleTime: 5 * 1000, // 5 seconds - more responsive for real-time source updates
-    refetchOnWindowFocus: true, // Refetch when user comes back to the tab
+    // v0.7.159 — Raised from 5s → 60s and disabled refetchOnWindowFocus.
+    // The sources list endpoint fans out to a per-row insights_count +
+    // embedded-LIMIT-1 subquery (api/routers/sources.py); on a 200-source
+    // notebook that's ~200 subqueries per refetch. Previous 5s + focus-
+    // refetch combination meant every Cmd-Tab back to the app re-ran the
+    // entire fan-out. Source mutations still trigger broad cache invalidation
+    // (useCreateSource, useDeleteSource, useUpdateSource), so the user
+    // doesn't lose accuracy — only the redundant on-focus refetch.
+    // useSourceStatus (the polling hook) keeps its own short interval
+    // for in-progress imports.
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -50,8 +60,11 @@ export function useNotebookSources(notebookId: string) {
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset,
     enabled: !!notebookId,
-    staleTime: 5 * 1000,
-    refetchOnWindowFocus: true,
+    // v0.7.159 — Same rationale as useSources: 5s+focus refetch
+    // triggered repeated heavy fan-outs on tab switches. Mutations
+    // explicitly invalidate this query key; that path stays accurate.
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Flatten all pages into a single array (memoized to prevent infinite re-renders)
