@@ -5,7 +5,7 @@ from loguru import logger
 
 from api.models import NoteCreate, NoteResponse, NoteUpdate
 from open_notebook.domain.notebook import Note
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -193,6 +193,14 @@ async def get_note(note_id: str):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.160 — Let the global handler at api/main.py:567 map this
+        # to HTTP 404 instead of clobbering it to 500 via the generic
+        # `except Exception` below. ObjectModel.get(id) raises
+        # NotFoundError for missing records (see domain/base.py:183),
+        # so a stale frontend cache hitting a deleted note used to
+        # surface as "Server error" rather than "Note not found".
+        raise
     except Exception as e:
         logger.error(f"Error fetching note {note_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching note: {str(e)}")
@@ -232,6 +240,10 @@ async def update_note(note_id: str, note_update: NoteUpdate):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.160 — same rationale as get_note: surface stale-ID 404
+        # via the global handler instead of swallowing to 500.
+        raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -251,6 +263,9 @@ async def delete_note(note_id: str):
 
         return {"message": "Note deleted successfully"}
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.160 — see get_note above.
         raise
     except Exception as e:
         logger.error(f"Error deleting note {note_id}: {str(e)}")

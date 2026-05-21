@@ -3,7 +3,7 @@ from loguru import logger
 
 from api.models import NoteResponse, SaveAsNoteRequest, SourceInsightResponse
 from open_notebook.domain.notebook import SourceInsight
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -45,6 +45,10 @@ async def get_insight(insight_id: str):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.160 — let the global handler at api/main.py:567 map to
+        # HTTP 404; previously the generic except below clobbered to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching insight {insight_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching insight")
@@ -62,6 +66,9 @@ async def delete_insight(insight_id: str):
 
         return {"message": "Insight deleted successfully"}
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.160 — same rationale as get_insight above.
         raise
     except Exception as e:
         logger.error(f"Error deleting insight {insight_id}: {str(e)}")
@@ -88,6 +95,9 @@ async def save_insight_as_note(insight_id: str, request: SaveAsNoteRequest):
             updated=str(note.updated),
         )
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.160 — same rationale as get_insight above.
         raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
