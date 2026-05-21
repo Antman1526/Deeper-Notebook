@@ -27,7 +27,17 @@ async def _find_model_record(
 async def _find_or_create_model(
     provider: str, model_name: str, model_type: str
 ) -> str | None:
-    """Find existing Model record or auto-create one linked to provider credential."""
+    """Find existing Model record or auto-create one linked to provider credential.
+
+    v0.7.158 — De-spammed the "No credential found for provider" warning.
+    The migration loops over every legacy seed profile (3 episode + 4
+    speaker = up to 14 calls per launch) and the same provider warning
+    used to fire once per call — flooding api.log with 14 identical
+    WARNING entries every cold start. Now: still log at WARNING level
+    once per (provider, model_name) pair, but skip the log entirely if
+    we've already warned about this combination during the current
+    process. Same diagnostic value, ~10× less log noise.
+    """
     # Try exact match first
     model_id = await _find_model_record(provider, model_name, model_type)
     if model_id:
@@ -38,10 +48,18 @@ async def _find_or_create_model(
 
     credentials = await Credential.get_by_provider(provider)
     if not credentials:
-        logger.warning(
-            f"No credential found for provider '{provider}'. "
-            f"Cannot auto-create model '{model_name}'. Profile needs manual migration."
-        )
+        # v0.7.158 — Dedup the warning per (provider, model_name).
+        # The legacy seeds repeatedly point at openai/gpt-5-mini and
+        # openai/gpt-4o-mini-tts; once we've reported each combination
+        # we don't need to repeat the report 13 more times in one launch.
+        key = (provider, model_name)
+        if key not in _credential_missing_warned:
+            logger.warning(
+                f"No credential found for provider '{provider}'. "
+                f"Cannot auto-create model '{model_name}'. "
+                f"Profile needs manual migration."
+            )
+            _credential_missing_warned.add(key)
         return None
 
     # Use the first credential for the provider
@@ -60,6 +78,12 @@ async def _find_or_create_model(
         f"linked to credential '{credential.name}'"
     )
     return str(model.id)
+
+
+# v0.7.158 — Process-level set used by _find_or_create_model to dedup
+# the "No credential found for provider" warning per (provider, model)
+# pair. Reset implicitly when the API process restarts.
+_credential_missing_warned: set[tuple[str, str]] = set()
 
 
 async def migrate_podcast_profiles() -> None:
