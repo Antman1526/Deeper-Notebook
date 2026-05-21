@@ -18,7 +18,86 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.148 (in flight)
+## Unreleased — v0.7.36 → v0.7.149 (in flight)
+
+- **v0.7.149** 🐛 **Fix `auto_register/episode_profile.py` payload
+  schema drift — all 9 preset POSTs were returning HTTP 422 every
+  launch.** Carried over from v0.7.145 "what this does NOT fix" list.
+
+  Diagnosis from launcher.log (running app, 2026-05-20 21:52):
+
+      [desktop.auto_register.episode_profile] WARNING:
+      Could not create episode profile 'Open Notebook Plus Local'
+      (HTTP 422): {"detail":[{"type":"missing","loc":["body",
+      "speaker_config"],"msg":"Field required",...}]}
+
+  …repeated 9 times for every preset. The launcher was sending:
+
+      {
+        "chat_model_id": "<id>",                      ← not in schema
+        "speakers": [{"name": ..., "tts_model_id":}], ← not in schema
+        "default_length_minutes": 5,                  ← not in schema
+        ...
+      }
+
+  But `api/routers/episode_profiles.py:EpisodeProfileCreate` actually
+  requires:
+
+      {
+        "speaker_config": "<speaker_profile_name>",   ← REQUIRED, missing
+        "outline_llm": "<model_id>",                  ← optional, chat
+        "transcript_llm": "<model_id>",               ← optional, chat
+        ...
+      }
+
+  None of the 9 v0.7.30 preset library entries (Deep Dive, Quick Brief,
+  Debate, Tutorial, Story Mode, News Roundup, Q&A Interview, Recap &
+  Review, plus the base "Open Notebook Plus Local") ever made it into
+  the database. The launcher.log noise was the only user-visible sign;
+  the actual symptom was the Studio episode-profile picker only
+  showing the legacy cloud-only profiles from migration 7.surrealql.
+
+  Fix (`desktop/auto_register/episode_profile.py`):
+
+  1. **Per-preset speaker_profile mapping.** Added `speaker_profile`
+     key to each of the 9 `_PRESETS` entries, naming the speaker
+     profile that semantically fits:
+       - Open Notebook Plus Local, Deep Dive, Quick Brief, Tutorial,
+         Story Mode, News Roundup, Recap & Review → "Local Duo"
+       - Debate → "Local Debate" (matches Pro/Skeptic personalities)
+       - Q&A Interview → "Local Interview" (matches Interviewer/Expert)
+  2. **Payload rewrite.** Replaced `chat_model_id` + `speakers: [...]`
+     + `default_length_minutes` with `speaker_config: "<name>"` plus
+     `outline_llm` + `transcript_llm` (the schema's actual model
+     fields). The chat model is routed through both.
+  3. **Speaker-profile presence cross-check.** New GET to
+     `/api/speaker-profiles` before any POST. If no speaker profiles
+     exist (piper voices missing → speaker bootstrap skipped), abort
+     the episode bootstrap silently rather than 422 nine times.
+  4. **Graceful degradation.** If the preferred speaker profile
+     (e.g. "Local Debate") isn't registered but "Local Duo" is, the
+     preset is registered against "Local Duo" instead of skipped.
+     Logged with a `degraded` counter for observability.
+
+  Tests (`desktop/tests/test_auto_register.py`):
+  - 3 existing episode-profile tests updated to assert the new
+    payload shape (`outline_llm` instead of `chat_model_id`, no
+    `speakers` / no `chat_model_id` / no `default_length_minutes`,
+    presence of `speaker_config` referencing a known profile).
+  - Debate + Q&A semantic mapping verified (Debate → Local Debate,
+    Q&A → Local Interview).
+  - 2 new regression tests: `test_episode_profile_skips_when_no_
+    speaker_profiles_exist` (zero POSTs when speaker bootstrap failed)
+    and `test_episode_profile_falls_back_to_local_duo_when_preferred_
+    missing` (graceful degradation).
+  - 20/20 auto_register tests pass.
+
+  After the next rebuild + launch, the launcher.log episode-profile
+  block changes from:
+      Episode profile preset library: 0 created, 0 skipped
+  to:
+      Episode profile preset library: 9 created, 0 skipped, 0 degraded
+  and the Studio picker shows the full preset library.
 
 - **v0.7.148** 🐛 **Fix Setup Wizard stuck on "Loading..." — alias
   `/api/healthz/deep` on the backend.** Follow-up to v0.7.147:
