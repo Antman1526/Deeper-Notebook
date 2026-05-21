@@ -24,12 +24,25 @@ export default function PodcastsPage() {
     return episodeProfiles.some(needsModelSetup) || speakerProfiles.some(needsModelSetup)
   }, [episodeProfiles, speakerProfiles])
 
+  // v0.7.153 — Visual rhythm refresh (Podcasts = edge-to-edge wide).
+  // Changes:
+  //   - Page padding px-6 py-6 → px-6 py-10 sm:px-8 (more vertical breathing
+  //     room; horizontal stays edge-to-edge for the wide grid layout)
+  //   - Top-level space-y-6 → space-y-10 so the header / alert / tabs
+  //     sections have a real visual break between them
+  //   - Title text-2xl → text-3xl, header gap space-y-1 → space-y-2
+  //     (title and subtitle stop touching)
+  //   - Removed the "CHOOSE A VIEW" all-caps caption above the tab list:
+  //     two-tab toggles are self-explanatory; the label was visual noise
+  //     and added one of the cramped-stacking pain points
+  //   - Tabs inner space-y-6 → space-y-8 (more room between the tab
+  //     toggle and the active panel)
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-6 space-y-6">
-          <header className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{t('podcasts.listTitle')}</h1>
+        <div className="px-6 py-10 sm:px-8 space-y-10">
+          <header className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight">{t('podcasts.listTitle')}</h1>
             <p className="text-muted-foreground">
               {t('podcasts.listDesc')}
             </p>
@@ -48,21 +61,18 @@ export default function PodcastsPage() {
           <Tabs
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as 'episodes' | 'templates')}
-            className="space-y-6"
+            className="space-y-8"
           >
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('podcasts.chooseAView')}</p>
-              <TabsList aria-label={t('common.accessibility.podcastViews')} className="w-full max-w-md">
-                <TabsTrigger value="episodes">
-                  <Mic className="h-4 w-4" />
-                  {t('podcasts.episodesTab')}
-                </TabsTrigger>
-                <TabsTrigger value="templates">
-                  <LayoutTemplate className="h-4 w-4" />
-                  {t('podcasts.templatesTab')}
-                </TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList aria-label={t('common.accessibility.podcastViews')} className="w-full max-w-md">
+              <TabsTrigger value="episodes">
+                <Mic className="h-4 w-4" />
+                {t('podcasts.episodesTab')}
+              </TabsTrigger>
+              <TabsTrigger value="templates">
+                <LayoutTemplate className="h-4 w-4" />
+                {t('podcasts.templatesTab')}
+              </TabsTrigger>
+            </TabsList>
 
             <TabsContent value="episodes">
               <EpisodesTab />

@@ -16,17 +16,33 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { refetch } = useSettings()
 
+  // v0.7.153 — Visual rhythm refresh (Settings = roomy treatment).
+  // Pain points addressed (per user 2026-05-21):
+  //   - Inputs/labels stacked too tightly  → bumped space-y-6 → space-y-10
+  //     between top-level sections; page padding p-6 → px-6 py-10 sm:px-8
+  //   - Section headings don't separate cleanly → header gets its own
+  //     space-y-2 stack with the refresh button moved to a header bar
+  //     on the right (visual right-alignment makes the section break
+  //     read at a glance)
+  //   - Buttons buried → refresh becomes a labeled "Refresh" outline
+  //     button (icon + label) instead of an icon-only square
+  // Container width: max-w-4xl (896px) → max-w-3xl (768px) feels less
+  // sparse on wide monitors while still hitting the "roomy" target.
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6">
-          <div className="max-w-4xl space-y-6">
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold">{t('navigation.settings')}</h1>
+        <div className="px-6 py-10 sm:px-8">
+          <div className="mx-auto max-w-3xl space-y-10">
+            <header className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  {t('navigation.settings')}
+                </h1>
+              </div>
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
-            </div>
+            </header>
 
             <SettingsForm />
             <ObservabilityCard />

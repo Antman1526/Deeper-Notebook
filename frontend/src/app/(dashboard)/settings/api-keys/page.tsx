@@ -978,18 +978,33 @@ export default function ApiKeysPage() {
     )
   }
 
+  // v0.7.153 — Visual rhythm refresh (Models = edge-to-edge wide).
+  // Pain points addressed (per user 2026-05-21):
+  //   - Inputs/labels stacked too tightly  → page padding p-6 → px-6 py-10
+  //     sm:px-8; outer space-y-6 → space-y-12 between major sections
+  //   - Section headings don't separate cleanly → each major block is
+  //     now in a <section> with a hairline border-t separator + an h2
+  //     header (Defaults, Email Digests, Providers). The page reads
+  //     as a series of clearly-delineated cards.
+  //   - Buttons buried → the "Providers" section gets its own h2 plus
+  //     a sticky-style row with filter input on the left and chip
+  //     filters on the right with more breathing room
+  //   - Title gets text-2xl font-bold → text-3xl font-semibold (lighter
+  //     visual weight, more elegant per NotebookLM comparison)
+  //   - Provider grid gap-4 → gap-5 so adjacent cards have visible
+  //     separation instead of running into each other
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+        <div className="px-6 py-10 sm:px-8 space-y-12">
           {/* Header */}
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Key className="h-6 w-6" />
+          <header className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3">
+              <Key className="h-7 w-7" />
               {t('apiKeys.title')}
             </h1>
-            <p className="text-muted-foreground mt-1">{t('apiKeys.description')}</p>
-          </div>
+            <p className="text-muted-foreground">{t('apiKeys.description')}</p>
+          </header>
 
           {/* Encryption warning */}
           {!encryptionReady && (
@@ -1007,88 +1022,108 @@ export default function ApiKeysPage() {
           {/* Migration banner */}
           {encryptionReady && <MigrationBanner providersToMigrate={providersToMigrate} />}
 
-          {/* Default Model Selectors */}
-          {models && defaults && (
-            <DefaultModelSelectors models={models} defaults={defaults} />
-          )}
+          {/* v0.7.153 — Defaults section: groups Default-Model selectors +
+              the Reasoning-slot primer under one visual section. */}
+          <section className="space-y-6">
+            {models && defaults && (
+              <DefaultModelSelectors models={models} defaults={defaults} />
+            )}
 
-          {/* ONP v0.5 — Reasoning slot primer (shadow-layer component). Renders
-              regardless of whether a model is assigned; it's an explainer + a
-              status indicator combined. */}
-          {defaults && (
-            <ReasoningSlotCard
-              assignedModel={
-                defaults.default_reasoning_model
-                  ? models?.find(m => m.id === defaults.default_reasoning_model)?.name
-                    ?? defaults.default_reasoning_model
-                  : null
-              }
-            />
-          )}
-
-          {/* ONP v0.6 — Gmail email-digest integration (shadow-layer component)
-              Anchored ID matches the sidebar button's deep-link target. */}
-          <div id="email-digests">
-            <GmailIntegration />
-          </div>
-
-          {/* v0.7.35 — Provider filter row. 16 providers stacked
-              vertically was hard to navigate; this gives both a
-              substring search and a status-chip filter. */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative max-w-md flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={providerQuery}
-                onChange={(e) => setProviderQuery(e.target.value)}
-                placeholder="Filter providers…"
-                className="pl-9"
-                aria-label="Filter providers"
+            {/* ONP v0.5 — Reasoning slot primer (shadow-layer component).
+                Renders regardless of whether a model is assigned; it's an
+                explainer + a status indicator combined. */}
+            {defaults && (
+              <ReasoningSlotCard
+                assignedModel={
+                  defaults.default_reasoning_model
+                    ? models?.find(m => m.id === defaults.default_reasoning_model)?.name
+                      ?? defaults.default_reasoning_model
+                    : null
+                }
               />
+            )}
+          </section>
+
+          {/* v0.7.153 — Email Digests section gets a visible top divider so
+              the user sees it as a discrete integration block rather than
+              another cramped card stacked on the defaults above.
+              Anchored ID matches the sidebar button's deep-link target. */}
+          <section id="email-digests" className="border-t pt-12">
+            <GmailIntegration />
+          </section>
+
+          {/* v0.7.153 — Providers section. The previous flat layout buried
+              "16 providers in a list" under three different banners and a
+              tight filter row. Now it's a labeled <section> with an h2
+              and a roomier filter bar above the credential cards. */}
+          <section className="border-t pt-12 space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold tracking-tight">Providers</h2>
+              <p className="text-sm text-muted-foreground">
+                Configure API credentials and registered models for each AI provider.
+              </p>
             </div>
-            <div className="flex gap-2 text-xs">
-              {(['all', 'configured', 'env', 'none'] as const).map((status) => (
-                <Button
-                  key={status}
-                  size="sm"
-                  variant={providerStatusFilter === status ? 'default' : 'outline'}
-                  onClick={() => setProviderStatusFilter(status)}
-                  className="h-8"
-                >
-                  {status === 'all'
-                    ? 'All'
-                    : status === 'configured'
-                      ? 'Has credential'
-                      : status === 'env'
-                        ? 'From env'
-                        : 'Unconfigured'}
-                </Button>
+
+            {/* v0.7.35 — Provider filter row. 16 providers stacked
+                vertically was hard to navigate; this gives both a
+                substring search and a status-chip filter. */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative max-w-md flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={providerQuery}
+                  onChange={(e) => setProviderQuery(e.target.value)}
+                  placeholder="Filter providers…"
+                  className="pl-9"
+                  aria-label="Filter providers"
+                />
+              </div>
+              <div className="flex gap-2 text-xs">
+                {(['all', 'configured', 'env', 'none'] as const).map((status) => (
+                  <Button
+                    key={status}
+                    size="sm"
+                    variant={providerStatusFilter === status ? 'default' : 'outline'}
+                    onClick={() => setProviderStatusFilter(status)}
+                    className="h-8"
+                  >
+                    {status === 'all'
+                      ? 'All'
+                      : status === 'configured'
+                        ? 'Has credential'
+                        : status === 'env'
+                          ? 'From env'
+                          : 'Unconfigured'}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {filteredProviders.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4">
+                No providers match the filter.
+              </p>
+            )}
+
+            {/* Provider Cards — bumped gap-4 → gap-5 (v0.7.153) so adjacent
+                provider cards have visible breathing room instead of
+                visually merging. */}
+            <div className="grid gap-5">
+              {filteredProviders.map(provider => (
+                <ProviderSection
+                  key={provider}
+                  provider={provider}
+                  credentials={credentialsByProvider[provider] || []}
+                  models={models || []}
+                  defaults={defaults || null}
+                  allCredentials={credentials || []}
+                  encryptionReady={encryptionReady}
+                />
               ))}
             </div>
-          </div>
-          {filteredProviders.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4">
-              No providers match the filter.
-            </p>
-          )}
-
-          {/* Provider Cards */}
-          <div className="grid gap-4">
-            {filteredProviders.map(provider => (
-              <ProviderSection
-                key={provider}
-                provider={provider}
-                credentials={credentialsByProvider[provider] || []}
-                models={models || []}
-                defaults={defaults || null}
-                allCredentials={credentials || []}
-                encryptionReady={encryptionReady}
-              />
-            ))}
-          </div>
+          </section>
 
           {/* Help link */}
-          <div className="border-t pt-4">
+          <div className="border-t pt-6">
             <a
               href="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md"
               target="_blank"
