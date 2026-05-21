@@ -50,6 +50,16 @@ hiddenimports = [
     # aiohttp optional speedups — may be imported conditionally.
     "aiohttp._helpers",
     "aiohttp._http_parser",
+    # v0.7.146 — Launcher uses function-scoped imports for these two
+    # modules (see desktop/launcher.py:148 + :246). PyInstaller's
+    # modulegraph generally follows local imports, but the `from X
+    # import (a, b, c)` tuple form has historically been missed in
+    # some PyInstaller releases. Belt-and-suspenders explicit declaration
+    # — without these modules the launcher raises ModuleNotFoundError
+    # at start_all() and the .app exits before writing launcher.log,
+    # producing the exact silent-crash symptom the user hit on rebuild.
+    "desktop.singleton",
+    "desktop.next_rewrites_patcher",
 ]
 
 # ---------------------------------------------------------------------------

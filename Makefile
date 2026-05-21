@@ -417,9 +417,40 @@ build-mac-runtimes:
 	@$(BUILD_PY) desktop/build/fetch_runtimes.py
 
 # Stage 4: PyInstaller — produces dist/Open Notebook Plus.app from desktop/build/pyinstaller.spec.
+#
+# v0.7.146 — Re-seal the bundle with `codesign --force --deep --sign -`
+# AFTER PyInstaller finishes. Background:
+#
+#   macOS auto-applies an ad-hoc signature to arm64 Mach-O binaries the
+#   first time they're written. PyInstaller produces the .app in
+#   multiple write phases (COLLECT, then BUNDLE wraps it), and ANY file
+#   modification under the bundle after macOS seals it — including
+#   Spotlight indexing writing extended attributes, or PyInstaller's
+#   own multi-pass writes — invalidates the seal. The Gatekeeper
+#   verdict on the user's first rebuild was:
+#
+#     spctl -a -vvv "Open Notebook Plus.app"
+#     → a sealed resource is missing or invalid
+#
+#   When a Gatekeeper seal is broken, macOS silently kills the binary
+#   at launch: no error dialog, no crash report, no stderr output. The
+#   user double-clicks and nothing happens.
+#
+#   The fix is to do an explicit final codesign at the END of all
+#   PyInstaller work, so the seal reflects the bundle's true final
+#   contents. `--deep` re-signs every nested Mach-O (Python framework,
+#   dylibs, helper binaries). `--force` overwrites any prior signature.
+#   `--sign -` means ad-hoc (no developer cert required for local dev).
 build-mac-pyinstaller:
 	@echo "🔧 Running PyInstaller (this is the slow step, ~5-10 min)..."
 	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
+	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign -)..."
+	@codesign --force --deep --sign - "dist/Open Notebook Plus.app"
+	@echo "   Verifying seal..."
+	@spctl -a -vvv "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || \
+		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);" && \
+		echo "   the seal itself is valid, run codesign -v to confirm."
+	@codesign -v "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || true
 
 # Stage 5: wrap the .app into a .dmg via hdiutil. Unsigned — first launch needs
 # right-click → Open OR `xattr -dr com.apple.quarantine dist/Open\ Notebook\ Plus.app`.

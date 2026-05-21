@@ -18,7 +18,82 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.145 (in flight)
+## Unreleased — v0.7.36 → v0.7.146 (in flight)
+
+- **v0.7.146** 🐛 **Fix silent-launch-failure of rebuilt `.app` (broken
+  Gatekeeper seal + possibly-missing launcher modules).** User
+  incident today (2026-05-20): after `make build-mac-clean && make
+  build-mac` completed cleanly and produced a fresh `dist/Open
+  Notebook Plus.app` + `.dmg`, double-clicking the `.app` did
+  absolutely nothing. No window, no error dialog, no crash report
+  in `~/Library/Logs/DiagnosticReports/`, no entries in
+  `~/.open-notebook-plus/launcher.log` (file wasn't even created),
+  no stderr when launched directly from the terminal.
+
+  Diagnosis: `spctl -a -vvv "dist/Open Notebook Plus.app"` returned
+  `a sealed resource is missing or invalid`. Gatekeeper was silently
+  killing the binary before Python initialization. This is the
+  classic symptom of a broken ad-hoc code signature seal: macOS
+  blocks the process and emits no user-visible feedback.
+
+  Root cause: macOS auto-applies an ad-hoc signature to arm64
+  Mach-O binaries the first time they're written. PyInstaller's
+  `BUNDLE` step in the spec doesn't explicitly sign the .app, so
+  the macOS-auto-applied seal covers only the state of the bundle
+  at one specific moment during the multi-phase build. Any file
+  modification under the bundle after that point — including
+  PyInstaller's own COLLECT/BUNDLE write sequencing, Spotlight
+  indexing writing `com.apple.metadata:*` xattrs, or the build
+  script's final touches — invalidates the seal.
+
+  Fixes:
+
+  1. **`Makefile:420-440` — `build-mac-pyinstaller` target now runs
+     `codesign --force --deep --sign - "dist/Open Notebook Plus.app"`
+     immediately after PyInstaller completes, then verifies the
+     seal with `codesign -v` and `spctl -a -vvv`. `--deep` re-signs
+     every nested Mach-O (the Python framework, all dylibs, helper
+     binaries). `--force` overwrites any prior signature. `--sign -`
+     is ad-hoc (no developer cert needed for local dev, matches
+     prior behavior). The DMG step that runs after this only reads
+     the .app (via `hdiutil create -srcfolder`), it doesn't modify
+     it, so the seal stays valid through DMG packaging.
+
+  2. **`desktop/build/pyinstaller.spec:45-58` — explicit hiddenimports
+     for `desktop.singleton` and `desktop.next_rewrites_patcher`.**
+     These two v0.7.142/v0.7.144 modules are imported function-locally
+     in `desktop/launcher.py:148` and `:246` (inside the `start_all`
+     method) via `from desktop.singleton import (acquire_singleton,
+     ...)` tuple form. PyInstaller's modulegraph generally follows
+     local imports, but the tuple-form `from X import (a, b, c)`
+     pattern has historically been missed in some PyInstaller
+     releases. Without these in the bundled PYZ, the launcher would
+     raise `ModuleNotFoundError: No module named 'desktop.singleton'`
+     at first launch — the same silent-exit-before-logging-setup
+     symptom. Belt-and-suspenders explicit declaration.
+
+  Recovery for users who already have a broken bundle (without
+  rebuilding): `codesign --force --deep --sign - "dist/Open
+  Notebook Plus.app"` re-seals the existing bundle. Combined with
+  `xattr -cr "dist/Open Notebook Plus.app"` to clear any stale
+  quarantine attributes, this gets the existing .app launching.
+
+  Durable fix: future `make build-mac` runs produce a bundle whose
+  seal is valid and verifies cleanly under Gatekeeper.
+
+  **What this does NOT fix:**
+
+    1. **Code-signing certificate.** This is still ad-hoc signing.
+       Distributing the .app to other Macs requires a Developer ID
+       certificate from Apple ($99/year) and notarization. Out of
+       scope for local dev / personal use.
+
+    2. **The pre-existing items from v0.7.145** (`/api/transcribe`
+       404, 18 `chat_llm_n_ctx` test failures) remain untouched —
+       this commit is scoped to the build/launch unblock.
+
+  No code change to `launcher.py` itself; the imports were already
+  correct. Pure build-pipeline patch.
 
 - **v0.7.145** 🐛 **Fix launcher's `/api/episode_profiles` 404s
   (underscore vs hyphen mismatch).** User reported recurring 404s
