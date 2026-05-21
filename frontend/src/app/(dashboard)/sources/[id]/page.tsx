@@ -26,13 +26,22 @@ export default function SourceDetailPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Back button */}
-      <div className="pt-6 pb-4 px-6">
+      {/* v0.7.164 — Source detail layout polish.
+          Before: back button had `pt-6 pb-4 px-6` PLUS its own
+          `mb-4` (~80px of empty space above content). Each column
+          re-applied `px-4 pb-6` inside an already-padded parent —
+          40px of horizontal padding squeezed the chat column on
+          standard laptop widths. Visual audit item #2.
+          After: tightened back-button band to `px-6 pt-4 pb-2`
+          (removed the redundant mb-4 on the Button itself), and
+          dropped the per-column `px-4` so the outer `px-6` does
+          all the horizontal work. Chat column gains back ~32px of
+          breathing room on every viewport. */}
+      <div className="px-6 pt-4 pb-2">
         <Button
           variant="ghost"
           size="sm"
           onClick={handleBack}
-          className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           {navigation.getReturnLabel()}
@@ -42,7 +51,7 @@ export default function SourceDetailPage() {
       {/* Main content: Source detail + Chat */}
       <div className="flex-1 grid gap-6 lg:grid-cols-[2fr_1fr] overflow-hidden px-6">
         {/* Left column - Source detail */}
-        <div className="overflow-y-auto px-4 pb-6">
+        <div className="overflow-y-auto pb-6">
           <SourceDetailContent
             sourceId={sourceId}
             showChatButton={false}
@@ -51,7 +60,7 @@ export default function SourceDetailPage() {
         </div>
 
         {/* Right column - Chat */}
-        <div className="overflow-y-auto px-4 pb-6">
+        <div className="overflow-y-auto pb-6">
           <ChatPanel
             messages={chat.messages}
             isStreaming={chat.isStreaming}

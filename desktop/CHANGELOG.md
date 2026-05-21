@@ -59,13 +59,31 @@ focused commit; each ships with regression tests.
       now unused (preserved in locales for safety; cleanup
       deferred to a locale sweep).
 
-  Visual audit's item #2 (sources/[id] double-padding), #5
-  (transformations alignment), #1 (notebooks 3-column body
-  spacing), #6 (setup-wizard CTA prominence), #7 (Studio mode-
-  picker tiles), plus the 20+ secondary opportunities remain
-  open for follow-up commits. v0.7.164 picked the highest-
-  leverage one (item #4) — 4 pages, consistent visual outcome,
-  zero behavior change.
+  **Two more visual-audit items folded into this commit:**
+
+  **Notebook detail header / workspace separation** (audit #1).
+  `(dashboard)/notebooks/[id]/page.tsx:162-168`. The most-trafficked
+  screen in the app previously read as one giant blob — header was
+  `p-6 pb-0` (no bottom padding, no divider) and workspace was
+  `p-6 pt-6`. Replaced with `flex-shrink-0 px-6 pt-6 pb-4 border-b`
+  on the header (real breathing room + hairline divider) and
+  `px-6 pt-8 pb-6` on the workspace below (columns "land" cleanly
+  below the divider).
+
+  **Source detail double-padding** (audit #2).
+  `(dashboard)/sources/[id]/page.tsx:28-54`. Back-button band was
+  `pt-6 pb-4 px-6` PLUS its own `mb-4` (~80px of empty space). Each
+  column re-applied `px-4` on top of the outer `px-6` — 40px of
+  horizontal padding squeezed the chat column on standard laptop
+  widths. Tightened back-button to `px-6 pt-4 pb-2` (removed the
+  redundant `mb-4`); dropped per-column `px-4` so outer `px-6` does
+  all horizontal work. Chat column gains ~32px of breathing room
+  on every viewport.
+
+  Visual audit's items #5 (transformations alignment — folded into
+  the H1 sweep above), #6 (setup-wizard CTA prominence), #7
+  (Studio mode-picker tiles), plus the 20+ secondary opportunities
+  remain open for follow-up commits.
 
   Frontend `tsc` clean. No locale changes (the unused
   `chooseAMode` key stays; cleanup deferred).
