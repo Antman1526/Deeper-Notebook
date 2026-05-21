@@ -153,34 +153,46 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
             {"source_id": ensure_record_id(full_source_id)},
         )
 
-        sessions = []
-        for relation in relations:
-            session_id_raw = relation.get("in")
-            if session_id_raw:
-                session_id = str(session_id_raw)
+        # v0.7.161 — N+1 fix: previously this loop did TWO sequential
+        # round-trips per session (a row fetch + a LangGraph checkpoint
+        # read). A source with 30 chat sessions paid 60 sequential
+        # network/disk hits. Now we issue both fan-outs concurrently:
+        #   1. asyncio.gather all session-row fetches in parallel
+        #   2. then asyncio.gather all message-count reads in parallel
+        # Each phase has its wall-clock bounded by the slowest single
+        # call instead of the sum.
+        session_ids: list[str] = [
+            str(r["in"]) for r in relations if r.get("in")
+        ]
+        session_rows = await asyncio.gather(*[
+            repo_query("SELECT * FROM $id", {"id": ensure_record_id(sid)})
+            for sid in session_ids
+        ])
+        msg_counts = await asyncio.gather(*[
+            get_session_message_count(source_chat_graph, sid)
+            for sid in session_ids
+        ])
 
-                session_result = await repo_query(
-                    "SELECT * FROM $id", {"id": ensure_record_id(session_id)}
+        sessions: list[SourceChatSessionResponse] = []
+        for sid, session_result, msg_count in zip(
+            session_ids, session_rows, msg_counts
+        ):
+            if not session_result or len(session_result) == 0:
+                # Session record was deleted between the relations
+                # query and the fan-out fetch; skip cleanly.
+                continue
+            session_data = session_result[0]
+            sessions.append(
+                SourceChatSessionResponse(
+                    id=session_data.get("id") or "",
+                    title=session_data.get("title") or "Untitled Session",
+                    source_id=source_id,
+                    model_override=session_data.get("model_override"),
+                    created=str(session_data.get("created")),
+                    updated=str(session_data.get("updated")),
+                    message_count=msg_count,
                 )
-                if session_result and len(session_result) > 0:
-                    session_data = session_result[0]
-
-                    # Get message count from LangGraph state
-                    msg_count = await get_session_message_count(
-                        source_chat_graph, session_id
-                    )
-
-                    sessions.append(
-                        SourceChatSessionResponse(
-                            id=session_data.get("id") or "",
-                            title=session_data.get("title") or "Untitled Session",
-                            source_id=source_id,
-                            model_override=session_data.get("model_override"),
-                            created=str(session_data.get("created")),
-                            updated=str(session_data.get("updated")),
-                            message_count=msg_count,
-                        )
-                    )
+            )
 
         # Sort sessions by created date (newest first)
         sessions.sort(key=lambda x: x.created, reverse=True)
