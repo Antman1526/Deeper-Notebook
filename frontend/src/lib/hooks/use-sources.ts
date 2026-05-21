@@ -136,6 +136,14 @@ export function useCreateSource() {
         refetchType: 'active'
       })
 
+      // v0.7.166 — Also invalidate the notebooks list query.
+      // `GET /notebooks` returns `source_count` and `note_count` per
+      // notebook (api/routers/notebooks.py:53-59) for the sidebar.
+      // Without this invalidation the sidebar showed stale counts
+      // until the next window-focus refetch — visible UX bug after
+      // every source-add.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
+
       // Show different messages based on processing mode
       if (variables.async_processing) {
         toast({
@@ -198,6 +206,9 @@ export function useDeleteSource() {
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
+      // v0.7.166 — Invalidate the notebooks list so the sidebar's
+      // source_count refreshes. Same rationale as in useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('sources.sourceDeletedSuccess'),
@@ -229,6 +240,8 @@ export function useFileUpload() {
         queryKey: QUERY_KEYS.sourcesInfinite(variables.notebookId),
         refetchType: 'active'
       })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('sources.fileUploadedSuccess'),
@@ -331,6 +344,8 @@ export function useAddSourcesToNotebook() {
       sourceIds.forEach(sourceId => {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
       })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
 
       // Show appropriate toast based on results
       if (result.failures === 0) {
@@ -382,6 +397,8 @@ export function useRemoveSourceFromNotebook() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
 
       toast({
         title: t('common.success'),
