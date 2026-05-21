@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { Loader2, AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Loader2, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import {
   Accordion,
   AccordionContent,
@@ -288,30 +288,44 @@ export function RebuildEmbeddings() {
                 </div>
                 <Progress value={progressPercent} className="h-2" />
                 {failedItems > 0 && (
-                  <p className="text-sm text-yellow-600">
-                    ⚠️ {t('advanced.rebuild.failedItems').replace('{count}', failedItems.toString())}
+                  // v0.7.167 — raw `⚠️` emoji replaced with the lucide
+                  // AlertTriangle icon used everywhere else in the app.
+                  // The previous emoji was the only icon-via-Unicode in
+                  // an otherwise lucide-driven UI; jarring next to the
+                  // sibling AlertCircle just below at line 323.
+                  <p className="text-sm text-yellow-600 inline-flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4" />
+                    {t('advanced.rebuild.failedItems').replace('{count}', failedItems.toString())}
                   </p>
                 )}
               </div>
             )}
 
-             {stats && (
-              <div className="grid grid-cols-4 gap-4">
+            {/* v0.7.167 — Stats grid: number weights toned down from
+                `text-2xl font-bold` (read as "marketing dashboard") to
+                `text-xl font-semibold` (reads as "settings"). The
+                surrounding Advanced page is a settings screen; the
+                stats shouldn't out-weigh the page H1. Also bumped the
+                `grid-cols-4` to be responsive — `sm:grid-cols-2
+                lg:grid-cols-4` so 4 cramped tiles don't collide on
+                narrow viewports. */}
+            {stats && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('navigation.sources')}</p>
-                  <p className="text-2xl font-bold">{sourcesProcessed}</p>
+                  <p className="text-xl font-semibold">{sourcesProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('common.notes')}</p>
-                  <p className="text-2xl font-bold">{notesProcessed}</p>
+                  <p className="text-xl font-semibold">{notesProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('common.insights')}</p>
-                  <p className="text-2xl font-bold">{insightsProcessed}</p>
+                  <p className="text-xl font-semibold">{insightsProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('advanced.rebuild.time')}</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-xl font-semibold">
                     {processingTimeSeconds !== undefined ? `${processingTimeSeconds.toFixed(1)}s` : '—'}
                   </p>
                 </div>

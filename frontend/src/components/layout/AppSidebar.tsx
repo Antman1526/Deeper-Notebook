@@ -30,7 +30,9 @@ import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/o
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { Separator } from '@/components/ui/separator'
+// v0.7.167 — Separator import no longer needed; section gaps use
+// margin instead of visible dividers. Kept as a comment so a future
+// "what happened to it?" grep finds the rationale.
 import {
   Book,
   Search,
@@ -262,10 +264,15 @@ export function AppSidebar() {
           </div>
 
           {navigation.map((section, index) => (
-            <div key={section.title}>
-              {index > 0 && (
-                <Separator className="my-3" />
-              )}
+            // v0.7.167 — Sidebar section separators downgraded from
+            // visible `<Separator />` lines to plain vertical rhythm.
+            // 4 sections × 1 separator each = 4 horizontal lines in the
+            // sidebar — visually noisy on what should be a quiet rail.
+            // The uppercase section labels (COLLECT, PROCESS, CREATE,
+            // MANAGE) already provide enough delineation; just give
+            // them breathing room via `mt-6` and the labels do the
+            // work. Saves ~3px of visual chrome per gap.
+            <div key={section.title} className={index > 0 ? "mt-6" : ""}>
               <div className="space-y-1">
                 {!isCollapsed && (
                   <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
