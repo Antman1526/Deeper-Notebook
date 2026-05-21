@@ -250,8 +250,18 @@ export default function SetupWizardPage() {
             </CardContent>
           </Card>
 
-          <div className="flex items-center justify-end gap-3">
+          {/* v0.7.164 — Setup Wizard primary CTA prominence (visual
+              audit item #6). The wizard is the highest-stakes first-
+              launch screen in the app — the Continue button used to
+              be a default-size right-aligned button with no visible
+              border separation from the subsystem card above, fighting
+              for attention with secondary actions. Promoted to
+              `size="lg"` with a hairline top divider + pt-4 so the
+              action bar reads as a footer (clear "I'm done here →
+              advance" affordance). */}
+          <div className="flex items-center justify-end gap-3 border-t pt-4">
             <Button
+              size="lg"
               onClick={handleContinue}
               disabled={!canContinue}
               data-testid="continue-button"

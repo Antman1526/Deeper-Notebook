@@ -320,21 +320,32 @@ export default function StudioPage() {
         <CardHeader>
           <CardTitle>2. Pick output mode</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
+        {/* v0.7.164 — Studio mode-picker tiles (visual audit item #7).
+            Before: tiles used `gap-2 p-4` with `h-5 w-5` icons and the
+            title in plain `font-medium` — visually they weighed the
+            same as the podcast-profile selects below them. The mode
+            picker is the PRIMARY decision on this screen; it should
+            feel like a primary decision.
+            After: tiles get `gap-4 p-6` (real breathing room), icons
+            bumped to `h-6 w-6 mb-3`, title `text-base font-semibold`,
+            description `text-sm` (not xs — long enough to read at a
+            glance). Inner card spacing bumped to `space-y-6` so the
+            dropdowns below don't crowd the tiles. */}
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
               onClick={() => setMode('notebook')}
               className={`
-                border rounded-lg p-4 text-left transition-colors
+                border rounded-lg p-6 text-left transition-colors
                 ${mode === 'notebook'
                   ? 'border-primary bg-primary/5'
                   : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
               `}
             >
-              <BookOpen className="h-5 w-5 mb-2 text-primary" />
-              <div className="font-medium">Study notebook</div>
-              <div className="text-xs text-muted-foreground mt-1">
+              <BookOpen className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">Study notebook</div>
+              <div className="text-sm text-muted-foreground mt-1">
                 Structured markdown: overview, sections, definitions, Q&amp;A.
                 Saved as an AI-authored note attached to the new notebook.
               </div>
@@ -344,15 +355,15 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('podcast')}
               className={`
-                border rounded-lg p-4 text-left transition-colors
+                border rounded-lg p-6 text-left transition-colors
                 ${mode === 'podcast'
                   ? 'border-primary bg-primary/5'
                   : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
               `}
             >
-              <Mic className="h-5 w-5 mb-2 text-primary" />
-              <div className="font-medium">Podcast episode</div>
-              <div className="text-xs text-muted-foreground mt-1">
+              <Mic className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">Podcast episode</div>
+              <div className="text-sm text-muted-foreground mt-1">
                 Two-host conversational episode rendered to audio via the
                 configured TTS profile. Status visible in /podcasts.
               </div>
