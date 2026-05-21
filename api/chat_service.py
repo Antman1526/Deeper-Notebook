@@ -21,10 +21,20 @@ class ChatService:
         if password:
             self.headers["Authorization"] = f"Bearer {password}"
 
+    # v0.7.158 — Default per-client httpx timeout. Previously each
+    # AsyncClient() was instantiated without any timeout argument, which
+    # httpx interprets as "no timeout at all" — a hung downstream
+    # SurrealDB / LangGraph / repo_query path would hold the calling
+    # request slot indefinitely (only 4 slots in the default pool).
+    # `execute_chat` already sets its own 10-minute read budget for
+    # local LLMs (Ollama, llama.cpp); these defaults apply to the
+    # CRUD endpoints that should NEVER take more than a few seconds.
+    _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+
     async def get_sessions(self, notebook_id: str) -> list[dict[str, Any]]:
         """Get all chat sessions for a notebook"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.get(
                     f"{self.base_url}/api/chat/sessions",
                     params={"notebook_id": notebook_id},
@@ -50,7 +60,7 @@ class ChatService:
             if model_override is not None:
                 data["model_override"] = model_override
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.post(
                     f"{self.base_url}/api/chat/sessions",
                     json=data,
@@ -65,7 +75,7 @@ class ChatService:
     async def get_session(self, session_id: str) -> dict[str, Any]:
         """Get a specific session with messages"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.get(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     headers=self.headers,
@@ -95,7 +105,7 @@ class ChatService:
                     "At least one field must be provided to update a session"
                 )
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.put(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     json=data,
@@ -110,7 +120,7 @@ class ChatService:
     async def delete_session(self, session_id: str) -> dict[str, Any]:
         """Delete a chat session"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.delete(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     headers=self.headers,
@@ -153,7 +163,7 @@ class ChatService:
         try:
             data = {"notebook_id": notebook_id, "context_config": context_config}
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.post(
                     f"{self.base_url}/api/chat/context", json=data, headers=self.headers
                 )
