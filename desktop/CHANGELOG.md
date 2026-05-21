@@ -18,7 +18,48 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.161 (in flight)
+## Unreleased — v0.7.36 → v0.7.162 (in flight)
+
+- **v0.7.162** 🧪 **Router-level test coverage for `auth`, `languages`,
+  and `embedding_rebuild`.** Three of the nine routers flagged by the
+  improvement scan as having no `tests/test_*.py` module that imports
+  them. Picked these three for highest leverage:
+
+  - `auth.py` (26 lines): the bedrock of the entire auth middleware.
+    Tests pin the two states (`auth_enabled=true/false`) and verify
+    the endpoint NEVER leaks the configured password back to the
+    caller in any string field of the response. Frontend's login
+    flow depends on this signal — a regression here would silently
+    break the unauthenticated-login UX path.
+  - `languages.py` (83 lines): drives the podcast EpisodeProfile
+    `language` picker. Tests verify (a) the result is a non-empty
+    list of BCP 47 codes with hyphen separator (never underscore),
+    (b) names are non-empty (no blank dropdown options), (c) the
+    sort is name-ascending, and (d) the required regional variants
+    (en-US, en-GB, pt-PT, zh-TW) survive any future refactor of
+    the `_EXTRA_VARIANTS` list — those are the locales the launcher's
+    preset library and Studio TTS configuration depend on.
+  - `embedding_rebuild.py` (218 lines): we JUST refactored this in
+    v0.7.160 (6 sequential `repo_query` calls → 3 parallel via
+    `asyncio.gather` + new `_extract_count` helper). Highest
+    regression risk in the codebase right now. Tests cover:
+      * `_extract_count` helper: dict-shape, int-shape, empty/None,
+        unexpected types — all the response variants SurrealDB
+        emits depending on SELECT VALUE / GROUP ALL combinations.
+      * End-to-end happy path: 3 selected branches → exactly 3
+        queries → counts summed → response shape matches schema.
+      * Opt-out path: deselecting notes/insights → ONLY the
+        sources query fires (saves roundtrips, matches the
+        opt-out semantics of the previous code).
+
+  Test file at `tests/test_v0_7_162_router_coverage.py`. **9 new
+  passing tests; full backend suite at 825/825**.
+
+  Routers still missing dedicated test coverage (deferred to
+  future commits): `context.py`, `commands.py`, `episode_profiles.py`,
+  `speaker_profiles.py`, `search.py` (ask SSE path). Each is
+  meaningfully complex enough to warrant its own focused commit
+  rather than a sweep here.
 
 - **v0.7.161** ⚡ **Chat-session N+1 — parallelize per-session
   LangGraph checkpoint reads.** Top improvement-scan finding from
