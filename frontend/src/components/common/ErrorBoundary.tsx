@@ -56,10 +56,19 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <div className="mx-auto w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+              {/* v0.7.167 — Replaced raw Tailwind red palette
+                  (`bg-red-100`, `text-red-600`, `text-red-900` + their
+                  `dark:` variants) with the theme's destructive tokens.
+                  This was the ONE place in the audit using raw red
+                  outside the theme system — meant the error fallback
+                  rendered with a jarring hardcoded red even when the
+                  user picked one of the 8 non-blue themes (Solarized,
+                  Nord, Paper, etc.). Now the error UI absorbs the
+                  active theme's destructive hue. */}
+              <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-destructive" />
               </div>
-              <CardTitle className="text-red-900 dark:text-red-100">{t?.common?.error || 'Something went wrong'}</CardTitle>
+              <CardTitle className="text-destructive">{t?.common?.error || 'Something went wrong'}</CardTitle>
               <CardDescription>
                 {t?.common?.refreshPage || 'An unexpected error occurred. Please try refreshing the page.'}
               </CardDescription>

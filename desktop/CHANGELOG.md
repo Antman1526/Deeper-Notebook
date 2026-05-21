@@ -18,7 +18,43 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.166 (in flight)
+## Unreleased — v0.7.36 → v0.7.167 (in flight)
+
+- **v0.7.167** 🎨 **Visual quick-wins batch.** Three small,
+  high-visibility fixes from the v0.7.164 secondary-opportunities
+  list. All low-risk; zero behavior change.
+
+  **(1) RebuildEmbeddings — raw `⚠️` emoji → lucide `<AlertTriangle>`.**
+  `RebuildEmbeddings.tsx:292` was the only icon-via-Unicode in an
+  otherwise lucide-driven UI. Jarring next to the sibling
+  `<AlertCircle>` icons in the same component. Now consistent with
+  the app-wide icon system.
+
+  **(2) RebuildEmbeddings — stats grid less "marketing-dashboard"-y.**
+  Stats numbers were `text-2xl font-bold` next to `text-sm` labels —
+  the numbers visually outweighed the surrounding settings UI.
+  Toned down to `text-xl font-semibold`. Also made the 4-column grid
+  responsive (`grid-cols-2 lg:grid-cols-4`) so on narrow viewports
+  the stats don't crowd.
+
+  **(3) ErrorBoundary — raw red palette → theme destructive tokens.**
+  `ErrorBoundary.tsx:59-60,62` was the ONE place in the audit using
+  raw Tailwind `red-100/red-600/red-900` outside the theme system.
+  Meant the error fallback rendered with a jarring hardcoded red
+  even when the user picked one of the 8 non-blue themes
+  (Solarized, Nord, Paper, Dracula, etc.). Replaced with
+  `bg-destructive/10` / `text-destructive` so the error UI absorbs
+  the active theme's destructive hue.
+
+  **(4) AppSidebar — separator noise.** 4 nav sections × 1
+  `<Separator className="my-3" />` between each = 3 horizontal
+  hairlines in the sidebar. Visually busy on what should be a quiet
+  rail. The uppercase section labels (COLLECT, PROCESS, CREATE,
+  MANAGE) already provide enough delineation; bumped section
+  spacing to `mt-6` and dropped the separators entirely. Saves
+  ~12px of visible chrome cumulative; reads as a calmer rail.
+
+  Frontend `tsc` clean. No behavior change, no test changes.
 
 - **v0.7.166** 🐛⚡ **Cache invalidation gap + archived-filter
   efficiency + bootstrap test debt.** Three follow-through items
