@@ -14,7 +14,11 @@ from api.models import (
 )
 from open_notebook.ai.models import Model
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
-from open_notebook.exceptions import InvalidInputError, OpenNotebookError
+from open_notebook.exceptions import (
+    InvalidInputError,
+    NotFoundError,
+    OpenNotebookError,
+)
 from open_notebook.graphs.transformation import graph as transformation_graph
 
 router = APIRouter()
@@ -228,6 +232,10 @@ async def get_transformation(transformation_id: str):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.160 — let the global handler at api/main.py:567 map to
+        # HTTP 404; previously the generic except below clobbered to 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching transformation {transformation_id}: {str(e)}")
         raise HTTPException(
@@ -273,6 +281,9 @@ async def update_transformation(
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.160 — see get_transformation above.
+        raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -294,6 +305,9 @@ async def delete_transformation(transformation_id: str):
 
         return {"message": "Transformation deleted successfully"}
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.160 — see get_transformation above.
         raise
     except Exception as e:
         logger.error(f"Error deleting transformation {transformation_id}: {str(e)}")
