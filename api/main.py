@@ -426,12 +426,24 @@ else:
 # wide open to the world. This is a foot-gun the README warns about
 # but it's worth surfacing at process boot too — operators tail logs.
 _password_is_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+# v0.7.154 — Severity downgrade: ERROR → WARNING for the desktop fork.
+# The desktop launcher binds the API to 127.0.0.1 ONLY (see
+# desktop/launcher.py:_spawn_api `--host 127.0.0.1`), so "anyone with
+# the API URL" can never be reached from outside the local machine.
+# The previous ERROR level was correct for the multi-user Docker
+# deployment path it was written for, but on every desktop launch it
+# fires once at startup and gets indexed by any log-aggregation tooling
+# as a critical failure — drowning out actual ERROR-level events the
+# operator needs to see. Downgraded to WARNING so it still appears in
+# logs (the message itself is unchanged) without false-flagging the
+# default desktop configuration as a security incident.
 if CORS_IS_DEFAULT_WILDCARD and not _password_is_set:
-    logger.error(
+    logger.warning(
         "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD is "
         "unset. Any origin can call this API without credentials. ANYONE "
         "with the API URL can read/write every notebook. This is fine ONLY "
-        "for local development. For ANY exposed deployment (Docker, "
+        "for local development (desktop fork binds to 127.0.0.1, so this "
+        "is the expected state). For ANY exposed deployment (Docker, "
         "Kubernetes, public IP), set BOTH: "
         "CORS_ORIGINS=https://your-frontend.example.com AND "
         "OPEN_NOTEBOOK_PASSWORD=<strong-password>."
