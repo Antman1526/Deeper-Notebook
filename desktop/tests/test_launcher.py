@@ -23,6 +23,37 @@ def cfg(tmp_path):
     return make_config(tmp_path)
 
 
+# v0.7.155 — Autouse fixture: stub the v0.7.142 singleton + orphan reaper
+# for EVERY test in this file. Without this, any test calling
+# Supervisor.start_all() raises AlreadyRunning when the user's real
+# app is running (because acquire_singleton writes to the real
+# ~/.open-notebook-plus/launcher.pid), or pollutes that file between
+# test invocations even when the app isn't running. The 15 historic
+# launcher-test failures (including all 4 chat_llm_n_ctx_* tests and
+# all 11 supervisor_* tests) trace back to this single missing stub.
+#
+# Both imports are function-scoped inside Supervisor.start_all() at
+# desktop/launcher.py:148 + :162, so we patch the SOURCE module
+# (`desktop.singleton.*`) directly — that's what the local-import
+# binds to at call time. Patching `desktop.launcher.acquire_singleton`
+# would only work if the import were module-scoped.
+@pytest.fixture(autouse=True)
+def _stub_singleton(monkeypatch):
+    class _FakeSingletonHandle:
+        def release(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "desktop.singleton.acquire_singleton",
+        lambda *a, **kw: _FakeSingletonHandle(),
+    )
+    monkeypatch.setattr(
+        "desktop.singleton.reap_orphans",
+        lambda *a, **kw: [],
+    )
+    yield
+
+
 def _alive_proc():
     p = MagicMock()
     p.poll.return_value = None
@@ -431,6 +462,9 @@ def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
                        lambda n: list(range(40001, 40001 + n)))
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+    # v0.7.155 — Singleton + reap_orphans are stubbed module-wide via
+    # the autouse `_stub_singleton` fixture at the top of this file.
+    # No per-test stubbing needed here.
 
 
 def test_chat_llm_n_ctx_defaults_to_16384(cfg, tmp_path, monkeypatch):
