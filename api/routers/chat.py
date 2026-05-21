@@ -628,9 +628,24 @@ async def execute_chat(request: ExecuteChatRequest):
         # Update session timestamp
         await session.save()
 
+        # v0.7.165 — LangGraph state-shape variance guard. The graph
+        # currently returns a TypedDict so `result.get("messages")`
+        # works, but the streaming path in this file (lines ~820-836)
+        # already applies the dual dict/Pydantic guard because past
+        # LangGraph releases have shipped Pydantic-typed states and
+        # the CLAUDE.md standing audit calls this out as a recurring
+        # footgun (v0.7.52/55/56/75/81/95 are prior fixes for the
+        # same pattern). Normalize once at the top so both reads
+        # below (response conversion + memory extractor) share the
+        # same source-of-truth list.
+        result_messages = (
+            result.get("messages", []) if isinstance(result, dict)
+            else (getattr(result, "messages", None) or [])
+        )
+
         # Convert messages to response format
         messages: list[ChatMessage] = []
-        for msg in result.get("messages", []):
+        for msg in result_messages:
             messages.append(
                 ChatMessage(
                     id=getattr(msg, "id", f"msg_{len(messages)}"),
@@ -642,11 +657,13 @@ async def execute_chat(request: ExecuteChatRequest):
 
         # v0.7.68 — fire the memory extractor for this turn. The user's
         # text is request.message; the assistant's reply is the last
-        # AIMessage in result["messages"]. Last-message heuristic is
-        # safe here because the chat graph appends exactly one AI
-        # response per turn (state["messages"] is a reducer-added list).
+        # AIMessage in the message list. Last-message heuristic is safe
+        # here because the chat graph appends exactly one AI response
+        # per turn (state["messages"] is a reducer-added list).
+        # v0.7.165 — iterate the dual-path-normalized `result_messages`
+        # so the Pydantic-state case is covered here too.
         ai_text = ""
-        for msg in reversed(result.get("messages", [])):
+        for msg in reversed(result_messages):
             mtype = getattr(msg, "type", None)
             if mtype == "ai":
                 ai_text = _extract_text(msg)
