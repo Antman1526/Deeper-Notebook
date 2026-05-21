@@ -384,12 +384,26 @@ build-mac-test:
 # appearing.
 #
 # Now: every `make build-mac` regenerates the lock from current
-# pyproject.toml first. The header in desktop/requirements.lock
-# already documents the canonical command — we just promote it
-# to a Makefile target so it actually runs.
+# pyproject.toml AND desktop/requirements.txt first. The header in
+# desktop/requirements.lock already documents the canonical command —
+# we just promote it to a Makefile target so it actually runs.
+#
+# v0.7.154 — Added `desktop/requirements.txt` as a second compile
+# input. Background: v0.7.141 introduced this target compiling
+# only from pyproject.toml, which silently DROPPED any dep that
+# was declared only in desktop/requirements.txt (CI's
+# "installs on top of the upstream pyproject.toml" path). The
+# casualty was `llama-cpp-python>=0.3.16,<0.4` (desktop/requirements.txt:18,
+# pinned for CVE-2024-42479) — the lockfile shipped without it,
+# the bundled venv installed without it, and every local-GGUF chat
+# attempt got `ModuleNotFoundError: No module named 'llama_cpp'`
+# at llama_cpp.server spawn (visible in llamacpp_chat_stderr.log
+# now that v0.7.151 captures stderr). Passing BOTH files to
+# `uv pip compile` merges the dep sets exactly the way
+# `pip install -r requirements.txt` would have at runtime.
 build-mac-lock:
-	@echo "🔒 Regenerating desktop/requirements.lock from pyproject.toml..."
-	@uv pip compile pyproject.toml --python-version 3.12 \
+	@echo "🔒 Regenerating desktop/requirements.lock from pyproject.toml + desktop/requirements.txt..."
+	@uv pip compile pyproject.toml desktop/requirements.txt --python-version 3.12 \
 		-o desktop/requirements.lock --quiet
 	@echo "   Lockfile: $$(wc -l < desktop/requirements.lock) pinned packages"
 
