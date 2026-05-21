@@ -18,7 +18,74 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.146 (in flight)
+## Unreleased — v0.7.36 → v0.7.147 (in flight)
+
+- **v0.7.147** 🐛 **Fix the REAL "app won't open" root cause —
+  `DATA_FOLDER = "./data"` was CWD-relative and crashed when launched
+  from a read-only mount.** Post-v0.7.146 audit on 2026-05-20 found
+  the user had been launching the `.app` directly from the mounted
+  DMG (`/Volumes/Open Notebook Plus`, mounted read-only by macOS).
+  The launcher itself ran fine — the codesign fix from v0.7.146
+  was real but secondary. The actual failure chain:
+
+      1. Launcher spawns API with cwd=upstream_root, which is INSIDE
+         the read-only DMG mount.
+      2. open_notebook/config.py:4 had `DATA_FOLDER = "./data"`.
+      3. At module import, `os.makedirs("./data/sqlite-db")` raised
+         `OSError: [Errno 30] Read-only file system: './data'`.
+      4. uvicorn crashed before binding /readyz.
+      5. Launcher waited 180s, raised
+         `TimeoutError: http://127.0.0.1:52658/readyz never returned
+         <500 within 180s`, exited.
+      6. From Finder: silent — no window, no error dialog.
+
+  The proof was in api.log (read-only filesystem error), not in
+  launcher.log (which only saw the downstream timeout). Discovered by
+  scanning `~/.open-notebook-plus/logs/` for tracebacks after seeing
+  the user's launcher.log was actively being written to — meaning
+  the launcher WAS running. The "app won't open" was actually "app
+  starts, API self-destructs, launcher gives up waiting".
+
+  Fix (two files, backward-compatible):
+
+  1. **`open_notebook/config.py:4`** — `DATA_FOLDER` now reads from
+     env (`os.environ.get("DATA_FOLDER", "").strip() or "./data"`).
+     Existing Docker / dev workflows that rely on CWD-relative
+     `./data` are unaffected (the env var defaults to empty).
+
+  2. **`desktop/launcher.py:181`** — `session_env` now injects an
+     absolute `DATA_FOLDER = ~/.open-notebook-plus/data/`. The dir is
+     mkdir'd before population so the API's module-load makedirs
+     always succeeds. This makes the launch path resilient to ANY
+     read-only CWD: mounted DMG, Time Machine snapshot, /Applications
+     under a non-admin account, network-mounted home dirs.
+
+  **Why this wasn't caught earlier:** the CI runs unit tests against
+  source where CWD is a writable repo checkout. The bug only surfaces
+  in a frozen-bundle launch from a read-only mount — exactly the user-
+  facing distribution path that no automated test covers. The new
+  regression test
+  `desktop/tests/test_launcher.py::test_supervisor_injects_data_folder_absolute_path`
+  guards against the launcher dropping the DATA_FOLDER injection by
+  asserting it's absolute, points under `.open-notebook-plus`, and
+  exists on disk before children spawn.
+
+  **Recovery for users without rebuilding:** install the `.app` to
+  `/Applications/` first (writable), then launch. The CWD will be
+  inside the writable bundle path and `./data` will resolve.
+  v0.7.147 makes this resilient — install location no longer matters.
+
+  Tests: 4 launcher tests pass (1 new regression + 3 pre-existing
+  session_env / startup tests verified unaffected).
+
+  **What this does NOT fix:** the five other bugs the audit
+  surfaced — `auto_register/episode_profile.py` payload-schema
+  drift (every preset registration returns HTTP 422), the
+  `model_downloads.py` false-positive size threshold (Piper
+  `.onnx.json` configs re-downloaded every launch), the
+  `llama_cpp.server` Hermes-3 crash with stderr silently discarded,
+  the cosmetic "0 MB" download display, and the pre-existing
+  v0.7.145 items. Tracked for v0.7.148+.
 
 - **v0.7.146** 🐛 **Fix silent-launch-failure of rebuilt `.app` (broken
   Gatekeeper seal + possibly-missing launcher modules).** User
