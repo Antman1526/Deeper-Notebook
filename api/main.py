@@ -465,6 +465,13 @@ app.add_middleware(
         "/livez",
         "/readyz",
         "/healthz/deep",   # v0.7.112 — operators need to poll without auth
+        # v0.7.148 — frontend reaches /healthz/deep through Next.js's /api/*
+        # rewrite (frontend builds resolve `apiUrl` to a path that the
+        # ApiClient interceptor still routes through /api), so the request
+        # arrives here as `/api/healthz/deep`. Without this exemption +
+        # the alias route below, the Setup Wizard's poll returns 404 and
+        # hangs on "Loading..." indefinitely. See incident on 2026-05-20.
+        "/api/healthz/deep",
         "/docs",
         "/openapi.json",
         "/redoc",
@@ -981,6 +988,31 @@ async def healthz_deep(probe_providers: bool = False):
         content={"status": overall, "checks": checks},
         status_code=status_code,
     )
+
+
+# v0.7.148 — Alias route at `/api/healthz/deep`.
+#
+# The Setup Wizard's `useDeepHealth` hook polls `/healthz/deep` through
+# the frontend's `apiClient`. `health.ts` correctly sets
+# `baseURL: apiUrl` (without the `/api` suffix) so the path SHOULD reach
+# the root-mounted handler above. In practice, the build pipeline +
+# Next.js rewrites end up sending the request to the backend as
+# `/api/healthz/deep`, which 404s, which leaves the wizard stuck on
+# "Loading..." forever and blocks the user from progressing past the
+# first launch screen (incident on 2026-05-20).
+#
+# Adding an alias on the backend is the most defensive and most
+# backward-compatible fix: both `/healthz/deep` and `/api/healthz/deep`
+# now resolve to the same probe. Existing operators / monitoring
+# dashboards / curl recipes targeting the root path continue to work
+# unchanged.
+#
+# `?probe_providers=` is passed through identically. The auth-middleware
+# exempt-paths list above includes both paths.
+@app.get("/api/healthz/deep")
+async def healthz_deep_api_alias(probe_providers: bool = False):
+    """Alias for `/healthz/deep` — same handler, accessible under `/api`."""
+    return await healthz_deep(probe_providers=probe_providers)
 
 
 # -------------------------------------------------------------------- #
