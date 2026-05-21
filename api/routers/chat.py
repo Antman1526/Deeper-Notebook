@@ -274,24 +274,35 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
         # Get sessions for this notebook
         sessions_list = await notebook.get_chat_sessions()
 
-        results = []
-        for session in sessions_list:
-            session_id = str(session.id)
+        # v0.7.161 — N+1 fix: parallelize the per-session LangGraph
+        # checkpoint reads. Previously this loop awaited
+        # get_session_message_count() sequentially, so a notebook with
+        # 50 sessions paid 50 × ~30ms = ~1.5s wall-clock before the
+        # right-rail Chat list could render (each call does a
+        # sync-in-thread SQLite checkpoint read via the graph_utils
+        # helper). With asyncio.gather, those reads run concurrently
+        # — wall-clock drops to ~30ms for the single longest read,
+        # regardless of session count. The reads themselves are still
+        # made; the bigger fix (denormalize total_messages onto the
+        # chat_session row at write time) requires a schema migration
+        # and a LangGraph checkpoint hook; tracked as deferred.
+        msg_counts = await asyncio.gather(*[
+            get_session_message_count(chat_graph, str(session.id))
+            for session in sessions_list
+        ])
 
-            # Get message count from LangGraph state
-            msg_count = await get_session_message_count(chat_graph, session_id)
-
-            results.append(
-                ChatSessionResponse(
-                    id=session.id or "",
-                    title=session.title or "Untitled Session",
-                    notebook_id=notebook_id,
-                    created=str(session.created),
-                    updated=str(session.updated),
-                    message_count=msg_count,
-                    model_override=getattr(session, "model_override", None),
-                )
+        results = [
+            ChatSessionResponse(
+                id=session.id or "",
+                title=session.title or "Untitled Session",
+                notebook_id=notebook_id,
+                created=str(session.created),
+                updated=str(session.updated),
+                message_count=msg_count,
+                model_override=getattr(session, "model_override", None),
             )
+            for session, msg_count in zip(sessions_list, msg_counts)
+        ]
 
         return results
     except NotFoundError:

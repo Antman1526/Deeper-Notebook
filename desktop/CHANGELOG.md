@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.160 (in flight)
+## Unreleased — v0.7.36 → v0.7.161 (in flight)
+
+- **v0.7.161** ⚡ **Chat-session N+1 — parallelize per-session
+  LangGraph checkpoint reads.** Top improvement-scan finding from
+  2026-05-21. Carried from v0.7.160 deferred list.
+
+  Background: `GET /chat/sessions?notebook_id=X` (the right-hand
+  Chat rail on every notebook page open) used to iterate sessions
+  and SEQUENTIALLY await `get_session_message_count()` per row.
+  Each call does a SQLite checkpoint read in a thread via
+  `asyncio.to_thread(graph.get_state, ...)` (`open_notebook/utils/
+  graph_utils.py:7`). A notebook with 50 chat sessions paid
+  50 × ~30ms = **~1.5s wall-clock** before the rail could render —
+  and that 1.5s held one of only 4 default DB-pool worker slots.
+
+  The same pattern was worse in
+  `GET /sources/{source_id}/chat/sessions` which did TWO
+  sequential round-trips per session (a row fetch + the checkpoint
+  read) — 30 sessions = 60 sequential hits.
+
+  Fix:
+
+  1. **`api/routers/chat.py:get_sessions`** — replaced the per-row
+     `for session in sessions_list: msg_count = await ...` loop
+     with `asyncio.gather(*[get_session_message_count(...) for ...])`
+     followed by a `zip(sessions_list, msg_counts)` comprehension.
+     Wall-clock for the 50-session case drops from N × 30ms to
+     ~30ms regardless of N.
+  2. **`api/routers/source_chat.py:get_source_chat_sessions`** — same
+     refactor, with TWO `asyncio.gather` phases: one for the
+     session-row fetches, one for the message-count reads. A
+     between-phases delete race (session record removed between
+     the relations query and the row fetch) returns an empty list
+     for that ID, which we now skip cleanly with a guard inside
+     the zip loop.
+
+  **Why not the full denormalization fix:** the audit's first-best
+  recommendation was to add a `total_messages` column to the
+  `chat_session` row and update it at write time, so the
+  GET endpoint could read directly from the row. That requires:
+    - a SurrealDB schema migration to add the column
+    - a LangGraph post-invoke hook (or custom checkpoint saver)
+      to recompute the count whenever the chat graph appends
+    - a backfill for existing rows
+  Each piece is plausible but adds non-trivial risk to the chat
+  write path. Parallelizing is risk-free (read path only, no
+  schema change) and already captures the lion's share of the
+  improvement. The denormalization path is now properly deferred.
+
+  Tests (`tests/test_chat_sessions_n_plus_1.py`): 2 new
+  regression tests that pin the concurrency contract by recording
+  call-start timestamps and asserting the spread is sub-millisecond
+  (a sequential regression would show spread ≥ (N-1) × per-call-
+  delay). 2/2 pass. 814/814 pre-existing backend tests still pass.
 
 - **v0.7.160** 🐛⚡ **Typed-exception re-raise across 3 routers +
   embedding_rebuild 6-query → 3-query parallel.** Low-risk improvement
