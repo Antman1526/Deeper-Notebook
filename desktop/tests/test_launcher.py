@@ -140,6 +140,46 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         sv.stop_all()
 
 
+def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch):
+    """v0.7.147 regression test.
+
+    The API subprocess inherits cwd=upstream_root which is read-only when
+    the .app is launched from a mounted DMG. open_notebook/config.py used
+    to hardcode "./data" → EROFS at module import → uvicorn crash →
+    launcher's 180s /readyz wait timed out → silent exit.
+
+    The supervisor must inject DATA_FOLDER as an absolute path under
+    ~/.open-notebook-plus/data so the API can always write its sqlite-db
+    and uploads regardless of cwd writability.
+    """
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
+    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+    # Force a known HOME so the assertion is deterministic.
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv.start_all()
+    try:
+        data_folder = sv.session_env.get("DATA_FOLDER")
+        assert data_folder is not None, "DATA_FOLDER must be set in session_env"
+        # MUST be absolute — relative paths are exactly the bug we fixed.
+        assert Path(data_folder).is_absolute(), (
+            f"DATA_FOLDER must be absolute, got: {data_folder!r}"
+        )
+        # MUST point under the user's per-app dir so subsequent makedirs succeed.
+        assert ".open-notebook-plus" in data_folder
+        assert data_folder.endswith("/data")
+        # MUST already exist (we mkdir it before populating session_env).
+        assert Path(data_folder).is_dir(), (
+            f"DATA_FOLDER must exist on disk, got: {data_folder!r}"
+        )
+    finally:
+        sv.stop_all()
+
+
 def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatch):
     """The 3 new spawn methods fire iff their paths are provided."""
     spawned: list[list[str]] = []
