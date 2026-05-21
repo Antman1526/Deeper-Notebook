@@ -332,11 +332,10 @@ def test_register_memory_credential_is_idempotent_when_cred_exists():
 
 
 def test_episode_profile_picks_qwen_chat_model_over_voice_models():
-    """v0.6.22 regression: the old hardcoded fallback chain checked for
-    'Hermes-3-Llama-3.1-8B-Q4_K_M' and 'Mistral-7B-Instruct-v0.3-Q4_K_M'
-    first. On a 64 GB Mac running v0.6.11's auto-assigner the registered
-    chat model is named e.g. 'Qwen3.6-35B-A3B-Q4_K_M'. The new code
-    picks the first non-voice/embed model regardless of its name."""
+    """v0.6.22 + v0.7.149 regression: each preset POST must reference the
+    chat model via `outline_llm`/`transcript_llm` (v0.7.149 schema) and
+    pair with the speaker profile named in its preset definition.
+    """
     from desktop.auto_register.episode_profile import register_default_episode_profile
 
     posted_episode_profiles: list[dict] = []
@@ -349,6 +348,14 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []  # no existing profile
+                    if path == "/api/speaker-profiles":
+                        # v0.7.149 — all 4 local speaker profiles present
+                        return [
+                            {"name": "Local Duo"},
+                            {"name": "Local Solo"},
+                            {"name": "Local Debate"},
+                            {"name": "Local Interview"},
+                        ]
                     if path == "/api/models":
                         # Order matters — the function picks the first non-voice.
                         return [
@@ -371,18 +378,35 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
 
     register_default_episode_profile(FakeClient())
     # v0.7.30 — preset library expanded from 1 → 9 presets. Each gets
-    # POSTed when no existing profiles match. All must share the same
-    # chat model + speaker IDs.
+    # POSTed when no existing profiles match. All must reference the
+    # chat model via outline_llm/transcript_llm + a valid speaker profile.
     from desktop.auto_register.episode_profile import _PRESETS
     assert len(posted_episode_profiles) == len(_PRESETS), (
         f"expected {len(_PRESETS)} preset POSTs, got {len(posted_episode_profiles)}"
     )
     for profile in posted_episode_profiles:
-        assert profile["chat_model_id"] == "model:qwen", (
-            f"chat model should be Qwen, got {profile['chat_model_id']}"
+        # v0.7.149 — chat model routes through outline_llm + transcript_llm.
+        # The schema does NOT accept chat_model_id any more.
+        assert profile.get("outline_llm") == "model:qwen", (
+            f"outline_llm should be Qwen, got {profile.get('outline_llm')!r}"
         )
-        assert profile["speakers"][0]["tts_model_id"] == "model:amy"
-        assert profile["speakers"][1]["tts_model_id"] == "model:ryan"
+        assert profile.get("transcript_llm") == "model:qwen", (
+            f"transcript_llm should be Qwen, got {profile.get('transcript_llm')!r}"
+        )
+        # v0.7.149 — speaker_config is REQUIRED by the backend schema.
+        # The previous `speakers: [...]` field is gone.
+        assert "speakers" not in profile, (
+            "v0.7.149 dropped the 'speakers' field — schema doesn't accept it"
+        )
+        assert "chat_model_id" not in profile, (
+            "v0.7.149 dropped 'chat_model_id' — schema doesn't accept it"
+        )
+        assert "default_length_minutes" not in profile, (
+            "default_length_minutes is not in the backend schema"
+        )
+        assert profile["speaker_config"] in {
+            "Local Duo", "Local Solo", "Local Debate", "Local Interview"
+        }, f"speaker_config {profile['speaker_config']!r} not in expected set"
         # Each preset must carry its purpose-built briefing + segments.
         assert profile["default_briefing"], (
             f"preset {profile['name']!r} has no briefing"
@@ -395,13 +419,24 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
     assert len(set(names)) == len(names), "duplicate preset names"
     # Default preset is still in the set (back-compat)
     assert "Open Notebook Plus Local" in names
+    # v0.7.149 — Debate preset MUST pair with Local Debate (semantic match)
+    debate = next(p for p in posted_episode_profiles if p["name"] == "Debate")
+    assert debate["speaker_config"] == "Local Debate", (
+        "Debate preset should use the Local Debate speaker profile"
+    )
+    qa = next(p for p in posted_episode_profiles if p["name"] == "Q&A Interview")
+    assert qa["speaker_config"] == "Local Interview", (
+        "Q&A Interview preset should use the Local Interview speaker profile"
+    )
 
 
 def test_episode_profile_skips_bge_embedding_in_chat_pick():
     """The old fallback used only prefix matching (piper-, whisper-, nomic-).
     A user with bge-large-en-v1.5 in their model dir (no matching prefix)
     would get it picked as chat model — wrong. The fix also runs the
-    embedding heuristic."""
+    embedding heuristic.
+    v0.7.149 — verifies the chat model is now plumbed through outline_llm
+    (the actual schema field) instead of the dropped chat_model_id."""
     from desktop.auto_register.episode_profile import register_default_episode_profile
 
     posted: list[dict] = []
@@ -413,6 +448,8 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []
+                    if path == "/api/speaker-profiles":
+                        return [{"name": "Local Duo"}]
                     if path == "/api/models":
                         return [
                             # bge-large-en-v1.5 — NOT matching any old prefix
@@ -434,9 +471,10 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
             return R()
 
     register_default_episode_profile(FakeClient())
-    assert posted[0]["chat_model_id"] == "model:qwen7", (
+    assert posted[0]["outline_llm"] == "model:qwen7", (
         "should skip bge-* embedding and pick the real chat model"
     )
+    assert posted[0]["transcript_llm"] == "model:qwen7"
 
 
 def test_speaker_profile_registers_local_piper_library():
@@ -588,6 +626,9 @@ def test_episode_profile_library_is_idempotent():
                 def json(self):
                     if path == "/api/episode-profiles":
                         return [{"name": n} for n in existing_names]
+                    if path == "/api/speaker-profiles":
+                        return [{"name": "Local Duo"}, {"name": "Local Debate"},
+                                {"name": "Local Interview"}, {"name": "Local Solo"}]
                     if path == "/api/models":
                         return [
                             {"name": "Qwen-7B-chat", "id": "model:q"},
@@ -686,3 +727,100 @@ def test_ensure_credential_returns_existing_id_on_match():
     )
     assert result == "cred:whisper-1"
     assert not posted
+
+
+def test_episode_profile_skips_when_no_speaker_profiles_exist():
+    """v0.7.149 regression.
+
+    `speaker_config` is a REQUIRED field in the backend schema. If the
+    speaker bootstrap skipped (e.g. piper voices weren't registered),
+    we'd have nothing to put in that field and every POST would 422.
+    The fix: detect zero speaker profiles → skip the entire episode
+    library bootstrap silently. Better to have no presets than nine
+    failed POSTs in the launcher log every launch.
+    """
+    from desktop.auto_register.episode_profile import register_default_episode_profile
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode-profiles":
+                        return []
+                    if path == "/api/speaker-profiles":
+                        return []  # ← no speaker profiles → skip bootstrap
+                    if path == "/api/models":
+                        return [{"name": "Qwen-7B-chat", "id": "model:q"}]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            posted.append({"path": path, "json": json})
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    assert posted == [], (
+        "must NOT POST any episode profiles when no speaker_config target exists"
+    )
+
+
+def test_episode_profile_falls_back_to_local_duo_when_preferred_missing():
+    """v0.7.149 regression.
+
+    If the preset's preferred speaker_profile (e.g. 'Local Debate' for
+    the Debate preset) is missing but 'Local Duo' exists, we degrade
+    the preset to use 'Local Duo' rather than skip it. Goal: ship a
+    usable preset library even when only the most-common speaker
+    profile is registered. The launcher.log records the degradation
+    count for observability.
+    """
+    from desktop.auto_register.episode_profile import (
+        _PRESETS,
+        register_default_episode_profile,
+    )
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode-profiles":
+                        return []
+                    if path == "/api/speaker-profiles":
+                        # Only Local Duo — Debate + Interview prefs miss.
+                        return [{"name": "Local Duo"}]
+                    if path == "/api/models":
+                        return [
+                            {"name": "Qwen", "id": "model:q"},
+                            {"name": "piper-amy-en", "id": "model:amy"},
+                            {"name": "piper-ryan-en", "id": "model:ryan"},
+                        ]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/episode-profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    # All 9 presets registered, all using Local Duo.
+    assert len(posted) == len(_PRESETS), (
+        f"expected all {len(_PRESETS)} presets registered with fallback, got {len(posted)}"
+    )
+    for profile in posted:
+        assert profile["speaker_config"] == "Local Duo", (
+            f"preset {profile['name']!r} did not fall back to Local Duo: "
+            f"speaker_config={profile['speaker_config']!r}"
+        )

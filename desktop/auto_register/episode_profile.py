@@ -56,6 +56,13 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Two-voice podcast using local Piper TTS",
         "num_segments": 5,
         "default_length_minutes": 5,
+        # v0.7.149 — every preset MUST reference a speaker profile by name
+        # (the backend's EpisodeProfileCreate schema requires speaker_config
+        # as a required string field). The 4 candidates registered by
+        # desktop/auto_register/speaker_profile.py are: Local Duo, Local
+        # Solo, Local Debate, Local Interview. We map each episode preset
+        # to the speaker profile that best fits its format.
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A balanced two-host conversational podcast about the provided "
             "material. Hosts trade observations, ask each other questions, "
@@ -68,6 +75,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Long-form exploration of one topic, 10-15 min",
         "num_segments": 7,
         "default_length_minutes": 12,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "An in-depth two-host deep dive on a single topic. The hosts "
             "patiently unpack one core thesis, then explore consequences, "
@@ -82,6 +90,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Headline-paced summary in under 5 minutes",
         "num_segments": 3,
         "default_length_minutes": 4,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A tight, headline-paced summary of the material. Two hosts "
             "trade the three most-important takeaways and one open "
@@ -95,6 +104,9 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Two hosts argue opposing sides of the material",
         "num_segments": 5,
         "default_length_minutes": 10,
+        # Local Debate's speakers have baked-in Pro/Skeptic personalities;
+        # this is the natural fit.
+        "speaker_profile": "Local Debate",
         "default_briefing": (
             "A structured debate. Alex argues in favour of (or the optimistic "
             "reading of) the material; Sam argues against (or the skeptical "
@@ -110,6 +122,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Step-by-step instructional walkthrough",
         "num_segments": 5,
         "default_length_minutes": 8,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A teaching-format conversation. Sam plays the curious learner; "
             "Alex plays the patient practitioner. They walk through the "
@@ -125,6 +138,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Narrative retelling, scene by scene",
         "num_segments": 5,
         "default_length_minutes": 10,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A narrative-driven episode. The hosts retell the material as "
             "a story: characters (real or conceptual), stakes, turning "
@@ -139,6 +153,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Fast-paced multi-topic recap",
         "num_segments": 4,
         "default_length_minutes": 6,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A fast-paced recap of multiple items from the material. Each "
             "segment covers a distinct item or theme: headline, why-it-"
@@ -153,6 +168,9 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "One host interviews the other in depth",
         "num_segments": 5,
         "default_length_minutes": 12,
+        # Local Interview's speakers have baked-in Interviewer/Expert
+        # backstories that match this format exactly.
+        "speaker_profile": "Local Interview",
         "default_briefing": (
             "An interview-style episode. Sam plays the curious interviewer; "
             "Alex plays the subject-matter expert who has internalised the "
@@ -168,6 +186,7 @@ _PRESETS: list[dict[str, Any]] = [
         "description": "Book/paper-style critical review",
         "num_segments": 5,
         "default_length_minutes": 10,
+        "speaker_profile": "Local Duo",
         "default_briefing": (
             "A review-format episode treating the material as a single "
             "work to be critically assessed. Structure: setup (what is "
@@ -185,6 +204,16 @@ def register_default_episode_profile(client: httpx.Client) -> None:
 
     Skips any preset whose `name` already exists in the database
     (whether user-created or from a prior install). Never overwrites.
+
+    v0.7.149 — Payload rewritten to match the backend Pydantic schema
+    (`api/routers/episode_profiles.py:EpisodeProfileCreate`). The
+    previous payload sent `chat_model_id` + `speakers: [...]` which
+    the schema doesn't accept; the missing `speaker_config` field made
+    every POST return HTTP 422 and the whole preset library failed to
+    register on every launch. Now we map each preset to a speaker
+    profile by name (referenced via `speaker_config: str`) and route
+    the chat model through `outline_llm` + `transcript_llm` (the schema's
+    actual model-reference fields).
     """
     try:
         r = client.get("/api/episode-profiles")
@@ -197,9 +226,34 @@ def register_default_episode_profile(client: httpx.Client) -> None:
         )
         return
 
-    # Resolve the chat model ID + speaker voice IDs once; reused across
-    # every preset. If any of these is missing, skip the entire library
-    # — without them no preset can be useful anyway.
+    # v0.7.149 — Cross-check: only register an episode preset if its
+    # referenced speaker profile actually exists. The speaker bootstrap
+    # runs BEFORE this module (see auto_register/__init__ ordering) so
+    # in the happy path all four are present. If any is missing (e.g.
+    # piper voices weren't registered → speaker bootstrap skipped), we
+    # downgrade the corresponding episode preset to "Local Duo" or skip
+    # it entirely rather than 422 every launch.
+    try:
+        r_sp = client.get("/api/speaker-profiles")
+        r_sp.raise_for_status()
+        existing_speakers = {p.get("name") for p in r_sp.json() if p.get("name")}
+    except Exception as exc:
+        log.warning(
+            "Could not list speaker profiles: %s — skipping episode preset bootstrap",
+            exc,
+        )
+        return
+    if not existing_speakers:
+        log.info(
+            "Skipping episode profile registration: no speaker profiles exist "
+            "(speaker bootstrap may have skipped — check piper voice registration)"
+        )
+        return
+
+    # Resolve a chat model to use as outline_llm + transcript_llm. If no
+    # eligible chat model is registered, we still register the presets
+    # (these are optional fields) — the user can pick a model in the UI
+    # when they generate an episode.
     try:
         models = client.get("/api/models").json()
     except Exception:
@@ -215,32 +269,55 @@ def register_default_episode_profile(client: httpx.Client) -> None:
         ),
         None,
     )
-    amy_id = by_name.get("piper-amy-en")
-    ryan_id = by_name.get("piper-ryan-en")
-    if not (chat_id and amy_id and ryan_id):
+    if chat_id is None:
         log.info(
-            "Skipping episode profile registration: missing chat_id/amy_id/ryan_id"
+            "No chat model resolved for episode presets — outline_llm + "
+            "transcript_llm will be left blank (user picks at generation time)"
         )
-        return
 
     created = 0
     skipped = 0
+    degraded = 0
     for preset in _PRESETS:
         if preset["name"] in existing:
             skipped += 1
             continue
-        payload = {
+        # v0.7.149 — Fall back to "Local Duo" if the preset's preferred
+        # speaker profile isn't registered (e.g. piper voices missing →
+        # only the migration-seeded `tech_experts` etc exist, none of
+        # which we want as defaults). If even Local Duo is missing,
+        # try any existing profile name as last-resort, then skip.
+        speaker_config = preset["speaker_profile"]
+        if speaker_config not in existing_speakers:
+            if "Local Duo" in existing_speakers:
+                speaker_config = "Local Duo"
+                degraded += 1
+            else:
+                # Take the first available speaker profile alphabetically
+                # for deterministic test behavior.
+                fallback = sorted(existing_speakers)[0] if existing_speakers else None
+                if fallback is None:
+                    log.warning(
+                        "Skipping preset %r: no speaker profile available",
+                        preset["name"],
+                    )
+                    continue
+                speaker_config = fallback
+                degraded += 1
+
+        payload: dict[str, Any] = {
             "name": preset["name"],
             "description": preset["description"],
-            "chat_model_id": chat_id,
-            "speakers": [
-                {"name": "Alex", "role": "Host", "tts_model_id": amy_id},
-                {"name": "Sam", "role": "Co-host", "tts_model_id": ryan_id},
-            ],
-            "default_length_minutes": preset["default_length_minutes"],
+            "speaker_config": speaker_config,
             "default_briefing": preset["default_briefing"],
             "num_segments": preset["num_segments"],
         }
+        # outline_llm + transcript_llm are Optional[str] in the schema —
+        # only include them when we actually resolved a chat model.
+        if chat_id is not None:
+            payload["outline_llm"] = chat_id
+            payload["transcript_llm"] = chat_id
+
         try:
             r = client.post("/api/episode-profiles", json=payload)
             if r.status_code in (200, 201):
@@ -259,7 +336,9 @@ def register_default_episode_profile(client: httpx.Client) -> None:
             )
 
     log.info(
-        "Episode profile preset library: %d created, %d skipped (already existed)",
+        "Episode profile preset library: %d created, %d skipped (already "
+        "existed), %d created with degraded speaker_profile fallback",
         created,
         skipped,
+        degraded,
     )
