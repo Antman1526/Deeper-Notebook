@@ -227,14 +227,22 @@ export default function StudioPage() {
               </Button>
             </Link>
           </div>
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold mb-1">Studio</h1>
-            <p className="text-sm text-muted-foreground">
+          {/* v0.7.164 — H1 hierarchy sweep. Was `text-2xl font-bold`
+              with `mb-1` between title and description; now matches
+              the v0.7.153 dashboard standard
+              (`text-3xl font-semibold tracking-tight`) with a
+              `space-y-2` stack for proper breathing. Subtitle
+              bumped from `text-sm` to default body size — the
+              Studio is a flagship feature; the explainer copy
+              shouldn't read as a footnote. */}
+          <header className="mb-6 space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Studio</h1>
+            <p className="text-muted-foreground max-w-3xl">
               Upload one or more documents (PDF, DOCX, MD, TXT, HTML, PPTX) and
               generate either a structured study notebook or a two-host podcast
               episode, grounded in your sources.
             </p>
-          </div>
+          </header>
 
       <Card className="mb-6">
         <CardHeader>

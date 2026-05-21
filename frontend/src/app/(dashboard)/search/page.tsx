@@ -158,23 +158,32 @@ export default function SearchPage() {
 
   return (
     <AppShell>
-      <div className="p-4 md:p-6">
-        <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">{t('searchPage.askAndSearch')}</h1>
+      {/* v0.7.164 — Visual sweep. Was `p-4 md:p-6` (smaller than every
+          other dashboard page) + `text-xl md:text-2xl font-bold`
+          (smaller H1). The Ask & Search page is a flagship feature
+          competing with NotebookLM — it shouldn't read as a junior
+          screen. Standardised to:
+            - `px-6 py-10 sm:px-8` (matches Podcasts/Settings/Models)
+            - `text-3xl font-semibold tracking-tight` H1
+            - Removed the noisy "CHOOSE A MODE" all-caps caption above
+              the tabs (same fix as Podcasts in v0.7.153 — two-tab
+              toggles are self-explanatory).
+          Translation key `searchPage.chooseAMode` is now unused but
+          preserved in locales for safety. */}
+      <div className="px-6 py-10 sm:px-8 space-y-8">
+        <h1 className="text-3xl font-semibold tracking-tight">{t('searchPage.askAndSearch')}</h1>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-6">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('searchPage.chooseAMode')}</p>
-            <TabsList aria-label={t('common.accessibility.searchKB')} className="w-full max-w-xl">
-              <TabsTrigger value="ask">
-                <MessageCircleQuestion className="h-4 w-4" />
-                {t('searchPage.askBeta')}
-              </TabsTrigger>
-              <TabsTrigger value="search">
-                <Search className="h-4 w-4" />
-                {t('searchPage.search')}
-              </TabsTrigger>
-            </TabsList>
-          </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-8">
+          <TabsList aria-label={t('common.accessibility.searchKB')} className="w-full max-w-xl">
+            <TabsTrigger value="ask">
+              <MessageCircleQuestion className="h-4 w-4" />
+              {t('searchPage.askBeta')}
+            </TabsTrigger>
+            <TabsTrigger value="search">
+              <Search className="h-4 w-4" />
+              {t('searchPage.search')}
+            </TabsTrigger>
+          </TabsList>
 
           <TabsContent value="ask" className="mt-6">
             <Card>
