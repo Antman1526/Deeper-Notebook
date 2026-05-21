@@ -822,10 +822,32 @@ def _phase_open_window(ctx: AppContext) -> None:
                   if ctx.memory_dashboard_port else None)
     remind = (not ctx.openchronicle_available
               and ctx.cfg.openchronicle_choice == "prompt")
+
+    # v0.7.152 — Resolve STT + TTS shim URLs from the launcher's
+    # dynamically-allocated ports so the voice-injection JS targets the
+    # real shim processes instead of the non-existent /api/transcribe
+    # route on the main API (which was the cause of the recurring
+    # "STT failed: HTTP 404" toast). When a shim failed to start
+    # (whisper_port=0 means _spawn_whisper didn't run, e.g. no whisper
+    # model file present), we pass None and voice_injection.js falls
+    # back to its built-in `/api/transcribe` default — still broken,
+    # but no worse than today.
+    whisper_port = getattr(ctx.sv, "whisper_port", 0)
+    piper_port = getattr(ctx.sv, "piper_port", 0)
+    stt_url = (
+        f"http://127.0.0.1:{whisper_port}/v1/audio/transcriptions"
+        if whisper_port else None
+    )
+    tts_url = (
+        f"http://127.0.0.1:{piper_port}/v1/audio/speech"
+        if piper_port else None
+    )
+
     try:
         open_window(ctx.sv.frontend_url, on_close=ctx.sv.stop_all,
                     theme=ctx.cfg.theme,
-                    memory_url=memory_url, remind_openchronicle=remind)
+                    memory_url=memory_url, remind_openchronicle=remind,
+                    stt_url=stt_url, tts_url=tts_url)
     finally:
         ctx.sv.stop_all()
 
