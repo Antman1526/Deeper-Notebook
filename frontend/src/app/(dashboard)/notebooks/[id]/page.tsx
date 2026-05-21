@@ -160,12 +160,24 @@ export default function NotebookPage() {
 
   return (
     <AppShell>
+      {/* v0.7.164 — Notebook detail page header gets a clean visual
+          break from the 3-column workspace below.
+          Before: header was `p-6 pb-0` (no bottom padding, no
+          divider) and the workspace was `p-6 pt-6`. The two regions
+          read as one blob — the user couldn't immediately see where
+          the metadata header ends and the source/notes/chat columns
+          begin.
+          After: header gets `pb-4` (real breathing room) plus a
+          hairline `border-b` divider; workspace re-balances to
+          `pt-8` so the columns "land" cleanly below the divider.
+          This is the most-visited screen in the app — worth the
+          polish to compete with NotebookLM's notebook view. */}
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex-shrink-0 p-6 pb-0">
+        <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
           <NotebookHeader notebook={notebook} />
         </div>
 
-        <div className="flex-1 p-6 pt-6 overflow-x-auto flex flex-col">
+        <div className="flex-1 px-6 pt-8 pb-6 overflow-x-auto flex flex-col">
           {/* Mobile: Tabbed interface - only render on mobile to avoid double-mounting */}
           {!isDesktop && (
             <>
