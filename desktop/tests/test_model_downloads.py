@@ -236,3 +236,99 @@ def test_download_one_passes_timeout_to_urlopen(tmp_path):
     _, kwargs = mock_urlopen.call_args
     assert kwargs.get("timeout") is not None
     assert kwargs["timeout"] > 0
+
+
+# ---------------------------------------------------------------------------
+# v0.7.150 — min_bytes override for small files (Piper config JSONs)
+# ---------------------------------------------------------------------------
+
+def test_download_one_min_bytes_override_accepts_small_real_file(tmp_path):
+    """v0.7.150 regression.
+
+    Piper `.onnx.json` voice configs are ~5 KB. The MB-based threshold
+    (expected_size_mb=1 → 838860 bytes) was incorrectly flagging the real
+    files as too small, triggering re-download on every launch.
+
+    `min_bytes=2048` explicitly accepts files ≥ 2 KB regardless of MB
+    metadata, fixing the spam.
+    """
+    dest = tmp_path / "voice.onnx.json"
+    dest.write_bytes(b"x" * 4882)  # exact size from launcher.log warning
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        result = _download_one(
+            "https://example.com/voice.onnx.json", dest, "voice cfg",
+            min_bytes=2048,
+        )
+
+    mock_urlopen.assert_not_called(), "must skip download — file already valid"
+    assert result is True
+
+
+def test_download_one_min_bytes_override_rejects_tiny_html_error_page(tmp_path):
+    """min_bytes still filters out obviously-broken downloads — e.g. when
+    HuggingFace returns a tiny HTML 503 page instead of the JSON. The 2 KB
+    floor is below real Piper configs (~5 KB) but well above an error page.
+    """
+    dest = tmp_path / "voice.onnx.json"
+    dest.write_bytes(b"<html>503 Service Unavailable</html>")  # ~37 bytes
+
+    fake_content = b'{"language": {"code": "en_US"}}'
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        result = _download_one(
+            "https://example.com/voice.onnx.json", dest, "voice cfg",
+            min_bytes=2048,
+        )
+
+    mock_urlopen.assert_called_once(), "must re-download — file is below 2 KB floor"
+    assert result is True
+    # The HTML error page was replaced with the real (mocked) JSON.
+    assert dest.read_bytes() == fake_content
+
+
+def test_min_bytes_takes_precedence_over_expected_size_mb(tmp_path):
+    """When both `min_bytes` and `expected_size_mb` are passed, `min_bytes`
+    wins. Defensive: ensures we never accidentally apply both thresholds.
+    """
+    dest = tmp_path / "small.json"
+    dest.write_bytes(b"x" * 5000)  # 5 KB
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        result = _download_one(
+            "https://example.com/small.json", dest, "label",
+            expected_size_mb=1,    # would set threshold to 838860 bytes
+            min_bytes=2048,        # overrides to 2048 bytes
+        )
+
+    mock_urlopen.assert_not_called(), (
+        "min_bytes=2048 should override expected_size_mb=1 (which would "
+        "set threshold to 838860 and incorrectly trigger re-download)"
+    )
+    assert result is True
+
+
+def test_ensure_tts_model_does_not_redownload_small_existing_config(tmp_path):
+    """v0.7.150 end-to-end: ensure_tts_model uses min_bytes for the config
+    file, so a real ~5 KB existing .onnx.json is left alone.
+    """
+    from desktop.model_downloads import PIPER_VOICE_MODEL, ensure_tts_model
+    _, onnx_rel, _, onnx_size = PIPER_VOICE_MODEL
+    onnx = tmp_path / onnx_rel
+    cfg = tmp_path / "TTS" / "en_US-amy-medium.onnx.json"
+    onnx.parent.mkdir(parents=True, exist_ok=True)
+    # onnx weight ~25 MB sparse, config ~5 KB real bytes
+    with onnx.open("wb") as f:
+        f.truncate(int(onnx_size * 1024 * 1024 * 0.96))
+    cfg.write_bytes(b'{"lang": "en"}' + b" " * 5000)
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        result = ensure_tts_model(tmp_path)
+
+    mock_urlopen.assert_not_called(), (
+        "v0.7.150: must not re-download a real ~5 KB voice config"
+    )
+    assert result == (onnx, cfg)
