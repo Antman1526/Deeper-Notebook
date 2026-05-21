@@ -129,7 +129,7 @@ async def create_source_chat_session(
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating source chat session: {str(e)}"
+            status_code=500, detail="Error creating source chat session"
         )
 
 
@@ -206,7 +206,7 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source chat sessions: {str(e)}"
+            status_code=500, detail="Error fetching source chat sessions"
         )
 
 
@@ -307,7 +307,7 @@ async def get_source_chat_session(
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source chat session: {str(e)}"
+            status_code=500, detail="Error fetching source chat session"
         )
 
 
@@ -383,7 +383,7 @@ async def update_source_chat_session(
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating source chat session: {str(e)}"
+            status_code=500, detail="Error updating source chat session"
         )
 
 
@@ -442,7 +442,7 @@ async def delete_source_chat_session(
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error deleting source chat session: {str(e)}"
+            status_code=500, detail="Error deleting source chat session"
         )
 
 
@@ -670,4 +670,4 @@ async def send_message_to_source_chat(
         raise
     except Exception as e:
         logger.error(f"Error sending message to source chat: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error sending message")

@@ -95,7 +95,7 @@ async def get_notebooks(
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching notebooks: {str(e)}"
+            status_code=500, detail="Error fetching notebooks"
         )
 
 
@@ -128,7 +128,7 @@ async def create_notebook(notebook: NotebookCreate):
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating notebook: {str(e)}"
+            status_code=500, detail="Error creating notebook"
         )
 
 
@@ -157,7 +157,7 @@ async def get_notebook_delete_preview(notebook_id: str):
         logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching notebook deletion preview: {str(e)}",
+            detail="Error fetching notebook deletion preview",
         )
 
 
@@ -193,7 +193,7 @@ async def get_notebook(notebook_id: str):
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching notebook: {str(e)}"
+            status_code=500, detail="Error fetching notebook"
         )
 
 
@@ -255,7 +255,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating notebook: {str(e)}"
+            status_code=500, detail="Error updating notebook"
         )
 
 
@@ -310,7 +310,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
         )
         raise HTTPException(
-            status_code=500, detail=f"Error linking source to notebook: {str(e)}"
+            status_code=500, detail="Error linking source to notebook"
         )
 
 
@@ -340,7 +340,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
             f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
         )
         raise HTTPException(
-            status_code=500, detail=f"Error removing source from notebook: {str(e)}"
+            status_code=500, detail="Error removing source from notebook"
         )
 
 
@@ -377,5 +377,5 @@ async def delete_notebook(
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error deleting notebook: {str(e)}"
+            status_code=500, detail="Error deleting notebook"
         )

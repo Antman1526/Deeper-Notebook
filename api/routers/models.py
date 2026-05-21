@@ -196,7 +196,7 @@ async def get_models(
         raise
     except Exception as e:
         logger.error(f"Error fetching models: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching models")
 
 
 @router.post("/models", response_model=ModelResponse)
@@ -251,7 +251,7 @@ async def create_model(model_data: ModelCreate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating model: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating model: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error creating model")
 
 
 @router.delete("/models/{model_id}")
@@ -269,7 +269,7 @@ async def delete_model(model_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting model {model_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting model")
 
 
 @router.post("/models/{model_id}/test", response_model=ModelTestResponse)
@@ -319,7 +319,7 @@ async def get_default_models():
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching default models: {str(e)}"
+            status_code=500, detail="Error fetching default models"
         )
 
 
@@ -372,7 +372,7 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
     except Exception as e:
         logger.error(f"Error updating default models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating default models: {str(e)}"
+            status_code=500, detail="Error updating default models"
         )
 
 
@@ -494,7 +494,7 @@ async def get_provider_availability():
     except Exception as e:
         logger.error(f"Error checking provider availability: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error checking provider availability: {str(e)}"
+            status_code=500, detail="Error checking provider availability"
         )
 
 
@@ -610,7 +610,7 @@ async def sync_all_models():
     except Exception as e:
         logger.error(f"Error syncing all models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error syncing all models: {str(e)}"
+            status_code=500, detail="Error syncing all models"
         )
 
 
@@ -638,7 +638,7 @@ async def get_model_count(provider: str):
     except Exception as e:
         logger.error(f"Error getting model count for {provider}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error getting model count: {str(e)}"
+            status_code=500, detail="Error getting model count"
         )
 
 
@@ -677,7 +677,7 @@ async def get_models_by_provider(provider: str):
     except Exception as e:
         logger.error(f"Error fetching models for {provider}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching models: {str(e)}"
+            status_code=500, detail="Error fetching models"
         )
 
 
@@ -823,7 +823,7 @@ async def auto_assign_defaults():
     except Exception as e:
         logger.error(f"Error auto-assigning defaults: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error auto-assigning defaults: {str(e)}"
+            status_code=500, detail="Error auto-assigning defaults"
         )
 
 
@@ -924,5 +924,5 @@ async def auto_assign_capability(force: bool = False):
         logger.error(f"Error in capability-aware auto-assign: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error in capability-aware auto-assign: {str(e)}",
+            detail="Error in capability-aware auto-assign",
         )
