@@ -159,3 +159,43 @@ def test_deep_endpoint_is_exempt_from_auth(client, monkeypatch):
     # NOT 401/403 — that'd mean middleware blocked it
     assert r.status_code != 401
     assert r.status_code != 403
+
+
+def test_api_alias_returns_same_payload(client, monkeypatch):
+    """v0.7.148 regression.
+
+    Frontend's Setup Wizard hits `/api/healthz/deep` (not `/healthz/deep`)
+    because the `apiClient` interceptor / Next.js rewrite chain ends up
+    routing the request through `/api/*` regardless of `health.ts`'s
+    `baseURL` override. Without this alias the wizard sees 404 and hangs
+    on "Loading..." forever.
+
+    The alias MUST be registered AND auth-exempt AND return the exact
+    same payload shape as the root path.
+    """
+    _patch_all_healthy(monkeypatch)
+    r_root = client.get("/healthz/deep")
+    r_api = client.get("/api/healthz/deep")
+    assert r_root.status_code == r_api.status_code == 200
+    # Byte-for-byte payload equivalence: both must call the same handler.
+    assert r_root.json() == r_api.json()
+    # Auth-exempt: no header → must NOT be 401/403.
+    r_no_auth = client.get("/api/healthz/deep", headers={})
+    assert r_no_auth.status_code in (200, 503), r_no_auth.text
+    assert r_no_auth.status_code != 401
+    assert r_no_auth.status_code != 403
+
+
+def test_api_alias_passes_probe_providers_query(client, monkeypatch):
+    """The alias must forward `?probe_providers=true` to the same code
+    path so monitoring tools that hit the aliased URL get the full
+    response. Regression guard against the alias dropping query args.
+    """
+    _patch_all_healthy(monkeypatch)
+    r_root = client.get("/healthz/deep?probe_providers=false")
+    r_api = client.get("/api/healthz/deep?probe_providers=false")
+    assert r_root.status_code == r_api.status_code
+    # `upstream_providers` only appears when probe_providers=true; both
+    # paths must agree on this behavior.
+    assert ("upstream_providers" in r_root.json()["checks"]) == \
+        ("upstream_providers" in r_api.json()["checks"])
