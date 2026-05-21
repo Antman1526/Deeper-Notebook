@@ -18,7 +18,51 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.162 (in flight)
+## Unreleased — v0.7.36 → v0.7.163 (in flight)
+
+- **v0.7.163** ⚡ **Transformations pagination + credentials N+1
+  parallelization.** Two follow-through items from the v0.7.159
+  deferred list.
+
+  **(1) `GET /transformations` paginated.** `api/routers/
+  transformations.py:27` previously called
+  `Transformation.get_all(order_by="name asc")` with no
+  `LIMIT`. Same shape bug as `/notes` had pre-v0.7.159 — small
+  table today (typically <50 user-defined rows), but a malicious
+  / accidental population can return multi-MB JSON. Added
+  `limit: int = Query(200, ge=1, le=1000)` + `offset: int =
+  Query(0, ge=0)` to match the v0.7.159 convention. Tests verify
+  the args thread through to `get_all`, defaults apply when
+  unspecified, out-of-range values return 422.
+
+  **(2) `GET /credentials` N+1 fixed.** `api/routers/
+  credentials.py:121` ran a sequential await loop calling
+  `cred.get_linked_models()` per credential. Each call hits
+  SurrealDB with `SELECT * FROM model WHERE credential = $id`
+  (`open_notebook/domain/credential.py:185`). A user with 13
+  configured providers paid ~13 × ~30ms = ~400ms before the
+  Models page list could render. Same pattern as v0.7.161
+  chat-session N+1.
+
+  Fix: replace the `for cred in credentials: models = await
+  cred.get_linked_models()` loop with a single
+  `asyncio.gather(*[c.get_linked_models() for c in credentials])`
+  followed by a `zip(credentials, linked_models_lists)`
+  comprehension. Wall-clock drops to ~30ms regardless of credential
+  count.
+
+  Bigger fix (denormalize a `model_count` field onto the credential
+  row at write time) needs a schema migration + a post-save hook
+  on Model. Deferred — gather captures the lion's share with zero
+  schema risk.
+
+  Tests at `tests/test_v0_7_163_pagination_and_n1.py`: 5 new
+  passing tests covering both fixes. Route-level wall-clock test
+  intentionally omitted (TestClient startup overhead makes a stable
+  threshold flaky); the contract is pinned at the asyncio level
+  with a 4× concurrency margin.
+
+  Full backend suite: **830/830** (was 825 in v0.7.162).
 
 - **v0.7.162** 🧪 **Router-level test coverage for `auth`, `languages`,
   and `embedding_rebuild`.** Three of the nine routers flagged by the
