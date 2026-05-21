@@ -18,7 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.153 (in flight)
+## Unreleased — v0.7.36 → v0.7.154 (in flight)
+
+- **v0.7.154** 🐛 **Restore `llama-cpp-python` in the lockfile + downgrade
+  DANGEROUS CONFIG log level.** Two BLOCKING audit findings from
+  2026-05-21.
+
+  **Finding 1 — local-GGUF chat broken.** Every chat request against
+  the local Hermes-3 model returned 500. `llamacpp_chat_stderr.log:1`:
+
+      ModuleNotFoundError: No module named 'llama_cpp'
+
+  Root cause: v0.7.141 introduced `make build-mac-lock` which
+  regenerates `desktop/requirements.lock` from `pyproject.toml` only.
+  `llama-cpp-python>=0.3.16,<0.4` was declared in
+  `desktop/requirements.txt:18` (pinned for CVE-2024-42479 — heap OOB
+  read in GGUF parsing) but NOT in `pyproject.toml`. The new
+  build-mac-lock target silently dropped it; the bundled venv shipped
+  without llama_cpp; chat failed at llama_cpp.server spawn. Auto-register
+  saw the silent failure and logged "skipping local-GGUF credential
+  registration: no llama-cpp server port supplied".
+
+  Fix (`Makefile:386-407`): pass BOTH input files to
+  `uv pip compile`:
+
+      uv pip compile pyproject.toml desktop/requirements.txt
+          --python-version 3.12 -o desktop/requirements.lock --quiet
+
+  This matches what `pip install -r requirements.txt` would do at
+  runtime (the CI's documented "installs on top of the upstream
+  pyproject.toml" pattern). Regenerated locally: `llama-cpp-python
+  ==0.3.23` is now present in `desktop/requirements.lock:312` (plus
+  transitive deps `diskcache`, `jinja2`, `numpy`).
+
+  **Finding 2 — log-level false alarm.** `api/main.py:430` was logging
+  the CORS=*, no-password warning at ERROR level on every startup.
+  The desktop launcher binds to 127.0.0.1 only, so the danger
+  described doesn't apply — but the ERROR-level entry fired anyway,
+  contaminating any log search for real failures.
+
+  Fix (`api/main.py:429-449`): downgrade `logger.error` →
+  `logger.warning` and add a clarifying sentence noting that the
+  desktop fork's 127.0.0.1-only bind makes this the expected state.
+  Message text otherwise unchanged. The full Docker/K8s warning
+  copy remains so a future operator running this in a server context
+  still gets the heads-up.
+
+  **What this does NOT fix:**
+
+    1. The `/api/config` 8-second slow-query (also flagged by the
+       audit). Needs deeper investigation in
+       `open_notebook/database/repository.py:repo_query` — defer to
+       a separate commit.
+    2. The 15 launcher-test failures from unmocked
+       `acquire_singleton`. Tracked for v0.7.155.
+    3. The episode_profile fallback that could pick `business_panel`
+       on a fresh install. Tracked for v0.7.156.
+    4. Gmail-status polling spam in `api.log` — likely a
+       missing `useEffect` cleanup. Frontend-only, separate trace.
+
+  After rebuild + reinstall (NB: requires `make build-mac` to
+  regenerate the bundled venv via the new lock), the Hermes-3
+  chat path will resolve cleanly and the launcher.log
+  "skipping local-GGUF credential registration" warning goes away.
 
 - **v0.7.153** 🎨 **Visual rhythm refresh — Settings, Podcasts, Models
   pages (spacing-only, no color changes).** Per the brainstorming on
