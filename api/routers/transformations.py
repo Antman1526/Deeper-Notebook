@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from api.models import (
@@ -25,10 +25,28 @@ router = APIRouter()
 
 
 @router.get("/transformations", response_model=list[TransformationResponse])
-async def get_transformations():
+async def get_transformations(
+    # v0.7.163 — Pagination follow-through (same pattern as v0.7.159's
+    # Note.get_all fix). Transformation tables are typically <50 entries
+    # so this isn't a current crisis like /notes was, but
+    # `SELECT * FROM transformation` with no LIMIT is the same shape
+    # bug — an integration script populating thousands of rows could
+    # silently return multi-MB JSON. Default cap = 200; hard ceiling
+    # 1000 prevents bypass by curious callers.
+    limit: int = Query(
+        200, ge=1, le=1000,
+        description="Max rows to return (default 200, max 1000).",
+    ),
+    offset: int = Query(
+        0, ge=0,
+        description="Rows to skip for pagination (default 0).",
+    ),
+):
     """Get all transformations."""
     try:
-        transformations = await Transformation.get_all(order_by="name asc")
+        transformations = await Transformation.get_all(
+            order_by="name asc", limit=limit, offset=offset,
+        )
 
         return [
             TransformationResponse(

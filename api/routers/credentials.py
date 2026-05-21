@@ -118,10 +118,26 @@ async def list_credentials(
         else:
             credentials = await Credential.get_all(order_by="provider, created")
 
-        result = []
-        for cred in credentials:
-            models = await cred.get_linked_models()
-            result.append(credential_to_response(cred, len(models)))
+        # v0.7.163 — N+1 fix: parallelize the per-credential linked-models
+        # lookup. Previously the loop sequentially awaited
+        # `cred.get_linked_models()` per row; each call hits SurrealDB
+        # with `SELECT * FROM model WHERE credential = $cred_id`. A user
+        # with 13 configured providers paid ~13 × ~30ms = ~400ms before
+        # the Models page list could render. asyncio.gather collapses
+        # this into a single wall-clock interval.
+        #
+        # Same pattern as v0.7.161 (chat-session checkpoint reads). The
+        # bigger fix (denormalize a `model_count` field onto the
+        # credential row at write time) needs a schema migration + a
+        # post-save hook on Model; deferred.
+        import asyncio as _asyncio
+        linked_models_lists = await _asyncio.gather(*[
+            cred.get_linked_models() for cred in credentials
+        ])
+        result = [
+            credential_to_response(cred, len(models))
+            for cred, models in zip(credentials, linked_models_lists)
+        ]
 
         return result
 
