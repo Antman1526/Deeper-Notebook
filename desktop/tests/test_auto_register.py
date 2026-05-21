@@ -770,6 +770,65 @@ def test_episode_profile_skips_when_no_speaker_profiles_exist():
     )
 
 
+def test_episode_profile_skips_when_only_migration_seeded_speakers_exist():
+    """v0.7.156 regression.
+
+    Migration 7.surrealql seeds three speaker profiles (`tech_experts`,
+    `solo_expert`, `business_panel`) all bound to OpenAI's
+    `gpt-4o-mini-tts`. On a fresh install where the Local-* speaker
+    bootstrap hasn't run yet (Piper voices not registered), v0.7.149's
+    last-resort fallback used `sorted(existing_speakers)[0]` and
+    silently picked `business_panel`. The resulting episode preset
+    would 500 at podcast-generation TTS time because no OpenAI
+    credential exists.
+
+    Fix: filter migration-seeded openai-only speakers out of the
+    fallback candidate pool. With no LOCAL-* speakers available, we
+    skip the preset and log so the user can re-run after registering
+    Piper. Better to ship zero presets than nine that all crash on
+    use.
+    """
+    from desktop.auto_register.episode_profile import register_default_episode_profile
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode-profiles":
+                        return []
+                    if path == "/api/speaker-profiles":
+                        # Only migration-seeded openai-only speakers exist.
+                        return [
+                            {"name": "tech_experts"},
+                            {"name": "solo_expert"},
+                            {"name": "business_panel"},
+                        ]
+                    if path == "/api/models":
+                        return [{"name": "Qwen", "id": "model:q"}]
+                    return []
+            return R()
+        def post(self, path, json=None):
+            if path == "/api/episode-profiles":
+                posted.append(json)
+            class R:
+                status_code = 201
+                text = ""
+                def json(self): return {}
+            return R()
+
+    register_default_episode_profile(FakeClient())
+    # v0.7.156 — must NOT bind any preset to business_panel / solo_expert /
+    # tech_experts. They all require an OpenAI credential the user doesn't
+    # have on a fresh install.
+    assert posted == [], (
+        "Expected zero posts when only migration-seeded (OpenAI-only) "
+        "speakers exist. v0.7.156 fix: filter them out of fallback pool."
+    )
+
+
 def test_episode_profile_falls_back_to_local_duo_when_preferred_missing():
     """v0.7.149 regression.
 
