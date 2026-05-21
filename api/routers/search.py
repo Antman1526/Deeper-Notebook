@@ -90,14 +90,14 @@ async def search_knowledge_base(search_request: SearchRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except DatabaseOperationError as e:
         logger.error(f"Database error during search: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Search failed")
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Search failed")
 
 
 async def stream_ask_response(
@@ -307,7 +307,7 @@ async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
         raise
     except Exception as e:
         logger.error(f"Error in ask endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ask operation failed")
 
 
 @router.post("/search/ask/simple", response_model=AskResponse)
@@ -386,4 +386,4 @@ async def ask_knowledge_base_simple(
         raise
     except Exception as e:
         logger.error(f"Error in ask simple endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ask operation failed")

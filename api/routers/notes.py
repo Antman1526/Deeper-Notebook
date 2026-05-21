@@ -65,7 +65,7 @@ async def get_notes(
         raise
     except Exception as e:
         logger.error(f"Error fetching notes: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching notes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching notes")
 
 
 @router.post("/notes", response_model=NoteResponse)
@@ -172,7 +172,7 @@ async def create_note(note_data: NoteCreate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating note: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating note: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error creating note")
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
@@ -203,7 +203,7 @@ async def get_note(note_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching note {note_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching note: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching note")
 
 
 @router.put("/notes/{note_id}", response_model=NoteResponse)
@@ -248,7 +248,7 @@ async def update_note(note_id: str, note_update: NoteUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating note {note_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating note: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error updating note")
 
 
 @router.delete("/notes/{note_id}")
@@ -269,4 +269,4 @@ async def delete_note(note_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting note {note_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting note: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting note")

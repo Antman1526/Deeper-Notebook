@@ -68,7 +68,7 @@ async def get_transformations(
     except Exception as e:
         logger.error(f"Error fetching transformations: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching transformations: {str(e)}"
+            status_code=500, detail="Error fetching transformations"
         )
 
 
@@ -104,7 +104,7 @@ async def create_transformation(transformation_data: TransformationCreate):
     except Exception as e:
         logger.error(f"Error creating transformation: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating transformation: {str(e)}"
+            status_code=500, detail="Error creating transformation"
         )
 
 
@@ -178,7 +178,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
     except Exception as e:
         logger.error(f"Error executing transformation: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error executing transformation: {str(e)}"
+            status_code=500, detail="Error executing transformation"
         )
 
 
@@ -199,7 +199,7 @@ async def get_default_prompt():
     except Exception as e:
         logger.error(f"Error fetching default prompt: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching default prompt: {str(e)}"
+            status_code=500, detail="Error fetching default prompt"
         )
 
 
@@ -224,7 +224,7 @@ async def update_default_prompt(prompt_update: DefaultPromptUpdate):
     except Exception as e:
         logger.error(f"Error updating default prompt: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating default prompt: {str(e)}"
+            status_code=500, detail="Error updating default prompt"
         )
 
 
@@ -257,7 +257,7 @@ async def get_transformation(transformation_id: str):
     except Exception as e:
         logger.error(f"Error fetching transformation {transformation_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching transformation: {str(e)}"
+            status_code=500, detail="Error fetching transformation"
         )
 
 
@@ -307,7 +307,7 @@ async def update_transformation(
     except Exception as e:
         logger.error(f"Error updating transformation {transformation_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating transformation: {str(e)}"
+            status_code=500, detail="Error updating transformation"
         )
 
 
@@ -330,5 +330,5 @@ async def delete_transformation(transformation_id: str):
     except Exception as e:
         logger.error(f"Error deleting transformation {transformation_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error deleting transformation: {str(e)}"
+            status_code=500, detail="Error deleting transformation"
         )

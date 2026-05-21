@@ -18,7 +18,74 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.167 (in flight)
+## Unreleased — v0.7.36 → v0.7.168 (in flight)
+
+- **v0.7.168** 🔒 **HTTPException detail leakage sweep — strip
+  `: {str(e)}` from 66 sites across 11 routers.** Carried from
+  v0.7.165 deferred list (the biggest remaining code-scan finding).
+
+  Background: the codebase had a recurring pattern of
+
+      except Exception as e:
+          logger.error(f"Error fetching X: {str(e)}")
+          raise HTTPException(
+              status_code=500, detail=f"Error fetching X: {str(e)}"
+          )
+
+  …where the **same** raw exception text was both logged AND returned
+  in the HTTP response body. The `logger.error()` is correct — the
+  api.log is the right place for the full traceback — but echoing
+  `str(e)` to the user leaks:
+    - SurrealDB driver internals + class names
+    - File paths from loguru-formatted exception strings
+    - Database connection details on connection errors
+    - On rare occasions, API keys (when an upstream provider's
+      error message echoes the bad key)
+
+  Plus those raw strings are untranslatable; the frontend's i18n
+  layer (`getApiErrorMessage` in `lib/utils/error-handler.ts`) can
+  only meaningfully translate a stable prefix, not an arbitrary
+  `RuntimeError: <some-driver-thing>`.
+
+  Mechanical sweep with a Python regex against the consistent
+  `detail=f"<prefix>: {str(e)}"` pattern. 66 sites fixed across:
+
+    | Router               | Sites |
+    |----------------------|-------|
+    | sources.py           | 12    |
+    | models.py            | 11    |
+    | notebooks.py         | 8     |
+    | transformations.py   | 8     |
+    | chat.py              | 7     |
+    | source_chat.py       | 6     |
+    | notes.py             | 5     |
+    | search.py            | 4     |
+    | embedding.py         | 2     |
+    | embedding_rebuild.py | 2     |
+    | context.py           | 1     |
+
+  After sweep: `detail=f"<prefix>: {str(e)}"` → `detail="<prefix>"`.
+  The preceding `logger.error(f"...: {str(e)}")` line is unchanged
+  — operators tailing api.log still get the full text; only the
+  user-facing response is sanitized.
+
+  **Regression guard** (`tests/test_v0_7_168_no_str_e_leakage.py`):
+  parametrized test that asserts EVERY file in `api/routers/`
+  contains zero `detail=f"...: {str(e)}"` patterns. 28 tests
+  (one per router file + a global aggregate) — a future PR adding
+  a new endpoint that reintroduces the pattern fails at
+  test-collection time with the offending line(s) printed.
+
+  Migration guidance baked into the test docstring: if a new
+  endpoint legitimately needs to surface a richer error message,
+  raise a typed `OpenNotebookError` subclass (`NotFoundError`,
+  `InvalidInputError`, `RateLimitError`, etc.) — those have
+  explicit, safe message contracts and the global exception
+  handlers in `api/main.py:567-616` map them to the right HTTP
+  status with the right detail format.
+
+  Full backend suite: **868/868** (was 840 in v0.7.166; +28 new
+  parametrized tests in this commit).
 
 - **v0.7.167** 🎨 **Visual quick-wins batch.** Three small,
   high-visibility fixes from the v0.7.164 secondary-opportunities
