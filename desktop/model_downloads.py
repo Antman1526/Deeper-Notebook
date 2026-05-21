@@ -64,7 +64,8 @@ PIPER_RYAN_CONFIG = (
 
 def _download_one(url: str, dest: Path, label: str,
                   progress: Callable[[str], None] | None = None,
-                  expected_size_mb: int = 0) -> bool:
+                  expected_size_mb: int = 0,
+                  min_bytes: int = 0) -> bool:
     """Download url to dest atomically. Returns True if file is present after.
 
     v0.6.29 fixes:
@@ -80,20 +81,33 @@ def _download_one(url: str, dest: Path, label: str,
          pass a generous 300s timeout.
       3. tmp.unlink uses missing_ok=True so a race during cleanup doesn't
          crash the worker.
+
+    v0.7.150 — `min_bytes` keyword overrides the expected_size_mb-based
+    calculation for files where the MB heuristic doesn't fit. Specifically:
+    the Piper `.onnx.json` voice configs are ~5 KB JSON descriptors. The
+    previous `expected_size_mb=1` declaration produced an 838 KB threshold
+    (1 MB × 0.80) that the real 5 KB file couldn't meet, so every launch
+    re-downloaded them — visible as the recurring "Existing X is only
+    4882 bytes (expected >= 838860) — re-downloading" warnings in
+    launcher.log. With `min_bytes=2048` the actual JSON is correctly
+    detected as good (5000 ≥ 2048) and the partial-download protection
+    still filters out obvious HTML error pages (typically < 1 KB).
     """
     progress = progress or (lambda msg: None)
 
-    # Skip-if-already-present check uses the expected size as the source
-    # of truth when we know it; 100 KB is the legacy fallback for entries
-    # that don't yet declare an expected_size_mb (the small Piper config
-    # JSONs, which are ~1 MB and have no partial-download risk).
+    # Skip-if-already-present check. Threshold precedence:
+    #   1. explicit min_bytes override (v0.7.150) — used for small files
+    #      where the MB-based heuristic produces an unreachable threshold
+    #   2. expected_size_mb × 0.80 — for normal-sized weight files
+    #   3. legacy 100_000-byte floor — when neither is declared
     if dest.exists():
         existing_bytes = dest.stat().st_size
-        min_bytes_ok = (
-            int(expected_size_mb * 1024 * 1024 * 0.80)
-            if expected_size_mb > 0
-            else 100_000
-        )
+        if min_bytes > 0:
+            min_bytes_ok = min_bytes
+        elif expected_size_mb > 0:
+            min_bytes_ok = int(expected_size_mb * 1024 * 1024 * 0.80)
+        else:
+            min_bytes_ok = 100_000
         if existing_bytes >= min_bytes_ok:
             return True
         # Below threshold — looks like a partial / corrupted download.
@@ -155,17 +169,28 @@ def ensure_stt_model(
     return None
 
 
+# v0.7.150 — Piper `.onnx.json` voice configs are ~5 KB JSON descriptors
+# (a few hundred lines of phoneme→model-id mapping). The launcher's
+# partial-download protection requires an explicit threshold for files
+# this small: the expected_size_mb-based calculation can't produce a
+# threshold below `expected_size_mb × 0.80 × 1 MB`, and the legacy
+# 100_000-byte floor is also too high. 2048 bytes filters out obvious
+# HTML error pages (typically <1 KB) while admitting the real ~5 KB JSON.
+_PIPER_CONFIG_MIN_BYTES = 2048
+
+
 def ensure_tts_model(
     model_dir: Path,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, Path] | None:
     """Download Piper Amy medium voice (.onnx + .json) into model_dir/TTS/."""
     onnx_url, onnx_rel, onnx_label, onnx_size = PIPER_VOICE_MODEL
-    cfg_url, cfg_rel, cfg_label, cfg_size = PIPER_VOICE_CONFIG
+    cfg_url, cfg_rel, cfg_label, _cfg_size = PIPER_VOICE_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
     if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
-            and _download_one(cfg_url, cfg, cfg_label, progress, expected_size_mb=cfg_size)):
+            and _download_one(cfg_url, cfg, cfg_label, progress,
+                              min_bytes=_PIPER_CONFIG_MIN_BYTES)):
         return (onnx, cfg)
     return None
 
@@ -176,10 +201,11 @@ def ensure_secondary_tts_voice(
 ) -> tuple[Path, Path] | None:
     """Download Piper Ryan high voice (.onnx + .json) into model_dir/TTS/."""
     onnx_url, onnx_rel, onnx_label, onnx_size = PIPER_RYAN_MODEL
-    cfg_url, cfg_rel, cfg_label, cfg_size = PIPER_RYAN_CONFIG
+    cfg_url, cfg_rel, cfg_label, _cfg_size = PIPER_RYAN_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
     if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
-            and _download_one(cfg_url, cfg, cfg_label, progress, expected_size_mb=cfg_size)):
+            and _download_one(cfg_url, cfg, cfg_label, progress,
+                              min_bytes=_PIPER_CONFIG_MIN_BYTES)):
         return (onnx, cfg)
     return None
