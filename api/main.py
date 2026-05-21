@@ -346,6 +346,25 @@ async def lifespan(app: FastAPI):
             f"Failed to start checkpoint-prune task (non-fatal): {e}",
         )
 
+    # v0.7.157 — Pre-warm the GmailIntegration TTL cache. The frontend
+    # polls /api/onp/gmail/status on mount; first cold call against the
+    # singleton SurrealDB record takes 4-8s (slow-query warnings on
+    # every fresh launch). Paying that cost ONCE here, in a background
+    # task that doesn't block /readyz, means the user's page-load
+    # poll hits a populated 30s cache instead of waiting on the DB.
+    # If the warmup itself fails or times out, the next user request
+    # will retry on cache miss — same as without this warmup, just
+    # one user request slower.
+    async def _prewarm_gmail_cache() -> None:
+        try:
+            from open_notebook.domain.gmail import GmailIntegration
+            await GmailIntegration.get()
+        except Exception as e:
+            logger.debug(f"Gmail cache pre-warm failed (non-fatal): {e}")
+
+    asyncio.create_task(_prewarm_gmail_cache(), name="onp-gmail-prewarm")
+    logger.info("Gmail TTL-cache pre-warm task scheduled")
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
