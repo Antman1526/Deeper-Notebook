@@ -1,6 +1,7 @@
 """llama.cpp provider: scan a directory for GGUFs, spawn llama-cpp-python server."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -16,12 +17,38 @@ from desktop.providers import ProviderEnv
 # and skipped during model listing.
 MIN_GGUF_BYTES = 1 * 1024 * 1024
 
+# v0.7.151 — Number of stderr lines to include in the RuntimeError message
+# when llama_cpp.server exits prematurely or never becomes ready. Enough
+# context to identify the actual failure (model architecture unsupported,
+# OOM, missing dependency) without bloating the exception message.
+_STDERR_TAIL_LINES = 30
+
 
 def _http_ready(port: int) -> bool:
     try:
         return httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
         return False
+
+
+def _default_log_dir() -> Path:
+    """Where to write llama_cpp.server stderr if no override is supplied.
+    Matches desktop/app.py's `log_dir = ~/.open-notebook-plus/logs`."""
+    home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or "."
+    return Path(home) / ".open-notebook-plus" / "logs"
+
+
+def _tail_lines(path: Path, n: int) -> str:
+    """Read at most the last `n` lines of `path` for inclusion in error
+    messages. Returns the empty string if the file is missing or unreadable
+    (the caller will fall back to a generic message). Never raises."""
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return ""
+    tail = lines[-n:]
+    return "".join(tail).rstrip()
 
 
 class LlamaCppProvider:
@@ -33,6 +60,7 @@ class LlamaCppProvider:
         ready_probe: Callable[[int], bool] = _http_ready,
         max_wait: float = 60.0,
         python_executable: Path | None = None,
+        log_dir: Path | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
@@ -41,6 +69,15 @@ class LlamaCppProvider:
         # Defaults to sys.executable (unfrozen/dev); pass the venv python when
         # running inside the frozen .app so llama_cpp is importable.
         self._python_executable: Path = python_executable or Path(sys.executable)
+        # v0.7.151 — Where to write llama_cpp.server stderr. Until this
+        # release stderr was DEVNULL'd, so when the server exited with
+        # returncode=1 (e.g. unsupported model architecture, OOM, missing
+        # CUDA toolkit) the user got "exited prematurely (returncode=1)"
+        # with zero diagnostic context. Now we open a per-instance logfile
+        # and surface its tail in the RuntimeError message.
+        self._log_dir: Path = log_dir or _default_log_dir()
+        self._stderr_log: Path | None = None
+        self._stderr_fh = None  # type: ignore[var-annotated]
         self._proc: subprocess.Popen | None = None
         self._port: int | None = None
 
@@ -58,20 +95,65 @@ class LlamaCppProvider:
             self.stop()
 
         port = find_free_port()
+
+        # v0.7.151 — Open a per-launch stderr logfile so the inevitable
+        # llama_cpp.server crash on an unsupported quant / arch is
+        # diagnosable from the launcher.log instead of completely silent.
+        # The file path is included in the RuntimeError message so the
+        # user can `tail -F` it.
+        try:
+            self._log_dir.mkdir(parents=True, exist_ok=True)
+            self._stderr_log = self._log_dir / "llamacpp_chat_stderr.log"
+            # Append (not overwrite) so a crash followed by a manual retry
+            # still has the original failure context. The user can rotate
+            # if it gets large; this is a diagnostic file, not a hot loop.
+            self._stderr_fh = self._stderr_log.open("ab", buffering=0)
+        except OSError:
+            # If we can't open the logfile (read-only fs, permission denied),
+            # fall back to DEVNULL — the previous behavior. Better than
+            # crashing before even attempting to spawn the model server.
+            self._stderr_log = None
+            self._stderr_fh = subprocess.DEVNULL
+
         self._proc = subprocess.Popen(
             [str(self._python_executable), "-m", "llama_cpp.server",
              "--model", str(path),
              "--host", "127.0.0.1",
              "--port", str(port)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=self._stderr_fh,
         )
         self._port = port
 
         deadline = time.monotonic() + self._max_wait
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
-                raise RuntimeError(f"llama_cpp.server exited prematurely "
-                                   f"(returncode={self._proc.returncode})")
+                # v0.7.151 — surface the captured stderr tail so the user
+                # can actually diagnose the crash without grepping logs.
+                self._close_stderr()
+                tail = _tail_lines(self._stderr_log, _STDERR_TAIL_LINES) \
+                    if self._stderr_log else ""
+                msg = (
+                    f"llama_cpp.server exited prematurely "
+                    f"(returncode={self._proc.returncode}) "
+                    f"while loading model {model!r}"
+                )
+                if tail:
+                    msg += (
+                        f". Last {_STDERR_TAIL_LINES} lines of stderr "
+                        f"(full log at {self._stderr_log}):\n{tail}"
+                    )
+                elif self._stderr_log:
+                    msg += (
+                        f". Empty stderr at {self._stderr_log} — "
+                        f"the server died before writing any diagnostics "
+                        f"(possible: missing llama_cpp install, exec policy)"
+                    )
+                else:
+                    msg += (
+                        ". Stderr capture unavailable "
+                        "(logfile could not be opened — read-only fs?)"
+                    )
+                raise RuntimeError(msg)
             if self._ready_probe(port):
                 # Upstream uses esperanto's openai_compatible provider; these
                 # are the env var names esperanto's OpenAICompatibleLanguageModel
@@ -82,11 +164,41 @@ class LlamaCppProvider:
                 )
             time.sleep(0.5)
 
+        # v0.7.151 — Timeout path: process is still alive but never bound
+        # the port. Include stderr tail too, since the model may be
+        # silently hung (mmap stuck, infinite tokenizer load, …).
         self.stop()
-        raise RuntimeError(f"llama_cpp.server on port {port} never became ready")
+        tail = _tail_lines(self._stderr_log, _STDERR_TAIL_LINES) \
+            if self._stderr_log else ""
+        msg = (
+            f"llama_cpp.server on port {port} never became ready "
+            f"within {self._max_wait}s (model={model!r})"
+        )
+        if tail:
+            msg += (
+                f". Last stderr (full log at {self._stderr_log}):\n{tail}"
+            )
+        raise RuntimeError(msg)
+
+    def _close_stderr(self) -> None:
+        """v0.7.151 — flush and close the stderr handle if it's a file we
+        opened. Idempotent; safe to call from stop() and from the exit-path
+        RuntimeError construction."""
+        fh = self._stderr_fh
+        if fh is None:
+            return
+        if fh is subprocess.DEVNULL:
+            self._stderr_fh = None
+            return
+        try:
+            fh.close()
+        except Exception:
+            pass
+        self._stderr_fh = None
 
     def stop(self) -> None:
         if self._proc is None:
+            self._close_stderr()  # v0.7.151 — idempotent cleanup
             return
         self._proc.terminate()
         try:
@@ -96,6 +208,7 @@ class LlamaCppProvider:
             self._proc.wait()
         self._proc = None
         self._port = None
+        self._close_stderr()  # v0.7.151 — flush + release the logfile handle
 
     def pick_default_model(self) -> str:
         """Choose a sensible default GGUF from the user's model dir.

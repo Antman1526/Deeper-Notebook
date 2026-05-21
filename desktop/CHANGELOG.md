@@ -18,7 +18,76 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.150 (in flight)
+## Unreleased — v0.7.36 → v0.7.151 (in flight)
+
+- **v0.7.151** 🐛 **Capture `llama_cpp.server` stderr — Hermes-3 (and any
+  future) crash is now diagnosable instead of silently swallowed.**
+  Carried from v0.7.145 deferred list.
+
+  Launcher.log showed:
+
+      Failed to auto-start llama.cpp for 'GGUF/Hermes-3-Llama-3.1-8B-Q4_K_M.gguf':
+      Traceback (most recent call last):
+        File "desktop/app.py", line 287, in _phase_select_provider
+        File "desktop/providers/llamacpp.py", line 73, in start
+      RuntimeError: llama_cpp.server exited prematurely (returncode=1)
+
+  …with absolutely no diagnostic context. `desktop/providers/llamacpp.py`
+  was passing `stderr=subprocess.DEVNULL` to `subprocess.Popen`, so any
+  error message from llama_cpp.server — unsupported model architecture
+  (Hermes-3 needs a custom ROPE base), CUDA OOM, missing optional
+  dependency, exec policy denial, segfault — was discarded.
+
+  The user couldn't tell whether the issue was:
+    - the model file itself
+    - the llama-cpp version pinned in the venv
+    - the GPU runtime
+    - permissions
+    - something else entirely
+
+  Fix (`desktop/providers/llamacpp.py`):
+
+  1. **New `log_dir` ctor kwarg** (defaults to
+     `~/.open-notebook-plus/logs/`). Provider opens
+     `llamacpp_chat_stderr.log` in append mode on every `start()` so the
+     diagnostic file persists across launcher restarts.
+  2. **stderr routed to that file**, replacing `subprocess.DEVNULL`.
+     Append-mode means a crash → retry → crash sequence accumulates
+     context rather than overwriting.
+  3. **Both premature-exit AND timeout error paths** now include:
+       - the model name (which GGUF failed)
+       - the returncode (so a SIGSEGV / SIGKILL is distinguishable)
+       - the last 30 stderr lines as a quoted block
+       - the absolute path to the full logfile
+     so a user can `tail -F` the file or grep it for the actual cause.
+  4. **Graceful fallback**: if the logfile can't be opened (read-only
+     filesystem, permission denied), fall back to `subprocess.DEVNULL`
+     — same behavior as before — and the error message explicitly says
+     "Stderr capture unavailable" so the user isn't confused about why
+     the stderr block is missing.
+  5. **Cleanup**: `stop()` and the error paths both call
+     `_close_stderr()` (idempotent) to release the file handle.
+
+  Tests (`desktop/tests/test_llamacpp_provider.py`): 4 new regression
+  tests covering:
+    - stderr captured + tail in error msg + logfile path referenced
+    - stderr empty → explicit "Empty stderr" + path hint + likely-cause
+    - unwritable log_dir → graceful fallback to DEVNULL + clear msg
+    - ready-timeout path also includes in-flight stderr (mmap stall,
+      slow GPU init, etc.)
+  All 14 tests pass (10 pre-existing + 4 new).
+
+  Next time the user hits a chat-LLM crash they'll see something like:
+
+      RuntimeError: llama_cpp.server exited prematurely (returncode=1)
+      while loading model 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf'. Last 30
+      lines of stderr (full log at /Users/.../llamacpp_chat_stderr.log):
+        llama_model_load: error loading model architecture: unknown
+        unknown model architecture: 'hermes3'
+        llama_load_model_from_file: failed to load model
+
+  …which is enough to either swap to a supported quant, upgrade the
+  llama-cpp-python pin, or pick a different default model.
 
 - **v0.7.150** 🐛 **Fix Piper voice config re-download spam — `min_bytes`
   override for files where the MB-based threshold doesn't fit.** Carried
