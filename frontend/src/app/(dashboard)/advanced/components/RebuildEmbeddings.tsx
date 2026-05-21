@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,18 @@ export function RebuildEmbeddings() {
   const [includeInsights, setIncludeInsights] = useState(true)
   const [commandId, setCommandId] = useState<string | null>(null)
   const [status, setStatus] = useState<RebuildStatusResponse | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  // v0.7.158 — `pollingInterval` was previously a `useState` value that
+  // `stopPolling` closed over. Because `stopPolling` was wrapped in
+  // useCallback(..., [pollingInterval]), the unmount cleanup
+  // useEffect(() => () => stopPolling(), [stopPolling]) re-ran on
+  // EVERY setPollingInterval(...) — and the prior unmount callback
+  // closed over a STALE pollingInterval (often null because the state
+  // hadn't propagated yet). Result: an orphaned setInterval kept
+  // hitting /embedding/rebuild/status forever after the user
+  // navigated away from /advanced. Refactored to useRef so the
+  // current interval is always readable from cleanup without
+  // triggering re-renders or stale closures.
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Rebuild mutation
   const rebuildMutation = useMutation({
@@ -43,9 +54,11 @@ export function RebuildEmbeddings() {
   })
 
   // Start polling for rebuild status
+  // v0.7.158 — reads/writes pollingIntervalRef.current instead of
+  // state, so a re-render doesn't drop the live interval id.
   const startPolling = (cmdId: string) => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
     }
 
     const interval = setInterval(async () => {
@@ -62,23 +75,34 @@ export function RebuildEmbeddings() {
       }
     }, 5000) // Poll every 5 seconds
 
-    setPollingInterval(interval)
+    pollingIntervalRef.current = interval
   }
 
   // Stop polling
-  const stopPolling = useCallback(() => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+  // v0.7.158 — no longer wrapped in useCallback (ref is stable, no
+  // dependency to track), eliminating the stale-closure cleanup bug
+  // where the unmount callback closed over an outdated interval id.
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
-  }, [pollingInterval])
+  }
 
   // Cleanup on unmount
+  // v0.7.158 — empty dep array. Reads ref at unmount time, so we
+  // ALWAYS see the current interval (whatever it was set to last).
+  // The previous [stopPolling] dep caused the cleanup to re-arm on
+  // every state change, with each re-armed callback closing over a
+  // stale pollingInterval — orphaning the interval after unmount.
   useEffect(() => {
     return () => {
-      stopPolling()
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
     }
-  }, [stopPolling])
+  }, [])
 
   const handleStartRebuild = () => {
     const request: RebuildEmbeddingsRequest = {

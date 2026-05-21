@@ -18,7 +18,67 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.157 (in flight)
+## Unreleased — v0.7.36 → v0.7.158 (in flight)
+
+- **v0.7.158** ⚡🐛 **Reliability sweep — httpx timeouts, log dedup,
+  RebuildEmbeddings stale-closure cleanup.** Three findings from the
+  2026-05-21 improvement scan, bundled as one focused commit.
+
+  **(1) Six `httpx.AsyncClient()` calls without timeout** in
+  `api/chat_service.py` (lines 27, 53, 68, 98, 113, 156). httpx
+  treats a missing `timeout=` as "wait forever". A hung downstream
+  call (DB pool exhausted, SurrealDB unresponsive, LangGraph node
+  stuck) would hold one of only 4 default request-pool slots
+  INDEFINITELY — eventually starving the API of capacity to serve
+  even healthy endpoints. Only `execute_chat` (line 138) had a
+  bespoke timeout for long-running local LLMs.
+
+  Fix: added a class-level `_DEFAULT_TIMEOUT =
+  httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)`
+  and threaded it through every `AsyncClient(...)` call. The 10-
+  minute `read` budget on `execute_chat` is preserved as a per-call
+  override.
+
+  **(2) Podcast migration warning flood.** Every cold start logged
+  ~14 identical `WARNING: No credential found for provider 'openai'`
+  entries in api.log (one per legacy seed profile attempting to bind
+  to gpt-5-mini / gpt-4o-mini-tts). Diagnostic value of the 2nd
+  through 14th was zero — pure log noise drowning out real warnings.
+
+  Fix (`open_notebook/podcasts/migration.py`): dedup the warning
+  per `(provider, model_name)` pair using a process-level set
+  `_credential_missing_warned`. First missing-credential call for
+  each combination logs at WARNING level (same text); subsequent
+  calls in the same process skip the log. After a restart the set
+  is empty so any newly-missing combinations still surface.
+
+  **(3) RebuildEmbeddings orphaned-setInterval bug**
+  (`frontend/src/app/(dashboard)/advanced/components/RebuildEmbeddings.tsx`).
+  The component stored `pollingInterval` in `useState`, wrapped
+  `stopPolling` in `useCallback(..., [pollingInterval])`, and ran
+  the unmount cleanup as `useEffect(() => () => stopPolling(),
+  [stopPolling])`. Result: the unmount callback was RE-ARMED on
+  every `setPollingInterval(...)` and each new callback closed
+  over a stale `pollingInterval` value (often `null` before state
+  propagated). When the user navigated away mid-poll, the live
+  interval was never cleared → an orphaned 5-second poll hammered
+  `/embedding/rebuild/status` forever.
+
+  Fix: switched to `useRef<NodeJS.Timeout | null>(null)`. Reads
+  and writes go through the ref so the cleanup always sees the
+  current interval id; the unmount effect uses an empty deps array
+  so it only fires on actual unmount. `useCallback` import dropped.
+
+  Frontend `tsc` clean. Backend tests pass (7/7 gmail combined,
+  no regressions).
+
+  After rebuild, expected behavior:
+    - api.log shows the credential-missing warning at most ONCE
+      per (provider, model_name) per process lifetime
+    - chat_service CRUD endpoints fail fast instead of hanging
+      indefinitely when downstream stalls
+    - Visiting /advanced and navigating away no longer leaves an
+      orphaned status-poll running in the background
 
 - **v0.7.157** ⚡ **Cache `GmailIntegration.get()` + bounded-wait query
   + lifespan pre-warm — eliminates the 4-8s "slow query" cluster on
