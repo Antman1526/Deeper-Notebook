@@ -31,9 +31,14 @@ export function useCreateNote() {
   return useMutation({
     mutationFn: (data: CreateNoteRequest) => notesApi.create(data),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: QUERY_KEYS.notes(variables.notebook_id) 
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notes(variables.notebook_id)
       })
+      // v0.7.166 — sidebar note_count refresh.
+      // `GET /notebooks` returns note_count per notebook
+      // (api/routers/notebooks.py:53-59); without this invalidation
+      // the sidebar counter stayed stale until window-focus refetch.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('notebooks.noteCreatedSuccess'),
@@ -85,6 +90,8 @@ export function useDeleteNote() {
     onSuccess: () => {
       // Invalidate all notes queries (with and without notebook IDs)
       queryClient.invalidateQueries({ queryKey: ['notes'] })
+      // v0.7.166 — sidebar note_count refresh; see useCreateNote.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('notebooks.noteDeletedSuccess'),

@@ -18,7 +18,66 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.165 (in flight)
+## Unreleased — v0.7.36 → v0.7.166 (in flight)
+
+- **v0.7.166** 🐛⚡ **Cache invalidation gap + archived-filter
+  efficiency + bootstrap test debt.** Three follow-through items
+  from the v0.7.165 deferred list.
+
+  **(1) Frontend cache invalidation: sidebar counts stayed stale
+  after every source/note mutation.** `GET /notebooks` returns
+  `source_count` and `note_count` per row for the sidebar
+  (`api/routers/notebooks.py:53-59`), but the source/note
+  mutation hooks weren't invalidating `QUERY_KEYS.notebooks` on
+  success. Result: after every add/delete the sidebar counters
+  showed the old number until the next window-focus refetch —
+  visible UX bug.
+
+  Fix: added `queryClient.invalidateQueries({ queryKey:
+  QUERY_KEYS.notebooks })` to 5 source mutation hooks
+  (`useCreateSource`, `useDeleteSource`, `useFileUpload`,
+  `useAddSourcesToNotebook`, `useRemoveSourceFromNotebook`) and
+  2 note mutation hooks (`useCreateNote`, `useDeleteNote`). All
+  7 onSuccess callbacks now refresh the sidebar count.
+
+  **(2) Notebooks `?archived=` filter moved from Python to
+  SurrealQL WHERE clause.** `api/routers/notebooks.py:64-65`
+  previously fetched ALL notebook rows (including the per-row
+  `source_count` + `note_count` subqueries) then filtered in
+  Python with `[nb for nb in result if nb.get("archived") ==
+  archived]`. A caller asking for `?archived=false` paid for the
+  full archive scan plus the heavy subquery fan-out, then threw
+  half the results away.
+
+  Fix: build a conditional `WHERE archived = $archived` clause
+  with proper parameter binding (NOT f-string interpolation),
+  so SurrealDB skips archived rows server-side. The
+  `validated_order_by` f-string interpolation is still safe —
+  it's been checked against the allowed-fields + allowed-directions
+  allowlists above. Three new tests pin this: `?archived=false`
+  binds `$archived=False`, `?archived=true` binds `$archived=True`,
+  no `archived` param → no WHERE clause emitted.
+
+  **(3) `desktop/tests/test_bootstrap.py` test debt.** The
+  `test_ensure_venv_creates_venv_and_writes_marker` test was
+  asserting `len(run_calls) == 2` but v0.7.141 added the
+  depcheck suite (6 additional `python -c 'import X'` probes),
+  making the count 8. Test wasn't updated alongside v0.7.141 and
+  has been silently failing in CI-style full-suite runs ever
+  since. Updated to assert `>= 2` for venv-create + uv-install
+  (the original contract) and added structural assertions on
+  the remaining calls (each must be a `python -c 'import X'`
+  probe against the fake venv interpreter).
+
+  Tests: 5 new at `tests/test_v0_7_166_invalidation_and_archived.py`
+  + the bootstrap-test fix. Full backend suite: **840/840**
+  (was 835). Desktop suite: 248/248 (was 247/248).
+
+  **Verified in isolation:** the 17 "failures" seen when running
+  `tests/` + `desktop/tests/` together are pre-existing cross-file
+  test pollution (shared module state); each suite passes cleanly
+  on its own. Logged as a separate item for future test-infra
+  cleanup; NOT caused by v0.7.166 changes.
 
 - **v0.7.165** 🐛 **Production-readiness fixes — LangGraph state-shape
   guards + asyncio task GC risk.** Three top-priority items from the

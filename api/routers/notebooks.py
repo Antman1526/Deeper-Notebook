@@ -49,20 +49,33 @@ async def get_notebooks(
                 detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
             )
 
-        # Build the query with counts
+        # v0.7.166 — `archived` filter moved into the WHERE clause.
+        # Previously this fetched ALL notebook rows (including the
+        # source_count + note_count subqueries fired per row) and
+        # then filtered in Python. With many archived notebooks a
+        # caller asking for `?archived=false` paid for the full
+        # archive scan + post-filtering — wasted DB work + payload.
+        # Now SurrealDB skips archived rows server-side. Note: f-string
+        # interpolation of `validated_order_by` is safe — it's been
+        # checked against the `allowed_fields` allowlist + `allowed_directions`
+        # whitelist above; raw user input never reaches the query.
+        # `archived` flows in via the `$archived` binding, not f-string.
+        where_clause = ""
+        params: dict = {}
+        if archived is not None:
+            where_clause = "WHERE archived = $archived"
+            params["archived"] = archived
+
         query = f"""
             SELECT *,
             count(<-reference.in) as source_count,
             count(<-artifact.in) as note_count
             FROM notebook
+            {where_clause}
             ORDER BY {validated_order_by}
         """
 
-        result = await repo_query(query)
-
-        # Filter by archived status if specified
-        if archived is not None:
-            result = [nb for nb in result if nb.get("archived") == archived]
+        result = await repo_query(query, params if params else None)
 
         return [
             NotebookResponse(
