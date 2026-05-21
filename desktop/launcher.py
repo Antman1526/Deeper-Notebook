@@ -178,9 +178,24 @@ class Supervisor:
          chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
 
         api_url = f"http://127.0.0.1:{api_port}"
+        # v0.7.147 — Pin DATA_FOLDER to a per-user, ALWAYS-writable absolute
+        # path. open_notebook/config.py used to hardcode "./data" (CWD-
+        # relative) and the API subprocess inherits cwd=upstream_root, which
+        # is read-only when the .app is launched from a mounted DMG. The
+        # resulting EROFS at module import crashed uvicorn before /readyz
+        # ever came up, the launcher waited 180s, then exited silently.
+        # Injecting an absolute path here makes the launch path resilient
+        # to ANY read-only CWD (DMG, Time Machine snapshot, /Applications
+        # under a non-admin user, …) without affecting Docker / dev where
+        # the env var would simply not be set otherwise.
+        data_folder = Path(
+            os.environ.get("HOME", os.environ.get("USERPROFILE", "."))
+        ) / ".open-notebook-plus" / "data"
+        data_folder.mkdir(parents=True, exist_ok=True)
         self.session_env = {
             **os.environ,
             **self.extra_env,
+            "DATA_FOLDER": str(data_folder),
             "SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
             "SURREAL_USER": self.cfg.surreal_user,
             "SURREAL_PASSWORD": self.cfg.surreal_password,
