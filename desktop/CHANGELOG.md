@@ -18,7 +18,65 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.151 (in flight)
+## Unreleased — v0.7.36 → v0.7.152 (in flight)
+
+- **v0.7.152** 🐛 **Wire `voice_injection.js` to the real STT + TTS shim
+  ports — no more "STT failed: HTTP 404" toast.** Final item from the
+  v0.7.145 deferred list.
+
+  The voice-injection JS (`desktop/first_run/static/voice_injection.js`)
+  POSTs recorded audio to `/api/transcribe` and TTS-requests to
+  `/api/audio/speech`. Both paths 404 on the main API — those endpoints
+  don't exist. The actual implementations are PER-LAUNCH shim processes
+  on dynamically-allocated ports:
+
+      Whisper STT:  http://127.0.0.1:<whisper_port>/v1/audio/transcriptions
+      Piper  TTS:   http://127.0.0.1:<piper_port>/v1/audio/speech
+
+  The shim ports were already plumbed through to `desktop/app.py:686`
+  (`whisper_port=getattr(sv, "whisper_port", ...), piper_port=...`) for
+  the auto_register pipeline, but never made it into the browser-side
+  voice JS. The JS supports overrides via `window.ONP_STT_URL` and
+  `window.ONP_TTS_URL` — they just weren't being set.
+
+  Fix (3 files):
+
+  1. **`desktop/window.py`** — `_theme_injection_js()` gains optional
+     `stt_url` and `tts_url` kwargs. When supplied, emits
+     `window.ONP_STT_URL = "<url>";` and `window.ONP_TTS_URL = "<url>";`
+     INSIDE the `(function() { ... })();` IIFE that loads the voice JS,
+     so the globals are set BEFORE the script reads them.
+  2. **`desktop/window.py::open_window`** — gains the same two kwargs
+     and forwards them to `_theme_injection_js()`.
+  3. **`desktop/app.py::_phase_open_window`** — resolves
+     `stt_url`/`tts_url` from `ctx.sv.whisper_port` and `ctx.sv.piper_port`
+     (already plumbed via the supervisor), passing `None` when the
+     respective shim failed to start (port=0). When None, the JS falls
+     back to its built-in `/api/transcribe` default — same broken
+     behavior as today, no regression — rather than misroute to a stale
+     port that may belong to a completely different process next launch.
+
+  Tests (`desktop/tests/test_window.py`): 4 new regression tests:
+    - assigns `window.ONP_STT_URL` when `stt_url` provided
+    - assigns `window.ONP_TTS_URL` when `tts_url` provided
+    - emits NO assignment when both are None (fall-through to default)
+    - both URLs land simultaneously without one shadowing the other
+
+  Subtle test note: `voice_injection.js` ITSELF contains the literal
+  `window.ONP_STT_URL` token (as the fallback lookup
+  `window.ONP_STT_URL || '/api/transcribe'`). The omit-when-None test
+  has to assert against the ASSIGNMENT pattern (`window.ONP_STT_URL = `)
+  rather than the bare name. 35/35 window tests pass.
+
+  After rebuild + next launch with whisper + piper alive:
+    - Mic FAB POST goes to `http://127.0.0.1:<whisper_port>/v1/audio/transcriptions`
+      → 200 with `{text: "..."}` transcript
+    - Speaker icon POST goes to `http://127.0.0.1:<piper_port>/v1/audio/speech`
+      → 200 with audio/wav body
+    - api.log shows ZERO `/api/transcribe` 404s
+
+  This completes the v0.7.145 deferred list. v0.7.149-152 collectively
+  resolve all four follow-ups.
 
 - **v0.7.151** 🐛 **Capture `llama_cpp.server` stderr — Hermes-3 (and any
   future) crash is now diagnosable instead of silently swallowed.**

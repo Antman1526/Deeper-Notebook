@@ -178,7 +178,9 @@ def _theme_tokens(theme_id: str) -> dict:
 
 
 def _theme_injection_js(theme_id: str, memory_url: str | None = None,
-                        remind_openchronicle: bool = False) -> str:
+                        remind_openchronicle: bool = False,
+                        stt_url: str | None = None,
+                        tts_url: str | None = None) -> str:
     """Inject ALL 9 themes' tokens up front, keyed by [data-theme="X"]
     attribute selectors. The active theme is set by `dataset.theme` on
     <html>. The onp/ThemeSwitcher React component (and `window.ONP.setTheme`
@@ -269,9 +271,37 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     voice_js = _voice_injection_js()
+    # v0.7.152 — Set window.ONP_STT_URL and window.ONP_TTS_URL BEFORE the
+    # voice-injection script runs so it picks up the per-launch shim ports.
+    #
+    # Background: voice_injection.js defaults `STT_URL` to `/api/transcribe`
+    # and `TTS_URL` to `/api/audio/speech`. Neither path exists on the main
+    # FastAPI app — they're served by the per-launch whisper + piper shim
+    # processes on dynamically-allocated ports. Without these globals the
+    # mic button POSTs to a non-existent /api/transcribe (404) and the
+    # voice-message TTS button POSTs to a non-existent /api/audio/speech
+    # (404). Visible as "STT failed: HTTP 404" toast in the UI on every
+    # mic press and a similarly-broken speaker icon.
+    #
+    # When stt_url/tts_url are None (e.g. whisper or piper failed to start
+    # this session) we leave the globals UNSET so voice_injection.js falls
+    # back to its built-in `/api/transcribe` default — which still 404s,
+    # but at least the override mechanism doesn't make things worse. The
+    # broken-state UX matches what the user already had.
+    voice_globals_pieces: list[str] = []
+    if stt_url:
+        voice_globals_pieces.append(
+            f"window.ONP_STT_URL = {_json.dumps(stt_url)};"
+        )
+    if tts_url:
+        voice_globals_pieces.append(
+            f"window.ONP_TTS_URL = {_json.dumps(tts_url)};"
+        )
+    voice_globals = "\n        ".join(voice_globals_pieces)
     # Append a script-tag injection so the voice JS runs after page DOM is ready.
     voice_injector = f"""
     (function() {{
+        {voice_globals}
         var s = document.createElement('script');
         s.textContent = {_json.dumps(voice_js)};
         document.head.appendChild(s);
@@ -298,8 +328,18 @@ def open_window(url: str, on_close: Callable[[], None],
                 width: int = 1280, height: int = 800,
                 theme: str = "light-blue",
                 memory_url: str | None = None,
-                remind_openchronicle: bool = False) -> None:
-    """Blocking — returns when the user closes the window."""
+                remind_openchronicle: bool = False,
+                stt_url: str | None = None,
+                tts_url: str | None = None) -> None:
+    """Blocking — returns when the user closes the window.
+
+    v0.7.152 — `stt_url` and `tts_url` are the dynamic per-launch endpoints
+    of the whisper + piper shim processes. When set, they're injected as
+    `window.ONP_STT_URL` / `window.ONP_TTS_URL` so the voice-injection
+    JS calls the actual shims instead of POSTing to the non-existent
+    `/api/transcribe` + `/api/audio/speech` routes (which were generating
+    the "STT failed: HTTP 404" toasts in the UI).
+    """
     import webview  # lazy: only the desktop runtime path needs this
     window = webview.create_window(title, url, width=width, height=height)
     window.events.closed += on_close
@@ -317,7 +357,8 @@ def open_window(url: str, on_close: Callable[[], None],
         try:
             window.evaluate_js(
                 _theme_injection_js(active_theme, memory_url=memory_url,
-                                    remind_openchronicle=remind_openchronicle))
+                                    remind_openchronicle=remind_openchronicle,
+                                    stt_url=stt_url, tts_url=tts_url))
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
