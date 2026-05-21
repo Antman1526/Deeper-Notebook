@@ -18,7 +18,57 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.163 (in flight)
+## Unreleased — v0.7.36 → v0.7.164 (in flight)
+
+- **v0.7.164** 🎨 **H1 hierarchy sweep — Notebooks, Transformations,
+  Studio, Search pages match the v0.7.153 standard.** Top finding
+  from the 2026-05-21 visual audit (item #4).
+
+  Background: two competing H1 styles shipped side-by-side after
+  v0.7.153. Settings, Podcasts, Models, Advanced, Setup-Wizard used
+  the new `text-3xl font-semibold tracking-tight`; Notebooks,
+  Transformations, Studio, Search still used the older
+  `text-2xl font-bold`. Users saw different "page weight" depending
+  on which route they visited — visible inconsistency.
+
+  Pages updated (4 files):
+
+    - **Notebooks** (`(dashboard)/notebooks/page.tsx:60`):
+      H1 promoted; rest of header structure untouched.
+    - **Transformations** (`(dashboard)/transformations/page.tsx:26-44`):
+      H1 promoted AND broken alignment fixed. The previous JSX
+      opened a `flex items-center justify-between` with only a
+      left-half — the right slot was empty so `justify-between`
+      did no work — and the description sat in a separate
+      `max-w-5xl` block below with no top margin (orphaned).
+      Replaced with a single `<header>` stack: title+refresh on
+      the top row, description below via `space-y-2`.
+    - **Studio** (`(dashboard)/studio/page.tsx:230-239`):
+      H1 promoted. Subtitle bumped from `text-sm` to default body
+      size — Studio is a flagship feature; the explainer copy
+      shouldn't read as a footnote. `mb-1` → `space-y-2` for
+      consistent breathing room.
+    - **Search** (`(dashboard)/search/page.tsx:159-178`):
+      Bigger fix here. Was `p-4 md:p-6` (smaller than every other
+      dashboard page) with `text-xl md:text-2xl font-bold`
+      (smallest H1 in the app). Standardised to
+      `px-6 py-10 sm:px-8` + the v0.7.153 H1 style. Removed the
+      noisy "CHOOSE A MODE" all-caps caption above the tabs —
+      same fix as Podcasts in v0.7.153, two-tab toggles are
+      self-explanatory. Translation key `searchPage.chooseAMode`
+      now unused (preserved in locales for safety; cleanup
+      deferred to a locale sweep).
+
+  Visual audit's item #2 (sources/[id] double-padding), #5
+  (transformations alignment), #1 (notebooks 3-column body
+  spacing), #6 (setup-wizard CTA prominence), #7 (Studio mode-
+  picker tiles), plus the 20+ secondary opportunities remain
+  open for follow-up commits. v0.7.164 picked the highest-
+  leverage one (item #4) — 4 pages, consistent visual outcome,
+  zero behavior change.
+
+  Frontend `tsc` clean. No locale changes (the unused
+  `chooseAMode` key stays; cleanup deferred).
 
 - **v0.7.163** ⚡ **Transformations pagination + credentials N+1
   parallelization.** Two follow-through items from the v0.7.159
