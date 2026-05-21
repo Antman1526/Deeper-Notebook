@@ -314,7 +314,7 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching chat sessions: {str(e)}"
+            status_code=500, detail="Error fetching chat sessions"
         )
 
 
@@ -356,7 +356,7 @@ async def create_session(request: CreateSessionRequest):
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating chat session: {str(e)}"
+            status_code=500, detail="Error creating chat session"
         )
 
 
@@ -436,7 +436,7 @@ async def get_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching session")
 
 
 @router.put("/chat/sessions/{session_id}", response_model=ChatSessionResponse)
@@ -496,7 +496,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         raise
     except Exception as e:
         logger.error(f"Error updating session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error updating session")
 
 
 @router.delete("/chat/sessions/{session_id}", response_model=SuccessResponse)
@@ -536,7 +536,7 @@ async def delete_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting session")
 
 
 @router.post("/chat/execute", response_model=ExecuteChatResponse)
@@ -698,7 +698,7 @@ async def execute_chat(request: ExecuteChatRequest):
             f"  Model override: {request.model_override}\n"
             f"  Traceback:\n{traceback.format_exc()}"
         )
-        raise HTTPException(status_code=500, detail=f"Error executing chat: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error executing chat")
 
 
 # ---------------------------------------------------------------------------
@@ -1054,4 +1054,4 @@ async def build_context(request: BuildContextRequest):
         raise
     except Exception as e:
         logger.error(f"Error building context: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error building context: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error building context")
