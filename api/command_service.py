@@ -178,9 +178,29 @@ class CommandService:
         """
         try:
             from surreal_commands import get_command_status as _gcs
-            from surreal_commands.core.service import (
-                get_command_service as _gcsvc,
-            )
+
+            # v0.7.177 — `surreal_commands.core.service.get_command_service`
+            # is a private API surface. Importing it directly couples us to
+            # the upstream package's internal module layout, so an upstream
+            # refactor that renames `core.service` → `service` (or moves
+            # `get_command_service` elsewhere) would silently break all
+            # job cancellation with an ImportError caught only by the
+            # broad `except Exception` below. Wrap the private import in
+            # try/ImportError and fall back to a direct repo_query UPDATE
+            # on the `command` table — same pattern the lifespan stale-
+            # command reaper at api/main.py:272-287 uses.
+            try:
+                from surreal_commands.core.service import (
+                    get_command_service as _gcsvc,
+                )
+                _have_private_api = True
+            except ImportError:
+                _have_private_api = False
+                logger.debug(
+                    "cancel_command_job: surreal_commands.core.service "
+                    "not importable, falling back to direct UPDATE on "
+                    "the `command` table."
+                )
 
             status = await _gcs(job_id)
             if status is None:
@@ -195,13 +215,35 @@ class CommandService:
                     "not in a cancellable state, skipping"
                 )
                 return False
-            svc = _gcsvc()
-            await svc.update_command_result(
-                job_id,
-                status="canceled",
-                result={},
-                error_message="Cancelled by user via DELETE /commands/jobs/{job_id}",
+
+            cancel_msg = (
+                "Cancelled by user via DELETE /commands/jobs/{job_id}"
             )
+            if _have_private_api:
+                svc = _gcsvc()
+                await svc.update_command_result(
+                    job_id,
+                    status="canceled",
+                    result={},
+                    error_message=cancel_msg,
+                )
+            else:
+                # Direct SurrealDB fallback. Mirrors the structure of the
+                # lifespan stale-command reaper. The `command:` prefix
+                # handling matches what surreal_commands itself stores.
+                from open_notebook.database.repository import repo_query
+
+                record_id = (
+                    job_id if job_id.startswith("command:") else f"command:{job_id}"
+                )
+                await repo_query(
+                    f"UPDATE {record_id} "
+                    "SET status = 'canceled', "
+                    "    result = {}, "
+                    "    error_message = $msg, "
+                    "    updated = time::now()",
+                    {"msg": cancel_msg},
+                )
             logger.info(f"cancel_command_job: marked {job_id} as canceled")
             return True
         except Exception as e:

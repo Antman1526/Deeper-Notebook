@@ -18,7 +18,45 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.176 (in flight)
+## Unreleased — v0.7.36 → v0.7.177 (in flight)
+
+- **v0.7.177** 🐛🔒 **Round-4 deferred sweep: podcast_service info-
+  leak, cancel_command_job private-API fallback, forward-looking
+  migration guard catches 8 & 15 (MED+LOW severity).** Three
+  independent surfaces, one version tag.
+
+  1. **podcast_service.py str(e) leak sweep.** The v0.7.168 router
+     sweep handled every `api/routers/*.py` file but missed
+     `api/podcast_service.py`. Four `HTTPException(detail=f"...
+     {str(e)}")` raises were echoing driver internals (SurrealDB
+     WS frames, RecordIDs, connection-pool diagnostics) back to
+     the client. Sanitized to generic messages; `logger.error`
+     still captures the full exception for ops.
+
+  2. **cancel_command_job private-API fallback.** The function
+     imported `surreal_commands.core.service.get_command_service`
+     — a private module. An upstream rename of `core.service`
+     would silently break ALL job cancellation with an ImportError
+     swallowed by the broad `except Exception` below. v0.7.177
+     wraps the private import in try/ImportError and falls back
+     to a direct `repo_query` UPDATE on the `command` table
+     (same pattern as the v0.7.172 lifespan reaper).
+
+  3. **Migration idempotency forward-guard.** The new
+     `test_every_up_migration_uses_idempotent_defines` meta-test
+     caught two more unguarded migrations the v0.7.176 audit
+     missed: migration 8 (`model_override` + `command` field
+     additions) and migration 15 (all three `memory_*` tables).
+     Both fixed with `IF NOT EXISTS` guards. The meta-test now
+     serves as a sentinel against future contributors adding
+     migration 17+ with the same footgun.
+
+  Tests at `tests/test_v0_7_177_audit_sweep.py`: 5 new — AST pins
+  on sanitized podcast_service details, on the try/ImportError
+  fallback in cancel_command_job, on `command:` prefix handling,
+  and the forward-guard meta-test.
+
+  Full backend suite: **911/911** (was 906 in v0.7.176).
 
 - **v0.7.176** 🐛 **Migrations 12 and 16 are now re-run-safe (MED
   severity).** Round-3 deep-scan item #6.
