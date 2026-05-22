@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.181 (in flight)
+## Unreleased — v0.7.36 → v0.7.182 (in flight)
+
+- **v0.7.182** 🐛🍎 **Round-8 sweep — iso() helper extended to 6 more
+  routers + NotFoundError sweep continued to 4 more + response-model
+  Optional[str] widening across all 8 domain shapes.** Continuation of
+  v0.7.181 with broader scope.
+
+  **(1) iso() migration — 6 new routers (20 sites total).** Continuation
+  of the v0.7.181 fix. Routers migrated:
+    - `api/routers/source_chat.py` — 6 sites (3 endpoints)
+    - `api/routers/podcasts.py` — 2 sites
+    - `api/routers/models.py` — 4 sites
+    - `api/routers/exports.py` — 2 sites (HTML metadata serialisation
+      — pre-fix would emit a SPACE-separated datetime into the exported
+      file; downstream JS pipelines re-parsing those strings would
+      hit the same Safari bug.)
+    - `api/routers/embedding_rebuild.py` — 2 sites (rebuild-status
+      response.started_at / .completed_at)
+    - `api/routers/insights.py` — 4 sites
+
+  Running total: **10 routers** Safari-safe. The remaining ~14 routers
+  with no datetime serialization (search, context, commands, config,
+  episode_profiles, speaker_profiles, etc.) aren't on the hot path
+  for this bug.
+
+  **(2) Response-model `Optional[str]` widening — 6 more shapes.** The
+  v0.7.181 widening covered SourceResponse + SourceListResponse only.
+  This round propagates the change to NotebookResponse, ModelResponse,
+  TransformationResponse, NoteResponse, SourceInsightResponse, and
+  CredentialResponse. Caught when the iso() migration in `models.py`
+  exposed a latent test-suite failure (`test_create_same_model_name_*`
+  → 500) on `ModelResponse.created` being required `str` but the test
+  mocks producing None.
+
+  **(3) NotFoundError re-raise — 4 new routers.** Continuation of the
+  v0.7.179 + v0.7.181 sweep:
+    - `api/routers/studio.py` — 5 reraises (was the largest unhandled
+      surface — 28 broad excepts, none with typed reraise)
+    - `api/routers/source_chat.py` — 7 reraises (had partial v0.7.108
+      coverage; now bulk-applied)
+    - `api/routers/episode_profiles.py` — 4 reraises
+    - `api/routers/speaker_profiles.py` — 4 reraises
+
+  Running total: **10 routers** with typed re-raise. Remaining: gmail,
+  exports, embedding, embedding_rebuild, search, context, commands,
+  config, insights, chat (deferred for next round).
+
+  Tests at `tests/test_v0_7_182_sweep_continued.py`: 6 new — per-router
+  iso() import pins, str() absence forward-guard, response-model
+  Optional[str] cumulative pin, NotFoundError reraise cumulative pin,
+  iso() helper contract re-pin.
+
+  Full backend suite: **941/941** (was 935 in v0.7.181; +6 new).
+  Frontend: **65/65** + tsc clean (no frontend touches this round).
 
 - **v0.7.181** 🐛🍎 **Safari ISO datetime fix + SourceResponse shape
   reconciliation + NotFoundError sweep continuation (round-7).**

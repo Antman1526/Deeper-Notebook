@@ -13,6 +13,7 @@ from api.models import (
     ModelResponse,
     ProviderAvailabilityResponse,
 )
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.ai.connection_tester import test_individual_model
 from open_notebook.ai.key_provider import provision_provider_keys
 from open_notebook.ai.model_discovery import (
@@ -184,8 +185,8 @@ async def get_models(
                 provider=model.provider,
                 type=model.type,
                 credential=model.credential,
-                created=str(model.created),
-                updated=str(model.updated),
+                created=iso(model.created),
+                updated=iso(model.updated),
             )
             for model in models
         ]
@@ -242,8 +243,8 @@ async def create_model(model_data: ModelCreate):
             provider=new_model.provider,
             type=new_model.type,
             credential=new_model.credential,
-            created=str(new_model.created),
-            updated=str(new_model.updated),
+            created=iso(new_model.created),
+            updated=iso(new_model.updated),
         )
     except HTTPException:
         raise

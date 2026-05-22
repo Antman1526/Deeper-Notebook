@@ -56,6 +56,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.routers.filesystem import _resolve_and_validate
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.domain.notebook import Note, Notebook, Source
 
 router = APIRouter(tags=["exports"])
@@ -400,10 +401,15 @@ def _render_note_as_html(note: Note) -> str:
     title = note.title or "(untitled)"
     meta_pairs: list[tuple[str, str]] = []
     meta_pairs.append(("type", note.note_type or "human"))
+    # v0.7.182 — iso() for Safari new Date() compat in the exported
+    # HTML (`<dd>{date}</dd>` is purely visual but a copy-pasted ISO
+    # string into a downstream JS pipeline would re-trip the original
+    # bug). The `or ""` guards against iso(None) when the attribute
+    # is somehow present but falsy.
     if getattr(note, "created", None):
-        meta_pairs.append(("created", str(note.created)))
+        meta_pairs.append(("created", iso(note.created) or ""))
     if getattr(note, "updated", None):
-        meta_pairs.append(("updated", str(note.updated)))
+        meta_pairs.append(("updated", iso(note.updated) or ""))
     if getattr(note, "id", None):
         meta_pairs.append(("id", str(note.id)))
     fm_html = '<div class="onp-frontmatter"><dl>'

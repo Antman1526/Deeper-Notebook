@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from api.models import NoteResponse, SaveAsNoteRequest, SourceInsightResponse
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.domain.notebook import SourceInsight
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 
@@ -40,8 +41,8 @@ async def get_insight(insight_id: str):
             source_id=source.id or "",
             insight_type=insight.insight_type,
             content=insight.content,
-            created=str(insight.created),
-            updated=str(insight.updated),
+            created=iso(insight.created),
+            updated=iso(insight.updated),
         )
     except HTTPException:
         raise
@@ -91,8 +92,8 @@ async def save_insight_as_note(insight_id: str, request: SaveAsNoteRequest):
             title=note.title,
             content=note.content,
             note_type=note.note_type,
-            created=str(note.created),
-            updated=str(note.updated),
+            created=iso(note.created),
+            updated=iso(note.updated),
         )
     except HTTPException:
         raise

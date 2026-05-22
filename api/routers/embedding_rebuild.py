@@ -3,6 +3,7 @@ from loguru import logger
 from surreal_commands import get_command_status
 
 from api.command_service import CommandService
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from api.models import (
     RebuildProgress,
     RebuildRequest,
@@ -193,10 +194,12 @@ async def get_rebuild_status(command_id: str):
             )
 
         # Add timestamps
+        # v0.7.182 — iso() for Safari new Date() compat on the
+        # rebuild-status timestamps the frontend renders.
         if hasattr(status, "created") and status.created:
-            response.started_at = str(status.created)
+            response.started_at = iso(status.created)
         if hasattr(status, "updated") and status.updated:
-            response.completed_at = str(status.updated)
+            response.completed_at = iso(status.updated)
 
         # Add error message if failed
         if (

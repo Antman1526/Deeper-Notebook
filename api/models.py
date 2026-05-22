@@ -22,8 +22,16 @@ class NotebookResponse(BaseModel):
     name: str
     description: str
     archived: bool
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     source_count: int
     note_count: int
 
@@ -79,8 +87,16 @@ class ModelResponse(BaseModel):
     provider: str
     type: str
     credential: Optional[str] = None
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class DefaultModelsResponse(BaseModel):
@@ -137,8 +153,16 @@ class TransformationResponse(BaseModel):
     description: str
     prompt: str
     apply_default: bool
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class TransformationExecuteRequest(BaseModel):
@@ -193,8 +217,16 @@ class NoteResponse(BaseModel):
     title: Optional[str]
     content: Optional[str]
     note_type: Optional[str]
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     command_id: Optional[str] = None
 
 
@@ -448,8 +480,16 @@ class SourceInsightResponse(BaseModel):
     source_id: str
     insight_type: str
     content: str
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class InsightCreationResponse(BaseModel):
@@ -666,8 +706,16 @@ class CredentialResponse(BaseModel):
     location: Optional[str] = None
     credentials_path: Optional[str] = None
     has_api_key: bool = False
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     model_count: int = 0
     decryption_error: Optional[str] = None
 
