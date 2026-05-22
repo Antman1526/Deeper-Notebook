@@ -533,7 +533,6 @@ export const jaJP = {
   },
   searchPage: {
     askAndSearch: "質問と検索",
-    chooseAMode: "モードを選択",
     askBeta: "質問（ベータ）",
     search: "検索",
     askYourKb: "ナレッジベースに質問（ベータ）",
@@ -630,7 +629,6 @@ export const jaJP = {
     noProfilesFound: "エピソードプロファイルが見つかりません。ポッドキャストを生成する前にエピソードプロファイルを作成してください。",
     listTitle: "ポッドキャスト",
     listDesc: "生成されたエピソードを追跡し、再利用可能なプロファイルを管理します。",
-    chooseAView: "表示を選択",
     episodesTab: "エピソード",
     templatesTab: "プロファイル",
     overviewTitle: "エピソード概要",

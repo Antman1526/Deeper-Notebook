@@ -267,7 +267,10 @@ export default function SourcesPage() {
     return (
       <AppShell>
         <div className="flex h-full items-center justify-center">
-          <p className="text-red-500">{error}</p>
+          {/* v0.7.180 — text-red-500 → text-destructive so the error
+              line absorbs the active theme's destructive hue (same as the
+              v0.7.165 ErrorBoundary fix). */}
+          <p className="text-destructive">{error}</p>
         </div>
       </AppShell>
     )
@@ -300,7 +303,10 @@ export default function SourcesPage() {
       <div className="flex flex-col h-full w-full max-w-none px-6 py-6">
         <div className="mb-6 flex flex-shrink-0 items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">{t('sources.allSources')}</h1>
+            {/* v0.7.180 — H1 standardization (font-bold → font-semibold
+                tracking-tight). Last leftover dashboard H1 on the legacy
+                weight. See advanced/page.tsx:16 for context. */}
+            <h1 className="text-3xl font-semibold tracking-tight">{t('sources.allSources')}</h1>
             <p className="mt-2 text-muted-foreground">
               {t('sources.allSourcesDesc')}
             </p>

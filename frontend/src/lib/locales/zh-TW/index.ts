@@ -533,7 +533,6 @@ export const zhTW = {
   },
   searchPage: {
     askAndSearch: "提問與搜尋",
-    chooseAMode: "選擇模式",
     askBeta: "提問 (beta)",
     search: "搜尋",
     askYourKb: "向您的知識庫提問 (beta)",
@@ -630,7 +629,6 @@ export const zhTW = {
     noProfilesFound: "未找到單集簡介。在生成播客之前，請先建立一個單集簡介。",
     listTitle: "播客",
     listDesc: "跟踪生成的單集並管理可重複使用的簡介。",
-    chooseAView: "選擇視圖",
     episodesTab: "單集",
     templatesTab: "設定檔",
     overviewTitle: "單集概覽",

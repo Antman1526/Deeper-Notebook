@@ -533,7 +533,6 @@ export const frFR = {
   },
   searchPage: {
     askAndSearch: "Poser une question et Rechercher",
-    chooseAMode: "Choisir un mode",
     askBeta: "Demander (bêta)",
     search: "Recherche",
     askYourKb: "Interroger votre base de connaissances (bêta)",
@@ -630,7 +629,6 @@ export const frFR = {
     noProfilesFound: "Aucun profil d'épisode trouvé. Créez un profil d'épisode avant de générer un podcast.",
     listTitle: "Podcasts",
     listDesc: "Suivez les épisodes générés et gérez les profils réutilisables.",
-    chooseAView: "Choisir une vue",
     episodesTab: "Épisodes",
     templatesTab: "Profils",
     overviewTitle: "Aperçu des épisodes",
