@@ -18,7 +18,76 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.191 (in flight)
+## Unreleased — v0.7.36 → v0.7.192 (in flight)
+
+- **v0.7.192** 🐛 **Two end-to-end bugs caught by testing the freshly-
+  built v0.7.191 .app on macOS arm64.** The kind of bugs unit tests
+  can't catch — they only show up when the bundled venv runs against
+  real langgraph + real local-LLM-server processes.
+
+  **(1) LangGraph SqliteSaver no longer supports async methods.**
+  Newer langgraph (≥ 0.6) split sync vs. async checkpointers;
+  `chat_graph.astream_events(...)` and `chat_graph.ainvoke(...)`
+  internally call `aget_tuple()`, which the sync `SqliteSaver`
+  raises `NotImplementedError` on. End-user symptom: clicking "Send"
+  in chat instantly returned **"Chat stream failed unexpectedly."**
+  (the v0.7.184 sanitised SSE error event). The full traceback in
+  `api.log` pointed at the LangGraph internals.
+
+  Fix:
+    - `open_notebook/graphs/chat.py` and
+      `open_notebook/graphs/source_chat.py` now expose lazy async-
+      graph factories: `get_async_graph()` and
+      `get_async_source_chat_graph()`. Each returns an
+      `AsyncSqliteSaver`-backed twin of the legacy graph (same
+      nodes + topology, different persistence backend), constructed
+      on first call.
+    - `api/routers/chat.py` and `api/routers/source_chat.py` route
+      `ainvoke` / `astream_events` through the async twins; sync
+      `get_state(...)` reads (already wrapped in `asyncio.to_thread`)
+      keep using the original sync graph.
+    - Both savers point at the SAME on-disk SQLite file
+      (`LANGGRAPH_CHECKPOINT_FILE`). SQLite's WAL mode (configured
+      in `open_notebook.utils.sqlite_checkpoint`) makes concurrent
+      reads + writes across independent connections safe; the
+      v0.7.32 busy-timeout absorbs rare lock contention.
+    - **Why lazy**: `aiosqlite.connect()` captures the current event
+      loop at construct time via `asyncio.get_running_loop()`. At
+      module import time there's no loop yet, so eager construction
+      fails with "no running event loop". The lazy factory uses a
+      threading.Lock (loop-agnostic) for the slow-path init and
+      caches the result for all subsequent calls.
+
+  **(2) `llama_cpp[server]` extras missing from the bundled venv.**
+  `desktop/requirements.txt` pinned `llama-cpp-python>=0.3.16,<0.4`
+  without the `[server]` extra. The bundled venv installed
+  `llama_cpp.server.__main__` but was missing `starlette-context`,
+  `sse-starlette`, `pydantic-settings`, and `PyYAML`. Every
+  `python -m llama_cpp.server` spawn died at import time with
+  `ModuleNotFoundError: No module named 'starlette_context'`,
+  leaving the local llamacpp_embed + llamacpp_chat servers dead.
+
+  End-user symptom: source uploads stuck "Processing" forever
+  (visible in the screenshot during testing). Every embed_source
+  command failed with `Failed to generate embeddings: All connection
+  attempts failed` because the embedding port wasn't bound.
+
+  Fix: `llama-cpp-python[server]>=0.3.16,<0.4` in
+  `desktop/requirements.txt`. Lockfile regenerated via
+  `make build-mac-lock`. Now includes `starlette-context==0.3.6`,
+  `sse-starlette==3.4.2`, `pydantic-settings==2.14.1`, `pyyaml==6.0.3`.
+
+  Tests at `tests/test_v0_7_192_langgraph_async_checkpointer.py`:
+  6 new — chat + source_chat module exports lazy factory pins,
+  chat + source_chat router import + use pins, requirements.txt
+  `[server]` extra pin, lockfile contains-deps pin.
+  Plus updated 3 existing tests to monkey-patch the new
+  `get_async_graph` lazy factory alongside the legacy `chat_graph`
+  attribute (test_chat_execute_timeout, test_chat_stream,
+  test_v0_7_174_session_locks).
+
+  Backend: **1000/1000** (was 994 in v0.7.191; +6 new tests, all
+  green). Bundled .app needs `make build-mac` to ship these fixes.
 
 - **v0.7.191** 🐛 **Round-9 audit — Frontend LOW closeout: cancel
   control, stable callback identity, scoped invalidation, dead-code

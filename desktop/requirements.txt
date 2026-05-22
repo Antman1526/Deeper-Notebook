@@ -15,7 +15,16 @@
 pywebview==5.4
 pyinstaller>=6.13.0,<7
 aiohttp>=3.11.18,<4
-llama-cpp-python>=0.3.16,<0.4
+# v0.7.192 — `[server]` extra pulls in starlette-context + sse-starlette
+# + pydantic-settings + PyYAML, all required by `python -m
+# llama_cpp.server`. Without it the bundled venv installed
+# llama_cpp.server's __main__.py but crashed at first import with
+# `ModuleNotFoundError: No module named 'starlette_context'`,
+# leaving the embed + chat local-GGUF servers dead. Every source
+# upload then got stuck "Processing" because embed_source couldn't
+# reach the embedding port. Visible in
+# ~/.open-notebook-plus/logs/llamacpp_embed.log and llamacpp.log.
+llama-cpp-python[server]>=0.3.16,<0.4
 httpx==0.28.1
 tomli==2.2.1; python_version < "3.11"
 pytest==8.3.4

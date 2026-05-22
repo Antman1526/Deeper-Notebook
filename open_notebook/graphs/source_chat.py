@@ -5,6 +5,9 @@ from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
+# v0.7.192 — See chat.py for the SqliteSaver / AsyncSqliteSaver split
+# rationale. Same pattern applied here.
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from loguru import logger
@@ -329,4 +332,36 @@ source_chat_state = StateGraph(SourceChatState)
 source_chat_state.add_node("source_chat_agent", call_model_with_source_context)
 source_chat_state.add_edge(START, "source_chat_agent")
 source_chat_state.add_edge("source_chat_agent", END)
+# Default `source_chat_graph` keeps SqliteSaver for back-compat with
+# every existing sync `.get_state()` call. Streaming endpoints use
+# `get_async_source_chat_graph()` (lazy) instead.
 source_chat_graph = source_chat_state.compile(checkpointer=memory)
+
+
+# v0.7.192 — Lazy async-graph initializer. See open_notebook/graphs/chat.py
+# for the full rationale on the lazy/threading-lock pattern (aiosqlite
+# captures the event loop at construct time, so we can't build at
+# module load).
+import threading
+
+import aiosqlite
+
+_async_source_chat_graph: "object | None" = None
+_async_source_chat_graph_lock = threading.Lock()
+
+
+async def get_async_source_chat_graph():
+    """Return the AsyncSqliteSaver-backed twin of `source_chat_graph`,
+    lazily constructed on first call."""
+    global _async_source_chat_graph
+    if _async_source_chat_graph is not None:
+        return _async_source_chat_graph
+    with _async_source_chat_graph_lock:
+        if _async_source_chat_graph is not None:
+            return _async_source_chat_graph
+        aio_conn = await aiosqlite.connect(LANGGRAPH_CHECKPOINT_FILE)
+        async_memory = AsyncSqliteSaver(aio_conn)
+        _async_source_chat_graph = source_chat_state.compile(
+            checkpointer=async_memory,
+        )
+    return _async_source_chat_graph

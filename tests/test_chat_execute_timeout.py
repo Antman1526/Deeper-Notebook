@@ -41,7 +41,13 @@ def client(app):
 def hanging_graph(monkeypatch):
     """Replace chat_graph with one whose ainvoke hangs forever and whose
     get_state returns an empty state. The wait_for timeout in the handler
-    is what must save us."""
+    is what must save us.
+
+    v0.7.192 — Also stub `get_async_graph()` (the v0.7.192 lazy async-
+    checkpointer twin). Pre-fix the router only used chat_graph.ainvoke;
+    after v0.7.192 the actual ainvoke call sites use the async twin via
+    `await get_async_graph()`, so the test had to be extended to patch
+    both surfaces."""
 
     class _HangingGraph:
         def get_state(self, config):
@@ -54,6 +60,13 @@ def hanging_graph(monkeypatch):
 
     fake = _HangingGraph()
     monkeypatch.setattr(chat_router, "chat_graph", fake)
+
+    # v0.7.192 — also stub the lazy async-graph getter so the wait_for
+    # at the call site times out on OUR hanging fake, not on the real
+    # graph trying to reach a non-existent SurrealDB.
+    async def _fake_get_async_graph():
+        return fake
+    monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
     return fake
 
 
@@ -114,7 +127,13 @@ def test_chat_execute_returns_200_when_graph_returns_in_time(
             from langchain_core.messages import AIMessage
             return {"messages": [AIMessage(content="quick reply")]}
 
-    monkeypatch.setattr(chat_router, "chat_graph", _FastGraph())
+    fake_fast = _FastGraph()
+    monkeypatch.setattr(chat_router, "chat_graph", fake_fast)
+    # v0.7.192 — patch the async-graph getter too (see hanging_graph
+    # fixture above for the full rationale).
+    async def _fake_get_async_graph():
+        return fake_fast
+    monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
 
     resp = client.post(
         "/api/chat/execute",

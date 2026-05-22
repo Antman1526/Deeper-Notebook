@@ -172,7 +172,18 @@ def test_chat_execute_wraps_critical_section_in_session_lock():
     )
     # The ainvoke call must come AFTER the lock acquire (and inside
     # the async-with on the lock).
+    # v0.7.192 — accept either the legacy `chat_graph.ainvoke(` or
+    # the v0.7.192 async-twin form. _stream_chat_events now calls
+    # `_chat_graph_async.ainvoke(...)` via the lazy async-graph
+    # factory; the lock-before-write invariant is what matters,
+    # not the specific graph variable name.
     idx_ainvoke = src.find("chat_graph.ainvoke(")
+    if idx_ainvoke == -1:
+        idx_ainvoke = src.find("_chat_graph_async.ainvoke(")
+    assert idx_ainvoke != -1, (
+        "v0.7.174 regression: chat_graph(_async).ainvoke call site "
+        "is gone. Cannot verify the lock wraps the critical section."
+    )
     assert idx_lock < idx_ainvoke
 
 
