@@ -1208,15 +1208,43 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         # use + create) and blocks the event loop for the duration of
         # the handshake. Concurrent insight creations otherwise stall
         # every other in-flight request.
-        command_id = await asyncio.to_thread(
-            submit_command,
-            "open_notebook",
-            "run_transformation",
-            {
-                "source_id": source_id,
-                "transformation_id": request.transformation_id,
-            },
-        )
+        #
+        # v0.7.175 — Route through CommandService.submit_command_job
+        # instead of bare `asyncio.to_thread(submit_command, ...)`.
+        # The bare call had no timeout cap, so a saturated SurrealDB
+        # pool / hung WS handshake would block this endpoint
+        # indefinitely — pinning a worker pool slot per stuck call.
+        # CommandService.submit_command_job already wraps with
+        # asyncio.wait_for(timeout=10) at command_service.py:43-51
+        # and raises ValueError on timeout, which we surface to the
+        # client as HTTP 503 below (rather than 500). Same pattern as
+        # the existing call sites at sources.py:520 and :1064 that
+        # ALREADY route through CommandService.
+        try:
+            command_id = await CommandService.submit_command_job(
+                "open_notebook",
+                "run_transformation",
+                {
+                    "source_id": source_id,
+                    "transformation_id": request.transformation_id,
+                },
+            )
+        except ValueError as exc:
+            # CommandService.submit_command_job raises ValueError on
+            # timeout (saturated pool). Surface as 503 rather than the
+            # generic 500 below — distinguishes "service overloaded,
+            # retry shortly" from "unexpected server error".
+            logger.warning(
+                "Insight submission timed out / failed for source {}: {}",
+                source_id, exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Insight generation service is overloaded "
+                    "— please retry in a moment."
+                ),
+            ) from exc
         logger.info(
             f"Submitted run_transformation command {command_id} for source {source_id}"
         )

@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.174 (in flight)
+## Unreleased — v0.7.36 → v0.7.176 (in flight)
+
+- **v0.7.176** 🐛 **Migrations 12 and 16 are now re-run-safe (MED
+  severity).** Round-3 deep-scan item #6.
+
+  Background: `AsyncMigrationManager` records `_sbl_migrations` rows
+  so each migration only fires once, but if that table is manually
+  rolled back, a backup restore replaces a newer DB with an older
+  snapshot, or a disaster-recovery procedure rewinds the version row,
+  the next API startup re-runs migrations against a schema that
+  already has the tables. In SurrealDB without `IF NOT EXISTS`:
+
+  - `DEFINE FIELD ... ON foo TYPE string;` fails or silently
+    overwrites on re-run.
+  - `DEFINE INDEX ... ON foo FIELDS ...;` drops + recreates,
+    opening a window where queries miss rows.
+
+  Migrations 12 (`credential` table + `idx_credential_provider`
+  index) and 16 (`gmail_integration`) were the last two without
+  guards — every other migration either uses `IF NOT EXISTS` /
+  `OVERWRITE` or is a data-only migration. v0.7.176 adds the
+  guards.
+
+  Tests at `tests/test_v0_7_176_migration_idempotency.py`: 5 new —
+  every DEFINE in 12.surrealql and 16.surrealql carries a guard,
+  marker comments preserved, no regressions in other migrations.
+
+- **v0.7.175** 🐛 **`/sources/{id}/insights` now routes through
+  `CommandService.submit_command_job` — adds the missing 10-second
+  timeout cap (MED severity).** Round-3 deep-scan item #4.
+
+  Background: every other call site for `submit_command` had already
+  been migrated to `CommandService.submit_command_job` (see
+  sources.py:520, sources.py:1064), which wraps the sync
+  `submit_command` call in `asyncio.wait_for(timeout=10)` and raises
+  `ValueError` on timeout. The insight-submission endpoint at
+  sources.py:1205 was the lone holdout — a bare
+  `asyncio.to_thread(submit_command, ...)` with no timeout cap. On a
+  saturated SurrealDB pool / hung WebSocket handshake this could
+  block a FastAPI worker slot indefinitely, pinning one worker per
+  stuck insight request.
+
+  v0.7.175 routes through `CommandService.submit_command_job` and
+  translates the `ValueError` (CommandService's timeout signal) into
+  HTTP 503 ("service overloaded, retry shortly") rather than the
+  generic 500 — letting clients distinguish transient overload from
+  a real server error and back off appropriately.
+
+  Tests at `tests/test_v0_7_175_insights_timeout.py`: 3 new — AST
+  pins on `submit_command_job` routing, 503 status code on
+  ValueError, and `logger.warning` before the raise (so saturated-
+  pool incidents aren't silent).
+
+  Full backend suite: **906/906** (was 898 in v0.7.174).
 
 - **v0.7.174** 🔒 **Per-session lock serializes concurrent `/chat/execute`
   + `/chat/stream` — fixes silently-lost turns (HIGH severity).**
