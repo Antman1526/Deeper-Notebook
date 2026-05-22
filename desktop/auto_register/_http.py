@@ -60,7 +60,57 @@ def _ensure_credential(
             r.raise_for_status()
             for cred in r.json():
                 if cred.get("name", "").lower() == name.lower():
-                    return cred.get("id")
+                    cred_id = cred.get("id")
+                    # v0.7.193 — refresh the base_url if the caller
+                    # passed one that differs from the saved value.
+                    #
+                    # Why this matters: the desktop launcher allocates
+                    # the local llama-cpp / whisper / piper / embed /
+                    # memory ports DYNAMICALLY each launch via
+                    # find_free_ports(). If the user happens to get a
+                    # different port assignment between launches (port
+                    # 56918 → 57204), the credential saved by a prior
+                    # launch still points at the old port and the
+                    # /credentials/{id}/test call connects to a closed
+                    # socket. Pre-v0.7.193 the helper just returned
+                    # the existing ID without checking; saved URL stayed
+                    # stale forever.
+                    #
+                    # We only PUT when the caller actually passed a
+                    # base_url AND it differs — saves an unnecessary
+                    # round-trip on the (common) case where the port
+                    # happened to match across launches.
+                    saved_url = cred.get("base_url")
+                    if (
+                        base_url is not None
+                        and cred_id is not None
+                        and saved_url != base_url
+                    ):
+                        try:
+                            put_resp = client.put(
+                                f"/api/credentials/{cred_id}",
+                                json={"base_url": base_url},
+                            )
+                            if put_resp.status_code in (200, 204):
+                                log.info(
+                                    "Refreshed base_url for %r: %r → %r "
+                                    "(dynamic port changed across launches)",
+                                    name, saved_url, base_url,
+                                )
+                            else:
+                                log.warning(
+                                    "PUT /credentials/%s base_url → %s: %s "
+                                    "(credential will use stale URL)",
+                                    cred_id, put_resp.status_code,
+                                    put_resp.text[:200],
+                                )
+                        except Exception as exc:
+                            log.warning(
+                                "Could not refresh base_url for %r: %s "
+                                "(credential will use stale URL)",
+                                name, exc,
+                            )
+                    return cred_id
             # Loop exited without finding a match — refuse to POST a duplicate.
             log.warning(
                 "Credential %r reported as existing but not found in "

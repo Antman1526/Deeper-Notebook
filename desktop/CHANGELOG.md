@@ -18,7 +18,54 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.192 (in flight)
+## Unreleased — v0.7.36 → v0.7.193 (in flight)
+
+- **v0.7.193** 🐛 **Local-server credentials now refresh `base_url`
+  on every launch — fixes "chat model configured but broken after
+  every restart".** Two related bugs in the auto-register flow.
+
+  **Bug 1: `_phase_auto_register` ignored `sv.chat_llm_port`.**
+  `desktop/app.py:_phase_auto_register` resolved `llamacpp_port`
+  ONLY by parsing the user's `OPENAI_COMPATIBLE_BASE_URL` env var
+  — never by reading the launcher-allocated `sv.chat_llm_port`.
+  The other four local servers (whisper, piper, embed, memory)
+  read directly from the supervisor; chat-LLM was the lone holdout.
+  `desktop/auto_register/llamacpp.py:71-75` would log "skipping
+  local-GGUF credential registration: no llama-cpp server port
+  supplied (would have created broken creds)" and silently
+  not wire up the chat model.
+
+  Fix: priority chain in `app.py` — `sv.chat_llm_port` first (always
+  present in desktop mode), then `OPENAI_COMPATIBLE_BASE_URL` env
+  override (for users pointing at an external llama.cpp / LM Studio
+  instance instead of the bundled one).
+
+  **Bug 2: `_ensure_credential` never updated existing credentials'
+  `base_url`.** Even if `auto_register` passed the right port, the
+  shared helper at `desktop/auto_register/_http.py` just returned
+  the existing credential ID without checking whether the saved URL
+  still matched. The desktop launcher's `find_free_ports()` allocates
+  dynamic ports each launch, so the credential saved by yesterday's
+  launch pointed at port 56918 while today's llama-cpp-python was
+  bound to 57204. `/credentials/{credential_id}/test` connected to
+  a closed socket; the model dropdown showed it as broken.
+
+  Fix: on the "already exists" branch, compare the saved `base_url`
+  against the one the caller passed; PUT the new one when they
+  differ. Skipped when the URLs match (saves a round-trip on the
+  common case where the port happened to repeat across launches)
+  or when the caller didn't pass a base_url (API-key credentials).
+  Single fix in the shared helper benefits all 5 local-server
+  registrations: llama.cpp (local), Memory retriever, Whisper STT,
+  Piper TTS, llama.cpp embedding.
+
+  Tests at `tests/test_v0_7_193_local_model_port_refresh.py`: 4 new —
+  app.py reads sv.chat_llm_port pin, behavioural pins on
+  `_ensure_credential` (refreshes URL on port change, skips PUT when
+  unchanged, skips PUT when no URL provided).
+
+  Backend: **1004/1004** (was 1000 in v0.7.192; +4 new).
+  Combined `tests/ desktop/tests/`: **1253/1253**.
 
 - **v0.7.192** 🐛 **Two end-to-end bugs caught by testing the freshly-
   built v0.7.191 .app on macOS arm64.** The kind of bugs unit tests
