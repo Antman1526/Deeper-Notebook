@@ -18,7 +18,98 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.182 (in flight)
+## Unreleased — v0.7.36 → v0.7.183 (in flight)
+
+- **v0.7.183** 🐛🧹🎨 **Final deferred-list completion sweep — closes
+  EVERY remaining backlog item from rounds 1-8.** Five independent
+  surfaces, one version tag.
+
+  **(1) source_chat.py redundant handler cleanup.** The v0.7.182
+  bulk-sweep inserted `except (NotFoundError, InvalidInputError):
+  raise` at 7 endpoints — but at 5 of those endpoints an explicit
+  `except NotFoundError: raise HTTPException(404, "Source not
+  found")` already caught NotFoundError above. The tuple form's
+  NotFoundError leg was unreachable. v0.7.183 narrowed those 5 to
+  `except InvalidInputError:` only (still routes 400 to the global
+  handler via InvalidInputError). At the 2 sites that DON'T have an
+  upstream NotFoundError handler (stream_source_chat_response,
+  send_message_to_source_chat), the tuple form is preserved with
+  an explicit inline comment.
+
+  **(2) NotFoundError reraise — final 10 routers completed.** The
+  v0.7.179/v0.7.181/v0.7.182 sweep covered 10 routers; this round
+  closes the rest with the same audit-then-apply pattern:
+    - `api/routers/context.py` — 1 endpoint fixed (was the only
+      remaining function-level wrapper swallowing NotFoundError).
+    - `api/routers/chat.py` — 9 reraises inserted (was largest
+      remaining surface).
+    - `api/routers/search.py` — 4 reraises.
+    - `api/routers/embedding.py` — 2 reraises.
+    - Audited-no-fix: gmail.py (singleton GmailIntegration.get()
+      never raises NotFoundError), exports.py (export_note has no
+      outer try wrapper; NotFoundError propagates clean to the
+      global handler), commands.py / config.py /
+      embedding_rebuild.py (no Model.get(id) calls — the
+      `.get(...)` calls in those files are dict accesses).
+  **Cumulative: 14 routers Safari-NotFoundError-clean.**
+
+  **(3) iso() helper — final coverage.** v0.7.181/v0.7.182 covered
+  10 routers; v0.7.183 swept the rest:
+    - `api/routers/transformations.py` — 8 sites
+    - `api/podcast_service.py` — 2 sites
+    - `api/credentials_service.py` — 2 sites
+    - `api/command_service.py` — 2 sites
+  Forward-guard test `test_no_unsafe_str_dt_calls_anywhere_in_api`
+  now scans the entire `api/` tree on every CI run; ANY future
+  `str(X.created)` / `str(X.updated)` will fail loud.
+
+  **(4) Cross-suite test pollution FIXED.** Two namespace
+  collisions resolved:
+    - `desktop/scripts/` → `desktop/dl_scripts/`. The
+      `desktop/scripts/` folder name shadowed the root `scripts/`
+      package whenever a desktop shim test inserted `desktop/`
+      into sys.path. `from scripts.benchmark_models import ...`
+      in `tests/test_v0_7_139.py` resolved to
+      `desktop/scripts/benchmark_models` (which doesn't exist) →
+      8 ModuleNotFoundError failures.
+    - `desktop/tests/__init__.py` removed (was empty). With the
+      file present, `desktop/tests/` became a package called
+      `tests`, shadowing the root `tests/` directory the same way.
+      `from tests.integration.conftest import ...` in
+      `tests/test_v0_7_131.py` → 4 more failures.
+    - The remaining 5 failures (test_v0_7_139.py
+      TestJSONExtraction / TestPodcastSpeakerDetection /
+      TestReportRendering) were downstream of the first scripts
+      collision and now pass.
+    **Combined `pytest tests/ desktop/tests/`: 1201/1201**
+    (was 17 failed, 1177 passed in v0.7.182). Tracks as
+    "Cross-file test pollution between tests/ and desktop/tests/
+    (pre-existing)" — resolved.
+
+  **(5) Frontend visual polish — markdown headers + Advanced page
+  padding.**
+    - `SourceDetailContent.tsx:600-601` — markdown h1/h2
+      `font-bold` → `font-semibold`. Prevents the weight-shift
+      when scrolling from the source title (v0.7.180 H1 standard,
+      `font-semibold`) into the body content.
+    - `(dashboard)/advanced/page.tsx:13` — outer padding `p-6` →
+      `px-6 py-10 sm:px-8`. Brings the Advanced page to the
+      v0.7.180 dashboard padding standard (Settings, Podcasts,
+      Search, Models). No more cramped-to-the-rail feel.
+
+  Tests at `tests/test_v0_7_183_completion_sweep.py`: 7 new — narrow
+  handler pin, cumulative `str(X.created)` forward-guard, context.py
+  pin, both namespace-collision pins (desktop/scripts/ AND
+  desktop/tests/__init__.py), markdown header pin, Advanced page
+  padding pin.
+
+  **Final tallies:**
+  - Backend `tests/`: **948/948** (was 941; +7 new).
+  - Desktop `desktop/tests/`: **253/253** (unchanged).
+  - **Combined `tests/ desktop/tests/`: 1201/1201** ← *was 17 failed
+    going back many rounds; the pre-existing cross-suite pollution
+    is FIXED.*
+  - Frontend: **65/65** + tsc clean.
 
 - **v0.7.182** 🐛🍎 **Round-8 sweep — iso() helper extended to 6 more
   routers + NotFoundError sweep continued to 4 more + response-model

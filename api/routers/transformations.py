@@ -12,6 +12,7 @@ from api.models import (
     TransformationResponse,
     TransformationUpdate,
 )
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
 from open_notebook.ai.models import Model
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
 from open_notebook.exceptions import (
@@ -56,8 +57,8 @@ async def get_transformations(
                 description=transformation.description,
                 prompt=transformation.prompt,
                 apply_default=transformation.apply_default,
-                created=str(transformation.created),
-                updated=str(transformation.updated),
+                created=iso(transformation.created),
+                updated=iso(transformation.updated),
             )
             for transformation in transformations
         ]
@@ -96,8 +97,8 @@ async def create_transformation(transformation_data: TransformationCreate):
             description=new_transformation.description,
             prompt=new_transformation.prompt,
             apply_default=new_transformation.apply_default,
-            created=str(new_transformation.created),
-            updated=str(new_transformation.updated),
+            created=iso(new_transformation.created),
+            updated=iso(new_transformation.updated),
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -261,8 +262,8 @@ async def get_transformation(transformation_id: str):
             description=transformation.description,
             prompt=transformation.prompt,
             apply_default=transformation.apply_default,
-            created=str(transformation.created),
-            updated=str(transformation.updated),
+            created=iso(transformation.created),
+            updated=iso(transformation.updated),
         )
     except HTTPException:
         raise
@@ -310,8 +311,8 @@ async def update_transformation(
             description=transformation.description,
             prompt=transformation.prompt,
             apply_default=transformation.apply_default,
-            created=str(transformation.created),
-            updated=str(transformation.updated),
+            created=iso(transformation.created),
+            updated=iso(transformation.updated),
         )
     except HTTPException:
         raise

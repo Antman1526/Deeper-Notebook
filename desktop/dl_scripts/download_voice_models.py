@@ -2,7 +2,15 @@
 """Download Whisper.cpp + Piper voice models into the user's model dir.
 
 Usage:
-    python -m desktop.scripts.download_voice_models [--model-dir PATH]
+    python -m desktop.dl_scripts.download_voice_models [--model-dir PATH]
+
+v0.7.183 — renamed from desktop.scripts → desktop.dl_scripts. The
+`desktop/scripts/` package name collided with the top-level `scripts/`
+package whenever a desktop test inserted `desktop/` into sys.path
+(test_memory_shim.py / test_piper_shim.py / test_openchronicle_shim.py
+/ test_whisper_shim.py), shadowing the root `scripts.benchmark_models`
+import path and breaking 17 tests in the combined-suite run. Renaming
+removes the namespace collision entirely.
 """
 from __future__ import annotations
 

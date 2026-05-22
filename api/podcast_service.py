@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from surreal_commands import get_command_status, submit_command
 
 from open_notebook.domain.notebook import Notebook
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
 
 
@@ -167,10 +168,10 @@ class PodcastService:
                 "error_message": getattr(status, "error_message", None)
                 if status
                 else None,
-                "created": str(status.created)
+                "created": iso(status.created)
                 if status and hasattr(status, "created") and status.created
                 else None,
-                "updated": str(status.updated)
+                "updated": iso(status.updated)
                 if status and hasattr(status, "updated") and status.updated
                 else None,
                 "progress": getattr(status, "progress", None) if status else None,

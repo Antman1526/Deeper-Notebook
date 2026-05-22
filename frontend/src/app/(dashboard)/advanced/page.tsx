@@ -10,7 +10,13 @@ export default function AdvancedPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6">
+        {/* v0.7.183 — outer padding promoted from bare `p-6` to the
+            v0.7.180 dashboard-page standard `px-6 py-10 sm:px-8`
+            (matches Settings, Podcasts, Search, Models). Adds the
+            vertical breathing room every other dashboard has, plus
+            the wider sm-breakpoint horizontal padding so content
+            isn't hugging the rail on mid-width laptops. */}
+        <div className="px-6 py-10 sm:px-8">
           <div className="max-w-4xl mx-auto space-y-6">
             <div>
               {/* v0.7.180 — text-3xl font-bold → text-3xl font-semibold
