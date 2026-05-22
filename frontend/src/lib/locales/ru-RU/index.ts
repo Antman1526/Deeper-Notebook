@@ -533,7 +533,6 @@ export const ruRU = {
   },
   searchPage: {
     askAndSearch: "Запрос и поиск",
-    chooseAMode: "Выберите режим",
     askBeta: "Запрос (бета)",
     search: "Поиск",
     askYourKb: "Спросите базу знаний (бета)",
@@ -630,7 +629,6 @@ export const ruRU = {
     noProfilesFound: "Профили эпизодов не найдены. Создайте профиль перед генерацией подкаста.",
     listTitle: "Подкасты",
     listDesc: "Отслеживайте сгенерированные эпизоды и управляйте профилями.",
-    chooseAView: "Выберите представление",
     episodesTab: "Эпизоды",
     templatesTab: "Профили",
     overviewTitle: "Обзор эпизодов",

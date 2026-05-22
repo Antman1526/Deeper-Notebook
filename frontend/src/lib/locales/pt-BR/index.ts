@@ -533,7 +533,6 @@ export const ptBR = {
   },
   searchPage: {
     askAndSearch: "Perguntar e Buscar",
-    chooseAMode: "Escolha um modo",
     askBeta: "Perguntar (beta)",
     search: "Buscar",
     askYourKb: "Pergunte à Sua Base de Conhecimento (beta)",
@@ -630,7 +629,6 @@ export const ptBR = {
     noProfilesFound: "Nenhum perfil de episódio encontrado. Crie um perfil de episódio antes de gerar um podcast.",
     listTitle: "Podcasts",
     listDesc: "Acompanhe episódios gerados e gerencie perfis reutilizáveis.",
-    chooseAView: "Escolha uma visualização",
     episodesTab: "Episódios",
     templatesTab: "Perfis",
     overviewTitle: "Visão geral dos episódios",

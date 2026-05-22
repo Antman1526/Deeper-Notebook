@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.179 (in flight)
+## Unreleased — v0.7.36 → v0.7.180 (in flight)
+
+- **v0.7.180** 🎨🧹 **Visual polish + locale cleanup + Zustand
+  forward-guard.** Five low-risk surfaces from the deferred backlog.
+
+  **(1) `sidebar-store.ts` partialize.** The Zustand store used
+  `persist` middleware with no explicit `partialize`. Today the
+  store only has `isCollapsed` so this was a no-op — BUT the moment
+  a future contributor adds ephemeral state (`isHovered`,
+  `lastClickedAt`, a transition flag), the default behavior would
+  silently bleed it into localStorage and across page reloads.
+  Codified the persistence boundary as `partialize: (state) => ({
+  isCollapsed: state.isCollapsed })`. Matches the pattern auth-store
+  already uses per `lib/stores/CLAUDE.md`. Zero behavior change today;
+  full forward-guard tomorrow.
+
+  **(2) Orphaned i18n keys removed: `searchPage.chooseAMode` +
+  `podcasts.chooseAView`.** v0.7.153 + v0.7.164 removed the
+  "CHOOSE A MODE" / "CHOOSE A VIEW" all-caps captions from Search
+  and Podcasts (two-tab toggles are self-explanatory) but left the
+  unused locale keys behind in all 10 locale files. The vitest
+  `Unused Key Detection` test eventually flagged them. Removed
+  10 lines × 2 keys = 20 lines from `en-US`, `bn-IN`, `es-ES`,
+  `fr-FR`, `it-IT`, `ja-JP`, `pt-BR`, `ru-RU`, `zh-CN`, `zh-TW`.
+
+  **(3) H1 weight standardisation — Advanced + Sources pages.**
+  Last two dashboard H1s still on the legacy `text-3xl font-bold`
+  pattern. Both promoted to the v0.7.153 standard
+  `text-3xl font-semibold tracking-tight`. Every dashboard route
+  now reads with consistent weight. Also fixed the inline-edit
+  titles in `NotebookHeader.tsx` and `SourceDetailContent.tsx`
+  (`text-2xl font-bold` → `text-2xl font-semibold`) so the
+  notebook/source detail titles don't outweigh the H1s above them.
+
+  **(4) Hardcoded `text-gray-500/600` → `text-muted-foreground` in
+  SourceCard.** 4 spots: source-type indicator + processing message
+  + 2 progress labels. Cards now absorb the active theme's muted
+  hue instead of pinning a literal gray that's wrong in
+  Solarized / Nord / Dracula / Paper / etc.
+
+  **(5) `text-red-500` → `text-destructive` in three error
+  surfaces.** `sources/page.tsx:270` (error banner),
+  `SourceDetailContent.tsx:451` (load error), and
+  `RebuildEmbeddings.tsx:256` (failed-status icon). Same pattern
+  v0.7.165 used for ErrorBoundary. Held to the user's "no theme
+  color changes" constraint by NOT touching the
+  queued/running/completed icon colors (yellow/blue/green) — those
+  keep their semantic palette; only the destructive case has a
+  canonical theme token.
+
+  Frontend `tsc` clean. **Frontend tests: 65/65** (up from 64 — the
+  unused-key test now passes after the locale cleanup; was the
+  flagging mechanism that caught `podcasts.chooseAView`).
+  **Backend suite: 922/922.**
 
 - **v0.7.179** 🐛 **NotFoundError re-raise sweep across three high-
   traffic routers — fixes wrong-status responses on legitimate 404s

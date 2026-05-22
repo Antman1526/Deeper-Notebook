@@ -448,7 +448,8 @@ export function SourceDetailContent({
   if (error || !source) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-        <p className="text-red-500">{error || t('sources.notFound')}</p>
+        {/* v0.7.180 — text-red-500 → text-destructive (theme-aware). */}
+        <p className="text-destructive">{error || t('sources.notFound')}</p>
       </div>
     )
   }
@@ -462,8 +463,11 @@ export function SourceDetailContent({
             <InlineEdit
               value={source.title || ''}
               onSave={handleUpdateTitle}
-              className="text-2xl font-bold"
-              inputClassName="text-2xl font-bold"
+              // v0.7.180 — font-bold → font-semibold so source title
+              // matches notebook title (NotebookHeader) and v0.7.153 H1
+              // standard.
+              className="text-2xl font-semibold"
+              inputClassName="text-2xl font-semibold"
               placeholder={t('sources.titlePlaceholder')}
               emptyText={t('sources.untitledSource')}
             />

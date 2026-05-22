@@ -533,7 +533,6 @@ export const esES = {
   },
   searchPage: {
     askAndSearch: "Preguntar y buscar",
-    chooseAMode: "Elige un modo",
     askBeta: "Preguntar (beta)",
     search: "Buscar",
     askYourKb: "Pregunta a tu base de conocimiento (beta)",
@@ -630,7 +629,6 @@ export const esES = {
     noProfilesFound: "No se encontraron perfiles de episodio. Crea un perfil de episodio antes de generar un podcast.",
     listTitle: "Podcasts",
     listDesc: "Lleva un registro de los episodios generados y gestiona perfiles reutilizables.",
-    chooseAView: "Elige una vista",
     episodesTab: "Episodios",
     templatesTab: "Perfiles",
     overviewTitle: "Vista general de episodios",

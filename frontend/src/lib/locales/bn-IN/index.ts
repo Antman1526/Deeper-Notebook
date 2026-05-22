@@ -533,7 +533,6 @@ export const bnIN = {
   },
   searchPage: {
     askAndSearch: "জিজ্ঞাসা ও অনুসন্ধান",
-    chooseAMode: "একটি মোড বেছে নিন",
     askBeta: "জিজ্ঞাসা (বেটা)",
     search: "অনুসন্ধান",
     askYourKb: "আপনার জ্ঞানভান্ডার জিজ্ঞাসা করুন (বেটা)",
@@ -630,7 +629,6 @@ export const bnIN = {
     noProfilesFound: "কোন এপিসোড প্রোফাইল পাওয়া যায়নি। পডকাস্ট তৈরির আগে একটি এপিসোড প্রোফাইল তৈরি করুন।",
     listTitle: "পডকাস্ট",
     listDesc: "তৈরি করা এপিসোড ট্র্যাক করুন এবং পুনঃব্যবহারযোগ্য প্রোফাইল পরিচালনা করুন।",
-    chooseAView: "একটি ভিউ বেছে নিন",
     episodesTab: "এপিসোড",
     templatesTab: "প্রোফাইল",
     overviewTitle: "এপিসোড ওভারভিউ",

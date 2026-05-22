@@ -541,7 +541,6 @@ export const enUS = {
   },
   searchPage: {
     askAndSearch: "Ask and Search",
-    chooseAMode: "Choose a mode",
     askBeta: "Ask (beta)",
     search: "Search",
     askYourKb: "Ask Your Knowledge Base (beta)",
@@ -638,7 +637,6 @@ export const enUS = {
     noProfilesFound: "No episode profiles found. Create an episode profile before generating a podcast.",
     listTitle: "Podcasts",
     listDesc: "Keep track of generated episodes and manage reusable profiles.",
-    chooseAView: "Choose a view",
     episodesTab: "Episodes",
     templatesTab: "Profiles",
     overviewTitle: "Episodes overview",
