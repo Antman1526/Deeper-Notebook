@@ -674,8 +674,34 @@ def _phase_auto_register(ctx: AppContext) -> None:
         sv = ctx.sv
 
         api_base = sv.session_env["INTERNAL_API_URL"]
-        llamacpp_port = None
-        if cfg.provider == "llamacpp" and cfg.default_model:
+
+        # v0.7.193 — llamacpp_port resolution. Was:
+        #   if cfg.provider == "llamacpp" and cfg.default_model:
+        #       url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL", "")
+        #       if url: llamacpp_port = urllib.parse.urlparse(url).port
+        # That ONLY discovered the chat-LLM port when the user had
+        # explicitly set OPENAI_COMPATIBLE_BASE_URL in .env. But the
+        # desktop launcher spawns its OWN llamacpp_chat server on a
+        # dynamic port (`sv.chat_llm_port`) every launch — that port
+        # was being ignored, so auto_register would log "skipping
+        # local-GGUF credential registration: no llama-cpp server port
+        # supplied" and not wire up the chat model. The user could
+        # still add the credential manually via the Setup Wizard, but
+        # the dynamic port changes every launch so the manually-saved
+        # credential pointed at the WRONG port on the next launch.
+        #
+        # The other four local servers (whisper, piper, embed, memory)
+        # already read directly from the supervisor — `llamacpp_port`
+        # was the lone holdout doing env-var-only resolution. Now
+        # consistent with the rest.
+        #
+        # Priority:
+        #   1. supervisor.chat_llm_port (always present in desktop mode)
+        #   2. OPENAI_COMPATIBLE_BASE_URL env override (for users with
+        #      an external llama.cpp / LM Studio instance they want to
+        #      target instead of the bundled one)
+        llamacpp_port = getattr(sv, "chat_llm_port", None) or None
+        if llamacpp_port is None and cfg.provider == "llamacpp" and cfg.default_model:
             url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL", "")
             if url:
                 llamacpp_port = urllib.parse.urlparse(url).port
