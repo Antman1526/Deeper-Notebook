@@ -18,7 +18,56 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.168 (in flight)
+## Unreleased — v0.7.36 → v0.7.169 (in flight)
+
+- **v0.7.169** ⚡ **Pagination completion — `Notebook.get_chat_sessions`
+  + `podcast_commands` unbounded SELECTs.** Two remaining items from
+  the v0.7.165 deferred list, both same shape family as v0.7.159 /
+  v0.7.163 / v0.7.166.
+
+  **(1) `Notebook.get_chat_sessions()` paginated.**
+  `open_notebook/domain/notebook.py:135`. v0.7.161 made the
+  per-session LangGraph checkpoint reads concurrent (read-side
+  fan-out), but the underlying SurrealQL SELECT that listed every
+  chat session attached to the notebook was still unbounded. A
+  power user with hundreds of sessions per notebook paid for the
+  full table scan + relationship traversal BEFORE the parallel
+  checkpoint reads even started.
+
+  Fix: optional `limit` / `offset` parameters with the same
+  validation contract as `ObjectModel.get_all` from v0.7.159
+  (positive int / non-negative int, `bool` explicitly rejected,
+  `InvalidInputError` raised pre-try-block so it propagates to
+  HTTP 400 via the global handler instead of getting clobbered
+  to 500). Defaults stay `None` for backward compatibility —
+  existing callers keep the unbounded behavior.
+
+  `api/routers/chat.py:get_sessions` wires the new parameters
+  through with sensible defaults: `limit=Query(100, ge=1, le=1000)`,
+  `offset=Query(0, ge=0)`. The right-rail Chat list is bounded
+  to 100 newest sessions by default; clients can paginate beyond
+  that with `?offset=100`.
+
+  **(2) `commands/podcast_commands.py` LIMIT 1000 on the two
+  unbounded `SELECT *` calls.** Both `episode_profile` and
+  `speaker_profile` tables are typically small (<20 user-defined
+  rows each) but the unbounded shape was the same defensive gap
+  v0.7.159 was closing — a script-generated or migration-artifact
+  population could blow up the podcast-generate path's memory
+  footprint on every job. Now LIMIT 1000 (generous — well above
+  any realistic install) with a WARNING log if either limit is
+  ever hit. The canary log surfaces in api.log filters so an
+  operator who actually grows past 1000 profiles sees the signal
+  immediately rather than wondering why profiles are missing
+  from podcast generation.
+
+  Tests at `tests/test_v0_7_169_pagination_completion.py`: 7 new
+  — AST checks for the router wiring + the podcast LIMIT clauses,
+  runtime checks for the validation contract (invalid limit/offset
+  → InvalidInputError), and back-compat check that no-args calls
+  still produce an unbounded query.
+
+  Full backend suite: **875/875** (was 868 in v0.7.168; +7 new).
 
 - **v0.7.168** 🔒 **HTTPException detail leakage sweep — strip
   `: {str(e)}` from 66 sites across 11 routers.** Carried from

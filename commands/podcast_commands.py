@@ -135,9 +135,29 @@ async def generate_podcast_command(
             f"tts: {tts_provider}/{tts_model_name}"
         )
 
-        # 4. Load all profiles and configure podcast-creator
-        episode_profiles = await repo_query("SELECT * FROM episode_profile")
-        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
+        # 4. Load all profiles and configure podcast-creator.
+        # v0.7.169 — Bounded LIMIT 1000 on both SELECTs as defensive
+        # hardening (same pattern family as v0.7.159/163/166). These
+        # tables are typically small (<20 user-defined entries each)
+        # so the bound is generous, but the prior unbounded form was
+        # the same shape bug as `/notes` had pre-v0.7.159 — a fresh
+        # install that somehow ended up with thousands of rows
+        # (script-generated, migration artifact) would pull the full
+        # set into memory before podcast-creator could even validate.
+        # If the limit ever bites, the log line below makes it visible.
+        episode_profiles = await repo_query(
+            "SELECT * FROM episode_profile LIMIT 1000"
+        )
+        speaker_profiles = await repo_query(
+            "SELECT * FROM speaker_profile LIMIT 1000"
+        )
+        if len(episode_profiles) >= 1000 or len(speaker_profiles) >= 1000:
+            logger.warning(
+                "Hit LIMIT 1000 on podcast profile load — extending the "
+                "cap is safe but suggests the profile tables grew "
+                "unexpectedly large (episode={}, speaker={}).",
+                len(episode_profiles), len(speaker_profiles),
+            )
 
         # Transform the surrealdb array into a dictionary for podcast-creator
         episode_profiles_dict = {
