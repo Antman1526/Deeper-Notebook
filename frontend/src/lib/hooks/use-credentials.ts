@@ -9,7 +9,10 @@ import {
 } from '@/lib/api/credentials'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { getApiErrorKey } from '@/lib/utils/error-handler'
+// v0.7.196 — see use-models.ts: getApiErrorKey returns a raw i18n key
+// string. Direct use as a toast description renders the key as text
+// to the user on mapped errors.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { MODEL_QUERY_KEYS } from '@/lib/hooks/use-models'
 
 export const CREDENTIAL_QUERY_KEYS = {
@@ -94,7 +97,7 @@ export function useCreateCredential() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -128,7 +131,7 @@ export function useUpdateCredential() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -163,7 +166,7 @@ export function useDeleteCredential() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -198,7 +201,7 @@ export function useTestCredential() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('apiKeys.testFailed')),
+        description: getApiErrorMessage(error, t, 'apiKeys.testFailed'),
         variant: 'destructive',
       })
     },
@@ -230,7 +233,7 @@ export function useDiscoverModels() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('apiKeys.syncFailed')),
+        description: getApiErrorMessage(error, t, 'apiKeys.syncFailed'),
         variant: 'destructive',
       })
     },
@@ -274,7 +277,7 @@ export function useRegisterModels() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('apiKeys.syncFailed')),
+        description: getApiErrorMessage(error, t, 'apiKeys.syncFailed'),
         variant: 'destructive',
       })
     },
@@ -327,7 +330,7 @@ export function useMigrateFromEnv() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -380,7 +383,7 @@ export function useMigrateFromProviderConfig() {
     onError: (error: unknown) => {
       toast({
         title: t('common.error'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
