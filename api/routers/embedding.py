@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from api.command_service import CommandService
 from api.models import EmbedRequest, EmbedResponse
 from open_notebook.ai.models import model_manager
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.domain.notebook import Note, Notebook, Source
 
 router = APIRouter()
@@ -159,6 +160,11 @@ async def embed_content(embed_request: EmbedRequest):
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
+        raise
     except Exception as e:
         logger.error(
             f"Error embedding {embed_request.item_type} {embed_request.item_id}: {str(e)}"
@@ -283,6 +289,9 @@ async def vectorize_notebook_sources(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as exc:
         # Worker registry not available — fail loudly so the user knows

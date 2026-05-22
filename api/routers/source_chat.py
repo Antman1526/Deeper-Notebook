@@ -129,8 +129,12 @@ async def create_source_chat_session(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+    except InvalidInputError:
+        # v0.7.183 — bubble InvalidInputError to the global handler
+        # (→ 400). NotFoundError is already caught explicitly above
+        # with a clean "Source not found" message; the v0.7.182 bulk
+        # sweep also inserted it here, but that clause was unreachable.
+        # Narrowed to InvalidInputError only.
         raise
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
@@ -209,8 +213,12 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+    except InvalidInputError:
+        # v0.7.183 — bubble InvalidInputError to the global handler
+        # (→ 400). NotFoundError is already caught explicitly above
+        # with a clean "Source not found" message; the v0.7.182 bulk
+        # sweep also inserted it here, but that clause was unreachable.
+        # Narrowed to InvalidInputError only.
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
@@ -314,8 +322,12 @@ async def get_source_chat_session(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+    except InvalidInputError:
+        # v0.7.183 — bubble InvalidInputError to the global handler
+        # (→ 400). NotFoundError is already caught explicitly above
+        # with a clean "Source not found" message; the v0.7.182 bulk
+        # sweep also inserted it here, but that clause was unreachable.
+        # Narrowed to InvalidInputError only.
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
@@ -394,8 +406,12 @@ async def update_source_chat_session(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+    except InvalidInputError:
+        # v0.7.183 — bubble InvalidInputError to the global handler
+        # (→ 400). NotFoundError is already caught explicitly above
+        # with a clean "Source not found" message; the v0.7.182 bulk
+        # sweep also inserted it here, but that clause was unreachable.
+        # Narrowed to InvalidInputError only.
         raise
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
@@ -480,8 +496,12 @@ async def delete_source_chat_session(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+    except InvalidInputError:
+        # v0.7.183 — bubble InvalidInputError to the global handler
+        # (→ 400). NotFoundError is already caught explicitly above
+        # with a clean "Source not found" message; the v0.7.182 bulk
+        # sweep also inserted it here, but that clause was unreachable.
+        # Narrowed to InvalidInputError only.
         raise
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
@@ -654,7 +674,13 @@ async def stream_source_chat_response(
         # `except Exception` doesn't clobber them to 500.
         raise
     except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+        # v0.7.183 — keep the tuple form here. The v0.7.182 sweep
+        # inserted this on every endpoint; the v0.7.183 cleanup
+        # narrowed the 5 endpoints that had an upstream explicit
+        # `except NotFoundError: raise HTTPException(404, ...)` to
+        # `except InvalidInputError:` only (the NotFoundError clause
+        # was unreachable there). This streaming endpoint does NOT
+        # have an upstream NotFoundError handler, so keep the tuple.
         raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
@@ -741,7 +767,9 @@ async def send_message_to_source_chat(
     except HTTPException:
         raise
     except (NotFoundError, InvalidInputError):
-        # v0.7.182 — bubble typed exceptions to the global handlers.
+        # v0.7.183 — keep tuple form here (no upstream NotFoundError
+        # handler in this function; see line 672 region for the
+        # rationale).
         raise
     except Exception as e:
         logger.error(f"Error sending message to source chat: {str(e)}")

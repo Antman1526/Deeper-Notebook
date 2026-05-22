@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+
 
 class CommandService:
     """Generic service layer for command operations"""
@@ -87,10 +89,12 @@ class CommandService:
                 "status": status.status,
                 "result": status.result,
                 "error_message": getattr(status, "error_message", None),
-                "created": str(status.created)
+                # v0.7.183 — iso() for Safari new Date() compat. Same
+                # pattern as podcast_service.py:171-176.
+                "created": iso(status.created)
                 if hasattr(status, "created") and status.created
                 else None,
-                "updated": str(status.updated)
+                "updated": iso(status.updated)
                 if hasattr(status, "updated") and status.updated
                 else None,
                 "progress": getattr(status, "progress", None),

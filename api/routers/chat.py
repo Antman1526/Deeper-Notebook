@@ -14,6 +14,7 @@ from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
+    InvalidInputError,
     NotFoundError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
@@ -109,6 +110,9 @@ async def _fire_memory_extract_turn(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as exc:
         # Memory is best-effort. A failed submit_command (worker down,
         # SurrealDB blip, command not registered on this build) MUST
@@ -180,6 +184,9 @@ async def _fire_memory_summarize_session(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as exc:
         logger.debug(
@@ -333,6 +340,9 @@ async def get_sessions(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
         raise HTTPException(
@@ -375,6 +385,9 @@ async def create_session(request: CreateSessionRequest):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
@@ -458,6 +471,9 @@ async def get_session(session_id: str):
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching session: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching session")
@@ -518,6 +534,9 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error updating session: {str(e)}")
@@ -592,6 +611,9 @@ async def delete_session(session_id: str):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
@@ -1013,6 +1035,9 @@ async def _stream_chat_events(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(
             "Error in /chat/stream for session {}: {}\n{}",
@@ -1161,6 +1186,11 @@ async def build_context(request: BuildContextRequest):
             context=context_data, token_count=estimated_tokens, char_count=char_count
         )
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
         raise
     except Exception as e:
         logger.error(f"Error building context: {str(e)}")
