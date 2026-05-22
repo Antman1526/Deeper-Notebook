@@ -466,7 +466,22 @@ async def repo_update(
             record_id = f"{table}:{id}"
         data.pop("id", None)
         if "created" in data and isinstance(data["created"], str):
-            data["created"] = datetime.fromisoformat(data["created"])
+            # v0.7.170 — Normalize naive datetimes to UTC-aware.
+            # `datetime.fromisoformat("2026-05-21T17:00:00")` (no tz
+            # suffix) returns a NAIVE datetime. Mixing naive + aware
+            # in downstream comparisons (e.g. gmail.py needs_refresh
+            # at line 242: `datetime.now(timezone.utc) >= self.token_
+            # expires_at`) raises `TypeError: can't compare offset-
+            # naive and offset-aware datetimes`. Plus the adjacent
+            # line below uses `datetime.now(timezone.utc)` (aware),
+            # so writing back a naive `created` alongside an aware
+            # `updated` is itself inconsistent. Treat any naive
+            # input as UTC — matches the convention everywhere else
+            # in the codebase that uses `timezone.utc` explicitly.
+            parsed = datetime.fromisoformat(data["created"])
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            data["created"] = parsed
         data["updated"] = datetime.now(timezone.utc)
         query = f"UPDATE {record_id} MERGE $data;"
         # logger.debug(f"Update query: {query}")
