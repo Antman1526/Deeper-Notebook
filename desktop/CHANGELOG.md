@@ -18,7 +18,50 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.193 (in flight)
+## Unreleased — v0.7.36 → v0.7.194 (in flight)
+
+- **v0.7.194** 🐛 **`register_llamacpp_models` recognises the legacy
+  `Local GGUF (llama.cpp)` credential name — fixes pre-v0.6.x
+  installs that had 10-20+ models orphaned by the v0.6.x rename.**
+
+  Discovered while inspecting `/api/credentials` on a freshly-
+  launched v0.7.193 .app: two local-llama-cpp credentials coexisted.
+
+    - `Local GGUF (llama.cpp)` (created 2026-05-14, pre-v0.6.x):
+      `base_url=http://127.0.0.1:8080/v1` (hardcoded port from
+      v0.5.9 era, broken since), **18 models linked**.
+    - `llama.cpp (local)` (created by v0.7.193, current dynamic
+      port): 0 models linked, orphan.
+
+  Root cause: somewhere around v0.6.x the canonical credential name
+  shifted from `Local GGUF (llama.cpp)` to `llama.cpp (local)`, but
+  the rename was never propagated to existing installs. v0.7.193's
+  auto-register looked up the new name, didn't find a match, and
+  created a fresh credential — the user's existing models stayed
+  linked to the broken legacy one pointing at port 8080.
+
+  Fix: at the credential-creation step in
+  `desktop/auto_register/llamacpp.py`, check whether
+  `Local GGUF (llama.cpp)` already exists in `existing_cred_names`
+  (case-insensitive). If yes, target THAT credential — v0.7.193's
+  `_ensure_credential` PUT branch then refreshes its `base_url` to
+  the current `chat_llm_port` and the pre-existing model links keep
+  working. New installs (no legacy credential) get the modern name
+  unchanged.
+
+  **End-user note**: if you already had the orphan `llama.cpp
+  (local)` credential created by v0.7.193, it'll stay sitting
+  harmlessly with 0 models attached. Delete it manually from the
+  Settings UI if you want a clean list. Future launches won't
+  create new duplicates.
+
+  Tests at `tests/test_v0_7_194_legacy_credential_alias.py`: 3 new
+  — AST pin on the legacy-name check, behavioural pin that the PUT
+  refreshes the legacy credential's URL (not POST a duplicate),
+  behavioural pin that clean installs still get the modern name.
+
+  Backend: **1007/1007** (was 1004 in v0.7.193; +3 new).
+  Combined `tests/ desktop/tests/`: **1260/1260**.
 
 - **v0.7.193** 🐛 **Local-server credentials now refresh `base_url`
   on every launch — fixes "chat model configured but broken after
