@@ -17,6 +17,9 @@ from open_notebook.exceptions import (
     NotFoundError,
 )
 from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
+# v0.7.192 — Lazy async-graph getter. See open_notebook/graphs/chat.py
+# for the full rationale on the lazy/aiosqlite pattern.
+from open_notebook.graphs.source_chat import get_async_source_chat_graph
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -581,7 +584,14 @@ async def stream_source_chat_response(
             #   - on_chain_end terminal event with final state → context_indicators
             accumulated_content = ""
             final_state: Optional[dict] = None
-            async for event in source_chat_graph.astream_events(
+            # v0.7.192 — AsyncSqliteSaver twin (lazily initialised).
+            # Newer langgraph raises NotImplementedError when
+            # astream_events' internal aget_tuple() hits the sync
+            # SqliteSaver. State is shared via the underlying SQLite
+            # file so the sync `source_chat_graph.get_state()` reads
+            # above still see this write's checkpoint.
+            _source_chat_graph_async = await get_async_source_chat_graph()
+            async for event in _source_chat_graph_async.astream_events(
                 input=state_values,  # type: ignore[arg-type]
                 config=RunnableConfig(
                     configurable={"thread_id": session_id, "model_id": model_override}

@@ -4,6 +4,15 @@ from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
+# v0.7.192 — AsyncSqliteSaver for the streaming/ainvoke path.
+# Newer langgraph (≥ 0.6) split sync vs async checkpointers; the old
+# SqliteSaver raises NotImplementedError when LangGraph internally
+# calls aget_tuple() during astream_events / ainvoke. We keep the
+# sync SqliteSaver for the existing `asyncio.to_thread(graph.get_state)`
+# read paths and add AsyncSqliteSaver for async writes. Both savers
+# share the SAME underlying SQLite file so checkpoint state is
+# always consistent — they're just two views over the same DB.
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
@@ -157,4 +166,63 @@ agent_state = StateGraph(ThreadState)
 agent_state.add_node("agent", call_model_with_messages)
 agent_state.add_edge(START, "agent")
 agent_state.add_edge("agent", END)
+# Default `graph` exposes the SYNC checkpointer for back-compat with
+# every existing `chat_graph.get_state(...)` caller (wrapped in
+# asyncio.to_thread by the router code).
 graph = agent_state.compile(checkpointer=memory)
+
+
+# v0.7.192 — Lazy async-graph initializer.
+#
+# Newer langgraph (≥ 0.6) raises NotImplementedError when
+# astream_events / ainvoke internally calls aget_tuple() against the
+# sync SqliteSaver. The async variant needs AsyncSqliteSaver wrapping
+# an aiosqlite connection.
+#
+# Why lazy instead of constructing at module load:
+#
+#   `aiosqlite.connect(...)` captures the CURRENT event loop at
+#   construct time (it calls asyncio.get_running_loop() in __init__).
+#   Module load happens at import time when there's no event loop
+#   yet — the .connect() call fails with "no running event loop".
+#
+#   We can't fall back to "construct in lifespan startup" cleanly
+#   either, because the lifespan would have to wire the resulting
+#   graph into every router module's import scope. Defer to the
+#   first call instead — `get_async_graph()` returns the cached
+#   AsyncSqliteSaver-backed graph after lazily constructing it on
+#   first use.
+#
+# Why a threading.Lock rather than an asyncio.Lock: same reason as
+# above — asyncio.Lock() needs an event loop at construct time. A
+# threading.Lock is loop-agnostic. `await` inside the `with` block
+# is fine; the lock prevents two coroutines on the same loop from
+# both entering the slow-path simultaneously.
+import threading
+
+import aiosqlite
+
+_async_graph: "object | None" = None
+_async_graph_lock = threading.Lock()
+
+
+async def get_async_graph():
+    """Return the AsyncSqliteSaver-backed twin of `graph`, lazily
+    constructed on first call.
+
+    Same nodes + topology as the sync `graph`; just a different
+    persistence backend. Both savers point at the SAME on-disk SQLite
+    file (LANGGRAPH_CHECKPOINT_FILE) — checkpoints written through
+    one are visible to reads through the other, courtesy of SQLite
+    WAL mode (configured in open_notebook.utils.sqlite_checkpoint).
+    """
+    global _async_graph
+    if _async_graph is not None:
+        return _async_graph
+    with _async_graph_lock:
+        if _async_graph is not None:
+            return _async_graph
+        aio_conn = await aiosqlite.connect(LANGGRAPH_CHECKPOINT_FILE)
+        async_memory = AsyncSqliteSaver(aio_conn)
+        _async_graph = agent_state.compile(checkpointer=async_memory)
+    return _async_graph
