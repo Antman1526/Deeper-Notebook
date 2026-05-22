@@ -37,9 +37,31 @@ from desktop.ports import find_free_ports
 log = logging.getLogger(__name__)
 
 
-def _wait_tcp(host: str, port: int, timeout: float = 30.0) -> None:
+def _wait_tcp(
+    host: str,
+    port: int,
+    timeout: float = 30.0,
+    proc: "subprocess.Popen | None" = None,
+) -> None:
+    """v0.7.188 — Added optional `proc` arg for early-exit on dead child.
+    Pre-fix, if the spawned process crashed at startup (binary missing,
+    port collision after our SO_REUSEADDR test), `_wait_tcp` waited the
+    full `timeout` seconds before raising. The user stared at "Starting
+    SurrealDB…" for up to 30s when the failure was visible in
+    `proc.returncode` within 100ms.
+
+    With `proc` passed in, we poll() between probes — a non-None
+    returncode means the child exited and there is NO chance the port
+    will ever come up. Raise immediately with the child's exit code
+    so the launcher can surface a useful error."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            raise RuntimeError(
+                f"child for {host}:{port} exited rc={proc.returncode} "
+                f"before the port came up — check the per-child log "
+                f"in the debug-mode logs dir"
+            )
         try:
             with socket.create_connection((host, port), timeout=1.0):
                 return
@@ -48,9 +70,22 @@ def _wait_tcp(host: str, port: int, timeout: float = 30.0) -> None:
     raise TimeoutError(f"tcp {host}:{port} never came up within {timeout}s")
 
 
-def _wait_http(url: str, timeout: float = 60.0) -> None:
+def _wait_http(
+    url: str,
+    timeout: float = 60.0,
+    proc: "subprocess.Popen | None" = None,
+) -> None:
+    """v0.7.188 — Same early-exit-on-dead-child treatment as _wait_tcp.
+    Without it, `_wait_http("/readyz", timeout=180)` would wait 3
+    minutes on a uvicorn binary that crashed in 200ms."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            raise RuntimeError(
+                f"child for {url} exited rc={proc.returncode} before "
+                f"the endpoint became reachable — check the per-child "
+                f"log in the debug-mode logs dir"
+            )
         try:
             r = httpx.get(url, timeout=1.0)
             if r.status_code < 500:
@@ -227,7 +262,13 @@ class Supervisor:
 
         self._progress("supervisor.surreal", "running")
         self._spawn_surreal(surreal_port)
-        _wait_tcp("127.0.0.1", surreal_port, timeout=30)
+        # v0.7.188 — pass the just-spawned proc to _wait_tcp so the
+        # probe can early-exit if the child dies before binding.
+        # self._procs[-1] is the latest Popen pushed by _spawn().
+        _wait_tcp(
+            "127.0.0.1", surreal_port, timeout=30,
+            proc=self._procs[-1] if self._procs else None,
+        )
         self._progress("supervisor.surreal", "done")
 
         self._progress("supervisor.api", "running")
@@ -244,7 +285,13 @@ class Supervisor:
         # actually reachable AND migrations have applied — the real
         # signal that downstream services (worker, frontend window)
         # can safely come up against the API.
-        _wait_http(f"http://127.0.0.1:{api_port}/readyz", timeout=180)
+        # v0.7.188 — pass the API proc so 3-minute wait → fail-fast on
+        # a uvicorn that crashed in 200ms (binary missing, port
+        # collision, EACCES on logging dir, etc.).
+        _wait_http(
+            f"http://127.0.0.1:{api_port}/readyz", timeout=180,
+            proc=self._procs[-1] if self._procs else None,
+        )
         self._progress("supervisor.api", "done")
 
         self._progress("supervisor.worker", "running")
@@ -279,7 +326,11 @@ class Supervisor:
 
         self._progress("supervisor.next", "running")
         self._spawn_next(frontend_port, next_cwd=next_cwd)
-        _wait_http(f"http://127.0.0.1:{frontend_port}/", timeout=120)
+        # v0.7.188 — same early-exit pattern as the API wait above.
+        _wait_http(
+            f"http://127.0.0.1:{frontend_port}/", timeout=120,
+            proc=self._procs[-1] if self._procs else None,
+        )
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
         self._progress("supervisor.next", "done")
 
