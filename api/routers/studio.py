@@ -51,7 +51,7 @@ from api.podcast_service import PodcastService
 from api.routers.sources import save_uploaded_file
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.notebook import Asset, Note, Notebook, Source
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.utils.text_utils import (
     clean_thinking_content,
     extract_text_content,
@@ -542,6 +542,9 @@ async def studio_generate(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as exc:
         # v0.7.178 — Sanitize 500 detail (same pattern as v0.7.168
         # / v0.7.177 sweeps). logger.exception above captures the
@@ -931,6 +934,9 @@ async def _generate_outline(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as exc:
         logger.exception("Studio multi-page: outline pass failed")
         raise HTTPException(
@@ -1238,6 +1244,9 @@ async def _dispatch_notebook_mode(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as exc:
         # Saving even the Overview note failed — surface a 500 so the
         # frontend doesn't claim success. Notebook + sources are intact.
@@ -1318,6 +1327,9 @@ async def _dispatch_notebook_mode_singlenote(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as exc:
         logger.exception("Studio notebook (single-note fallback): LLM call failed")
         raise HTTPException(
@@ -1337,6 +1349,9 @@ async def _dispatch_notebook_mode_singlenote(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as exc:
         # v0.7.178 — Sanitize 500 detail (see above). logger.exception

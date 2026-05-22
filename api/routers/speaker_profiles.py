@@ -5,6 +5,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from open_notebook.podcasts.models import SpeakerProfile
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -64,6 +65,9 @@ async def get_speaker_profile(profile_name: str):
         return _profile_to_response(profile)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profile '{profile_name}': {e}")
@@ -135,6 +139,9 @@ async def update_speaker_profile(profile_id: str, profile_data: SpeakerProfileCr
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Failed to update speaker profile: {e}")
         raise HTTPException(
@@ -158,6 +165,9 @@ async def delete_speaker_profile(profile_id: str):
         return {"message": "Speaker profile deleted successfully"}
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to delete speaker profile: {e}")
@@ -192,6 +202,9 @@ async def duplicate_speaker_profile(profile_id: str):
         return _profile_to_response(duplicate)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to duplicate speaker profile: {e}")
