@@ -14,6 +14,7 @@ from api.podcast_service import (
 )
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import repo_query
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.podcasts.models import EpisodeProfile
 
 router = APIRouter()
@@ -109,6 +110,9 @@ async def generate_podcast(request: PodcastGenerationRequest):
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error generating podcast: {str(e)}")
         raise HTTPException(
@@ -126,6 +130,9 @@ async def get_podcast_job_status(job_id: str):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error fetching podcast job status: {str(e)}")
@@ -226,6 +233,9 @@ async def list_podcast_episodes(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error listing podcast episodes: {str(e)}")
         raise HTTPException(
@@ -282,6 +292,9 @@ async def get_podcast_episode(episode_id: str):
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching podcast episode: {str(e)}")
         raise HTTPException(status_code=404, detail="Episode not found")
@@ -293,6 +306,12 @@ async def stream_podcast_episode_audio(episode_id: str):
     try:
         episode = await PodcastService.get_episode(episode_id)
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # The broad `except Exception` below otherwise masks legitimate
+        # 404/400 cases as generic 500s.
         raise
     except Exception as e:
         logger.error(f"Error fetching podcast episode for audio: {str(e)}")
@@ -416,6 +435,12 @@ async def retry_podcast_episode(episode_id: str):
         return {"job_id": job_id, "message": "Retry submitted successfully"}
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # The broad `except Exception` below otherwise masks legitimate
+        # 404/400 cases as generic 500s.
         raise
     except Exception as e:
         logger.error(f"Error retrying podcast episode: {str(e)}")

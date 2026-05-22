@@ -23,7 +23,7 @@ from open_notebook.ai.model_discovery import (
 )
 from open_notebook.ai.models import DefaultModels, Model
 from open_notebook.domain.credential import Credential
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -267,6 +267,10 @@ async def delete_model(model_id: str):
         return {"message": "Model deleted successfully"}
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error deleting model {model_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error deleting model")
@@ -368,6 +372,10 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
         )
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error updating default models: {str(e)}")

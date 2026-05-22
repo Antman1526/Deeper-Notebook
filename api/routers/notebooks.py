@@ -12,7 +12,7 @@ from api.models import (
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -92,6 +92,12 @@ async def get_notebooks(
         ]
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
         raise HTTPException(
@@ -153,6 +159,12 @@ async def get_notebook_delete_preview(notebook_id: str):
         )
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
         raise HTTPException(
@@ -189,6 +201,12 @@ async def get_notebook(notebook_id: str):
             note_count=nb.get("note_count", 0),
         )
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
         raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
@@ -250,6 +268,11 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.179 — bubble to global handler → 404 (Notebook.get raises
+        # NotFoundError instead of returning None; the local `if not
+        # notebook: raise HTTPException(404)` guard above is dead code).
+        raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -305,6 +328,12 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         return {"message": "Source linked to notebook successfully"}
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
@@ -334,6 +363,12 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
 
         return {"message": "Source removed from notebook successfully"}
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
         raise
     except Exception as e:
         logger.error(
@@ -373,6 +408,12 @@ async def delete_notebook(
             unlinked_sources=result["unlinked_sources"],
         )
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
         raise
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
