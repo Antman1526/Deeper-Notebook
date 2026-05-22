@@ -615,69 +615,94 @@ async def execute_chat(request: ExecuteChatRequest):
             else getattr(session, "model_override", None)
         )
 
-        # Get current state
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
-        current_state = await asyncio.to_thread(
-            chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": full_session_id}),
-        )
+        # v0.7.174 — Serialize execution per session_id. Two concurrent
+        # requests to the SAME thread_id (two tabs, an SSE reconnect
+        # racing a fresh POST, an aggressive client retry) used to each
+        # read the checkpoint independently, each append their own
+        # HumanMessage in process memory, each invoke. With the
+        # add_messages reducer the checkpoint DID append both new
+        # messages — but each ainvoke's INPUT state was missing the
+        # other's user turn, so the LLM never saw the concurrent
+        # question and the saved AIMessage could overwrite the other's
+        # response. Net effect: silently lost turns.
+        #
+        # The lock is per-session (not global) so unrelated notebooks
+        # don't serialize. WeakValueDictionary backing means the lock
+        # auto-GCs when no caller holds it — no memory growth on a
+        # long-running install with many session_ids.
+        from api.utils.session_locks import get_session_lock
+        session_lock = await get_session_lock(full_session_id)
+        async with session_lock:
+            # Get current state
+            # Use sync get_state() in a thread since SqliteSaver doesn't support async
+            current_state = await asyncio.to_thread(
+                chat_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": full_session_id}),
+            )
 
-        # Prepare state for execution
-        state_values = current_state.values if current_state else {}
-        state_values["messages"] = state_values.get("messages", [])
-        state_values["context"] = request.context
-        state_values["model_override"] = model_override
+            # Prepare state for execution
+            state_values = current_state.values if current_state else {}
+            state_values["messages"] = state_values.get("messages", [])
+            state_values["context"] = request.context
+            state_values["model_override"] = model_override
 
-        # Add user message to state
-        from langchain_core.messages import HumanMessage
+            # Add user message to state
+            from langchain_core.messages import HumanMessage
 
-        user_message = HumanMessage(content=request.message)
-        state_values["messages"].append(user_message)
+            user_message = HumanMessage(content=request.message)
+            state_values["messages"].append(user_message)
 
-        # Execute chat graph
-        # v0.7.37 — native async. The v0.6.10 asyncio.to_thread wrapper
-        # is no longer needed because the chat-graph node itself is
-        # now `async def call_model_with_messages`. LangGraph routes
-        # ainvoke() directly to the async node without re-bridging
-        # through a thread pool.
-        # v0.7.99 — wrap in wait_for so a hung local chat model can't
-        # block the non-streaming /chat endpoint indefinitely. Default
-        # 300s is generous (chat graphs can do memory recall + tool
-        # calls + long generations); cloud users can lower, slow-LLM
-        # users can raise. The streaming endpoint /chat/stream is
-        # naturally bounded by SSE disconnect handling (v0.7.50+) and
-        # doesn't need this wrap.
-        _chat_timeout = float(
-            os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
-        )
-        try:
-            result = await asyncio.wait_for(
-                chat_graph.ainvoke(
-                    input=state_values,  # type: ignore[arg-type]
-                    config=RunnableConfig(
-                        configurable={
-                            "thread_id": full_session_id,
-                            "model_id": model_override,
-                        }
+            # Execute chat graph
+            # v0.7.37 — native async. The v0.6.10 asyncio.to_thread wrapper
+            # is no longer needed because the chat-graph node itself is
+            # now `async def call_model_with_messages`. LangGraph routes
+            # ainvoke() directly to the async node without re-bridging
+            # through a thread pool.
+            # v0.7.99 — wrap in wait_for so a hung local chat model can't
+            # block the non-streaming /chat endpoint indefinitely. Default
+            # 300s is generous (chat graphs can do memory recall + tool
+            # calls + long generations); cloud users can lower, slow-LLM
+            # users can raise. The streaming endpoint /chat/stream is
+            # naturally bounded by SSE disconnect handling (v0.7.50+) and
+            # doesn't need this wrap.
+            _chat_timeout = float(
+                os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
+            )
+            try:
+                result = await asyncio.wait_for(
+                    chat_graph.ainvoke(
+                        input=state_values,  # type: ignore[arg-type]
+                        config=RunnableConfig(
+                            configurable={
+                                "thread_id": full_session_id,
+                                "model_id": model_override,
+                            }
+                        ),
                     ),
-                ),
-                timeout=_chat_timeout,
-            )
-        except asyncio.TimeoutError as exc:
-            logger.warning(
-                "Chat /chat: timed out after {}s for session {}",
-                _chat_timeout, full_session_id,
-            )
-            raise HTTPException(
-                status_code=504,
-                detail=(
-                    f"Chat timed out after {_chat_timeout}s. The model may "
-                    "be loading, overloaded, or generating a very long "
-                    "response. Raise ONP_CHAT_TIMEOUT_SEC, switch to a "
-                    "faster model, or try /chat/stream for token-by-token "
-                    "responses that surface progress immediately."
-                ),
-            ) from exc
+                    timeout=_chat_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                logger.warning(
+                    "Chat /chat: timed out after {}s for session {}",
+                    _chat_timeout, full_session_id,
+                )
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        f"Chat timed out after {_chat_timeout}s. The model may "
+                        "be loading, overloaded, or generating a very long "
+                        "response. Raise ONP_CHAT_TIMEOUT_SEC, switch to a "
+                        "faster model, or try /chat/stream for token-by-token "
+                        "responses that surface progress immediately."
+                    ),
+                ) from exc
+
+        # v0.7.174 — The session lock is released here. Everything below
+        # (session.save, response building, memory extractor fire-and-
+        # forget) does NOT need to hold the lock — concurrent sessions
+        # can race on their own session.save() rows safely (each writes
+        # to a different chat_session: id) and the memory extractor is
+        # already fire-and-forget per turn.
 
         # Update session timestamp
         await session.save()
@@ -818,93 +843,119 @@ async def _stream_chat_events(
             else getattr(session, "model_override", None)
         )
 
-        # Get current state — same as /chat/execute
-        current_state = await asyncio.to_thread(
-            chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": full_session_id}),
-        )
-        state_values = current_state.values if current_state else {}
-        state_values["messages"] = state_values.get("messages", [])
-        state_values["context"] = request.context
-        state_values["model_override"] = model_override
+        # v0.7.174 — Per-session serialization for the streaming path.
+        # Same race as /chat/execute (two concurrent streams to the
+        # same thread_id each read the same checkpoint, each append
+        # their HumanMessage, each invoke — losing turns). Manual
+        # acquire/finally-release used here (instead of `async with`)
+        # because the critical section spans the multi-yield generator
+        # body and re-indenting the entire astream_events loop in this
+        # edit would be high-risk. When the consumer (FastAPI's
+        # StreamingResponse) closes the generator early (e.g. client
+        # disconnect), the GeneratorExit cleanup runs the finally so
+        # the lock IS released even mid-stream.
+        from api.utils.session_locks import get_session_lock
+        session_lock = await get_session_lock(full_session_id)
+        await session_lock.acquire()
+        try:
+            # Get current state — same as /chat/execute
+            current_state = await asyncio.to_thread(
+                chat_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": full_session_id}),
+            )
+            state_values = current_state.values if current_state else {}
+            state_values["messages"] = state_values.get("messages", [])
+            state_values["context"] = request.context
+            state_values["model_override"] = model_override
 
-        from langchain_core.messages import HumanMessage
+            from langchain_core.messages import HumanMessage
 
-        user_message = HumanMessage(content=request.message)
-        state_values["messages"].append(user_message)
+            user_message = HumanMessage(content=request.message)
+            state_values["messages"].append(user_message)
 
-        yield json.dumps({
-            "type": "start",
-            "session_id": request.session_id,
-        }) + "\n"
+            yield json.dumps({
+                "type": "start",
+                "session_id": request.session_id,
+            }) + "\n"
 
-        # Stream events from the LangGraph. astream_events yields a rich
-        # event stream — we filter for `on_chat_model_stream` which fires
-        # for each token chunk the LLM emits.
-        # v0.7.52 — removed dead `last_token_idx` counter (was incremented
-        # but never read).
-        final_result: Optional[dict[str, Any]] = None
-        async for event in chat_graph.astream_events(
-            input=state_values,  # type: ignore[arg-type]
-            config=RunnableConfig(
-                configurable={
-                    "thread_id": full_session_id,
-                    "model_id": model_override,
-                }
-            ),
-            version="v2",
-        ):
-            # Stop the stream if the client disconnected — saves the
-            # local LLM from churning out tokens nobody will see.
-            if await fastapi_request.is_disconnected():
-                logger.info(
-                    "chat stream: client disconnected for session {}; "
-                    "halting", full_session_id,
-                )
-                return
-
-            etype = event.get("event")
-            if etype == "on_chat_model_stream":
-                # Event shape: {"event": "on_chat_model_stream",
-                #               "data": {"chunk": AIMessageChunk(content="...")}}
-                chunk = event.get("data", {}).get("chunk")
-                content = getattr(chunk, "content", None)
-                if isinstance(content, str) and content:
-                    yield json.dumps({
-                        "type": "token",
-                        "content": content,
-                    }) + "\n"
-            elif etype == "on_chain_end":
-                # The outer graph's on_chain_end carries the final state.
-                # We capture it to send the canonical messages list with
-                # the done event.
-                #
-                # v0.7.52 — accept either dict or Pydantic state. LangGraph
-                # graphs that declare a TypedDict yield dicts at chain
-                # boundaries; graphs that declare a Pydantic BaseModel
-                # yield model instances. Our graph happens to use a
-                # TypedDict today, but other graphs invoked through the
-                # same streaming machinery may not — and an upstream
-                # LangGraph release could legitimately change this. The
-                # previous `isinstance(output, dict)` guard silently
-                # dropped the final result for the Pydantic shape and
-                # the stream's `done` event would arrive with messages=[],
-                # causing the frontend to fall back to refetching the
-                # session — slow and racy.
-                data = event.get("data", {})
-                output = data.get("output")
-                msgs = None
-                if isinstance(output, dict):
-                    msgs = output.get("messages")
-                else:
-                    msgs = getattr(output, "messages", None)
-                if msgs is not None:
-                    # Normalize to a dict either way so downstream code
-                    # can stay simple.
-                    final_result = (
-                        output if isinstance(output, dict)
-                        else {"messages": msgs}
+            # Stream events from the LangGraph. astream_events yields a rich
+            # event stream — we filter for `on_chat_model_stream` which fires
+            # for each token chunk the LLM emits.
+            # v0.7.52 — removed dead `last_token_idx` counter (was incremented
+            # but never read).
+            final_result: Optional[dict[str, Any]] = None
+            async for event in chat_graph.astream_events(
+                input=state_values,  # type: ignore[arg-type]
+                config=RunnableConfig(
+                    configurable={
+                        "thread_id": full_session_id,
+                        "model_id": model_override,
+                    }
+                ),
+                version="v2",
+            ):
+                # Stop the stream if the client disconnected — saves the
+                # local LLM from churning out tokens nobody will see.
+                if await fastapi_request.is_disconnected():
+                    logger.info(
+                        "chat stream: client disconnected for session {}; "
+                        "halting", full_session_id,
                     )
+                    return
+
+                etype = event.get("event")
+                if etype == "on_chat_model_stream":
+                    # Event shape: {"event": "on_chat_model_stream",
+                    #               "data": {"chunk": AIMessageChunk(content="...")}}
+                    chunk = event.get("data", {}).get("chunk")
+                    content = getattr(chunk, "content", None)
+                    if isinstance(content, str) and content:
+                        yield json.dumps({
+                            "type": "token",
+                            "content": content,
+                        }) + "\n"
+                elif etype == "on_chain_end":
+                    # The outer graph's on_chain_end carries the final state.
+                    # We capture it to send the canonical messages list with
+                    # the done event.
+                    #
+                    # v0.7.52 — accept either dict or Pydantic state. LangGraph
+                    # graphs that declare a TypedDict yield dicts at chain
+                    # boundaries; graphs that declare a Pydantic BaseModel
+                    # yield model instances. Our graph happens to use a
+                    # TypedDict today, but other graphs invoked through the
+                    # same streaming machinery may not — and an upstream
+                    # LangGraph release could legitimately change this. The
+                    # previous `isinstance(output, dict)` guard silently
+                    # dropped the final result for the Pydantic shape and
+                    # the stream's `done` event would arrive with messages=[],
+                    # causing the frontend to fall back to refetching the
+                    # session — slow and racy.
+                    data = event.get("data", {})
+                    output = data.get("output")
+                    msgs = None
+                    if isinstance(output, dict):
+                        msgs = output.get("messages")
+                    else:
+                        msgs = getattr(output, "messages", None)
+                    if msgs is not None:
+                        # Normalize to a dict either way so downstream code
+                        # can stay simple.
+                        final_result = (
+                            output if isinstance(output, dict)
+                            else {"messages": msgs}
+                        )
+        finally:
+            # v0.7.174 — release the per-session lock. Runs on every exit
+            # path: normal completion, early `return` on client disconnect,
+            # raised exception, AND GeneratorExit when FastAPI's
+            # StreamingResponse closes the generator early.
+            try:
+                session_lock.release()
+            except RuntimeError:
+                # Already released (e.g. lock wasn't actually acquired
+                # because acquire() raised). Safe to swallow.
+                pass
 
         # Final event with the canonical message list
         messages: list = []

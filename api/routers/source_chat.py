@@ -499,110 +499,135 @@ async def stream_source_chat_response(
       - `error`                — terminal failure
     """
     try:
-        # Get current state — SqliteSaver.get_state is still sync.
-        current_state = await asyncio.to_thread(
-            source_chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": session_id}),
-        )
+        # v0.7.174 — Per-session serialization (mirrors the chat.py
+        # stream fix). Two concurrent calls to the same `session_id`
+        # used to each read the same checkpoint, each append their
+        # HumanMessage in process memory, each ainvoke — silently
+        # losing turns when both writes hit the checkpoint. Manual
+        # acquire/finally-release because the critical section spans
+        # a multi-yield generator body; using `async with` would
+        # require indenting the entire astream_events loop. The
+        # generator's GeneratorExit cleanup (FastAPI's StreamingResponse
+        # closing the generator on client disconnect) reaches the
+        # finally clause and releases.
+        from api.utils.session_locks import get_session_lock
+        session_lock = await get_session_lock(session_id)
+        await session_lock.acquire()
+        try:
+            # Get current state — SqliteSaver.get_state is still sync.
+            current_state = await asyncio.to_thread(
+                source_chat_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": session_id}),
+            )
 
-        # Prepare state for execution
-        state_values = current_state.values if current_state else {}
-        state_values["messages"] = state_values.get("messages", [])
-        state_values["source_id"] = source_id
-        state_values["model_override"] = model_override
+            # Prepare state for execution
+            state_values = current_state.values if current_state else {}
+            state_values["messages"] = state_values.get("messages", [])
+            state_values["source_id"] = source_id
+            state_values["model_override"] = model_override
 
-        # Add user message to state
-        user_message = HumanMessage(content=message)
-        state_values["messages"].append(user_message)
+            # Add user message to state
+            user_message = HumanMessage(content=message)
+            state_values["messages"].append(user_message)
 
-        # Send user message event
-        user_event = {"type": "user_message", "content": message, "timestamp": None}
-        yield f"data: {json.dumps(user_event)}\n\n"
+            # Send user message event
+            user_event = {"type": "user_message", "content": message, "timestamp": None}
+            yield f"data: {json.dumps(user_event)}\n\n"
 
-        # v0.7.42 — token streaming via LangGraph astream_events. The
-        # source_chat_graph node is `async def` (v0.7.37) so this
-        # routes natively. We collect:
-        #   - on_chat_model_stream events → ai_message_delta events
-        #   - on_chain_end terminal event with final state → context_indicators
-        accumulated_content = ""
-        final_state: Optional[dict] = None
-        async for event in source_chat_graph.astream_events(
-            input=state_values,  # type: ignore[arg-type]
-            config=RunnableConfig(
-                configurable={"thread_id": session_id, "model_id": model_override}
-            ),
-            version="v2",
-        ):
-            # Early-cancel parity with /chat/stream — stop generation
-            # the moment the client gives up on the response.
-            if fastapi_request is not None and await fastapi_request.is_disconnected():
-                logger.info(
-                    "source chat stream: client disconnected for "
-                    "session {}; halting", session_id,
-                )
-                return
-
-            etype = event.get("event")
-            if etype == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                content = getattr(chunk, "content", None)
-                if isinstance(content, str) and content:
-                    accumulated_content += content
-                    yield (
-                        "data: "
-                        + json.dumps({
-                            "type": "ai_message_delta",
-                            "content": content,
-                        })
-                        + "\n\n"
+            # v0.7.42 — token streaming via LangGraph astream_events. The
+            # source_chat_graph node is `async def` (v0.7.37) so this
+            # routes natively. We collect:
+            #   - on_chat_model_stream events → ai_message_delta events
+            #   - on_chain_end terminal event with final state → context_indicators
+            accumulated_content = ""
+            final_state: Optional[dict] = None
+            async for event in source_chat_graph.astream_events(
+                input=state_values,  # type: ignore[arg-type]
+                config=RunnableConfig(
+                    configurable={"thread_id": session_id, "model_id": model_override}
+                ),
+                version="v2",
+            ):
+                # Early-cancel parity with /chat/stream — stop generation
+                # the moment the client gives up on the response.
+                if fastapi_request is not None and await fastapi_request.is_disconnected():
+                    logger.info(
+                        "source chat stream: client disconnected for "
+                        "session {}; halting", session_id,
                     )
-            elif etype == "on_chain_end":
-                # Capture the outer chain's final state — has
-                # context_indicators + canonical messages.
-                # v0.7.56 — accept both dict and Pydantic state shapes
-                # (same root cause as v0.7.52 chat.py fix). If LangGraph
-                # ever yields a model instance the SSE consumer would
-                # otherwise never see the terminal context_indicators
-                # event.
-                output = event.get("data", {}).get("output")
-                if isinstance(output, dict):
-                    final_state = output
-                elif output is not None and hasattr(output, "messages"):
-                    final_state = {
-                        "messages": getattr(output, "messages", None),
-                        "context_indicators": getattr(
-                            output, "context_indicators", None
-                        ),
-                    }
+                    return
 
-        # Emit the terminal ai_message event so clients that ignore
-        # the deltas still see a single canonical "full message" event
-        # (back-compat with anything written for the v0.6.x SSE
-        # contract before v0.7.42).
-        if accumulated_content:
-            yield (
-                "data: "
-                + json.dumps({
-                    "type": "ai_message",
-                    "content": accumulated_content,
-                    "timestamp": None,
-                })
-                + "\n\n"
-            )
+                etype = event.get("event")
+                if etype == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    content = getattr(chunk, "content", None)
+                    if isinstance(content, str) and content:
+                        accumulated_content += content
+                        yield (
+                            "data: "
+                            + json.dumps({
+                                "type": "ai_message_delta",
+                                "content": content,
+                            })
+                            + "\n\n"
+                        )
+                elif etype == "on_chain_end":
+                    # Capture the outer chain's final state — has
+                    # context_indicators + canonical messages.
+                    # v0.7.56 — accept both dict and Pydantic state shapes
+                    # (same root cause as v0.7.52 chat.py fix). If LangGraph
+                    # ever yields a model instance the SSE consumer would
+                    # otherwise never see the terminal context_indicators
+                    # event.
+                    output = event.get("data", {}).get("output")
+                    if isinstance(output, dict):
+                        final_state = output
+                    elif output is not None and hasattr(output, "messages"):
+                        final_state = {
+                            "messages": getattr(output, "messages", None),
+                            "context_indicators": getattr(
+                                output, "context_indicators", None
+                            ),
+                        }
 
-        # Stream context indicators
-        if final_state and "context_indicators" in final_state:
-            yield (
-                "data: "
-                + json.dumps({
-                    "type": "context_indicators",
-                    "data": final_state["context_indicators"],
-                })
-                + "\n\n"
-            )
+            # Emit the terminal ai_message event so clients that ignore
+            # the deltas still see a single canonical "full message" event
+            # (back-compat with anything written for the v0.6.x SSE
+            # contract before v0.7.42).
+            if accumulated_content:
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "ai_message",
+                        "content": accumulated_content,
+                        "timestamp": None,
+                    })
+                    + "\n\n"
+                )
 
-        # Send completion signal
-        yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            # Stream context indicators
+            if final_state and "context_indicators" in final_state:
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "context_indicators",
+                        "data": final_state["context_indicators"],
+                    })
+                    + "\n\n"
+                )
+
+            # Send completion signal
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        finally:
+            # v0.7.174 — release the per-session lock. Runs on every exit
+            # path: normal completion, early `return` on disconnect,
+            # raised exception (re-raised to outer except), and
+            # GeneratorExit when FastAPI closes the stream.
+            try:
+                session_lock.release()
+            except RuntimeError:
+                # Lock wasn't actually held (acquire() raised). Safe.
+                pass
 
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
