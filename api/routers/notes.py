@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from api.models import NoteCreate, NoteResponse, NoteUpdate
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.domain.notebook import Note
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 
@@ -56,8 +57,8 @@ async def get_notes(
                 title=note.title,
                 content=note.content,
                 note_type=note.note_type,
-                created=str(note.created),
-                updated=str(note.updated),
+                created=iso(note.created),
+                updated=iso(note.updated),
             )
             for note in notes
         ]
@@ -162,8 +163,9 @@ async def create_note(note_data: NoteCreate):
             title=new_note.title,
             content=new_note.content,
             note_type=new_note.note_type,
-            created=str(new_note.created),
-            updated=str(new_note.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(new_note.created),
+            updated=iso(new_note.updated),
             command_id=str(command_id) if command_id else None,
         )
     except HTTPException:
@@ -188,8 +190,9 @@ async def get_note(note_id: str):
             title=note.title,
             content=note.content,
             note_type=note.note_type,
-            created=str(note.created),
-            updated=str(note.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(note.created),
+            updated=iso(note.updated),
         )
     except HTTPException:
         raise
@@ -234,8 +237,9 @@ async def update_note(note_id: str, note_update: NoteUpdate):
             title=note.title,
             content=note.content,
             note_type=note.note_type,
-            created=str(note.created),
-            updated=str(note.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(note.created),
+            updated=iso(note.updated),
             command_id=str(command_id) if command_id else None,
         )
     except HTTPException:

@@ -10,6 +10,7 @@ from api.models import (
     NotebookResponse,
     NotebookUpdate,
 )
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.exceptions import InvalidInputError, NotFoundError
@@ -120,8 +121,9 @@ async def create_notebook(notebook: NotebookCreate):
             name=new_notebook.name,
             description=new_notebook.description,
             archived=new_notebook.archived or False,
-            created=str(new_notebook.created),
-            updated=str(new_notebook.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(new_notebook.created),
+            updated=iso(new_notebook.updated),
             source_count=0,  # New notebook has no sources
             note_count=0,  # New notebook has no notes
         )
@@ -261,8 +263,9 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             name=notebook.name,
             description=notebook.description,
             archived=notebook.archived or False,
-            created=str(notebook.created),
-            updated=str(notebook.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(notebook.created),
+            updated=iso(notebook.updated),
             source_count=0,
             note_count=0,
         )

@@ -57,6 +57,7 @@ from api.models import (
 )
 from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
 from open_notebook.domain.credential import Credential
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
@@ -83,6 +84,9 @@ async def get_status():
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching status: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch credential status")
@@ -96,6 +100,9 @@ async def get_env_status():
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
         logger.error(f"Error checking env status: {e}")
@@ -145,6 +152,9 @@ async def list_credentials(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error listing credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to list credentials")
@@ -163,6 +173,9 @@ async def list_credentials_by_provider(provider: str):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
         logger.error(f"Error listing credentials for {provider}: {e}")
@@ -217,6 +230,9 @@ async def create_credential(request: CreateCredentialRequest):
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error creating credential: {e}")
         raise HTTPException(status_code=500, detail="Failed to create credential")
@@ -232,6 +248,9 @@ async def get_credential(credential_id: str):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
         logger.error(f"Error fetching credential {credential_id}: {e}")
@@ -293,6 +312,10 @@ async def update_credential(credential_id: str, request: UpdateCredentialRequest
         return credential_to_response(cred, len(models))
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers in
+        # api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error updating credential {credential_id}: {e}")
@@ -387,6 +410,10 @@ async def delete_credential(
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers in
+        # api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error deleting credential {credential_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete credential")
@@ -453,6 +480,9 @@ async def discover_models_for_credential(credential_id: str):
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error discovering models for credential {credential_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to discover models")
@@ -469,6 +499,9 @@ async def register_models_for_credential(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
         logger.error(f"Error registering models for credential {credential_id}: {e}")
@@ -491,6 +524,9 @@ async def migrate_from_provider_config():
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"ProviderConfig migration FAILED: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Migration from provider config failed")
@@ -506,6 +542,9 @@ async def migrate_from_env():
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
         logger.error(f"Env migration FAILED: {type(e).__name__}: {e}", exc_info=True)
