@@ -243,13 +243,33 @@ class GmailIntegration(BaseModel):
 
 
 def _parse_dt(v) -> Optional[datetime]:
+    """Parse a datetime-shaped value into an UTC-aware datetime.
+
+    v0.7.170 — Always returns a TIMEZONE-AWARE datetime (or None).
+    The previous form could leak a naive datetime through two paths:
+      1. `isinstance(v, datetime)` branch returned `v` as-is, even if
+         SurrealDB had handed us a naive datetime
+      2. `datetime.fromisoformat("2026-05-21T17:00:00")` (no tz
+         suffix) returns a naive datetime
+    Downstream comparison code (`needs_refresh` at line 242 does
+    `datetime.now(timezone.utc) >= self.token_expires_at`) raises
+    `TypeError: can't compare offset-naive and offset-aware
+    datetimes` when fed a naive value. Now any naive input is
+    treated as UTC — matches the rest of the codebase convention.
+    """
     if not v:
         return None
     if isinstance(v, datetime):
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
         return v
     try:
-        # SurrealDB returns ISO strings
+        # SurrealDB returns ISO strings; the `Z` suffix is the
+        # canonical UTC marker but fromisoformat needs +00:00.
         s = str(v).replace("Z", "+00:00")
-        return datetime.fromisoformat(s)
+        parsed = datetime.fromisoformat(s)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
     except Exception:
         return None

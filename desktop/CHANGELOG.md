@@ -18,7 +18,36 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.169 (in flight)
+## Unreleased — v0.7.36 → v0.7.170 (in flight)
+
+- **v0.7.170** 🐛 **Datetime aware/naive normalization — repository.py +
+  gmail._parse_dt.** Both sites previously could produce naive
+  datetimes that would TypeError when compared against aware ones.
+
+  - `open_notebook/database/repository.py:repo_update` —
+    `datetime.fromisoformat(data["created"])` returns naive when the
+    input string has no tz suffix. The adjacent line writes
+    `datetime.now(timezone.utc)` (aware), so a row could end up with
+    a mixed-aware pair that breaks downstream comparison code.
+  - `open_notebook/domain/gmail.py:_parse_dt` — passed naive datetime
+    instances through unchanged AND `fromisoformat` could leak naive.
+    `needs_refresh` at line 242 then did
+    `datetime.now(timezone.utc) >= self.token_expires_at` which
+    raised `TypeError: can't compare offset-naive and offset-aware
+    datetimes`. The Gmail-token-refresh path could crash silently.
+
+  Both fixes: `if x.tzinfo is None: x = x.replace(tzinfo=timezone.utc)`.
+  Matches the convention everywhere else in the codebase that uses
+  `timezone.utc` explicitly.
+
+  Tests at `tests/test_v0_7_170_datetime_aware.py`: 9 new — naive
+  ISO strings, Z-suffix strings, aware strings, naive datetime
+  instances, aware datetime instances, None/empty/unparseable
+  fallthrough, plus an end-to-end `needs_refresh` test against a
+  naive DB input. AST guard on the repository.py normalization
+  ensures a future refactor can't drop it.
+
+  Suite: **884/884** (was 875 in v0.7.169).
 
 - **v0.7.169** ⚡ **Pagination completion — `Notebook.get_chat_sessions`
   + `podcast_commands` unbounded SELECTs.** Two remaining items from
