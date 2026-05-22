@@ -36,16 +36,47 @@ def register_llamacpp_models(
     if llamacpp_port is not None:
         # A live llama-cpp-python server is running — register against it.
         base_url = f"http://127.0.0.1:{llamacpp_port}/v1"
+
+        # v0.7.194 — credential-name canonical-form resolution.
+        #
+        # Before v0.6.x this credential was named "Local GGUF (llama.cpp)"
+        # — installs that went through the original Setup Wizard wrote
+        # that name to SurrealDB along with the hardcoded port 8080.
+        # Sometime around v0.6.x the canonical name shifted to
+        # "llama.cpp (local)", but the rename wasn't propagated to
+        # existing installs.
+        #
+        # End result: pre-v0.6.x users had `Local GGUF (llama.cpp)`
+        # with port 8080 (broken since v0.5.9 stopped spawning that
+        # port) and 10-20+ models LINKED to it. v0.7.193 auto-register
+        # ran with the new name, found no match (case-sensitive name
+        # lookup), and CREATED a fresh "llama.cpp (local)" with 0
+        # models attached — orphaned. The user's chat still hit the
+        # broken port 8080 because their existing models pointed at
+        # the legacy credential.
+        #
+        # Fix: prefer the legacy name if it already exists. Auto-
+        # register then refreshes its base_url to the current
+        # chat_llm_port (via v0.7.193 _ensure_credential PUT) and the
+        # 10-20+ already-linked models start working immediately. New
+        # installs (no legacy credential) get the modern name.
+        legacy_name = "Local GGUF (llama.cpp)"
+        modern_name = "llama.cpp (local)"
+        cred_name = (
+            legacy_name
+            if legacy_name.lower() in existing_cred_names
+            else modern_name
+        )
         cred_id = _ensure_credential(
             client=client,
             existing_names=existing_cred_names,
-            name="llama.cpp (local)",
+            name=cred_name,
             provider="openai_compatible",
             modalities=["language", "embedding"],
             base_url=base_url,
         )
         if cred_id:
-            existing_cred_names.add("llama.cpp (local)")
+            existing_cred_names.add(cred_name.lower())
             for gguf_rel in local_ggufs:
                 model_name = Path(gguf_rel).stem
                 model_type = "embedding" if _is_embedding_gguf(model_name) else "language"
