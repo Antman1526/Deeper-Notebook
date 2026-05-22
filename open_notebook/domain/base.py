@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, Union, cast
 
 from loguru import logger
@@ -213,15 +213,29 @@ class ObjectModel(BaseModel):
         try:
             self.model_validate(self.model_dump(), strict=True)
             data = self._prepare_save_data()
-            data["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # v0.7.187 — was `datetime.now().strftime("%Y-%m-%d %H:%M:%S")`,
+            # which produces a naive local-time stamp (no TZ marker). Cross-
+            # machine sync between the primary install and the 2-3 test
+            # users would produce off-by-N-hour ordering, and DST
+            # transitions silently broke "latest first" sort. ISO 8601
+            # with explicit UTC tzinfo is what SurrealDB expects natively
+            # and what the v0.7.181 iso() helper round-trips cleanly.
+            # Backend audit finding #6.
+            data["updated"] = datetime.now(timezone.utc).isoformat()
 
             repo_result: list[dict[str, Any]] | dict[str, Any]
             if self.id is None:
-                data["created"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                data["created"] = datetime.now(timezone.utc).isoformat()
                 repo_result = await repo_create(self.__class__.table_name, data)
             else:
+                # v0.7.187 — was `.strftime("%Y-%m-%d %H:%M:%S")` (naive
+                # local-time, lossy). On update, we round-trip `created`
+                # via aware-UTC isoformat to preserve TZ. If `created`
+                # is somehow already a string (older cache, manual
+                # serialisation), leave it alone — the v0.7.181 iso()
+                # helper passes strings through unchanged on read.
                 data["created"] = (
-                    self.created.strftime("%Y-%m-%d %H:%M:%S")
+                    self.created.isoformat()
                     if isinstance(self.created, datetime)
                     else self.created
                 )

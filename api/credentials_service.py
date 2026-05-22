@@ -15,6 +15,19 @@ from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
+
+# v0.7.187 — Shared timeout config for credentials-discovery probes.
+# Backend audit finding #7: AsyncClient() with no top-level timeout
+# means TLS handshake / pool-acquisition stages can hang past the
+# per-call `timeout=30.0` kwarg, since that kwarg only bounds the
+# request-response phase. Mirror the chat_service.py pattern: set
+# explicit connect/read/write/pool budgets at client construction.
+_DISCOVERY_HTTP_TIMEOUT = httpx.Timeout(
+    connect=5.0,   # TLS handshake + DNS — fail fast on dead endpoints
+    read=30.0,     # provider catalog GET can be slow on first request
+    write=10.0,
+    pool=5.0,      # connection pool acquire — bound the queue
+)
 from pydantic import SecretStr
 
 from api.models import CredentialResponse
@@ -563,7 +576,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
     if provider == "ollama":
         ollama_url = base_url or "http://localhost:11434"
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
                 response = await client.get(f"{ollama_url}/api/tags", timeout=10.0)
                 response.raise_for_status()
                 data = response.json()
@@ -583,7 +596,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
             headers = {}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
                 response = await client.get(
                     f"{base_url.rstrip('/')}/models", headers=headers, timeout=30.0,
                 )
@@ -606,7 +619,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
         try:
             url = f"{endpoint.rstrip('/')}/openai/models?api-version={api_version}"
             headers = {"api-key": api_key}
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
                 response = await client.get(url, headers=headers, timeout=30.0)
                 response.raise_for_status()
                 data = response.json()
@@ -634,7 +647,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
     if provider == "google":
         try:
             headers = {"X-Goog-Api-Key": api_key} if api_key else {}
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
                 response = await client.get(
                     "https://generativelanguage.googleapis.com/v1/models",
                     headers=headers,
@@ -661,7 +674,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
         return []
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
             response = await client.get(
                 discovery_url,
                 headers={"Authorization": f"Bearer {api_key}"},
