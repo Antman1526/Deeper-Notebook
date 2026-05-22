@@ -18,7 +18,51 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.188 (in flight)
+## Unreleased — v0.7.36 → v0.7.189 (in flight)
+
+- **v0.7.189** 🎨 **Round-9 audit — Frontend MED+LOW polish: stale
+  invalidation gaps + i18n-aware date formatting.** Three everyday
+  papercuts the audit caught.
+
+  **(1) `useUpdateNote` invalidates `QUERY_KEYS.notebooks` on
+  success.** `useCreateNote` and `useDeleteNote` already did this
+  (v0.7.166); `useUpdateNote` was the missing third side. Sidebar's
+  recently-updated sort + per-notebook last-activity timestamp now
+  refresh immediately after editing a note instead of staying
+  stale until the next window-focus refetch.
+
+  **(2) New `formatDateTime` + `formatDate` helpers in
+  `lib/utils/date-locale.ts` — i18n-aware date formatting.** Five
+  call sites did raw `new Date(str).toLocaleString()` which honours
+  the OS locale, NOT the app's i18n language. Same component
+  rendered two different date formats stacked on each other if a
+  user picked Chinese in the app while running on an English OS
+  (SourceDetailContent line 859 used `getDateLocale(language)`
+  for the relative-time line then bare `.toLocaleString()` for
+  the absolute-time line right below it). Migrated:
+    - `SourceDetailContent.tsx` — `source.created` / `source.updated`
+      absolute-time lines.
+    - `RebuildEmbeddings.tsx` — `status.started_at` /
+      `status.completed_at`.
+    - `GmailIntegration.tsx` — `status.last_sent_at`.
+  The new helper is `formatDateTime(value, language)`. Null/empty
+  input → empty string; malformed date → original string passed
+  through (caller decides on a fallback).
+
+  **(3) `useNotebookChat` invalidates session list after stream
+  completes.** After `/chat/stream` finished, only the CURRENT
+  session was refetched; the session-list query that powers the
+  sidebar's "last updated" timestamp stayed stale until the next
+  window-focus refetch. Matches the pattern useSourceChat already
+  used.
+
+  Tests at `tests/test_v0_7_189_frontend_polish.py`: 6 new —
+  useUpdateNote invalidation pin, formatDateTime helper export
+  pin, 3 call-site pins, useNotebookChat session-list
+  invalidation pin.
+
+  Backend: **994/994** (was 988 in v0.7.188; +6). Frontend:
+  **65/65** + tsc clean. Combined `tests/ desktop/tests/`: **1237/1237**.
 
 - **v0.7.188** 🛠️ **Round-9 audit — Desktop reliability: model
   download resume + launcher early-exit on dead child.** Two

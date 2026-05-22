@@ -65,6 +65,11 @@ export function useUpdateNote() {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notes() })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.note(id) })
+      // v0.7.189 — also invalidate the notebooks list so the sidebar's
+      // "recently-updated" sort + the per-notebook last-activity
+      // timestamp refresh. useCreateNote + useDeleteNote already do
+      // this; useUpdateNote was the missing third side of the triangle.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('notebooks.noteUpdatedSuccess'),

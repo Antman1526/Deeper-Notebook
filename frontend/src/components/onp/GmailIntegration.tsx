@@ -22,6 +22,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Mail, CheckCircle2, Loader2, ExternalLink } from 'lucide-react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'
+
 interface GmailStatus {
   connected: boolean
   email_address: string | null
@@ -37,6 +40,7 @@ interface GmailStatus {
 }
 
 export function GmailIntegration() {
+  const { language } = useTranslation()  // v0.7.189 — locale-aware date format
   const [status, setStatus] = useState<GmailStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -392,7 +396,7 @@ export function GmailIntegration() {
 
             {status.last_sent_at && (
               <p className="text-xs text-[var(--muted-foreground)]">
-                Last sent: {new Date(status.last_sent_at).toLocaleString()}
+                Last sent: {formatDateTime(status.last_sent_at, language)}
               </p>
             )}
           </div>
