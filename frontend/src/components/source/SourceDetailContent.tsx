@@ -597,8 +597,14 @@ export function SourceDetailContent({
                     remarkPlugins={[remarkGfm]}
                     components={{
                       p: ({ children }) => <p className="mb-4">{children}</p>,
-                      h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-4">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-xl font-bold mt-5 mb-3">{children}</h2>,
+                      // v0.7.183 — h1/h2 font-bold → font-semibold so
+                      // markdown-rendered headers match the v0.7.180 H1/H2
+                      // standard already applied to dashboard pages and the
+                      // inline-edit source title above (line 469). Prevents
+                      // a jarring weight-shift when scrolling from the
+                      // title into the body content.
+                      h1: ({ children }) => <h1 className="text-2xl font-semibold mt-6 mb-4">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-xl font-semibold mt-5 mb-3">{children}</h2>,
                       h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2">{children}</h3>,
                       ul: ({ children }) => <ul className="mb-4 list-disc pl-6">{children}</ul>,
                       ol: ({ children }) => <ol className="mb-4 list-decimal pl-6">{children}</ol>,

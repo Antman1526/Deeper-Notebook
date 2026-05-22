@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import SecretStr
 
 from api.models import CredentialResponse
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
 from open_notebook.domain.credential import Credential
 from open_notebook.utils.encryption import get_secret_from_env
 
@@ -236,8 +237,8 @@ def credential_to_response(cred: Credential, model_count: int = 0) -> Credential
         location=cred.location,
         credentials_path=cred.credentials_path,
         has_api_key=cred.api_key is not None,
-        created=str(cred.created) if cred.created else "",
-        updated=str(cred.updated) if cred.updated else "",
+        created=iso(cred.created) or "",
+        updated=iso(cred.updated) or "",
         model_count=model_count,
         decryption_error=cred.decryption_error,
     )

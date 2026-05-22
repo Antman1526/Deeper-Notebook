@@ -58,6 +58,7 @@ from pydantic import BaseModel, Field
 from api.routers.filesystem import _resolve_and_validate
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.domain.notebook import Note, Notebook, Source
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter(tags=["exports"])
 

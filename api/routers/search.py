@@ -8,7 +8,7 @@ from loguru import logger
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
 from open_notebook.ai.models import Model, model_manager
 from open_notebook.domain.notebook import text_search, vector_search
-from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from open_notebook.exceptions import DatabaseOperationError, InvalidInputError, NotFoundError
 from open_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
@@ -94,6 +94,9 @@ async def search_knowledge_base(search_request: SearchRequest):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
@@ -244,6 +247,9 @@ async def stream_ask_response(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 
@@ -304,6 +310,11 @@ async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
         )
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
         raise
     except Exception as e:
         logger.error(f"Error in ask endpoint: {str(e)}")
@@ -383,6 +394,11 @@ async def ask_knowledge_base_simple(
         return AskResponse(answer=final_answer, question=ask_request.question)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
         raise
     except Exception as e:
         logger.error(f"Error in ask simple endpoint: {str(e)}")
