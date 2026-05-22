@@ -7,12 +7,29 @@ and the launcher continues without that model.
 from __future__ import annotations
 
 import logging
-import shutil
-import urllib.request
+import time
 from pathlib import Path
 from typing import Callable
 
+import httpx
+
 log = logging.getLogger(__name__)
+
+
+# v0.7.188 — chunk size for streamed downloads. 1 MB balances syscall
+# overhead vs. per-chunk progress granularity for multi-GB models.
+_CHUNK_BYTES = 1 * 1024 * 1024
+
+# Per-chunk idle timeout. urllib's single `timeout=` only bounds the
+# initial connect; mid-stream stalls hang indefinitely. httpx's
+# Timeout(read=N) applies per-chunk — N seconds of no bytes from
+# the server is the failure threshold. 30s is generous for slow
+# residential connections but short enough that a truly dead
+# CDN connection is caught within half a minute.
+_CHUNK_READ_TIMEOUT = 30.0
+
+# Connect/handshake budget — fail fast on dead URLs / TLS issues.
+_CONNECT_TIMEOUT = 10.0
 
 
 # (url, dest_relative_path, friendly_name, expected_size_mb)
@@ -123,22 +140,95 @@ def _download_one(url: str, dest: Path, label: str,
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
+
+    # v0.7.188 — Resumable streaming download.
+    #
+    # Pre-fix problems (audit finding #4):
+    #   * urllib.urlopen had a single 300s `timeout` that only applied
+    #     to the initial connect — once streaming began, an idle stalled
+    #     socket could hang indefinitely. The launcher spinner would
+    #     show "Downloading…" forever on a flaky CDN.
+    #   * `shutil.copyfileobj` runs to completion or fails — no resume
+    #     capability. A 5GB GGUF interrupted at 4.8GB simply restarted
+    #     from byte 0 on next launch. Multiply by the 4-6 models we
+    #     auto-download and a single dropped network event costs
+    #     20-30 GB of redundant transfer.
+    #
+    # Post-fix:
+    #   * `httpx.stream(...)` with per-chunk read timeout (_CHUNK_READ_TIMEOUT).
+    #     A genuinely stalled connection raises ReadTimeout within 30s
+    #     instead of hanging forever.
+    #   * `.tmp` partial-download is KEPT between launches. On the next
+    #     try we send `Range: bytes=<existing>-` and append. If the
+    #     server doesn't support Range (200 vs 206), we fall back to
+    #     a full restart — same shape as the pre-fix behaviour, no
+    #     regression.
+    #   * `start_at_byte` is captured BEFORE the request so any
+    #     interrupt that drops mid-write still leaves the partial
+    #     for the next launch to resume from.
     try:
         progress(f"Downloading {label} (~{dest.name})…")
-        # 300s timeout for the FIRST byte; for large files we then stream
-        # bytes which uses the same socket — no per-byte timeout, so a
-        # genuinely slow connection still completes.
-        with urllib.request.urlopen(url, timeout=300) as resp, tmp.open("wb") as f:
-            shutil.copyfileobj(resp, f)
+        start_at_byte = tmp.stat().st_size if tmp.exists() else 0
+        headers: dict[str, str] = {}
+        if start_at_byte > 0:
+            headers["Range"] = f"bytes={start_at_byte}-"
+            log.info(
+                "Resuming %s from byte %d (%.1f MB already on disk)",
+                label, start_at_byte, start_at_byte / 1024 / 1024,
+            )
+
+        timeout = httpx.Timeout(
+            connect=_CONNECT_TIMEOUT,
+            read=_CHUNK_READ_TIMEOUT,
+            write=_CHUNK_READ_TIMEOUT,
+            pool=_CONNECT_TIMEOUT,
+        )
+
+        with httpx.stream(
+            "GET", url, headers=headers, follow_redirects=True, timeout=timeout,
+        ) as resp:
+            # If we asked for a Range and the server replied with the
+            # whole file (200 instead of 206), we have to start over.
+            # Append-mode would corrupt by duplicating the prefix.
+            if start_at_byte > 0 and resp.status_code == 200:
+                log.warning(
+                    "Server %s ignored Range header for %s — restarting "
+                    "from byte 0 (will not corrupt; just lose %.1f MB of "
+                    "redundant work)", url, label, start_at_byte / 1024 / 1024,
+                )
+                start_at_byte = 0
+            resp.raise_for_status()
+
+            mode = "ab" if start_at_byte > 0 else "wb"
+            written = start_at_byte
+            last_progress_emit = time.monotonic()
+            with tmp.open(mode) as f:
+                for chunk in resp.iter_bytes(chunk_size=_CHUNK_BYTES):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    written += len(chunk)
+                    # Throttle progress emissions to at most one per
+                    # 2 seconds so we don't flood the launcher log
+                    # with megabyte-level updates.
+                    if time.monotonic() - last_progress_emit >= 2.0:
+                        progress(
+                            f"Downloading {label}: "
+                            f"{written // 1024 // 1024} MB"
+                        )
+                        last_progress_emit = time.monotonic()
+
         tmp.rename(dest)
         progress(f"Downloaded {label}: {dest.stat().st_size // 1024 // 1024} MB")
         return True
     except Exception as exc:
         log.warning("Could not download %s: %s", label, exc)
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        # v0.7.188 — IMPORTANT: do NOT delete the .tmp on failure.
+        # The whole point of the resume support is that next launch
+        # picks up where this one left off. The partial-validity
+        # check at the top of this function (min_bytes / 80%) handles
+        # the case where the partial is in fact corrupted — only
+        # dest.unlink() runs there, never tmp.unlink().
         return False
 
 
