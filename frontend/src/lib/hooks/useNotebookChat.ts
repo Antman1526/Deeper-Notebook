@@ -167,6 +167,30 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   // the LAST setState to land could be the FIRST request to start, leaving
   // counts stuck on a stale intermediate value. State updates are now the
   // caller's responsibility — see the gated effect below.
+  // v0.7.191 — Stable identity for buildContext.
+  //
+  // Pre-fix problem (audit finding #4): `useCallback(..., [sources,
+  // notes, contextSelections])` depended on ARRAY REFERENCES. TanStack
+  // Query returns a fresh array on every refetch (even when the row
+  // set is identical), so `sources` identity churned on every poll,
+  // window-focus refetch, sibling mutation invalidation, etc.
+  // `buildContext` identity therefore changed too, retriggering the
+  // gated effect below, which POST'd `/chat/build-context` again
+  // even though nothing the function cares about (IDs + modes) had
+  // changed. Spurious network calls per refetch.
+  //
+  // The fix: derive a stable string fingerprint of just the
+  // semantically-relevant data (source IDs, note IDs, the selections
+  // map) and depend on that. The arrays + selections object live as
+  // closure-captured refs but DON'T appear in the deps array.
+  //
+  // Why this is safe: buildContext only reads `.id` from each source/
+  // note + the mode flag. If those don't change, the request body
+  // doesn't change either.
+  const sourcesKey = sources.map(s => s.id).join('|')
+  const notesKey = notes.map(n => n.id).join('|')
+  const selectionsKey = JSON.stringify(contextSelections)
+
   const buildContext = useCallback(async () => {
     const context_config: { sources: Record<string, string>, notes: Record<string, string> } = {
       sources: {},
@@ -198,7 +222,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       context_config
     })
     return response  // { context, token_count, char_count }
-  }, [notebookId, sources, notes, contextSelections])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notebookId, sourcesKey, notesKey, selectionsKey])
 
   // Send message (synchronous, no streaming)
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
@@ -482,6 +507,18 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     updateContextCounts()
   }, [buildContext])
 
+  // v0.7.191 — public cancelStreaming, parity with useSourceChat
+  // (audit finding #3). Previously useNotebookChat had the
+  // abortController plumbing but no public way for the UI to
+  // trigger a cancel — only the unmount effect would abort.
+  // Users couldn't stop a runaway local-LLM mid-generation.
+  const cancelStreaming = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setIsSending(false)
+    }
+  }, [])
+
   return {
     // State
     sessions,
@@ -500,6 +537,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     deleteSession,
     switchSession,
     sendMessage,
+    cancelStreaming,  // v0.7.191 — expose cancel control to UI
     setModelOverride,
     refetchSessions
   }
