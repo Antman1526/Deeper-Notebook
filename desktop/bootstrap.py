@@ -17,6 +17,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 from typing import Callable
+from desktop.paths import user_home
 
 # Max bytes kept in bootstrap-subprocess.log before truncation (P2-MED-19).
 # 5 MB is plenty for the heaviest install we run; rotating on next launch
@@ -101,7 +102,7 @@ def _lock_hash(lock_path: Path) -> str:
 
 def _bootstrap_log_path() -> Path:
     """Append-only diagnostic log next to bootstrap.log (same dir)."""
-    base = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+    base = user_home()
     return base / ".open-notebook-plus" / "logs" / "bootstrap-subprocess.log"
 
 

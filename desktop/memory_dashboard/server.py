@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 from aiohttp import web
+from desktop.paths import user_home
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -21,7 +22,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 # the inbox only shows events after this timestamp, so it doesn't become a
 # wall of already-triaged items. Survives app restart; user-deletable.
 def _capture_state_path() -> Path:
-    base = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+    base = user_home()
     return base / ".open-notebook-plus" / "capture_state.json"
 
 
