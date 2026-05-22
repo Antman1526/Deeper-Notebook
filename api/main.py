@@ -245,6 +245,62 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Edge deduplication encountered errors (non-fatal): {e}")
 
+    # v0.7.172 — Stale-command reaper. If the surreal-commands worker
+    # crashed / was OOM-killed mid-job, the command row stays
+    # `status="running"` (or "new" / "queued") and the corresponding
+    # `source.command` pointer keeps the source stuck in a polling
+    # loop on the frontend. `useSourceStatus` polls every 2 seconds
+    # while status ∈ {new, queued, running} — silent CPU + DB load,
+    # forever, with no path to recovery short of manual SurrealQL.
+    #
+    # On API restart we KNOW the worker isn't still mid-job
+    # (workers and the API share a process tree under the launcher),
+    # so any pre-restart row in a not-terminal state is stale. Mark
+    # them all failed with a clear error message so the frontend
+    # stops polling and the user can re-trigger via the existing
+    # `useRetrySource` / retry-podcast paths.
+    #
+    # The 30-minute updated-time filter is belt-and-suspenders: in
+    # the extremely unlikely case that a worker IS still running an
+    # older job at the moment of restart (e.g. cross-process
+    # supervision in a future deployment), we don't wipe its
+    # status — only stale work older than 30m. For the desktop
+    # launcher's process-tree model this is overkill but cheap.
+    try:
+        from open_notebook.database.repository import repo_query
+
+        reaped = await repo_query(
+            "UPDATE command "
+            "SET status = 'failed', "
+            "    error_message = $msg, "
+            "    updated = time::now() "
+            "WHERE status IN ['new', 'queued', 'running'] "
+            "  AND updated < (time::now() - 30m) "
+            "RETURN id",
+            {
+                "msg": (
+                    "Marked stale on API restart — the worker did not "
+                    "finish before restart. Re-trigger the operation if "
+                    "needed."
+                ),
+            },
+        )
+        if reaped:
+            logger.warning(
+                "Reaped {} stale command row(s) left in new/queued/running "
+                "state from a previous run. They've been marked failed so "
+                "the frontend stops polling.",
+                len(reaped),
+            )
+        else:
+            logger.debug("No stale command rows to reap")
+    except Exception as e:
+        # Non-fatal — the API can still serve traffic with stale rows
+        # around; the next worker startup will likely sort them out.
+        logger.warning(
+            "Stale-command reaper failed (non-fatal): {}", e,
+        )
+
     # ONP v0.6.1 — Start Gmail digest scheduler background task.
     # The scheduler wakes every 5 minutes, checks GmailIntegration state, and
     # fires daily/weekly digests when due. Non-fatal if it fails to start —
