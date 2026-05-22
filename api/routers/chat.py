@@ -547,6 +547,40 @@ async def delete_session(session_id: str):
 
         await session.delete()
 
+        # v0.7.171 — Clean up the LangGraph checkpoint rows for this
+        # thread. Previously `session.delete()` removed the
+        # chat_session row from SurrealDB but the LangGraph SQLite
+        # checkpoints + writes tables kept the thread's full message
+        # history forever, indexed by `thread_id = full_session_id`.
+        # Over the life of an install this grows unbounded (every
+        # deleted chat leaves its full transcript behind) — meaningful
+        # disk usage on chat-heavy users. Worse: if a `chat_session:`
+        # ID ever collides with one used in the past (test harness,
+        # manual SurrealQL insert), the "new" session inherits the
+        # old transcript as its history. Now we explicitly call
+        # `delete_thread` on the checkpointer (the SqliteSaver method
+        # introduced for exactly this purpose). Wrapped in best-effort
+        # try/except so a checkpoint-cleanup failure doesn't block the
+        # primary SurrealDB delete — the row IS gone; the orphan
+        # checkpoint will be cleaned by the existing
+        # `checkpoint_prune` background task (api/main.py v0.7.125).
+        try:
+            checkpointer = getattr(chat_graph, "checkpointer", None)
+            delete_thread = getattr(checkpointer, "delete_thread", None)
+            if delete_thread is not None:
+                await asyncio.to_thread(delete_thread, full_session_id)
+                logger.debug(
+                    "Cleaned up LangGraph checkpoint thread {}",
+                    full_session_id,
+                )
+        except Exception as cleanup_exc:
+            logger.warning(
+                "LangGraph checkpoint cleanup failed for session {} "
+                "(non-fatal — the row is already deleted; "
+                "checkpoint_prune will catch the orphan): {}",
+                full_session_id, cleanup_exc,
+            )
+
         return SuccessResponse(success=True, message="Session deleted successfully")
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")

@@ -18,7 +18,66 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.170 (in flight)
+## Unreleased — v0.7.36 → v0.7.171 (in flight)
+
+- **v0.7.171** 🐛🔒 **LangGraph checkpoint cleanup on session delete —
+  fixes unbounded SQLite growth + thread-ID-collision data leak.**
+  Top finding from the v0.7.169 deep-scan (HIGH severity).
+
+  Background: `ChatSession.delete()` removed the SurrealDB row but
+  never touched the LangGraph SQLite checkpoint store. Two problems
+  compounded:
+
+    1. **Unbounded disk growth.** The `checkpoints` + `writes`
+       tables in `langgraph.sqlite` kept the full transcript of
+       every deleted chat forever, indexed by `thread_id =
+       full_session_id`. Chat-heavy users accumulate hundreds of MB
+       over months. The v0.7.125 `checkpoint_prune` task keeps N
+       newest per thread but does NOT delete orphaned threads.
+    2. **Thread-ID-collision leak.** If a `chat_session:` ULID ever
+       collided with one used in the past (test harness, manual
+       SurrealQL insert, restored backup), the "new" session
+       inherited the prior conversation as its history — wrong
+       transcript surfaced to a different user or context. Low
+       probability but high impact when it hits.
+
+  Fix in both `api/routers/chat.py:delete_session` and
+  `api/routers/source_chat.py` analogue:
+
+  ```python
+  await session.delete()
+  try:
+      checkpointer = getattr(chat_graph, "checkpointer", None)
+      delete_thread = getattr(checkpointer, "delete_thread", None)
+      if delete_thread is not None:
+          await asyncio.to_thread(delete_thread, full_session_id)
+  except Exception as cleanup_exc:
+      logger.warning("…cleanup failed (non-fatal): {}", cleanup_exc)
+  ```
+
+  - **`getattr` chain** defends against LangGraph versions that may
+    not ship the method (older versions, swapped checkpoint
+    backends). Falls through cleanly without crashing the delete.
+  - **`asyncio.to_thread`** because SqliteSaver's `delete_thread` is
+    sync — same bridging pattern as `get_session_message_count`.
+  - **Best-effort try/except** so the cleanup never blocks the
+    primary SurrealDB delete (the row is GONE; any orphan
+    checkpoint will be caught by the existing prune-loop on its
+    next sweep). Logged at WARNING level so a systematic failure
+    (LangGraph upgrade broke our private-method assumption) surfaces
+    as a canary in api.log filters.
+  - **Order matters**: SurrealDB delete runs FIRST. Reversed order
+    would risk an orphaned session row pointing at empty history
+    on a partial failure.
+
+  Tests at `tests/test_v0_7_171_checkpoint_cleanup.py`: 4 AST-level
+  pins — both delete paths invoke `checkpointer.delete_thread`,
+  both wrap in try/except + WARNING log, and order (`session.delete()`
+  precedes cleanup) is enforced. A future refactor that drops the
+  cleanup OR swaps the order fails deterministically at test-collection
+  time.
+
+  Full backend suite: **888/888** (was 884 in v0.7.170).
 
 - **v0.7.170** 🐛 **Datetime aware/naive normalization — repository.py +
   gmail._parse_dt.** Both sites previously could produce naive
