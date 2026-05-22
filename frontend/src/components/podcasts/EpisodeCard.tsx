@@ -213,16 +213,43 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   const [actualDurationSec, setActualDurationSec] = useState<number | null>(null)
 
   useEffect(() => {
-    let revokeUrl: string | undefined
+    // v0.7.186 — Rewritten to fix three race conditions the audit
+    // caught:
+    //
+    //  (a) Object-URL LEAK on rapid unmount: previously the cleanup
+    //      function closed over `revokeUrl` at the time it was
+    //      returned. The assignment `revokeUrl = URL.createObjectURL(blob)`
+    //      happens LATER inside the async path. On quick unmount,
+    //      cleanup ran while `revokeUrl` was still undefined, then
+    //      the URL was created and never revoked.
+    //
+    //  (b) setState-after-unmount: `setAudioSrc/setAudioError`
+    //      could run after the component had unmounted, triggering
+    //      React warnings + memory pinning.
+    //
+    //  (c) Stale-blob-wins on rapid episode switching: with no
+    //      AbortController on the fetch, a slow first fetch could
+    //      resolve AFTER a faster second fetch, stomping the
+    //      correct `audioSrc` with the stale blob.
+    //
+    // The fix: a single `objectUrlRef`-style local that cleanup
+    // CAN see (set BEFORE the async work returns), a `cancelled`
+    // flag guarding every setState, AND an AbortController so an
+    // in-flight fetch aborts on episode-switch / unmount.
+    let cancelled = false
+    let currentObjectUrl: string | null = null
+    const controller = new AbortController()
     setAudioError(null)
 
-    // If backend exposed a protected endpoint, fetch it with auth headers
     const loadProtectedAudio = async () => {
-      // First resolve the audio URL
-      const directAudioUrl = await resolvePodcastAssetUrl(episode.audio_url ?? episode.audio_file)
+      const directAudioUrl = await resolvePodcastAssetUrl(
+        episode.audio_url ?? episode.audio_file
+      )
+
+      if (cancelled) return
 
       if (!directAudioUrl || !episode.audio_url) {
-        setAudioSrc(directAudioUrl)
+        if (!cancelled) setAudioSrc(directAudioUrl)
         return
       }
 
@@ -245,15 +272,24 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
           headers.Authorization = `Bearer ${token}`
         }
 
-        const response = await fetch(directAudioUrl, { headers })
+        const response = await fetch(directAudioUrl, {
+          headers,
+          signal: controller.signal,
+        })
         if (!response.ok) {
           throw new Error(`Audio request failed with status ${response.status}`)
         }
 
         const blob = await response.blob()
-        revokeUrl = URL.createObjectURL(blob)
-        setAudioSrc(revokeUrl)
+        if (cancelled) return  // unmounted/switched between fetch & blob()
+
+        const url = URL.createObjectURL(blob)
+        currentObjectUrl = url  // set BEFORE setState so cleanup sees it
+        setAudioSrc(url)
       } catch (error) {
+        // AbortError is the expected outcome of switching episodes
+        // mid-fetch — don't surface that to the user as a failure.
+        if (cancelled || (error as Error).name === 'AbortError') return
         console.error('Unable to load podcast audio', error)
         setAudioError(t('podcasts.audioUnavailable'))
         setAudioSrc(undefined)
@@ -263,8 +299,10 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
     void loadProtectedAudio()
 
     return () => {
-      if (revokeUrl) {
-        URL.revokeObjectURL(revokeUrl)
+      cancelled = true
+      controller.abort()
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl)
       }
     }
   }, [episode.audio_url, episode.audio_file, t])

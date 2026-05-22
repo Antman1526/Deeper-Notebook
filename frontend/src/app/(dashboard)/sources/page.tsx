@@ -103,6 +103,22 @@ export default function SourcesPage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (sources.length === 0) return
 
+      // v0.7.186 — Don't hijack arrows/Enter/Home/End when the user
+      // is typing in an input. Previously this listener captured
+      // every keystroke globally, so e.g. the AppShell search bar,
+      // the command palette, any dialog input, or a contenteditable
+      // anywhere in the tree all lost their arrow-key caret movement
+      // while the Sources page was the active route. CommandPalette
+      // already uses this guard pattern (CommandPalette.tsx:77-84).
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      ) {
+        return
+      }
+
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
