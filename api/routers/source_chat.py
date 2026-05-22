@@ -9,9 +9,11 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
 from open_notebook.exceptions import (
+    InvalidInputError,
     NotFoundError,
 )
 from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
@@ -116,8 +118,9 @@ async def create_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=session.model_override,
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.182 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=0,
         )
     except NotFoundError:
@@ -125,6 +128,9 @@ async def create_source_chat_session(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
@@ -202,6 +208,9 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
@@ -292,8 +301,9 @@ async def get_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=getattr(session, "model_override", None),
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.182 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=len(messages),
             messages=messages,
             context_indicators=context_indicators,
@@ -303,6 +313,9 @@ async def get_source_chat_session(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
@@ -370,8 +383,9 @@ async def update_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=getattr(session, "model_override", None),
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.182 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=msg_count,
         )
     except NotFoundError:
@@ -379,6 +393,9 @@ async def update_source_chat_session(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
@@ -462,6 +479,9 @@ async def delete_source_chat_session(
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
@@ -633,6 +653,9 @@ async def stream_source_chat_response(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 
@@ -716,6 +739,9 @@ async def send_message_to_source_chat(
         )
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Error sending message to source chat: {str(e)}")

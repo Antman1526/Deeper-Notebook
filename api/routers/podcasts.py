@@ -12,6 +12,7 @@ from api.podcast_service import (
     PodcastGenerationResponse,
     PodcastService,
 )
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import repo_query
 from open_notebook.exceptions import InvalidInputError, NotFoundError
@@ -209,7 +210,7 @@ async def list_podcast_episodes(
                     audio_url=audio_url,
                     transcript=episode.transcript,
                     outline=episode.outline,
-                    created=str(episode.created) if episode.created else None,
+                    created=iso(episode.created) if episode.created else None,
                     job_status=job_status,
                     error_message=error_message,
                 )
@@ -283,7 +284,7 @@ async def get_podcast_episode(episode_id: str):
             audio_url=audio_url,
             transcript=episode.transcript,
             outline=episode.outline,
-            created=str(episode.created) if episode.created else None,
+            created=iso(episode.created) if episode.created else None,
             job_status=job_status,
             error_message=error_message,
         )
