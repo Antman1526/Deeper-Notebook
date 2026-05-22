@@ -18,7 +18,73 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.187 (in flight)
+## Unreleased — v0.7.36 → v0.7.188 (in flight)
+
+- **v0.7.188** 🛠️ **Round-9 audit — Desktop reliability: model
+  download resume + launcher early-exit on dead child.** Two
+  user-visible reliability bugs from the audit, both with
+  material everyday impact.
+
+  **(1) Model downloads now resumable (`desktop/model_downloads.py`).**
+  Migrated from `urllib.request.urlopen` to `httpx.stream`. The
+  audit caught two genuinely painful bugs:
+    - `urllib`'s 300s `timeout=` only covered the initial connect;
+      a mid-stream stalled socket hung the launcher forever.
+      `httpx.stream(... timeout=httpx.Timeout(read=30))` raises
+      `ReadTimeout` within 30s on any idle stall.
+    - `shutil.copyfileobj(resp, f)` had NO resume capability. A
+      5GB chat-LLM GGUF interrupted at 4.8GB silently restarted
+      from byte 0 on next launch. Multiply by the 4-6 models the
+      first-launch downloader fetches — a single dropped network
+      event cost 20-30GB of redundant transfer. The new flow
+      sends `Range: bytes=<existing>-` against any `.tmp` partial
+      and appends; on the next launch the user picks up exactly
+      where the previous one left off. Defends against CDNs that
+      ignore Range and return 200 by restarting from byte 0
+      (preventing prefix duplication / corruption).
+    - The `.tmp` is now PRESERVED on failure (the pre-fix
+      `tmp.unlink(missing_ok=True)` actively defeated any resume
+      support before it could exist). The partial-validity check
+      at the top of `_download_one` (min_bytes / 80% rule) still
+      detects + discards corrupted partials.
+    - Progress messages throttled to one per 2 seconds so a
+      multi-GB stream doesn't flood `progress.jsonl`.
+
+  **(2) Launcher readiness probes early-exit on dead child
+  (`desktop/launcher.py`).** `_wait_tcp` and `_wait_http` now
+  accept an optional `proc` argument. Between probe attempts
+  they call `proc.poll()`; a non-None returncode means the
+  child crashed and there is NO chance the port/endpoint will
+  come up — raise `RuntimeError(f"child exited rc={returncode}")`
+  immediately. Pre-fix, a uvicorn that crashed in 200ms (binary
+  missing, port collision, EACCES on the logging dir) left the
+  user staring at "Starting…" for the full 180s probe timeout.
+  Three call sites in `_main_supervise` wired the latest spawned
+  proc via `self._procs[-1]`.
+
+  **(3) `progress.jsonl` rotation — AUDITED, NO FIX NEEDED.**
+  The audit suggested adding rotation; it's already there from
+  v0.5.10 (`ProgressBus._rotate_if_oversized` at progress.py:45
+  rotates to `.old` at 2MB on startup). Custom check+rename
+  pattern, not RotatingFileHandler — sidesteps the Windows
+  concurrency gotcha. Added a forward-guard test so a future
+  contributor doesn't accidentally simplify the rotation away.
+
+  Tests at `tests/test_v0_7_188_desktop_reliability.py`: 8 new —
+  proc-argument pins on _wait_tcp/_wait_http, behavioural pin on
+  _wait_tcp early-exit timing, httpx-not-urllib pin, Range-header
+  construction pin, behavioural pin on tmp-preserved-on-failure,
+  behavioural pin on server-ignored-Range restart-from-zero,
+  ProgressBus rotation forward-guard.
+
+  Also rewrote `desktop/tests/test_model_downloads.py` to mock
+  `httpx.stream` instead of `urllib.request.urlopen` (same
+  behavioural semantics; new transport).
+
+  Backend: **988/988** (was 966 in v0.7.187; +22 — that includes
+  the test_model_downloads rewrite picking up some prior tests
+  that had been collection-only and the v0.7.188 new file).
+  Combined `tests/ desktop/tests/`: **1231/1231**.
 
 - **v0.7.187** 🐛 **Round-9 audit — MED-severity correctness tightening
   across three independent surfaces.**

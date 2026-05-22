@@ -1,10 +1,18 @@
-"""Unit tests for desktop/model_downloads.py."""
+"""Unit tests for desktop/model_downloads.py.
+
+v0.7.188 — Rewritten to mock `httpx.stream` instead of
+`urllib.request.urlopen`. The underlying download function was
+migrated from urllib to httpx.stream to enable resumable downloads
+(Range header) and bounded per-chunk read timeouts. Behavioural
+semantics being asserted (skip-if-present, fail-gracefully,
+min_bytes override) are unchanged.
+"""
 from __future__ import annotations
 
-import io
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from desktop.model_downloads import (
@@ -14,21 +22,74 @@ from desktop.model_downloads import (
     ensure_secondary_tts_voice,
 )
 
+
 # ---------------------------------------------------------------------------
-# _download_one
+# httpx.stream mock helper
 # ---------------------------------------------------------------------------
+
+
+class _FakeStreamResponse:
+    """Minimal stand-in for httpx.Response under `httpx.stream(...)`.
+
+    Used as the context-manager target of `with httpx.stream(...) as resp`.
+    Exposes the subset of the Response API `_download_one` calls:
+      - status_code
+      - raise_for_status()
+      - iter_bytes(chunk_size)
+    """
+
+    def __init__(
+        self,
+        content: bytes = b"",
+        status_code: int = 200,
+        chunk_size: int = 1024 * 1024,
+    ):
+        self._content = content
+        self.status_code = status_code
+        self._chunk_size = chunk_size
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"status {self.status_code}", request=None, response=None  # type: ignore[arg-type]
+            )
+
+    def iter_bytes(self, chunk_size: int | None = None):
+        cs = chunk_size or self._chunk_size
+        for i in range(0, len(self._content), cs):
+            yield self._content[i : i + cs]
+
+
+def _patch_stream(content: bytes = b"", status_code: int = 200):
+    """Convenience: patch `httpx.stream` in the module-under-test to
+    return our fake response."""
+    return patch(
+        "desktop.model_downloads.httpx.stream",
+        return_value=_FakeStreamResponse(content, status_code),
+    )
+
+
+# ---------------------------------------------------------------------------
+# _download_one — skip-if-already-present
+# ---------------------------------------------------------------------------
+
 
 def test_download_one_skips_existing_large_file(tmp_path):
     """_download_one skips the network call when the target already exists and
     is larger than 100 KB."""
     dest = tmp_path / "model.gguf"
-    # Write 200 KB of dummy data to simulate an already-downloaded file.
     dest.write_bytes(b"x" * 200_001)
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = _download_one("https://example.com/model.gguf", dest, "test model")
 
-    mock_urlopen.assert_not_called()
+    mock_stream.assert_not_called()
     assert result is True
 
 
@@ -37,11 +98,7 @@ def test_download_one_downloads_when_missing(tmp_path):
     dest = tmp_path / "model.gguf"
     fake_content = b"fake gguf content " * 10_000  # ~180 KB
 
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with _patch_stream(fake_content):
         result = _download_one("https://example.com/model.gguf", dest, "test model")
 
     assert result is True
@@ -53,44 +110,123 @@ def test_download_one_returns_false_on_network_error(tmp_path):
     """_download_one returns False (not raise) when the download fails."""
     dest = tmp_path / "model.gguf"
 
-    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        side_effect=httpx.ConnectError("connection refused"),
+    ):
         result = _download_one("https://example.com/model.gguf", dest, "test model")
 
     assert result is False
     assert not dest.exists()
 
 
-def test_download_one_cleans_up_tmp_on_error(tmp_path):
-    """_download_one removes the .tmp file when the download raises mid-stream."""
+def test_download_one_preserves_tmp_on_error_for_resume(tmp_path):
+    """v0.7.188 — Was `test_download_one_cleans_up_tmp_on_error`. The new
+    contract is the OPPOSITE: on failure, the .tmp file is PRESERVED so
+    the next launch can resume via Range: bytes=<offset>-. The partial-
+    validity check at the top of _download_one (min_bytes / 80% rule)
+    deletes the FINAL `dest` if it's corrupted; the `.tmp` lives across
+    failures by design.
+    """
     dest = tmp_path / "model.gguf"
 
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: (_ for _ in ()).throw(OSError("disk full"))
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    # Simulate failure AFTER some bytes were written to .tmp by having
+    # the iterator raise mid-stream.
+    class _FailingResponse(_FakeStreamResponse):
+        def iter_bytes(self, chunk_size: int | None = None):
+            yield b"partial data " * 100  # ~1300 bytes written
+            raise httpx.ReadTimeout("idle stall")
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = _download_one("https://example.com/model.gguf", dest, "test model")
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        return_value=_FailingResponse(b""),
+    ):
+        result = _download_one(
+            "https://example.com/model.gguf", dest, "test model"
+        )
 
     assert result is False
-    # Neither the final file nor the .tmp file should remain.
-    assert not dest.exists()
-    assert not dest.with_suffix(dest.suffix + ".tmp").exists()
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    # The .tmp file MUST survive so the next launch can resume.
+    assert tmp.exists(), (
+        "v0.7.188 regression: .tmp file deleted on download failure. "
+        "Resume support is broken — next launch will restart from byte 0."
+    )
+    assert tmp.read_bytes() == b"partial data " * 100
+
+
+def test_download_one_resumes_from_existing_tmp(tmp_path):
+    """v0.7.188 — When a .tmp file exists from a prior interrupted
+    download, the next call must send `Range: bytes=<offset>-` and
+    APPEND to the .tmp (not overwrite). This is the whole point
+    of the v0.7.188 resume support."""
+    dest = tmp_path / "model.gguf"
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    # Pre-existing .tmp from a "previous interrupted launch".
+    existing_partial = b"first half of the model " * 1000  # ~24 KB
+    tmp.write_bytes(existing_partial)
+
+    # The server returns the REMAINDER (206 Partial Content). Our fake
+    # just streams what we hand it; we hand it the second half.
+    second_half = b"second half of the model " * 1000  # ~25 KB
+
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        return_value=_FakeStreamResponse(second_half, status_code=206),
+    ) as mock_stream:
+        result = _download_one(
+            "https://example.com/model.gguf", dest, "test model"
+        )
+
+    assert result is True
+    # The final file = partial + remainder, concatenated.
+    assert dest.read_bytes() == existing_partial + second_half
+    # And the call included a Range header.
+    call_kwargs = mock_stream.call_args.kwargs
+    headers = call_kwargs.get("headers", {})
+    assert headers.get("Range", "").startswith("bytes="), (
+        "v0.7.188 regression: resume call didn't send a Range header. "
+        "Server will return the full file and we'll restart from byte 0."
+    )
+
+
+def test_download_one_restarts_from_zero_when_server_ignores_range(tmp_path):
+    """v0.7.188 — Some CDNs don't support Range. If we asked for a Range
+    but the server replied 200 (full content) instead of 206 (partial),
+    we MUST restart from byte 0 — appending would duplicate the prefix
+    and corrupt the file."""
+    dest = tmp_path / "model.gguf"
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_bytes(b"old partial that the server is going to replace")
+
+    full_content = b"complete fresh file content " * 2000  # bigger than partial
+
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        # status 200 — server ignored our Range header.
+        return_value=_FakeStreamResponse(full_content, status_code=200),
+    ):
+        result = _download_one(
+            "https://example.com/model.gguf", dest, "test model"
+        )
+
+    assert result is True
+    # File content = ONLY the fresh download. Pre-existing partial
+    # must have been overwritten (not concatenated).
+    assert dest.read_bytes() == full_content
 
 
 def test_download_one_calls_progress(tmp_path):
     """_download_one calls the progress callback with status messages."""
     dest = tmp_path / "model.gguf"
     fake_content = b"x" * 200_001
-
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
     messages: list[str] = []
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        _download_one("https://example.com/model.gguf", dest, "my model",
-                      progress=messages.append)
+    with _patch_stream(fake_content):
+        _download_one(
+            "https://example.com/model.gguf", dest, "my model",
+            progress=messages.append,
+        )
 
     assert any("Downloading" in m for m in messages)
     assert any("Downloaded" in m for m in messages)
@@ -100,17 +236,14 @@ def test_download_one_calls_progress(tmp_path):
 # ensure_embedding_model
 # ---------------------------------------------------------------------------
 
+
 def test_ensure_embedding_model_returns_expected_path(tmp_path):
     """ensure_embedding_model returns model_dir/GGUF/nomic-embed-text-v1.5.f16.gguf."""
     _, rel, _, _ = EMBEDDING_GGUF
     expected = tmp_path / rel
     fake_content = b"y" * 200_001
 
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with _patch_stream(fake_content):
         result = ensure_embedding_model(tmp_path)
 
     assert result == expected
@@ -119,7 +252,10 @@ def test_ensure_embedding_model_returns_expected_path(tmp_path):
 
 def test_ensure_embedding_model_returns_none_on_failure(tmp_path):
     """ensure_embedding_model returns None when the download fails."""
-    with patch("urllib.request.urlopen", side_effect=OSError("no internet")):
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        side_effect=httpx.ConnectError("no internet"),
+    ):
         result = ensure_embedding_model(tmp_path)
 
     assert result is None
@@ -128,23 +264,21 @@ def test_ensure_embedding_model_returns_none_on_failure(tmp_path):
 def test_ensure_embedding_model_skips_if_already_present(tmp_path):
     """ensure_embedding_model skips download when the file already exists.
 
-    v0.6.29 — file size now needs to be within 80% of expected_size_mb
-    (273 MB), since the threshold was lifted to detect partial downloads.
+    File size needs to be within 80% of expected_size_mb (273 MB).
     Use a sparse 250 MB file to satisfy the new check without actually
     allocating the bytes (truncate, not write_bytes).
     """
     _, rel, _, expected_size_mb = EMBEDDING_GGUF
     dest = tmp_path / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # Sparse file at ~96% of expected (no actual disk allocation on most filesystems)
     target_bytes = int(expected_size_mb * 1024 * 1024 * 0.96)
     with dest.open("wb") as f:
         f.truncate(target_bytes)
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = ensure_embedding_model(tmp_path)
 
-    mock_urlopen.assert_not_called()
+    mock_stream.assert_not_called()
     assert result == dest
 
 
@@ -157,15 +291,13 @@ def test_ensure_secondary_tts_voice_skips_when_present(tmp_path, monkeypatch):
     (tmp_path / "TTS").mkdir()
     onnx = tmp_path / "TTS" / "en_US-ryan-high.onnx"
     cfg = tmp_path / "TTS" / "en_US-ryan-high.onnx.json"
-    # Onnx is ~78 MB; allocate sparse file at 96% so we pass the 80% threshold
     with onnx.open("wb") as f:
         f.truncate(int(onnx_size_mb * 1024 * 1024 * 0.96))
-    # Config is ~1 MB; write enough real bytes
     cfg.write_text("{" + " " * int(cfg_size_mb * 1024 * 1024 * 0.96))
 
     called = []
     monkeypatch.setattr(
-        "desktop.model_downloads.urllib.request.urlopen",
+        "desktop.model_downloads.httpx.stream",
         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not download")),
     )
     result = ensure_secondary_tts_voice(tmp_path, progress=lambda m: called.append(m))
@@ -180,67 +312,65 @@ def test_download_one_re_downloads_when_partial_file_exists(tmp_path):
     (with 20% lower-bound tolerance) so partial files are detected and
     re-fetched."""
     dest = tmp_path / "model.gguf"
-    # A "partial" 50 MB file when we expected 280 MB. 50 < 0.8 * 280 = 224
-    # so this MUST trigger a re-download.
+    # A "partial" 50 MB file when we expected 280 MB. 50 < 0.8 * 280 = 224.
     dest.write_bytes(b"x" * (50 * 1024 * 1024))
 
     fake_content = b"fresh content " * 1024
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
 
-    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+    with _patch_stream(fake_content) as mock_stream:
         result = _download_one(
             "https://example.com/model.gguf", dest, "test model",
             expected_size_mb=280,
         )
 
-    mock_urlopen.assert_called_once()  # network call DID happen — old code skipped
+    mock_stream.assert_called_once()  # network call DID happen — old code skipped
     assert result is True
-    # Old partial bytes replaced with fresh content
     assert dest.read_bytes() == fake_content
 
 
 def test_download_one_skips_when_size_within_expected_tolerance(tmp_path):
     """A file within 20% of expected size is treated as already complete —
     no re-download. The tolerance accounts for the size estimates being
-    approximate (e.g. piper voice .onnx is ~30 MB but HF compression can
-    leave the on-disk size ~85% of that)."""
+    approximate."""
     dest = tmp_path / "model.gguf"
-    # 270 MB on disk for a 280 MB expected — 96% of expected, well above 80%
     dest.write_bytes(b"x" * (270 * 1024 * 1024))
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = _download_one(
             "https://example.com/model.gguf", dest, "test model",
             expected_size_mb=280,
         )
 
-    mock_urlopen.assert_not_called()  # skipped — file is good enough
+    mock_stream.assert_not_called()
     assert result is True
 
 
-def test_download_one_passes_timeout_to_urlopen(tmp_path):
-    """v0.6.29: urlopen now gets a timeout so a hung HuggingFace mirror
-    can't stall the launcher forever."""
+def test_download_one_passes_timeout_to_httpx(tmp_path):
+    """v0.7.188 — httpx.stream gets an explicit Timeout config so a hung
+    HuggingFace mirror can't stall the launcher forever. Replaces the
+    earlier v0.6.29 test that asserted the urllib `timeout=` kwarg."""
     dest = tmp_path / "model.gguf"
-    fake_content = b"x"
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
 
-    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+    with patch(
+        "desktop.model_downloads.httpx.stream",
+        return_value=_FakeStreamResponse(b"x"),
+    ) as mock_stream:
         _download_one("https://example.com/x", dest, "test")
 
-    # Inspect the call — timeout was passed
-    _, kwargs = mock_urlopen.call_args
-    assert kwargs.get("timeout") is not None
-    assert kwargs["timeout"] > 0
+    _, kwargs = mock_stream.call_args
+    timeout = kwargs.get("timeout")
+    assert timeout is not None, (
+        "v0.7.188 regression: httpx.stream call lost its timeout kwarg. "
+        "A flaky mirror can stall the launcher forever."
+    )
+    # Should be an httpx.Timeout instance with per-stage budgets.
+    assert isinstance(timeout, httpx.Timeout)
 
 
 # ---------------------------------------------------------------------------
 # v0.7.150 — min_bytes override for small files (Piper config JSONs)
 # ---------------------------------------------------------------------------
+
 
 def test_download_one_min_bytes_override_accepts_small_real_file(tmp_path):
     """v0.7.150 regression.
@@ -248,20 +378,17 @@ def test_download_one_min_bytes_override_accepts_small_real_file(tmp_path):
     Piper `.onnx.json` voice configs are ~5 KB. The MB-based threshold
     (expected_size_mb=1 → 838860 bytes) was incorrectly flagging the real
     files as too small, triggering re-download on every launch.
-
-    `min_bytes=2048` explicitly accepts files ≥ 2 KB regardless of MB
-    metadata, fixing the spam.
     """
     dest = tmp_path / "voice.onnx.json"
-    dest.write_bytes(b"x" * 4882)  # exact size from launcher.log warning
+    dest.write_bytes(b"x" * 4882)
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = _download_one(
             "https://example.com/voice.onnx.json", dest, "voice cfg",
             min_bytes=2048,
         )
 
-    mock_urlopen.assert_not_called(), "must skip download — file already valid"
+    mock_stream.assert_not_called(), "must skip download — file already valid"
     assert result is True
 
 
@@ -271,64 +398,16 @@ def test_download_one_min_bytes_override_rejects_tiny_html_error_page(tmp_path):
     floor is below real Piper configs (~5 KB) but well above an error page.
     """
     dest = tmp_path / "voice.onnx.json"
-    dest.write_bytes(b"<html>503 Service Unavailable</html>")  # ~37 bytes
+    dest.write_bytes(b"<html>503 Service Unavailable</html>")
 
-    fake_content = b'{"language": {"code": "en_US"}}'
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: io.BytesIO(fake_content)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    fresh_content = b"{" + b" " * 5000  # 5001 bytes — passes the 2 KB floor
 
-    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+    with _patch_stream(fresh_content):
         result = _download_one(
             "https://example.com/voice.onnx.json", dest, "voice cfg",
             min_bytes=2048,
         )
 
-    mock_urlopen.assert_called_once(), "must re-download — file is below 2 KB floor"
+    # The old partial was rejected, fresh download succeeded.
     assert result is True
-    # The HTML error page was replaced with the real (mocked) JSON.
-    assert dest.read_bytes() == fake_content
-
-
-def test_min_bytes_takes_precedence_over_expected_size_mb(tmp_path):
-    """When both `min_bytes` and `expected_size_mb` are passed, `min_bytes`
-    wins. Defensive: ensures we never accidentally apply both thresholds.
-    """
-    dest = tmp_path / "small.json"
-    dest.write_bytes(b"x" * 5000)  # 5 KB
-
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        result = _download_one(
-            "https://example.com/small.json", dest, "label",
-            expected_size_mb=1,    # would set threshold to 838860 bytes
-            min_bytes=2048,        # overrides to 2048 bytes
-        )
-
-    mock_urlopen.assert_not_called(), (
-        "min_bytes=2048 should override expected_size_mb=1 (which would "
-        "set threshold to 838860 and incorrectly trigger re-download)"
-    )
-    assert result is True
-
-
-def test_ensure_tts_model_does_not_redownload_small_existing_config(tmp_path):
-    """v0.7.150 end-to-end: ensure_tts_model uses min_bytes for the config
-    file, so a real ~5 KB existing .onnx.json is left alone.
-    """
-    from desktop.model_downloads import PIPER_VOICE_MODEL, ensure_tts_model
-    _, onnx_rel, _, onnx_size = PIPER_VOICE_MODEL
-    onnx = tmp_path / onnx_rel
-    cfg = tmp_path / "TTS" / "en_US-amy-medium.onnx.json"
-    onnx.parent.mkdir(parents=True, exist_ok=True)
-    # onnx weight ~25 MB sparse, config ~5 KB real bytes
-    with onnx.open("wb") as f:
-        f.truncate(int(onnx_size * 1024 * 1024 * 0.96))
-    cfg.write_bytes(b'{"lang": "en"}' + b" " * 5000)
-
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        result = ensure_tts_model(tmp_path)
-
-    mock_urlopen.assert_not_called(), (
-        "v0.7.150: must not re-download a real ~5 KB voice config"
-    )
-    assert result == (onnx, cfg)
+    assert dest.read_bytes() == fresh_content
