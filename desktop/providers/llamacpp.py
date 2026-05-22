@@ -12,6 +12,7 @@ import httpx
 
 from desktop.ports import find_free_port
 from desktop.providers import ProviderEnv
+from desktop.paths import user_home
 
 # Files smaller than this are treated as Git LFS pointers / aborted downloads
 # and skipped during model listing.
@@ -34,7 +35,7 @@ def _http_ready(port: int) -> bool:
 def _default_log_dir() -> Path:
     """Where to write llama_cpp.server stderr if no override is supplied.
     Matches desktop/app.py's `log_dir = ~/.open-notebook-plus/logs`."""
-    home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or "."
+    home = str(user_home())
     return Path(home) / ".open-notebook-plus" / "logs"
 
 

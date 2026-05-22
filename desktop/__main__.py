@@ -12,6 +12,7 @@ tricks are needed.
 from __future__ import annotations
 
 import sys
+from desktop.paths import user_home as _user_home
 
 
 def _emergency_log(exc: BaseException) -> None:
@@ -31,7 +32,7 @@ def _emergency_log(exc: BaseException) -> None:
     import traceback as _traceback
     from pathlib import Path as _Path
 
-    base = _Path(_os.environ.get("HOME", _os.environ.get("USERPROFILE", ".")))
+    base = _user_home()
     log_dir = base / ".open-notebook-plus" / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)

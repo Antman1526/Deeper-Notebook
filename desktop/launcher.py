@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from desktop.progress import ProgressBus
 
 from desktop.config import Config
+from desktop.paths import user_home
 from desktop.ports import find_free_ports
 
 # v0.6.5 — debugging supervised-child failures was painful: every optional
@@ -88,7 +89,7 @@ class Supervisor:
         self.extra_env = dict(extra_env or {})
         self.debug_mode = debug_mode
         self.log_dir = log_dir or (
-            Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+            user_home()
             / ".open-notebook-plus" / "logs"
         )
         # venv_python: the Python interpreter used to spawn FastAPI/worker children.
@@ -190,7 +191,7 @@ class Supervisor:
         # under a non-admin user, …) without affecting Docker / dev where
         # the env var would simply not be set otherwise.
         data_folder = Path(
-            os.environ.get("HOME", os.environ.get("USERPROFILE", "."))
+            str(user_home())
         ) / ".open-notebook-plus" / "data"
         data_folder.mkdir(parents=True, exist_ok=True)
         self.session_env = {
@@ -357,15 +358,38 @@ class Supervisor:
                         except Exception:
                             pass
                 elif pid and sys.platform == "win32":
-                    # Windows: send CTRL_BREAK to the process group
-                    # (works because we created with CREATE_NEW_PROCESS_GROUP).
+                    # v0.7.185 — was `os.kill(pid, CTRL_BREAK_EVENT)`. That
+                    # only works when the target shares a console with us;
+                    # a PyInstaller windowed .exe has NO console, so the
+                    # signal is silently dropped and grandchildren leak —
+                    # exactly the same bug v0.7.173 fixed for POSIX.
+                    # `taskkill /F /T /PID` is the Windows equivalent of
+                    # `killpg(SIGKILL)` and works without a console.
+                    #   /F = force kill, /T = kill subtree (children +
+                    #   grandchildren), /PID <n> = target by PID.
+                    # Wrapped in subprocess.run with check=False so a
+                    # non-existent PID (already-dead process) doesn't
+                    # raise — same forgiveness pattern as the POSIX
+                    # killpg branch above. Audit finding #3.
                     try:
-                        os.kill(pid, signal.CTRL_BREAK_EVENT)
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=5,
+                        )
                     except Exception:
+                        # taskkill missing (sandboxed environment) /
+                        # timed out / other failure — fall back to
+                        # the soft signal + terminate sequence.
                         try:
-                            p.terminate()
+                            os.kill(pid, signal.CTRL_BREAK_EVENT)
                         except Exception:
-                            pass
+                            try:
+                                p.terminate()
+                            except Exception:
+                                pass
                 else:
                     # No real PID (test mock) — fall back to terminate().
                     p.terminate()
@@ -449,10 +473,15 @@ class Supervisor:
         if sys.platform != "win32":
             popen_kwargs["start_new_session"] = True
         else:
-            # Best-effort Windows equivalent — CREATE_NEW_PROCESS_GROUP
-            # makes the child a group leader so we can send a group
-            # signal at shutdown via os.kill(pgid, CTRL_BREAK_EVENT).
-            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # v0.7.185 — was just CREATE_NEW_PROCESS_GROUP. Added
+            # CREATE_NO_WINDOW so each child doesn't pop a transient
+            # console window (jarring UX from a packaged windowed
+            # .app). The process-group flag remains so `taskkill /T`
+            # in stop_all can target the whole subtree.
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.CREATE_NO_WINDOW
+            )
 
         proc = subprocess.Popen(args, **popen_kwargs)
         self._procs.append(proc)
@@ -500,20 +529,30 @@ class Supervisor:
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
         binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
-        data_dir = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", "."))) \
+        data_dir = user_home() \
             / ".open-notebook-plus" / "surreal_data"
         data_dir.mkdir(parents=True, exist_ok=True)
         # Use --flag=value form so passwords/usernames that happen to start
         # with '-' (a real possibility from secrets.token_urlsafe which uses
         # base64url, where `-` is a valid char) aren't reparsed by clap as
         # a separate short flag like '-4'.
+        # v0.7.185 — was f"file://{data_dir}". On POSIX `data_dir`
+        # starts with `/`, producing a valid `file:///Users/.../...`
+        # URL. On Windows `data_dir` is e.g. `C:\Users\Joe\.open-
+        # notebook-plus\surreal_data`, so the f-string produces
+        # `file://C:\Users\...` — NOT a valid file: URL. SurrealDB's
+        # URL parser reads `C:` as the host, and storage init fails
+        # silently or with a confusing error. `Path.as_uri()` is the
+        # idiomatic cross-platform builder: returns
+        # `file:///C:/Users/...` on Windows, `file:///Users/...` on
+        # POSIX. Audit finding #2.
         self._spawn(
             [
                 str(binary), "start",
                 f"--user={self.cfg.surreal_user}",
                 f"--pass={self.cfg.surreal_password}",
                 f"--bind=127.0.0.1:{port}",
-                f"file://{data_dir}",
+                data_dir.as_uri(),
             ],
             name="surreal",
         )
