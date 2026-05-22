@@ -18,7 +18,56 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.177 (in flight)
+## Unreleased — v0.7.36 → v0.7.178 (in flight)
+
+- **v0.7.178** 🐛 **Round-5 deferred sweep: embedding OOM cap,
+  NotFoundError re-raise, two more studio str(exc) leaks (MED+LOW
+  severity).** Four independent surfaces, one version tag.
+
+  1. **`commands/embedding_commands.py` chunk-count cap.** The
+     per-source chunk list had no ceiling — a 500MB plain-text
+     upload chunks to ~333k entries, each holding (chunk text +
+     768-dim float32 embedding + record dict) simultaneously in
+     memory before the bulk INSERT flushes. Worker OOMs.
+     v0.7.178 adds `MAX_CHUNKS_PER_SOURCE = 10000` (~50MB peak,
+     comfortable headroom for any legitimate document at the
+     default 1500-char chunk size). Raised as `ValueError` so
+     surreal_commands' `stop_on: [ValueError]` retry config
+     does NOT spin the worker in a retry loop blowing up the
+     same way each time.
+
+  2. **`api/routers/sources.py::create_source_insight`
+     NotFoundError re-raise.** The bare `except Exception` clause
+     swallowed `NotFoundError` / `InvalidInputError` from
+     `Source.get()` / `Transformation.get()`, returning HTTP 500
+     instead of letting the global FastAPI handlers in
+     `api/main.py` map them to 404 / 400. The local
+     `if not source: raise HTTPException(404)` guards were dead
+     code — `Source.get()` raises `NotFoundError` instead of
+     returning None
+     (`open_notebook/domain/base.py:183`). Added the explicit
+     `except (NotFoundError, InvalidInputError): raise` before
+     the broad handler. The wider sweep across other routers is
+     a separate task (see deferred section).
+
+  3. **`api/routers/studio.py` two more str(exc) leaks.** The
+     v0.7.168 + v0.7.177 sweeps missed two `detail=f"...{exc}"`
+     raises (notebook-create failure + single-note fallback).
+     Sanitized to generic messages; `logger.exception` still
+     captures the full traceback for ops.
+
+  4. **Forward-guard test on launcher drain-thread join.** The
+     v0.7.58 race fix (join drain threads BEFORE closing log
+     files in `stop_all`) is now AST-pinned. A future cleanup
+     pass that reorders or drops the join would re-introduce
+     'I/O on closed file' tracebacks on every desktop shutdown.
+
+  Tests at `tests/test_v0_7_178_audit_sweep.py`: 5 new — chunk-
+  cap constant pin + ValueError class pin, NotFoundError re-raise
+  pin, two studio sanitized-detail pins, drain-thread join order
+  forward-guard.
+
+  Full backend suite: **916/916** (was 911 in v0.7.177).
 
 - **v0.7.177** 🐛🔒 **Round-4 deferred sweep: podcast_service info-
   leak, cancel_command_job private-API fallback, forward-looking

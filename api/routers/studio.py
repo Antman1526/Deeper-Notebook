@@ -543,8 +543,11 @@ async def studio_generate(
         # `except Exception` doesn't clobber them to 500.
         raise
     except Exception as exc:
+        # v0.7.178 — Sanitize 500 detail (same pattern as v0.7.168
+        # / v0.7.177 sweeps). logger.exception above captures the
+        # full traceback for ops; the client gets a generic message.
         logger.exception("Studio: failed to create notebook")
-        raise HTTPException(status_code=500, detail=f"Could not create notebook: {exc}")
+        raise HTTPException(status_code=500, detail="Could not create notebook")
     notebook_id = str(notebook.id)
 
     # 4. Per-file: save → Source → extract → link.
@@ -1336,10 +1339,12 @@ async def _dispatch_notebook_mode_singlenote(
         # `except Exception` doesn't clobber them to 500.
         raise
     except Exception as exc:
+        # v0.7.178 — Sanitize 500 detail (see above). logger.exception
+        # captures the full traceback for ops.
         logger.exception("Studio notebook (single-note fallback): could not save Note")
         raise HTTPException(
             status_code=500,
-            detail=f"Generated content but could not save it: {exc}",
+            detail="Generated content but could not save it",
         )
     note_id = str(note.id)
     return StudioGenerateResponse(
