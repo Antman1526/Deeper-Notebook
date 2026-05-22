@@ -1030,20 +1030,40 @@ async def _stream_chat_events(
         yield json.dumps({"type": "done", "messages": messages}) + "\n"
 
     except NotFoundError:
+        # Streaming context — the HTTP response has already started
+        # by the time we get here, so we CAN'T change the status code
+        # to 404. Yield a structured error event instead; the frontend
+        # renders it via getApiErrorMessage().
         yield json.dumps({"type": "error", "detail": "Session not found"}) + "\n"
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.183 — bubble typed exceptions to the global handlers.
-        raise
+    except InvalidInputError as e:
+        # v0.7.184 — Was `except (NotFoundError, InvalidInputError): raise`
+        # (the v0.7.183 bulk sweep applied uniformly), which (a) made
+        # the NotFoundError leg unreachable (already caught above) and
+        # (b) tried to BUBBLE in a context where bubbling is wrong —
+        # the response has already begun streaming, so we can't change
+        # status. Narrowed to InvalidInputError + yield-as-event,
+        # matching the NotFoundError treatment above. Backend audit
+        # finding #2.
+        yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
     except Exception as e:
+        # v0.7.184 — Don't echo str(e) into the SSE error event. The
+        # underlying exception can carry driver internals (SurrealDB
+        # WS frames, RecordIDs, partial paths) — same info-leak class
+        # the v0.7.168/177 sweeps already closed for non-streaming
+        # routes. logger.error captures the full traceback for ops;
+        # the client gets a generic message.
         logger.error(
             "Error in /chat/stream for session {}: {}\n{}",
             request.session_id, str(e), traceback.format_exc(),
         )
-        yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+        yield json.dumps({
+            "type": "error",
+            "detail": "Chat stream failed unexpectedly.",
+        }) + "\n"
 
 
 @router.post("/chat/stream")
