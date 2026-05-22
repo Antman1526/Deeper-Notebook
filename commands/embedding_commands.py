@@ -14,6 +14,22 @@ from open_notebook.utils.chunking import ContentType, chunk_text, detect_content
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
 
 
+# v0.7.178 — Sanity cap on per-source chunk count. With default 1500-char
+# chunks this represents ~15MB of text in one source — generous for any
+# legitimate document but stops a pathological input (say a 500MB plain-
+# text dump uploaded by accident) from OOMing the worker. The simultaneous
+# in-memory footprint per chunk is roughly:
+#   - the chunk text itself           (~1500 bytes)
+#   - the 768-dim float32 embedding   (~3072 bytes)
+#   - the source_embedding record overhead (~500 bytes)
+# i.e. ~5KB per chunk × 10000 = ~50MB peak before the bulk insert flushes.
+# At 50000 chunks (the prior implicit ceiling, set only by str length)
+# this same path peaks around 250MB and reliably OOMs a desktop worker.
+# Raised as ValueError so the command does NOT retry — pathological input
+# would just blow up the next attempt the same way.
+MAX_CHUNKS_PER_SOURCE = 10000
+
+
 def full_model_dump(model):
     if isinstance(model, BaseModel):
         return model.model_dump()
@@ -377,6 +393,24 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
 
         if total_chunks == 0:
             raise ValueError("No chunks created after splitting text")
+
+        # v0.7.178 — Fail fast on pathological inputs before allocating
+        # the embeddings + records lists. Without this guard, a 500MB
+        # text upload chunks to ~333k entries; each one balloons into
+        # a chunk + 768-dim float32 + record dict held simultaneously
+        # in memory, which OOMs the worker. ValueError is the right
+        # exception class because surreal_commands' retry config has
+        # `stop_on: [ValueError]` — pathological inputs should not
+        # spin in a retry loop blowing up the worker repeatedly.
+        if total_chunks > MAX_CHUNKS_PER_SOURCE:
+            raise ValueError(
+                f"Source produces {total_chunks} chunks, which exceeds "
+                f"the per-source cap of {MAX_CHUNKS_PER_SOURCE}. The "
+                f"source is likely too large to embed in one pass — "
+                f"split the document or raise MAX_CHUNKS_PER_SOURCE in "
+                f"commands/embedding_commands.py if you've vetted the "
+                f"memory headroom."
+            )
 
         # 5. Generate embeddings for all chunks in batches
         cmd_id = get_command_id(input_data)

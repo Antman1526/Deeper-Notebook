@@ -33,7 +33,7 @@ from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -1259,6 +1259,17 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         )
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.178 — Let typed exceptions bubble to the global FastAPI
+        # handlers in api/main.py (NotFoundError → 404, InvalidInputError
+        # → 400). Without this re-raise, the broad `except Exception`
+        # below intercepts them and returns a generic 500 — so a missing
+        # source / transformation that legitimately should be 404 was
+        # showing up to the client as 500. The local `if not source:
+        # raise HTTPException(404)` guards above never trigger because
+        # `Source.get()` raises NotFoundError instead of returning None
+        # (see open_notebook/domain/base.py:183).
         raise
     except Exception as e:
         logger.error(f"Error starting insight generation for source {source_id}: {e}")
