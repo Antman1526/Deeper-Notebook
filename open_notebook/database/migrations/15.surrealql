@@ -3,36 +3,41 @@
 -- 3 tables, identical shape, routed by `kind` in payloads:
 --   memory_fact, memory_preference, memory_episode.
 -- HNSW index DIMENSION 768 = nomic-embed-text-v1.5's output size.
+--
+-- v0.7.177 — Added `IF NOT EXISTS` to every DEFINE TABLE / DEFINE
+-- FIELD so this migration is re-run-safe. The HNSW indexes already
+-- carried the guard; the table + field DEFINEs were the gap.
+-- Parity with the v0.7.176 fixes for migrations 12 and 16.
 
 -- memory_fact: atomic facts extracted from chat turns.
-DEFINE TABLE memory_fact SCHEMAFULL;
-DEFINE FIELD text       ON memory_fact TYPE string;
-DEFINE FIELD embedding  ON memory_fact TYPE array<float>;
-DEFINE FIELD metadata   ON memory_fact TYPE object DEFAULT {};
-DEFINE FIELD scope      ON memory_fact TYPE string DEFAULT "user";
-DEFINE FIELD confidence ON memory_fact TYPE float  DEFAULT 1.0;
-DEFINE FIELD created_at ON memory_fact TYPE datetime DEFAULT time::now();
+DEFINE TABLE IF NOT EXISTS memory_fact SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS text       ON memory_fact TYPE string;
+DEFINE FIELD IF NOT EXISTS embedding  ON memory_fact TYPE array<float>;
+DEFINE FIELD IF NOT EXISTS metadata   ON memory_fact TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS scope      ON memory_fact TYPE string DEFAULT "user";
+DEFINE FIELD IF NOT EXISTS confidence ON memory_fact TYPE float  DEFAULT 1.0;
+DEFINE FIELD IF NOT EXISTS created_at ON memory_fact TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS memory_fact_embedding ON memory_fact
     FIELDS embedding HNSW DIMENSION 768;
 
 -- memory_preference: user preferences and workflow habits.
-DEFINE TABLE memory_preference SCHEMAFULL;
-DEFINE FIELD text       ON memory_preference TYPE string;
-DEFINE FIELD embedding  ON memory_preference TYPE array<float>;
-DEFINE FIELD metadata   ON memory_preference TYPE object DEFAULT {};
-DEFINE FIELD scope      ON memory_preference TYPE string DEFAULT "user";
-DEFINE FIELD confidence ON memory_preference TYPE float  DEFAULT 1.0;
-DEFINE FIELD created_at ON memory_preference TYPE datetime DEFAULT time::now();
+DEFINE TABLE IF NOT EXISTS memory_preference SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS text       ON memory_preference TYPE string;
+DEFINE FIELD IF NOT EXISTS embedding  ON memory_preference TYPE array<float>;
+DEFINE FIELD IF NOT EXISTS metadata   ON memory_preference TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS scope      ON memory_preference TYPE string DEFAULT "user";
+DEFINE FIELD IF NOT EXISTS confidence ON memory_preference TYPE float  DEFAULT 1.0;
+DEFINE FIELD IF NOT EXISTS created_at ON memory_preference TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS memory_preference_embedding ON memory_preference
     FIELDS embedding HNSW DIMENSION 768;
 
 -- memory_episode: per-chat-session summaries.
-DEFINE TABLE memory_episode SCHEMAFULL;
-DEFINE FIELD text       ON memory_episode TYPE string;
-DEFINE FIELD embedding  ON memory_episode TYPE array<float>;
-DEFINE FIELD metadata   ON memory_episode TYPE object DEFAULT {};
-DEFINE FIELD scope      ON memory_episode TYPE string DEFAULT "user";
-DEFINE FIELD confidence ON memory_episode TYPE float  DEFAULT 1.0;
-DEFINE FIELD created_at ON memory_episode TYPE datetime DEFAULT time::now();
+DEFINE TABLE IF NOT EXISTS memory_episode SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS text       ON memory_episode TYPE string;
+DEFINE FIELD IF NOT EXISTS embedding  ON memory_episode TYPE array<float>;
+DEFINE FIELD IF NOT EXISTS metadata   ON memory_episode TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS scope      ON memory_episode TYPE string DEFAULT "user";
+DEFINE FIELD IF NOT EXISTS confidence ON memory_episode TYPE float  DEFAULT 1.0;
+DEFINE FIELD IF NOT EXISTS created_at ON memory_episode TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS memory_episode_embedding ON memory_episode
     FIELDS embedding HNSW DIMENSION 768;
