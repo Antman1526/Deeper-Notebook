@@ -14,6 +14,10 @@ import { useSettings, useUpdateSettings } from '@/lib/hooks/use-settings'
 import { useEffect, useState } from 'react'
 import { ChevronDownIcon } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.196 — sanitize raw `error.message` (axios stack-trace fragment)
+// in the load-failed Alert. Route through ERROR_MAP first; fall back
+// to the backend's user-friendly detail string if nothing matches.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 const settingsSchema = z.object({
   default_content_processing_engine_doc: z.enum(['auto', 'docling', 'simple']).optional(),
@@ -87,7 +91,12 @@ export function SettingsForm() {
       <Alert variant="destructive">
         <AlertTitle>{t('settings.loadFailed')}</AlertTitle>
         <AlertDescription>
-          {error instanceof Error ? error.message : t('common.error')}
+          {/* v0.7.196 — `error.message` previously leaked raw axios
+              text ("Network Error", "Request failed with status code
+              500", Python exception strings via FastAPI's default
+              500 handler). getApiErrorMessage routes through the
+              translation map first. */}
+          {getApiErrorMessage(error, t, 'settings.loadFailed')}
         </AlertDescription>
       </Alert>
     )

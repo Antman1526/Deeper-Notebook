@@ -46,6 +46,11 @@ import {
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useDiscoverModels, useRegisterModels } from '@/lib/hooks/use-credentials'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.196 — discoveryError previously stored raw `error.message`
+// (axios "Network Error", FastAPI 500 default body, etc.). Route
+// through ERROR_MAP first; fall back to the backend's user-friendly
+// detail string. Same sibling-pattern cleaned up in v0.7.184.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { Credential, DiscoveredModel } from '@/lib/api/credentials'
 
 import {
@@ -98,8 +103,9 @@ export function DiscoverModelsDialog({
         },
         onError: (error: unknown) => {
           setHasDiscovered(true)
-          const msg = error instanceof Error ? error.message : String(error)
-          setDiscoveryError(msg)
+          // v0.7.196 — was `error.message`/`String(error)` raw, leaked
+          // axios + FastAPI stack-text into the user-visible Alert.
+          setDiscoveryError(getApiErrorMessage(error, t, 'apiKeys.syncFailed'))
         },
       })
     }

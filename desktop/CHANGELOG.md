@@ -18,7 +18,80 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.195 (in flight)
+## Unreleased — v0.7.36 → v0.7.196 (in flight)
+
+- **v0.7.196** 🐛 **Frontend visual audit — error-message leaks +
+  i18n-key-as-text bug across 6 hook files.** Discovered while running
+  the explicit visual scan request: 27 callsites across `use-models`,
+  `use-podcasts`, `use-notes`, `use-credentials` (and 5 more raw-
+  message sites in components) were passing `getApiErrorKey(error,
+  t('common.error'))` directly as the toast description. That helper
+  returns the i18n KEY string (e.g. `"apiErrors.notebookNotFound"`),
+  so on any mapped backend error the user saw literal text like
+  `apiErrors.notebookNotFound` rendered in the toast instead of the
+  translated string.
+
+  Sibling pattern to the v0.7.184 chat-stream sanitization. Audit
+  also surfaced 5 raw-`error.message` callsites that leak axios +
+  FastAPI stack-trace text to the user on transient errors.
+
+  Fixes applied (HIGH from the audit):
+  1. **Hook layer sweep** — 27 callsites in `use-models.ts`,
+     `use-podcasts.ts`, `use-notes.ts`, `use-credentials.ts` swapped
+     from `getApiErrorKey(error, t('KEY'))` to
+     `getApiErrorMessage(error, t, 'KEY')`. `getApiErrorMessage`
+     returns the translated string (or the backend's user-friendly
+     detail when no mapping exists).
+  2. **`use-models.ts:useTestModel`** — was rendering raw
+     `String(error)` ("[object Object]" / axios `Error: Network
+     Error`) into `testResult.message` shown beside the Test button.
+     Now routes via `getApiErrorMessage`.
+  3. **`use-models.ts:useAutoAssignCapability`** — was rendering
+     raw `error.message` (Python exception strings) in the toast.
+     Same fix.
+  4. **`SettingsForm.tsx:90`** — load-failed Alert previously
+     showed raw `error.message` ("Network Error", "Request failed
+     with status code 500"). Now routed.
+  5. **`DiscoverModelsDialog.tsx:101-102`** — discovery-error Alert
+     previously stored `error.message` / `String(error)` as the
+     visible text. Same fix.
+  6. **`GeneratePodcastDialog.tsx:928`** — podcast-generation-failed
+     toast description was raw `error.message`. Now routed via
+     `getApiErrorMessage(error, t, 'common.refreshPage')`.
+  7. **`GeneratePodcastDialog.tsx:374-376`** — `toLocaleString(lang.
+     startsWith('zh') ? lang : 'en-US')` silently fell back to en-US
+     date format for 7 of our 10 supported locales (pt-BR, ja-JP,
+     fr-FR, ru-RU, bn-IN, es-ES, it-IT). Replaced with
+     `formatDateTime(note.updated, language)` (the v0.7.189 helper).
+  8. **`studio/page.tsx`** — both the failure-toast `catch` and the
+     inline `mutation.isError` Alert were ad-hoc unwrapping
+     `response.data.detail || error.message` (could surface raw
+     stack-trace text). Both now route through `getApiErrorMessage`.
+
+  Tests at `frontend/src/lib/utils/error-handler.test.ts`: 7 new —
+  contract tests on `getApiErrorMessage` (mapped key → translated
+  string; unmapped → backend detail; empty detail → fallback key
+  translated; null → safe default), and an AST-level regression
+  test that walks all `src/lib/hooks/**/*.ts` looking for the
+  `description: getApiErrorKey(` pattern and fails if any are
+  re-introduced.
+
+  Deferred (note in the report below):
+  - **HIGH #1 from the audit: full Studio i18n extraction.** ~20
+    English strings hardcoded on the Studio page. Scope is
+    cross-cutting (touches all 10 locale files); the visual scan
+    fixed the user-facing error path (which IS now routed through
+    the i18n helpers) but the static labels remain English-only.
+    Carries over as v0.7.197.
+  - **MED #8-#10 from the audit: opacity-0 group-hover patterns,
+    mobile sidebar drawer, icon-only buttons without aria-label.**
+    All real but discrete polish items, not user-blocking. Carry
+    over.
+
+  Frontend tests: **72/72** (was 65 in v0.7.195; +7 new).
+  TypeScript strict-mode compile: clean (`npx tsc --noEmit`).
+  Backend regression-test smoke: **8/8** (v0.7.194 + v0.7.195
+  pins still green).
 
 - **v0.7.195** 🐛 **STT / TTS / Memory shim dependencies bundled —
   Whisper, Piper, and Memory servers now actually start.**
