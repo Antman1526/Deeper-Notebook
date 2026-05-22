@@ -130,9 +130,25 @@ def _resolve_and_validate(path: str, *, must_exist: bool = True) -> Path:
             status_code=400, detail="path must resolve to an absolute location",
         )
     resolved_str = str(resolved)
+    # v0.7.185 — Audit finding #5: previously this just did
+    # `.lower().startswith(prefix.lower())`. On Windows, Path.resolve()
+    # produces `C:\Windows\System32\...` — startswith against `/windows`
+    # (POSIX-style prefix) returns False, so the denylist SILENTLY
+    # didn't fire and the file picker happily browsed into C:\Windows
+    # and friends. The fix: normalize backslashes to forward slashes
+    # so a Windows path like `c:\windows\system32` becomes
+    # `c:/windows/system32`, then ALSO match the Windows variant
+    # `<drive>:/windows` against the bare-`/windows` prefix by
+    # stripping a leading drive letter.
+    resolved_lower = resolved_str.lower().replace("\\", "/")
+    # Strip a leading drive letter (e.g. `c:`) for matching, so the
+    # POSIX-shaped prefix list catches both forms uniformly.
+    if len(resolved_lower) >= 2 and resolved_lower[1] == ":":
+        comparable = resolved_lower[2:]
+    else:
+        comparable = resolved_lower
     for prefix in _DENIED_PREFIXES:
-        # Case-insensitive on Windows-style paths; native str on macOS/Linux.
-        if resolved_str.lower().startswith(prefix.lower()):
+        if comparable.startswith(prefix.lower()):
             raise HTTPException(
                 status_code=403,
                 detail=(

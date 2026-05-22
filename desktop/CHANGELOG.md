@@ -18,7 +18,62 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.184 (in flight)
+## Unreleased — v0.7.36 → v0.7.185 (in flight)
+
+- **v0.7.185** 🪟 **Round-9 audit — Windows compatibility fixes.**
+  Four bugs that silently broke on Windows but worked on macOS /
+  Linux — exactly the class of bug that goes unnoticed when the
+  primary developer is on macOS and Windows is the secondary
+  platform.
+
+  **(1) Centralised home-directory resolver — `desktop/paths.py`.**
+  9 sites independently rolled their own `os.environ.get("HOME",
+  fallback)` lookup with inconsistent fallbacks. Seven used `"."`
+  — CATASTROPHIC on Windows: when the .exe is launched from File
+  Explorer, CWD is the .exe directory (typically `C:\Program
+  Files\...`, read-only). Logs, PID file, surreal_data, and config
+  all silently fail to write. Two used `"~"` (POSIX-only). New
+  `user_home()` falls through to `Path.home()` — guaranteed to
+  return a writable directory on every supported OS. Migration
+  touched bootstrap.py, launcher.py (3 sites), singleton.py,
+  __main__.py, providers/llamacpp.py, memory_dashboard/server.py,
+  model_manager/server.py. Forward-guard test scans desktop/
+  on every CI run.
+
+  **(2) SurrealDB `file://` URI now uses `Path.as_uri()`.**
+  `f"file://{data_dir}"` produces `file:///Users/...` on POSIX
+  (valid) but `file://C:\\Users\\...` on Windows (NOT valid —
+  SurrealDB's URL parser reads `C:` as the host). `data_dir.as_uri()`
+  is the idiomatic cross-platform builder: returns
+  `file:///C:/Users/...` on Windows, `file:///Users/...` on POSIX.
+
+  **(3) Windows process-tree teardown via `taskkill /F /T /PID`.**
+  Previously `os.kill(pid, CTRL_BREAK_EVENT)` — a no-op for a
+  windowed PyInstaller .exe because the signal requires a console.
+  Grandchildren (next-server forks, etc.) leaked on every shutdown
+  — exactly the same bug v0.7.173 fixed for POSIX. `taskkill /F
+  /T` is the Windows equivalent of `killpg(SIGKILL)` and works
+  without a console. Also added `CREATE_NO_WINDOW` to Popen flags
+  so child processes don't pop transient console windows from the
+  packaged .app.
+
+  **(4) Filesystem denylist normalises path separators + drive
+  letters.** `_DENIED_PREFIXES` had POSIX-shaped entries
+  (`"/Windows"`, `"/$Recycle.Bin"`) but the prefix match was
+  `.lower().startswith(prefix.lower())`. On Windows,
+  `Path.resolve()` returns `C:\\Windows\\System32\\...`;
+  `.startswith("/windows")` was False, silently letting the file
+  picker browse into protected paths. Fix: normalise backslashes
+  to forward slashes, strip leading drive letter, then prefix
+  match. POSIX coverage unchanged.
+
+  Tests at `tests/test_v0_7_185_windows_compat.py`: 10 new — 4
+  user_home() behaviour pins, AST forward-guard on desktop/ HOME
+  fallbacks, as_uri pin, taskkill + CREATE_NO_WINDOW pins, denylist
+  normalisation pin, POSIX denylist still-works pin.
+
+  Backend: **958/958** (was 948 in v0.7.184; +10 new).
+  Combined `tests/ desktop/tests/`: **1215/1215**.
 
 - **v0.7.184** 🐛 **Round-9 audit — Backend HIGH-severity bugs
   (cascade-delete data leak, dead /chat/stream handler, info leak).**
