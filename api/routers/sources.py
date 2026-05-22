@@ -637,9 +637,19 @@ async def create_source(
                             raise
                         except Exception:
                             pass
+                    # v0.7.184 — Don't echo result.error_message to the
+                    # client. Worker error messages can carry SurrealDB
+                    # driver frames, file paths, partial RecordIDs —
+                    # same info-leak class the v0.7.168/177 podcast_service
+                    # sweep closed. logger captures the full picture; the
+                    # client gets a generic message. Backend audit #3.
+                    logger.error(
+                        "Sync source processing failed for source {}: {}",
+                        source.id, result.error_message,
+                    )
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
+                        detail="Source processing failed",
                     )
 
                 # Get the processed source

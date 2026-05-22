@@ -18,7 +18,56 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.183 (in flight)
+## Unreleased — v0.7.36 → v0.7.184 (in flight)
+
+- **v0.7.184** 🐛 **Round-9 audit — Backend HIGH-severity bugs
+  (cascade-delete data leak, dead /chat/stream handler, info leak).**
+  Three independent surfaces flagged by a project-wide audit.
+
+  **(1) Notebook.delete() chat-session cascade — DATA INTEGRITY
+  bug.** `open_notebook/domain/notebook.py:401` used
+  `DELETE $ids` to remove orphaned chat sessions. That isn't
+  valid SurrealQL — DELETE wants a table reference or WHERE clause,
+  NOT a bare array bound to the verb position. The query silently
+  no-op'd (or errored, driver-dependent), so EVERY `chat_session`
+  row that ever pointed at a deleted notebook leaked into the
+  database across the entire v0.7.61 → v0.7.183 window. Fixed by
+  switching to `DELETE chat_session WHERE id IN $ids`.
+
+  **(2) `/chat/stream` had a dead handler + str(e) leak.**
+  `api/routers/chat.py:1032-1040` had `except NotFoundError:` that
+  shadowed the v0.7.183 bulk-inserted
+  `except (NotFoundError, InvalidInputError): raise`. The v0.7.183
+  clause was unreachable AND semantically wrong for a streaming
+  context (HTTP status has already been emitted; we can't bubble
+  to the global 404 handler). Narrowed to
+  `except InvalidInputError as e:` + yield-as-event, matching the
+  NotFoundError treatment. ALSO sanitised the catch-all
+  `except Exception: yield ... str(e)` to a generic message —
+  same info-leak class v0.7.168/177 closed for non-streaming routes.
+
+  **(3) Sync source-processing leaked worker error message.**
+  `api/routers/sources.py:642` did
+  `HTTPException(500, detail=f"Processing failed: {result.error_message}")`.
+  Worker errors carry SurrealDB driver frames + partial paths.
+  Same info-leak class v0.7.177 closed for podcast_service.
+  Sanitised to a generic detail; logger.error preserves the full
+  message for ops.
+
+  Plus: updated `tests/test_chat_stream.py::test_stream_emits_error_event_on_graph_exception`
+  which had been effectively *asserting the str(e) leak* — now
+  asserts the sanitised detail and the absence of raw exception
+  text in the response body.
+
+  Tests at `tests/test_v0_7_184_backend_high_bugs.py`: 4 new — AST
+  pin on the cascade-delete query shape, dead-handler removal pin,
+  generic-catch-all str(e) absence pin (scoped to the catch-all,
+  not InvalidInputError which carries safe typed messages),
+  source-processing info-leak pin.
+
+  Backend suite: **948/948** (was 948 in v0.7.183, with 1 prior test
+  rewritten to assert the leak was closed instead of the leak being
+  present).
 
 - **v0.7.183** 🐛🧹🎨 **Final deferred-list completion sweep — closes
   EVERY remaining backlog item from rounds 1-8.** Five independent
