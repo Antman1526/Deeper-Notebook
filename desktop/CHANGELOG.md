@@ -18,7 +18,70 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.180 (in flight)
+## Unreleased — v0.7.36 → v0.7.181 (in flight)
+
+- **v0.7.181** 🐛🍎 **Safari ISO datetime fix + SourceResponse shape
+  reconciliation + NotFoundError sweep continuation (round-7).**
+  Three independent surfaces, one version tag.
+
+  **(1) `api/utils/iso.py` — Safari `new Date()` brittleness fix.**
+  Python's `str(datetime)` produces a SPACE-separated form
+  (`"2026-05-22 10:14:41+00:00"`) that Safari refuses to parse;
+  every other browser accepts it silently. Pydantic response
+  models declare `created` / `updated` as `str`, so router code
+  is on the hook for the conversion — and the natural-looking
+  `str(source.created)` is exactly wrong for Safari. v0.7.181
+  introduces a None-safe, idempotent `iso(value)` helper at
+  `api/utils/iso.py` that returns `.isoformat()` (T separator,
+  Safari-safe) for datetimes and passes strings through unchanged.
+  Migrated the four highest-traffic routers:
+
+  - `api/routers/sources.py` — 10 sites
+  - `api/routers/notebooks.py` — 4 sites
+  - `api/routers/notes.py` — 6 sites
+  - `api/routers/chat.py` — 8 sites
+
+  Also widened `SourceResponse.created/updated` and
+  `SourceListResponse.created/updated` from `str` to
+  `Optional[str]` — the pre-v0.7.181 behavior silently returned
+  the literal string `"None"` via `str(None)` during async-create
+  paths where the row isn't persisted yet. The new `iso(None)`
+  returns proper None; Optional[str] is the matching type change.
+
+  **(2) `SourceResponse` / `SourceListResponse` shape
+  reconciliation.** The list endpoint reported `insights_count`
+  per row; the detail endpoint did not — clicking into a source
+  silently dropped the "N transformations" badge from the
+  sidebar. v0.7.181 adds `insights_count: int = 0` to
+  SourceResponse (default for backward compat with POST/PUT/retry
+  constructions), wires a fast `SELECT VALUE count() FROM
+  source_insight WHERE source = $source_id` aggregate into the
+  detail endpoint, and tightens `processing_info` from bare
+  `dict` to `dict[str, Any]` (matching the list endpoint). The
+  intentional asymmetries (full_text + notebooks list-only
+  omission) are preserved and documented inline in models.py.
+
+  **(3) NotFoundError re-raise sweep continued —
+  `api/routers/credentials.py` + `api/routers/transformations.py`.**
+  Continuation of the v0.7.179 sweep that covered notebooks /
+  podcasts / models. Each got the `except (NotFoundError,
+  InvalidInputError): raise` clause inserted before every broad
+  Exception handler (12 + 5 endpoints respectively), plus the
+  typed imports. Forward-guard test extended.
+
+  Tests at `tests/test_v0_7_181_iso_helper.py`: 8 new — helper
+  contract, T-separator invariant, idempotency, per-router
+  migration pins, forward-guard against `str(X.created)`
+  regressions in the four migrated files.
+
+  Tests at `tests/test_v0_7_181_source_response.py`: 5 new —
+  insights_count field pin, processing_info type pin, detail-
+  endpoint count query pin, list-endpoint field pin, and a
+  YAGNI guard against future "let's add full_text to list for
+  symmetry" PRs.
+
+  Full backend suite: **935/935** (was 922 in v0.7.180; +13 net
+  new tests, all green). Frontend: **65/65**.
 
 - **v0.7.180** 🎨🧹 **Visual polish + locale cleanup + Zustand
   forward-guard.** Five low-risk surfaces from the deferred backlog.

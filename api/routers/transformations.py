@@ -65,6 +65,10 @@ async def get_transformations(
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error fetching transformations: {str(e)}")
         raise HTTPException(
@@ -100,6 +104,10 @@ async def create_transformation(transformation_data: TransformationCreate):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error creating transformation: {str(e)}")
@@ -196,6 +204,10 @@ async def get_default_prompt():
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error fetching default prompt: {str(e)}")
         raise HTTPException(
@@ -220,6 +232,10 @@ async def update_default_prompt(prompt_update: DefaultPromptUpdate):
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error updating default prompt: {str(e)}")
