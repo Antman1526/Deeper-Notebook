@@ -127,11 +127,19 @@ def test_api_main_holds_gmail_prewarm_task_reference():
     """
     src = _read_source("api/main.py")
 
-    # The assignment must exist
-    assert "gmail_prewarm_task = asyncio.create_task(" in src, (
-        "v0.7.165 regression: api/main.py reverted to fire-and-forget "
-        "`asyncio.create_task(_prewarm_gmail_cache())` — the task may "
-        "be GC'd before it runs. Reassign to `gmail_prewarm_task = `."
+    # The assignment must exist. v0.7.190 — the spawn is now wrapped
+    # in `_track_task(asyncio.create_task(...))` per the asyncio docs'
+    # recommended module-level strong-ref pattern. Both shapes are
+    # acceptable: the v0.7.165 local-var anchor OR the v0.7.190
+    # _track_task anchor (which is strictly stronger).
+    assert (
+        "gmail_prewarm_task = asyncio.create_task(" in src
+        or "gmail_prewarm_task = _track_task(asyncio.create_task(" in src
+    ), (
+        "v0.7.165/v0.7.190 regression: api/main.py reverted to fire-and-"
+        "forget `asyncio.create_task(_prewarm_gmail_cache())` — the "
+        "task may be GC'd before it runs. Reassign to "
+        "`gmail_prewarm_task = _track_task(asyncio.create_task(...))`."
     )
 
     # And the shutdown path must reference it
