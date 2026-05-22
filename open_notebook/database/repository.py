@@ -339,7 +339,10 @@ async def db_connection():
 
 
 async def repo_query(
-    query_str: str, vars: Optional[dict[str, Any]] = None
+    query_str: str,
+    vars: Optional[dict[str, Any]] = None,
+    *,
+    timeout_s: Optional[float] = None,
 ) -> list[dict[str, Any]]:
     """Execute a SurrealQL query and return the results.
 
@@ -350,6 +353,14 @@ async def repo_query(
     invisible — operators can't tell which query is timing out vs
     which is fast-but-frequently-empty. Truncates the logged query to
     300 chars so a multi-page UNION doesn't blow up the log line.
+
+    v0.7.190 — Optional `timeout_s` keyword caps each query at
+    `wait_for(timeout=timeout_s)`. Default None preserves the v0.7.120
+    behaviour (only the outer route handler's timeout applies). Callers
+    that fan out many small queries (ContextBuilder, memory_recall)
+    can pass an explicit per-query budget so a single stuck pool
+    connection doesn't pin the whole route handler — same defensive
+    pattern the v0.7.52 pool-warmup uses.
     """
     import os
     import time
@@ -359,22 +370,27 @@ async def repo_query(
     )
     start = time.monotonic()
     try:
-        async with db_connection() as connection:
-            try:
-                result = parse_record_ids(
-                    await connection.query(query_str, vars)
-                )
-                if isinstance(result, str):
-                    raise RuntimeError(result)
-                return result
-            except RuntimeError as e:
-                # RuntimeError is raised for retriable transaction conflicts
-                # — log at debug to avoid noise.
-                logger.debug(str(e))
-                raise
-            except Exception as e:
-                logger.exception(e)
-                raise
+        async def _run() -> list[dict[str, Any]]:
+            async with db_connection() as connection:
+                try:
+                    result = parse_record_ids(
+                        await connection.query(query_str, vars)
+                    )
+                    if isinstance(result, str):
+                        raise RuntimeError(result)
+                    return result
+                except RuntimeError as e:
+                    # RuntimeError is raised for retriable transaction
+                    # conflicts — log at debug to avoid noise.
+                    logger.debug(str(e))
+                    raise
+                except Exception as e:
+                    logger.exception(e)
+                    raise
+
+        if timeout_s is not None:
+            return await asyncio.wait_for(_run(), timeout=timeout_s)
+        return await _run()
     finally:
         # Always log slow queries, even when the query failed — a slow
         # query that ALSO errored is doubly worth surfacing.

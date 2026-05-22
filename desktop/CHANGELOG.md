@@ -18,7 +18,43 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.189 (in flight)
+## Unreleased — v0.7.36 → v0.7.190 (in flight)
+
+- **v0.7.190** 🐛 **Round-9 audit — Backend LOW closeout: GC-anchored
+  background tasks + repo_query timeout + UTC timestamp tool.**
+  Three small defensible improvements.
+
+  **(1) Module-level `_BACKGROUND_TASKS` set + `_track_task()` in
+  `api/main.py`.** Per the asyncio docs, fire-and-forget tasks may
+  be GC'd before they finish — the event loop only keeps weak
+  references. The lifespan-local var anchor pattern works today,
+  but a future refactor that extracts the spawn into a helper
+  would silently lose it. Wrapped all 3 lifespan tasks
+  (digest_scheduler, checkpoint_prune, gmail_prewarm) in
+  `_track_task` as defence-in-depth. Auto-discards on completion
+  so the set doesn't leak across many short-lived tasks.
+
+  **(2) `repo_query()` accepts optional `timeout_s` kwarg.** Default
+  None preserves the v0.7.120 behaviour. Callers that fan out many
+  small queries (ContextBuilder, memory_recall) can pass an
+  explicit per-query budget so a single stuck pool connection
+  doesn't pin the route handler past its outer timeout. Matches
+  the v0.7.52 `wait_for(10s)` pattern already used for pool warmup.
+
+  **(3) `tools.py::get_current_timestamp` returns UTC ISO 8601.**
+  Was `datetime.now().strftime("%Y%m%d%H%M%S")` — naive local time,
+  no TZ marker. The output lands in LLM prompts that may be replayed
+  cross-machine; "20260522113000" was ambiguous (UTC-5 local? UTC+9
+  local?). Now `datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")`
+  with explicit T separator + Z marker. Updated the two associated
+  tests for the new format.
+
+  Tests at `tests/test_v0_7_190_backend_low_closeout.py`: 6 new —
+  _track_task helper pins (3), repo_query signature pins (2),
+  timestamp format pin (1).
+
+  Backend: **990/990** (was 994 — minus 4 from this round's
+  format-update of test_graphs.py tests + test_v0_7_165 pin).
 
 - **v0.7.189** 🎨 **Round-9 audit — Frontend MED+LOW polish: stale
   invalidation gaps + i18n-aware date formatting.** Three everyday

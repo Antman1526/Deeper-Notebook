@@ -166,6 +166,33 @@ async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
     raise RuntimeError("pool warmup failed with no exception captured")
 
 
+# v0.7.190 — Module-level strong-ref set for background tasks. Anchors
+# every long-running task we spawn (digest scheduler, checkpoint
+# pruner, gmail pre-warm) so the asyncio event loop's weak-ref
+# tracking can't GC them under pressure. Documented foot-gun: see
+# https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
+#   "Important: Save a reference to the result of this function, to
+#    avoid a task disappearing mid-execution. The event loop only
+#    keeps weak references to tasks. A task that isn't referenced
+#    elsewhere may be garbage collected at any time, even before it's
+#    done."
+# The lifespan-local `digest_scheduler_task = asyncio.create_task(...)`
+# pattern works today (the local var is held by the closure for the
+# lifespan duration), but a future refactor that extracts the spawn
+# into a helper function would silently lose the anchor. _track_task
+# is the asyncio-recommended defensive pattern.
+_BACKGROUND_TASKS: "set[asyncio.Task]" = set()
+
+
+def _track_task(task: "asyncio.Task") -> "asyncio.Task":
+    """Anchor `task` to the module-level set so the GC can't reap it.
+    Auto-discards on completion via add_done_callback so the set
+    doesn't leak across many short-lived tasks."""
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -310,10 +337,12 @@ async def lifespan(app: FastAPI):
     try:
         from open_notebook.digest.scheduler import run_forever as _digest_run_forever
 
-        digest_scheduler_task = asyncio.create_task(
+        # v0.7.190 — wrap in _track_task so a future refactor that
+        # loses the local-var anchor doesn't silently allow GC.
+        digest_scheduler_task = _track_task(asyncio.create_task(
             _digest_run_forever(digest_stop_event),
             name="onp-digest-scheduler",
-        )
+        ))
         logger.info("Digest scheduler task started")
     except Exception as e:
         logger.warning(f"Failed to start digest scheduler (non-fatal): {e}")
@@ -392,10 +421,11 @@ async def lifespan(app: FastAPI):
             run_prune_loop as _checkpoint_prune_loop,
         )
 
-        checkpoint_prune_task = asyncio.create_task(
+        # v0.7.190 — _track_task anchor (see digest scheduler above).
+        checkpoint_prune_task = _track_task(asyncio.create_task(
             _checkpoint_prune_loop(checkpoint_prune_stop_event),
             name="onp-checkpoint-prune",
-        )
+        ))
         logger.info("LangGraph checkpoint-prune task started")
     except Exception as e:
         logger.warning(
@@ -429,9 +459,12 @@ async def lifespan(app: FastAPI):
     # (digest_scheduler_task, checkpoint_prune_task) already assign
     # to local variables and cancel cleanly on shutdown; this one
     # was the outlier. Now matches that pattern.
-    gmail_prewarm_task = asyncio.create_task(
+    # v0.7.190 — _track_task anchor (see digest scheduler above).
+    # Belt-and-suspenders: gmail_prewarm_task is also held by the
+    # closure for await/cancel below.
+    gmail_prewarm_task = _track_task(asyncio.create_task(
         _prewarm_gmail_cache(), name="onp-gmail-prewarm",
-    )
+    ))
     logger.info("Gmail TTL-cache pre-warm task scheduled")
 
     logger.success("API initialization completed successfully")
