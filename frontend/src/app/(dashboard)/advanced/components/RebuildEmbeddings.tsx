@@ -19,9 +19,10 @@ import {
 import { embeddingApi } from '@/lib/api/embedding'
 import type { RebuildEmbeddingsRequest, RebuildStatusResponse } from '@/lib/api/embedding'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'  // v0.7.189 — locale-aware date format
 
 export function RebuildEmbeddings() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [mode, setMode] = useState<'existing' | 'all'>('existing')
   const [includeSources, setIncludeSources] = useState(true)
   const [includeNotes, setIncludeNotes] = useState(true)
@@ -347,9 +348,12 @@ export function RebuildEmbeddings() {
 
             {status.started_at && (
               <div className="text-sm text-muted-foreground space-y-1">
-                <p>{t('common.created').replace('{time}', new Date(status.started_at).toLocaleString())}</p>
+                {/* v0.7.189 — formatDateTime(...) instead of toLocaleString()
+                    so the date format honours the user's app-language
+                    choice rather than the OS locale. */}
+                <p>{t('common.created').replace('{time}', formatDateTime(status.started_at, language))}</p>
                 {status.completed_at && (
-                  <p>{t('notebooks.updated')}: {new Date(status.completed_at).toLocaleString()}</p>
+                  <p>{t('notebooks.updated')}: {formatDateTime(status.completed_at, language)}</p>
                 )}
               </div>
             )}

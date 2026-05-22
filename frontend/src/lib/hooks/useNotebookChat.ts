@@ -337,10 +337,21 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         // list — same shape as the non-streaming /chat/execute response.
         setMessages(canonicalMessages)
         await refetchCurrentSession()
+        // v0.7.189 — also invalidate the session LIST so the sidebar's
+        // "last updated" timestamp on this session refreshes
+        // immediately. Without this, the session card showed a stale
+        // updated time until the next window-focus refetch.
+        // Matches the pattern useSourceChat already uses.
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+        })
       } else {
         // Stream ended without an error or a done event — unusual
         // (server bug?). Keep what we have; refetch for safety.
         await refetchCurrentSession()
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+        })
       }
     } catch (err: unknown) {
       // v0.7.50 — AbortError = user navigated away mid-stream or a

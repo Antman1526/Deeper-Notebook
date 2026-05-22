@@ -62,7 +62,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
@@ -859,8 +859,14 @@ export function SourceDetailContent({
                           locale: getDateLocale(language)
                         })}
                       </p>
+                      {/* v0.7.189 — formatDateTime(value, language) instead
+                          of new Date(...).toLocaleString() so the absolute-
+                          time line uses the same locale as the relative-
+                          time line above (which uses getDateLocale). Pre-fix
+                          the absolute line honoured OS locale and produced
+                          two formats stacked on each other. */}
                       <p className="text-xs text-muted-foreground">
-                        {new Date(source.created).toLocaleString()}
+                        {formatDateTime(source.created, language)}
                       </p>
                     </div>
                     <div>
@@ -872,7 +878,7 @@ export function SourceDetailContent({
                         })}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(source.updated).toLocaleString()}
+                        {formatDateTime(source.updated, language)}
                       </p>
                     </div>
                   </div>
