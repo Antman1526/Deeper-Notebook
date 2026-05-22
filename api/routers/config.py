@@ -52,7 +52,13 @@ async def get_latest_version_cached(current_version: str) -> tuple[Optional[str]
     global _version_cache
 
     # Check if cache is still valid (within TTL)
-    cache_age = time.time() - _version_cache["timestamp"]
+    # v0.7.187 — was time.time(). Use monotonic for TTL comparison:
+    # wall-clock can jump (NTP correction, sleep/resume on laptops,
+    # DST transitions), pinning a stale cache for hours or
+    # invalidating prematurely on every call. The desktop target is
+    # explicitly a laptop that sleeps. monotonic is the canonical
+    # choice for "elapsed time" comparisons. Backend audit #4.
+    cache_age = time.monotonic() - _version_cache["timestamp"]
     if _version_cache["timestamp"] > 0 and cache_age < VERSION_CACHE_TTL:
         logger.debug(f"Using cached version check result (age: {cache_age:.0f}s)")
         return _version_cache["latest_version"], _version_cache["has_update"]
@@ -80,7 +86,7 @@ async def get_latest_version_cached(current_version: str) -> tuple[Optional[str]
         # Cache the result
         _version_cache["latest_version"] = latest_version
         _version_cache["has_update"] = has_update
-        _version_cache["timestamp"] = time.time()
+        _version_cache["timestamp"] = time.monotonic()
         _version_cache["check_failed"] = False
 
         logger.info(f"Version check complete. Update available: {has_update}")
@@ -93,7 +99,7 @@ async def get_latest_version_cached(current_version: str) -> tuple[Optional[str]
         # Cache the failure to avoid repeated attempts
         _version_cache["latest_version"] = None
         _version_cache["has_update"] = False
-        _version_cache["timestamp"] = time.time()
+        _version_cache["timestamp"] = time.monotonic()
         _version_cache["check_failed"] = True
 
         return None, False

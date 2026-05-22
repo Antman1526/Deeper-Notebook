@@ -18,7 +18,44 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.186 (in flight)
+## Unreleased — v0.7.36 → v0.7.187 (in flight)
+
+- **v0.7.187** 🐛 **Round-9 audit — MED-severity correctness tightening
+  across three independent surfaces.**
+
+  **(1) `api/routers/config.py` version-check TTL uses
+  `time.monotonic()`.** Was `time.time()`. Wall-clock comparisons
+  break on laptops: NTP corrections jump the clock, sleep/resume
+  freezes it, DST transitions skip an hour. The desktop target is
+  *explicitly* a laptop that sleeps. `time.monotonic()` is the
+  canonical "elapsed time" comparison. Same fix the rest of the
+  codebase (repository.py, metrics.py, app.py, launcher.py)
+  already uses.
+
+  **(2) `open_notebook/domain/base.py::ObjectModel.save()` writes
+  aware UTC ISO 8601 timestamps.** Was `datetime.now().strftime(
+  "%Y-%m-%d %H:%M:%S")` — naive local-time, no TZ marker, non-ISO
+  format. Cross-machine sync between the primary install and the
+  2-3 testers produced off-by-N-hour ordering; the v0.7.181
+  `iso()` helper couldn't reconstruct a TZ that was never stored.
+  Now writes `datetime.now(timezone.utc).isoformat()` and
+  round-trips existing datetime objects through `.isoformat()`
+  too. Companion to the v0.7.181/182 read-side fix.
+
+  **(3) `api/credentials_service.py` httpx.AsyncClient uses a
+  shared `_DISCOVERY_HTTP_TIMEOUT`.** Was bare `httpx.AsyncClient()`
+  + per-call `timeout=30.0`. The per-call kwarg only bounds the
+  request-response phase; TLS handshake and pool-acquire could
+  hang indefinitely on a half-broken provider URL. Now sets
+  explicit connect/read/write/pool budgets at client construction
+  — mirrors the chat_service.py pattern.
+
+  Tests at `tests/test_v0_7_187_med_correctness.py`: 5 new —
+  monotonic-clock pin, time.time() forward-guard, aware-UTC
+  isoformat pin, timezone import pin, shared-timeout pin.
+
+  Backend: **966/966** (was 961 in v0.7.186; +5 new).
+  Combined `tests/ desktop/tests/`: **1223/1223**.
 
 - **v0.7.186** 🐛 **Round-9 audit — Frontend HIGH-severity bugs.**
   Two everyday-UX bugs the audit caught.
