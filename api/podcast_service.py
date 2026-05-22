@@ -142,10 +142,17 @@ class PodcastService:
             logger.warning(f"Podcast submission rejected: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            # v0.7.177 — Don't echo str(e) back to the client. The
+            # underlying exception can carry driver internals (SurrealDB
+            # WS frames, connection-pool diagnostics, partial RecordIDs)
+            # which are sensitive operationally and useless to the
+            # caller. logger.error captures the full picture for ops;
+            # the client gets a generic message. Same pattern as the
+            # v0.7.168 router sweep that this service file missed.
             logger.error(f"Failed to submit podcast generation job: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to submit podcast generation job: {str(e)}",
+                detail="Failed to submit podcast generation job",
             )
 
     @staticmethod
@@ -169,9 +176,11 @@ class PodcastService:
                 "progress": getattr(status, "progress", None) if status else None,
             }
         except Exception as e:
+            # v0.7.177 — Sanitize 500 detail; logger.error keeps the
+            # full exception for ops, the client gets a generic message.
             logger.error(f"Failed to get podcast job status: {e}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to get job status: {str(e)}"
+                status_code=500, detail="Failed to get job status"
             )
 
     @staticmethod
@@ -181,9 +190,10 @@ class PodcastService:
             episodes = await PodcastEpisode.get_all(order_by="created desc")
             return episodes
         except Exception as e:
+            # v0.7.177 — Sanitize 500 detail (see above).
             logger.error(f"Failed to list podcast episodes: {e}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to list episodes: {str(e)}"
+                status_code=500, detail="Failed to list episodes"
             )
 
     @staticmethod
@@ -193,8 +203,13 @@ class PodcastService:
             episode = await PodcastEpisode.get(episode_id)
             return episode
         except Exception as e:
+            # v0.7.177 — Sanitize 404 detail. The exception here is
+            # usually "record not found" but could be a connection
+            # error masquerading as one; either way, "Episode not
+            # found" is the right user-facing message and the full
+            # exception is preserved in the log.
             logger.error(f"Failed to get podcast episode {episode_id}: {e}")
-            raise HTTPException(status_code=404, detail=f"Episode not found: {str(e)}")
+            raise HTTPException(status_code=404, detail="Episode not found")
 
 
 class DefaultProfiles:
