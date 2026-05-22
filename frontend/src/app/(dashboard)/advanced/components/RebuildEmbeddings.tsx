@@ -253,7 +253,13 @@ export function RebuildEmbeddings() {
                 {status.status === 'queued' && <Clock className="h-5 w-5 text-yellow-500" />}
                 {status.status === 'running' && <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />}
                 {status.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                {status.status === 'failed' && <XCircle className="h-5 w-5 text-red-500" />}
+                {/* v0.7.180 — Only the failed-status icon swaps to the
+                    theme token (text-red-500 → text-destructive). The
+                    queued/running/completed icons keep their semantic
+                    palette per user constraint "no theme color changes" —
+                    only the destructive case has a canonical theme token
+                    that lights up correctly in dark + alt themes. */}
+                {status.status === 'failed' && <XCircle className="h-5 w-5 text-destructive" />}
                 <div className="flex flex-col">
                   <span className="font-medium">
                     {status.status === 'queued' && t('advanced.rebuild.queued')}

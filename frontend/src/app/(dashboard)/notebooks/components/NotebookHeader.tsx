@@ -61,8 +61,11 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 name="notebook-name"
                 value={notebook.name}
                 onSave={handleUpdateName}
-                className="text-2xl font-bold"
-                inputClassName="text-2xl font-bold"
+                // v0.7.180 — font-bold → font-semibold so the editable
+                // notebook title matches the v0.7.153 H1 weight standard
+                // and doesn't outweigh the dashboard H1s above it.
+                className="text-2xl font-semibold"
+                inputClassName="text-2xl font-semibold"
                 placeholder={t('notebooks.namePlaceholder')}
               />
               {notebook.archived && (

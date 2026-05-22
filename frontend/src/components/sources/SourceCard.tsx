@@ -256,7 +256,12 @@ export function SourceCard({
                 </div>
 
                 {/* Source type indicator */}
-                <div className="flex items-center gap-1 text-gray-500">
+                {/* v0.7.180 — text-gray-500 → text-muted-foreground so this
+                    secondary metadata absorbs the active theme's muted hue
+                    instead of pinning a literal gray that's wrong in the
+                    Solarized/Nord/Dracula themes. Same pattern v0.7.165 used
+                    for ErrorBoundary's red palette. */}
+                <div className="flex items-center gap-1 text-muted-foreground">
                   <SourceTypeIcon className="h-3 w-3" />
                   <span className="text-xs capitalize">{t('common.source')}</span>
                 </div>
@@ -275,7 +280,7 @@ export function SourceCard({
 
             {/* Processing message for active statuses */}
             {statusData?.message && (isProcessing || isFailed) && (
-              <p className="text-xs text-gray-600 mb-2 italic">
+              <p className="text-xs text-muted-foreground mb-2 italic">
                 {statusData.message}
               </p>
             )}
@@ -401,8 +406,8 @@ export function SourceCard({
         {isProcessing && statusData?.processing_info?.progress && (
           <div className="mt-3 pt-2 border-t">
             <div className="flex justify-between items-center mb-1">
-            <span className="text-xs text-gray-600">{t('common.progress')}</span>
-              <span className="text-xs text-gray-600">
+            <span className="text-xs text-muted-foreground">{t('common.progress')}</span>
+              <span className="text-xs text-muted-foreground">
                 {Math.round(statusData.processing_info.progress as number)}%
               </span>
             </div>

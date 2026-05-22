@@ -533,7 +533,6 @@ export const zhCN = {
   },
   searchPage: {
     askAndSearch: "提问与搜索",
-    chooseAMode: "选择模式",
     askBeta: "提问 (beta)",
     search: "搜索",
     askYourKb: "向您的知识库提问 (beta)",
@@ -630,7 +629,6 @@ export const zhCN = {
     noProfilesFound: "未找到单集简介。在生成播客之前，请先创建一个单集简介。",
     listTitle: "播客",
     listDesc: "跟踪生成的单集并管理可重复使用的简介。",
-    chooseAView: "选择视图",
     episodesTab: "单集",
     templatesTab: "配置",
     overviewTitle: "单集概览",

@@ -168,8 +168,8 @@ export default function SearchPage() {
             - Removed the noisy "CHOOSE A MODE" all-caps caption above
               the tabs (same fix as Podcasts in v0.7.153 — two-tab
               toggles are self-explanatory).
-          Translation key `searchPage.chooseAMode` is now unused but
-          preserved in locales for safety. */}
+          v0.7.180 — the orphaned `searchPage.chooseAMode` key has
+          since been removed from all 10 locale files. */}
       <div className="px-6 py-10 sm:px-8 space-y-8">
         <h1 className="text-3xl font-semibold tracking-tight">{t('searchPage.askAndSearch')}</h1>
 

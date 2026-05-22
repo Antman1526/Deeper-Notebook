@@ -533,7 +533,6 @@ export const itIT = {
   },
   searchPage: {
     askAndSearch: "Chiedi e cerca",
-    chooseAMode: "Scegli una modalità",
     askBeta: "Chiedi (beta)",
     search: "Cerca",
     askYourKb: "Chiedi alla tua base di conoscenza (beta)",
@@ -630,7 +629,6 @@ export const itIT = {
     noProfilesFound: "Nessun profilo episodio trovato. Crea un profilo episodio prima di generare un podcast.",
     listTitle: "Podcast",
     listDesc: "Tieni traccia degli episodi generati e gestisci i profili riutilizzabili.",
-    chooseAView: "Scegli una vista",
     episodesTab: "Episodi",
     templatesTab: "Profili",
     overviewTitle: "Panoramica episodi",
