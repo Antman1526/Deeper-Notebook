@@ -18,7 +18,52 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.185 (in flight)
+## Unreleased — v0.7.36 → v0.7.186 (in flight)
+
+- **v0.7.186** 🐛 **Round-9 audit — Frontend HIGH-severity bugs.**
+  Two everyday-UX bugs the audit caught.
+
+  **(1) Sources page hijacked global keyboard navigation.**
+  `src/app/(dashboard)/sources/page.tsx` registered a window-level
+  `keydown` listener that called `e.preventDefault()` on
+  ArrowDown/Up/Home/End/Enter regardless of `e.target`. As long
+  as the Sources route was active, EVERY input across the app
+  lost arrow-key caret movement — the app search bar, the command
+  palette, dialog inputs, contenteditable spans, all of it.
+  CommandPalette already uses the correct guard pattern; ported
+  it: early-return when the focused element is INPUT/TEXTAREA/
+  SELECT/contenteditable.
+
+  **(2) EpisodeCard leaked object-URLs + setState-after-unmount +
+  stale-blob-wins on fast switching.** The audio-fetch `useEffect`
+  had three subtle race conditions:
+    - The cleanup closure captured `revokeUrl` at the time it was
+      returned — but `revokeUrl = URL.createObjectURL(blob)`
+      happens LATER in the async path. Quick unmount → cleanup
+      ran while `revokeUrl` was still undefined → object URL
+      created later was NEVER revoked. Memory leak per fast
+      unmount.
+    - `setAudioSrc/setAudioError` ran after potential unmount
+      (no `mounted` guard), triggering React warnings + pinning
+      a reference to the unmounted component.
+    - No AbortController on the fetch — a slow first request
+      could resolve AFTER a faster second request and stomp the
+      correct `audioSrc` with the stale blob (user clicking
+      between episodes).
+
+  Rewritten with: `cancelled` flag guarding every setState,
+  `currentObjectUrl` assigned BEFORE setState so cleanup always
+  sees the right value, AbortController wired to `fetch(..., {
+  signal })`, and AbortError silently absorbed (it's the expected
+  outcome of switching mid-fetch, not a real failure to surface
+  via toast).
+
+  Tests at `tests/test_v0_7_186_frontend_high_bugs.py`: 3 new —
+  keyboard-guard pin, cancelled-flag pattern pin, AbortError
+  handling pin.
+
+  Backend: **961/961** (+3). Frontend: **65/65** + tsc clean.
+  Combined `tests/ desktop/tests/`: **1218/1218**.
 
 - **v0.7.185** 🪟 **Round-9 audit — Windows compatibility fixes.**
   Four bugs that silently broke on Windows but worked on macOS /
