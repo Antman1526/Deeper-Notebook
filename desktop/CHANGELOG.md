@@ -18,7 +18,52 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.194 (in flight)
+## Unreleased — v0.7.36 → v0.7.195 (in flight)
+
+- **v0.7.195** 🐛 **STT / TTS / Memory shim dependencies bundled —
+  Whisper, Piper, and Memory servers now actually start.**
+  Long-standing bug, root-caused while verifying local models.
+
+  Symptom (visible via `/credentials/{id}/test`):
+    - `Whisper (local)` → "Cannot connect to server."
+    - `Piper (local)` → "Cannot connect to server."
+    - `Memory (local)` → "Cannot connect to server."
+
+  Root cause: the three shim files (`desktop/desktop_shims/{whisper,
+  piper,memory}_shim.py`) have been in the codebase since the v0.4
+  local-server feature shipped, but their runtime dependencies
+  (`faster-whisper`, `piper-tts`, `mem0ai`) were **never pinned** in
+  `desktop/requirements.txt`. Every .app install since v0.4 has
+  silently shipped non-functional STT / TTS / Memory servers.
+
+  Why nobody noticed earlier:
+    - Production-mode `_spawn()` redirects child stdout/stderr to
+      DEVNULL, so a shim crashing at import LEFT NO TRACE in
+      launcher.log. The per-server log files (`whisper.log` etc.)
+      never got new entries.
+    - `progress.jsonl` still marked `supervisor.whisper: done`
+      because `_try_spawn` only knows about exceptions from the
+      spawn helper, not whether the subprocess actually bound a
+      port.
+    - `auto_register` happily registered credentials pointing at
+      the planned ports.
+
+  Fix: pin all three deps in `desktop/requirements.txt`:
+  ```
+  faster-whisper>=1.1.0,<2
+  piper-tts>=1.2.0,<2
+  mem0ai>=0.1.0,<2
+  ```
+  Lockfile regenerated via `make build-mac-lock`. Same class of
+  fix as v0.7.192's `llama-cpp-python[server]` extras and the
+  v0.7.141 lockfile-staleness incident.
+
+  Tests at `tests/test_v0_7_195_shim_deps_bundled.py`: 5 new —
+  requirements.txt pins (3 deps), lockfile pins (3 deps), forward-
+  guards that the shims still import what we pinned.
+
+  Backend: **1012/1012** (was 1007 in v0.7.194; +5 new).
+  Combined `tests/ desktop/tests/`: **1265/1265**.
 
 - **v0.7.194** 🐛 **`register_llamacpp_models` recognises the legacy
   `Local GGUF (llama.cpp)` credential name — fixes pre-v0.6.x

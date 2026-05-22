@@ -55,8 +55,12 @@ attrs==26.1.0
     #   referencing
 authlib==1.7.2
     # via fastmcp
+av==17.0.1
+    # via faster-whisper
 babel==2.18.0
     # via open-notebook (pyproject.toml)
+backoff==2.2.1
+    # via posthog
 beartype==0.22.9
     # via py-key-value-aio
 beautifulsoup4==4.14.3
@@ -99,6 +103,8 @@ cryptography==48.0.0
     #   pyjwt
 cssselect==1.4.0
     # via readability-lxml
+ctranslate2==4.7.2
+    # via faster-whisper
 cyclopts==4.11.2
     # via fastmcp
 dataclasses-json==0.6.7
@@ -117,6 +123,7 @@ distro==1.9.0
     #   google-genai
     #   groq
     #   openai
+    #   posthog
 dnspython==2.8.0
     # via email-validator
 docstring-parser==0.18.0
@@ -140,6 +147,8 @@ fastapi==0.136.1
     # via
     #   open-notebook (pyproject.toml)
     #   llama-cpp-python
+faster-whisper==1.2.1
+    # via -r desktop/requirements.txt
 fastmcp==3.2.4
     # via content-core
 filelock==3.29.0
@@ -148,6 +157,8 @@ filetype==1.2.0
     # via langchain-google-genai
 firecrawl-py==4.25.2
     # via content-core
+flatbuffers==25.12.19
+    # via onnxruntime
 frozenlist==1.8.0
     # via
     #   aiohttp
@@ -162,12 +173,18 @@ griffelib==2.0.2
     # via fastmcp
 groq==0.37.1
     # via langchain-groq
+grpcio==1.80.0
+    # via qdrant-client
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
+h2==4.3.0
+    # via httpx
 hf-xet==1.5.0
     # via huggingface-hub
+hpack==4.1.0
+    # via h2
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
@@ -187,15 +204,20 @@ httpx==0.28.1
     #   mcp
     #   ollama
     #   openai
+    #   qdrant-client
 httpx-sse==0.4.3
     # via
     #   langchain-community
     #   langchain-mistralai
     #   mcp
 huggingface-hub==1.14.0
-    # via tokenizers
+    # via
+    #   faster-whisper
+    #   tokenizers
 humanize==4.15.0
     # via surreal-commands
+hyperframe==6.1.0
+    # via h2
 idna==3.14
     # via
     #   anyio
@@ -342,6 +364,8 @@ mcp==1.27.1
     # via fastmcp
 mdurl==0.1.2
     # via markdown-it-py
+mem0ai==1.0.11
+    # via -r desktop/requirements.txt
 more-itertools==11.0.2
     # via
     #   jaraco-classes
@@ -365,15 +389,24 @@ nodejs-wheel-binaries==24.15.0
 numpy==2.4.4
     # via
     #   open-notebook (pyproject.toml)
+    #   ctranslate2
     #   imageio
     #   langchain-community
     #   llama-cpp-python
     #   moviepy
+    #   onnxruntime
     #   pandas
+    #   qdrant-client
 ollama==0.6.2
     # via langchain-ollama
+onnxruntime==1.26.0
+    # via
+    #   faster-whisper
+    #   piper-tts
 openai==2.36.0
-    # via langchain-openai
+    # via
+    #   langchain-openai
+    #   mem0ai
 openapi-pydantic==0.5.1
     # via fastmcp
 openpyxl==3.1.5
@@ -393,6 +426,7 @@ packaging==26.2
     #   langchain-core
     #   langsmith
     #   marshmallow
+    #   onnxruntime
     #   pyinstaller
     #   pyinstaller-hooks-contrib
     #   pytest
@@ -400,6 +434,8 @@ pandas==3.0.2
     # via content-core
 pathable==0.5.0
     # via jsonschema-path
+pathvalidate==3.3.1
+    # via piper-tts
 pillow==11.3.0
     # via
     #   content-core
@@ -408,12 +444,18 @@ pillow==11.3.0
     #   python-pptx
 pip==26.1.1
     # via ai-prompter
+piper-tts==1.4.2
+    # via -r desktop/requirements.txt
 platformdirs==4.9.6
     # via fastmcp
 pluggy==1.6.0
     # via pytest
 podcast-creator==0.12.0
     # via open-notebook (pyproject.toml)
+portalocker==3.2.0
+    # via qdrant-client
+posthog==7.15.3
+    # via mem0ai
 proglog==0.1.12
     # via moviepy
 prometheus-client==0.25.0
@@ -422,6 +464,11 @@ propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
+protobuf==6.33.6
+    # via
+    #   mem0ai
+    #   onnxruntime
+    #   qdrant-client
 proxy-tools==0.1.0
     # via pywebview
 py-key-value-aio==0.4.4
@@ -456,10 +503,12 @@ pydantic==2.13.4
     #   langgraph
     #   langsmith
     #   mcp
+    #   mem0ai
     #   ollama
     #   openai
     #   openapi-pydantic
     #   pydantic-settings
+    #   qdrant-client
     #   surreal-commands
 pydantic-core==2.46.4
     # via
@@ -531,10 +580,13 @@ python-pptx==1.0.2
     # via content-core
 pytubefix==10.6.1
     # via content-core
+pytz==2026.2
+    # via mem0ai
 pywebview==5.4
     # via -r desktop/requirements.txt
 pyyaml==6.0.3
     # via
+    #   ctranslate2
     #   fastmcp
     #   huggingface-hub
     #   jsonschema-path
@@ -542,6 +594,8 @@ pyyaml==6.0.3
     #   langchain-community
     #   langchain-core
     #   llama-cpp-python
+qdrant-client==1.18.0
+    # via mem0ai
 readability-lxml==0.8.4.1
     # via content-core
 referencing==0.37.0
@@ -560,6 +614,7 @@ requests==2.33.1
     #   langchain-community
     #   langsmith
     #   podcast-creator
+    #   posthog
     #   requests-toolbelt
     #   surrealdb
     #   tiktoken
@@ -581,6 +636,7 @@ rpds-py==0.30.0
     #   referencing
 setuptools==82.0.1
     # via
+    #   ctranslate2
     #   pyinstaller
     #   pyinstaller-hooks-contrib
 shellingham==1.5.4
@@ -604,6 +660,7 @@ sqlalchemy==2.0.49
     # via
     #   langchain-classic
     #   langchain-community
+    #   mem0ai
 sqlite-vec==0.1.9
     # via langgraph-checkpoint-sqlite
 sse-starlette==3.4.2
@@ -638,11 +695,14 @@ tiktoken==0.12.0
     #   langchain-openai
     #   podcast-creator
 tokenizers==0.23.1
-    # via langchain-mistralai
+    # via
+    #   faster-whisper
+    #   langchain-mistralai
 tomli==2.4.1
     # via open-notebook (pyproject.toml)
 tqdm==4.67.3
     # via
+    #   faster-whisper
     #   huggingface-hub
     #   openai
     #   proglog
@@ -660,6 +720,7 @@ typing-extensions==4.15.0
     #   fastapi
     #   google-genai
     #   groq
+    #   grpcio
     #   huggingface-hub
     #   langchain-core
     #   langchain-protocol
@@ -667,6 +728,7 @@ typing-extensions==4.15.0
     #   mcp
     #   openai
     #   opentelemetry-api
+    #   posthog
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
@@ -691,6 +753,7 @@ uncalled-for==0.3.2
 urllib3==2.7.0
     # via
     #   open-notebook (pyproject.toml)
+    #   qdrant-client
     #   requests
 uuid-utils==0.14.1
     # via
