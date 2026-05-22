@@ -18,7 +18,71 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.173 (in flight)
+## Unreleased — v0.7.36 → v0.7.174 (in flight)
+
+- **v0.7.174** 🔒 **Per-session lock serializes concurrent `/chat/execute`
+  + `/chat/stream` — fixes silently-lost turns (HIGH severity).**
+  Last remaining HIGH from the v0.7.169 deep-scan.
+
+  Background: both `/chat/execute` and `/chat/stream` (plus their
+  source-chat analogue) followed this pattern:
+
+      current_state = await asyncio.to_thread(chat_graph.get_state, ...)
+      state_values["messages"].append(HumanMessage(...))
+      result = await chat_graph.ainvoke(state_values, ...)
+
+  Two concurrent requests to the SAME `thread_id` (two open tabs,
+  an SSE reconnect racing a fresh POST, an aggressive automated
+  client retry) each hit `get_state` independently, each appended
+  their own HumanMessage in process memory, each invoked the graph.
+  The `add_messages` reducer DID append both new messages — but
+  each ainvoke's INPUT state was missing the other's user turn,
+  so request B's LLM never saw request A's question and the saved
+  checkpoint could end up with one AIMessage overwriting the
+  other. Net effect: silently lost turns.
+
+  **Fix:** new `api/utils/session_locks.py` module with a
+  `WeakValueDictionary[str, asyncio.Lock]` registry +
+  `get_session_lock(session_id)` accessor. Critical sections in
+  three endpoints now run under the lock:
+
+  - `api/routers/chat.py:execute_chat` — `async with session_lock:`
+    wraps state-read + ainvoke (clean `async with` since the
+    region is small).
+  - `api/routers/chat.py:_stream_chat_events` — manual
+    `acquire()`/`try`/`finally release()` because the critical
+    section spans a multi-yield generator body; `async with` would
+    require re-indenting the entire astream_events loop.
+  - `api/routers/source_chat.py:stream_source_chat_response` —
+    same manual pattern as the chat-stream path.
+
+  **WeakValueDictionary** semantics: while a caller holds the
+  lock (async-with or local reference), the lock survives. Once
+  all holders release and the local refs go out of scope, the
+  lock is GC'd and the WeakValueDict entry auto-evicts. No
+  manual cleanup, no unbounded growth on a long-running install
+  with many distinct session_ids.
+
+  **Why per-session, not global:** the race is per-thread_id.
+  Two unrelated notebooks chatting simultaneously shouldn't
+  serialize on each other; only the literal "same chat session"
+  case needs ordering.
+
+  **GeneratorExit safety:** when FastAPI's StreamingResponse
+  closes the generator early (client disconnect), Python's
+  GeneratorExit cleanup runs the `finally` block — the lock
+  IS released even mid-stream. Confirmed by the early-`return`
+  path in the disconnect handler.
+
+  Tests at `tests/test_v0_7_174_session_locks.py`: 7 new —
+  same-session-returns-same-lock, different-sessions-get-different-
+  locks, **timing-based serialization proof** (two concurrent
+  acquirers can't both be in the critical section at once,
+  verified via timestamp recording), WeakValueDictionary
+  GC-eligibility check, plus AST pins on all three endpoint
+  wrap sites.
+
+  Full backend suite: **898/898** (was 891 in v0.7.172-173).
 
 - **v0.7.173** 🐛 **Launcher spawns children into their own process
   group + kills the whole group on shutdown (HIGH severity).** Top
