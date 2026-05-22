@@ -210,7 +210,15 @@ def test_stream_emits_error_event_on_graph_exception(
     assert "token" in types
     assert "error" in types
     err = next(e for e in events if e["type"] == "error")
-    assert "LLM provider unreachable" in err["detail"]
+    # v0.7.184 — sanitised generic detail (no raw exception text).
+    # Previously this asserted "LLM provider unreachable" in detail,
+    # which was effectively asserting the str(e) info leak the
+    # v0.7.184 audit closed. The raw exception is now in the log
+    # only; the client gets a generic message. Same class of
+    # tightening v0.7.168 / v0.7.177 applied to non-streaming routes.
+    assert err["detail"] == "Chat stream failed unexpectedly."
+    # And we did NOT leak the raw exception text into the wire body.
+    assert "LLM provider unreachable" not in resp.text
 
 
 def test_stream_filters_non_string_chunk_content(

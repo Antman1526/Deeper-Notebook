@@ -398,8 +398,17 @@ class Notebook(ObjectModel):
                 {"notebook_id": notebook_id},
             )
             if chat_session_ids:
+                # v0.7.184 — Was `DELETE $ids` with the ids list bound
+                # as the entire post-DELETE expression. That isn't valid
+                # SurrealQL: DELETE wants a table reference / record-id
+                # expression / WHERE clause, NOT an array bound straight
+                # to the verb position. The query silently no-op'd (or
+                # errored, depending on driver version), so cascade
+                # delete leaked every chat_session row that ever pointed
+                # at a deleted notebook. Backend audit finding #1.
+                # The correct form binds the id list to a WHERE-IN.
                 await repo_query(
-                    "DELETE $ids",
+                    "DELETE chat_session WHERE id IN $ids",
                     {"ids": chat_session_ids},
                 )
                 logger.info(
