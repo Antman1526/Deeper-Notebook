@@ -17,6 +17,7 @@ from loguru import logger
 from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
@@ -539,8 +540,8 @@ async def create_source(
                     full_text=None,  # Will be populated after processing
                     embedded=False,  # Will be updated after processing
                     embedded_chunks=0,
-                    created=str(source.created),
-                    updated=str(source.updated),
+                    created=iso(source.created),
+                    updated=iso(source.updated),
                     command_id=command_id,
                     status="new",
                     processing_info={"async": True, "queued": True},
@@ -668,8 +669,8 @@ async def create_source(
                     full_text=processed_source.full_text,
                     embedded=embedded_chunks > 0,
                     embedded_chunks=embedded_chunks,
-                    created=str(processed_source.created),
-                    updated=str(processed_source.updated),
+                    created=iso(processed_source.created),
+                    updated=iso(processed_source.updated),
                     # No command_id or status for sync processing (legacy behavior)
                 )
 
@@ -811,6 +812,21 @@ async def get_source(source_id: str):
             [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
         )
 
+        # v0.7.181 — Fast insights_count via aggregate query. Same
+        # SurrealQL shape the /sources list endpoint uses (sources.py:289)
+        # so the detail and list responses report consistent numbers.
+        # Cheap — single aggregate on the source_insight table by source.
+        insights_count_rows = await repo_query(
+            "SELECT VALUE count() FROM source_insight "
+            "WHERE source = $source_id GROUP ALL",
+            {"source_id": ensure_record_id(source.id or source_id)},
+        )
+        insights_count = (
+            int(insights_count_rows[0])
+            if insights_count_rows and insights_count_rows[0] is not None
+            else 0
+        )
+
         return SourceResponse(
             id=source.id or "",
             title=source.title,
@@ -824,9 +840,11 @@ async def get_source(source_id: str):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
+            insights_count=insights_count,  # v0.7.181 — parity with list endpoint
             file_available=_is_source_file_available(source),
-            created=str(source.created),
-            updated=str(source.updated),
+            # v0.7.181 — iso() instead of str() for Safari new Date() compat.
+            created=iso(source.created),
+            updated=iso(source.updated),
             # Status fields
             command_id=str(source.command) if source.command else None,
             status=status,
@@ -967,8 +985,9 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
-            created=str(source.created),
-            updated=str(source.updated),
+            # v0.7.181 — iso() instead of str() for Safari new Date() compat.
+            created=iso(source.created),
+            updated=iso(source.updated),
         )
     except HTTPException:
         raise
@@ -1102,8 +1121,8 @@ async def retry_source_processing(source_id: str):
                 full_text=source.full_text,
                 embedded=embedded_chunks > 0,
                 embedded_chunks=embedded_chunks,
-                created=str(source.created),
-                updated=str(source.updated),
+                created=iso(source.created),
+                updated=iso(source.updated),
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
@@ -1163,8 +1182,8 @@ async def get_source_insights(source_id: str):
                 source_id=source_id,
                 insight_type=insight.insight_type,
                 content=insight.content,
-                created=str(insight.created),
-                updated=str(insight.updated),
+                created=iso(insight.created),
+                updated=iso(insight.updated),
             )
             for insight in insights
         ]

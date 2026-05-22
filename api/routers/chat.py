@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
@@ -316,8 +317,9 @@ async def get_sessions(
                 id=session.id or "",
                 title=session.title or "Untitled Session",
                 notebook_id=notebook_id,
-                created=str(session.created),
-                updated=str(session.updated),
+                # v0.7.181 — iso() for Safari new Date() compat.
+                created=iso(session.created),
+                updated=iso(session.updated),
                 message_count=msg_count,
                 model_override=getattr(session, "model_override", None),
             )
@@ -362,8 +364,9 @@ async def create_session(request: CreateSessionRequest):
             id=session.id or "",
             title=session.title or "",
             notebook_id=request.notebook_id,
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=0,
             model_override=session.model_override,
         )
@@ -442,8 +445,9 @@ async def get_session(session_id: str):
             id=session.id or "",
             title=session.title or "Untitled Session",
             notebook_id=notebook_id,
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=len(messages),
             messages=messages,
             model_override=getattr(session, "model_override", None),
@@ -503,8 +507,9 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             id=session.id or "",
             title=session.title or "",
             notebook_id=notebook_id,
-            created=str(session.created),
-            updated=str(session.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(session.created),
+            updated=iso(session.updated),
             message_count=msg_count,
             model_override=session.model_override,
         )

@@ -344,6 +344,29 @@ class SourceUpdate(BaseModel):
     topics: Optional[list[str]] = Field(None, description="Source topics")
 
 
+# v0.7.181 — SourceResponse / SourceListResponse shape reconciliation.
+#
+# Intentional asymmetries (kept):
+#   - `full_text`        ONLY on SourceResponse. The list endpoint
+#                        deliberately omits this — bulk source-list
+#                        responses would otherwise carry every source's
+#                        full body (potentially MB per row).
+#   - `notebooks`        ONLY on SourceResponse. Requires a per-row
+#                        reference JOIN; cheap once but quadratic at
+#                        list scale. List callers that need notebook
+#                        membership use a separate endpoint.
+#
+# Reconciled (was a gap before v0.7.181):
+#   - `insights_count`   Now present on BOTH. Was list-only — the
+#                        detail view had no way to surface "this
+#                        source has N transformations" without a
+#                        separate API call. Default 0 so creation-
+#                        time SourceResponse constructions stay
+#                        backward-compatible.
+#   - `processing_info`  Both now type-annotated `dict[str, Any]`
+#                        (was bare `dict` on SourceResponse — the
+#                        type annotation was looser than the list
+#                        endpoint's already-tight type).
 class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
@@ -352,13 +375,23 @@ class SourceResponse(BaseModel):
     full_text: Optional[str]
     embedded: bool
     embedded_chunks: int
+    insights_count: int = 0  # v0.7.181 — parity with SourceListResponse
     file_available: Optional[bool] = None
-    created: str
-    updated: str
+    # v0.7.181 — created/updated are now Optional[str]. Previously they
+    # were required `str`, which combined with the natural `str(model.created)`
+    # serialisation pattern silently returned the literal string `"None"`
+    # when the model hadn't been saved yet (e.g. async-create paths
+    # where SourceResponse is constructed mid-flight before the row is
+    # persisted). The new iso() helper correctly returns None for None
+    # input — making this Optional is the matching change so the
+    # response can legitimately carry null timestamps during the
+    # pre-persist window without Pydantic rejecting them.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     # New fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[dict] = None
+    processing_info: Optional[dict[str, Any]] = None  # v0.7.181 — tightened from bare `dict`
     # Notebook associations
     notebooks: Optional[list[str]] = None
 
@@ -371,8 +404,13 @@ class SourceListResponse(BaseModel):
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
     insights_count: int
-    created: str
-    updated: str
+    # v0.7.181 — same Optional[str] treatment as SourceResponse for
+    # consistency. List rows always come from persisted records so in
+    # practice these are never None, but the type widening keeps the
+    # two response shapes aligned and is forward-compatible if the
+    # list query ever surfaces partially-materialised rows.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     file_available: Optional[bool] = None
     # Status fields for async processing
     command_id: Optional[str] = None
