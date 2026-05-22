@@ -430,6 +430,30 @@ async def delete_source_chat_session(
 
         await session.delete()
 
+        # v0.7.171 — Clean up the source-chat LangGraph checkpoint
+        # rows for this thread. Same rationale as the chat.py fix:
+        # without this, every deleted source-chat leaves its full
+        # transcript behind in the LangGraph SQLite (indexed by
+        # thread_id = full_session_id), growing unbounded over the
+        # life of an install. Best-effort try/except: a checkpoint-
+        # cleanup failure doesn't block the primary SurrealDB delete,
+        # and the existing v0.7.125 prune-loop will catch any orphan.
+        try:
+            checkpointer = getattr(source_chat_graph, "checkpointer", None)
+            delete_thread = getattr(checkpointer, "delete_thread", None)
+            if delete_thread is not None:
+                await asyncio.to_thread(delete_thread, full_session_id)
+                logger.debug(
+                    "Cleaned up source-chat checkpoint thread {}",
+                    full_session_id,
+                )
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Source-chat checkpoint cleanup failed for session {} "
+                "(non-fatal): {}",
+                full_session_id, cleanup_exc,
+            )
+
         return SuccessResponse(
             success=True, message="Source chat session deleted successfully"
         )
