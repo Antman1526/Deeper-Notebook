@@ -132,10 +132,51 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def get_chat_sessions(self) -> list["ChatSession"]:
+    async def get_chat_sessions(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list["ChatSession"]:
+        """Fetch all chat sessions for this notebook, newest-first.
+
+        v0.7.169 — Optional `limit` / `offset` pagination. Previously
+        this returned EVERY chat session attached to the notebook with
+        no bound — a power user with hundreds of long-running chats
+        paid for the full table fan-out PLUS the per-session LangGraph
+        checkpoint read (v0.7.161 made those concurrent, but the
+        underlying session list itself was still unbounded). Now
+        the router can pass `limit=` to cap the response and keep the
+        right-rail Chat list snappy.
+
+        Defaults stay None for backward compatibility — callers that
+        don't ask for pagination keep the pre-v0.7.169 unbounded
+        behavior.
+        """
         try:
+            # v0.7.169 — Inject `LIMIT $limit START $offset` only when
+            # the caller asked. Validate the inputs aggressively
+            # (positive int / non-negative int respectively) BEFORE
+            # interpolating into the query — SurrealQL accepts integer
+            # literals via direct interpolation, but it doesn't sanitize
+            # them the way a SQL driver would. Mirror the v0.7.159
+            # `ObjectModel.get_all` validation pattern.
+            if limit is not None:
+                if not isinstance(limit, int) or limit <= 0 or isinstance(limit, bool):
+                    raise InvalidInputError(
+                        f"limit must be a positive int, got {limit!r}"
+                    )
+            if offset is not None:
+                if not isinstance(offset, int) or offset < 0 or isinstance(offset, bool):
+                    raise InvalidInputError(
+                        f"offset must be a non-negative int, got {offset!r}"
+                    )
+            tail = ""
+            if limit is not None:
+                tail = f" LIMIT {limit}"
+            if offset is not None:
+                tail += f" START {offset}"
             srcs = await repo_query(
-                """
+                f"""
                 select * from (
                     select
                     <- chat_session as chat_session
@@ -143,13 +184,18 @@ class Notebook(ObjectModel):
                     where out=$id
                     fetch chat_session
                 )
-                order by chat_session.updated desc
+                order by chat_session.updated desc{tail}
             """,
                 {"id": ensure_record_id(self.id)},
             )
             return (
                 [ChatSession(**src["chat_session"][0]) for src in srcs] if srcs else []
             )
+        except InvalidInputError:
+            # v0.7.169 — Let typed input errors propagate to the
+            # global exception handler (mapped to HTTP 400) rather
+            # than getting clobbered to 500 by the generic except below.
+            raise
         except Exception as e:
             logger.error(
                 f"Error fetching chat sessions for notebook {self.id}: {str(e)}"

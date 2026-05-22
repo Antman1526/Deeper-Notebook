@@ -263,7 +263,23 @@ class SuccessResponse(BaseModel):
 
 
 @router.get("/chat/sessions", response_model=list[ChatSessionResponse])
-async def get_sessions(notebook_id: str = Query(..., description="Notebook ID")):
+async def get_sessions(
+    notebook_id: str = Query(..., description="Notebook ID"),
+    # v0.7.169 — Pagination follow-through. The right-rail Chat list
+    # on every notebook page open used to return EVERY session attached
+    # to the notebook with no bound, and each one then paid for a
+    # LangGraph checkpoint read (v0.7.161 made those concurrent, but
+    # the underlying SELECT was still unbounded). Default cap = 100
+    # newest sessions; 1000 hard ceiling.
+    limit: int = Query(
+        100, ge=1, le=1000,
+        description="Max sessions to return (default 100, max 1000).",
+    ),
+    offset: int = Query(
+        0, ge=0,
+        description="Sessions to skip for pagination (default 0).",
+    ),
+):
     """Get all chat sessions for a notebook."""
     try:
         # Get notebook to verify it exists
@@ -272,7 +288,11 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Get sessions for this notebook
-        sessions_list = await notebook.get_chat_sessions()
+        # v0.7.169 — pass through `limit` / `offset` so the inner
+        # SELECT is bounded server-side.
+        sessions_list = await notebook.get_chat_sessions(
+            limit=limit, offset=offset,
+        )
 
         # v0.7.161 — N+1 fix: parallelize the per-session LangGraph
         # checkpoint reads. Previously this loop awaited
