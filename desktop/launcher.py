@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import re
 import socket
 import subprocess
@@ -330,9 +331,44 @@ class Supervisor:
         # "clean" but the OS still had the worker holding the SurrealDB
         # lock, and the next launch failed with a cryptic "address
         # already in use".
+        #
+        # v0.7.173 — Kill the entire process GROUP (the v0.7.173 spawn
+        # uses `start_new_session=True` so each child is its own group
+        # leader; sending SIGTERM to the pgid takes out the immediate
+        # child PLUS any forked grandchildren in one signal). The bare
+        # `p.terminate()` only signalled the immediate child — Next.js
+        # grandchildren (`next-server`) reparented to PID 1 and
+        # survived past the .app close. Falls back to terminate() if
+        # killpg fails (e.g. process already exited, mocked Popen in
+        # tests that doesn't have a real pgid).
         for p in reversed(self._procs):
             try:
-                p.terminate()
+                pid = getattr(p, "pid", None)
+                if pid and sys.platform != "win32":
+                    try:
+                        # killpg with the LEADER's PID (which equals
+                        # the pgid because start_new_session=True).
+                        os.killpg(pid, signal.SIGTERM)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        # Process already gone, no permission, or pgid
+                        # missing (mock). Fall through to terminate().
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
+                elif pid and sys.platform == "win32":
+                    # Windows: send CTRL_BREAK to the process group
+                    # (works because we created with CREATE_NEW_PROCESS_GROUP).
+                    try:
+                        os.kill(pid, signal.CTRL_BREAK_EVENT)
+                    except Exception:
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
+                else:
+                    # No real PID (test mock) — fall back to terminate().
+                    p.terminate()
             except Exception as exc:
                 # v0.7.82 — `getattr(p, "pid", "?")` instead of `p.pid` so
                 # mocked process objects in desktop/tests/test_launcher.py
@@ -385,13 +421,40 @@ class Supervisor:
             stdout = subprocess.DEVNULL
             stderr = subprocess.DEVNULL
 
-        proc = subprocess.Popen(
-            args,
-            cwd=str(cwd) if cwd else None,
-            env=self.session_env,
-            stdout=stdout,
-            stderr=stderr,
-        )
+        # v0.7.173 — Isolate each child into its own process group so
+        # `stop_all` can kill the WHOLE subtree (including grandchildren)
+        # in one signal. Previously this was a bare `subprocess.Popen`
+        # and `stop_all` only sent SIGTERM to the immediate child —
+        # grandchildren reparented to PID 1 and survived after the
+        # .app window closed. Documented incident: the
+        # `next-server (v16.2.6)` orphan zombies the user has seen
+        # accumulating between launches (Next.js forks per-request
+        # workers; `next-server` is itself a fork of the `node`
+        # process we directly spawn). The v0.7.142 `reap_orphans`
+        # was a startup sweep, not a shutdown one — so closing the
+        # .app still leaked zombies until the next launch.
+        #
+        # `start_new_session=True` (POSIX) makes the child a process-
+        # group leader. `stop_all` below now uses `os.killpg(pgid,
+        # SIGTERM)` to kill the whole group atomically.
+        # On Windows the equivalent is `creationflags=CREATE_NEW_PROCESS_GROUP`
+        # plus `signal.CTRL_BREAK_EVENT`; only POSIX is supported here
+        # currently — Windows launcher builds are a future-work item.
+        popen_kwargs: dict = {
+            "cwd": str(cwd) if cwd else None,
+            "env": self.session_env,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        if sys.platform != "win32":
+            popen_kwargs["start_new_session"] = True
+        else:
+            # Best-effort Windows equivalent — CREATE_NEW_PROCESS_GROUP
+            # makes the child a group leader so we can send a group
+            # signal at shutdown via os.kill(pgid, CTRL_BREAK_EVENT).
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        proc = subprocess.Popen(args, **popen_kwargs)
         self._procs.append(proc)
 
         if self.debug_mode and proc.stdout is not None and proc.stderr is not None:
