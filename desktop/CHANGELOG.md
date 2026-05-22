@@ -18,7 +18,52 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.190 (in flight)
+## Unreleased — v0.7.36 → v0.7.191 (in flight)
+
+- **v0.7.191** 🐛 **Round-9 audit — Frontend LOW closeout: cancel
+  control, stable callback identity, scoped invalidation, dead-code
+  removal.** Four small but defensible improvements that close the
+  round-9 audit completely.
+
+  **(1) `useNotebookChat` exposes `cancelStreaming`.** Parity with
+  `useSourceChat` which already had it. UI now has a way to stop
+  a runaway local-LLM mid-generation; previously only the unmount
+  path aborted, leaving users staring at tokens they didn't want.
+
+  **(2) `useNotebookChat.buildContext` callback has stable identity.**
+  Pre-fix the useCallback depended on ARRAY REFERENCES (`sources`,
+  `notes`) — but TanStack Query returns a fresh array on every
+  refetch even when the row set is identical. So `buildContext`
+  identity churned per refetch, retriggering the gated effect, which
+  POSTed `/chat/build-context` again per refetch with zero user
+  input. Now derives stable string fingerprints (`sourcesKey`,
+  `notesKey`, `selectionsKey`) and depends on those.
+
+  **(3) `use-sources` mutations use predicate-scoped invalidation.**
+  The pre-fix `invalidateQueries({ queryKey: ['sources'] })` matched
+  EVERY source query — including `['sources', sourceId, 'status']`
+  polling keys. So every source mutation triggered a status refetch
+  for every source the user had open, even completed ones. On a
+  notebook with 30+ sources this was a measurable hit. New
+  `_isSourcesListQuery` predicate scopes invalidation to LIST keys
+  only; per-source status polls keep their independent cadence.
+
+  **(4) ChatColumn dead `if (!sources && !notes)` branch removed.**
+  Both `sources` (prop) and `notes` (useNotes default `[]`) are
+  ALWAYS truthy arrays — the "unable to load chat" UI was
+  unreachable. Removed alongside the orphaned `AlertCircle`
+  import. If real load-failure UI is ever needed, branch on
+  `useNotes().error` explicitly.
+
+  Tests at `tests/test_v0_7_191_frontend_low_closeout.py`: 4 new —
+  cancelStreaming export pin, stable-keys pin, predicate pin,
+  dead-code-absent pin.
+
+  Backend: **994/994** (+4). Frontend: **65/65** + tsc clean.
+  Combined `tests/ desktop/tests/`: **1247/1247**.
+
+  **Round-9 audit COMPLETE: 8 commits (v0.7.184-v0.7.191), all 24
+  findings resolved or formally documented as audited-no-fix.**
 
 - **v0.7.190** 🐛 **Round-9 audit — Backend LOW closeout: GC-anchored
   background tasks + repo_query timeout + UTC timestamp tool.**
