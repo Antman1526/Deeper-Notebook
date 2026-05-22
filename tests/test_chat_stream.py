@@ -82,6 +82,15 @@ def fake_graph(monkeypatch):
 
     fake = _FakeGraph()
     monkeypatch.setattr(chat_router, "chat_graph", fake)
+    # v0.7.192 — chat_router.get_async_graph (added in v0.7.192) is
+    # what _stream_chat_events actually calls for astream_events.
+    # The pre-v0.7.192 code did `chat_graph.astream_events(...)`
+    # directly; the lazy async-graph factory returns the
+    # AsyncSqliteSaver-backed twin. Patch both so the fake intercepts
+    # the streaming path.
+    async def _fake_get_async_graph():
+        return fake
+    monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
     return fake
 
 

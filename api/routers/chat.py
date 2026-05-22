@@ -18,6 +18,12 @@ from open_notebook.exceptions import (
     NotFoundError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
+# v0.7.192 — Lazy async-graph getter for ainvoke / astream_events
+# call sites. Newer langgraph raises NotImplementedError when those
+# internally call aget_tuple() against the sync SqliteSaver. The
+# lazy pattern works around aiosqlite capturing the event loop at
+# construct time; see open_notebook/graphs/chat.py for details.
+from open_notebook.graphs.chat import get_async_graph
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -696,8 +702,16 @@ async def execute_chat(request: ExecuteChatRequest):
                 os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
             )
             try:
+                # v0.7.192 — Use the AsyncSqliteSaver-backed twin
+                # (lazily initialised). Newer langgraph raises
+                # NotImplementedError when ainvoke's internal
+                # aget_tuple() hits the sync SqliteSaver. Both savers
+                # point at the same on-disk SQLite file → state
+                # stays consistent across this async write and the
+                # sync `chat_graph.get_state(...)` reads above.
+                _chat_graph_async = await get_async_graph()
                 result = await asyncio.wait_for(
-                    chat_graph.ainvoke(
+                    _chat_graph_async.ainvoke(
                         input=state_values,  # type: ignore[arg-type]
                         config=RunnableConfig(
                             configurable={
@@ -911,7 +925,10 @@ async def _stream_chat_events(
             # v0.7.52 — removed dead `last_token_idx` counter (was incremented
             # but never read).
             final_result: Optional[dict[str, Any]] = None
-            async for event in chat_graph.astream_events(
+            # v0.7.192 — AsyncSqliteSaver twin (lazily initialised).
+            # See ainvoke call site above for the full rationale.
+            _chat_graph_async = await get_async_graph()
+            async for event in _chat_graph_async.astream_events(
                 input=state_values,  # type: ignore[arg-type]
                 config=RunnableConfig(
                     configurable={
