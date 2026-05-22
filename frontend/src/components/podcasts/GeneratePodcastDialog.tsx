@@ -16,6 +16,15 @@ import { PodcastGenerationRequest } from '@/lib/types/podcasts'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.196 —
+//  - getApiErrorMessage: sanitize the raw `error.message` previously
+//    shown as the toast description on podcast-generation failure.
+//  - formatDateTime: replace the
+//    `toLocaleString(lang.startsWith('zh') ? lang : 'en-US')` pattern
+//    that silently fell back to en-US date format for every non-Chinese
+//    locale (pt-BR, ja-JP, fr-FR, ru-RU, bn-IN, es-ES, it-IT).
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { formatDateTime } from '@/lib/utils/date-locale'
 import {
   Dialog,
   DialogContent,
@@ -370,10 +379,13 @@ function ContentSelectionPanel({
                                         {note.title || tr.untitledNote}
                                       </span>
                                       <span className="text-xs text-muted-foreground">
+                                        {/* v0.7.196 — was
+                                            `toLocaleString(lang.startsWith('zh') ? lang : 'en-US')`,
+                                            which forced en-US date
+                                            format for 7 of our 10
+                                            supported locales. */}
                                         {tr.commonUpdated}{' '}
-                                        {new Date(note.updated).toLocaleString(
-                                          language.startsWith('zh') ? language : 'en-US'
-                                        )}
+                                        {formatDateTime(note.updated, language)}
                                       </span>
                                     </Label>
                                   </div>
@@ -923,9 +935,13 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
       }, 500)
     } catch (error) {
       console.error('Failed to generate podcast', error)
+      // v0.7.196 — was `error.message` raw, leaked axios + FastAPI
+      // stack-text. Route through ERROR_MAP first, fall back to
+      // `common.refreshPage` for unknown errors. Same sibling-pattern
+      // cleaned up in v0.7.184.
       toast({
         title: t('podcasts.generationFailed'),
-        description: error instanceof Error ? error.message : t('common.refreshPage'),
+        description: getApiErrorMessage(error, t, 'common.refreshPage'),
         variant: 'destructive',
       })
     } finally {

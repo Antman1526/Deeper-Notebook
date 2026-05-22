@@ -48,6 +48,13 @@ import apiClient from '@/lib/api/client'
 // mutations). Previously this file declared its own raw keys, causing
 // duplicate network requests + stale data.
 import { QUERY_KEYS } from '@/lib/api/query-client'
+// v0.7.196 — sanitize raw `error.message` previously shown as the
+// toast description on Studio generation failure. Also routes the
+// `mutation.error` chain through the same helper for the inline
+// Alert below the form. The Studio page's English-only static
+// strings remain — full i18n extraction is deferred (see CHANGELOG).
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 // Must match api/routers/studio.py:_ALLOWED_EXTENSIONS
 const ALLOWED_EXTS = new Set([
@@ -80,6 +87,7 @@ function isAllowed(file: File): { ok: boolean; reason?: string } {
 export default function StudioPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { t } = useTranslation()
   const mutation = useStudioGenerate()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -197,13 +205,15 @@ export default function StudioPage() {
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
     } catch (e) {
-      const msg = (e as { response?: { data?: { detail?: string } }; message?: string })
-        ?.response?.data?.detail
-        || (e as Error)?.message
-        || 'Generation failed'
+      // v0.7.196 — was ad-hoc unwrap of axios `response.data.detail`
+      // and bare `(e as Error).message` fallback — both could surface
+      // raw stack-trace text. Route through getApiErrorMessage so
+      // mapped backend errors (apiErrors.*) are translated and
+      // unmapped errors fall back to the backend's user-friendly
+      // detail string only.
       toast({
         title: 'Studio generation failed',
-        description: msg,
+        description: getApiErrorMessage(e, t, 'apiErrors.genericError'),
         variant: 'destructive',
       })
     }
@@ -420,16 +430,10 @@ export default function StudioPage() {
         <div className="mb-4 p-3 rounded border border-destructive/50 bg-destructive/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="text-sm text-destructive">
-            {/* v0.7.1 — extract the backend's `detail` field from axios's
-                response chain when present. Otherwise we'd show generic
-                "Request failed with status code 400" instead of the
-                actual reason from the API (e.g. "No usable text could
-                be extracted…"). Matches the toast behavior in
-                onGenerate's catch branch. */}
-            {(mutation.error as { response?: { data?: { detail?: string } }; message?: string })
-              ?.response?.data?.detail
-              || (mutation.error as Error)?.message
-              || 'Generation failed.'}
+            {/* v0.7.196 — same helper as the catch-branch toast. Was
+                an inline unwrap that could surface raw axios + FastAPI
+                500-default text. */}
+            {getApiErrorMessage(mutation.error, t, 'apiErrors.genericError')}
           </div>
         </div>
       )}
