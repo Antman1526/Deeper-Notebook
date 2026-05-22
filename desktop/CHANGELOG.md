@@ -18,7 +18,98 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.171 (in flight)
+## Unreleased — v0.7.36 → v0.7.173 (in flight)
+
+- **v0.7.173** 🐛 **Launcher spawns children into their own process
+  group + kills the whole group on shutdown (HIGH severity).** Top
+  desktop finding from the v0.7.169 deep-scan.
+
+  Background: `desktop/launcher.py:_spawn` called bare
+  `subprocess.Popen` with no process-group setup, and `stop_all`
+  used `p.terminate()` — which only signals the immediate child.
+  Next.js forks per-request workers (`next-server (v16.2.6)`),
+  content-core forks PDF/OCR backends, llama-cpp may fork helpers;
+  any grandchild reparented to PID 1 when the immediate child died,
+  surviving past .app close. The user has personally seen the
+  `next-server` zombies accumulating between launches.
+
+  v0.7.142 `reap_orphans` is a startup sweep, not a shutdown one
+  — so closing the .app left zombies until the next launch.
+
+  Fix in `desktop/launcher.py`:
+
+  1. **Spawn-time isolation.** `_spawn` now passes
+     `start_new_session=True` on POSIX (makes the child a process-
+     group leader) or `creationflags=CREATE_NEW_PROCESS_GROUP` on
+     Windows. The whole subtree rooted at the immediate child
+     now shares one pgid.
+  2. **Shutdown-time pkill.** `stop_all` reversed-iterates the
+     procs and calls `os.killpg(pid, signal.SIGTERM)` (POSIX) or
+     `os.kill(pid, signal.CTRL_BREAK_EVENT)` (Windows). The pgid
+     equals the leader's PID (because we set
+     `start_new_session=True`). One signal → entire group dies.
+  3. **Fallback chain** preserves the existing v0.7.82 test-mock
+     contract: `ProcessLookupError`/`PermissionError`/`OSError`
+     are caught, and we fall through to `p.terminate()` so
+     `MagicMock(spec=Popen)` in tests still works.
+
+  Tests at `desktop/tests/test_v0_7_173_process_group.py`: 5
+  AST-level guards on the spawn-side kwarg, the Windows
+  equivalent, the killpg call, the fallback chain, and the
+  `signal` import. Existing 15 launcher tests pass unchanged.
+
+  After the next rebuild the orphan-zombie next-server processes
+  the user has seen accumulating between launches will get killed
+  properly on .app close.
+
+- **v0.7.172** 🐛 **Lifespan-startup stale-command reaper.** Top
+  MEDIUM finding from the deep-scan. Fixes the "frontend polls
+  forever after worker crash" UX bug.
+
+  Background: if the surreal-commands worker crashed / was OOM-
+  killed mid-job, the command row stayed in `new` / `queued` /
+  `running` forever. The frontend's `useSourceStatus` polls every
+  2 seconds while status is in any of those states — silent
+  CPU + DB load forever, with no path to recovery short of
+  manual SurrealQL or a Source.delete + recreate.
+
+  On API restart we KNOW the worker isn't still mid-job (the
+  launcher's process tree restarts together), so any pre-restart
+  row in a non-terminal state is stale.
+
+  Fix in `api/main.py` lifespan (between dedupe and digest
+  scheduler):
+
+  ```sql
+  UPDATE command
+  SET status = 'failed',
+      error_message = 'Marked stale on API restart — …',
+      updated = time::now()
+  WHERE status IN ['new', 'queued', 'running']
+    AND updated < (time::now() - 30m)
+  RETURN id;
+  ```
+
+  The 30-minute updated-time filter is belt-and-suspenders: in
+  the unlikely future case of cross-process worker supervision,
+  we don't wipe an actually-running job mid-execution. For the
+  current desktop-launcher process-tree model this is overkill
+  but cheap.
+
+  Reaped count is logged at WARNING level (visible in api.log
+  filters) so an install that consistently reaps stale rows
+  on every restart shows up as a canary for "the worker is
+  unreliable".
+
+  Wrapped in try/except so a SurrealDB hiccup at startup doesn't
+  block the API from coming up — the reaper is purely defensive.
+
+  Tests at `tests/test_v0_7_172_stale_command_reaper.py`: 3
+  AST-level guards covering the query shape, the non-fatal
+  try/except wrapper, and the WARNING-level canary log.
+
+  Combined suite: **891/891 backend** + **253/253 desktop** in
+  isolation (was 888/884 / 248/248 in v0.7.171).
 
 - **v0.7.171** 🐛🔒 **LangGraph checkpoint cleanup on session delete —
   fixes unbounded SQLite growth + thread-ID-collision data leak.**
