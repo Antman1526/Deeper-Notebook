@@ -18,7 +18,53 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.178 (in flight)
+## Unreleased — v0.7.36 → v0.7.179 (in flight)
+
+- **v0.7.179** 🐛 **NotFoundError re-raise sweep across three high-
+  traffic routers — fixes wrong-status responses on legitimate 404s
+  (MED severity).** Continuation of the v0.7.178 fix to
+  `sources.py::create_source_insight`; applies the same pattern
+  systematically across notebooks.py, podcasts.py, and models.py.
+
+  Background: `Source.get()` / `Notebook.get()` / `Model.get()` —
+  every domain-model fetcher rooted at `ObjectModel.get()` —
+  raises `NotFoundError` when the record isn't found, instead of
+  returning None (`open_notebook/domain/base.py:183`). The local
+  `if not source: raise HTTPException(404)` guards that appear
+  throughout the routers are therefore dead code. The real bug:
+  the broad `except Exception` handler at the bottom of nearly
+  every endpoint intercepts NotFoundError *before* it bubbles to
+  the global FastAPI handler at `api/main.py:651`, so what should
+  be a 404 surfaces as a generic 500.
+
+  v0.7.179 adds `except (NotFoundError, InvalidInputError): raise`
+  before every plain broad-Exception handler in the three biggest
+  routers. Endpoint count:
+
+  - `api/routers/notebooks.py` — 7 endpoints fixed (delete-
+    preview, get_notebook, update_notebook, add_source_to_notebook,
+    remove_source_from_notebook, delete_notebook, plus get_notebooks).
+  - `api/routers/podcasts.py` — 6 endpoints fixed.
+  - `api/routers/models.py` — 2 endpoints fixed.
+
+  Plus a forward-guard meta-test
+  (`test_forward_guard_domain_get_implies_notfounderror_import`)
+  that pins: any router file importing a domain model AND calling
+  `.get()` AND catching Exception MUST also import `NotFoundError`.
+  Stops a future contributor from adding a new endpoint that
+  silently swallows 404s.
+
+  Tests at `tests/test_v0_7_179_notfound_sweep.py`: 6 new — per-
+  router import + re-raise pins, broad-handler counter sanity
+  check, and the forward-guard.
+
+  Wider sweep across the remaining ~12 routers is deferred as a
+  follow-on (gmail.py, credentials.py, search.py, transformations.py,
+  studio.py, source_chat.py, chat.py, episode_profiles.py,
+  speaker_profiles.py, exports.py, embedding.py, embedding_rebuild.py,
+  context.py, commands.py, config.py, insights.py, notes.py).
+
+  Full backend suite: **922/922** (was 916 in v0.7.178).
 
 - **v0.7.178** 🐛 **Round-5 deferred sweep: embedding OOM cap,
   NotFoundError re-raise, two more studio str(exc) leaks (MED+LOW
