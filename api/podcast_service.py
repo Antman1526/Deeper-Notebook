@@ -60,13 +60,34 @@ class PodcastService:
             if not content and notebook_id:
                 try:
                     notebook = await Notebook.get(notebook_id)
-                    # Get notebook context (this may need to be adjusted based on actual Notebook implementation)
+                    # v0.7.201 — was `str(notebook) if no get_context`
+                    # which, on a stale ID (Notebook.get returned None),
+                    # silently wrote the literal string "None" as the
+                    # podcast's content. Generation then went through
+                    # with empty source material and produced a
+                    # nonsensical episode. Raise NotFoundError before
+                    # touching `notebook` so the user gets a clear
+                    # error at submission time.
+                    if notebook is None:
+                        from open_notebook.exceptions import NotFoundError
+                        raise NotFoundError(
+                            f"Notebook {notebook_id} not found"
+                        )
                     content = (
                         await notebook.get_context()
                         if hasattr(notebook, "get_context")
                         else str(notebook)
                     )
                 except Exception as e:
+                    # v0.7.201 — let typed NotFoundError pass through
+                    # so the global classifier emits a clean 404 with
+                    # the user-facing message above. Other failures
+                    # still fall back to the notebook-id-only content
+                    # path (kept for backward compat with non-fatal
+                    # transient DB hiccups).
+                    from open_notebook.exceptions import NotFoundError
+                    if isinstance(e, NotFoundError):
+                        raise
                     logger.warning(
                         f"Failed to get notebook content, using notebook_id as content: {e}"
                     )

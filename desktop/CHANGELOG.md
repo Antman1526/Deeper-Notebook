@@ -18,7 +18,70 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.200 (in flight)
+## Unreleased — v0.7.36 → v0.7.201 (in flight)
+
+- **v0.7.201** 🐛 **Backend services + notes router + frontend
+  follow-ups from the fresh audit.** Five backend findings and two
+  frontend polish items from a sweep of areas not yet covered by
+  v0.7.177-200.
+
+  1. **Backend (HIGH) — `credentials_service.test_credential`
+     str(e) leak.** Same class as v0.7.177/184. The fallback
+     `Error: {truncated}` returned `str(e)[:100]` to the API client.
+     Esperanto / SDK exceptions can embed endpoint URLs, partial
+     API keys, SurrealDB driver frames. Now logs the full exception
+     at `warning` level and returns a generic
+     `Connection test failed. Check that the {provider} endpoint
+     is reachable and the credentials are valid.` to the client.
+
+  2. **Backend (MED) — `podcast_service.generate_podcast` content
+     fallback wrote literal "None".** `notebook = await
+     Notebook.get(notebook_id)` was not guarded against `None`;
+     the fallback `str(notebook)` produced the string "None" as
+     the podcast's content, generation proceeded with empty
+     source material and produced a nonsensical episode. Now
+     raises `NotFoundError(f"Notebook {notebook_id} not found")`
+     before touching the reference; the inner-`except` lets the
+     typed exception bubble to the global classifier.
+
+  3. **Backend (MED) — `/readyz` leaked migration `str(exc)`.**
+     Migration exceptions can embed `.surql` file paths,
+     SurrealDB driver frames, DB DSN fragments. Returning that
+     inside the public health-probe JSON body is the kind of
+     info-leak that defeats hardening at the proxy layer.
+     Sanitized to a generic placeholder `"migrations check
+     failed"`; full exception still goes to `logger.warning`.
+
+  4. **Backend (MED) — `notes.py` NotFoundError sweep.** Five
+     bare `HTTPException(status_code=404, detail="Note/Notebook
+     not found")` callsites bypassed the v0.7.179-183 global
+     classifier. Bulk-swapped to `raise NotFoundError(...)`.
+     Added `except NotFoundError: raise` handlers to the two
+     functions that didn't already have them (`list_notes`,
+     `create_note`) — without those, `NotFoundError` would have
+     been caught by the generic `except Exception` and collapsed
+     to 500.
+
+  5. **Frontend (LOW) — SetupBanner upstream-repo URL.** Docs
+     link in the encryption-required banner pointed at
+     `lfnovo/open-notebook`; now points at
+     `Antman1526/open-notebook-Plus`. Plus users land on Plus
+     docs that match their build.
+
+  6. **Frontend (LOW) — MarkdownEditor hardcoded light mode.**
+     `data-color-mode="light"` was set unconditionally; in dark
+     mode the editor rendered white-on-dark inside the parent
+     dialog. Now reads `useTheme().resolvedTheme` and sets the
+     data-attribute accordingly. SSR fallback is "light"
+     (MDEditor is ssr:false anyway).
+
+  Tests at `tests/test_v0_7_201_audit_sweep.py`: 7 new — AST
+  pins on each of the 5 backend fixes, plus pins on the
+  SetupBanner Plus-fork URL and the MarkdownEditor theme hook.
+
+  Backend tests: **1034/1034** (was 1027; +7 new).
+  Frontend tests: **72/72**.
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.200** 🐛 **Search/Ask exception classifier pass-through +
   proper ask-stream cancellation + standards-compliant disconnect

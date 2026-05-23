@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { forwardRef } from 'react'
+import { useTheme } from 'next-themes'
 
 const MDEditor = dynamic(
   () => import('@uiw/react-md-editor').then((mod) => mod.default),
@@ -22,8 +23,18 @@ export interface MarkdownEditorProps {
 
 export const MarkdownEditor = forwardRef<HTMLDivElement, MarkdownEditorProps>(
   ({ value = '', onChange, placeholder, height = 300, preview = 'live', hideToolbar = false, className, textareaId, name }, ref) => {
+    // v0.7.201 — follow the app's next-themes setting instead of
+    // hardcoding `data-color-mode="light"`. Before, the editor
+    // rendered with a white background against a dark dialog when
+    // dark mode was active; obvious visual mismatch for note
+    // editing. `resolvedTheme` resolves "system" to the actual
+    // light/dark choice; SSR fallback is "light" because MDEditor
+    // is ssr:false anyway.
+    const { resolvedTheme } = useTheme()
+    const colorMode: 'light' | 'dark' =
+      resolvedTheme === 'dark' ? 'dark' : 'light'
     return (
-      <div className={className} ref={ref}>
+      <div className={className} ref={ref} data-color-mode={colorMode}>
         <MDEditor
           value={value}
           onChange={onChange}
@@ -35,7 +46,7 @@ export const MarkdownEditor = forwardRef<HTMLDivElement, MarkdownEditorProps>(
             id: textareaId,
             name: name,
           }}
-          data-color-mode="light"
+          data-color-mode={colorMode}
         />
       </div>
     )
