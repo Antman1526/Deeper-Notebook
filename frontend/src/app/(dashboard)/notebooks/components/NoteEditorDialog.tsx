@@ -13,6 +13,7 @@ import { MarkdownEditor } from '@/components/ui/markdown-editor'
 import { InlineEdit } from '@/components/common/InlineEdit'
 import { cn } from "@/lib/utils";
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 
 // v0.7.199 — factory pattern so the validation message is
 // translated. Was hardcoded English "Content is required" — non-
@@ -34,6 +35,7 @@ interface NoteEditorDialogProps {
 
 export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteEditorDialogProps) {
   const { t } = useTranslation()
+  const { toast } = useToast()
   const createNote = useCreateNote()
   const updateNote = useUpdateNote()
   const queryClient = useQueryClient()
@@ -118,7 +120,19 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     } else {
       // Creating a note requires a notebookId
       if (!notebookId) {
+        // v0.7.202 — was silent `console.error + return`. The
+        // user clicked Save, watched the dialog do nothing, and
+        // had no feedback at all. Surface a toast so the failure
+        // is visible. (In normal flows this branch is unreachable
+        // because the dialog opens with a parent-provided
+        // notebookId; the toast is a safety net for a
+        // misconfigured caller.)
         console.error('Cannot create note without notebook_id')
+        toast({
+          title: t('common.error'),
+          description: t('notebooks.failedToCreateNote'),
+          variant: 'destructive',
+        })
         return
       }
       await createNote.mutateAsync({

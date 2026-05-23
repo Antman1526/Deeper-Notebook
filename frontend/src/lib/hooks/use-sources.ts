@@ -283,6 +283,26 @@ export function useSourceStatus(sourceId: string, enabled = true) {
       // The query.state.data contains the SourceStatusResponse
       const data = query.state.data as SourceStatusResponse | undefined
       if (data?.status === 'running' || data?.status === 'queued' || data?.status === 'new') {
+        // v0.7.202 — cap aggressive 2 s polling. A worker that gets
+        // stuck in 'running' (common after the v0.7.172 reaper
+        // window, e.g. a job started <30 min ago that stalled
+        // before SIGTERM rescue) used to poll the API every 2 s
+        // forever — wasted requests + battery on the desktop app
+        // for sources the user has long abandoned. After 15 min
+        // of polling (450 ticks at 2 s) fall back to a 30 s
+        // background pulse so the UI still notices if the worker
+        // eventually wakes up, without burning network.
+        //
+        // query.state.dataUpdateCount is the number of completed
+        // fetches for this query since mount; not a perfect clock,
+        // but a fine proxy at a fixed 2 s interval and immune to
+        // wall-clock skew. The 450 threshold is intentionally
+        // generous — a real podcast/embed job legitimately takes
+        // 5-10 min on local-LLM builds.
+        const ticks = query.state.dataUpdateCount ?? 0
+        if (ticks > 450) {
+          return 30000
+        }
         return 2000
       }
       // No auto-refresh if completed, failed, or unknown

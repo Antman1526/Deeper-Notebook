@@ -155,8 +155,15 @@ class CommandService:
                     "command": row.get("name"),
                     "status": row.get("status"),
                     "error_message": row.get("error_message"),
-                    "created": str(row.get("created")) if row.get("created") else None,
-                    "updated": str(row.get("updated")) if row.get("updated") else None,
+                    # v0.7.202 — was `str(row.get("created"))` which,
+                    # depending on the surrealdb driver version,
+                    # could render the column as `surrealdb.DateTime(...)`
+                    # repr — breaks `new Date(...)` on Safari and
+                    # any client that expects an ISO 8601 string.
+                    # Use the iso() helper the rest of the codebase
+                    # standardised on in v0.7.181-183.
+                    "created": iso(row.get("created")),
+                    "updated": iso(row.get("updated")),
                 }
             )
         return out

@@ -596,7 +596,14 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
         ollama_url = base_url or "http://localhost:11434"
         try:
             async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
-                response = await client.get(f"{ollama_url}/api/tags", timeout=10.0)
+                # v0.7.202 — was `timeout=10.0` here, which httpx
+                # REPLACES the client-level structured Timeout with
+                # a single 10s budget for connect+read+write+pool
+                # combined. Partially undid the v0.7.187 structured-
+                # timeout fix. Drop the per-call kwarg so the client's
+                # connect=5/read=30/write=10/pool=5 budgets apply as
+                # designed.
+                response = await client.get(f"{ollama_url}/api/tags")
                 response.raise_for_status()
                 data = response.json()
                 return [
@@ -616,8 +623,11 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
             async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — same per-call-timeout drop as the Ollama
+                # branch above. Let the client's structured Timeout
+                # apply.
                 response = await client.get(
-                    f"{base_url.rstrip('/')}/models", headers=headers, timeout=30.0,
+                    f"{base_url.rstrip('/')}/models", headers=headers,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -639,7 +649,8 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
             url = f"{endpoint.rstrip('/')}/openai/models?api-version={api_version}"
             headers = {"api-key": api_key}
             async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
-                response = await client.get(url, headers=headers, timeout=30.0)
+                # v0.7.202 — same per-call-timeout drop.
+                response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 return [
@@ -667,10 +678,10 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
         try:
             headers = {"X-Goog-Api-Key": api_key} if api_key else {}
             async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — same per-call-timeout drop.
                 response = await client.get(
                     "https://generativelanguage.googleapis.com/v1/models",
                     headers=headers,
-                    timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -694,10 +705,12 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
 
     try:
         async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+            # v0.7.202 — same per-call-timeout drop as the other
+            # discovery branches (Ollama, openai_compatible, Azure,
+            # Google). Let the client-level structured Timeout apply.
             response = await client.get(
                 discovery_url,
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()
