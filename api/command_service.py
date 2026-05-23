@@ -67,8 +67,24 @@ class CommandService:
             return cmd_id_str
 
         except Exception as e:
+            # v0.7.204 — re-raise as typed OpenNotebookError so the
+            # global FastAPI classifier in api/main.py emits a 500
+            # with a structured payload instead of bubbling an
+            # untyped Exception that the framework renders as
+            # "Internal Server Error" with no detail. ValueError /
+            # asyncio.TimeoutError (the explicit raises above) are
+            # already typed and pass through unchanged because they
+            # subclass Exception too — only untyped Exceptions get
+            # wrapped. Logging stays at error level so ops have the
+            # full stack.
+            from open_notebook.exceptions import OpenNotebookError
             logger.error(f"Failed to submit command job: {e}")
-            raise
+            if isinstance(e, (OpenNotebookError, ValueError, asyncio.TimeoutError)):
+                raise
+            raise OpenNotebookError(
+                "Failed to submit command job. Check the API logs "
+                "for the underlying error."
+            ) from e
 
     @staticmethod
     async def get_command_status(job_id: str) -> Optional[dict[str, Any]]:
