@@ -18,7 +18,61 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.201 (in flight)
+## Unreleased — v0.7.36 → v0.7.202 (in flight)
+
+- **v0.7.202** 🐛 **Audit LOW-tier closeout: discovery timeouts,
+  iso() sweep, healthz defaults, NoteEditor toast, source-polling
+  cap.** Five small fixes consolidating the deferred LOW items
+  from the v0.7.201 backend audit + frontend polish.
+
+  1. **Backend — `credentials_service` discovery branches drop
+     per-call `timeout=` kwargs.** httpx merges `client.get(...,
+     timeout=X)` by REPLACING the client-level `httpx.Timeout(
+     connect=5, read=30, write=10, pool=5)` with a single X-second
+     budget for all four. Partially undid the v0.7.187 structured-
+     timeout fix on the Ollama + openai_compatible + Azure +
+     Google + standard-OpenAI branches. Dropped 5 callsites; the
+     client-level `_DISCOVERY_HTTP_TIMEOUT` now owns the contract.
+
+  2. **Backend — `command_service.list_command_jobs` iso() sweep.**
+     Was emitting `str(row.get("created"))` which renders as
+     `surrealdb.DateTime(...)` repr in some driver versions —
+     breaks Safari `new Date()` on the /commands admin listing.
+     Replaced with `iso(row.get("created"))` per the v0.7.181-183
+     convention.
+
+  3. **Backend — `/healthz/deep` defensive `checks[...]` defaults.**
+     `must_have_ok = checks["database"]["ok"] and checks[
+     "migrations"]["ok"]` indexed both keys without verifying
+     either was populated. If a probe path raised before the
+     assignment, the route 500'd with a stack-trace body instead
+     of returning the structured 503 health payload operators
+     expect. Added `checks["database"] = {"ok": False, "status":
+     "unknown"}` / `checks["migrations"] = {"ok": False}` defaults
+     at the top of the function.
+
+  4. **Frontend — NoteEditorDialog toast on missing notebookId.**
+     `if (!notebookId) { console.error; return }` silently
+     swallowed the Save click. User watched the dialog freeze
+     with no feedback. Added a toast inside the branch so the
+     failure is at least visible. (In normal flows this branch is
+     unreachable; safety net for a misconfigured parent.)
+
+  5. **Frontend — `useSourceStatus` cumulative-poll cap.** Was
+     2-second polling forever while `status ∈ {new, queued,
+     running}`. A worker stuck in 'running' (common after the
+     v0.7.172 reaper window) pinged the API every 2 s for the
+     life of the page, wasting requests and battery on the
+     desktop app. After ~15 min (450 ticks) fall back to a 30 s
+     background pulse so the UI still notices if the worker
+     eventually wakes up, without burning network.
+
+  Tests at `tests/test_v0_7_202_audit_lows.py`: 5 new — AST pins
+  on each fix.
+
+  Backend tests: **1039/1039** (was 1034; +5 new).
+  Frontend tests: **72/72**.
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.201** 🐛 **Backend services + notes router + frontend
   follow-ups from the fresh audit.** Five backend findings and two

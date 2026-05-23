@@ -1012,6 +1012,14 @@ async def healthz_deep(probe_providers: bool = False):
     from open_notebook.database import async_migrate
 
     checks: dict[str, dict] = {}
+    # v0.7.202 — defensive defaults so `must_have_ok = checks["database"]
+    # ["ok"] and checks["migrations"]["ok"]` below cannot KeyError
+    # crash if either probe path raises before the assignment runs.
+    # Without these, an exception inside the probe yields a 500 with
+    # an unhelpful stack-trace body instead of the structured 503
+    # health-check response the operator's probe-system expects.
+    checks["database"] = {"ok": False, "status": "unknown"}
+    checks["migrations"] = {"ok": False}
 
     # MUST-HAVE: Database
     db_health = await check_database_health()
