@@ -156,6 +156,99 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
         log.warning("PUT /api/models/defaults failed (non-fatal): %s", exc)
 
 
+def _prune_orphan_legacy_credentials(
+    client: httpx.Client, existing_creds: list[dict],
+) -> None:
+    """v0.7.208 — Delete orphan credentials left over from the
+    v0.6.x → v0.7.194 rename pair.
+
+    Pre-v0.6.x installs created `Local GGUF (llama.cpp)`. v0.6.x
+    silently renamed the canonical-form to `llama.cpp (local)`,
+    but pre-existing installs never got migrated. v0.7.193's
+    auto-register tried to create the new name → ended up with
+    BOTH credentials, the old one (with all the model links) +
+    the new one (empty orphan pointing at whatever dynamic port
+    that launch happened to allocate). v0.7.194 stopped the
+    duplicate creation going forward, but didn't clean up the
+    orphan rows left in the user's DB.
+
+    This helper detects + DELETES the orphan strictly safely:
+      - Name matches the new-canonical-form `llama.cpp (local)`
+        (lower-case match for resilience).
+      - At least one OTHER credential with the legacy name
+        `Local GGUF (llama.cpp)` ALSO exists (otherwise the
+        modern-name row IS the canonical row, not an orphan).
+      - The credential has 0 models linked (a row with models
+        attached is NEVER deleted — losing model links would be
+        catastrophic).
+
+    All three constraints together make a false-positive
+    functionally impossible. The base_url is intentionally NOT
+    checked — dynamic ports change every launch, so "unreachable"
+    is too noisy a signal here.
+    """
+    legacy_name = "local gguf (llama.cpp)"
+    modern_name = "llama.cpp (local)"
+
+    legacy_exists = any(
+        (c.get("name") or "").lower() == legacy_name for c in existing_creds
+    )
+    if not legacy_exists:
+        # No legacy row → the modern-name row IS the canonical one;
+        # don't touch it.
+        return
+
+    for cred in existing_creds:
+        if (cred.get("name") or "").lower() != modern_name:
+            continue
+        cred_id = cred.get("id")
+        if not cred_id:
+            continue
+        # Count linked models. The /api/models endpoint returns
+        # each model's credential field; filter to this cred id.
+        try:
+            r = client.get("/api/models")
+            r.raise_for_status()
+            linked = [
+                m for m in r.json()
+                if (m.get("credential") or "") == cred_id
+            ]
+        except Exception as exc:
+            log.warning(
+                "v0.7.208 orphan-prune: could not fetch /api/models "
+                "(skipping cred=%s): %s", cred_id, exc,
+            )
+            continue
+        if linked:
+            log.info(
+                "v0.7.208 orphan-prune: cred=%s name=%r has %d "
+                "linked models; KEEPING (not an orphan).",
+                cred_id, modern_name, len(linked),
+            )
+            continue
+        # Three constraints met — safe to delete.
+        try:
+            d = client.delete(f"/api/credentials/{cred_id}")
+            if d.status_code in (200, 204):
+                log.info(
+                    "v0.7.208 orphan-prune: deleted orphan cred=%s "
+                    "name=%r (0 linked models, legacy "
+                    "`%s` row also present)",
+                    cred_id, modern_name, legacy_name,
+                )
+            else:
+                log.warning(
+                    "v0.7.208 orphan-prune: DELETE for cred=%s "
+                    "returned HTTP %d (leaving in place)",
+                    cred_id, d.status_code,
+                )
+        except Exception as exc:
+            log.warning(
+                "v0.7.208 orphan-prune: DELETE for cred=%s failed: %s",
+                cred_id, exc,
+            )
+
+
 def auto_register(
     api_base_url: str,
     cfg: Config,
@@ -207,14 +300,31 @@ def _do_register(
     """Main registration logic, runs inside an httpx.Client context."""
     # --- 1. Fetch existing credentials and models --------------------------
     existing_cred_names: set[str] = set()
+    existing_creds_full: list[dict] = []
     try:
         r = client.get("/api/credentials")
         r.raise_for_status()
         for cred in r.json():
             existing_cred_names.add(cred.get("name", "").lower())
+            existing_creds_full.append(cred)
     except Exception as exc:
         log.warning("Could not fetch existing credentials: %s — skipping auto-register", exc)
         return
+
+    # v0.7.208 — Orphan-credential cleanup. v0.7.194 fixed the legacy-
+    # alias bug going forward (don't create a duplicate "llama.cpp
+    # (local)" when "Local GGUF (llama.cpp)" already exists), but
+    # pre-v0.7.194 installs still carry a leftover ORPHAN "llama.cpp
+    # (local)" credential pointing at a long-dead dynamic port (e.g.
+    # 51107 from a launch days ago) with 0 models linked. Every
+    # credential listing shows the user a permanently-broken row
+    # they can't make sense of. Detect + DELETE on launcher startup.
+    #
+    # Safety: only delete credentials matching the v0.6.x→v0.7.194
+    # rename pair (`llama.cpp (local)`) AND whose URL is unreachable
+    # AND whose linked-model count is 0. All three constraints
+    # together make a false-positive functionally impossible.
+    _prune_orphan_legacy_credentials(client, existing_creds_full)
 
     existing_model_keys: set[tuple[str, str]] = set()  # (name.lower, type.lower)
     try:
