@@ -18,7 +18,61 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.207 (in flight)
+## Unreleased — v0.7.36 → v0.7.208 (in flight)
+
+- **v0.7.208** 🐛 **Two fixes from end-to-end source-upload +
+  local-model audit:** the `embed` Form default + orphan
+  credential pruning.
+
+  1. **`/api/sources` upload form `embed` default flipped from
+     `"false"` to `"true"`.** Surface: I verified end-to-end the
+     local embed server is healthy (probed `/v1/embeddings`
+     directly — returns valid 768-dim vectors). I uploaded an
+     800-word text via curl; the source completed with
+     `embedded=false`, `embedded_chunks=0`, status="completed".
+     Looked successful but was invisible to vector search. Worker
+     log confirmed: `process_source_command: Embed: False —
+     Created 0 insights, embedding skipped`.
+
+     Root cause: backend `Form("false")` default on the upload
+     endpoint. Meanwhile the frontend's `AddSourceDialog.tsx:136`
+     resolves `embed = settings?.default_embedding_option ===
+     'always' || === 'ask'` — both of which are TRUE for the
+     user-facing default (`"ask"`). So through the UI, every
+     upload embeds; through curl / scripts, nothing embedded.
+     Surprising asymmetry; flipped the backend default to match
+     user expectation. Explicit `-F embed=false` still honoured
+     for the rare ingest-only flow.
+
+  2. **Orphan `llama.cpp (local)` credential pruning at launcher
+     startup.** v0.7.194 stopped the duplicate-credential
+     creation going forward, but pre-existing installs still
+     carried an orphan row (modern name with 0 models linked,
+     plus the legacy `Local GGUF (llama.cpp)` row with all the
+     model links). User saw a permanently-broken credential
+     they couldn't make sense of in Settings → API Keys.
+
+     Added `_prune_orphan_legacy_credentials` to `auto_register.
+     _do_register`, runs right after the initial credentials
+     fetch. Conservatively safe — requires ALL THREE constraints:
+       (a) candidate name matches `llama.cpp (local)`
+       (b) legacy `Local GGUF (llama.cpp)` row ALSO exists
+       (c) candidate has ZERO models linked
+
+     Logging is verbose (each KEEP / DELETE / SKIP is an INFO
+     line in launcher.log) so an operator can audit what got
+     pruned in any given launch. The orphan is gone on first
+     launch with v0.7.208; subsequent launches are no-ops.
+
+  Tests at `tests/test_v0_7_208_orphan_prune_and_embed_default.py`:
+  5 new —
+    - AST pin on the `embed: str = Form("true")` change.
+    - Behavioural runtime tests on the prune helper with a mocked
+      httpx client: deletes-when-safe, skips-without-legacy,
+      skips-with-linked-models, skips-on-fetch-failure.
+
+  Backend tests: **1067/1067** (was 1062; +5 new).
+  Desktop tests: **253/253**.
 
 - **v0.7.207** 🐛 **Local-model health audit: three credentials
   failing despite their processes being alive.** User asked to
