@@ -517,9 +517,28 @@ async def test_credential(credential_id: str) -> dict:
         elif "not found" in error_msg.lower() and "model" in error_msg.lower():
             return {"provider": provider, "success": True, "message": "API key valid (test model not available)"}
         else:
-            logger.debug(f"Test connection error for credential {credential_id}: {e}")
-            truncated = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-            return {"provider": provider, "success": False, "message": f"Error: {truncated}"}
+            # v0.7.201 — was `f"Error: {truncated}"` with str(e)[:100]
+            # returned to the API client. Same info-leak class as
+            # v0.7.177/184 for podcast_service / chat stream. Esperanto
+            # / SDK exceptions can embed endpoint URLs, partial keys,
+            # SurrealDB driver frames. Log the full exception; return
+            # a generic "test failed" string with the provider name so
+            # the user has actionable context without leaking internals.
+            logger.warning(
+                "test_credential: connection-test failed for credential "
+                "%s (provider=%s): %s",
+                credential_id,
+                provider,
+                e,
+            )
+            return {
+                "provider": provider,
+                "success": False,
+                "message": (
+                    f"Connection test failed. Check that the {provider} "
+                    "endpoint is reachable and the credentials are valid."
+                ),
+            }
 
 
 async def discover_with_config(provider: str, config: dict) -> list[dict]:

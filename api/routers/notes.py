@@ -43,7 +43,7 @@ async def get_notes(
 
             notebook = await Notebook.get(notebook_id)
             if not notebook:
-                raise HTTPException(status_code=404, detail="Notebook not found")
+                raise NotFoundError("Notebook not found")
             notes = await notebook.get_notes()
         else:
             # v0.7.159 — paginated; see Query() defaults above.
@@ -63,6 +63,13 @@ async def get_notes(
             for note in notes
         ]
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.201 — bubble typed exceptions to the global classifier
+        # (404 with the user-friendly message). Was caught by
+        # `except Exception` below and collapsed to 500 "Error
+        # fetching notes" after v0.7.201 swapped the bare 404
+        # HTTPException for NotFoundError.
         raise
     except Exception as e:
         logger.error(f"Error fetching notes: {str(e)}")
@@ -155,7 +162,7 @@ async def create_note(note_data: NoteCreate):
 
             notebook = await Notebook.get(note_data.notebook_id)
             if not notebook:
-                raise HTTPException(status_code=404, detail="Notebook not found")
+                raise NotFoundError("Notebook not found")
             await new_note.add_to_notebook(note_data.notebook_id)
 
         return NoteResponse(
@@ -170,6 +177,11 @@ async def create_note(note_data: NoteCreate):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        # v0.7.201 — same bubble-pattern fix as list_notes; the
+        # notebook_id-not-found case now raises NotFoundError instead
+        # of HTTPException(404).
+        raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -183,7 +195,7 @@ async def get_note(note_id: str):
     try:
         note = await Note.get(note_id)
         if not note:
-            raise HTTPException(status_code=404, detail="Note not found")
+            raise NotFoundError("Note not found")
 
         return NoteResponse(
             id=note.id or "",
@@ -215,7 +227,7 @@ async def update_note(note_id: str, note_update: NoteUpdate):
     try:
         note = await Note.get(note_id)
         if not note:
-            raise HTTPException(status_code=404, detail="Note not found")
+            raise NotFoundError("Note not found")
 
         # Update only provided fields
         if note_update.title is not None:
@@ -261,7 +273,7 @@ async def delete_note(note_id: str):
     try:
         note = await Note.get(note_id)
         if not note:
-            raise HTTPException(status_code=404, detail="Note not found")
+            raise NotFoundError("Note not found")
 
         await note.delete()
 

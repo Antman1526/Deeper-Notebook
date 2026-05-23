@@ -847,7 +847,13 @@ async def readyz():
         pending_migrations = await manager.needs_migration()
         migrations_ok = not pending_migrations
     except Exception as exc:
-        migrations_error = str(exc)
+        # v0.7.201 — was `str(exc)` returned inside the /readyz JSON
+        # body. Migration exceptions can embed SurrealDB driver
+        # frames, file paths from .surql migration files, and DB
+        # DSN fragments. Log the full exception for operators; return
+        # a generic placeholder to the probe response so the body is
+        # safe to expose on a public health endpoint.
+        migrations_error = "migrations check failed"
         logger.warning("readyz: migration check failed: {}", exc)
 
     ready = db_status == "online" and migrations_ok
