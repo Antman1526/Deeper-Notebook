@@ -18,7 +18,83 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.196 (in flight)
+## Unreleased — v0.7.36 → v0.7.197 (in flight)
+
+- **v0.7.197** 🐛 **Local-model orchestration deferred items +
+  touch-device sidebar fix.** Working through the v0.7.196 deferred
+  list, filtered to items that actually fix the application or
+  improve performance.
+
+  Backend (4 items from the background "Local model audit"):
+
+  1. **`mcp` + `fastmcp` pinned in `desktop/requirements.txt`** —
+     same class as v0.7.195. The `openchronicle_shim.py` does
+     `from mcp.client.session import ClientSession` /
+     `from mcp.client.streamable_http import streamablehttp_client`,
+     but `mcp` was only present in the lockfile as a transitive of
+     `fastmcp`, which was itself NOT in `requirements.txt`. Next
+     lockfile regen would drop both, the openchronicle bridge
+     would crash silently at startup (same DEVNULL trap as v0.7.195).
+
+  2. **`embed_port` / `whisper_port` / `piper_port` stash now
+     conditional on the spawn actually producing a server.** Before:
+     `_spawn_llamacpp_embed` early-returned when `nomic_embed_path`
+     was None / missing, BUT `self.embed_port = embed_port` still
+     ran unconditionally. auto_register then registered `Local
+     Embeddings (llama.cpp)` against a port nothing was listening
+     on, and `_spawn_memory_retriever` started the memory child
+     with `--embed-url http://127.0.0.1:<dead_port>/v1`. First
+     source upload hung because the embed call to the dead port
+     silently timed out. Same trap for whisper / piper.
+
+     Fix: mirror the spawn function's preconditions in the stash
+     step. If the prerequisite (model file present, voices present)
+     is missing, stash 0 instead of the allocated port.
+
+  3. **Embedding GGUFs routed to the embed credential, not chat.**
+     `register_llamacpp_models` iterated every GGUF in `model_dir`,
+     classified each as `language` or `embedding` via
+     `_is_embedding_gguf(name)`, and then linked ALL of them to
+     `cred_id` (the chat credential pointing at `chat_llm_port`).
+     The chat llama-server does not serve `/v1/embeddings` for the
+     embed model file; selecting it as the embedding model from
+     the UI returned 404 at runtime.
+
+     Fix: when an embedding GGUF is detected AND the `Local
+     Embeddings (llama.cpp)` credential exists in
+     `existing_cred_names`, look up its id via `GET /api/credentials`
+     and link the model to THAT credential. Fall back to the chat
+     credential when no embed credential exists (clean install, no
+     nomic file) so the model still appears in dropdowns with a
+     known-bad URL the user can fix in the UI.
+
+  4. **`_spawn_openchronicle_bridge` honours `OPENCHRONICLE_MCP_URL`.**
+     The shim's argparse default already read the env var (the
+     P1-MED-10 audit fix), but `launcher.py:802` hardcoded
+     `--mcp-url http://127.0.0.1:8742/mcp` on every spawn — which
+     OVERRODE the shim's default. Users on a non-default MCP port
+     (the documented use case) couldn't reach their server.
+
+  Frontend (1 MED item from the v0.7.196 frontend audit):
+
+  5. **Touch-device action menus / sidebar expand button now
+     visible.** Four sites used `opacity-0 group-hover:opacity-100
+     transition-opacity` to hide action chrome until hover. On
+     touch devices (iPad, touch laptops, mobile) `:hover` never
+     fires, so the buttons were permanently invisible and the
+     features unreachable. Added `[@media(hover:none)]:opacity-100`
+     to AppSidebar (collapsed-sidebar expand), NotebookCard,
+     NotesColumn, SourceCard (action menus).
+
+  Tests at `tests/test_v0_7_197_local_model_orchestration.py`:
+  5 new — pins on requirements.txt mcp+fastmcp entries, AST pins
+  on launcher.py's `embed_alive`/`whisper_alive`/`piper_alive`
+  guards, AST + behavioural pin on the embed-credential routing in
+  llamacpp.py, AST pin on the MCP env-var read.
+
+  Backend tests: **1017/1017** (was 1012; +5 new).
+  Desktop tests: **253/253**.
+  Frontend tests: **72/72**.
 
 - **v0.7.196** 🐛 **Frontend visual audit — error-message leaks +
   i18n-key-as-text bug across 6 hook files.** Discovered while running

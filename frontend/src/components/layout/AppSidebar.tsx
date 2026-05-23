@@ -150,11 +150,19 @@ export function AppSidebar() {
                 height={32}
                 className="transition-opacity group-hover:opacity-0"
               />
+              {/* v0.7.197 — `[@media(hover:none)]:opacity-100` makes
+                  the collapsed-sidebar expand button visible on touch
+                  devices (iPad, touch laptops). The `opacity-0 group-
+                  hover:opacity-100` pair only works on devices that
+                  fire a real `hover` — on a touch screen the button
+                  was permanently invisible, so users had no way to
+                  expand the sidebar. Repeated across NotebookCard,
+                  NotesColumn, SourceCard (same hover-only trap). */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={toggleCollapse}
-                className="absolute text-sidebar-foreground hover:bg-sidebar-accent opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute text-sidebar-foreground hover:bg-sidebar-accent opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
               >
                 <Menu className="h-4 w-4" />
               </Button>

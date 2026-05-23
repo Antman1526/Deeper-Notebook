@@ -341,10 +341,37 @@ class Supervisor:
         self._try_spawn("supervisor.whisper", self._spawn_whisper, whisper_port)
         self._try_spawn("supervisor.piper", self._spawn_piper, piper_port)
 
-        # Stash ports for auto_register to use.
-        self.embed_port = embed_port
-        self.whisper_port = whisper_port
-        self.piper_port = piper_port
+        # v0.7.197 — Stash ports for auto_register, BUT ONLY if the
+        # corresponding spawn actually produced a server.
+        #
+        # Before: we unconditionally stored the allocated port even
+        # when `_spawn_*` early-returned (no nomic embed file, no
+        # whisper model, no piper voices). auto_register then registered
+        # credentials with `base_url=http://127.0.0.1:<unused_port>/v1`,
+        # and the memory_retriever child was started with
+        # `--embed-url http://127.0.0.1:<dead_port>/v1` — so the user
+        # saw a "Local Embeddings (llama.cpp)" credential in the UI
+        # that failed every test, and the first source upload hung
+        # because the embed call to the dead port silently timed out.
+        #
+        # Mirror the early-return conditions in _spawn_llamacpp_embed /
+        # _spawn_whisper / _spawn_piper. If the prerequisite is
+        # missing, store 0 so downstream code (auto_register,
+        # _spawn_memory_retriever) sees "no embed server" instead of
+        # "embed server on a port that nothing is listening on".
+        embed_alive = (
+            self.nomic_embed_path is not None and self.nomic_embed_path.exists()
+        )
+        whisper_alive = self.whisper_model_path is not None
+        # _spawn_piper additionally requires at least one voice path to
+        # actually exist on disk (the dict is filtered there too); keep
+        # that check in sync to avoid the same false-port-stash trap.
+        piper_alive = bool(self.piper_voices) and any(
+            p.exists() for p in self.piper_voices.values()
+        )
+        self.embed_port = embed_port if embed_alive else 0
+        self.whisper_port = whisper_port if whisper_alive else 0
+        self.piper_port = piper_port if piper_alive else 0
 
         # v0.4 additions — order matters: chat LLM must be up before the
         # memory retriever boots, because the retriever instantiates
@@ -796,9 +823,22 @@ class Supervisor:
     def _spawn_openchronicle_bridge(self, port: int) -> None:
         if not self.openchronicle_available:
             return
+        # v0.7.197 — Honour OPENCHRONICLE_MCP_URL the same way the shim's
+        # argparse default does. Before, the launcher hardcoded
+        # `--mcp-url http://127.0.0.1:8742/mcp` on every spawn —
+        # which OVERRODE the env-var default in
+        # `openchronicle_shim.py`'s argparse. Users running
+        # OpenChronicle on a non-default port (the documented use
+        # case) couldn't reach it from ONP. The P1-MED-10 audit fix
+        # in the shim was dead code as long as this launcher line
+        # forced the default URL. Read the env now; fall back to the
+        # same default the shim would have used.
+        mcp_url = os.environ.get(
+            "OPENCHRONICLE_MCP_URL", "http://127.0.0.1:8742/mcp"
+        )
         args = [
             str(self.venv_python), "-m", "desktop_shims.openchronicle_shim",
             "--host", "127.0.0.1", "--port", str(port),
-            "--mcp-url", "http://127.0.0.1:8742/mcp",
+            "--mcp-url", mcp_url,
         ]
         self._spawn(args, cwd=self.upstream_root, name="openchronicle")
