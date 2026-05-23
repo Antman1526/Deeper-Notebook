@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.204 (in flight)
+## Unreleased — v0.7.36 → v0.7.205 (in flight)
+
+- **v0.7.205** 🐛🔥 **CRITICAL: `PORT` env-var leak caused the
+  frontend window to show the API's "Not Found" JSON instead of
+  the UI.** Discovered while testing v0.7.204 — the .app opened,
+  pywebview's window rendered `{"detail":"Not Found"}` on a dark
+  background instead of the Next.js dashboard.
+
+  **Root cause:** `desktop/launcher.py:242` set `"PORT": str(
+  frontend_port)` in `self.session_env`, which every spawned
+  child inherits via `_spawn(env=self.session_env)`. uvicorn —
+  used by `llama_cpp.server` (the embed/chat servers) — reads
+  `PORT` from env via pydantic_settings and treats it as
+  AUTHORITATIVE, overriding the `--port <X>` CLI arg.
+
+  Concrete failure mode from the user's launch:
+    - api_port=60432, frontend_port=60433, embed_port=60434
+    - API spawned on 60432 ✓ (uvicorn CLI args take precedence
+      via the `__main__` argparse path used here)
+    - Next.js (`node server.js`) bound `*:60433` ✓
+    - `llama_cpp.server --port 60434` was spawned but bound
+      `127.0.0.1:60433` because `PORT=60433` from inherited env
+      overrode the `--port 60434` CLI arg in pydantic_settings'
+      priority order.
+    - macOS routes 127.0.0.1 connections to the most-specific
+      listener, so `http://127.0.0.1:60433/` (the URL the
+      webview opened) was served by the embed server's FastAPI
+      root handler — returning `{"detail":"Not Found"}` instead
+      of the Next.js UI.
+
+  **Fix:**
+    1. Remove `"PORT": str(frontend_port)` from `session_env`.
+    2. Add `extra_env: dict[str, str] | None = None` kwarg to
+       `_spawn()`; if passed, merge on top of `session_env` for
+       that child only.
+    3. `_spawn_next` now passes `extra_env={"PORT": str(port)}`
+       so the env override scope is narrowed to the Next.js
+       child.
+
+  Diagnosis evidence preserved:
+    `ps -p 69622 -o command=` showed
+    `python -m llama_cpp.server ... --port 60434`
+    but `lsof -iTCP -sTCP:LISTEN` showed PID 69622 listening on
+    `127.0.0.1:60433`. The discrepancy is the entire signature
+    of the bug.
+
+  Tests at `tests/test_v0_7_205_port_env_leak.py`: 3 new — AST
+  pins on the absence of `PORT` in session_env, the new
+  `extra_env` parameter shape on `_spawn`, and the explicit
+  `extra_env={"PORT": str(port)}` in `_spawn_next`.
+
+  Backend tests: **1052/1052** (was 1049; +3 new).
+  Desktop tests: **253/253**.
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.204** 🐛 **Cosmetic / low-priority closeout.** Five
   small fixes consolidating the items the user explicitly
