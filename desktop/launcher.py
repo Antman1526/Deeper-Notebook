@@ -815,6 +815,71 @@ class Supervisor:
         ] + voice_args
         self._spawn(args, cwd=self.upstream_root, name="piper")
 
+    @staticmethod
+    def _detect_gguf_context_length(
+        gguf_path: Path, *, fallback: int = 32768,
+    ) -> int:
+        """v0.7.206 — Read a GGUF file's `<arch>.context_length` metadata
+        without loading the whole model into memory.
+
+        Why this exists: previously the launcher capped `n_ctx` at a
+        fixed 16384 default regardless of model capability. A user
+        running Hermes-3 (131k native) hit `400 context_length_exceeded`
+        after selecting 2-3 sources for a chat (21k tokens combined).
+        Auto-detection means the cap matches what the model file
+        actually advertises, capped by `ONP_CHAT_LLM_CTX_MAX` for RAM
+        safety.
+
+        Returns `fallback` on any error — the launcher must never
+        block startup on a metadata parse failure (could be a corrupt
+        file, an exotic quant the parser doesn't recognise, etc.).
+        """
+        try:
+            from gguf import GGUFReader  # type: ignore[import-not-found]
+        except Exception as exc:
+            log.debug(
+                "gguf library not available for metadata probe; "
+                "using fallback %d: %s",
+                fallback, exc,
+            )
+            return fallback
+
+        try:
+            reader = GGUFReader(str(gguf_path))
+            # Architecture is stored in `general.architecture`; the
+            # per-arch metadata key is `<arch>.context_length`.
+            arch_field = reader.get_field("general.architecture")
+            if arch_field is None:
+                return fallback
+            # GGUFReader exposes string fields as a list of raw bytes
+            # arrays per part; coerce defensively.
+            arch_parts = getattr(arch_field, "parts", None) or []
+            arch_data = getattr(arch_field, "data", None) or []
+            if arch_parts and arch_data:
+                arch_raw = arch_parts[arch_data[0]]
+                arch = bytes(arch_raw).decode("utf-8", errors="ignore").strip()
+            else:
+                return fallback
+
+            ctx_field = reader.get_field(f"{arch}.context_length")
+            if ctx_field is None:
+                return fallback
+            ctx_data = getattr(ctx_field, "data", None) or []
+            ctx_parts = getattr(ctx_field, "parts", None) or []
+            if ctx_parts and ctx_data:
+                val = ctx_parts[ctx_data[0]]
+                # context_length is a uint32/uint64; coerce to int.
+                ctx_int = int(val[0]) if hasattr(val, "__len__") else int(val)
+                if ctx_int >= 512:
+                    return ctx_int
+        except Exception as exc:
+            log.debug(
+                "Failed to read GGUF context_length from %s: %s; "
+                "using fallback %d",
+                gguf_path, exc, fallback,
+            )
+        return fallback
+
     def _spawn_llamacpp_chat(self, port: int) -> None:
         """Second llama-server, this one serving a chat-capable GGUF.
 
@@ -851,31 +916,69 @@ class Supervisor:
         # capped EVERY chat session at 8k tokens regardless of the model's
         # actual capability. Modern local models commonly support much more:
         # Qwen 2.5/3.x at 32k-131k, Hermes-3 at 131k, Mistral-7B at 32k,
-        # Llama-3.2 at 131k. The 8k cap also undermined v0.7.4's Studio
-        # fix — Studio's combined-context cap is now ~15k tokens, more than
-        # the server itself accepted.
+        # Llama-3.2 at 131k.
         #
-        # Default 16384: safe for any modern local model (covers gemma-2-9b
-        # and codellama-13b's 8k/16k while leaving comfortable headroom
-        # for Hermes/Qwen/Mistral/Llama larger contexts via env override).
-        # Constrained-hardware users with low VRAM can lower it via
-        # ONP_CHAT_LLM_CTX; capable users with 32k+ models can raise it.
-        n_ctx = os.environ.get("ONP_CHAT_LLM_CTX", "16384")
-        # Defensive: validate it's a positive int. Garbage falls back to
-        # the safe default rather than passing through to llama-cpp.
+        # v0.7.206 — Two changes here, both motivated by a user-reported
+        # 400 "context_length_exceeded" failure on local chat:
+        #
+        #   1. **Bump default 16384 → 32768.** The previous 16k default was
+        #      set when gemma-2-9b / codellama-13b were the common local
+        #      models (8k/16k native contexts). The actual install base now
+        #      runs Hermes-3 / Qwen2.5 / Llama-3.2 — all of which natively
+        #      support 32k–131k. The 16k cap was the SERVER side; a user
+        #      chatting with 2-3 selected sources can easily exceed 21k
+        #      tokens combined (system prompt + history + sources). 32k
+        #      gives 11k of headroom over the v0.7.205 failure case while
+        #      only doubling KV-cache RAM (~2 GB → ~4 GB for an 8B model).
+        #
+        #   2. **Auto-detect from GGUF metadata** when ONP_CHAT_LLM_CTX is
+        #      not explicitly set. The GGUF file's `llama.context_length`
+        #      metadata field tells us the model's native max. Cap that at
+        #      `ONP_CHAT_LLM_CTX_MAX` (default 32768) to avoid runaway RAM
+        #      on models that advertise 131k. Users who explicitly set
+        #      ONP_CHAT_LLM_CTX retain full control.
+        #
+        # Constrained-hardware users with low VRAM can lower via
+        # `ONP_CHAT_LLM_CTX=8192`; users on a Mac Studio with 64GB+ can
+        # raise via `ONP_CHAT_LLM_CTX_MAX=65536` (or set
+        # `ONP_CHAT_LLM_CTX=65536` to skip auto-detection entirely).
+        env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")
         try:
-            n_ctx_int = int(n_ctx)
-            if n_ctx_int < 512:
-                log.warning(
-                    "ONP_CHAT_LLM_CTX=%s too low (<512); using 16384 instead",
-                    n_ctx,
-                )
-                n_ctx = "16384"
+            ctx_max = int(os.environ.get("ONP_CHAT_LLM_CTX_MAX", "32768"))
+            if ctx_max < 512:
+                ctx_max = 32768
         except ValueError:
-            log.warning(
-                "ONP_CHAT_LLM_CTX=%r is not an int; using 16384", n_ctx,
+            ctx_max = 32768
+
+        if env_n_ctx:
+            # Explicit user override — validate but otherwise trust.
+            try:
+                n_ctx_int = int(env_n_ctx)
+                if n_ctx_int < 512:
+                    log.warning(
+                        "ONP_CHAT_LLM_CTX=%s too low (<512); using %d instead",
+                        env_n_ctx, ctx_max,
+                    )
+                    n_ctx_int = ctx_max
+            except ValueError:
+                log.warning(
+                    "ONP_CHAT_LLM_CTX=%r is not an int; using %d",
+                    env_n_ctx, ctx_max,
+                )
+                n_ctx_int = ctx_max
+        else:
+            # No explicit override — try to read the GGUF's native
+            # context length and use min(native, ctx_max).
+            n_ctx_int = self._detect_gguf_context_length(
+                self.chat_llm_path, fallback=ctx_max
             )
-            n_ctx = "16384"
+            n_ctx_int = min(n_ctx_int, ctx_max)
+            log.info(
+                "llamacpp_chat: n_ctx=%d (auto-detected, capped at "
+                "ONP_CHAT_LLM_CTX_MAX=%d). Override with ONP_CHAT_LLM_CTX.",
+                n_ctx_int, ctx_max,
+            )
+        n_ctx = str(n_ctx_int)
 
         args = [
             str(self.venv_python), "-m", "llama_cpp.server",

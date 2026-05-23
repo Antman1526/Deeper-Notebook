@@ -18,7 +18,57 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.205 (in flight)
+## Unreleased — v0.7.36 → v0.7.206 (in flight)
+
+- **v0.7.206** 🐛 **Local chat failing — n_ctx default bumped +
+  GGUF context-length auto-detection.** User report: "Local
+  models are failing in the chat." Investigated llamacpp_chat.log
+  and api.log; the chat server returned `400` with:
+  `"This model's maximum context length is 16384 tokens. However,
+  you requested 21016 tokens..."`
+
+  **Root cause:** the launcher hardcoded `n_ctx=16384` for the
+  llama_cpp chat server. That default was set when gemma-2-9b /
+  codellama-13b were common (8k/16k native contexts), but the
+  current install base runs Hermes-3 (131k native), Qwen2.5
+  (32k-128k), Llama-3.2 (131k) — all artificially capped at 16k.
+  A user with 2-3 selected sources easily exceeded 21k tokens
+  (system prompt + history + sources), tripping the cap.
+
+  **Fix:**
+    1. **Default `n_ctx` bumped 16384 → 32768.** Doubles KV-cache
+       RAM for an 8B model (~2 GB → ~4 GB) — acceptable trade-off
+       on any local-AI-capable machine. Gives 11k of headroom
+       over the v0.7.205-era failure case.
+    2. **Auto-detect from GGUF metadata.** When `ONP_CHAT_LLM_CTX`
+       is NOT explicitly set, the launcher now reads the GGUF
+       file's `<arch>.context_length` field (e.g.
+       `llama.context_length=131072` for Hermes-3) via the
+       `gguf` Python library (a transitive dep of
+       llama-cpp-python). Capped at `ONP_CHAT_LLM_CTX_MAX`
+       (default 32768) for RAM safety. Capable users with 64GB+
+       Mac Studios can set `ONP_CHAT_LLM_CTX_MAX=65536` or
+       directly `ONP_CHAT_LLM_CTX=65536` to use more of the
+       model's native window.
+    3. **Defensive failure mode.** `_detect_gguf_context_length`
+       returns the fallback on any error (missing `gguf`
+       library, corrupt file, unrecognised quant); the
+       launcher MUST NOT block startup on metadata-parse
+       failures.
+
+  Test housekeeping: v0.7.8 launcher tests pinned the old 16384
+  default. Updated to pin the new 32768 default with comments
+  documenting the v0.7.206 rationale.
+
+  Tests at `tests/test_v0_7_206_local_chat_context_window.py`:
+  5 new — AST pin on the 32768 default, AST + runtime pin on
+  the `_detect_gguf_context_length` helper existence + the
+  "never raises" contract (missing `gguf` library, corrupt
+  file), AST pin on the explicit-env-var override branch.
+
+  Backend tests: **1057/1057** (was 1052; +5 new).
+  Desktop tests: **253/253** (3 v0.7.8 launcher tests updated
+  for the new default).
 
 - **v0.7.205** 🐛🔥 **CRITICAL: `PORT` env-var leak caused the
   frontend window to show the API's "Not Found" JSON instead of
