@@ -113,6 +113,22 @@ export default function SearchPage() {
     ask.sendAsk(askQuestion, models)
   }, [askQuestion, modelDefaults, customModels, ask])
 
+  // v0.7.204 — stash the latest handlers in refs so the auto-trigger
+  // effect doesn't need them in its deps. Previously the effect
+  // listed `handleSearch` / `handleAsk` (and via them: searchQuery,
+  // searchType, searchSources, searchNotes, askQuestion,
+  // modelDefaults, customModels) — each of those changing as the
+  // user typed re-ran the effect. The `hasAutoTriggeredRef` guard
+  // saved correctness but the effect was deeply tangled with
+  // half the page state. Narrow the deps to JUST the URL-driven
+  // trigger inputs.
+  const handleSearchRef = useRef(handleSearch)
+  const handleAskRef = useRef(handleAsk)
+  useEffect(() => {
+    handleSearchRef.current = handleSearch
+    handleAskRef.current = handleAsk
+  }, [handleSearch, handleAsk])
+
   // Auto-trigger search/ask when arriving with URL params
   useEffect(() => {
     // Skip if already triggered or no query
@@ -122,13 +138,17 @@ export default function SearchPage() {
     if (urlMode === 'ask' && modelsLoading) return
 
     if (urlMode === 'search') {
-      handleSearch()
+      handleSearchRef.current()
       hasAutoTriggeredRef.current = true
     } else if (urlMode === 'ask' && modelDefaults?.default_chat_model) {
-      handleAsk()
+      handleAskRef.current()
       hasAutoTriggeredRef.current = true
     }
-  }, [urlQuery, urlMode, modelsLoading, modelDefaults, handleSearch, handleAsk])
+    // v0.7.204 — intentionally narrow deps. handleSearch/handleAsk
+    // accessed via refs above so they're always current without
+    // re-running the trigger logic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuery, urlMode, modelsLoading, modelDefaults?.default_chat_model])
 
   // Handle URL param changes while on page (e.g., from command palette again)
   useEffect(() => {

@@ -121,7 +121,29 @@ async def create_note(note_data: NoteCreate):
                     note_data.content.strip().splitlines()[0]
                     if note_data.content else "Untitled"
                 )
-                title = first_line[:80] or "Untitled Note"
+                # v0.7.204 — was `first_line[:80]` (bare-char slice).
+                # On CJK content the first 80 chars can be 240+ bytes,
+                # and on a string containing a multi-codepoint
+                # grapheme (an emoji ZWJ sequence, a Hangul jamo
+                # cluster, a combining-mark sequence) the [:80] could
+                # land mid-grapheme and render as a broken character
+                # in the sidebar title. The actual sidebar column has
+                # plenty of room; the [:80] was a safety cap, not a
+                # width cap. Make it tunable via env (operators with
+                # CJK-heavy content can raise it) and clamp to a sane
+                # range so a misconfigured value can't break note
+                # creation entirely.
+                import os
+                _max_title_len_raw = os.environ.get(
+                    "ONP_NOTE_TITLE_FALLBACK_LEN", "80"
+                )
+                try:
+                    _max_title_len = max(
+                        20, min(int(_max_title_len_raw), 500)
+                    )
+                except ValueError:
+                    _max_title_len = 80
+                title = first_line[:_max_title_len] or "Untitled Note"
             # v0.7.81 — same dict-vs-Pydantic dual-path guard we apply to
             # other LangGraph ainvoke results (chat.py v0.7.52,
             # search.py v0.7.55, source_chat.py v0.7.56,

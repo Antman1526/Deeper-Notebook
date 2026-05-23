@@ -18,7 +18,84 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.203 (in flight)
+## Unreleased — v0.7.36 → v0.7.204 (in flight)
+
+- **v0.7.204** 🐛 **Cosmetic / low-priority closeout.** Five
+  small fixes consolidating the items the user explicitly
+  flagged as "remaining but not blocking" — pulling them all
+  into one batch so the deferred list is finally empty.
+
+  1. **Backend — `find_free_ports` socket-release race
+     mitigation.** Added `SO_REUSEADDR=1` on probe sockets so a
+     child binding the same port after the probe socket closes
+     isn't blocked by a stray TIME_WAIT on the host. Also added
+     a bounded re-probe loop (`_MAX_REPROBE_ATTEMPTS = 5`) that
+     re-runs allocation if any OS allocator quirk returns
+     duplicates within a single batch. Doesn't eliminate the
+     race (a true fix requires socket-FD handoff via subprocess,
+     which would invade every spawn helper) but defeats the
+     common manifestations.
+
+  2. **Frontend — `search/page.tsx` auto-trigger useEffect
+     deps narrowed via ref pattern.** `handleSearch` /
+     `handleAsk` are recreated each render with deps
+     `searchQuery`, `searchType`, `askQuestion`, `modelDefaults`,
+     `customModels` — so the auto-trigger effect's dep array
+     listed them as well and re-ran every time the user typed.
+     Correctness was preserved by the `hasAutoTriggeredRef`
+     guard, but the brittleness was real. Stashed both
+     handlers in refs that update via a separate effect; the
+     auto-trigger effect now depends ONLY on the URL-driven
+     inputs (`urlQuery`, `urlMode`, `modelsLoading`,
+     `modelDefaults?.default_chat_model`).
+
+  3. **Backend — `podcast_service.get_episode` error
+     classification.** Was a bare `try/except Exception: raise
+     HTTPException(404, "Episode not found")` — every failure
+     (DB connection drop, mid-query timeout, decryption error)
+     became a synthetic 404 with a misleading message. An
+     operator looking at logs saw the real backend issue but
+     the API client got the same 404 it would for a stale ID,
+     so debugging took 10× longer. Restructured: a None return
+     from `PodcastEpisode.get` (the actual "not found" path)
+     raises `NotFoundError`; everything else propagates as its
+     real type and hits the global classifier with the right
+     HTTP code (500 for DB, 502 for upstream, etc.).
+
+  4. **Backend — `command_service.submit_command_job` typed-
+     exception passthrough.** Outer `except Exception: raise`
+     re-raised untyped exceptions that the FastAPI framework
+     rendered as "Internal Server Error" with no detail. Now
+     wraps untyped subclasses as `OpenNotebookError` so the
+     global classifier emits a structured 500 with a useful
+     message. Typed exceptions (`ValueError`,
+     `asyncio.TimeoutError`, `OpenNotebookError` subclasses) pass
+     through unchanged via an `isinstance` guard.
+
+  5. **Backend — `notes.py` title `[:80]` magic number
+     parameterized.** The auto-title fallback (used when the LLM
+     title-generation prompt times out) sliced `first_line[:80]`
+     — CJK content's first 80 chars can be 240+ bytes and the
+     sidebar column has plenty of room. Made it tunable via
+     `ONP_NOTE_TITLE_FALLBACK_LEN` env, clamped to 20-500 so a
+     misconfigured value can't break note creation entirely.
+     Default stays at 80 for backwards compat.
+
+  Test housekeeping: v0.7.177's regression test was pinning the
+  pre-v0.7.204 `try/except` shape in `get_episode`. Updated to
+  pin the NotFoundError raise instead, with comments documenting
+  the v0.7.204 restructure so a future contributor knows why the
+  needles changed.
+
+  Tests at `tests/test_v0_7_204_cosmetic_closeout.py`: 6 new —
+  AST pins on SO_REUSEADDR + dedupe + ref-pattern + NotFoundError
+  raise + typed-exception wrap + title len env, plus a runtime
+  smoke test on `find_free_ports(5)` returning 5 distinct
+  ephemeral ports.
+
+  Backend tests: **1049/1049** (was 1043; +6 new).
+  Frontend tests: **72/72**.
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.203** 🌐 **Studio page full i18n extraction (the big
   deferred item from v0.7.196).** ~30 user-visible strings on the
