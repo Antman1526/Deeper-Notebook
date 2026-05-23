@@ -190,7 +190,20 @@ def parse_source_form_data(
     content: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     transformations: Optional[str] = Form(None),  # JSON string of transformation IDs
-    embed: str = Form("false"),  # Accept as string, convert to bool
+    # v0.7.208 — was Form("false"). A user-visible asymmetry:
+    # the frontend's AddSourceDialog defaults `embed=true` (when
+    # `default_embedding_option` is "always" or "ask", which is
+    # the user-facing default), but the backend Form default was
+    # "false". API consumers using curl / direct scripts therefore
+    # got an UPLOAD-BUT-DON'T-EMBED behaviour even though every
+    # part of the UI assumed sources are searchable after upload.
+    # Symptom: a curl upload completed with `embedded=false`,
+    # `embedded_chunks=0`, and `status=completed` — looked
+    # successful but the source was invisible to vector search.
+    # Flip the default to "true" so the API matches user
+    # expectation; explicit `-F embed=false` still works for the
+    # rare ingest-only flow.
+    embed: str = Form("true"),  # Accept as string, convert to bool
     delete_source: str = Form("false"),  # Accept as string, convert to bool
     async_processing: str = Form("false"),  # Accept as string, convert to bool
     file: Optional[UploadFile] = File(None),
