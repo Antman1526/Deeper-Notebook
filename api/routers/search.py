@@ -195,10 +195,27 @@ async def stream_ask_response(
             # events. `on_chain_end` fires with the node's output state.
             elif etype == "on_chain_end":
                 output = event.get("data", {}).get("output")
-                if not isinstance(output, dict):
+                # v0.7.199 — LangGraph state-shape variance: a node
+                # may return either a plain dict OR a Pydantic model
+                # (depending on whether the node typed its return).
+                # Bare `isinstance(output, dict)` previously dropped
+                # all subsequent strategy/answer/final-answer SSE
+                # events when a Pydantic model came through — the
+                # user saw a blank streaming response. Mirror the
+                # pattern v0.7.55 introduced in /search/ask/simple:
+                # try dict access first, fall back to getattr.
+                if output is None:
                     continue
-                if node_name == "agent" and "strategy" in output:
-                    strategy = output["strategy"]
+
+                def _get(key: str):
+                    if isinstance(output, dict):
+                        return output.get(key)
+                    return getattr(output, key, None)
+
+                if node_name == "agent":
+                    strategy = _get("strategy")
+                    if strategy is None:
+                        continue
                     yield (
                         "data: "
                         + json.dumps({
@@ -211,18 +228,20 @@ async def stream_ask_response(
                         })
                         + "\n\n"
                     )
-                elif node_name == "provide_answer" and "answers" in output:
-                    for answer in output["answers"]:
+                elif node_name == "provide_answer":
+                    answers = _get("answers")
+                    if not answers:
+                        continue
+                    for answer in answers:
                         yield (
                             "data: "
                             + json.dumps({"type": "answer", "content": answer})
                             + "\n\n"
                         )
-                elif (
-                    node_name == "write_final_answer"
-                    and "final_answer" in output
-                ):
-                    final_answer = output["final_answer"]
+                elif node_name == "write_final_answer":
+                    final_answer = _get("final_answer")
+                    if final_answer is None:
+                        continue
                     # Terminal canonical event — fallback for clients
                     # that ignore deltas, and the final text after any
                     # post-processing (e.g. clean_thinking_content stripped

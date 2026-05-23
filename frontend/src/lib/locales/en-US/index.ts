@@ -96,6 +96,14 @@ export const enUS = {
     name: "Name",
     default: "Default",
     nameRequired: "Name is required",
+    // v0.7.199 — common form-validation messages factored out of the
+    // hardcoded English literals in the zod schemas. Other locale
+    // files will fall back to these via i18next's default-locale
+    // fallback chain until they add their own translations.
+    titleRequired: "Title is required",
+    contentRequired: "Content is required",
+    promptRequired: "Prompt is required",
+    openMenu: "Open menu",
     modelConfiguration: "Model Configuration",
     resetToDefault: "Reset to Default",
     reasoning: "Reasoning",
