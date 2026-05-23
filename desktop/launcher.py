@@ -377,7 +377,43 @@ class Supervisor:
         # memory retriever boots, because the retriever instantiates
         # mem0.Memory which validates the LLM endpoint at startup.
         self._try_spawn("supervisor.llamacpp_chat", self._spawn_llamacpp_chat, chat_llm_port)
-        self.chat_llm_port = chat_llm_port    # assigned before memory_retriever spawn
+        # v0.7.197 chat_alive mirrors _spawn_llamacpp_chat's preconditions
+        # (used immediately below for the v0.7.198 _wait_tcp gate, and
+        # below in the v0.7.197 conditional stash).
+        chat_alive = (
+            self.chat_llm_path is not None and self.chat_llm_path.exists()
+        )
+        # v0.7.198 — Wait for the chat server to actually bind its port
+        # BEFORE spawning the memory retriever. llama-cpp typically
+        # takes 10-30 s to mmap a multi-GB GGUF and warm; without this
+        # gate, mem0.Memory's startup validation hit a closed port and
+        # the memory child exited rc=1 silently (production-mode
+        # DEVNULL — same trap as v0.7.195). The user then saw "Memory
+        # (local)" → Cannot connect to server in the credentials UI
+        # even though everything was "configured correctly".
+        #
+        # Generous timeout (60 s) because a cold-cache mmap of a 16 GB
+        # GGUF on a slow SSD can legitimately take that long. `proc=`
+        # lets us short-circuit if the child crashed (binary missing,
+        # GGUF corrupt, etc.) instead of waiting the full minute.
+        # On timeout we LOG a warning and proceed — better to let the
+        # rest of the launcher come up degraded than freeze the UI.
+        if chat_alive and self._procs:
+            try:
+                _wait_tcp(
+                    "127.0.0.1",
+                    chat_llm_port,
+                    timeout=60.0,
+                    proc=self._procs[-1],
+                )
+            except (TimeoutError, RuntimeError) as exc:
+                log.warning(
+                    "v0.7.198 llamacpp_chat readiness probe failed: %s "
+                    "(memory_retriever spawn will proceed but mem0 init "
+                    "may fail)",
+                    exc,
+                )
+        self.chat_llm_port = chat_llm_port if chat_alive else 0
 
         self._try_spawn("supervisor.memory", self._spawn_memory_retriever, memory_port)
         self.memory_port = memory_port

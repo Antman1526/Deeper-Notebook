@@ -418,11 +418,15 @@ function CredentialItem({
             <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} disabled={!!credential.decryption_error} title={t('common.edit')}>
               <Edit className="h-4 w-4" />
             </Button>
+            {/* v0.7.198 — `title` is shown as a desktop tooltip but
+                ignored by most screen readers; add `aria-label` so SR
+                users hear "Delete" rather than just "button". */}
             <Button
               variant="ghost" size="sm"
               onClick={() => setDeleteOpen(true)}
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
               title={t('common.delete')}
+              aria-label={t('common.delete')}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -1009,7 +1013,7 @@ export default function ApiKeysPage() {
           {/* Encryption warning */}
           {!encryptionReady && (
             <Alert className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
-              <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
+              <ShieldAlert className="h-4 w-4 text-destructive" />
               <AlertTitle className="text-red-800 dark:text-red-200">{t('apiKeys.encryptionRequired')}</AlertTitle>
               <AlertDescription className="text-red-700 dark:text-red-300">
                 <code className="text-xs bg-red-100 dark:bg-red-900/30 px-1 py-0.5 rounded">

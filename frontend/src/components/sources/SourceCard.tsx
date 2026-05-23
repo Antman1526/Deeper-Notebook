@@ -86,7 +86,7 @@ const getStatusConfig = (t: TFunction) => ({
   },
   failed: {
     icon: AlertTriangle,
-    color: 'text-red-600',
+    color: 'text-destructive',
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',
     label: t('sources.statusFailed'),
@@ -377,7 +377,7 @@ export function SourceCard({
                   handleDelete()
                 }}
                 disabled={!onDelete}
-                className="text-red-600 focus:text-red-600"
+                className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 {t('sources.deleteSource')}
