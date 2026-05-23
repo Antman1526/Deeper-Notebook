@@ -49,6 +49,26 @@ llama-cpp-python[server]>=0.3.16,<0.4
 faster-whisper>=1.1.0,<2
 piper-tts>=1.2.0,<2
 mem0ai>=0.1.0,<2
+
+# v0.7.197 — Pin the OpenChronicle MCP-bridge dependencies. Same
+# class of bug as v0.7.195 (faster-whisper / piper-tts / mem0ai
+# were never pinned, silently shipped non-functional servers).
+# `desktop_shims/openchronicle_shim.py` does:
+#
+#     from mcp.client.session import ClientSession
+#     from mcp.client.streamable_http import streamablehttp_client
+#
+# These currently arrive in the lockfile only as transitive deps
+# of `fastmcp` (which is itself transitively pulled in by another
+# upstream package, NOT declared in requirements.txt). The lock
+# comment "via -r desktop/requirements.txt" is stale — next time
+# someone regenerates the lockfile from this file as-is, both
+# `mcp` and `fastmcp` vanish and openchronicle_shim crashes
+# silently at startup (same DEVNULL trap as v0.7.195).
+#
+# Pin them explicitly so the dependency is declared, not implied.
+mcp>=1.0,<2
+fastmcp>=3.0,<4
 httpx==0.28.1
 tomli==2.2.1; python_version < "3.11"
 pytest==8.3.4
