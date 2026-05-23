@@ -86,17 +86,22 @@ async def search_knowledge_base(search_request: SearchRequest):
             search_type=search_request.type,
         )
 
-    except InvalidInputError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except DatabaseOperationError as e:
-        logger.error(f"Database error during search: {str(e)}")
-        raise HTTPException(status_code=500, detail="Search failed")
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
         raise
-    except (NotFoundError, InvalidInputError):
-        # v0.7.183 — bubble typed exceptions to the global handlers.
+    except (NotFoundError, InvalidInputError, DatabaseOperationError):
+        # v0.7.200 — bubble ALL typed open-notebook exceptions to the
+        # global classifier middleware. Before, this function caught
+        # `InvalidInputError` and `DatabaseOperationError` here and
+        # collapsed them into HTTPException(400/500, "Search failed") —
+        # defeating the v0.7.179-183 typed-exception sweep that taught
+        # `main.py` to render user-friendly messages from
+        # NotFoundError/InvalidInputError/AuthenticationError/etc.
+        # The global handler (api/main.py) classifies
+        # DatabaseOperationError into a 500 with a descriptive message,
+        # so users see "Database query failed" instead of the
+        # opaque "Search failed" placeholder.
         raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
@@ -139,11 +144,28 @@ async def stream_ask_response(
       - `complete`          — done
       - `error`             — failure
     """
+    # v0.7.200 — Proper cancellation propagation to the upstream graph.
+    #
+    # Before: the function was a simple `async for event in
+    # ask_graph.astream_events(...)`. On disconnect we did `return`,
+    # which the async-generator translated into the iterator getting
+    # GeneratorExit at its NEXT `await` boundary. That boundary
+    # happens AFTER the current node finishes — and for the
+    # `write_final_answer` node, the "current await" is the full
+    # synthesis LLM call. Result: user navigates away, local LLM
+    # still spends the next 30-60s tokenising tokens nobody reads.
+    # On the desktop build this is real wasted GPU + battery.
+    #
+    # Fix: drive the iterator manually with `__anext__()` inside an
+    # `asyncio.Task`, and cancel that task when we detect disconnect.
+    # The cancel propagates into the in-flight LLM call (most modern
+    # async LLM clients honour cancellation), stopping mid-token.
+    # Mirrors the pattern v0.7.184 applied in chat.py.
+    import asyncio
     try:
         final_answer = None
         final_answer_buffer = ""
-
-        async for event in ask_graph.astream_events(
+        event_iter = ask_graph.astream_events(
             input=dict(question=question),  # type: ignore[arg-type]
             config=dict(
                 configurable=dict(
@@ -153,21 +175,39 @@ async def stream_ask_response(
                 )
             ),
             version="v2",
-        ):
-            # v0.7.53 — bail out if the HTTP client went away. The ask
-            # graph fans out to multiple LLM calls (one per sub-query
-            # plus the final synthesis) and on the local-deploy build
-            # the whole thing can take a couple of minutes. Without this
-            # check, navigating away from the search page leaves all
-            # those models grinding out tokens nobody will ever see —
-            # wasted CPU/GPU and battery on the desktop app. The chat
-            # stream already does this; the ask stream needs the same
-            # treatment.
-            if fastapi_request is not None and await fastapi_request.is_disconnected():
-                logger.info(
-                    "ask stream: client disconnected mid-stream; halting"
-                )
-                return
+        ).__aiter__()
+
+        while True:
+            next_task = asyncio.ensure_future(event_iter.__anext__())
+            try:
+                # v0.7.200 — race the iterator against an async sleep
+                # that periodically polls is_disconnected(). 200ms poll
+                # is generous compared to typical LLM token latency
+                # (50-200ms per token) so we don't burn CPU.
+                while not next_task.done():
+                    if (
+                        fastapi_request is not None
+                        and await fastapi_request.is_disconnected()
+                    ):
+                        logger.info(
+                            "ask stream: client disconnected mid-stream; "
+                            "cancelling in-flight graph + LLM call"
+                        )
+                        next_task.cancel()
+                        try:
+                            await next_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        # Best-effort close on the underlying iterator.
+                        try:
+                            await event_iter.aclose()  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        return
+                    await asyncio.sleep(0.2)
+                event = next_task.result()
+            except StopAsyncIteration:
+                break
 
             etype = event.get("event")
             metadata = event.get("metadata", {})
@@ -396,10 +436,16 @@ async def ask_knowledge_base_simple(
                 logger.info(
                     "/search/ask/simple: client disconnected mid-stream; halting"
                 )
-                # Returning a non-200 here would 500 in middleware; instead
-                # raise the same HTTPException as the "no answer" path so
-                # the response flows through the existing error chain.
-                raise HTTPException(status_code=499, detail="Client disconnected")
+                # v0.7.200 — was 499 (nginx-only) which renders as
+                # "Unknown status" in FastAPI logs / Sentry / OpenTelemetry
+                # exporters. 503 is the standard "service unavailable —
+                # try again" code, which is what a client that already
+                # gave up effectively asked for. Detail string is the
+                # operative signal.
+                raise HTTPException(
+                    status_code=503,
+                    detail="Client disconnected before answer ready",
+                )
             node_output = chunk.get("write_final_answer") if isinstance(chunk, dict) else None
             if node_output is not None:
                 if isinstance(node_output, dict):

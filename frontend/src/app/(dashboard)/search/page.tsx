@@ -338,7 +338,9 @@ export default function SearchPage() {
                       placeholder={t('searchPage.enterSearchPlaceholder')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyPress={handleKeyPress}
+                      // v0.7.200 — React 19 deprecates onKeyPress.
+                      // onKeyDown matches the Ask textarea below.
+                      onKeyDown={handleKeyPress}
                       disabled={searchMutation.isPending}
                       className="flex-1"
                       aria-label={t('common.accessibility.enterSearch')}
