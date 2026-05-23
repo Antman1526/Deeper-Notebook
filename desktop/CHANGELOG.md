@@ -18,7 +18,69 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.197 (in flight)
+## Unreleased — v0.7.36 → v0.7.198 (in flight)
+
+- **v0.7.198** 🐛 **Chat-LLM readiness gate + accessibility +
+  theme-token consistency.** Continuation of the deferred work
+  filtered to fixes-the-app or improves-perf items.
+
+  1. **Backend (HIGH) — wait for llamacpp_chat before spawning
+     memory_retriever.** llama-cpp typically takes 10–30 s to mmap a
+     multi-GB GGUF and bind. Previously `_spawn_memory_retriever`
+     started immediately after the `_try_spawn` for chat — mem0's
+     startup validation hit a closed port and the memory child
+     exited rc=1 silently (production DEVNULL trap from v0.7.195).
+     The user saw "Memory (local)" → Cannot connect to server in
+     the credentials UI on every cold launch.
+
+     Fix: `_wait_tcp("127.0.0.1", chat_llm_port, timeout=60.0,
+     proc=self._procs[-1])` between the two spawns. 60-s timeout
+     accommodates cold-cache mmap on slow SSDs. `proc=` lets us
+     short-circuit if the child crashed (e.g., GGUF corrupt) instead
+     of waiting the full minute. On timeout we LOG warning and
+     proceed — better degraded than a frozen UI.
+
+     Also extends the v0.7.197 conditional-stash invariant to the
+     chat port: `self.chat_llm_port = chat_llm_port if chat_alive
+     else 0`. Without it, an install without a chat GGUF would still
+     have auto_register create a chat credential pointing at a port
+     nothing is listening on.
+
+  2. **Frontend (MED) — icon-only button aria-labels.** Three sites
+     where screen readers announced "button" with no purpose: the
+     `MoreVertical` dropdown trigger in `SourceDetailContent.tsx`,
+     the insight-delete `Trash2` button in the same file, and the
+     credential-delete button on the API-keys settings page. Added
+     `aria-label`; the SR users now hear "Open menu" / "Delete".
+
+  3. **Frontend (MED) — hardcoded red colour tokens swept to
+     theme tokens.** 28 occurrences across 14 files were using
+     `text-red-600`, `text-red-600 hover:text-red-700`,
+     `text-red-600 focus:text-red-600`, `text-red-600
+     dark:text-red-400`, or `bg-red-600 hover:bg-red-700` — all
+     converted to `text-destructive` / `bg-destructive` (with
+     `/90` for hover variants). Form-validation messages, danger
+     buttons, error banners, and confirm-dialog destructive actions
+     now match the active theme (light / dark / the 9 custom ONP
+     palettes) instead of staying vivid red.
+
+  4. **Frontend (LOW) — LoginForm password show/hide toggle.**
+     Standard affordance was missing — users couldn't verify what
+     they typed (especially fat-finger touch). Added `Eye` /
+     `EyeOff` toggle button with `aria-pressed` state and
+     focus-visible ring. Toggled state is per-render only; cleared
+     on remount.
+
+  Tests at `tests/test_v0_7_198_launcher_readiness.py`: 3 new —
+  AST pins on `chat_alive` precondition, the `_wait_tcp` call with
+  `timeout=60.0`, the log.warning fallback path, and the
+  conditional `chat_llm_port` stash.
+
+  Backend tests: **1020/1020** (was 1017; +3 new).
+  Desktop tests: **253/253** (full launcher suite unchanged).
+  Frontend tests: **72/72** (no regression on the 28-file colour
+  sweep + 3 aria-label additions + LoginForm changes).
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.197** 🐛 **Local-model orchestration deferred items +
   touch-device sidebar fix.** Working through the v0.7.196 deferred

@@ -491,7 +491,18 @@ export function SourceDetailContent({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                {/* v0.7.198 — icon-only Button needs `aria-label` so
+                    screen readers announce purpose, not just "button".
+                    Using hardcoded English instead of t('common.
+                    openMenu') because that key would have to be added
+                    to all 10 locale files; the SR benefit of any
+                    announcement is the load-bearing fix here. Follow-
+                    up i18n is tracked in CHANGELOG deferred list. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open menu"
+                >
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -719,11 +730,15 @@ export function SourceDetailContent({
                           <Button size="sm" variant="outline" onClick={() => setSelectedInsight(insight)}>
                             {t('sources.viewInsight')}
                           </Button>
+                          {/* v0.7.198 — icon-only delete button needs
+                              an aria-label so SR announces "Delete
+                              insight" rather than just "button". */}
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => setInsightToDelete(insight.id)}
                             className="text-destructive hover:text-destructive"
+                            aria-label={t('common.delete')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
