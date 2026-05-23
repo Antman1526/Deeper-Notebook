@@ -70,7 +70,12 @@ def test_podcast_service_does_not_leak_str_e_in_500_details():
     assert 'detail="Failed to submit podcast generation job"' in src
     assert 'detail="Failed to get job status"' in src
     assert 'detail="Failed to list episodes"' in src
-    assert 'detail="Episode not found"' in src
+    # v0.7.204 — `get_episode` was restructured to raise
+    # `NotFoundError` (which the global classifier formats as 404)
+    # instead of wrapping every Exception as a synthetic 404
+    # "Episode not found". The HTTPException(404) is gone; the
+    # NotFoundError form is what we pin now.
+    assert 'raise NotFoundError(f"Episode {episode_id} not found")' in src
 
 
 def test_podcast_service_still_logs_full_exception():
@@ -81,11 +86,15 @@ def test_podcast_service_still_logs_full_exception():
     src = _read_source("api/podcast_service.py")
     # Each of the four sanitized blocks still has a preceding
     # logger.error that captures the exception.
+    # v0.7.204 — `get_episode` no longer has a try/except (it
+    # restructured to raise NotFoundError on the None return, letting
+    # all other exceptions classify naturally). So the
+    # `"Failed to get podcast episode {episode_id}"` log line is
+    # gone — by design — and removed from the needles.
     for needle in (
         "Failed to submit podcast generation job: {e}",
         "Failed to get podcast job status: {e}",
         "Failed to list podcast episodes: {e}",
-        "Failed to get podcast episode {episode_id}: {e}",
     ):
         assert needle in src, (
             f"v0.7.177 regression: logger.error for {needle!r} is gone. "

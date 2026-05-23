@@ -221,17 +221,23 @@ class PodcastService:
     @staticmethod
     async def get_episode(episode_id: str) -> PodcastEpisode:
         """Get a specific podcast episode"""
-        try:
-            episode = await PodcastEpisode.get(episode_id)
-            return episode
-        except Exception as e:
-            # v0.7.177 — Sanitize 404 detail. The exception here is
-            # usually "record not found" but could be a connection
-            # error masquerading as one; either way, "Episode not
-            # found" is the right user-facing message and the full
-            # exception is preserved in the log.
-            logger.error(f"Failed to get podcast episode {episode_id}: {e}")
-            raise HTTPException(status_code=404, detail="Episode not found")
+        # v0.7.204 — was a bare `try/except Exception` that turned
+        # EVERY failure (DB connection drop, mid-query timeout,
+        # decryption error, etc.) into 404 "Episode not found". An
+        # operator looking at logs saw a real backend issue but
+        # the API client got the same 404 it would for a stale ID
+        # — debugging took 10× longer because the symptom was
+        # misclassified. Now: a None return from
+        # `PodcastEpisode.get` (the actual "not found" path) raises
+        # NotFoundError; everything else propagates as its real
+        # type and hits the global classifier with the right
+        # HTTP code (500 for DB, 502 for upstream, etc.).
+        from open_notebook.exceptions import NotFoundError
+
+        episode = await PodcastEpisode.get(episode_id)
+        if episode is None:
+            raise NotFoundError(f"Episode {episode_id} not found")
+        return episode
 
 
 class DefaultProfiles:
