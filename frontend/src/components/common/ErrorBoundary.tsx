@@ -57,7 +57,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
               {/* v0.7.167 — Replaced raw Tailwind red palette
-                  (`bg-red-100`, `text-red-600`, `text-red-900` + their
+                  (`bg-red-100`, `text-destructive`, `text-red-900` + their
                   `dark:` variants) with the theme's destructive tokens.
                   This was the ONE place in the audit using raw red
                   outside the theme system — meant the error fallback
