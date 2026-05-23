@@ -493,15 +493,13 @@ export function SourceDetailContent({
               <DropdownMenuTrigger asChild>
                 {/* v0.7.198 — icon-only Button needs `aria-label` so
                     screen readers announce purpose, not just "button".
-                    Using hardcoded English instead of t('common.
-                    openMenu') because that key would have to be added
-                    to all 10 locale files; the SR benefit of any
-                    announcement is the load-bearing fix here. Follow-
-                    up i18n is tracked in CHANGELOG deferred list. */}
+                    v0.7.199 — `common.openMenu` key now exists in
+                    en-US; other locales fall back to English via
+                    i18next default-locale fallback chain. */}
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Open menu"
+                  aria-label={t('common.openMenu')}
                 >
                   <MoreVertical className="h-4 w-4" />
                 </Button>

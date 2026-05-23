@@ -14,12 +14,16 @@ import { InlineEdit } from '@/components/common/InlineEdit'
 import { cn } from "@/lib/utils";
 import { useTranslation } from '@/lib/hooks/use-translation'
 
-const createNoteSchema = z.object({
-  title: z.string().optional(),
-  content: z.string().min(1, 'Content is required'),
-})
+// v0.7.199 — factory pattern so the validation message is
+// translated. Was hardcoded English "Content is required" — non-
+// English users saw English text in the field-error.
+const makeCreateNoteSchema = (t: (key: string) => string) =>
+  z.object({
+    title: z.string().optional(),
+    content: z.string().min(1, t('common.contentRequired')),
+  })
 
-type CreateNoteFormData = z.infer<typeof createNoteSchema>
+type CreateNoteFormData = z.infer<ReturnType<typeof makeCreateNoteSchema>>
 
 interface NoteEditorDialogProps {
   open: boolean
@@ -49,7 +53,7 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     reset,
     setValue,
   } = useForm<CreateNoteFormData>({
-    resolver: zodResolver(createNoteSchema),
+    resolver: zodResolver(makeCreateNoteSchema(t)),
     defaultValues: {
       title: '',
       content: '',

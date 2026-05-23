@@ -17,15 +17,20 @@ import { useQueryClient } from '@tanstack/react-query'
 import { TRANSFORMATION_QUERY_KEYS } from '@/lib/hooks/use-transformations'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
-const transformationSchema = z.object({
-  name: z.string().min(1),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  prompt: z.string().min(1),
-  apply_default: z.boolean().optional(),
-})
+// v0.7.199 — factory pattern so the validation messages are
+// translated rather than zod's default "String must contain at
+// least 1 character(s)" English text. Same pattern as the
+// Episode/Speaker profile dialogs.
+const makeTransformationSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().min(1, t('common.nameRequired')),
+    title: z.string().min(1, t('common.titleRequired')),
+    description: z.string().optional(),
+    prompt: z.string().min(1, t('common.promptRequired')),
+    apply_default: z.boolean().optional(),
+  })
 
-type TransformationFormData = z.infer<typeof transformationSchema>
+type TransformationFormData = z.infer<ReturnType<typeof makeTransformationSchema>>
 
 interface TransformationEditorDialogProps {
   open: boolean
@@ -54,7 +59,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
     formState: { errors },
     reset,
   } = useForm<TransformationFormData>({
-    resolver: zodResolver(transformationSchema),
+    resolver: zodResolver(makeTransformationSchema(t)),
     defaultValues: {
       name: '',
       title: '',

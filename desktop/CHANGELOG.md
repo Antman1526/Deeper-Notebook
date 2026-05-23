@@ -18,7 +18,62 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.198 (in flight)
+## Unreleased — v0.7.36 → v0.7.199 (in flight)
+
+- **v0.7.199** 🐛 **Search/Ask Pydantic state-shape +
+  use-search.ts error leak + zod schema i18n.** Three discrete bugs
+  from a fresh audit of the Setup Wizard and Search/Ask flows.
+
+  1. **Backend (MED-becomes-HIGH on first hit) — `/search/ask` SSE
+     handler drops events on Pydantic state shapes.**
+     `api/routers/search.py:stream_ask_response` had
+     `if not isinstance(output, dict): continue` — LangGraph's
+     state-shape variance means a node may return either a dict OR
+     a Pydantic model depending on its return annotation. Every
+     subsequent strategy/answer/final_answer event was silently
+     dropped; the user saw a blank streaming response even though
+     the graph had completed normally. Same fix v0.7.55 already
+     applied to `/search/ask/simple`: a getattr-fallback `_get()`
+     helper that tries dict access first, falls back to
+     `getattr(output, key, None)`.
+
+  2. **Frontend (HIGH) — `use-search.ts` still passes the bare-key
+     variant through `t()`.** Missed in the v0.7.196 hook-layer
+     sweep because this file is a one-off, not in the
+     use-credentials / use-podcasts / use-notes / use-models
+     cluster. Pattern was `description: t(getApiErrorKey(error.
+     message))` — for unmapped errors, `getApiErrorKey` returns the
+     raw backend message string, `t()` returns it verbatim, leaking
+     axios "Network Error" / FastAPI stack-trace fragments into
+     the toast. Swap to `getApiErrorMessage(error, t, 'apiErrors.
+     genericError')`.
+
+  3. **Frontend (MED) — three zod schemas had hardcoded English
+     (or no) validation messages.** `TransformationEditorDialog`
+     (3 fields), `NoteEditorDialog` (1), `CreateNotebookDialog`
+     (1) all used `z.string().min(1, 'Name is required')` or worse
+     `z.string().min(1)` (no message at all — falls back to zod's
+     default "String must contain at least 1 character(s)").
+     Non-English users saw English text in field errors. Converted
+     all three to the factory pattern that the Episode/Speaker
+     profile dialogs already use: `makeXSchema(t) => z.object({...
+     name: z.string().min(1, t('common.nameRequired'))...})`.
+
+     Added 4 new `common.*` keys to all 10 locale files:
+     `titleRequired`, `contentRequired`, `promptRequired`,
+     `openMenu`. Locale-parity test enforces all 10 stay in sync;
+     the v0.7.198 `aria-label="Open menu"` hardcode in
+     `SourceDetailContent.tsx` upgraded to `t('common.openMenu')`.
+
+  Tests at `tests/test_v0_7_199_search_ask_state_shape.py`:
+  3 new — AST pin on the search.py getattr-fallback, AST pin on
+  use-search.ts using the translating helper, AST pin on all
+  three zod factories being present.
+
+  Backend tests: **1023/1023** (was 1020; +3 new).
+  Frontend tests: **72/72** (locale-parity test now passes
+  across all 10 locales with the new keys).
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.198** 🐛 **Chat-LLM readiness gate + accessibility +
   theme-token consistency.** Continuation of the deferred work
