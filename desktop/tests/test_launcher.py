@@ -467,14 +467,21 @@ def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
     # No per-test stubbing needed here.
 
 
-def test_chat_llm_n_ctx_defaults_to_16384(cfg, tmp_path, monkeypatch):
-    """No ONP_CHAT_LLM_CTX env var → server gets --n_ctx 16384.
+def test_chat_llm_n_ctx_defaults_to_32768(cfg, tmp_path, monkeypatch):
+    """v0.7.206 — No ONP_CHAT_LLM_CTX env var → server gets --n_ctx
+    32768 (was 16384 prior to v0.7.206).
 
-    Regression: previous hardcoded 8192 silently capped every modern
-    local model below its real context window and contradicted v0.7.4
-    Studio's ~15k token combined-input ceiling.
+    Why bumped: a user hit `400 context_length_exceeded` after
+    selecting 2-3 sources for a chat (~21k tokens combined). The
+    16k cap was set when gemma-2-9b / codellama-13b were common;
+    Hermes-3 / Qwen2.5 / Llama-3.2 native 32k-131k.
+
+    Auto-detection from GGUF metadata is also tried when no env
+    var is set — this test uses a fake GGUF path so the detection
+    falls back to ONP_CHAT_LLM_CTX_MAX (default 32768).
     """
     monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -482,7 +489,7 @@ def test_chat_llm_n_ctx_defaults_to_16384(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "16384", f"expected default 16384, got {n_ctx!r}"
+        assert n_ctx == "32768", f"expected v0.7.206 default 32768, got {n_ctx!r}"
     finally:
         sv.stop_all()
 
@@ -508,14 +515,15 @@ def test_chat_llm_n_ctx_respects_env_var(cfg, tmp_path, monkeypatch):
 
 
 def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
-    """Garbage in env var → falls back to 16384 instead of passing through.
+    """v0.7.206 — Garbage in env var → falls back to ONP_CHAT_LLM_CTX_MAX
+    (default 32768) instead of passing through.
 
     llama-cpp's --n_ctx is an integer arg; forwarding "abc" would crash
     the server at spawn time and leave the memory writer permanently
-    broken until the user noticed. Defensive validation belongs in the
-    launcher, not in the user's terminal.
+    broken until the user noticed.
     """
     monkeypatch.setenv("ONP_CHAT_LLM_CTX", "not-an-int")
+    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -523,20 +531,21 @@ def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "16384", f"expected fallback 16384, got {n_ctx!r}"
+        assert n_ctx == "32768", f"expected v0.7.206 fallback 32768, got {n_ctx!r}"
     finally:
         sv.stop_all()
 
 
 def test_chat_llm_n_ctx_falls_back_when_too_low(cfg, tmp_path, monkeypatch):
-    """ONP_CHAT_LLM_CTX < 512 → falls back to 16384.
+    """v0.7.206 — ONP_CHAT_LLM_CTX < 512 → falls back to
+    ONP_CHAT_LLM_CTX_MAX (default 32768).
 
     Below ~512 tokens the chat server is effectively unusable (system
     prompt alone won't fit), so a fat-fingered "128" or "0" is almost
-    certainly a typo — coerce to the safe default rather than spawn a
-    crippled server.
+    certainly a typo.
     """
     monkeypatch.setenv("ONP_CHAT_LLM_CTX", "128")
+    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -544,6 +553,6 @@ def test_chat_llm_n_ctx_falls_back_when_too_low(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "16384", f"expected fallback 16384 for too-low value, got {n_ctx!r}"
+        assert n_ctx == "32768", f"expected v0.7.206 fallback 32768 for too-low value, got {n_ctx!r}"
     finally:
         sv.stop_all()
