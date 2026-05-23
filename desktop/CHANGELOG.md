@@ -18,7 +18,53 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.202 (in flight)
+## Unreleased — v0.7.36 → v0.7.203 (in flight)
+
+- **v0.7.203** 🌐 **Studio page full i18n extraction (the big
+  deferred item from v0.7.196).** ~30 user-visible strings on the
+  Studio page were hardcoded English; non-English users — the
+  only ONP install base that ACTUALLY exercises the i18n system —
+  saw English on a primary entry point. Audit HIGH #1 from the
+  v0.7.196 frontend visual audit, carried through 7 versions of
+  deferred lists because the diff size (30 strings × 10 locales =
+  ~300 string changes) deserved its own dedicated commit.
+
+  Fix shape:
+
+  1. **New `studio.*` namespace in all 10 locale files.** en-US +
+     zh-CN + zh-TW + pt-BR + ja-JP + it-IT + fr-FR + ru-RU +
+     bn-IN + es-ES each got the full ~30-key block. Translations
+     are functional rather than literary — terminology consistent
+     across the namespace and follows each locale's existing
+     conventions for tech UI ("notebook" → "笔记本" / "Notebook" /
+     "ノートブック" / etc.).
+
+  2. **`studio/page.tsx` rewritten to route every visible string
+     through `t('studio.*')`.** Page title, subtitle, both step
+     headings, both mode-tile titles + descriptions, both profile-
+     select labels + placeholders, title input label + placeholder,
+     all 4 generate-button states, all 5 toast title/description
+     strings, the dropzone aria-label + visible text, the file-
+     remove aria-label, and the file-rejection toast.
+
+  3. **`isAllowed()` refactored.** Was returning pre-formatted
+     English `"unsupported type .pdf"` / `"file is 60 MB; cap is
+     50 MB"` rejection reasons. Now returns a typed `{key, params}`
+     object that the caller interpolates via `t()` so the user sees
+     the message in their language.
+
+  Tests at `tests/test_v0_7_203_studio_i18n.py`: 4 new — AST pin
+  on every locale having the full `studio.*` key set, AST pin on
+  no remaining hardcoded English in the Studio render tree,
+  AST pin on the load-bearing `t('studio.X')` calls, AST pin on
+  the `RejectionReason` union shape. Frontend's existing locale-
+  parity vitest enforces structural sameness across the 10
+  locale files for the new keys.
+
+  Backend tests: **1043/1043** (was 1039; +4 new).
+  Frontend tests: **72/72** (the locale-parity assertion that
+  blocked v0.7.199 stays green with the 30 new keys).
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.202** 🐛 **Audit LOW-tier closeout: discovery timeouts,
   iso() sweep, healthz defaults, NoteEditor toast, source-polling
