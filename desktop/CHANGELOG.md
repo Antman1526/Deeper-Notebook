@@ -18,7 +18,60 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.199 (in flight)
+## Unreleased — v0.7.36 → v0.7.200 (in flight)
+
+- **v0.7.200** 🐛 **Search/Ask exception classifier pass-through +
+  proper ask-stream cancellation + standards-compliant disconnect
+  status + React 19 deprecation cleanup.** Four discrete deferred
+  items from v0.7.199.
+
+  1. **Backend (HIGH) — `/search` swallowed typed exceptions.**
+     `api/routers/search.py` caught `InvalidInputError` and
+     `DatabaseOperationError` and collapsed them into bare
+     `HTTPException(400/500, "Search failed")`, defeating the
+     v0.7.179-183 global-classifier middleware sweep. Users saw
+     the literal "Search failed" placeholder instead of e.g.
+     "Database connection lost — please retry". Fix: combined
+     handler `except (NotFoundError, InvalidInputError,
+     DatabaseOperationError): raise` lets each bubble to the
+     classifier middleware in `api/main.py`.
+
+  2. **Backend (HIGH) — `stream_ask_response` didn't cancel
+     in-flight LLM call on disconnect.** Previously was a simple
+     `async for event in ask_graph.astream_events(...)` with
+     `if is_disconnected(): return` in the body. The `return`
+     only fires at the iterator's NEXT `await` boundary, which
+     for `write_final_answer` is AFTER the 30-60 s synthesis LLM
+     call completes. Local LLM kept tokenising tokens nobody
+     read — wasted GPU + battery on every cancelled Ask. Fix:
+     drive iterator manually with `asyncio.ensure_future(
+     event_iter.__anext__())`, poll `is_disconnected()` every
+     200ms while the task is pending, `next_task.cancel()` on
+     disconnect. Cancellation propagates into the in-flight LLM
+     call (modern async clients honour it). Mirrors the
+     v0.7.184 chat.py pattern.
+
+  3. **Backend (LOW) — `/search/ask/simple` raised
+     non-standard HTTP 499.** 499 is nginx-only and rendered as
+     "Unknown status" in FastAPI logs, Sentry, OTel exporters —
+     operators couldn't graph cancellation rates. Swapped to
+     standard 503 with a descriptive detail string.
+
+  4. **Frontend (LOW) — React 19 `onKeyPress` deprecation.**
+     `search/page.tsx:341`, `SessionManager.tsx:132,181` were
+     the last three callsites. React 19 silently no-ops the
+     handler. Swapped to `onKeyDown` (the modern, fully-
+     supported equivalent — same event shape).
+
+  Tests at `tests/test_v0_7_200_search_typed_exceptions.py`:
+  4 new — AST pin on the combined typed-exception handler in
+  search.py, AST pin on the `__anext__` task wrapping + cancel
+  flow, AST pin on no remaining 499 status, AST pin on no
+  remaining `onKeyPress` in search/SessionManager.
+
+  Backend tests: **1027/1027** (was 1023; +4 new).
+  Frontend tests: **72/72**.
+  TypeScript strict-mode compile: clean.
 
 - **v0.7.199** 🐛 **Search/Ask Pydantic state-shape +
   use-search.ts error leak + zod schema i18n.** Three discrete bugs
