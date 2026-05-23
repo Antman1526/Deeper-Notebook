@@ -150,7 +150,9 @@ fastapi==0.136.1
 faster-whisper==1.2.1
     # via -r desktop/requirements.txt
 fastmcp==3.2.4
-    # via content-core
+    # via
+    #   -r desktop/requirements.txt
+    #   content-core
 filelock==3.29.0
     # via huggingface-hub
 filetype==1.2.0
@@ -361,7 +363,9 @@ markupsafe==3.0.3
 marshmallow==3.26.2
     # via dataclasses-json
 mcp==1.27.1
-    # via fastmcp
+    # via
+    #   -r desktop/requirements.txt
+    #   fastmcp
 mdurl==0.1.2
     # via markdown-it-py
 mem0ai==1.0.11

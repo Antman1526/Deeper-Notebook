@@ -239,7 +239,29 @@ class Supervisor:
             "SURREAL_NAMESPACE": "open_notebook",
             "SURREAL_DATABASE": "open_notebook",
             "API_PORT": str(api_port),
-            "PORT": str(frontend_port),  # Next.js convention
+            # v0.7.205 — DO NOT put `PORT` in the shared session_env.
+            # Background: `PORT=<frontend_port>` was set here so the
+            # Next.js child would honour the dynamic port. But
+            # `session_env` is the env every child inherits via
+            # `_spawn(env=self.session_env)`. uvicorn's pydantic_settings
+            # in `llama_cpp.server` (and any other server we spawn
+            # that uses uvicorn's env-driven config) reads `PORT` from
+            # env and treats it as authoritative, OVERRIDING any
+            # `--port <X>` CLI arg.
+            #
+            # Symptom: a fresh launch allocated api_port=60432,
+            # frontend_port=60433, embed_port=60434. The embed server
+            # was spawned with `--port 60434` but uvicorn picked up
+            # `PORT=60433` from inherited env and bound 60433 instead.
+            # macOS then routed `127.0.0.1:60433` to the more-specific
+            # Python listener (embed server) instead of node's
+            # `*:60433` (Next.js) — so the webview opened the
+            # frontend URL and got `{"detail":"Not Found"}` from
+            # llama_cpp.server's FastAPI root, not the actual
+            # Next.js UI.
+            #
+            # PORT is now passed ONLY to the Next.js spawn via a
+            # per-child env override in `_spawn_next` below.
             # Upstream Next.js reads these (see frontend/next.config.ts and
             # frontend/src/app/config/route.ts):
             # - API_URL: where the browser makes direct API calls
@@ -546,6 +568,7 @@ class Supervisor:
         args: list[str],
         cwd: Path | None = None,
         name: str = "child",
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.Popen:
         # PIPE without a reader deadlocks long-running children once the OS
         # pipe buffer fills (Surreal, uvicorn, Next all emit plenty of output).
@@ -578,9 +601,21 @@ class Supervisor:
         # On Windows the equivalent is `creationflags=CREATE_NEW_PROCESS_GROUP`
         # plus `signal.CTRL_BREAK_EVENT`; only POSIX is supported here
         # currently — Windows launcher builds are a future-work item.
+        # v0.7.205 — per-child env override. Was: `env=self.session_env`
+        # for every spawn — which leaked PORT=<frontend_port> into
+        # uvicorn-based children (llama_cpp.server, etc.) and
+        # overrode their `--port` CLI arg. Merge any per-child
+        # `extra_env` on top of the shared session_env so only the
+        # Next.js spawn sees PORT.
+        if extra_env:
+            child_env = dict(self.session_env)
+            child_env.update(extra_env)
+        else:
+            child_env = self.session_env
+
         popen_kwargs: dict = {
             "cwd": str(cwd) if cwd else None,
-            "env": self.session_env,
+            "env": child_env,
             "stdout": stdout,
             "stderr": stderr,
         }
@@ -698,7 +733,12 @@ class Supervisor:
             "node.exe" if self.node_arch.startswith("windows") else "bin/node"
         )
         # The standalone build produces server.js with everything inlined.
-        # PORT comes from session_env (Next.js convention).
+        #
+        # v0.7.205 — pass `PORT=<frontend_port>` via per-child
+        # `extra_env` instead of the shared session_env. Next.js's
+        # standalone server reads PORT from env (no CLI flag for
+        # port); the per-child override means only this spawn sees
+        # it, not every uvicorn-based child.
         #
         # v0.7.143 — `next_cwd` defaults to the bundled frontend dir but
         # the caller may override with a writable copy if the bundle
@@ -710,6 +750,7 @@ class Supervisor:
             [str(node_bin), "server.js"],
             cwd=next_cwd,
             name="next",
+            extra_env={"PORT": str(port)},
         )
 
     def _progress(self, step: str, status: str, message: str = "") -> None:
