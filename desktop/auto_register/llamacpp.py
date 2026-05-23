@@ -75,18 +75,57 @@ def register_llamacpp_models(
             modalities=["language", "embedding"],
             base_url=base_url,
         )
+        # v0.7.197 — When an embedding GGUF (nomic, bge-*, mxbai-*,
+        # gte-*) is found in the model_dir, it MUST be linked to the
+        # `Local Embeddings (llama.cpp)` credential (which points at
+        # the dedicated --embedding=true llama-server on `embed_port`),
+        # NOT the chat credential pointing at `chat_llm_port`.
+        #
+        # Before: every GGUF — chat OR embed — was linked to
+        # `cred_id` (the chat credential). The chat llama-server
+        # does not serve `/v1/embeddings` for the embed model file,
+        # so any "use this embedding model" call from the API
+        # crashed with a 404 / model-not-found at runtime.
+        #
+        # Look up the embed credential by name (it's created by
+        # register_voice_models before this function runs). If it's
+        # absent (no nomic file → no embed server), fall back to the
+        # chat credential so non-embedding GGUFs still register and
+        # any embedding GGUFs that slipped through still link
+        # somewhere (and surface a known-bad URL the user can fix in
+        # the UI) instead of being silently dropped.
+        embed_cred_id: str | None = None
+        embed_cred_name_lower = "local embeddings (llama.cpp)"
+        if embed_cred_name_lower in existing_cred_names:
+            try:
+                resp = client.get("/api/credentials")
+                resp.raise_for_status()
+                for c in resp.json() or []:
+                    if (c.get("name") or "").lower() == embed_cred_name_lower:
+                        embed_cred_id = c.get("id")
+                        break
+            except Exception as exc:  # pragma: no cover — logged, not raised
+                log.warning(
+                    "v0.7.197 embed-credential lookup failed: %s (embedding "
+                    "GGUFs will fall back to chat credential)",
+                    exc,
+                )
+
         if cred_id:
             existing_cred_names.add(cred_name.lower())
             for gguf_rel in local_ggufs:
                 model_name = Path(gguf_rel).stem
-                model_type = "embedding" if _is_embedding_gguf(model_name) else "language"
+                is_embedding = _is_embedding_gguf(model_name)
+                model_type = "embedding" if is_embedding else "language"
+                # Route embeddings to the embed credential when known.
+                target_cred = embed_cred_id if (is_embedding and embed_cred_id) else cred_id
                 if _ensure_model(
                     client=client,
                     existing_keys=existing_model_keys,
                     name=model_name,
                     provider="openai_compatible",
                     model_type=model_type,
-                    credential_id=cred_id,
+                    credential_id=target_cred,
                 ):
                     existing_model_keys.add((model_name.lower(), model_type))
                     registered_any = True
