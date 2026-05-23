@@ -18,7 +18,59 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.206 (in flight)
+## Unreleased — v0.7.36 → v0.7.207 (in flight)
+
+- **v0.7.207** 🐛 **Local-model health audit: three credentials
+  failing despite their processes being alive.** User asked to
+  verify file uploads + local models work end-to-end. Hit live
+  API + ran `POST /api/credentials/{id}/test` against every
+  local credential:
+
+  | Credential | Result before v0.7.207 |
+  |---|---|
+  | Local GGUF (llama.cpp) — chat | ✅ Connected |
+  | Local Embeddings (llama.cpp) | ✅ Connected |
+  | Whisper (local) | ❌ Server returned status 404 |
+  | Piper (local) | ❌ Server returned status 404 |
+  | Memory (local) | ❌ Cannot connect to server |
+
+  Source upload itself was fully working — confirmed via
+  `POST /api/sources` (tiny .txt file → got back complete
+  SourceResponse with full_text extracted).
+
+  **3 bugs found + fixed:**
+
+  1. **Memory shim crashed at startup** with:
+     ```
+     TypeError: BaseEmbedderConfig.__init__() got an unexpected
+     keyword argument 'base_url'
+     ```
+     `desktop/memory/client.py` passed `base_url` to mem0's
+     embedder + LLM configs. mem0 uses `openai_base_url` —
+     verified at `mem0/configs/embeddings/base.py:23` and
+     `mem0/llms/openai.py:50`. Fix: swap field name on both
+     config blocks. memory_shim now boots cleanly and the
+     Memory (local) credential test goes green.
+
+  2. **Whisper credential test 404'd** because the shim only
+     exposed `GET /health` + `POST /v1/audio/transcriptions`,
+     but `connection_tester.py:_test_openai_compatible_connection`
+     probes `GET /v1/models` (the standard OpenAI-compatible
+     discovery endpoint). Added a `/v1/models` route returning
+     `{"object": "list", "data": [{"id": "whisper-base-en", ...}]}`.
+
+  3. **Piper credential test 404'd** for the same reason. Added
+     the same `/v1/models` route — each loaded voice surfaces as
+     its own model entry, so users can see what's available
+     before testing TTS.
+
+  Tests at `tests/test_v0_7_207_local_models_health.py`: 5 new
+  — AST pin on the mem0 field-name swap, AST pins on both
+  shim routes, plus runtime smoke tests that build the FastAPI
+  app and actually hit `/v1/models` to catch broken handlers.
+
+  Backend tests: **1062/1062** (was 1057; +5 new).
+  Desktop tests: **253/253**.
 
 - **v0.7.206** 🐛 **Local chat failing — n_ctx default bumped +
   GGUF context-length auto-detection.** User report: "Local

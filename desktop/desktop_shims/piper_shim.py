@@ -54,6 +54,24 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
     def health() -> dict:
         return {"status": "ok", "voices": list(voices.keys())}
 
+    # v0.7.207 — OpenAI-compatible `/v1/models` discovery endpoint
+    # (same rationale as whisper_shim.py). Each voice surfaces as
+    # an OpenAI-shaped model entry so the credential test in the
+    # UI succeeds and the user sees which voices are available.
+    @app.get("/v1/models")
+    def list_models() -> dict:
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": name,
+                    "object": "model",
+                    "owned_by": "open-notebook-plus",
+                }
+                for name in voices.keys()
+            ],
+        }
+
     @app.post("/v1/audio/speech")
     def speech(req: SpeechRequest) -> Response:
         # v0.7.7 — reject oversize input early. Piper synthesizes the
