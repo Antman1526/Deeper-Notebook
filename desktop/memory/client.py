@@ -46,11 +46,21 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
                 "password": cfg.surreal_password,
             },
         },
+        # v0.7.207 — mem0's BaseEmbedderConfig + BaseLlmConfig use
+        # the field name `openai_base_url`, NOT `base_url`. Prior to
+        # this fix the launcher passed `base_url` and mem0 rejected
+        # with `TypeError: BaseEmbedderConfig.__init__() got an
+        # unexpected keyword argument 'base_url'` at startup —
+        # memory_shim crashed silently (production DEVNULL), the
+        # Memory (local) credential test then reported "Cannot
+        # connect to server", and every chat session lost the
+        # mem0 writer that extracts facts + summarizes turns.
+        # Visible in ~/.open-notebook-plus/logs/memory.log.
         "embedder": {
             "provider": "openai",
             "config": {
                 "api_key": "sk-no-key",
-                "base_url": embed_url,
+                "openai_base_url": embed_url,
                 "model": "nomic-embed-text-v1.5",
             },
         },
@@ -58,7 +68,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
             "provider": "openai",
             "config": {
                 "api_key": "sk-no-key",
-                "base_url": llm_url,
+                "openai_base_url": llm_url,
                 "model": chat_model_name,
             },
         },

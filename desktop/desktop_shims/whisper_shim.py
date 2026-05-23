@@ -35,6 +35,26 @@ def build_app(model: Any) -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
+    # v0.7.207 — OpenAI-compatible `/v1/models` discovery endpoint.
+    # The connection_tester probes this on every credential test
+    # (see open_notebook/ai/connection_tester.py:_test_openai_compatible_
+    # connection — `GET {base_url}/models`). Without this route the
+    # Whisper credential test in the UI reported "Server returned
+    # status 404" even though the shim was alive and accepting
+    # POST /v1/audio/transcriptions traffic.
+    @app.get("/v1/models")
+    def list_models() -> dict:
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": "whisper-base-en",
+                    "object": "model",
+                    "owned_by": "open-notebook-plus",
+                }
+            ],
+        }
+
     @app.post("/v1/audio/transcriptions")
     async def transcribe(
         file: UploadFile = File(...),
