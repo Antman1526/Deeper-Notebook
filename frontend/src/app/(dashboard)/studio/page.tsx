@@ -73,13 +73,36 @@ function fileExt(name: string): string {
   return i < 0 ? '' : name.slice(i).toLowerCase()
 }
 
-function isAllowed(file: File): { ok: boolean; reason?: string } {
+// v0.7.203 — isAllowed returns a key + interpolation map so the
+// reason can be translated in the caller (which has access to t()
+// via the useTranslation hook). Returning a pre-formatted English
+// string would leak English into non-English users' toasts.
+interface RejectionReason {
+  key: 'studio.unsupportedType' | 'studio.fileTooLarge'
+  params: Record<string, string>
+}
+function isAllowed(file: File): { ok: boolean; reason?: RejectionReason } {
   const ext = fileExt(file.name)
   if (!ALLOWED_EXTS.has(ext)) {
-    return { ok: false, reason: `unsupported type ${ext || '(no extension)'}` }
+    return {
+      ok: false,
+      reason: {
+        key: 'studio.unsupportedType',
+        params: { ext: ext || '(no extension)' },
+      },
+    }
   }
   if (file.size > MAX_FILE_MB * 1024 * 1024) {
-    return { ok: false, reason: `file is ${Math.round(file.size / 1024 / 1024)} MB; cap is ${MAX_FILE_MB} MB` }
+    return {
+      ok: false,
+      reason: {
+        key: 'studio.fileTooLarge',
+        params: {
+          size: String(Math.round(file.size / 1024 / 1024)),
+          cap: String(MAX_FILE_MB),
+        },
+      },
+    }
   }
   return { ok: true }
 }
@@ -118,7 +141,18 @@ export default function StudioPage() {
     for (const f of Array.from(incoming)) {
       const { ok, reason } = isAllowed(f)
       if (!ok) {
-        rejected.push({ name: f.name, reason: reason || 'rejected' })
+        // v0.7.203 — format the rejection reason via t() with the
+        // returned key+params, so the user sees a translated string
+        // instead of hardcoded English. Fallback string is a last-
+        // resort safety in case isAllowed ever returns ok=false with
+        // no reason object.
+        const reasonText = reason
+          ? Object.entries(reason.params).reduce(
+              (s, [k, v]) => s.replace(`{${k}}`, v),
+              t(reason.key),
+            )
+          : 'rejected'
+        rejected.push({ name: f.name, reason: reasonText })
         continue
       }
       // Dedupe by (name, size) — close enough without computing a hash
@@ -129,13 +163,20 @@ export default function StudioPage() {
     }
     if (accepted.length > 0) setFiles((prev) => [...prev, ...accepted])
     if (rejected.length > 0) {
+      // v0.7.203 — full i18n. The reason strings inside `r.reason`
+      // (unsupportedType / fileTooLarge) are now generated via t()
+      // in isAllowed below; the heading uses the singular/plural
+      // pair from the locale file.
+      const headingKey = rejected.length === 1
+        ? 'studio.filesRejected'
+        : 'studio.filesRejectedPlural'
       toast({
-        title: `${rejected.length} file${rejected.length === 1 ? '' : 's'} rejected`,
+        title: t(headingKey).replace('{count}', String(rejected.length)),
         description: rejected.map((r) => `${r.name}: ${r.reason}`).join('; '),
         variant: 'destructive',
       })
     }
-  }, [files, toast])
+  }, [files, toast, t])
 
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index))
@@ -190,17 +231,20 @@ export default function StudioPage() {
       })
       // Warnings, if any
       if (result.warnings.length > 0) {
+        // v0.7.203 — i18n.
         toast({
-          title: 'Generated with warnings',
+          title: t('studio.generatedWithWarnings'),
           description: result.warnings.join('; '),
         })
       } else {
         toast({
-          title: mode === 'notebook' ? 'Notebook generated' : 'Podcast generation started',
+          title: mode === 'notebook'
+            ? t('studio.notebookGenerated')
+            : t('studio.podcastJobStarted'),
           description:
             mode === 'notebook'
-              ? `Navigating to the new notebook…`
-              : `Job ${result.job_id}. Audio will appear in /podcasts when done.`,
+              ? t('studio.notebookGeneratedDescription')
+              : t('studio.podcastJobStartedDescription').replace('{jobId}', result.job_id ?? ''),
         })
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
@@ -212,7 +256,7 @@ export default function StudioPage() {
       // unmapped errors fall back to the backend's user-friendly
       // detail string only.
       toast({
-        title: 'Studio generation failed',
+        title: t('studio.generationFailed'),
         description: getApiErrorMessage(e, t, 'apiErrors.genericError'),
         variant: 'destructive',
       })
@@ -233,7 +277,7 @@ export default function StudioPage() {
             <Link href="/notebooks">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Notebooks
+                {t('studio.backToNotebooks')}
               </Button>
             </Link>
           </div>
@@ -246,20 +290,17 @@ export default function StudioPage() {
               Studio is a flagship feature; the explainer copy
               shouldn't read as a footnote. */}
           <header className="mb-6 space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Studio</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">{t('studio.title')}</h1>
             <p className="text-muted-foreground max-w-3xl">
-              Upload one or more documents (PDF, DOCX, MD, TXT, HTML, PPTX) and
-              generate either a structured study notebook or a two-host podcast
-              episode, grounded in your sources.
+              {t('studio.subtitle')}
             </p>
           </header>
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>1. Upload documents</CardTitle>
+          <CardTitle>{t('studio.step1Title')}</CardTitle>
           <CardDescription>
-            Drag-and-drop, or click to browse. Up to {MAX_FILE_MB} MB per file.
-            Multiple files are combined into a single context.
+            {t('studio.step1Description').replace('{max}', String(MAX_FILE_MB))}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -280,11 +321,11 @@ export default function StudioPage() {
             `}
             role="button"
             tabIndex={0}
-            aria-label="Upload files"
+            aria-label={t('studio.uploadFilesLabel')}
           >
             <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
             <p className="text-sm">
-              Drop files here or <span className="text-primary underline">browse</span>
+              {t('studio.dropFilesHere')} <span className="text-primary underline">{t('studio.browse')}</span>
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {Array.from(ALLOWED_EXTS).sort().join(', ')}
@@ -315,7 +356,7 @@ export default function StudioPage() {
                     type="button"
                     onClick={(e) => { e.stopPropagation(); removeFile(i) }}
                     className="p-0.5 hover:bg-muted rounded"
-                    aria-label={`Remove ${f.name}`}
+                    aria-label={t('studio.removeFile').replace('{name}', f.name)}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -328,7 +369,7 @@ export default function StudioPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>2. Pick output mode</CardTitle>
+          <CardTitle>{t('studio.step2Title')}</CardTitle>
         </CardHeader>
         {/* v0.7.164 — Studio mode-picker tiles (visual audit item #7).
             Before: tiles used `gap-2 p-4` with `h-5 w-5` icons and the
@@ -354,10 +395,9 @@ export default function StudioPage() {
               `}
             >
               <BookOpen className="h-6 w-6 mb-3 text-primary" />
-              <div className="text-base font-semibold">Study notebook</div>
+              <div className="text-base font-semibold">{t('studio.notebookModeTitle')}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                Structured markdown: overview, sections, definitions, Q&amp;A.
-                Saved as an AI-authored note attached to the new notebook.
+                {t('studio.notebookModeDescription')}
               </div>
             </button>
 
@@ -372,10 +412,9 @@ export default function StudioPage() {
               `}
             >
               <Mic className="h-6 w-6 mb-3 text-primary" />
-              <div className="text-base font-semibold">Podcast episode</div>
+              <div className="text-base font-semibold">{t('studio.podcastModeTitle')}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                Two-host conversational episode rendered to audio via the
-                configured TTS profile. Status visible in /podcasts.
+                {t('studio.podcastModeDescription')}
               </div>
             </button>
           </div>
@@ -383,10 +422,10 @@ export default function StudioPage() {
           {mode === 'podcast' && (
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="space-y-1.5">
-                <Label htmlFor="ep-profile" className="text-xs">Episode profile</Label>
+                <Label htmlFor="ep-profile" className="text-xs">{t('studio.episodeProfileLabel')}</Label>
                 <Select value={episodeProfile} onValueChange={setEpisodeProfile}>
                   <SelectTrigger id="ep-profile" className="h-9 text-sm">
-                    <SelectValue placeholder="Pick a profile…" />
+                    <SelectValue placeholder={t('studio.episodeProfilePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {episodeProfiles.map((p) => (
@@ -396,10 +435,10 @@ export default function StudioPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="sp-profile" className="text-xs">Speaker profile</Label>
+                <Label htmlFor="sp-profile" className="text-xs">{t('studio.speakerProfileLabel')}</Label>
                 <Select value={speakerProfile} onValueChange={setSpeakerProfile}>
                   <SelectTrigger id="sp-profile" className="h-9 text-sm">
-                    <SelectValue placeholder="Pick speakers…" />
+                    <SelectValue placeholder={t('studio.speakerProfilePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {speakerProfiles.map((p) => (
@@ -413,13 +452,13 @@ export default function StudioPage() {
 
           <div className="space-y-1.5 pt-2">
             <Label htmlFor="title" className="text-xs">
-              Title (optional — auto-generated from first filename if blank)
+              {t('studio.titleLabel')}
             </Label>
             <Input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. 'Quantum Computing Primer'"
+              placeholder={t('studio.titlePlaceholder')}
               className="h-9 text-sm"
             />
           </div>
@@ -443,10 +482,14 @@ export default function StudioPage() {
               {mutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {mode === 'notebook' ? 'Generating study notebook…' : 'Submitting podcast job…'}
+                  {mode === 'notebook'
+                    ? t('studio.generatingNotebook')
+                    : t('studio.generatingPodcast')}
                 </>
               ) : (
-                <>Generate {mode === 'notebook' ? 'Notebook' : 'Podcast'}</>
+                <>{mode === 'notebook'
+                  ? t('studio.generateNotebook')
+                  : t('studio.generatePodcast')}</>
               )}
             </Button>
           </div>
