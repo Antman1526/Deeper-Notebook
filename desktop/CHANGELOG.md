@@ -65,6 +65,9 @@ focused commit; each ships with regression tests.
 - **✨ Phase 2 — Task 8: chat-graph mcp_search/mcp_fetch tools (v0.8.0)**
   - `open_notebook/graphs/chat.py` — `_resolve_chat_tools()` exposes `mcp_search` + `mcp_fetch` when an MCP server is enabled; bound to LLM with graceful fallback for providers without tool support (Phase 2 Task 8)
 
+- **✨ Phase 2 — Task 9: /api/mcp CRUD endpoints (v0.8.0)**
+  - `api/routers/mcp.py` — /api/mcp CRUD endpoints (list, create, delete, test); admin auth via PasswordAuthMiddleware; 409 on duplicate names (Phase 2 Task 9)
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
