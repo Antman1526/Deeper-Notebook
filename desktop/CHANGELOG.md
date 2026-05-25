@@ -38,6 +38,35 @@ focused commit; each ships with regression tests.
     valid, skips missing path, skips sub-1MB LFS-pointer-shaped path.
     Suite grew 14 → 18 cases, all passing.
 
+- **✨ v0.8.2 Item C — `--n_predict_draft` tuning knob**
+  - `LlamaCppProvider.__init__` accepts `draft_n_predict: int | None`;
+    when set together with `draft_model_path`, the spawned argv gets
+    `--n_predict_draft <N>` so operators can tune draft tokens per
+    verification pass (llama_cpp.server default is 8). Higher values
+    speed throughput when the draft and target models agree often
+    (same tokenizer family); lower values waste less work on
+    disagreement-heavy pairs.
+  - `desktop/app.py:_phase_select_provider` reads
+    `OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT`; non-int or <=0 falls back
+    to None so llama_cpp.server uses its built-in default. A stray
+    value without a configured `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH`
+    is dropped silently — pairing-only flag, won't appear in argv
+    without the draft model that gives it meaning.
+  - 2 new unit tests pin both branches (both-set appends correctly,
+    n_predict-without-draft-path drops). Suite grew 18 → 20 cases,
+    all passing.
+
+- **🔍 v0.8.2 audit — messageId propagation across chat surfaces (no bug)**
+  - Verified the v0.8.1 Item 3 deferral language is correct: notebook
+    `ChatColumn` already renders messages through `ChatPanel`
+    (`frontend/src/app/(dashboard)/notebooks/components/ChatColumn.tsx:6,87`),
+    so the messageId prop + cache-stash pipeline reaches notebook
+    chat for free. Source chat's `source_chat.py` graph does NOT
+    bind MCP tools — the LLM cannot emit `[mcp:N]` markers in the
+    source-chat path at all, so the missing cache stash there is
+    a non-issue (the placeholder pill would only render on stray
+    user-pasted tokens, which is benign).
+
 - **📚 v0.8.2 Item B — gbrain MCP integration docs**
   - `docs/3-USER-GUIDE/integrating-gbrain-mcp.md`: three-step setup
     guide for registering [gbrain](https://github.com/garrytan/gbrain)
