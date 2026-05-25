@@ -68,6 +68,9 @@ focused commit; each ships with regression tests.
 - **✨ Phase 2 — Task 9: /api/mcp CRUD endpoints (v0.8.0)**
   - `api/routers/mcp.py` — /api/mcp CRUD endpoints (list, create, delete, test); admin auth via PasswordAuthMiddleware; 409 on duplicate names (Phase 2 Task 9)
 
+- **✨ Phase 2 — Task 10: MCP Servers Settings page (v0.8.0, Phase 2 closeout)**
+  - frontend Settings/MCP page — list/add/test/delete MCP servers; sidebar nav link; full i18n across 10 locales (Phase 2 Task 10, Phase 2 closeout)
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
