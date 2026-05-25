@@ -537,7 +537,10 @@ export const bnIN = {
     citations: {
       toolCallLabel: "টুল কল",
       mcpIndexLabel: "MCP টুল কল #{index}",
-      mcpPlaceholder: "ফলাফল এখনও স্ট্রিম হয়নি — সম্পূর্ণ টুল কল পেলোড v0.8.1-এ আসবে",
+      mcpPlaceholder: "এই পুরনো সেশনের জন্য ফলাফল পাওয়া যাচ্ছে না",
+      mcpToolName: "টুল",
+      mcpArgs: "আর্গুমেন্ট",
+      mcpResult: "ফলাফল",
       sourceLabel: "উৎস",
       noteLabel: "নোট",
       insightLabel: "ইনসাইট",

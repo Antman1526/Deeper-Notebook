@@ -537,7 +537,10 @@ export const zhCN = {
     citations: {
       toolCallLabel: "工具调用",
       mcpIndexLabel: "MCP 工具调用 #{index}",
-      mcpPlaceholder: "结果尚未流式传输 — 完整工具调用载荷将在 v0.8.1 中提供",
+      mcpPlaceholder: "此旧会话的结果不可用",
+      mcpToolName: "工具",
+      mcpArgs: "参数",
+      mcpResult: "结果",
       sourceLabel: "来源",
       noteLabel: "笔记",
       insightLabel: "洞察",

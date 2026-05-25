@@ -254,3 +254,115 @@ def test_patch_mcp_server_rejects_empty_body(monkeypatch):
     r = client.patch("/api/mcp/mcp_server:x1", json={})
     assert r.status_code == 400, r.text
     assert "No fields to update" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# v0.8.1 Item 3 — _resolve_chat_tools captures accumulator
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_chat_tools_captures_calls(monkeypatch):
+    """When captures is provided, mcp_search appends one record per call
+    with correct index, name, args, and text."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+
+    # call_tool is an instance method — monkeypatching the class requires
+    # the replacement to accept `self` as the first positional argument.
+    async def fake_call_tool(self, name, args):
+        return {"text": "fake search result"}
+
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    captures: list = []
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[{"id": "mcp_server:1", "name": "test",
+                                "url": "http://x", "enabled": True}],
+                captures=captures,
+            )
+        )
+        # Invoke the mcp_search coroutine directly
+        mcp_search = next(t for t in tools if t.name == "mcp_search")
+        loop.run_until_complete(mcp_search.coroutine("test query"))
+    finally:
+        loop.close()
+
+    assert len(captures) == 1
+    assert captures[0]["index"] == 1
+    assert captures[0]["name"] == "web_search"
+    assert captures[0]["args"] == {"query": "test query"}
+    assert captures[0]["text"] == "fake search result"
+
+
+def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
+    """Calling mcp_search twice yields index 1 then 2 in captures."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+
+    async def fake_call_tool(self, name, args):
+        return {"text": "result"}
+
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    captures: list = []
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[{"id": "mcp_server:1", "name": "test",
+                                "url": "http://x", "enabled": True}],
+                captures=captures,
+            )
+        )
+        mcp_search = next(t for t in tools if t.name == "mcp_search")
+        loop.run_until_complete(mcp_search.coroutine("first query"))
+        loop.run_until_complete(mcp_search.coroutine("second query"))
+    finally:
+        loop.close()
+
+    assert len(captures) == 2
+    assert captures[0]["index"] == 1
+    assert captures[1]["index"] == 2
+
+
+def test_resolve_chat_tools_truncates_long_text(monkeypatch):
+    """Text longer than 4000 chars is truncated to exactly 4000 chars."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+
+    long_text = "x" * 10000
+
+    async def fake_call_tool(self, name, args):
+        return {"text": long_text}
+
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    captures: list = []
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[{"id": "mcp_server:1", "name": "test",
+                                "url": "http://x", "enabled": True}],
+                captures=captures,
+            )
+        )
+        mcp_search = next(t for t in tools if t.name == "mcp_search")
+        loop.run_until_complete(mcp_search.coroutine("any query"))
+    finally:
+        loop.close()
+
+    assert len(captures) == 1
+    assert len(captures[0]["text"]) == 4000

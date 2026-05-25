@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CitationPill } from './CitationPill'
+import type { McpToolCall } from '@/lib/types/api'
 
 // v0.8.0 Phase 4 Task 14 — component tests for CitationPill.
 
@@ -59,8 +60,8 @@ vi.mock('@/lib/hooks/use-insights', () => ({
   }),
 }))
 
-function makeWrapper() {
-  const qc = new QueryClient()
+function makeWrapper(queryClient?: QueryClient) {
+  const qc = queryClient ?? new QueryClient()
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   )
@@ -144,5 +145,56 @@ describe('CitationPill', () => {
     // insight_type 'key_points' → 'key points' after underscore strip + capitalize CSS
     expect(screen.getByText(/key points/i)).toBeInTheDocument()
     expect(screen.getByText(/Generated insight content/)).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // v0.8.1 Item 3 — MCP pill payload rendering from TanStack Query cache
+  // ---------------------------------------------------------------------------
+
+  it('mcp pill popover renders tool name, args, and result when cache is populated', () => {
+    // Pre-populate the TanStack Query cache with a fake MCP tool-call payload
+    // keyed by the message id we'll pass as messageId prop.
+    const qc = new QueryClient()
+    const calls: McpToolCall[] = [
+      {
+        index: 1,
+        name: 'web_search',
+        args: { query: 'open notebook plus features' },
+        text: 'Open Notebook Plus is a desktop research app.',
+      },
+    ]
+    qc.setQueryData(['mcp', 'tool-calls', 'msg-test-123'], calls)
+
+    render(
+      <CitationPill kind="mcp" value="1" messageId="msg-test-123" />,
+      { wrapper: makeWrapper(qc) },
+    )
+
+    // Tool name label
+    expect(screen.getByText(/chat\.citations\.mcpToolName/)).toBeInTheDocument()
+    // Tool function name
+    expect(screen.getByText(/web_search/)).toBeInTheDocument()
+    // Args section header
+    expect(screen.getByText(/chat\.citations\.mcpArgs/)).toBeInTheDocument()
+    // Args JSON includes the query
+    expect(screen.getByText(/open notebook plus features/)).toBeInTheDocument()
+    // Result section
+    expect(screen.getByText(/chat\.citations\.mcpResult/)).toBeInTheDocument()
+    // Result excerpt
+    expect(screen.getByText(/Open Notebook Plus is a desktop/)).toBeInTheDocument()
+  })
+
+  it('mcp pill popover falls back to placeholder when no cached payload exists', () => {
+    // No cache entry set — should show the updated placeholder.
+    render(
+      <CitationPill kind="mcp" value="1" messageId="msg-no-cache" />,
+      { wrapper: makeWrapper() },
+    )
+
+    expect(screen.getByText(/chat\.citations\.toolCallLabel/)).toBeInTheDocument()
+    // v0.8.1 Item 3 — placeholder is now the "older session" fallback message
+    expect(screen.getByText(/chat\.citations\.mcpPlaceholder/)).toBeInTheDocument()
+    // Must NOT show the tool-name label (that only appears when payload found)
+    expect(screen.queryByText(/chat\.citations\.mcpToolName/)).not.toBeInTheDocument()
   })
 })

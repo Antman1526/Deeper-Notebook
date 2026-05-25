@@ -537,7 +537,10 @@ export const zhTW = {
     citations: {
       toolCallLabel: "工具呼叫",
       mcpIndexLabel: "MCP 工具呼叫 #{index}",
-      mcpPlaceholder: "結果尚未串流 — 完整工具呼叫資料將在 v0.8.1 提供",
+      mcpPlaceholder: "此舊會話的結果不可用",
+      mcpToolName: "工具",
+      mcpArgs: "參數",
+      mcpResult: "結果",
       sourceLabel: "來源",
       noteLabel: "筆記",
       insightLabel: "洞察",

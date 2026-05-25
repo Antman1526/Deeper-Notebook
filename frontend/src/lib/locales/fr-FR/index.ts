@@ -537,7 +537,10 @@ export const frFR = {
     citations: {
       toolCallLabel: "Appel d'outil",
       mcpIndexLabel: "Appel MCP #{index}",
-      mcpPlaceholder: "Résultat pas encore diffusé — charge utile complète disponible en v0.8.1",
+      mcpPlaceholder: "Résultat non disponible pour cette ancienne session",
+      mcpToolName: "Outil",
+      mcpArgs: "Arguments",
+      mcpResult: "Résultat",
       sourceLabel: "Source",
       noteLabel: "Note",
       insightLabel: "Insight",

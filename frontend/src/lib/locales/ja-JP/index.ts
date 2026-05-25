@@ -537,7 +537,10 @@ export const jaJP = {
     citations: {
       toolCallLabel: "ツール呼び出し",
       mcpIndexLabel: "MCPツール呼び出し #{index}",
-      mcpPlaceholder: "結果はまだストリーミングされていません — 完全なツール呼び出しペイロードはv0.8.1で提供予定",
+      mcpPlaceholder: "この古いセッションでは結果を利用できません",
+      mcpToolName: "ツール",
+      mcpArgs: "引数",
+      mcpResult: "結果",
       sourceLabel: "ソース",
       noteLabel: "ノート",
       insightLabel: "インサイト",

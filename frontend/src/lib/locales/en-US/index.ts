@@ -548,10 +548,14 @@ export const enUS = {
     sessionDeleted: "Session deleted",
     citations: {
       // v0.8.0 Phase 4 Task 14 — pill + popover labels for citation markers.
+      // v0.8.1 Item 3 — mcpPlaceholder updated; mcpToolName/mcpArgs/mcpResult added.
       toolCallLabel: "Tool call",
       mcpIndexLabel: "MCP tool call #{index}",
-      // Placeholder shown until v0.8.1 stream-contract change adds tool-call payloads.
-      mcpPlaceholder: "Result not yet streamed — full tool-call payload coming in v0.8.1",
+      // Shown for old sessions that predate v0.8.1 (no cached payload).
+      mcpPlaceholder: "Result not available for this older session",
+      mcpToolName: "Tool",
+      mcpArgs: "Arguments",
+      mcpResult: "Result",
       sourceLabel: "Source",
       noteLabel: "Note",
       insightLabel: "Insight",
