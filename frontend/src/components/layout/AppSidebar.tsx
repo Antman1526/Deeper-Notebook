@@ -448,6 +448,29 @@ export function AppSidebar() {
               {t('common.signOut')}
             </Button>
           )}
+
+          {/* v0.7.210 — Version badge. Source: `window.ONP_VERSION`
+              injected by desktop/window.py at page load (read from
+              desktop/__init__.py:__version__). Falls back to the
+              /api/version endpoint when running in dev mode outside
+              the bundled .app. Read-only display — helps users tell
+              support which build they're running, and confirms a
+              fresh rebuild actually picked up new code.
+              `[suppressHydrationWarning]` because the value is set
+              client-side via window injection and may differ from
+              the SSR fallback. */}
+          {!isCollapsed && (
+            <div
+              className="mt-1 text-center text-[10px] text-sidebar-foreground/40 font-mono"
+              suppressHydrationWarning
+            >
+              v{
+                typeof window !== 'undefined'
+                  ? ((window as { ONP_VERSION?: string }).ONP_VERSION || '—')
+                  : '—'
+              }
+            </div>
+          )}
         </div>
       </div>
     </TooltipProvider>

@@ -18,7 +18,57 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.209 (in flight)
+## Unreleased — v0.7.36 → v0.7.210 (in flight)
+
+- **v0.7.210** 🐛 **Version sync + frontend version badge + /api/
+  version endpoint + periodic stale-command reaper.** Deep audit
+  by background agent + user-explicit ask to "make the startup
+  window for each new rebuild show what's running".
+
+  1. **`desktop/__init__.py` — synced `__version__` from "0.1.0"
+     to v0.7.210.** Was set when the project started, never
+     touched. Every log line, the smoke test, any About dialog
+     all reported v0.1.0 against a v0.7.x build. Locked in step
+     with the CHANGELOG via a new `test_version_matches_changelog`
+     smoke test that fails the build on drift.
+
+  2. **`api/main.py` — new `GET /api/version` endpoint.** Returns
+     `{"version": "0.7.210", "name": "Open Notebook Plus"}`.
+     Excluded from auth so the launch splash / login page can
+     hit it before the user enters credentials. Useful for
+     support diagnostics (`curl localhost:5055/api/version`)
+     without grepping logs.
+
+  3. **`desktop/window.py` — inject `window.ONP_VERSION` into the
+     main webview window** alongside the existing theme / memory /
+     voice globals. Frontend can render it in the sidebar footer.
+
+  4. **`frontend/src/components/layout/AppSidebar.tsx` — version
+     badge in the sidebar footer** (`v0.7.210`, tiny mono font,
+     muted color). Hidden when the sidebar is collapsed. Falls
+     back to `—` on the server render to avoid hydration warning;
+     populated client-side from `window.ONP_VERSION` (which
+     desktop/window.py sets).
+
+  5. **`api/main.py` — periodic stale-command reaper.** The
+     startup reaper at lifespan start only catches rows orphaned
+     by the LAST shutdown. If the worker dies mid-day while the
+     API stays up (OOM / llama.cpp crash), the orphaned rows
+     linger as "running" forever and the frontend polls them
+     until the next full API restart. Added a 5-minute
+     background loop that runs the same query. Cancelled cleanly
+     on shutdown via `_track_task` + the existing shutdown
+     teardown.
+
+  Tests at `tests/test_v0_7_210_version_and_reaper.py`: new — AST
+  pins on the sidebar badge + /api/version excluded_paths + the
+  reaper loop shape. Existing `desktop/tests/test_smoke.py`
+  updated to the new sync-with-CHANGELOG assertion.
+
+  Backend tests: **1073/1073** (unchanged — version reaper test
+  in v0.7.210 file).
+  Desktop tests: **253/253** (smoke test now asserts
+  CHANGELOG match instead of literal "0.1.0").
 
 - **v0.7.209** 🐛 **Audit sweep: 5 fixes across memory shim,
   source pipeline, auth middleware, CORS.** Fresh audit on
