@@ -18,7 +18,57 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.210 (in flight)
+## Unreleased — v0.7.36 → v0.7.211 (in flight)
+
+- **v0.7.211** 🐛 **Worker concurrency explicit + missing-GGUF
+  warnings + AsyncSqliteSaver shutdown.** Three follow-ups from
+  the v0.7.210 deep-audit deferred list.
+
+  1. **Worker `--max-tasks` flag explicit in launcher spawn.**
+     `surreal-commands.cli.worker` already defaults to 5
+     concurrent tasks (verified via `--help`), but the v0.7.210
+     audit flagged "single worker, head-of-line blocking"
+     because the spawn line had no concurrency arg. The default
+     IS 5 today, but a future surreal-commands release could
+     change it without us noticing. Pin the intent:
+     `--max-tasks 5` (tunable via `ONP_WORKER_MAX_TASKS`,
+     clamped to 1-32). No behaviour change today; defensive
+     against silent regression.
+
+  2. **Missing-GGUF startup warnings via ProgressBus.**
+     Pre-v0.7.211 path: `pick_chat_llm_file` returned None when
+     the user had deleted/moved their chat GGUF, the supervisor
+     silently skipped llama-cpp startup, auto_register saw no
+     chat credential, the user opened the app to find their
+     local chat model gone with no explanation. Same for the
+     embedding GGUF (`nomic-embed-text-v1.5.f16.gguf`). Now the
+     launcher publishes:
+       - `provider.llamacpp / warning / "No chat GGUF found in
+         <dir>. Local chat will be disabled until you download
+         a model..."`
+       - `provider.embedding / warning / "No embedding GGUF
+         found at <path>. Vector search will be disabled..."`
+     Visible in `~/.open-notebook-plus/logs/progress.jsonl` and
+     by future frontend toast plumbing.
+
+  3. **AsyncSqliteSaver connection close on FastAPI shutdown.**
+     `chat.py` and `source_chat.py` lazily open an
+     `aiosqlite.Connection` and hold it for the process lifetime
+     via the LangGraph AsyncSqliteSaver. Nothing closed it on
+     shutdown — harmless on POSIX, but on Windows the SQLite
+     file stayed locked between launcher restarts, and the FD
+     count crept up on long-running .app sessions. Added
+     `close_async_graph()` / `close_async_source_chat_graph()`
+     idempotent helpers; wired into the API lifespan teardown
+     right after the SurrealDB pool drain.
+
+  Tests at `tests/test_v0_7_211_audit_followup.py`: 7 new —
+  AST pins on all three fixes + a runtime smoke that the close
+  helper is safe on a never-built graph (because most shutdowns
+  happen on a process where the chat path was never exercised).
+
+  Backend tests: **1087/1087** (was 1080; +7 new).
+  Desktop tests: **254/254**.
 
 - **v0.7.210** 🐛 **Version sync + frontend version badge + /api/
   version endpoint + periodic stale-command reaper.** Deep audit
