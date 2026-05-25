@@ -258,6 +258,26 @@ class ExecuteChatRequest(BaseModel):
 class ExecuteChatResponse(BaseModel):
     session_id: str = Field(..., description="Session ID")
     messages: list[ChatMessage] = Field(..., description="Updated message list")
+    # v0.8.1 — smart-router decision surfaced to clients. "local" when the
+    # llama.cpp sidecar served this turn, "cloud" when the cloud provider
+    # served it, None when smart routing is off / an explicit
+    # model_override was used / no v0.8.0 routing happened. Closes the
+    # introspection gap that forced scripts/verify-chat-platform.sh
+    # Steps 4+5 into "manual eyeball check" mode.
+    selected_provider: Optional[str] = Field(
+        None,
+        description=(
+            "Which side of the smart router served this turn: 'local', "
+            "'cloud', or None when smart routing did not run."
+        ),
+    )
+    selected_model_id: Optional[str] = Field(
+        None,
+        description=(
+            "SurrealDB model ID actually used for this turn (None when "
+            "smart routing did not run)."
+        ),
+    )
 
 
 class BuildContextRequest(BaseModel):
@@ -763,6 +783,19 @@ async def execute_chat(request: ExecuteChatRequest):
             else (getattr(result, "messages", None) or [])
         )
 
+        # v0.8.1 — read smart-router decision (set by the chat-graph node
+        # when OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is on). Same dual dict /
+        # Pydantic guard as messages above so a future LangGraph state
+        # shape change doesn't silently drop the field.
+        selected_provider = (
+            result.get("selected_provider") if isinstance(result, dict)
+            else getattr(result, "selected_provider", None)
+        )
+        selected_model_id = (
+            result.get("selected_model_id") if isinstance(result, dict)
+            else getattr(result, "selected_model_id", None)
+        )
+
         # Convert messages to response format
         messages: list[ChatMessage] = []
         for msg in result_messages:
@@ -798,7 +831,12 @@ async def execute_chat(request: ExecuteChatRequest):
             model_override=model_override,
         )
 
-        return ExecuteChatResponse(session_id=request.session_id, messages=messages)
+        return ExecuteChatResponse(
+            session_id=request.session_id,
+            messages=messages,
+            selected_provider=selected_provider,
+            selected_model_id=selected_model_id,
+        )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
     except HTTPException:

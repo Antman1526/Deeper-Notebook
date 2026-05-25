@@ -25,18 +25,13 @@
 #                                open-notebook-change-me if that is also unset
 #   NOTEBOOK_ID         Required — see USAGE above
 #
-# KNOWN INTROSPECTION LIMITATION (Steps 4 + 5)
-#   The /chat/execute endpoint's ExecuteChatResponse does NOT include a
-#   "model" field — it returns only {session_id, messages}. Therefore Steps 4
-#   and 5 cannot programmatically assert which model (local vs cloud) was
-#   selected. They are implemented as "manual eyeball checks": the script
-#   prints the full response body and instructs the user to verify routing via
-#   the API logs. Look for log lines emitted by pick_provider() in
-#   open_notebook/ai/router.py, e.g.:
-#     "v0.8.0 chat router → local (fits, healthy)"
-#     "v0.8.0 chat router → cloud (overflow: 35000 > 32768)"
-#   This limitation is tracked as a v0.8.1 item: add a `selected_provider`
-#   field to ExecuteChatResponse so introspection becomes possible.
+# INTROSPECTION (Steps 4 + 5) — v0.8.1
+#   ExecuteChatResponse now carries `selected_provider` ("local"/"cloud"/null).
+#   Steps 4 and 5 assert on that field directly — no more manual eyeball
+#   checks. Requires the API to be launched with
+#     OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1
+#   plus a configured local model id, cloud model id, and (for Step 4) a
+#   healthy local chat sidecar.
 #
 # =============================================================================
 
@@ -72,12 +67,13 @@ STEPS
   1. GET  /api/local-models/health  → overall != "down"
   2. GET  /api/mcp                  → at least one enabled server
   3. POST /chat/execute             → short news prompt; response contains [mcp:1]
-  4. POST /chat/execute             → short prompt; manual: check logs for "local (fits"
-  5. POST /chat/execute             → 32k+ filler prompt; manual: check logs for "cloud"
+  4. POST /chat/execute             → short prompt; assert selected_provider == "local"
+  5. POST /chat/execute             → 32k+ filler prompt; assert selected_provider == "cloud"
 
 NOTE
-  Steps 4 and 5 cannot auto-assert model selection because ExecuteChatResponse
-  does not expose a model field. See script header for details.
+  Steps 4 and 5 require the API to be running with
+  OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1 and both local + cloud model IDs configured.
+  Without smart routing enabled, selected_provider is null on every turn.
 
 HELP
     exit 0
@@ -228,11 +224,11 @@ print(' '.join(str(m.get('content','')) for m in msgs if m.get('role')=='assista
 assert_contains "3" "assistant reply" "${MESSAGES_TEXT}" "[mcp:1]" "${CHAT_3_BODY}"
 
 # ---------------------------------------------------------------------------
-# Step 4 — Short prompt; local model should fit and be selected
-#           (manual eyeball — no model field in response)
+# Step 4 — Short prompt; local model should fit and be selected.
+#          v0.8.1: assert ExecuteChatResponse.selected_provider == "local".
 # ---------------------------------------------------------------------------
 echo ""
-echo "=== Step 4: Short prompt — expect local model (manual check) ==="
+echo "=== Step 4: Short prompt — expect selected_provider='local' ==="
 SESSION_4=$(_new_session "${NOTEBOOK_ID}")
 
 CHAT_4_BODY=$(curl -s \
@@ -244,18 +240,20 @@ CHAT_4_BODY=$(curl -s \
       \"message\": \"Hello, what is 2 + 2?\"
     }")
 
-echo "⚠️   Step 4: introspection unavailable; cannot auto-assert selected model."
-echo "    Check API logs for a line matching:"
-echo "      v0.8.0 chat router → local (fits"
-echo "    Full response (session_id + messages):"
-echo "${CHAT_4_BODY}" | python3 -m json.tool 2>/dev/null || echo "${CHAT_4_BODY}"
+SELECTED_4=$(echo "${CHAT_4_BODY}" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('selected_provider') or '')
+" 2>/dev/null || echo "")
+
+assert_eq "4" "selected_provider" "${SELECTED_4}" "local" "${CHAT_4_BODY}"
 
 # ---------------------------------------------------------------------------
-# Step 5 — Overflow prompt; cloud model should be selected
-#           (manual eyeball — no model field in response)
+# Step 5 — Overflow prompt; cloud model should be selected.
+#          v0.8.1: assert ExecuteChatResponse.selected_provider == "cloud".
 # ---------------------------------------------------------------------------
 echo ""
-echo "=== Step 5: Overflow prompt — expect cloud model (manual check) ==="
+echo "=== Step 5: Overflow prompt — expect selected_provider='cloud' ==="
 SESSION_5=$(_new_session "${NOTEBOOK_ID}")
 
 # ~32 000-word filler: "filler text " × 8000 = ~96 000 chars ≈ 24 000 tokens;
@@ -272,18 +270,18 @@ payload = {'session_id': '${SESSION_5}', 'message': '${FILLER} Now summarize thi
 print(json.dumps(payload))
 ")")
 
-echo "⚠️   Step 5: introspection unavailable; cannot auto-assert selected model."
-echo "    Check API logs for a line matching:"
-echo "      v0.8.0 chat router → cloud (overflow"
-echo "    Full response (truncated to first 500 chars):"
-echo "${CHAT_5_BODY}" | head -c 500
-echo ""
+SELECTED_5=$(echo "${CHAT_5_BODY}" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('selected_provider') or '')
+" 2>/dev/null || echo "")
+
+assert_eq "5" "selected_provider" "${SELECTED_5}" "cloud" "${CHAT_5_BODY}"
 
 # ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 echo ""
 echo "======================================="
-echo "✅  Steps 1-3 passed programmatically."
-echo "⚠️   Steps 4-5 are manual-eyeball checks (see output above)."
+echo "✅  All 5 steps passed programmatically."
 echo "======================================="
