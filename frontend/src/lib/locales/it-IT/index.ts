@@ -534,6 +534,14 @@ export const itIT = {
     sessionCreated: "Sessione chat creata",
     sessionUpdated: "Sessione aggiornata",
     sessionDeleted: "Sessione eliminata",
+    citations: {
+      toolCallLabel: "Chiamata strumento",
+      mcpIndexLabel: "Chiamata MCP #{index}",
+      mcpPlaceholder: "Risultato non ancora trasmesso — payload completo in arrivo con v0.8.1",
+      sourceLabel: "Fonte",
+      noteLabel: "Nota",
+      insightLabel: "Insight",
+    },
   },
   searchPage: {
     askAndSearch: "Chiedi e cerca",

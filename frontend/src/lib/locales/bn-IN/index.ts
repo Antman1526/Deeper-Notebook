@@ -534,6 +534,14 @@ export const bnIN = {
     sessionCreated: "চ্যাট সেশন তৈরি হয়েছে",
     sessionUpdated: "সেশন আপডেট হয়েছে",
     sessionDeleted: "সেশন মুছে ফেলা হয়েছে",
+    citations: {
+      toolCallLabel: "টুল কল",
+      mcpIndexLabel: "MCP টুল কল #{index}",
+      mcpPlaceholder: "ফলাফল এখনও স্ট্রিম হয়নি — সম্পূর্ণ টুল কল পেলোড v0.8.1-এ আসবে",
+      sourceLabel: "উৎস",
+      noteLabel: "নোট",
+      insightLabel: "ইনসাইট",
+    },
   },
   searchPage: {
     askAndSearch: "জিজ্ঞাসা ও অনুসন্ধান",

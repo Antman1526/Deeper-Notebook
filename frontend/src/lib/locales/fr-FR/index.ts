@@ -534,6 +534,14 @@ export const frFR = {
     sessionCreated: "Session de chat créée",
     sessionUpdated: "Session mise à jour",
     sessionDeleted: "Session supprimée",
+    citations: {
+      toolCallLabel: "Appel d'outil",
+      mcpIndexLabel: "Appel MCP #{index}",
+      mcpPlaceholder: "Résultat pas encore diffusé — charge utile complète disponible en v0.8.1",
+      sourceLabel: "Source",
+      noteLabel: "Note",
+      insightLabel: "Insight",
+    },
   },
   searchPage: {
     askAndSearch: "Poser une question et Rechercher",

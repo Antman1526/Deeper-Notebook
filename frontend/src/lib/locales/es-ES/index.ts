@@ -534,6 +534,14 @@ export const esES = {
     sessionCreated: "Sesión de chat creada",
     sessionUpdated: "Sesión actualizada",
     sessionDeleted: "Sesión eliminada",
+    citations: {
+      toolCallLabel: "Llamada de herramienta",
+      mcpIndexLabel: "Llamada MCP #{index}",
+      mcpPlaceholder: "Resultado aún no transmitido — la carga útil completa llegará en v0.8.1",
+      sourceLabel: "Fuente",
+      noteLabel: "Nota",
+      insightLabel: "Perspectiva",
+    },
   },
   searchPage: {
     askAndSearch: "Preguntar y buscar",
