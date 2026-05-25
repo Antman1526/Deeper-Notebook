@@ -867,6 +867,9 @@ export const frFR = {
       deleteFailed: "Échec de la suppression du serveur MCP.",
       testOk: "Connecté — {count} outil(s) disponible(s).",
       testFailed: "Échec du test de connexion.",
+      moveUp: "Déplacer vers le haut",
+      moveDown: "Déplacer vers le bas",
+      updateFailed: "Échec de la mise à jour du serveur MCP.",
     },
     observability: {
       title: "Observability Configuration",

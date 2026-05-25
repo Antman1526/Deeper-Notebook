@@ -867,6 +867,9 @@ export const ptBR = {
       deleteFailed: "Falha ao excluir servidor MCP.",
       testOk: "Conectado — {count} ferramenta(s) disponível(is).",
       testFailed: "Falha no teste de conexão.",
+      moveUp: "Mover para cima",
+      moveDown: "Mover para baixo",
+      updateFailed: "Falha ao atualizar servidor MCP.",
     },
     observability: {
       title: "Observability Configuration",

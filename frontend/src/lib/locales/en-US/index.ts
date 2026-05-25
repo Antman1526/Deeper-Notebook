@@ -883,6 +883,10 @@ export const enUS = {
       deleteFailed: "Failed to delete MCP server.",
       testOk: "Connected — {count} tool(s) available.",
       testFailed: "Connection test failed.",
+      // v0.8.1 Item 5 — priority reorder buttons
+      moveUp: "Move up",
+      moveDown: "Move down",
+      updateFailed: "Failed to update MCP server.",
     },
     observability: {
       title: "Observability Configuration",

@@ -13,6 +13,7 @@
 //   - Inline URL validation: http(s):// prefix check + trim before submit.
 
 import { useState } from 'react'
+import { ChevronUp, ChevronDown } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ import {
   useCreateMCPServer,
   useTestMCPServer,
   useDeleteMCPServer,
+  useUpdateMCPServer,
 } from '@/lib/hooks/use-mcp-servers'
 
 // Inline URL validity check — no extra dependency needed.
@@ -33,10 +35,18 @@ function isValidUrl(url: string): boolean {
 export default function MCPServersPage() {
   const { t } = useTranslation()
 
-  const { data: servers = [], isLoading } = useMCPServers()
+  const { data: rawServers = [], isLoading } = useMCPServers()
   const create = useCreateMCPServer()
   const test = useTestMCPServer()
   const del = useDeleteMCPServer()
+  const update = useUpdateMCPServer()
+
+  // v0.8.1 Item 5 — sort by priority ASC (backend also sorts, but a
+  // local sort guards against stale cache states across rapid mutations).
+  // Rows without a priority field (pre-migration) default to 100.
+  const servers = [...rawServers].sort(
+    (a, b) => (a.priority ?? 100) - (b.priority ?? 100),
+  )
 
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
@@ -125,7 +135,7 @@ export default function MCPServersPage() {
 
               {servers.length > 0 && (
                 <ul className="divide-y divide-border rounded-md border">
-                  {servers.map((server) => (
+                  {servers.map((server, i) => (
                     <li
                       key={server.id}
                       className="flex items-center justify-between gap-4 px-4 py-3"
@@ -135,6 +145,37 @@ export default function MCPServersPage() {
                         <p className="truncate text-xs text-muted-foreground">{server.url}</p>
                       </div>
                       <div className="flex shrink-0 gap-2">
+                        {/* v0.8.1 Item 5 — priority reorder buttons */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const above = servers[i - 1]
+                            update.mutate({
+                              id: server.id,
+                              body: { priority: (above.priority ?? 100) - 10 },
+                            })
+                          }}
+                          disabled={i === 0 || update.isPending}
+                          aria-label={t('settings.mcp.moveUp')}
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const below = servers[i + 1]
+                            update.mutate({
+                              id: server.id,
+                              body: { priority: (below.priority ?? 100) + 10 },
+                            })
+                          }}
+                          disabled={i === servers.length - 1 || update.isPending}
+                          aria-label={t('settings.mcp.moveDown')}
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

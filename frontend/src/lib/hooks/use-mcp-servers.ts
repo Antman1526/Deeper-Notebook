@@ -17,6 +17,9 @@ export interface MCPServer {
   name: string
   url: string
   enabled: boolean
+  // v0.8.1 Item 5 — priority field added by migration 19; lower = higher
+  // priority in the chat graph. Absent on records created before migration.
+  priority?: number
 }
 
 export interface MCPTestResult {
@@ -29,6 +32,15 @@ export interface CreateMCPServerRequest {
   name: string
   url: string
   enabled?: boolean
+}
+
+// v0.8.1 Item 5 — partial-update payload for PATCH /api/mcp/{id}.
+export interface UpdateMCPServerRequest {
+  id: string
+  body: {
+    priority?: number
+    enabled?: boolean
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +116,32 @@ export function useTestMCPServer() {
       const message =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         t('settings.mcp.testFailed')
+      toast.error(message)
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Mutation — update (priority / enabled)  v0.8.1 Item 5
+// PATCH /api/mcp/{id} — only the present fields are written.
+// Invalidates the server list on success so the reordered rows re-render.
+// ---------------------------------------------------------------------------
+export function useUpdateMCPServer() {
+  const queryClient = useQueryClient()
+  const { t } = useTranslation()
+
+  return useMutation<MCPServer, Error, UpdateMCPServerRequest>({
+    mutationFn: async ({ id, body }) => {
+      const res = await apiClient.patch<MCPServer>(`/mcp/${id}`, body)
+      return res.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MCP_QUERY_KEYS.all })
+    },
+    onError: (error: unknown) => {
+      const message =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        t('settings.mcp.updateFailed')
       toast.error(message)
     },
   })

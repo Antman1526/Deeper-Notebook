@@ -30,6 +30,7 @@ vi.mock('@/lib/hooks/use-mcp-servers', () => ({
   useCreateMCPServer: vi.fn(),
   useTestMCPServer: vi.fn(),
   useDeleteMCPServer: vi.fn(),
+  useUpdateMCPServer: vi.fn(),
 }))
 
 import {
@@ -37,6 +38,7 @@ import {
   useCreateMCPServer,
   useTestMCPServer,
   useDeleteMCPServer,
+  useUpdateMCPServer,
 } from '@/lib/hooks/use-mcp-servers'
 import MCPServersPage from './page'
 
@@ -52,6 +54,8 @@ function mockHooks(overrides: {
   testIsPending?: boolean
   delMutate?: ReturnType<typeof vi.fn>
   delIsPending?: boolean
+  updateMutate?: ReturnType<typeof vi.fn>
+  updateIsPending?: boolean
 } = {}) {
   const {
     servers = [],
@@ -62,6 +66,8 @@ function mockHooks(overrides: {
     testIsPending = false,
     delMutate = makeMutateFn(),
     delIsPending = false,
+    updateMutate = makeMutateFn(),
+    updateIsPending = false,
   } = overrides
 
   vi.mocked(useMCPServers).mockReturnValue({
@@ -86,7 +92,12 @@ function mockHooks(overrides: {
     isPending: delIsPending,
   } as any)
 
-  return { createMutate, testMutate, delMutate }
+  vi.mocked(useUpdateMCPServer).mockReturnValue({
+    mutate: updateMutate,
+    isPending: updateIsPending,
+  } as any)
+
+  return { createMutate, testMutate, delMutate, updateMutate }
 }
 
 // ---- Tests ----
@@ -231,5 +242,53 @@ describe('MCPServersPage', () => {
     await waitFor(() => {
       expect(delMutate).not.toHaveBeenCalled()
     })
+  })
+
+  // v0.8.1 Item 5 — priority reorder buttons
+  it('clicking move-up on middle row calls updateMCPServer with priority below neighbor above', async () => {
+    const updateMutate = vi.fn()
+    mockHooks({
+      servers: [
+        { id: 'srv:A', name: 'Alpha', url: 'https://a.example.com/mcp', enabled: true, priority: 90 },
+        { id: 'srv:B', name: 'Beta', url: 'https://b.example.com/mcp', enabled: true, priority: 100 },
+        { id: 'srv:C', name: 'Gamma', url: 'https://c.example.com/mcp', enabled: true, priority: 110 },
+      ],
+      updateMutate,
+    })
+    render(<MCPServersPage />)
+
+    // The move-up buttons are identified by aria-label (t() returns the key).
+    const moveUpButtons = screen.getAllByLabelText('settings.mcp.moveUp')
+    // Middle row (Beta) is at index 1 of the list — i.e. the second moveUp button.
+    fireEvent.click(moveUpButtons[1])
+
+    await waitFor(() => {
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: 'srv:B',
+        body: { priority: 80 }, // Alpha.priority(90) - 10
+      })
+    })
+  })
+
+  it('move-up button disabled on first row; move-down button disabled on last row', () => {
+    mockHooks({
+      servers: [
+        { id: 'srv:X', name: 'First', url: 'https://x.example.com/mcp', enabled: true, priority: 100 },
+        { id: 'srv:Y', name: 'Last', url: 'https://y.example.com/mcp', enabled: true, priority: 110 },
+      ],
+    })
+    render(<MCPServersPage />)
+
+    const moveUpButtons = screen.getAllByLabelText('settings.mcp.moveUp')
+    const moveDownButtons = screen.getAllByLabelText('settings.mcp.moveDown')
+
+    // First row: move-up disabled
+    expect(moveUpButtons[0]).toBeDisabled()
+    // First row: move-down NOT disabled
+    expect(moveDownButtons[0]).not.toBeDisabled()
+    // Last row: move-down disabled
+    expect(moveDownButtons[1]).toBeDisabled()
+    // Last row: move-up NOT disabled
+    expect(moveUpButtons[1]).not.toBeDisabled()
   })
 })
