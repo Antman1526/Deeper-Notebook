@@ -60,6 +60,31 @@ _NAME_TO_KIND = {
 }
 
 
+# v0.7.212 — module-level sentinel raised when a memory backend is
+# detected unreachable inside `apply_tool_call`. The per-turn driver
+# in `extract_turn` catches this sentinel and stops issuing more
+# `mem_client.add()` calls for the same turn. Without the short-
+# circuit, a memory-shim-down state caused the worker to spend
+# `~60s * N facts` on dead retries before logging and moving on.
+class _MemoryBackendUnreachable(Exception):
+    """Raised when `apply_tool_call` detects the memory backend
+    has gone unreachable for THIS turn. Caller short-circuits."""
+
+
+# Connection-related exception names we recognise without
+# importing httpx/requests at module load (those imports happen
+# inside mem0 when actually needed). Compared as `type(exc).__name__`
+# to stay loose against version drift.
+_BACKEND_DOWN_EXC_NAMES = frozenset({
+    "ConnectError",
+    "ConnectTimeout",
+    "ReadTimeout",
+    "ConnectionError",
+    "ConnectionRefusedError",
+    "OSError",
+})
+
+
 def apply_tool_call(mem_client, call: dict) -> None:
     """Translate one tool call into a mem0.add(...) invocation."""
     name = call.get("name")
@@ -96,6 +121,20 @@ def apply_tool_call(mem_client, call: dict) -> None:
             "mem_client.add failed for %s (text=%r): %s",
             kind, text[:80], exc,
         )
+        # v0.7.212 — Backend-down short-circuit. mem0's underlying
+        # httpx call has a default 60-second read timeout; without
+        # this signal, a memory-shim-down state cost the worker
+        # `60s * N_facts` per turn (5 facts ≈ 5 minutes pinned).
+        # Recognised connection-class exceptions raise our sentinel
+        # so the driver loop bails fast. Logical errors (bad
+        # payload, mem0 internal assertion) still fall through to
+        # the soft-fail path so the rest of the turn's facts can
+        # land.
+        exc_name = type(exc).__name__
+        if exc_name in _BACKEND_DOWN_EXC_NAMES:
+            raise _MemoryBackendUnreachable(
+                f"memory backend unreachable ({exc_name})"
+            ) from exc
 
 
 def extract_turn(*, llm, mem_client, chat_session_id: str,
@@ -124,7 +163,19 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
         # source_chat_id isn't a tool argument for extract_turn, but we attach
         # it to metadata so a downstream retriever can attribute the fact.
         call.setdefault("arguments", {}).setdefault("source_chat_id", chat_session_id)
-        apply_tool_call(mem_client, call)
+        try:
+            apply_tool_call(mem_client, call)
+        except _MemoryBackendUnreachable as exc:
+            # v0.7.212 — backend is down; remaining facts in this
+            # turn would each cost up to the underlying http timeout
+            # (mem0 default ~60s). Bail fast and let the next turn
+            # try again — the shim may be back up by then.
+            import logging
+            logging.getLogger(__name__).warning(
+                "extract_turn: %s — aborting remaining %d call(s) for "
+                "this turn", exc, max(0, len(calls) - calls.index(call) - 1),
+            )
+            return
 
 
 def summarize_session(*, llm, mem_client, chat_session_id: str,

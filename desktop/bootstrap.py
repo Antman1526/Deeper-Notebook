@@ -59,8 +59,30 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     else:
         interpreter = runtime_dir / "python" / "bin" / "python3"
 
+    # v0.7.212 — Partial-extraction recovery.
+    # Previously: a `python3` file existing was treated as proof that
+    # the runtime was fully extracted. If a previous extraction was
+    # interrupted mid-write (user Force Quit, disk full, Time Machine
+    # restore that copies the interpreter binary but not all the
+    # .so files), this function returned early — but the runtime is
+    # actually broken; the interpreter can't import its own stdlib.
+    # Subsequent `venv` create from this interpreter fails with a
+    # cryptic error and the user has to manually `rm -rf
+    # ~/.open-notebook-plus/python-runtime` to recover.
+    #
+    # Health check: if the file is present, ensure it's executable
+    # AND can print its version. Anything else means the install is
+    # broken — wipe the runtime dir and re-extract.
     if interpreter.exists():
-        return interpreter
+        if _interpreter_is_healthy(interpreter):
+            return interpreter
+        # Broken — log and reset.
+        import logging
+        logging.getLogger(__name__).warning(
+            "v0.7.212: detected partial/broken python-runtime at %s; "
+            "wiping and re-extracting", runtime_dir,
+        )
+        shutil.rmtree(runtime_dir, ignore_errors=True)
 
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
@@ -79,6 +101,35 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
         interpreter.chmod(0o755)
 
     return interpreter
+
+
+def _interpreter_is_healthy(interpreter: Path) -> bool:
+    """v0.7.212 — Probe that the extracted Python interpreter can
+    actually run. Returns False on any failure (missing executable
+    bit, broken stdlib link, partial tarball extraction).
+
+    Implementation: best-effort `python -c "import sys; print(sys.version)"`
+    with a tight 5-second timeout. Anything other than rc=0 means
+    the runtime is unusable; the caller will wipe + re-extract.
+    """
+    if not interpreter.exists():
+        return False
+    if not os.access(interpreter, os.X_OK):
+        # File present but not executable — never functional.
+        try:
+            interpreter.chmod(0o755)
+        except OSError:
+            return False
+    try:
+        proc = subprocess.run(
+            [str(interpreter), "-c", "import sys, encodings; print(sys.version)"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        return proc.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
 
 
 def venv_dir() -> Path:
