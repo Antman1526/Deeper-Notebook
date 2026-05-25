@@ -20,6 +20,16 @@ focused commit; each ships with regression tests.
 
 ## Unreleased — v0.7.36 → v0.7.212 (in flight)
 
+- **✨ Phase 3 — Smart local-vs-cloud routing (v0.8.0 pre-release)**
+  Pure function deciding which AI provider (local sidecar vs cloud) to use
+  for a chat turn, based on health status, context window headroom, and user
+  preference. Foundational for Task 12 (wiring into provision_langchain_model).
+  
+  - `open_notebook/ai/router.py` — `pick_provider()` pure function routing by
+    health + n_ctx headroom; honors user overrides (cloud/local/auto). 5 unit
+    tests cover all branches: auto-mode (healthy+fits, oversized, unhealthy),
+    forced overrides (both directions), error cases, and fallbacks (Phase 3 Task 11).
+
 - **✨ Phase 1 — Local-model health verification (v0.8.0 pre-release)**
   Foundational probe system for active sidecar health checks, surfaced at
   startup via launcher.log and on-demand via /api/local-models/health + badge
