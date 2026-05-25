@@ -68,6 +68,39 @@ class ThreadState(TypedDict):
     model_override: Optional[str]
 
 
+async def _resolve_chat_tools(*, force_servers=None) -> list:
+    """Phase 2 — when at least one MCP server is enabled in the
+    registry, expose `mcp_search` + `mcp_fetch` that route to the
+    first enabled server. Future: per-server tool surfaces (one
+    mcp_* function per server) for richer model decisions."""
+    from langchain_core.tools import Tool
+    from open_notebook.mcp.client import MCPClient
+    from open_notebook.mcp.registry import list_enabled_servers
+
+    servers = force_servers if force_servers is not None else await list_enabled_servers()
+    if not servers:
+        return []
+    server = servers[0]
+    client = MCPClient(url=server["url"])
+
+    async def _search(query: str) -> str:
+        result = await client.call_tool("web_search", {"query": query})
+        return result.get("text") or "(no result)"
+
+    async def _fetch(url: str) -> str:
+        result = await client.call_tool("fetch_url", {"url": url})
+        return result.get("text") or "(no result)"
+
+    # Tool(name, func, description) — func is positional-required in this
+    # version of langchain_core; pass func=None + coroutine for async-only tools.
+    return [
+        Tool(name="mcp_search", func=None, description="Search the web via MCP",
+             coroutine=_search),
+        Tool(name="mcp_fetch", func=None, description="Fetch a URL via MCP",
+             coroutine=_fetch),
+    ]
+
+
 async def call_model_with_messages(
     state: ThreadState, config: RunnableConfig
 ) -> dict:
@@ -137,6 +170,21 @@ async def call_model_with_messages(
         model = await provision_langchain_model(
             content_for_sizing, model_id, "chat", max_tokens=8192
         )
+
+        # v0.8.0 Phase 2 Task 8 — bind MCP tools when any server is
+        # enabled. We resolve tools each turn so the list reflects the
+        # current registry state without requiring a server restart.
+        # Wrapped in try/except because local-only providers (llama-cpp,
+        # Ollama without tool support, etc.) raise NotImplementedError or
+        # AttributeError on .bind_tools(); the chat still works normally
+        # without MCP when binding fails.
+        try:
+            mcp_tools = await _resolve_chat_tools()
+            if mcp_tools:
+                model = model.bind_tools(mcp_tools)
+        except Exception:
+            # v0.8.0 — local providers may not implement bind_tools; degrade gracefully
+            pass
 
         ai_message = await model.ainvoke(payload)
 

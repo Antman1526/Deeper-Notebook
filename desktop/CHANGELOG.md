@@ -62,6 +62,9 @@ focused commit; each ships with regression tests.
     servers only, so operators can toggle a server off without deleting it. Includes
     rollback migration 17_down for development/testing.
 
+- **✨ Phase 2 — Task 8: chat-graph mcp_search/mcp_fetch tools (v0.8.0)**
+  - `open_notebook/graphs/chat.py` — `_resolve_chat_tools()` exposes `mcp_search` + `mcp_fetch` when an MCP server is enabled; bound to LLM with graceful fallback for providers without tool support (Phase 2 Task 8)
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
