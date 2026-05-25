@@ -123,6 +123,13 @@ focused commit; each ships with regression tests.
     with N being the 1-based turn-local call index. Example block models the
     expected output. The frontend pill renderer (Task 14) reads these markers.
 
+- **✨ Phase 4 — Task 15: citation pipeline regression guard (v0.8.0, Phase 4 closeout)**
+  - `tests/test_phase4_citation_rendering.py` — 8 backend tests that render the
+    chat system prompt and run the citation regex over it. Catches accidental
+    removal of the MCP block, regex drift between frontend and backend, and
+    deletion of the frontend splitter/pill modules. Pairs with the 20 vitest
+    cases shipped in Task 14 to cover the full pipeline.
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
