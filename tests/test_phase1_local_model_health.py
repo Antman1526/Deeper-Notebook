@@ -62,3 +62,47 @@ def test_probe_openai_compatible_unhealthy_connect_refused():
     )
     assert result["status"] == "unhealthy"
     assert "connect" in (result["detail"] or "").lower()
+
+
+def test_probe_all_iterates_credentials():
+    """Given a list of credential dicts, probe_all returns one
+    HealthResult per cred in input order."""
+    from open_notebook.health.local_models import probe_all_local_models
+
+    creds = [
+        {"name": "chat", "kind": "openai_compatible",
+         "base_url": "http://127.0.0.1:0/v1"},
+        {"name": "embed", "kind": "openai_compatible",
+         "base_url": "http://127.0.0.1:0/v1"},
+    ]
+    results = probe_all_local_models(creds)
+    assert len(results) == 2
+    assert [r["name"] for r in results] == ["chat", "embed"]
+    assert all(r["status"] == "not_configured" for r in results)
+
+
+def test_router_returns_health_payload(monkeypatch):
+    """GET /api/local-models/health returns aggregated overall + per-model."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    # Stub the probe to avoid real HTTP.
+    from open_notebook.health import local_models as hm
+    monkeypatch.setattr(
+        hm, "probe_all_local_models",
+        lambda creds: [{"name": "chat", "status": "healthy",
+                        "detail": "ok", "latency_ms": 12.3}],
+    )
+    # Stub the credential fetch — in-test we have no SurrealDB.
+    from api.routers import local_models as router_mod
+    monkeypatch.setattr(
+        router_mod, "_load_local_credentials",
+        lambda: [{"name": "chat", "kind": "openai_compatible",
+                  "base_url": "http://127.0.0.1:1234/v1"}],
+    )
+    client = TestClient(app)
+    r = client.get("/api/local-models/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["overall"] in {"healthy", "degraded", "down"}
+    assert body["models"][0]["name"] == "chat"

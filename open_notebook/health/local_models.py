@@ -85,3 +85,18 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
             "detail": f"{type(exc).__name__}: {exc}",
             "latency_ms": None,
         }
+
+
+def probe_all_local_models(credentials: list[dict]) -> list[HealthResult]:
+    """Probe every local-sidecar credential. Sequential probes
+    (each is ≤9s by structured timeout); for the typical 4-5
+    local sidecars this is 36-45s worst case. Concurrent probes
+    could be a follow-up optimization but Phase 1 prioritises
+    simplicity + deterministic ordering."""
+    out: list[HealthResult] = []
+    for cred in credentials:
+        out.append(probe_local_model(
+            name=cred["name"], kind=cred["kind"],
+            base_url=cred["base_url"],
+        ))
+    return out
