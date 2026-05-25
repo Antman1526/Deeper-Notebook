@@ -20,6 +20,36 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.3 — Dual llama.cpp spawn + draft-model wiring fix (CRITICAL)**
+  - **Bug 1 (resource waste):** `desktop/app.py:_phase_select_provider`
+    called `LlamaCppProvider.start()`, which spawned a `llama_cpp.server`
+    subprocess (~4 GB RAM, 10–30 s cold mmap) on a dynamic port. Since
+    v0.7.193 wired `auto_register` to prefer `sv.chat_llm_port` over the
+    `OPENAI_COMPATIBLE_BASE_URL` env var, **nothing routed traffic to
+    that spawn** — it was a 4 GB / 30 s waste per launch, with the
+    actual chat sidecar still spun up separately by
+    `Supervisor._spawn_llamacpp_chat`. Fixed by removing the `.start()`
+    call. The `LlamaCppProvider` import is dropped from
+    `_phase_select_provider`; the class continues to expose its
+    discovery helpers (`is_available`, `pick_default_model`,
+    `list_models`) for any non-desktop callsite that wants them.
+  - **Bug 2 (Item A on the wrong path):** v0.8.2 Item A wired
+    `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` /
+    `OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT` into `LlamaCppProvider.start()`
+    — i.e. the dead path. Operators following the v0.8.2 docs were
+    setting the env vars correctly and seeing **no speedup**. Fixed by
+    moving the wiring to `Supervisor._spawn_llamacpp_chat`
+    (`desktop/launcher.py`). Env var names preserved — existing operators
+    get speculative decoding for the first time without touching their
+    `.env`.
+  - **Guards preserved on the new path**: missing/sub-1MB GGUF skipped
+    silently (no crash); malformed `n_predict` env logged and dropped;
+    `n_predict` without a draft model also dropped (would otherwise make
+    `llama_cpp.server` reject the argv).
+  - 7 new tests in `desktop/tests/test_v0_8_3_dual_spawn_fix.py` pin
+    every branch on the LIVE spawn. Full launcher + provider suite:
+    42/42 passing (35 pre-existing + 7 new).
+
 - **✨ v0.8.2 Item A — llama.cpp speculative decoding via `--model_draft`**
   - `desktop/providers/llamacpp.py`: `LlamaCppProvider.__init__` accepts
     `draft_model_path: Path | None`; when set, the spawned argv gets

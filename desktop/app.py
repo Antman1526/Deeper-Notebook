@@ -266,8 +266,12 @@ def _phase_download_models(ctx: AppContext) -> None:
 
 def _phase_select_provider(ctx: AppContext) -> None:
     """Start Ollama or llama.cpp server; populate ctx.extra_env."""
-    from desktop.providers.llamacpp import LlamaCppProvider
     from desktop.providers.ollama import OllamaProvider
+    # v0.8.3 — LlamaCppProvider no longer needed in this phase since
+    # we stopped calling .start() here (the Supervisor handles the
+    # production spawn). Discovery helpers (is_available,
+    # pick_default_model, list_models) can still be imported lazily
+    # by any callsite that wants them.
 
     assert ctx.cfg is not None
     assert ctx.log_dir is not None
@@ -281,39 +285,28 @@ def _phase_select_provider(ctx: AppContext) -> None:
             extra_env = ol.start(cfg.default_model or "")
 
     elif cfg.provider == "llamacpp":
-        # v0.8.2 Item A — operator can wire a small draft GGUF for
-        # speculative decoding. Path is absolute (not a model_dir-
-        # relative name) so the user can keep their drafts on a
-        # secondary drive. Empty/unset = no speedup, current behavior.
-        _draft_env = os.environ.get("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", "").strip()
-        _draft_path = Path(_draft_env) if _draft_env else None
-        # v0.8.2 Item C — operator-tunable draft token count per
-        # verification pass. Parsed as int; invalid value (non-int
-        # or <= 0) falls back to None so llama_cpp.server uses its
-        # built-in default. Meaningless without _draft_path.
-        _draft_n_env = os.environ.get("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "").strip()
-        try:
-            _draft_n = int(_draft_n_env) if _draft_n_env else None
-            if _draft_n is not None and _draft_n <= 0:
-                _draft_n = None
-        except ValueError:
-            _draft_n = None
-        lc = LlamaCppProvider(
-            model_dir=cfg.model_dir,
-            python_executable=ctx.venv_py,
-            draft_model_path=_draft_path,
-            draft_n_predict=_draft_n,
-        )
-        chosen_model = cfg.default_model or lc.pick_default_model()
-        if chosen_model:
-            try:
-                extra_env = lc.start(chosen_model)
-            except Exception:
-                _log_dir = ctx.log_dir
-                (_log_dir / "llamacpp.log").write_text(
-                    f"Failed to auto-start llama.cpp for {chosen_model!r}:\n"
-                    f"{traceback.format_exc()}\n"
-                )
+        # v0.8.3 — stop calling LlamaCppProvider.start() here. The
+        # Supervisor's own _spawn_llamacpp_chat (launcher.py:905) is
+        # the production llama.cpp launch path, since v0.7.193 wired
+        # auto_register to prefer sv.chat_llm_port over the
+        # OPENAI_COMPATIBLE_BASE_URL env var this branch used to set.
+        # Continuing to call .start() here was a duplicate ~4GB
+        # subprocess that no caller routed traffic to, plus 10-30s
+        # of cold-mmap latency on every launch.
+        #
+        # Knock-on: v0.8.2 Item A (OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH /
+        # OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT) was wired into
+        # LlamaCppProvider — i.e. the dead path. The Supervisor spawn
+        # now picks up those env vars directly (see launcher.py
+        # _spawn_llamacpp_chat v0.8.3 block) so speculative decoding
+        # works in production. No env var rename — operators who
+        # set them per the v0.8.2 docs get the feature for the first
+        # time without touching their .env.
+        #
+        # LlamaCppProvider stays in scope for discovery helpers
+        # (is_available, pick_default_model, list_models) used by
+        # other code paths; just no longer used to spawn.
+        pass
 
     ctx.extra_env = extra_env
 
