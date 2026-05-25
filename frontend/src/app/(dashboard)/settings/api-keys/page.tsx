@@ -692,6 +692,10 @@ function DefaultModelSelectors({
     { key: 'large_context_model', label: t('models.largeContextModelLabel'), description: t('models.largeContextModelDesc'), modelType: 'language', id: `${generatedId}-large` },
     // ONP v0.5 — 8th slot for slow-but-deep reasoning models (R1, gpt-oss, etc.)
     { key: 'default_reasoning_model', label: t('models.reasoningModelLabel'), description: t('models.reasoningModelDesc'), modelType: 'language', id: `${generatedId}-reasoning` },
+    // v0.8.1 — dedicated cloud slot for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing.
+    // Distinct from default_chat_model so the router doesn't silently route
+    // oversized prompts to a locally-configured chat model (migration 18).
+    { key: 'auto_route_cloud', label: t('models.autoRouteCloudLabel'), description: t('models.autoRouteCloudDesc'), modelType: 'language', id: `${generatedId}-auto-route-cloud` },
   ]
 
   const defaultConfigs = [...primaryConfigs, ...advancedConfigs]

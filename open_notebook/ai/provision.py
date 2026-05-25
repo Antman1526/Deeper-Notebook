@@ -61,7 +61,12 @@ def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bo
     return _health_cache[1].get(model_name, False)
 
 
-async def provision_langchain_chat_model(content: str, **kwargs) -> BaseChatModel:
+async def provision_langchain_chat_model(
+    content: str,
+    *,
+    selection_out: "dict | None" = None,
+    **kwargs,
+) -> BaseChatModel:
     """v0.8.0 — Smart-routed chat provisioning.
 
     Wraps provision_langchain_model with pick_provider when
@@ -77,10 +82,20 @@ async def provision_langchain_chat_model(content: str, **kwargs) -> BaseChatMode
       OPEN_NOTEBOOK_LOCAL_N_CTX          — local model context window (default: 32768)
       OPEN_NOTEBOOK_CHAT_PROVIDER        — override: auto | local | cloud (default: auto)
       OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL  — sidecar base URL for health probe
+
+    v0.8.1 — optional `selection_out` dict that, when smart routing is
+    enabled, is populated with `selected_provider` ("local"/"cloud") and
+    `selected_model_id` (the SurrealDB model ID actually used). The chat-
+    graph node passes a dict here so the /chat/execute response can carry
+    the routing decision back to clients (replaces the v0.8.0 "manual
+    eyeball check" workaround in scripts/verify-chat-platform.sh).
     """
     if not _truthy_env("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT"):
         # Default path — identical to calling provision_langchain_model directly
         # with no model_id so existing DefaultModels config drives selection.
+        # No selection_out fields set: the default path has no local/cloud
+        # distinction, so leaving the keys absent (caller reads as None) is
+        # the truthful answer.
         return await provision_langchain_model(
             content=content,
             model_id=None,
@@ -94,13 +109,16 @@ async def provision_langchain_chat_model(content: str, **kwargs) -> BaseChatMode
     local_model_id = os.getenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID") or None
     cloud_model_id = os.getenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID") or None
     if not cloud_model_id:
-        # v0.8.0 NOTE: if the user's DefaultModels.default_chat_model is set
-        # to a local model ID rather than a cloud model, the cloud branch of
-        # the router will route to that local model ID. This is a known
-        # v0.8.0 rough edge — v0.8.1 should add a dedicated auto_route_cloud
-        # field to DefaultModels to disambiguate the two.
+        # v0.8.1 — use the dedicated auto_route_cloud field, NOT
+        # default_chat_model. The v0.8.0 code fell back to default_chat_model
+        # which silently routed oversized prompts to a local model when the
+        # operator's chat default was itself local and
+        # OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID was unset. With auto_route_cloud
+        # absent we leave cloud_model_id as None so pick_provider falls through
+        # to its "no cloud configured" branch — transparent local-only
+        # behavior — instead of masquerading a local model as cloud.
         defaults = await model_manager.get_defaults()
-        cloud_model_id = getattr(defaults, "default_chat_model", None) or None
+        cloud_model_id = getattr(defaults, "auto_route_cloud", None) or None
 
     local_n_ctx = int(os.getenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768"))
     default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "auto")
@@ -114,6 +132,22 @@ async def provision_langchain_chat_model(content: str, **kwargs) -> BaseChatMode
         default_provider=default_provider,
     )
     logger.info(f"v0.8.0 chat router → {choice.model_id} ({choice.reason})")
+    # v0.8.1 — surface the routing decision so callers (chat graph node)
+    # can plumb it back into the HTTP response. Provider derivation: the
+    # chosen model_id matches local_model_id ⇒ "local"; otherwise "cloud".
+    # We compare by identity-of-choice rather than parsing choice.reason
+    # so future router refactors that rephrase reasons don't silently
+    # break this label.
+    if selection_out is not None:
+        if local_model_id and choice.model_id == local_model_id:
+            selection_out["selected_provider"] = "local"
+        elif cloud_model_id and choice.model_id == cloud_model_id:
+            selection_out["selected_provider"] = "cloud"
+        else:
+            # Unexpected — router returned an ID neither of our inputs.
+            # Don't lie; leave provider unset, but record the model_id.
+            selection_out["selected_provider"] = None
+        selection_out["selected_model_id"] = choice.model_id
     return await provision_langchain_model(
         content=content,
         model_id=choice.model_id,

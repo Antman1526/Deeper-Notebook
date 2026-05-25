@@ -998,6 +998,8 @@ export const zhTW = {
     reasoningModelLabel: "Reasoning Model",
 
     reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
+    autoRouteCloudLabel: "Auto-Route Cloud Model",
+    autoRouteCloudDesc: "Cloud fallback for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing. Receives oversized prompts when the local sidecar is unhealthy or the content exceeds its context window. Set this to a cloud model (GPT-4o, Claude, Gemini) — not your local chat default.",
     embeddingModelLabel: "嵌入模型",
     embeddingModelDesc: "用於語義搜尋和向量嵌入",
     ttsModelLabel: "文字轉語音模型",
