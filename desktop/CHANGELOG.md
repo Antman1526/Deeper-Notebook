@@ -20,6 +20,15 @@ focused commit; each ships with regression tests.
 
 ## Unreleased — v0.7.36 → v0.7.212 (in flight)
 
+- **✨ Phase 4 — Task 14: frontend citation pills (v0.8.0)**
+  - `frontend/src/components/chat/CitationPill.tsx` + `frontend/src/lib/utils/citations.ts` —
+    splits chat assistant text on `[mcp:N]` / `[source:ID]` / `[note:ID]` /
+    `[insight:ID]` markers and renders each as an interactive Radix popover pill.
+    For source/note/insight, hover lazy-fetches the record via existing hooks.
+    For mcp, the popover currently shows the marker label only — full tool-call
+    payload requires a chat-stream contract change (deferred to v0.8.1).
+    Full i18n across 10 locales.
+
 - **✨ Phase 3 — Smart local-vs-cloud routing (v0.8.0 pre-release)**
   Pure function deciding which AI provider (local sidecar vs cloud) to use
   for a chat turn, based on health status, context window headroom, and user

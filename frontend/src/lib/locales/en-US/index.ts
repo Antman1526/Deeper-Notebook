@@ -546,6 +546,16 @@ export const enUS = {
     sessionCreated: "Chat session created",
     sessionUpdated: "Session updated",
     sessionDeleted: "Session deleted",
+    citations: {
+      // v0.8.0 Phase 4 Task 14 — pill + popover labels for citation markers.
+      toolCallLabel: "Tool call",
+      mcpIndexLabel: "MCP tool call #{index}",
+      // Placeholder shown until v0.8.1 stream-contract change adds tool-call payloads.
+      mcpPlaceholder: "Result not yet streamed — full tool-call payload coming in v0.8.1",
+      sourceLabel: "Source",
+      noteLabel: "Note",
+      insightLabel: "Insight",
+    },
   },
   searchPage: {
     askAndSearch: "Ask and Search",

@@ -534,6 +534,14 @@ export const jaJP = {
     sessionCreated: "チャットセッションを作成しました",
     sessionUpdated: "セッションを更新しました",
     sessionDeleted: "セッションを削除しました",
+    citations: {
+      toolCallLabel: "ツール呼び出し",
+      mcpIndexLabel: "MCPツール呼び出し #{index}",
+      mcpPlaceholder: "結果はまだストリーミングされていません — 完全なツール呼び出しペイロードはv0.8.1で提供予定",
+      sourceLabel: "ソース",
+      noteLabel: "ノート",
+      insightLabel: "インサイト",
+    },
   },
   searchPage: {
     askAndSearch: "質問と検索",
