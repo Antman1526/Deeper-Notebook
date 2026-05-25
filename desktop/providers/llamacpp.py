@@ -62,6 +62,7 @@ class LlamaCppProvider:
         max_wait: float = 60.0,
         python_executable: Path | None = None,
         log_dir: Path | None = None,
+        draft_model_path: Path | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
@@ -70,6 +71,17 @@ class LlamaCppProvider:
         # Defaults to sys.executable (unfrozen/dev); pass the venv python when
         # running inside the frozen .app so llama_cpp is importable.
         self._python_executable: Path = python_executable or Path(sys.executable)
+        # v0.8.2 Item A — optional path to a smaller "draft" GGUF for
+        # llama.cpp speculative decoding. When set, --model_draft <path>
+        # is appended to the spawned argv and llama_cpp.server uses the
+        # draft model to propose tokens that the target model verifies
+        # in parallel — typical 1.5–2x decode speedup with no quality
+        # loss when the draft and target share a tokenizer family
+        # (e.g. Llama-3.2-1B drafting for Hermes-3-Llama-3.1-8B). Wired
+        # from OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH in desktop/app.py
+        # _phase_select_provider. Default None = current behavior
+        # unchanged; the flag is only added to argv when this is set.
+        self._draft_model_path: Path | None = draft_model_path
         # v0.7.151 — Where to write llama_cpp.server stderr. Until this
         # release stderr was DEVNULL'd, so when the server exited with
         # returncode=1 (e.g. unsupported model architecture, OOM, missing
@@ -116,11 +128,27 @@ class LlamaCppProvider:
             self._stderr_log = None
             self._stderr_fh = subprocess.DEVNULL
 
+        # Base argv. v0.8.2 Item A — append --model_draft only when
+        # the operator has set OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH;
+        # missing draft path or unset env keeps current behavior.
+        argv = [
+            str(self._python_executable), "-m", "llama_cpp.server",
+            "--model", str(path),
+            "--host", "127.0.0.1",
+            "--port", str(port),
+        ]
+        if self._draft_model_path is not None:
+            # Skip silently if the configured path no longer exists or
+            # is too small to be a real GGUF — spec'd as non-fatal so a
+            # stale env var doesn't take the whole sidecar down. The
+            # main model still loads; user just doesn't get the speedup.
+            if (
+                self._draft_model_path.is_file()
+                and self._draft_model_path.stat().st_size >= MIN_GGUF_BYTES
+            ):
+                argv.extend(["--model_draft", str(self._draft_model_path)])
         self._proc = subprocess.Popen(
-            [str(self._python_executable), "-m", "llama_cpp.server",
-             "--model", str(path),
-             "--host", "127.0.0.1",
-             "--port", str(port)],
+            argv,
             stdout=subprocess.DEVNULL, stderr=self._stderr_fh,
         )
         self._port = port

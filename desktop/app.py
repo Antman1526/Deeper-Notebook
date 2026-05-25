@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 import platform
 import sys
 import traceback
@@ -280,7 +281,17 @@ def _phase_select_provider(ctx: AppContext) -> None:
             extra_env = ol.start(cfg.default_model or "")
 
     elif cfg.provider == "llamacpp":
-        lc = LlamaCppProvider(model_dir=cfg.model_dir, python_executable=ctx.venv_py)
+        # v0.8.2 Item A — operator can wire a small draft GGUF for
+        # speculative decoding. Path is absolute (not a model_dir-
+        # relative name) so the user can keep their drafts on a
+        # secondary drive. Empty/unset = no speedup, current behavior.
+        _draft_env = os.environ.get("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", "").strip()
+        _draft_path = Path(_draft_env) if _draft_env else None
+        lc = LlamaCppProvider(
+            model_dir=cfg.model_dir,
+            python_executable=ctx.venv_py,
+            draft_model_path=_draft_path,
+        )
         chosen_model = cfg.default_model or lc.pick_default_model()
         if chosen_model:
             try:
