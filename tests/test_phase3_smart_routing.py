@@ -296,6 +296,163 @@ class TestProvisionLangchainChatModelEnabled:
         assert captured[0]["default_type"] == "chat"
 
 
+# ---------------------------------------------------------------------------
+# v0.8.1 Item 2 — cloud_model_id resolution via auto_route_cloud field
+# ---------------------------------------------------------------------------
+
+
+class TestCloudModelIdResolution:
+    """Verify that provision_langchain_chat_model resolves cloud_model_id from
+    DefaultModels.auto_route_cloud (not default_chat_model) when the env var
+    is unset — the fix for the v0.8.0 silent-local-masquerade bug."""
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def test_cloud_id_resolves_from_auto_route_cloud_field(self, monkeypatch):
+        """Env var unset: cloud_model_id must come from auto_route_cloud, NOT
+        default_chat_model.  The v0.8.0 bug would have used default_chat_model
+        which might be a local model."""
+        import open_notebook.ai.provision as provision_mod
+
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:local_y")
+        # Env var intentionally absent — must resolve via field.
+        monkeypatch.delenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
+
+        # Local is unhealthy so the router will try to use the cloud model.
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: False)
+
+        # Stub get_defaults: auto_route_cloud points at cloud; default_chat_model at local.
+        from open_notebook.ai.models import DefaultModels
+
+        fake_defaults = DefaultModels.__new__(DefaultModels)
+        object.__setattr__(fake_defaults, "auto_route_cloud", "model:cloud_x")
+        object.__setattr__(fake_defaults, "default_chat_model", "model:local_y")
+
+        monkeypatch.setattr(
+            provision_mod.model_manager,
+            "get_defaults",
+            lambda: _async_return(fake_defaults),
+        )
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append({"model_id": model_id})
+            return object()
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        # Oversized content to force cloud branch.
+        self._run(provision_mod.provision_langchain_chat_model("x" * 500_000))
+
+        assert len(captured) == 1
+        assert captured[0]["model_id"] == "model:cloud_x", (
+            f"Expected auto_route_cloud 'model:cloud_x', got {captured[0]['model_id']!r} — "
+            "the v0.8.0 fallback to default_chat_model may still be in place"
+        )
+
+    def test_cloud_id_env_var_overrides_auto_route_cloud_field(self, monkeypatch):
+        """OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID set: env var must win over the
+        auto_route_cloud field value."""
+        import open_notebook.ai.provision as provision_mod
+
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:local_y")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:env_z")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
+
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: False)
+
+        # Stub defaults with a different field value — env must take priority.
+        from open_notebook.ai.models import DefaultModels
+
+        fake_defaults = DefaultModels.__new__(DefaultModels)
+        object.__setattr__(fake_defaults, "auto_route_cloud", "model:field_w")
+        object.__setattr__(fake_defaults, "default_chat_model", "model:local_y")
+
+        monkeypatch.setattr(
+            provision_mod.model_manager,
+            "get_defaults",
+            lambda: _async_return(fake_defaults),
+        )
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append({"model_id": model_id})
+            return object()
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        self._run(provision_mod.provision_langchain_chat_model("x" * 500_000))
+
+        assert len(captured) == 1
+        assert captured[0]["model_id"] == "model:env_z", (
+            f"Expected env override 'model:env_z', got {captured[0]['model_id']!r}"
+        )
+
+    def test_cloud_id_is_none_when_neither_env_nor_field_set(self, monkeypatch):
+        """Neither env var nor auto_route_cloud set: cloud_model_id must be None
+        so pick_provider falls through to its 'no cloud configured' branch
+        (uses local fallback) rather than masquerading a local model as cloud."""
+        import open_notebook.ai.provision as provision_mod
+
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:local_y")
+        monkeypatch.delenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
+
+        # Local is healthy; content fits — pick_provider should return local.
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+
+        # Stub defaults: auto_route_cloud is None (not configured).
+        from open_notebook.ai.models import DefaultModels
+
+        fake_defaults = DefaultModels.__new__(DefaultModels)
+        object.__setattr__(fake_defaults, "auto_route_cloud", None)
+        object.__setattr__(fake_defaults, "default_chat_model", "model:local_y")
+
+        monkeypatch.setattr(
+            provision_mod.model_manager,
+            "get_defaults",
+            lambda: _async_return(fake_defaults),
+        )
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append({"model_id": model_id})
+            return object()
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        # Small content — fits local; with no cloud available it stays local.
+        self._run(provision_mod.provision_langchain_chat_model("short prompt"))
+
+        assert len(captured) == 1
+        # The router must pick local (no cloud configured) rather than
+        # fabricating a cloud route via default_chat_model.
+        assert captured[0]["model_id"] == "model:local_y", (
+            f"Expected local fallback 'model:local_y', got {captured[0]['model_id']!r} — "
+            "router may be masquerading a local model as cloud"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shared helper for async stubs
+# ---------------------------------------------------------------------------
+
+
+async def _async_return(value):
+    """Helper: wrap a plain value in a coroutine so monkeypatch.setattr can
+    replace async methods with a lambda that returns this coroutine."""
+    return value
+
+
 class TestHealthCacheTTL:
     """_local_chat_healthy_cached() must call the probe at most once within TTL."""
 

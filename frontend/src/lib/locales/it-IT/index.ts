@@ -996,6 +996,8 @@ export const itIT = {
     largeContextModelDesc: "Usato per elaborare documenti grandi - Gemini consigliato",
     reasoningModelLabel: "Modello di ragionamento",
     reasoningModelDesc: "Usato per domande difficili e analisi multi-step - lento ma profondo",
+    autoRouteCloudLabel: "Auto-Route Cloud Model",
+    autoRouteCloudDesc: "Cloud fallback for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing. Receives oversized prompts when the local sidecar is unhealthy or the content exceeds its context window. Set this to a cloud model (GPT-4o, Claude, Gemini) — not your local chat default.",
     embeddingModelLabel: "Modello di embedding",
     embeddingModelDesc: "Usato per ricerca semantica e embedding vettoriali",
     ttsModelLabel: "Modello Text-to-Speech",

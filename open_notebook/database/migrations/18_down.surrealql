@@ -1,0 +1,2 @@
+-- v0.8.1 Item 2 — rollback: remove the dedicated cloud model slot.
+REMOVE FIELD IF EXISTS auto_route_cloud ON open_notebook;

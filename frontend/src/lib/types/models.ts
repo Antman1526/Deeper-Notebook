@@ -25,6 +25,10 @@ export interface ModelDefaults {
   default_tools_model?: string | null
   // ONP v0.5 — dedicated slot for slow-but-deep reasoning models
   default_reasoning_model?: string | null
+  // v0.8.1 — dedicated cloud slot for the smart router (OPEN_NOTEBOOK_AUTO_ROUTE_CHAT).
+  // Separate from default_chat_model so the router doesn't silently fall
+  // back to a local model. Migration 18.
+  auto_route_cloud?: string | null
 }
 
 export interface ProviderAvailability {

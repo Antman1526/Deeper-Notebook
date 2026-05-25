@@ -20,6 +20,27 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.1 Item 2 — cloud_model_id fallback fix**
+  - `DefaultModels.auto_route_cloud` + migration 18 — dedicated slot for the
+    smart router's cloud model. Stops the v0.8.0 bug where the router silently
+    routed oversized prompts to a local model when the operator's
+    `default_chat_model` happened to point at a local sidecar and
+    `OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID` was unset. Three new unit tests cover
+    env-var override, field fallback, and the "no cloud configured" path.
+
+- ✨ **Chat routing introspection** (`api/routers/chat.py`,
+  `open_notebook/ai/provision.py`, `open_notebook/graphs/chat.py`):
+  `ExecuteChatResponse` now carries `selected_provider` ("local"/"cloud"/null)
+  and `selected_model_id`. The chat-graph node captures the
+  `pick_provider()` decision via a new `selection_out` dict on
+  `provision_langchain_chat_model()` and threads it through `ThreadState`
+  so /chat/execute can return it. Closes the v0.8.0 introspection gap that
+  forced `scripts/verify-chat-platform.sh` Steps 4+5 into manual-eyeball
+  mode — they now assert `.selected_provider == "local" | "cloud"`
+  programmatically. New test file
+  `tests/test_v0_8_1_selected_provider.py` covers the Pydantic shape and
+  the local/cloud/disabled plumbing paths.
+
 ---
 
 ## v0.8.0 — 2026-05-25 — Local-first MCP-enabled chat platform
