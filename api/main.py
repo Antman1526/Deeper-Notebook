@@ -328,6 +328,63 @@ async def lifespan(app: FastAPI):
             "Stale-command reaper failed (non-fatal): {}", e,
         )
 
+    # v0.7.210 — Periodic stale-command reaper. The startup pass
+    # above only catches rows orphaned by the LAST shutdown; if the
+    # worker dies mid-day (OOM, llama.cpp crash) while the API stays
+    # up, the orphaned rows linger as "running" forever and the
+    # frontend polls them until the next full API restart.
+    #
+    # Schedule a 5-minute loop that runs the same query. Cancelled
+    # cleanly on shutdown.
+    async def _reaper_loop() -> None:
+        from open_notebook.database.repository import repo_query as _rq
+        while True:
+            try:
+                await asyncio.sleep(300)  # 5 minutes
+                rows = await _rq(
+                    "UPDATE command "
+                    "SET status = 'failed', "
+                    "    error_message = $msg, "
+                    "    updated = time::now() "
+                    "WHERE status IN ['new', 'queued', 'running'] "
+                    "  AND updated < (time::now() - 30m) "
+                    "RETURN id",
+                    {
+                        "msg": (
+                            "Marked stale by periodic reaper — the worker "
+                            "did not progress this row in 30+ minutes. "
+                            "Re-trigger the operation if needed."
+                        ),
+                    },
+                )
+                if rows:
+                    logger.warning(
+                        "Periodic reaper: marked {} stale command "
+                        "row(s) failed", len(rows),
+                    )
+            except asyncio.CancelledError:
+                logger.debug("Periodic reaper cancelled at shutdown")
+                raise
+            except Exception as exc:
+                # Never crash the loop — log and try again next tick.
+                logger.warning(
+                    "Periodic reaper iteration failed (non-fatal): %s",
+                    exc,
+                )
+
+    reaper_task: asyncio.Task | None = None
+    try:
+        # v0.7.190 — _track_task anchors in the module-level
+        # _BACKGROUND_TASKS set so the GC doesn't reap the loose
+        # task. Same pattern as the digest scheduler / checkpoint
+        # prune loops below.
+        reaper_task = _track_task(asyncio.create_task(
+            _reaper_loop(), name="periodic_stale_command_reaper",
+        ))
+        logger.info("Started periodic stale-command reaper (every 5m)")
+    except Exception as exc:
+        logger.warning("Could not start periodic reaper: %s", exc)
+
     # ONP v0.6.1 — Start Gmail digest scheduler background task.
     # The scheduler wakes every 5 minutes, checks GmailIntegration state, and
     # fires daily/weekly digests when due. Non-fatal if it fails to start —
@@ -487,6 +544,16 @@ async def lifespan(app: FastAPI):
             except (asyncio.CancelledError, Exception):
                 pass
 
+    # v0.7.210 — Stop the periodic stale-command reaper. It sleeps
+    # in a 5-minute loop so a cancel needs to be propagated rather
+    # than waiting; just cancel + suppress.
+    if reaper_task is not None and not reaper_task.done():
+        reaper_task.cancel()
+        try:
+            await reaper_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
     # v0.7.125 — Stop the checkpoint-prune task FIRST (it's the most
     # likely to be mid-sleep so cancelling is quick), then the digest
     # scheduler. Both use the same wait_for(timeout=10) + cancel
@@ -625,6 +692,7 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        "/api/version",  # v0.7.210 — launch splash polls before auth
         "/metrics",   # v0.7.124 — Prometheus scrapes without auth
     ],
 )
@@ -813,6 +881,32 @@ async def health():
     loop point at /health; new code should use /livez (cheap) or
     /readyz (full dependency check)."""
     return {"status": "healthy"}
+
+
+# v0.7.210 — Version endpoint. Drives the splash window's "Open
+# Notebook Plus v0.7.X" badge + the About-dialog footer in the
+# tray menu + support-ticket diagnostics. Cheap, no DB call,
+# excluded from auth so the splash can hit it before the user
+# enters credentials.
+@app.get("/api/version")
+async def api_version():
+    """Return the bundled ONP version string + build metadata.
+
+    The frontend's launch splash polls this to display the running
+    version; ops dashboards / support requests can curl it to
+    confirm what build the user is on without grepping logs.
+    """
+    try:
+        # Import lazily so the test suite (which monkeypatches
+        # `desktop` modules) doesn't pay the import cost on every
+        # /api/version probe.
+        from desktop import __version__ as desktop_version
+    except Exception:
+        desktop_version = "unknown"
+    return {
+        "version": desktop_version,
+        "name": "Open Notebook Plus",
+    }
 
 
 # v0.7.15 — split liveness vs readiness so the user can actually
