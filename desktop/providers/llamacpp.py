@@ -63,6 +63,7 @@ class LlamaCppProvider:
         python_executable: Path | None = None,
         log_dir: Path | None = None,
         draft_model_path: Path | None = None,
+        draft_n_predict: int | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
@@ -82,6 +83,14 @@ class LlamaCppProvider:
         # _phase_select_provider. Default None = current behavior
         # unchanged; the flag is only added to argv when this is set.
         self._draft_model_path: Path | None = draft_model_path
+        # v0.8.2 Item C — operator-tunable draft token count per
+        # verification pass. llama_cpp.server default is 8; raising it
+        # speeds throughput when the draft model agrees often with the
+        # target (similar-architecture pairs), but wastes work on
+        # disagreement-heavy pairs (different tokenizer families).
+        # Meaningless when draft_model_path is unset; the flag is only
+        # emitted to argv when BOTH knobs are configured.
+        self._draft_n_predict: int | None = draft_n_predict
         # v0.7.151 — Where to write llama_cpp.server stderr. Until this
         # release stderr was DEVNULL'd, so when the server exited with
         # returncode=1 (e.g. unsupported model architecture, OOM, missing
@@ -147,6 +156,21 @@ class LlamaCppProvider:
                 and self._draft_model_path.stat().st_size >= MIN_GGUF_BYTES
             ):
                 argv.extend(["--model_draft", str(self._draft_model_path)])
+                # v0.8.2 Item C — also pass --n_predict_draft if the
+                # operator tuned it; otherwise llama_cpp.server uses
+                # its built-in default (currently 8 tokens / verify).
+                # Only emit when the draft itself was accepted above
+                # so a stray env var without a draft model can't
+                # generate a malformed argv that llama_cpp.server
+                # rejects at parse time.
+                if (
+                    self._draft_n_predict is not None
+                    and self._draft_n_predict > 0
+                ):
+                    argv.extend([
+                        "--n_predict_draft",
+                        str(self._draft_n_predict),
+                    ])
         self._proc = subprocess.Popen(
             argv,
             stdout=subprocess.DEVNULL, stderr=self._stderr_fh,

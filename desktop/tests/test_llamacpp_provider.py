@@ -373,6 +373,61 @@ def test_start_skips_draft_flag_when_path_too_small(gguf_dir, monkeypatch, tmp_p
     )
 
 
+def test_start_appends_n_predict_draft_when_both_set(gguf_dir, monkeypatch, tmp_path):
+    """v0.8.2 Item C — when BOTH draft_model_path AND draft_n_predict
+    are set, the spawned argv gets `--n_predict_draft <N>` immediately
+    after the `--model_draft` pair. Guards the operator-tunable knob
+    that pairs with Item A's speculative decoding."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51124)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    draft_path = tmp_path / "draft.gguf"
+    draft_path.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        draft_model_path=draft_path,
+        draft_n_predict=16,
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    argv = captured[0]
+    assert "--n_predict_draft" in argv, f"expected --n_predict_draft in argv; got {argv}"
+    idx = argv.index("--n_predict_draft")
+    assert argv[idx + 1] == "16", f"argv[{idx+1}]={argv[idx+1]!r} (want '16')"
+    # And the model_draft pair must still be present + correct
+    assert "--model_draft" in argv
+
+
+def test_start_omits_n_predict_draft_when_draft_path_missing(gguf_dir, monkeypatch, tmp_path):
+    """v0.8.2 Item C — a stale OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT without
+    a valid draft_model_path must NOT emit a stray `--n_predict_draft`
+    flag (llama_cpp.server would reject the argv at parse time)."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51125)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        draft_model_path=None,           # no draft model
+        draft_n_predict=32,              # but n_predict set anyway
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    argv = captured[0]
+    assert "--n_predict_draft" not in argv, (
+        f"n_predict_draft must be skipped when draft_model_path is None; got {argv}"
+    )
+    assert "--model_draft" not in argv
+
+
 def test_start_includes_stderr_tail_on_never_ready_timeout(gguf_dir, monkeypatch, tmp_path):
     """v0.7.151 — when the process is still alive but never binds the
     port (max_wait timeout), include the stderr tail too. The model may
