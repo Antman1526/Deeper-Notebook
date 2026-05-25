@@ -1,0 +1,9 @@
+-- Phase 2 Task 7 (v0.8.0) — DB-backed MCP server registry.
+-- Each row is one MCP endpoint the chat graph can call.
+DEFINE TABLE mcp_server SCHEMAFULL;
+DEFINE FIELD name ON mcp_server TYPE string;
+DEFINE FIELD url ON mcp_server TYPE string;
+DEFINE FIELD enabled ON mcp_server TYPE bool DEFAULT true;
+DEFINE FIELD created ON mcp_server TYPE datetime DEFAULT time::now();
+DEFINE FIELD updated ON mcp_server TYPE datetime DEFAULT time::now();
+DEFINE INDEX mcp_server_name_unique ON mcp_server FIELDS name UNIQUE;

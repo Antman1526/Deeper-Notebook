@@ -55,6 +55,13 @@ focused commit; each ships with regression tests.
     chat graph integration. Each call opens a fresh session per MCP's design.
     Added `mcp>=1.0.0` dependency to pyproject.toml.
 
+- **✨ Phase 2 — Task 7: MCP server DB registry (v0.8.0)**
+  - `open_notebook/mcp/registry.py` + migration 17 — DB-backed MCP server registry;
+    chat graph reads enabled servers per-turn. `list_enabled_servers()` queries the
+    `mcp_server` SurrealDB table (schemaful, name UNIQUE) and filters for enabled
+    servers only, so operators can toggle a server off without deleting it. Includes
+    rollback migration 17_down for development/testing.
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list

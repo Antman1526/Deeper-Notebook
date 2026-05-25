@@ -1,0 +1,2 @@
+-- Phase 2 Task 7 (v0.8.0) — rollback MCP registry.
+REMOVE TABLE mcp_server;
