@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/popover'
 import { useSource } from '@/lib/hooks/use-sources'
 import { useNote } from '@/lib/hooks/use-notes'
+import { useInsight } from '@/lib/hooks/use-insights'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { CitationKind } from '@/lib/utils/citations'
 
@@ -110,9 +111,12 @@ function NotePopoverContent({ id }: { id: string }) {
 /** Popover body for [insight:ID] pills */
 function InsightPopoverContent({ id }: { id: string }) {
   const { t } = useTranslation()
-  // Insights share the source hook; the insight ID refers to a source record
-  // whose full_text field is the generated insight content.
-  const { data, isLoading } = useSource(id)
+  // v0.8.1 Item 4 — switched from useSource(id) to useInsight(id). The MVP
+  // wrongly assumed insight IDs were sourceish records; in practice the LLM
+  // emits source_insight:xxx record IDs (per CITING INSTRUCTIONS in
+  // prompts/chat/system.jinja:51-52), so the source GET would 404 silently
+  // and the popover always showed the italic "common.insight" fallback.
+  const { data, isLoading } = useInsight(id)
 
   if (isLoading) {
     return <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
