@@ -49,9 +49,11 @@ vi.mock('@/lib/hooks/use-insights', () => ({
   useInsight: (id: string) => ({
     data: {
       id,
-      insight_type: 'summary',
+      source_id: 'source:parent_xyz',
+      insight_type: 'key_points',
       content: 'Generated insight content for the popover.',
-      title: 'Test Insight Title',
+      created: '2026-05-25T10:00:00Z',
+      updated: '2026-05-25T10:00:00Z',
     },
     isLoading: false,
   }),
@@ -129,15 +131,18 @@ describe('CitationPill', () => {
     expect(container.querySelector('button')).not.toBeNull()
   })
 
-  it('insight pill popover shows the fetched insight title (v0.8.1 useInsight wire-up)', () => {
+  it('insight pill popover shows insight_type + content excerpt (v0.8.1 useInsight wire-up)', () => {
     // v0.8.1 Item 4 — guards against regressing to useSource(id) which
-    // would silently 404 and show the italic fallback instead of the
-    // insight's own title.
+    // would silently 404 and show the italic fallback. Asserts on
+    // insight_type (humanized) + content excerpt — SourceInsightResponse
+    // has no `title` field.
     render(<CitationPill kind="insight" value="source_insight:xyz" />, {
       wrapper: makeWrapper(),
     })
 
     expect(screen.getByText(/chat\.citations\.insightLabel/)).toBeInTheDocument()
-    expect(screen.getByText('Test Insight Title')).toBeInTheDocument()
+    // insight_type 'key_points' → 'key points' after underscore strip + capitalize CSS
+    expect(screen.getByText(/key points/i)).toBeInTheDocument()
+    expect(screen.getByText(/Generated insight content/)).toBeInTheDocument()
   })
 })
