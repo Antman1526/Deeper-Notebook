@@ -17,7 +17,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import (
+    provision_langchain_chat_model,
+    provision_langchain_model,
+)
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import OpenNotebookError
@@ -167,9 +170,20 @@ async def call_model_with_messages(
         content_for_sizing = "\n".join(
             extract_text_content(m.content) for m in payload
         )
-        model = await provision_langchain_model(
-            content_for_sizing, model_id, "chat", max_tokens=8192
-        )
+        # v0.8.0 Phase 3 Task 12 — use smart-routed wrapper when no explicit
+        # model_id override is present. When model_id is set (per-request
+        # override via configurable or state.model_override) the wrapper is
+        # bypassed and the existing explicit-model path in
+        # provision_langchain_model runs instead — routing never clobbers a
+        # deliberate caller override.
+        if model_id:
+            model = await provision_langchain_model(
+                content_for_sizing, model_id, "chat", max_tokens=8192
+            )
+        else:
+            model = await provision_langchain_chat_model(
+                content_for_sizing, max_tokens=8192
+            )
 
         # v0.8.0 Phase 2 Task 8 — bind MCP tools when any server is
         # enabled. We resolve tools each turn so the list reflects the
