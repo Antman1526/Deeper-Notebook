@@ -348,12 +348,15 @@ import aiosqlite
 
 _async_source_chat_graph: "object | None" = None
 _async_source_chat_graph_lock = threading.Lock()
+# v0.7.211 — same connection-handle pattern as chat.py for clean
+# shutdown. See chat.py:close_async_graph for rationale.
+_async_source_chat_aio_conn: "object | None" = None
 
 
 async def get_async_source_chat_graph():
     """Return the AsyncSqliteSaver-backed twin of `source_chat_graph`,
     lazily constructed on first call."""
-    global _async_source_chat_graph
+    global _async_source_chat_graph, _async_source_chat_aio_conn
     if _async_source_chat_graph is not None:
         return _async_source_chat_graph
     with _async_source_chat_graph_lock:
@@ -364,4 +367,21 @@ async def get_async_source_chat_graph():
         _async_source_chat_graph = source_chat_state.compile(
             checkpointer=async_memory,
         )
+        _async_source_chat_aio_conn = aio_conn
     return _async_source_chat_graph
+
+
+async def close_async_source_chat_graph() -> None:
+    """v0.7.211 — Tear down the AsyncSqliteSaver connection on
+    shutdown. Same idempotent + safe-on-never-built pattern as
+    chat.py:close_async_graph."""
+    global _async_source_chat_graph, _async_source_chat_aio_conn
+    conn = _async_source_chat_aio_conn
+    _async_source_chat_aio_conn = None
+    _async_source_chat_graph = None
+    if conn is None:
+        return
+    try:
+        await conn.close()  # type: ignore[attr-defined]
+    except Exception:
+        pass

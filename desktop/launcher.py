@@ -722,9 +722,31 @@ class Supervisor:
         # Use the venv python to call the surreal-commands worker module
         # directly — no console script or frozen-binary dispatcher needed.
         # cwd is upstream_root for the same reason as the API.
+        #
+        # v0.7.211 — Make `--max-tasks` explicit even though the default
+        # is 5. Two reasons:
+        #   1. Visibility — the v0.7.210 deep audit flagged this as
+        #      "single worker, head-of-line blocking" because the spawn
+        #      command had no concurrency flag. The default IS 5, but a
+        #      future surreal-commands release could change that without
+        #      us noticing. Pin the intent.
+        #   2. Tunability — operators with constrained RAM (a 16 GB
+        #      Mac running a 14B local model + 5 concurrent
+        #      embed/insight/podcast jobs) can lower via
+        #      ONP_WORKER_MAX_TASKS env without code edits.
+        max_tasks_raw = os.environ.get("ONP_WORKER_MAX_TASKS", "5")
+        try:
+            max_tasks = max(1, min(int(max_tasks_raw), 32))
+        except ValueError:
+            log.warning(
+                "ONP_WORKER_MAX_TASKS=%r is not an int; using default 5",
+                max_tasks_raw,
+            )
+            max_tasks = 5
         args = [
             str(self.venv_python), "-m", "surreal_commands.cli.worker",
             "--import-modules", "commands",
+            "--max-tasks", str(max_tasks),
         ]
         self._spawn(args, cwd=self.upstream_root, name="worker")
 
