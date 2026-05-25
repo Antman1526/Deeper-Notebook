@@ -20,6 +20,8 @@ import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import { splitCitations } from '@/lib/utils/citations'
+import { CitationPill } from '@/components/chat/CitationPill'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -330,6 +332,9 @@ export function ChatPanel({
 }
 
 // Helper component to render AI messages with clickable references
+// v0.8.0 Phase 4 Task 14 — split on citation markers before markdown rendering.
+// [mcp:N] markers are rendered as CitationPill components inline; [source/note/insight:ID]
+// markers within text segments are handled by the existing compact-reference system.
 function AIMessageContent({
   content,
   onReferenceClick
@@ -338,11 +343,39 @@ function AIMessageContent({
   onReferenceClick: (type: string, id: string) => void
 }) {
   const { t } = useTranslation()
-  // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'))
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
+
+  // Shared ReactMarkdown component overrides — reused per text segment.
+  const mdComponents = {
+    a: LinkComponent,
+    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
+    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
+    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
+    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
+    h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
+    h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
+    h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
+    li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
+    ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
+    ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="my-4 overflow-x-auto">
+        <table className="min-w-full border-collapse border border-border">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
+    tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
+    tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
+    th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
+    td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
+  }
+
+  // Split the raw content on ALL citation markers ([mcp:N], [source:ID], etc.).
+  // Text segments are rendered via ReactMarkdown (with compact-reference conversion).
+  // Citation segments are rendered as CitationPill components inline.
+  const segments = splitCitations(content)
 
   // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
   // hardcoded blue-600 fails WCAG AA against the dark muted
@@ -350,34 +383,28 @@ function AIMessageContent({
   // URLs mid-character. Theme-aware token + break-words.
   return (
     <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: LinkComponent,
-          p: ({ children }) => <p className="mb-4">{children}</p>,
-          h1: ({ children }) => <h1 className="mb-4 mt-6">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-3 mt-5">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-3 mt-4">{children}</h3>,
-          h4: ({ children }) => <h4 className="mb-2 mt-4">{children}</h4>,
-          h5: ({ children }) => <h5 className="mb-2 mt-3">{children}</h5>,
-          h6: ({ children }) => <h6 className="mb-2 mt-3">{children}</h6>,
-          li: ({ children }) => <li className="mb-1">{children}</li>,
-          ul: ({ children }) => <ul className="mb-4 space-y-1">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-4 space-y-1">{children}</ol>,
-          table: ({ children }) => (
-            <div className="my-4 overflow-x-auto">
-              <table className="min-w-full border-collapse border border-border">{children}</table>
-            </div>
-          ),
-          thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
-          tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
-          th: ({ children }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
-          td: ({ children }) => <td className="border border-border px-3 py-2">{children}</td>,
-        }}
-      >
-        {markdownWithCompactRefs}
-      </ReactMarkdown>
+      {segments.map((seg, idx) => {
+        if (seg.kind === 'text') {
+          // Pass text segments through the existing compact-reference pipeline.
+          const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
+            seg.value,
+            t('common.references')
+          )
+          return (
+            <ReactMarkdown
+              key={idx}
+              remarkPlugins={[remarkGfm]}
+              components={mdComponents}
+            >
+              {markdownWithCompactRefs}
+            </ReactMarkdown>
+          )
+        }
+        // Citation segment → render as an inline pill.
+        return (
+          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} />
+        )
+      })}
     </div>
   )
 }

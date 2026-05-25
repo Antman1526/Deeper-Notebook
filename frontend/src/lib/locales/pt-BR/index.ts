@@ -534,6 +534,14 @@ export const ptBR = {
     sessionCreated: "Sessão de chat criada",
     sessionUpdated: "Sessão atualizada",
     sessionDeleted: "Sessão excluída",
+    citations: {
+      toolCallLabel: "Chamada de ferramenta",
+      mcpIndexLabel: "Chamada MCP #{index}",
+      mcpPlaceholder: "Resultado ainda não transmitido — payload completo chegará na v0.8.1",
+      sourceLabel: "Fonte",
+      noteLabel: "Nota",
+      insightLabel: "Insight",
+    },
   },
   searchPage: {
     askAndSearch: "Perguntar e Buscar",

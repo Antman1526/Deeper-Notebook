@@ -534,6 +534,14 @@ export const ruRU = {
     sessionCreated: "Сессия чата создана",
     sessionUpdated: "Сессия обновлена",
     sessionDeleted: "Сессия удалена",
+    citations: {
+      toolCallLabel: "Вызов инструмента",
+      mcpIndexLabel: "Вызов MCP #{index}",
+      mcpPlaceholder: "Результат ещё не получен — полная нагрузка вызова инструмента появится в v0.8.1",
+      sourceLabel: "Источник",
+      noteLabel: "Заметка",
+      insightLabel: "Инсайт",
+    },
   },
   searchPage: {
     askAndSearch: "Запрос и поиск",

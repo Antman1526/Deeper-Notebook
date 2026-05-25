@@ -534,6 +534,14 @@ export const zhCN = {
     sessionCreated: "聊天会话已创建",
     sessionUpdated: "会话已更新",
     sessionDeleted: "会话已删除",
+    citations: {
+      toolCallLabel: "工具调用",
+      mcpIndexLabel: "MCP 工具调用 #{index}",
+      mcpPlaceholder: "结果尚未流式传输 — 完整工具调用载荷将在 v0.8.1 中提供",
+      sourceLabel: "来源",
+      noteLabel: "笔记",
+      insightLabel: "洞察",
+    },
   },
   searchPage: {
     askAndSearch: "提问与搜索",
