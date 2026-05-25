@@ -50,6 +50,7 @@ from api.routers import commands as commands_router
 from api.routers import (
     gmail as gmail_router,
 )
+from api.routers import local_models as _local_models_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -720,6 +721,7 @@ app.add_middleware(
         "/api/auth/status",
         "/api/config",
         "/api/version",  # v0.7.210 — launch splash polls before auth
+        "/api/local-models/health",  # v0.8.0 — launch splash polls before auth
         "/metrics",   # v0.7.124 — Prometheus scrapes without auth
     ],
 )
@@ -893,6 +895,7 @@ app.include_router(languages.router, prefix="/api", tags=["languages"])
 # contents out to disk as markdown (folder or .zip).
 app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
 app.include_router(exports.router, prefix="/api", tags=["exports"])
+app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
 
 
 @app.get("/")
