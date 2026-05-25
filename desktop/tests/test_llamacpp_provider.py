@@ -255,6 +255,124 @@ def test_start_falls_back_to_devnull_when_log_dir_unwritable(gguf_dir, monkeypat
     )
 
 
+# ---------------------------------------------------------------------------
+# v0.8.2 Item A — speculative decoding via --model_draft
+# ---------------------------------------------------------------------------
+
+
+def _capture_argv_popen(captured: list):
+    """Build a fake Popen that records the argv it was called with so the
+    test can assert on the flags the provider passed to llama_cpp.server."""
+    def fake(args, stdout=None, stderr=None, **kwargs):
+        captured.append(list(args))
+        proc = MagicMock()
+        proc.poll.return_value = None  # still alive — ready_probe drives the loop
+        return proc
+    return fake
+
+
+def test_start_omits_draft_model_flag_when_unset(gguf_dir, monkeypatch):
+    """v0.8.2 Item A — backward compat. With no draft_model_path the
+    spawned argv must NOT contain --model_draft. Guards against accidentally
+    breaking the existing zero-config sidecar startup."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51120)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    assert len(captured) == 1
+    argv = captured[0]
+    assert "--model_draft" not in argv, (
+        f"draft flag must be absent when draft_model_path is None; got argv={argv}"
+    )
+
+
+def test_start_appends_draft_model_flag_when_path_valid(gguf_dir, monkeypatch, tmp_path):
+    """v0.8.2 Item A — when draft_model_path points at a real GGUF (>=1MB),
+    --model_draft <abs path> must be appended to the spawned argv so
+    llama_cpp.server picks up speculative decoding."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51121)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    # Make a small but valid (>= MIN_GGUF_BYTES) draft file
+    draft_path = tmp_path / "draft_small.gguf"
+    draft_path.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        draft_model_path=draft_path,
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    argv = captured[0]
+    assert "--model_draft" in argv, f"expected --model_draft in argv; got {argv}"
+    idx = argv.index("--model_draft")
+    assert argv[idx + 1] == str(draft_path), (
+        f"--model_draft value must be the absolute draft path; got argv[{idx+1}]={argv[idx+1]!r}"
+    )
+
+
+def test_start_skips_draft_flag_when_path_missing(gguf_dir, monkeypatch, tmp_path):
+    """v0.8.2 Item A — stale env var (path no longer exists) must not
+    crash the sidecar. Skip silently; main model still loads. The
+    operator can fix the env var without needing to restart-debug."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51122)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        draft_model_path=tmp_path / "does_not_exist.gguf",
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    argv = captured[0]
+    assert "--model_draft" not in argv, (
+        f"stale draft path must be skipped, not raised; got argv={argv}"
+    )
+
+
+def test_start_skips_draft_flag_when_path_too_small(gguf_dir, monkeypatch, tmp_path):
+    """v0.8.2 Item A — guard against Git-LFS-pointer / aborted-download
+    draft files (same size threshold as the main model loop). A user who
+    deleted+re-downloaded a draft and pointed env to a half-byte file
+    gets the unaccelerated sidecar instead of a crash loop."""
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", _capture_argv_popen(captured))
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51123)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    tiny_draft = tmp_path / "lfs_pointer.gguf"
+    tiny_draft.write_bytes(b"version https://git-lfs.github.com/spec/v1\n")
+
+    p = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        draft_model_path=tiny_draft,
+    )
+    p.start("model_b.gguf")
+    p.stop()
+
+    argv = captured[0]
+    assert "--model_draft" not in argv, (
+        f"sub-1MB draft must be skipped (likely LFS pointer); got argv={argv}"
+    )
+
+
 def test_start_includes_stderr_tail_on_never_ready_timeout(gguf_dir, monkeypatch, tmp_path):
     """v0.7.151 — when the process is still alive but never binds the
     port (max_wait timeout), include the stderr tail too. The model may

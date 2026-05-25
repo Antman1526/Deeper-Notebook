@@ -20,6 +20,33 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.2 Item A — llama.cpp speculative decoding via `--model_draft`**
+  - `desktop/providers/llamacpp.py`: `LlamaCppProvider.__init__` accepts
+    `draft_model_path: Path | None`; when set, the spawned argv gets
+    `--model_draft <abs path>` so llama-cpp-python uses the draft model
+    for speculative sampling (typical 1.5–2× decode speedup, no quality
+    loss when draft + target share a tokenizer family, e.g. Llama-3.2-1B
+    drafting for Hermes-3-Llama-3.1-8B).
+  - `desktop/app.py:_phase_select_provider` reads
+    `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` (absolute path to the GGUF)
+    and wires it through. Empty/unset = current behavior, byte-for-byte.
+    Missing or sub-1MB draft path is skipped silently (matches the
+    main-model `MIN_GGUF_BYTES` guard) so a stale env var can't crash
+    the sidecar — the operator just doesn't get the speedup.
+  - 4 new unit tests in `desktop/tests/test_llamacpp_provider.py`
+    cover: omits flag when unset (backward compat), appends flag when
+    valid, skips missing path, skips sub-1MB LFS-pointer-shaped path.
+    Suite grew 14 → 18 cases, all passing.
+
+- **📚 v0.8.2 Item B — gbrain MCP integration docs**
+  - `docs/3-USER-GUIDE/integrating-gbrain-mcp.md`: three-step setup
+    guide for registering [gbrain](https://github.com/garrytan/gbrain)
+    as an MCP source so the chat model can call its hybrid retrieval +
+    knowledge graph from any notebook. Covers the no-code v0.8.0
+    Settings → MCP Servers path, when-to-use-which decision table, and
+    four common troubleshooting modes (system prompt missing, blank
+    pill popovers, smart-routing flips to cloud, gbrain down).
+
 - **✨ v0.8.1 Item 3 — MCP tool-call payloads in citation pill popovers (Phase 4 closeout)**
   - Chat-graph `_resolve_chat_tools()` accepts a `captures` accumulator;
     each `mcp_search`/`mcp_fetch` closure appends `{index, name, args, text}`
