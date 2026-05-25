@@ -68,8 +68,20 @@ def test_extract_python_runtime_extracts_tarball(tmp_path: Path) -> None:
     assert result.exists(), "interpreter file should be extracted"
 
 
-def test_extract_python_runtime_skips_when_already_extracted(tmp_path: Path) -> None:
-    """extract_python_runtime returns early when the interpreter already exists."""
+def test_extract_python_runtime_skips_when_already_extracted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """extract_python_runtime returns early when the interpreter
+    already exists AND passes the v0.7.212 health probe.
+
+    v0.7.212 — the function now runs a quick `python -V`-style
+    probe before deciding to skip extraction, so a placeholder
+    file (like the test's `b"existing"` blob) would be treated as
+    a corrupt/partial install and re-extracted. Monkeypatch the
+    health helper to True so we exercise the skip path that the
+    original test covered (re-extraction is exercised by the new
+    v0.7.212 partial-extraction-recovery test below).
+    """
     tarball = _make_python_tarball(tmp_path)
     dest_parent = tmp_path / "home" / ".open-notebook-plus"
 
@@ -77,6 +89,14 @@ def test_extract_python_runtime_skips_when_already_extracted(tmp_path: Path) -> 
     interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
     interpreter.parent.mkdir(parents=True)
     interpreter.write_bytes(b"existing")
+
+    # v0.7.212 — stub the health probe so the placeholder file is
+    # treated as healthy. The probe itself is exercised by the
+    # behavioural tests in test_v0_7_212_audit_followup.py.
+    from desktop import bootstrap
+    monkeypatch.setattr(
+        bootstrap, "_interpreter_is_healthy", lambda _p: True,
+    )
 
     original_platform = sys.platform
     try:

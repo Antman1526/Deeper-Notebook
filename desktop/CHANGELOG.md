@@ -18,7 +18,68 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.211 (in flight)
+## Unreleased — v0.7.36 → v0.7.212 (in flight)
+
+- **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
+  mem0 backend-down short-circuit + wizard SSE thread leak.**
+  Three follow-ups from the v0.7.210 deep-audit deferred list
+  (MED #5, LOW #9, LOW #10).
+
+  1. **`desktop/bootstrap.py` — partial-extraction recovery.**
+     `extract_python_runtime` short-circuited as soon as
+     `<runtime>/python/bin/python3` existed on disk — but a
+     tarball extraction interrupted mid-write (Force Quit, disk
+     full, Time Machine partial restore) leaves the binary AND
+     a partial set of stdlib `.so` files. The interpreter can't
+     even `import sys`, and the next `python -m venv` step
+     failed with a cryptic error that forced manual
+     `rm -rf ~/.open-notebook-plus/python-runtime`. Now: probe
+     with `python -c "import sys, encodings; print(sys.version)"`
+     and `shutil.rmtree` + re-extract on any non-zero exit. The
+     `_interpreter_is_healthy` helper has its own bounded 5-s
+     timeout so a hung/non-responsive interpreter doesn't block
+     launcher startup forever.
+
+  2. **`desktop/memory/writer.py` — backend-down short-circuit.**
+     `apply_tool_call` previously caught all exceptions but
+     didn't signal the driver. A turn with 5 facts could spend
+     ~5 minutes pinned on dead 60s retries when the memory shim
+     was down (mem0's underlying httpx default read timeout).
+     Now: a new `_MemoryBackendUnreachable` sentinel is raised
+     for connection-class exceptions
+     (`ConnectError`, `ConnectionRefusedError`, `ReadTimeout`,
+     `OSError`, etc.); the `extract_turn` driver catches it and
+     aborts the remaining tool calls for THIS turn. Next turn
+     tries again — the shim may be back up. Logical errors
+     (ValueError on bad payload, mem0 internal assertions) still
+     fall through to the v0.5.10 soft-fail path so a single bad
+     fact doesn't poison the rest of the turn.
+
+  3. **`desktop/first_run/server.py` — wizard SSE thread leak.**
+     `progress_stream` started a daemon reader thread that
+     called `progress_bus.subscribe(timeout=120.0)`. When the
+     user closed the wizard window mid-stream, the writer loop
+     broke but the reader sat blocked for the full 120 s
+     timeout before terminating. Cumulative — every cancelled
+     wizard run leaked one daemon thread + one asyncio.Queue.
+     Added a `threading.Event()` cancel signal set on writer
+     exit (normal OR exception OR ConnectionResetError); reader
+     checks between subscribe iterations.
+
+  Tests at `tests/test_v0_7_212_audit_followup.py`: 7 new — AST
+  pins on each fix plus runtime tests for the interpreter health
+  probe (rc=0 / rc≠0 / missing-file) and the mem0 circuit
+  breaker (raises on ConnectionRefusedError; swallows ValueError;
+  driver aborts subsequent calls). Two pre-existing tests
+  updated: `test_bootstrap.py::test_extract_python_runtime_skips`
+  now monkeypatches the v0.7.212 health probe to True (the
+  partial-extraction-recovery path is exercised by the new
+  tests), and `test_client.py::test_build_memory_client...`
+  asserts `openai_base_url` instead of `base_url` (the v0.7.207
+  field-name swap).
+
+  Backend tests: **1094/1094** (was 1087; +7 new).
+  Desktop + memory tests: **299/299** (2 pre-existing updated).
 
 - **v0.7.211** 🐛 **Worker concurrency explicit + missing-GGUF
   warnings + AsyncSqliteSaver shutdown.** Three follow-ups from

@@ -26,9 +26,12 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints(monkeypat
         assert config["vector_store"]["config"]["user"] == "root"
         assert config["vector_store"]["config"]["password"] == "x" * 24
         # Embedder + LLM point at local servers
-        assert config["embedder"]["config"]["base_url"] == "http://127.0.0.1:51000/v1"
+        # v0.7.207 — mem0 uses `openai_base_url`, not `base_url`. See
+        # commit fa9199b for the launcher fix that swapped both
+        # embedder + LLM config blocks.
+        assert config["embedder"]["config"]["openai_base_url"] == "http://127.0.0.1:51000/v1"
         assert config["embedder"]["config"]["model"] == "nomic-embed-text-v1.5"
-        assert config["llm"]["config"]["base_url"] == "http://127.0.0.1:52000/v1"
+        assert config["llm"]["config"]["openai_base_url"] == "http://127.0.0.1:52000/v1"
         # v0.6.14: model name is "default" by default (llama-cpp accepts it)
         # so a different chat model loaded by the launcher still works.
         assert config["llm"]["config"]["model"] == "default"
