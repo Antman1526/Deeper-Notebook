@@ -17,6 +17,16 @@ A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-note
 
 Upload PDFs, audio, video, web pages, or text. Take notes. Chat with AI grounded in your sources. Run multi-step "Ask" synthesis across your library. Generate multi-speaker podcasts. **Memory** — facts and preferences automatically extracted from each chat persist across sessions. Everything runs locally if you want it to.
 
+## Why open-notebook-Plus over NotebookLM?
+
+v0.8.0 differentiators:
+
+- **Local-first chat:** runs cloud-grade conversation against the GGUF model you put on your drive. No request leaves the machine when local is healthy and fits.
+- **MCP servers:** plug in any Model Context Protocol server (web search, fetch, custom tools); the chat graph wires them into the LLM's tool surface automatically.
+- **Smart routing:** opt-in `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` picks local vs cloud per turn based on context size and sidecar health — no manual switching.
+- **Source-grounded citations:** every claim derived from your notebook documents or MCP tools renders as an interactive pill in the chat panel.
+- **Full data ownership:** your notebook, sources, and chat history live in your SurrealDB, on your drive, behind a password you set.
+
 ## What's different from upstream
 
 - **Native desktop app** — Mac `.dmg` (Windows in progress). No Docker, no terminal.

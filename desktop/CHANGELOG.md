@@ -18,7 +18,35 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.212 (in flight)
+## Unreleased
+
+---
+
+## v0.8.0 — 2026-05-25 — Local-first MCP-enabled chat platform
+
+v0.8.0 ships the full local-first MCP-enabled chat platform across four phases
+(Tasks 1-17). Active health probing detects live local-model sidecar status and
+surfaces it as colored sidebar badges so the user always knows whether their GGUF
+is reachable. An MCP server registry backed by SurrealDB lets operators plug in
+any Model Context Protocol server; the chat LangGraph graph wires enabled servers
+as tool-callable surfaces for every turn, and a Settings UI covers add/test/delete.
+Smart local-vs-cloud routing (`pick_provider()`, opt-in via `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT`)
+selects the local sidecar when it is healthy and the turn fits within its context window,
+falling back to the configured cloud model on overflow or sidecar failure — no manual
+switching required. Every claim derived from MCP tool results or notebook documents
+is tagged with a citation marker (`[mcp:N]`, `[source:ID]`, etc.) and rendered as an
+interactive pill in the chat panel. Regression tests across all four phases, a
+Phase 5 end-to-end verification script, and a version-sync bump to v0.8.0 complete
+the release.
+
+- **v0.8.0** ✨ Phase 5 closeout — E2E verification script + version release.
+  `scripts/verify-chat-platform.sh` five-step smoke test: local-model health,
+  MCP enabled-server count, MCP citation marker assertion ([mcp:1]), and
+  manual log-check steps for local-vs-cloud routing (Steps 4+5 are manual
+  eyeball checks — ExecuteChatResponse does not expose a model field; tracked
+  as v0.8.1 item). Version bumped from 0.7.212 → 0.8.0 across
+  `desktop/__init__.py`. pyproject.toml `version = "1.8.5"` is upstream
+  lfnovo/open-notebook's version and intentionally left unchanged.
 
 - **✨ Phase 4 — Task 14: frontend citation pills (v0.8.0)**
   - `frontend/src/components/chat/CitationPill.tsx` + `frontend/src/lib/utils/citations.ts` —
