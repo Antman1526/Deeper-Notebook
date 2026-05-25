@@ -107,6 +107,13 @@ focused commit; each ships with regression tests.
 - **✨ Phase 2 — Task 10: MCP Servers Settings page (v0.8.0, Phase 2 closeout)**
   - frontend Settings/MCP page — list/add/test/delete MCP servers; sidebar nav link; full i18n across 10 locales (Phase 2 Task 10, Phase 2 closeout)
 
+- **✨ Phase 4 — Task 13: citation markers in chat system prompt (v0.8.0)**
+  - `prompts/chat/system.jinja` — capabilities block flags `mcp_search`/`mcp_fetch`
+    as live-info tools; new "MCP TOOL CITATIONS" section instructs the LLM to
+    emit `[mcp:N]` markers after sentences whose claims came from MCP results,
+    with N being the 1-based turn-local call index. Example block models the
+    expected output. The frontend pill renderer (Task 14) reads these markers.
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
