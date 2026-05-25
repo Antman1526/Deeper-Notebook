@@ -1,0 +1,114 @@
+"""v0.7.210 — Version-display rollout + periodic stale-command reaper.
+
+User asked: "Make the startup window for each new rebuild or
+iteration of the application." A deep audit by background agent
+surfaced the root cause — `desktop/__init__.py:__version__` had
+been "0.1.0" since project start while CHANGELOG was at v0.7.x.
+Nothing in the UI told the user which build they were running.
+
+Fixes:
+
+  1. `desktop/__init__.py:__version__` synced to v0.7.210.
+  2. `api/main.py` exposes `GET /api/version` (auth-excluded).
+  3. `desktop/window.py` injects `window.ONP_VERSION` so the
+     frontend can render it.
+  4. `frontend/src/components/layout/AppSidebar.tsx` adds a
+     tiny version badge in the sidebar footer.
+  5. `api/main.py` adds a 5-minute periodic stale-command reaper
+     so worker crashes mid-day don't leave "running" rows that
+     the frontend polls forever (previously the reaper only ran
+     at API startup).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _src(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def test_api_version_endpoint_defined():
+    """v0.7.210 — `api/main.py` must declare `GET /api/version`
+    returning the bundled ONP version + name."""
+    src = _src("api/main.py")
+    assert '@app.get("/api/version")' in src
+    assert 'from desktop import __version__ as desktop_version' in src
+    assert '"name": "Open Notebook Plus"' in src
+
+
+def test_api_version_excluded_from_auth():
+    """v0.7.210 — /api/version must be in PasswordAuthMiddleware
+    excluded_paths so the launch splash / login page can hit it
+    before the user enters credentials."""
+    src = _src("api/main.py")
+    assert '"/api/version",' in src
+    # Right next to the v0.7.124 metrics-auth-exclusion entry.
+    assert "v0.7.210 — launch splash polls before auth" in src
+
+
+def test_window_injects_onp_version_global():
+    """v0.7.210 — desktop/window.py must inject window.ONP_VERSION
+    alongside the existing theme / memory / voice globals so the
+    frontend's AppSidebar footer can render the version badge."""
+    src = _src("desktop/window.py")
+    assert "from desktop import __version__ as _onp_version" in src
+    assert "window.ONP_VERSION = " in src
+
+
+def test_sidebar_renders_version_badge():
+    """v0.7.210 — AppSidebar must render the version badge from
+    `window.ONP_VERSION` (or `—` fallback on SSR)."""
+    src = _src("frontend/src/components/layout/AppSidebar.tsx")
+    assert "ONP_VERSION" in src
+    assert "v0.7.210 — Version badge" in src
+    # The badge is hidden when collapsed (matches the existing
+    # sidebar pattern for footer chrome).
+    assert "{!isCollapsed && (" in src
+
+
+def test_periodic_reaper_loop_defined():
+    """v0.7.210 — `api/main.py` must define a `_reaper_loop` async
+    function (5-min sleep + same query as the startup pass) and
+    anchor the task via `_track_task` so the GC can't reap it."""
+    src = _src("api/main.py")
+    assert "async def _reaper_loop()" in src
+    # The 5-minute interval is load-bearing (any shorter would
+    # spam the DB; any longer and the orphan-row UX regresses).
+    assert "await asyncio.sleep(300)" in src
+    # The loop must use the SAME (30m) staleness filter as the
+    # startup reaper — divergence would cause weird timing
+    # discrepancies between the two paths.
+    assert "AND updated < (time::now() - 30m)" in src
+    # Anchored via _track_task per the v0.7.190 GC-safe pattern.
+    assert (
+        "_track_task(asyncio.create_task(\n            _reaper_loop()"
+        in src
+    )
+
+
+def test_periodic_reaper_cancelled_on_shutdown():
+    """v0.7.210 — the reaper task must be cancelled during the
+    lifespan shutdown teardown. Otherwise it survives past the
+    FastAPI shutdown and the process refuses to exit until the
+    next 5-min wakeup."""
+    src = _src("api/main.py")
+    assert (
+        "v0.7.210 — Stop the periodic stale-command reaper" in src
+    )
+    assert "if reaper_task is not None and not reaper_task.done():" in src
+    assert "reaper_task.cancel()" in src
+
+
+def test_periodic_reaper_swallows_iteration_failures():
+    """v0.7.210 — a single failed DB query MUST NOT kill the loop.
+    The loop must log + sleep + try again next tick. Otherwise
+    one transient pool blip silently disables stale-row reaping
+    for the rest of the API's lifetime."""
+    src = _src("api/main.py")
+    assert "except asyncio.CancelledError:" in src
+    assert "except Exception as exc:" in src
+    assert "Periodic reaper iteration failed" in src

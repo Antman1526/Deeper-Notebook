@@ -308,9 +308,18 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     memory_js = _memory_injection_js()
+    # v0.7.210 — surface the running ONP version to the frontend so
+    # the user can see which build they have. The frontend's
+    # AppSidebar footer reads `window.ONP_VERSION` and renders it as
+    # a tiny badge ("v0.7.210"). Source of truth: desktop/__init__.py.
+    try:
+        from desktop import __version__ as _onp_version
+    except Exception:
+        _onp_version = "unknown"
     memory_globals = (
         f"window.ONP_MEMORY_URL = {_json.dumps(memory_url)};"
         f"window.ONP_REMIND_OPENCHRONICLE = {('true' if remind_openchronicle else 'false')};"
+        f"window.ONP_VERSION = {_json.dumps(_onp_version)};"
     )
     memory_injector = f"""
     (function() {{
