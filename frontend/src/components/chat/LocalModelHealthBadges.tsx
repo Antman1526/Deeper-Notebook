@@ -14,7 +14,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 const STATUS_DOT: Record<string, string> = {
   healthy: 'bg-emerald-500',
   unhealthy: 'bg-rose-500',
-  not_configured: 'bg-muted-foreground/60',
+  // v0.8.0 — /60 calculated to ~2.84:1 contrast on dark mode; bumped to /70 for WCAG AA 3:1 (non-text graphical object).
+  not_configured: 'bg-muted-foreground/70',
   unknown: 'bg-amber-500',
 }
 
