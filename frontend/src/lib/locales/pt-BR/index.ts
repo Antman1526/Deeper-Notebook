@@ -537,7 +537,10 @@ export const ptBR = {
     citations: {
       toolCallLabel: "Chamada de ferramenta",
       mcpIndexLabel: "Chamada MCP #{index}",
-      mcpPlaceholder: "Resultado ainda não transmitido — payload completo chegará na v0.8.1",
+      mcpPlaceholder: "Resultado não disponível para esta sessão mais antiga",
+      mcpToolName: "Ferramenta",
+      mcpArgs: "Argumentos",
+      mcpResult: "Resultado",
       sourceLabel: "Fonte",
       noteLabel: "Nota",
       insightLabel: "Insight",

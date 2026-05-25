@@ -308,6 +308,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
 
       let canonicalMessages: NotebookChatMessage[] | null = null
       let streamError: string | null = null
+      // v0.8.1 Item 3 — accumulate MCP tool-call payloads from the
+      // mcp_tool_calls event so we can stash them after the done event
+      // tells us the canonical message IDs.
+      let pendingMcpCalls: import('@/lib/types/api').McpToolCall[] | null = null
 
       for await (const event of chatApi.streamMessage({
         session_id: sessionId,
@@ -329,6 +333,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
                 : m,
             ),
           )
+        } else if (event.type === 'mcp_tool_calls') {
+          // v0.8.1 Item 3 — stash MCP call payloads until we know the
+          // canonical AI message ID (arrives in the 'done' event next).
+          pendingMcpCalls = event.calls
         } else if (event.type === 'done') {
           // Server's canonical message list — wins over our streamed
           // buffer (which lacks IDs, timestamps, and any pre-existing
@@ -339,6 +347,18 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
           // variance) and would otherwise WIPE the just-streamed reply.
           if (event.messages && event.messages.length > 0) {
             canonicalMessages = event.messages
+            // v0.8.1 Item 3 — now that we have canonical message IDs,
+            // stash any pending MCP call payloads keyed by the last
+            // AI message's ID so CitationPill can look them up.
+            if (pendingMcpCalls && pendingMcpCalls.length > 0) {
+              const lastAiMsg = [...event.messages].reverse().find(m => m.type === 'ai')
+              if (lastAiMsg) {
+                queryClient.setQueryData(
+                  ['mcp', 'tool-calls', lastAiMsg.id],
+                  pendingMcpCalls,
+                )
+              }
+            }
           }
         } else if (event.type === 'error') {
           streamError = event.detail

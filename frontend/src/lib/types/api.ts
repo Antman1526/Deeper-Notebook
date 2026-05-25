@@ -227,6 +227,19 @@ export interface UpdateNotebookChatSessionRequest {
   model_override?: string | null
 }
 
+// v0.8.1 Item 3 — shape of a single MCP tool-call capture.
+// Each record maps to one [mcp:N] marker in the AI message text.
+export interface McpToolCall {
+  /** 1-based index matching the [mcp:N] citation marker */
+  index: number
+  /** Tool name: "web_search" or "fetch_url" */
+  name: string
+  /** Tool arguments (query string or URL) */
+  args: Record<string, unknown>
+  /** Result text, truncated to 4000 chars by the backend */
+  text: string
+}
+
 export interface SendNotebookChatMessageRequest {
   session_id: string
   message: string
