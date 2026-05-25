@@ -95,10 +95,11 @@ def test_router_returns_health_payload(monkeypatch):
     )
     # Stub the credential fetch — in-test we have no SurrealDB.
     from api.routers import local_models as router_mod
+    async def _stub_creds():
+        return [{"name": "chat", "kind": "openai_compatible",
+                 "base_url": "http://127.0.0.1:1234/v1"}]
     monkeypatch.setattr(
-        router_mod, "_load_local_credentials",
-        lambda: [{"name": "chat", "kind": "openai_compatible",
-                  "base_url": "http://127.0.0.1:1234/v1"}],
+        router_mod, "_load_local_credentials", _stub_creds,
     )
     client = TestClient(app)
     r = client.get("/api/local-models/health")
