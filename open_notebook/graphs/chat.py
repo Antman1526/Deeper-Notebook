@@ -69,6 +69,12 @@ class ThreadState(TypedDict):
     context: Optional[str]
     context_config: Optional[dict]
     model_override: Optional[str]
+    # v0.8.1 — Smart-router decision plumbed back to /chat/execute so the
+    # HTTP response can include `selected_provider` ("local"/"cloud"). The
+    # node sets this when OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is on; otherwise
+    # it stays None and the response field is omitted/None.
+    selected_provider: Optional[str]
+    selected_model_id: Optional[str]
 
 
 async def _resolve_chat_tools(*, force_servers=None) -> list:
@@ -176,13 +182,21 @@ async def call_model_with_messages(
         # bypassed and the existing explicit-model path in
         # provision_langchain_model runs instead — routing never clobbers a
         # deliberate caller override.
+        # v0.8.1 — capture smart-router's local/cloud decision via
+        # selection_out so the chat router can include `selected_provider`
+        # in ExecuteChatResponse. Explicit model_override path bypasses
+        # the router entirely (the user picked a specific model), so
+        # selection_out stays empty there — `selected_provider` is None.
+        selection_out: dict = {}
         if model_id:
             model = await provision_langchain_model(
                 content_for_sizing, model_id, "chat", max_tokens=8192
             )
         else:
             model = await provision_langchain_chat_model(
-                content_for_sizing, max_tokens=8192
+                content_for_sizing,
+                selection_out=selection_out,
+                max_tokens=8192,
             )
 
         # v0.8.0 Phase 2 Task 8 — bind MCP tools when any server is
@@ -207,7 +221,17 @@ async def call_model_with_messages(
         cleaned_content = clean_thinking_content(content)
         cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
 
-        return {"messages": cleaned_message}
+        # v0.8.1 — return the routing decision alongside the new message
+        # so the /chat/execute router (api/routers/chat.py) can surface
+        # `selected_provider` in ExecuteChatResponse. Keys are absent
+        # when smart routing didn't run (model_override path or
+        # OPEN_NOTEBOOK_AUTO_ROUTE_CHAT off) — callers treat absence as
+        # None.
+        return {
+            "messages": cleaned_message,
+            "selected_provider": selection_out.get("selected_provider"),
+            "selected_model_id": selection_out.get("selected_model_id"),
+        }
     except OpenNotebookError:
         raise
     except Exception as e:
