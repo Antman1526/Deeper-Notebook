@@ -42,7 +42,7 @@ describe('LocalModelHealthBadges', () => {
     expect(dots).toHaveLength(3)
     expect(dots[0]).toHaveClass('bg-emerald-500') // healthy
     expect(dots[1]).toHaveClass('bg-rose-500') // unhealthy
-    expect(dots[2]).toHaveClass('bg-muted-foreground/60') // not_configured
+    expect(dots[2]).toHaveClass('bg-muted-foreground/70') // not_configured (v0.8.0 — WCAG AA contrast bump)
   })
 
   it('includes aria-label with model name and status key', () => {
