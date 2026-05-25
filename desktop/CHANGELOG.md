@@ -48,6 +48,13 @@ focused commit; each ships with regression tests.
      logs results to launcher.log as `phase1.health {name}: {status} ({detail}, Xms)`.
      Non-fatal catch so stuck probes don't block UI launch.
 
+- **✨ Phase 2 — Task 6: MCP client wrapper (v0.8.0)**
+  - `open_notebook/mcp/client.py` — Generic streamable-http MCP client wrapper.
+    Provides MCPClient dataclass wrapping mcp.client.session and streamablehttp_client,
+    exposing `await list_tool_names()` and `await call_tool(name, arguments)` for
+    chat graph integration. Each call opens a fresh session per MCP's design.
+    Added `mcp>=1.0.0` dependency to pyproject.toml.
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
