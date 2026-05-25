@@ -1008,6 +1008,73 @@ class Supervisor:
             "--host", "127.0.0.1", "--port", str(port),
             "--n_ctx", n_ctx,
         ]
+
+        # v0.8.3 — Speculative decoding via --model_draft. Originally
+        # shipped as v0.8.2 Item A but wired to LlamaCppProvider in
+        # desktop/providers/llamacpp.py — which auto_register's v0.7.193
+        # fix had already deprecated as a production spawn path.
+        # Operators following the v0.8.2 docs were setting the env vars
+        # correctly but seeing no speedup because this spawn (the LIVE
+        # one) never read them. Now wired here. Env var names preserved
+        # for backward compat.
+        #
+        # Skipping rules (same as the original llamacpp.py guard):
+        #   - Missing OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH = no flag,
+        #     no speedup, same as today (sidecar default behavior).
+        #   - Path doesn't exist or is <1MB (Git-LFS pointer / aborted
+        #     download) = silently skip rather than crash; main model
+        #     still loads, operator just doesn't get the speedup.
+        #   - n_predict knob without a draft path = dropped silently
+        #     (llama_cpp.server would reject a bare --n_predict_draft).
+        _MIN_GGUF_BYTES = 1 * 1024 * 1024
+        _draft_path_str = os.environ.get(
+            "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", ""
+        ).strip()
+        if _draft_path_str:
+            from pathlib import Path as _Path
+            _draft_path = _Path(_draft_path_str)
+            if (
+                _draft_path.is_file()
+                and _draft_path.stat().st_size >= _MIN_GGUF_BYTES
+            ):
+                args.extend(["--model_draft", str(_draft_path)])
+                # Only emit --n_predict_draft when the draft model was
+                # accepted above; bare n_predict without a draft model
+                # would make llama_cpp.server reject the argv at parse.
+                _draft_n_env = os.environ.get(
+                    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", ""
+                ).strip()
+                if _draft_n_env:
+                    try:
+                        _draft_n = int(_draft_n_env)
+                        if _draft_n > 0:
+                            args.extend([
+                                "--n_predict_draft", str(_draft_n),
+                            ])
+                    except ValueError:
+                        # Stale or malformed env value — log and skip
+                        # rather than crash the chat sidecar over a
+                        # tuning knob.
+                        log.warning(
+                            "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT=%r is "
+                            "not an int; ignoring (--n_predict_draft "
+                            "omitted; llama_cpp.server default applies)",
+                            _draft_n_env,
+                        )
+                log.info(
+                    "llamacpp_chat: speculative decoding enabled "
+                    "(--model_draft=%s)",
+                    _draft_path,
+                )
+            else:
+                log.warning(
+                    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=%s skipped: "
+                    "file missing or <1MB (likely Git-LFS pointer or "
+                    "aborted download). Chat sidecar starting without "
+                    "speculative decoding.",
+                    _draft_path,
+                )
+
         self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
 
     def _spawn_memory_retriever(self, port: int) -> None:
