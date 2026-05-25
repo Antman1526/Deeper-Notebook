@@ -122,16 +122,27 @@ function InsightPopoverContent({ id }: { id: string }) {
     return <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
   }
 
+  // v0.8.1 Item 4 follow-up — SourceInsightResponse has no `title` field
+  // (shape: id, source_id, insight_type, content, created, updated). Show
+  // the insight_type as the heading and a truncated content excerpt as
+  // the body, matching how Source and Note popovers display their data.
   return (
     <div className="space-y-1">
       <p className="text-xs font-semibold text-foreground">
         {t('chat.citations.insightLabel')}
       </p>
-      {data?.title ? (
-        <p className="text-xs text-muted-foreground">{data.title}</p>
+      {data?.insight_type ? (
+        <p className="text-xs text-muted-foreground capitalize">
+          {data.insight_type.replace(/_/g, ' ')}
+        </p>
       ) : (
         <p className="text-xs text-muted-foreground italic">
           {t('common.insight')}
+        </p>
+      )}
+      {data?.content && (
+        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
+          {data.content.slice(0, 200)}
         </p>
       )}
     </div>
