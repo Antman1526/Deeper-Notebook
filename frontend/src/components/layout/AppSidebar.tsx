@@ -27,6 +27,7 @@ import {
 // shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
+import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -447,6 +448,14 @@ export function AppSidebar() {
               <LogOut className="h-4 w-4" />
               {t('common.signOut')}
             </Button>
+          )}
+
+          {/* v0.8.0 Phase 1 — local-model health badges; hidden when
+              sidebar is collapsed and during the initial fetch. */}
+          {!isCollapsed && (
+            <div className="mt-2">
+              <LocalModelHealthBadges />
+            </div>
           )}
 
           {/* v0.7.210 — Version badge. Source: `window.ONP_VERSION`
