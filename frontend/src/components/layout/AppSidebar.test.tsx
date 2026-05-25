@@ -4,6 +4,13 @@ import { describe, it, expect, vi } from 'vitest'
 import { AppSidebar } from './AppSidebar'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 
+// v0.8.0 — mock the LocalModelHealthBadges component so the
+// AppSidebar tests don't need a QueryClientProvider. The badge
+// component has its own dedicated test suite.
+vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
+  LocalModelHealthBadges: () => null,
+}))
+
 // Mock Tooltip components to avoid Radix UI async issues in tests
 vi.mock('@/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
