@@ -995,6 +995,13 @@ export const itIT = {
     testModelFailed: "Test del Modello Fallito",
     searchOrAddModel: "Cerca o digita un nome modello...",
     addCustomModel: "Aggiungi \"{name}\"",
+    status: {
+      healthy: "sano",
+      unhealthy: "non sano",
+      notConfigured: "non configurato",
+      unknown: "sconosciuto",
+      noDetail: "nessun dettaglio",
+    },
   },
   apiKeys: {
     title: "Configura la tua IA con le tue chiavi API",

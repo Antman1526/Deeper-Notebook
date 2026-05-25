@@ -997,6 +997,13 @@ export const jaJP = {
     testModelFailed: "モデルテスト失敗",
     searchOrAddModel: "検索またはモデル名を入力...",
     addCustomModel: "\"{name}\" を追加",
+    status: {
+      healthy: "正常",
+      unhealthy: "異常",
+      notConfigured: "未設定",
+      unknown: "不明",
+      noDetail: "詳細なし",
+    },
   },
   apiKeys: {
     title: "独自のAPIキーでAIを設定",

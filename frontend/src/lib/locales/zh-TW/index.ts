@@ -997,6 +997,13 @@ export const zhTW = {
     testModelFailed: "模型測試失敗",
     searchOrAddModel: "搜尋或輸入模型名稱...",
     addCustomModel: "新增 \"{name}\"",
+    status: {
+      healthy: "正常",
+      unhealthy: "異常",
+      notConfigured: "未配置",
+      unknown: "未知",
+      noDetail: "無詳情",
+    },
   },
   apiKeys: {
     title: "使用您自己的 API 金鑰設定 AI",

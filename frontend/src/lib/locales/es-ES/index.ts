@@ -998,6 +998,13 @@ export const esES = {
     testModelFailed: "Prueba de modelo fallida",
     searchOrAddModel: "Buscar o escribir nombre del modelo...",
     addCustomModel: "Agregar \"{name}\"",
+    status: {
+      healthy: "sano",
+      unhealthy: "no sano",
+      notConfigured: "no configurado",
+      unknown: "desconocido",
+      noDetail: "sin detalles",
+    },
   },
   apiKeys: {
     title: "Configura tu IA con tus propias claves API",
