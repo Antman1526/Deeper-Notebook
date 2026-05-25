@@ -867,6 +867,9 @@ export const jaJP = {
       deleteFailed: "MCP サーバーの削除に失敗しました。",
       testOk: "接続成功 — ツール {count} 件が利用可能です。",
       testFailed: "接続テストに失敗しました。",
+      moveUp: "上へ",
+      moveDown: "下へ",
+      updateFailed: "MCP サーバーの更新に失敗しました。",
     },
     observability: {
       title: "Observability Configuration",

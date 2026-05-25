@@ -867,6 +867,9 @@ export const ruRU = {
       deleteFailed: "Не удалось удалить MCP-сервер.",
       testOk: "Подключено — доступно инструментов: {count}.",
       testFailed: "Тест подключения не прошёл.",
+      moveUp: "Переместить вверх",
+      moveDown: "Переместить вниз",
+      updateFailed: "Не удалось обновить MCP-сервер.",
     },
     observability: {
       title: "Observability Configuration",

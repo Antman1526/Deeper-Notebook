@@ -867,6 +867,9 @@ export const zhCN = {
       deleteFailed: "删除 MCP 服务器失败。",
       testOk: "连接成功 — 可用工具 {count} 个。",
       testFailed: "连接测试失败。",
+      moveUp: "上移",
+      moveDown: "下移",
+      updateFailed: "更新 MCP 服务器失败。",
     },
     observability: {
       title: "Observability Configuration",

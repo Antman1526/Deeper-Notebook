@@ -867,6 +867,9 @@ export const itIT = {
       deleteFailed: "Eliminazione del server MCP non riuscita.",
       testOk: "Connesso — {count} strumento/i disponibile/i.",
       testFailed: "Test di connessione non riuscito.",
+      moveUp: "Sposta su",
+      moveDown: "Sposta giù",
+      updateFailed: "Aggiornamento del server MCP non riuscito.",
     },
     observability: {
       title: "Observability Configuration",

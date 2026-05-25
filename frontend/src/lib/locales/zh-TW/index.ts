@@ -867,6 +867,9 @@ export const zhTW = {
       deleteFailed: "刪除 MCP 伺服器失敗。",
       testOk: "連線成功 — 可用工具 {count} 個。",
       testFailed: "連線測試失敗。",
+      moveUp: "上移",
+      moveDown: "下移",
+      updateFailed: "更新 MCP 伺服器失敗。",
     },
     observability: {
       title: "Observability Configuration",
