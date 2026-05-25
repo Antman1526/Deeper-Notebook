@@ -75,13 +75,26 @@ class ThreadState(TypedDict):
     # it stays None and the response field is omitted/None.
     selected_provider: Optional[str]
     selected_model_id: Optional[str]
+    # v0.8.1 Item 3 — list of MCP tool-call records made during this
+    # turn. Reset per turn (call_model_with_messages clears it before
+    # binding tools). The /chat router includes this in
+    # ExecuteChatResponse so the frontend can render citation pill
+    # popovers with the real search query + result text.
+    mcp_tool_calls: Optional[list]
 
 
-async def _resolve_chat_tools(*, force_servers=None) -> list:
+async def _resolve_chat_tools(*, force_servers=None, captures=None) -> list:
     """Phase 2 — when at least one MCP server is enabled in the
     registry, expose `mcp_search` + `mcp_fetch` that route to the
     first enabled server. Future: per-server tool surfaces (one
-    mcp_* function per server) for richer model decisions."""
+    mcp_* function per server) for richer model decisions.
+
+    v0.8.1 Item 3 — `captures` is an optional list[dict] accumulator.
+    When provided, each tool closure appends a record
+    {index, name, args, text} on completion so callers can surface
+    the real search query + result text in citation pill popovers.
+    text is truncated to 4000 chars to keep response sizes sane.
+    """
     from langchain_core.tools import Tool
     from open_notebook.mcp.client import MCPClient
     from open_notebook.mcp.registry import list_enabled_servers
@@ -94,11 +107,31 @@ async def _resolve_chat_tools(*, force_servers=None) -> list:
 
     async def _search(query: str) -> str:
         result = await client.call_tool("web_search", {"query": query})
-        return result.get("text") or "(no result)"
+        text = result.get("text") or "(no result)"
+        # v0.8.1 — capture for citation pill
+        if captures is not None:
+            captures.append({
+                "index": len(captures) + 1,  # 1-based, matches [mcp:N] marker
+                "name": "web_search",
+                "args": {"query": query},
+                # Truncate to 4000 chars; popover only shows ~500 anyway.
+                "text": text[:4000],
+            })
+        return text
 
     async def _fetch(url: str) -> str:
         result = await client.call_tool("fetch_url", {"url": url})
-        return result.get("text") or "(no result)"
+        text = result.get("text") or "(no result)"
+        # v0.8.1 — capture for citation pill
+        if captures is not None:
+            captures.append({
+                "index": len(captures) + 1,  # 1-based, matches [mcp:N] marker
+                "name": "fetch_url",
+                "args": {"url": url},
+                # Truncate to 4000 chars; popover only shows ~500 anyway.
+                "text": text[:4000],
+            })
+        return text
 
     # Tool(name, func, description) — func is positional-required in this
     # version of langchain_core; pass func=None + coroutine for async-only tools.
@@ -206,8 +239,12 @@ async def call_model_with_messages(
         # Ollama without tool support, etc.) raise NotImplementedError or
         # AttributeError on .bind_tools(); the chat still works normally
         # without MCP when binding fails.
+        #
+        # v0.8.1 Item 3 — accumulator for MCP tool-call payloads in this
+        # turn. Reset per turn so subsequent turns don't see stale entries.
+        mcp_captures: list = []
         try:
-            mcp_tools = await _resolve_chat_tools()
+            mcp_tools = await _resolve_chat_tools(captures=mcp_captures)
             if mcp_tools:
                 model = model.bind_tools(mcp_tools)
         except Exception:
@@ -227,10 +264,13 @@ async def call_model_with_messages(
         # when smart routing didn't run (model_override path or
         # OPEN_NOTEBOOK_AUTO_ROUTE_CHAT off) — callers treat absence as
         # None.
+        # v0.8.1 Item 3 — include MCP tool-call captures. None when no
+        # MCP calls were made this turn (empty captures list → None).
         return {
             "messages": cleaned_message,
             "selected_provider": selection_out.get("selected_provider"),
             "selected_model_id": selection_out.get("selected_model_id"),
+            "mcp_tool_calls": mcp_captures if mcp_captures else None,
         }
     except OpenNotebookError:
         raise

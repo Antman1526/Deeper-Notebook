@@ -203,6 +203,7 @@ export function ChatPanel({
                         <AIMessageContent
                           content={message.content}
                           onReferenceClick={handleReferenceClick}
+                          messageId={message.id}
                         />
                       ) : (
                         // v0.7.25 — `break-all` breaks between any two
@@ -335,12 +336,16 @@ export function ChatPanel({
 // v0.8.0 Phase 4 Task 14 — split on citation markers before markdown rendering.
 // [mcp:N] markers are rendered as CitationPill components inline; [source/note/insight:ID]
 // markers within text segments are handled by the existing compact-reference system.
+// v0.8.1 Item 3 — messageId passed through to CitationPill so the MCP
+// popover can look up tool-call payloads from the TanStack Query cache.
 function AIMessageContent({
   content,
-  onReferenceClick
+  onReferenceClick,
+  messageId,
 }: {
   content: string
   onReferenceClick: (type: string, id: string) => void
+  messageId?: string
 }) {
   const { t } = useTranslation()
 
@@ -401,8 +406,10 @@ function AIMessageContent({
           )
         }
         // Citation segment → render as an inline pill.
+        // v0.8.1 Item 3 — pass messageId so MCP pills can look up
+        // tool-call payloads from the TanStack Query cache.
         return (
-          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} />
+          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} messageId={messageId} />
         )
       })}
     </div>

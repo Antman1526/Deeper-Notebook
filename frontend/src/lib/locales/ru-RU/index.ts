@@ -537,7 +537,10 @@ export const ruRU = {
     citations: {
       toolCallLabel: "Вызов инструмента",
       mcpIndexLabel: "Вызов MCP #{index}",
-      mcpPlaceholder: "Результат ещё не получен — полная нагрузка вызова инструмента появится в v0.8.1",
+      mcpPlaceholder: "Результат недоступен для этой старой сессии",
+      mcpToolName: "Инструмент",
+      mcpArgs: "Аргументы",
+      mcpResult: "Результат",
       sourceLabel: "Источник",
       noteLabel: "Заметка",
       insightLabel: "Инсайт",

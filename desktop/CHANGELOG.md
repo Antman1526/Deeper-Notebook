@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.1 Item 3 — MCP tool-call payloads in citation pill popovers (Phase 4 closeout)**
+  - Chat-graph `_resolve_chat_tools()` accepts a `captures` accumulator;
+    each `mcp_search`/`mcp_fetch` closure appends `{index, name, args, text}`
+    on completion (text truncated to 4000 chars). `ThreadState` carries the
+    list; `call_model_with_messages` resets per turn.
+  - `ExecuteChatResponse.mcp_tool_calls` exposes the list on /chat/execute.
+    /chat/stream emits a final `{"type":"mcp_tool_calls"}` NDJSON event
+    just before stream-close.
+  - Frontend `useNotebookChat` stashes the payload in TanStack Query cache
+    keyed by last-AI-message id. `CitationPill` MCP popover reads it and
+    renders tool name + args (compact JSON) + result excerpt.
+    The v0.8.0 placeholder text is now an honest "no payload" fallback for
+    old sessions.
+  - i18n: 4 new/updated keys across 10 locales.
+  - 3 new backend unit tests in `tests/test_phase2_mcp_integration.py`.
+  - 2 new frontend tests in `CitationPill.test.tsx`.
+  - `messageId` prop-drilled through `AIMessageContent` → `CitationPill`
+    (approach a); only 2 component levels, no context needed.
+
 - **✨ v0.8.1 Item 5 — MCP server priority ordering**
   - `mcp_server.priority` (migration 19, default 100); `list_enabled_servers()`
     sorts by priority then created for deterministic order. Chat graph

@@ -11,13 +11,13 @@
  *
  * v0.8.0 Phase 4 Task 14
  *
- * MCP popover:
- *   Currently shows a placeholder because the backend chat stream does not yet
- *   include the tool-call payload alongside the token stream.
- *   TODO(v0.8.1): extend the SSE wire format to include a sentinel event
- *   {"type":"mcp_call_result","index":N,"name":"...","args":{...},"text":"..."}
- *   and collect these in a side-buffer here so the popover can show the
- *   actual search query / result text.
+ * MCP popover (v0.8.1 Item 3):
+ *   The parent message renderer passes `messageId` as a prop. The MCP
+ *   popover looks up tool-call payloads from the TanStack Query cache
+ *   keyed by ['mcp', 'tool-calls', messageId]. Payloads are stashed
+ *   there by useNotebookChat when the /chat/stream mcp_tool_calls
+ *   NDJSON event arrives. Falls back to a placeholder for old sessions
+ *   that predate this feature.
  */
 
 import React from 'react'
@@ -27,11 +27,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSource } from '@/lib/hooks/use-sources'
 import { useNote } from '@/lib/hooks/use-notes'
 import { useInsight } from '@/lib/hooks/use-insights'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { CitationKind } from '@/lib/utils/citations'
+import type { McpToolCall } from '@/lib/types/api'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,6 +44,13 @@ interface CitationPillProps {
   kind: CitationKind
   /** The raw reference value — integer string for mcp, record ID for others */
   value: string
+  /**
+   * v0.8.1 Item 3 — ID of the AI message this pill belongs to.
+   * Used by McpPopoverContent to look up tool-call payloads from the
+   * TanStack Query cache. Optional for backward compatibility (pills
+   * rendered without messageId fall back to the placeholder).
+   */
+  messageId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -150,24 +159,70 @@ function InsightPopoverContent({ id }: { id: string }) {
 }
 
 /** Popover body for [mcp:N] pills.
- *  Option A (MVP): shows marker + placeholder until v0.8.1 stream contract change.
+ *  v0.8.1 Item 3: reads MCP tool-call payload from TanStack Query cache
+ *  (keyed by messageId, stashed by useNotebookChat on mcp_tool_calls event).
+ *  Falls back to updated placeholder for old sessions with no cached data.
  */
-function McpPopoverContent({ index }: { index: string }) {
+function McpPopoverContent({ index, messageId }: { index: string; messageId?: string }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
+
+  // Read-only cache lookup — no fetcher, so this never triggers a network
+  // request. Returns undefined if the cache key was never populated.
+  const calls = messageId
+    ? (queryClient.getQueryData<McpToolCall[]>(['mcp', 'tool-calls', messageId]) ?? null)
+    : null
+
+  // Find the specific call matching this pill's 1-based index.
+  const callIndex = parseInt(index, 10)
+  const call = calls?.find(c => c.index === callIndex) ?? null
+
+  if (!call) {
+    // Fallback — either messageId not provided (old code path) or the
+    // cache entry was never populated (old session pre-v0.8.1 or MCP
+    // was not enabled during this turn).
+    return (
+      <div className="space-y-1">
+        <p className="text-xs font-semibold text-foreground">
+          {t('chat.citations.toolCallLabel')}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t('chat.citations.mcpIndexLabel').replace('{index}', index)}
+        </p>
+        <p className="text-xs text-muted-foreground italic mt-1">
+          {t('chat.citations.mcpPlaceholder')}
+        </p>
+      </div>
+    )
+  }
+
+  // Payload found — render tool name, compact args JSON, and truncated result.
+  const argsJson = JSON.stringify(call.args, null, 2)
+  const resultExcerpt = call.text.slice(0, 500)
+
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       <p className="text-xs font-semibold text-foreground">
         {t('chat.citations.toolCallLabel')}
       </p>
-      <p className="text-xs text-muted-foreground">
-        {t('chat.citations.mcpIndexLabel').replace('{index}', index)}
-      </p>
-      <p className="text-xs text-muted-foreground italic mt-1">
-        {/* v0.8.1 TODO: replace this placeholder once the SSE stream emits
-            {"type":"mcp_call_result","index":N,"name":"...","args":{...},"text":"..."}
-            so we can display the actual search query and result snippet. */}
-        {t('chat.citations.mcpPlaceholder')}
-      </p>
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">
+          {t('chat.citations.mcpToolName')}: <span className="font-mono text-foreground">{call.name}</span>
+        </p>
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">{t('chat.citations.mcpArgs')}</p>
+        <pre className="text-[0.65rem] bg-muted rounded p-1 overflow-x-auto max-w-full whitespace-pre-wrap break-all">
+          {argsJson}
+        </pre>
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">{t('chat.citations.mcpResult')}</p>
+        <p className="text-xs text-muted-foreground line-clamp-6 break-words">
+          {resultExcerpt}
+          {call.text.length > 500 && '…'}
+        </p>
+      </div>
     </div>
   )
 }
@@ -201,7 +256,7 @@ const KIND_ICONS: Record<CitationKind, React.ElementType> = {
  * Accessibility: the trigger is a focusable button; Radix Popover handles
  * keyboard navigation (Enter/Space to open, Escape to close, focus-trap).
  */
-export function CitationPill({ kind, value }: CitationPillProps) {
+export function CitationPill({ kind, value, messageId }: CitationPillProps) {
   const { t } = useTranslation()
   const Icon = KIND_ICONS[kind]
 
@@ -243,7 +298,7 @@ export function CitationPill({ kind, value }: CitationPillProps) {
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 text-sm" side="top" align="center">
-        {kind === 'mcp' && <McpPopoverContent index={value} />}
+        {kind === 'mcp' && <McpPopoverContent index={value} messageId={messageId} />}
         {kind === 'source' && <SourcePopoverContent id={value} />}
         {kind === 'note' && <NotePopoverContent id={value} />}
         {kind === 'insight' && <InsightPopoverContent id={value} />}

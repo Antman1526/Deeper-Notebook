@@ -537,7 +537,10 @@ export const itIT = {
     citations: {
       toolCallLabel: "Chiamata strumento",
       mcpIndexLabel: "Chiamata MCP #{index}",
-      mcpPlaceholder: "Risultato non ancora trasmesso — payload completo in arrivo con v0.8.1",
+      mcpPlaceholder: "Risultato non disponibile per questa sessione precedente",
+      mcpToolName: "Strumento",
+      mcpArgs: "Argomenti",
+      mcpResult: "Risultato",
       sourceLabel: "Fonte",
       noteLabel: "Nota",
       insightLabel: "Insight",

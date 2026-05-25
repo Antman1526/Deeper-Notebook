@@ -278,6 +278,15 @@ class ExecuteChatResponse(BaseModel):
             "smart routing did not run)."
         ),
     )
+    mcp_tool_calls: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description=(
+            "v0.8.1 Item 3 — MCP tool-call payloads for this turn. Each item: "
+            "{index: int (1-based, matches [mcp:N] markers), name: str, "
+            "args: dict, text: str (truncated to 4000 chars)}. None when "
+            "no MCP tools fired."
+        ),
+    )
 
 
 class BuildContextRequest(BaseModel):
@@ -795,6 +804,11 @@ async def execute_chat(request: ExecuteChatRequest):
             result.get("selected_model_id") if isinstance(result, dict)
             else getattr(result, "selected_model_id", None)
         )
+        # v0.8.1 Item 3 — MCP tool-call payloads captured this turn.
+        mcp_tool_calls = (
+            result.get("mcp_tool_calls") if isinstance(result, dict)
+            else getattr(result, "mcp_tool_calls", None)
+        )
 
         # Convert messages to response format
         messages: list[ChatMessage] = []
@@ -836,6 +850,7 @@ async def execute_chat(request: ExecuteChatRequest):
             messages=messages,
             selected_provider=selected_provider,
             selected_model_id=selected_model_id,
+            mcp_tool_calls=mcp_tool_calls,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1023,9 +1038,16 @@ async def _stream_chat_events(
                     if msgs is not None:
                         # Normalize to a dict either way so downstream code
                         # can stay simple.
+                        # v0.8.1 Item 3 — also capture mcp_tool_calls from
+                        # the final output if available, so we can emit it
+                        # as a dedicated NDJSON event before stream-close.
+                        mcp_calls_raw = (
+                            output.get("mcp_tool_calls") if isinstance(output, dict)
+                            else getattr(output, "mcp_tool_calls", None)
+                        )
                         final_result = (
                             output if isinstance(output, dict)
-                            else {"messages": msgs}
+                            else {"messages": msgs, "mcp_tool_calls": mcp_calls_raw}
                         )
         finally:
             # v0.7.174 — release the per-session lock. Runs on every exit
@@ -1081,6 +1103,21 @@ async def _stream_chat_events(
             assistant_text=ai_text,
             model_override=model_override,
         )
+
+        # v0.8.1 Item 3 — emit a dedicated mcp_tool_calls event just
+        # before stream-close so the frontend can stash the payloads
+        # in the TanStack Query cache. Emitted only when MCP calls were
+        # actually made this turn; clients that don't handle this event
+        # type will receive it as an unknown event and skip it.
+        mcp_tool_calls_out = (
+            final_result.get("mcp_tool_calls") if isinstance(final_result, dict)
+            else None
+        )
+        if mcp_tool_calls_out:
+            yield json.dumps({
+                "type": "mcp_tool_calls",
+                "calls": mcp_tool_calls_out,
+            }) + "\n"
 
         yield json.dumps({"type": "done", "messages": messages}) + "\n"
 

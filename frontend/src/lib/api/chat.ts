@@ -9,13 +9,16 @@ import {
   NotebookChatMessage,
   BuildContextRequest,
   BuildContextResponse,
+  McpToolCall,
 } from '@/lib/types/api'
 
 // v0.7.38 — streaming chat events. One discriminated union per
 // type emitted by /chat/stream's NDJSON wire format.
+// v0.8.1 Item 3 — added mcp_tool_calls event emitted just before done.
 export type ChatStreamEvent =
   | { type: 'start'; session_id: string }
   | { type: 'token'; content: string }
+  | { type: 'mcp_tool_calls'; calls: McpToolCall[] }
   | { type: 'done'; messages: NotebookChatMessage[] }
   | { type: 'error'; detail: string }
 

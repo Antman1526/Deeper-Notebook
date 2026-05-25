@@ -537,7 +537,10 @@ export const esES = {
     citations: {
       toolCallLabel: "Llamada de herramienta",
       mcpIndexLabel: "Llamada MCP #{index}",
-      mcpPlaceholder: "Resultado aún no transmitido — la carga útil completa llegará en v0.8.1",
+      mcpPlaceholder: "Resultado no disponible para esta sesión antigua",
+      mcpToolName: "Herramienta",
+      mcpArgs: "Argumentos",
+      mcpResult: "Resultado",
       sourceLabel: "Fuente",
       noteLabel: "Nota",
       insightLabel: "Perspectiva",
