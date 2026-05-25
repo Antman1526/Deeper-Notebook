@@ -287,10 +287,22 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # secondary drive. Empty/unset = no speedup, current behavior.
         _draft_env = os.environ.get("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", "").strip()
         _draft_path = Path(_draft_env) if _draft_env else None
+        # v0.8.2 Item C — operator-tunable draft token count per
+        # verification pass. Parsed as int; invalid value (non-int
+        # or <= 0) falls back to None so llama_cpp.server uses its
+        # built-in default. Meaningless without _draft_path.
+        _draft_n_env = os.environ.get("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "").strip()
+        try:
+            _draft_n = int(_draft_n_env) if _draft_n_env else None
+            if _draft_n is not None and _draft_n <= 0:
+                _draft_n = None
+        except ValueError:
+            _draft_n = None
         lc = LlamaCppProvider(
             model_dir=cfg.model_dir,
             python_executable=ctx.venv_py,
             draft_model_path=_draft_path,
+            draft_n_predict=_draft_n,
         )
         chosen_model = cfg.default_model or lc.pick_default_model()
         if chosen_model:
