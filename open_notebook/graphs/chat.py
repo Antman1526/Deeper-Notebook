@@ -204,6 +204,13 @@ import aiosqlite
 
 _async_graph: "object | None" = None
 _async_graph_lock = threading.Lock()
+# v0.7.211 — keep a handle to the aiosqlite connection so
+# `close_async_graph()` can close it on shutdown. Previously the
+# connection was held only inside the AsyncSqliteSaver wrapper
+# with no way to reach it; on `app.shutdown` the file descriptor
+# leaked and a background aiosqlite thread stayed alive past the
+# lifespan teardown.
+_async_aio_conn: "object | None" = None
 
 
 async def get_async_graph():
@@ -216,7 +223,7 @@ async def get_async_graph():
     one are visible to reads through the other, courtesy of SQLite
     WAL mode (configured in open_notebook.utils.sqlite_checkpoint).
     """
-    global _async_graph
+    global _async_graph, _async_aio_conn
     if _async_graph is not None:
         return _async_graph
     with _async_graph_lock:
@@ -225,4 +232,31 @@ async def get_async_graph():
         aio_conn = await aiosqlite.connect(LANGGRAPH_CHECKPOINT_FILE)
         async_memory = AsyncSqliteSaver(aio_conn)
         _async_graph = agent_state.compile(checkpointer=async_memory)
+        _async_aio_conn = aio_conn
     return _async_graph
+
+
+async def close_async_graph() -> None:
+    """v0.7.211 — Tear down the AsyncSqliteSaver's aiosqlite
+    connection on FastAPI lifespan shutdown.
+
+    Without this the connection (and its background thread) leaks
+    past the API process's clean shutdown — harmless on POSIX but
+    annoying on Windows where the SQLite file stays locked for the
+    next launcher session, and on long-running .app sessions where
+    the leaked FD count creeps up over hundreds of relaunches.
+    Safe to call multiple times (idempotent) and on a never-
+    constructed graph (no-op).
+    """
+    global _async_graph, _async_aio_conn
+    conn = _async_aio_conn
+    _async_aio_conn = None
+    _async_graph = None
+    if conn is None:
+        return
+    try:
+        # aiosqlite's close is an awaitable; mypy is OK with this.
+        await conn.close()  # type: ignore[attr-defined]
+    except Exception:
+        # Never crash shutdown on a checkpoint close failure.
+        pass

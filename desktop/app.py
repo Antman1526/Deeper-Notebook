@@ -445,6 +445,38 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     gguf_dir = voice_model_dir / "GGUF"
     from desktop.auto_register.assigner import pick_chat_llm_file
     chat_llm_path = pick_chat_llm_file(gguf_dir)
+    # v0.7.211 — Surface "no local chat GGUF found" as a visible
+    # progress event AND a launch warning the frontend can render.
+    # Pre-v0.7.211 path: pick_chat_llm_file returned None, the if
+    # `chat_alive` guard later silently skipped llama-cpp startup,
+    # auto_register saw no chat credential, and the user opened
+    # the app to find their local chat model gone with no
+    # explanation. Now the user sees a clear warning on the
+    # launcher splash + can be shown a toast in the frontend.
+    if chat_llm_path is None and ctx.cfg.provider == "llamacpp":
+        if ctx.progress_bus is not None:
+            ctx.progress_bus.publish(
+                "provider.llamacpp",
+                "warning",
+                (
+                    f"No chat GGUF found in {gguf_dir}. Local chat "
+                    "will be disabled until you download a model "
+                    "(use the Models dialog in Settings, or drop a "
+                    "Hermes-3 / Qwen2.5 / Llama-3.2 *.gguf into the "
+                    "folder above)."
+                ),
+            )
+    if nomic_path.exists() is False and ctx.cfg.provider == "llamacpp":
+        if ctx.progress_bus is not None:
+            ctx.progress_bus.publish(
+                "provider.embedding",
+                "warning",
+                (
+                    f"No embedding GGUF found at {nomic_path}. Vector "
+                    "search will be disabled. Download nomic-embed-text-"
+                    "v1.5.f16.gguf to enable semantic search."
+                ),
+            )
     piper_voices: dict[str, Path] = {}
     if amy_path.exists():
         piper_voices["alex"] = amy_path

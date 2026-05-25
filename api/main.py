@@ -601,6 +601,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Closing DB pool raised: {e}")
 
+    # v0.7.211 — Close the AsyncSqliteSaver connections that back
+    # /chat and /source/chat streaming. Previously these aiosqlite
+    # connections (+ their background threads) leaked past the
+    # FastAPI shutdown — harmless on POSIX, but the SQLite file
+    # stayed locked on Windows and the FD count crept up over
+    # hundreds of relaunches. Idempotent + safe-on-never-
+    # constructed; both helpers no-op if their graph was never
+    # used this session.
+    try:
+        from open_notebook.graphs.chat import close_async_graph
+
+        await close_async_graph()
+        logger.debug("AsyncSqliteSaver (chat) closed")
+    except Exception as e:
+        logger.warning(f"Closing chat AsyncSqliteSaver raised: {e}")
+    try:
+        from open_notebook.graphs.source_chat import (
+            close_async_source_chat_graph,
+        )
+
+        await close_async_source_chat_graph()
+        logger.debug("AsyncSqliteSaver (source_chat) closed")
+    except Exception as e:
+        logger.warning(
+            f"Closing source_chat AsyncSqliteSaver raised: {e}"
+        )
+
     logger.info("API shutdown complete")
 
 
