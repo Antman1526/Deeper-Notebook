@@ -127,21 +127,59 @@ def build_app(config_path: Path, on_done: Callable[[], None],
         loop = asyncio.get_event_loop()
         q: asyncio.Queue = asyncio.Queue()
 
+        # v0.7.212 — `_reader_cancel` is set by the writer loop when
+        # the client disconnects mid-stream. The reader thread then
+        # falls out of the subscribe() loop on the NEXT iteration
+        # (the 120s subscribe timeout already bounds the wait), and
+        # the daemon thread + Queue can be reaped immediately
+        # instead of lingering until the user's wizard window times
+        # out 2 minutes later. Previously, every cancelled SSE
+        # connection leaked one daemon thread + one Queue per
+        # cancelled wizard run.
+        _reader_cancel = threading.Event()
+
         def reader():
-            for evt in progress_bus.subscribe(timeout=120.0, replay=True):
-                loop.call_soon_threadsafe(q.put_nowait, evt)
-            loop.call_soon_threadsafe(q.put_nowait, None)
+            try:
+                for evt in progress_bus.subscribe(timeout=120.0, replay=True):
+                    if _reader_cancel.is_set():
+                        return
+                    loop.call_soon_threadsafe(q.put_nowait, evt)
+            except Exception:
+                # Never crash the daemon — the writer loop already
+                # handles the None-sentinel teardown.
+                pass
+            try:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+            except RuntimeError:
+                # Event loop is gone — wizard process exited.
+                pass
 
         threading.Thread(target=reader, daemon=True).start()
 
-        while True:
-            evt = await q.get()
-            if evt is None:
-                break
-            await resp.write(f"data: {json.dumps(evt)}\n\n".encode())
-            if evt["step"] == "ready" and evt["status"] == "done":
-                break
-        await resp.write_eof()
+        try:
+            while True:
+                evt = await q.get()
+                if evt is None:
+                    break
+                try:
+                    await resp.write(f"data: {json.dumps(evt)}\n\n".encode())
+                except (ConnectionResetError, asyncio.CancelledError):
+                    # Client (the wizard window) closed the stream.
+                    # v0.7.212 — signal the reader to stop on its
+                    # next subscribe iteration so we don't leak the
+                    # thread + Queue.
+                    _reader_cancel.set()
+                    break
+                if evt["step"] == "ready" and evt["status"] == "done":
+                    break
+        finally:
+            # Belt-and-suspenders: always set cancel on exit so the
+            # reader thread terminates even on a normal close.
+            _reader_cancel.set()
+        try:
+            await resp.write_eof()
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
         return resp
 
     app.router.add_get("/", index)
