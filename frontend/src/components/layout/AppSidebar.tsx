@@ -39,6 +39,7 @@ import {
   Search,
   Mic,
   Bot,
+  Plug,
   Shuffle,
   Settings,
   LogOut,
@@ -81,6 +82,8 @@ const getNavigation = (t: TFunction) => [
       { name: t('navigation.models'), href: '/settings/api-keys', icon: Bot },
       { name: t('navigation.transformations'), href: '/transformations', icon: Shuffle },
       { name: t('navigation.settings'), href: '/settings', icon: Settings },
+      // v0.8.0 Phase 2 Task 10 — MCP Servers settings page
+      { name: t('settings.mcp.navTitle'), href: '/settings/mcp', icon: Plug },
       { name: t('navigation.advanced'), href: '/advanced', icon: Wrench },
     ],
   },
