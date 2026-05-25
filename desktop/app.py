@@ -745,6 +745,38 @@ def _phase_auto_register(ctx: AppContext) -> None:
             embed_port=getattr(sv, "embed_port", None) or None,
             memory_port=getattr(sv, "memory_port", None) or None,
         )
+
+        # Phase 1 — Active probe each local sidecar so the launcher.log
+        # captures actual health (not just port-bind success). The
+        # frontend's /api/local-models/health endpoint re-runs these on
+        # demand from the badge component.
+        try:
+            from open_notebook.health.local_models import (
+                probe_all_local_models,
+            )
+            creds_for_probe = []
+            if getattr(sv, "chat_llm_port", 0):
+                creds_for_probe.append({
+                    "name": "Local GGUF (llama.cpp)",
+                    "kind": "openai_compatible",
+                    "base_url": f"http://127.0.0.1:{sv.chat_llm_port}/v1",
+                })
+            if getattr(sv, "embed_port", 0):
+                creds_for_probe.append({
+                    "name": "Local Embeddings (llama.cpp)",
+                    "kind": "openai_compatible",
+                    "base_url": f"http://127.0.0.1:{sv.embed_port}/v1",
+                })
+            if creds_for_probe:
+                results = probe_all_local_models(creds_for_probe)
+                for r in results:
+                    log.info(
+                        "phase1.health %s: %s (%s, %.0fms)",
+                        r["name"], r["status"], r["detail"],
+                        r.get("latency_ms") or 0,
+                    )
+        except Exception as exc:
+            log.warning("phase1.health probe failed (non-fatal): %s", exc)
     except Exception:
         # v0.6.26 — append, not overwrite. Same fix as v0.6.25's
         # launcher.log: .write_text() truncated, wiping prior failure
