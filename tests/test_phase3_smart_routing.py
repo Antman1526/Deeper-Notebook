@@ -1,6 +1,10 @@
-"""Phase 3 Task 11 — pick_provider() unit tests.
+"""Phase 3 Task 11+12 — pick_provider() and provision_langchain_chat_model() tests.
 
-Pure function tests for local-vs-cloud routing logic.
+Task 11 tests are pure function tests for local-vs-cloud routing logic.
+Task 12 tests verify that provision_langchain_chat_model() correctly gates
+smart routing behind OPEN_NOTEBOOK_AUTO_ROUTE_CHAT and forwards the router's
+choice to provision_langchain_model.
+
 All tests are deterministic, require no I/O, and exercise every branch.
 """
 import pytest
@@ -176,3 +180,155 @@ class TestPickProviderFallbacks:
         )
         assert choice.model_id == "model:gpt-4o"
         assert "local unavailable" in choice.reason
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Task 12 — provision_langchain_chat_model() wiring tests
+# ---------------------------------------------------------------------------
+
+
+class TestProvisionLangchainChatModelDisabled:
+    """OPEN_NOTEBOOK_AUTO_ROUTE_CHAT unset — wrapper must be a transparent
+    pass-through to provision_langchain_model(model_id=None, default_type='chat')."""
+
+    def test_provision_skips_router_when_disabled(self, monkeypatch):
+        """When auto-routing env var is unset the wrapper delegates directly
+        to provision_langchain_model with model_id=None and default_type='chat'.
+        pick_provider() must never be called."""
+        import asyncio
+        import open_notebook.ai.provision as provision_mod
+
+        # Ensure env var is absent
+        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append(
+                {"content": content, "model_id": model_id, "default_type": default_type}
+            )
+            return object()  # sentinel — caller doesn't dereference the model
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        # Also assert pick_provider is never reached by patching it to explode
+        import open_notebook.ai.router as router_mod
+
+        def _exploding_pick_provider(**kwargs):
+            raise AssertionError("pick_provider() must not be called when routing is off")
+
+        monkeypatch.setattr(router_mod, "pick_provider", _exploding_pick_provider)
+
+        asyncio.get_event_loop().run_until_complete(
+            provision_mod.provision_langchain_chat_model("hello world")
+        )
+
+        assert len(captured) == 1
+        assert captured[0]["model_id"] is None
+        assert captured[0]["default_type"] == "chat"
+
+
+class TestProvisionLangchainChatModelEnabled:
+    """OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1 — wrapper must call pick_provider and
+    forward its model_id choice to provision_langchain_model."""
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def test_provision_calls_router_when_enabled_picks_local(self, monkeypatch):
+        """Small content + healthy local → router picks local model."""
+        import open_notebook.ai.provision as provision_mod
+
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+
+        # Patch health cache to return healthy
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append({"model_id": model_id, "default_type": default_type})
+            return object()
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        # Small content — should fit in default n_ctx (32768) with headroom
+        self._run(provision_mod.provision_langchain_chat_model("short prompt"))
+
+        assert len(captured) == 1, "provision_langchain_model should be called exactly once"
+        assert captured[0]["model_id"] == "model:hermes", (
+            f"Expected local model_id 'model:hermes', got {captured[0]['model_id']!r}"
+        )
+        assert captured[0]["default_type"] == "chat"
+
+    def test_provision_calls_router_when_enabled_picks_cloud(self, monkeypatch):
+        """Huge content overflows local n_ctx → router picks cloud model."""
+        import open_notebook.ai.provision as provision_mod
+
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+
+        captured: list[dict] = []
+
+        async def _fake_provision(content, model_id, default_type, **kwargs):
+            captured.append({"model_id": model_id, "default_type": default_type})
+            return object()
+
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
+
+        # ~500k characters → vastly exceeds any local n_ctx → must pick cloud
+        huge_content = "x" * 500_000
+        self._run(provision_mod.provision_langchain_chat_model(huge_content))
+
+        assert len(captured) == 1
+        assert captured[0]["model_id"] == "model:gpt4", (
+            f"Expected cloud model_id 'model:gpt4', got {captured[0]['model_id']!r}"
+        )
+        assert captured[0]["default_type"] == "chat"
+
+
+class TestHealthCacheTTL:
+    """_local_chat_healthy_cached() must call the probe at most once within TTL."""
+
+    def test_health_cache_respects_ttl(self, monkeypatch):
+        """Two back-to-back calls within the TTL window must hit the probe
+        exactly once (the second call returns the cached result)."""
+        import open_notebook.ai.provision as provision_mod
+
+        # Reset the module-level cache so the test starts clean
+        monkeypatch.setattr(provision_mod, "_health_cache", None)
+
+        probe_call_count = [0]
+
+        def _fake_probe(creds):
+            probe_call_count[0] += 1
+            # Return a single healthy result so _health_cache is populated
+            return [{"name": "Local GGUF (llama.cpp)", "status": "healthy"}]
+
+        # Patch probe_all_local_models inside the health module so the import
+        # inside _local_chat_healthy_cached resolves to our fake.
+        import open_notebook.health.local_models as health_mod
+        monkeypatch.setattr(health_mod, "probe_all_local_models", _fake_probe)
+
+        # Provide a base URL so the cache path actually builds creds
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
+
+        # First call — cache miss, probe runs
+        result1 = provision_mod._local_chat_healthy_cached()
+        # Second call — cache hit within TTL, probe should NOT run again
+        result2 = provision_mod._local_chat_healthy_cached()
+
+        assert probe_call_count[0] == 1, (
+            f"Expected probe to be called exactly once, got {probe_call_count[0]}"
+        )
+        assert result1 is True
+        assert result2 is True
