@@ -868,6 +868,9 @@ export const bnIN = {
       deleteFailed: "MCP সার্ভার মুছতে ব্যর্থ।",
       testOk: "সংযুক্ত — {count}টি টুল পাওয়া গেছে।",
       testFailed: "সংযোগ পরীক্ষা ব্যর্থ হয়েছে।",
+      moveUp: "উপরে সরান",
+      moveDown: "নিচে সরান",
+      updateFailed: "MCP সার্ভার আপডেট করতে ব্যর্থ।",
     },
     observability: {
       title: "Observability Configuration",

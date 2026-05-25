@@ -1,0 +1,5 @@
+-- v0.8.1 Item 5 — explicit priority so operators can reorder MCP
+-- servers; chat graph picks the lowest-priority enabled row.
+-- New rows default to 100; tied rows fall back to insertion order
+-- (created timestamp) for stable sort.
+DEFINE FIELD IF NOT EXISTS priority ON mcp_server TYPE int DEFAULT 100;

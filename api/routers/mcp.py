@@ -18,6 +18,17 @@ class MCPServerCreate(BaseModel):
     enabled: bool = True
 
 
+class MCPServerUpdate(BaseModel):
+    """v0.8.1 Item 5 — partial-update body for PATCH /api/mcp/{server_id}.
+
+    Both fields are optional; at least one must be present (the router
+    rejects an empty body with 400). Using None as sentinel rather than
+    model_fields_set so callers can always send a plain JSON object.
+    """
+    priority: int | None = None
+    enabled: bool | None = None
+
+
 @router.get("/api/mcp")
 async def list_mcp_servers():
     """Return all registered MCP servers with id, name, url, enabled."""
@@ -54,6 +65,30 @@ async def create_mcp_server(body: MCPServerCreate):
                 detail="An MCP server with that name already exists",
             )
         raise
+
+
+@router.patch("/api/mcp/{server_id}")
+async def update_mcp_server(server_id: str, body: MCPServerUpdate):
+    """Partial update for an MCP server row.
+
+    v0.8.1 Item 5 — accepts ``{priority?: int, enabled?: bool}``.
+    Only the fields actually present in the payload are written;
+    ``repo_update`` auto-bumps the ``updated`` timestamp.
+    Returns 400 when the caller sends an empty body (nothing to write).
+    """
+    from open_notebook.database.repository import repo_update
+
+    fields = body.model_dump(exclude_none=True)
+    if not fields:
+        raise HTTPException(400, "No fields to update")
+    # v0.8.1 — repo_update(table, id, data) auto-bumps `updated`; we only
+    # set the fields the caller actually sent so enabled and priority can
+    # each be changed independently without clobbering the other.
+    result = await repo_update("mcp_server", server_id, fields)
+    # repo_update returns a list from repo_query; normalise to dict.
+    if isinstance(result, list):
+        return result[0] if result else {}
+    return result
 
 
 @router.delete("/api/mcp/{server_id}")

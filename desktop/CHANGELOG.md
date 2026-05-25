@@ -20,6 +20,17 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.1 Item 5 — MCP server priority ordering**
+  - `mcp_server.priority` (migration 19, default 100); `list_enabled_servers()`
+    sorts by priority then created for deterministic order. Chat graph
+    `_resolve_chat_tools()` still picks `servers[0]` — now meaningfully
+    "highest-priority enabled server" instead of "whichever was inserted first".
+  - `PATCH /api/mcp/{server_id}` accepts `{priority?, enabled?}` for partial
+    updates; 400 on empty body.
+  - Settings/MCP page adds ▲/▼ icon buttons per row (no drag-and-drop dep);
+    full i18n across 10 locales. Two new vitest cases cover the mutation call
+    + the first/last-row disabled state.
+
 - **🐛 v0.8.1 Item 4 — citation pill insight popover uses the right hook**
   - `frontend/src/components/chat/CitationPill.tsx` — `InsightPopoverContent`
     was wired to `useSource(id)` on the assumption that insight IDs were source

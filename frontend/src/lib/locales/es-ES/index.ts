@@ -868,6 +868,9 @@ export const esES = {
       deleteFailed: "Error al eliminar el servidor MCP.",
       testOk: "Conectado — {count} herramienta(s) disponible(s).",
       testFailed: "La prueba de conexión falló.",
+      moveUp: "Mover arriba",
+      moveDown: "Mover abajo",
+      updateFailed: "Error al actualizar el servidor MCP.",
     },
     observability: {
       title: "Observability Configuration",

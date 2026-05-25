@@ -163,3 +163,94 @@ def test_mcp_router_duplicate_name_409(monkeypatch):
     r = client.post("/api/mcp", json=payload)
     assert r.status_code == 409, r.text
     assert "already exists" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# v0.8.1 Item 5 — priority field + PATCH endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_list_enabled_servers_sorts_by_priority(monkeypatch):
+    """`list_enabled_servers()` returns rows sorted by priority ASC, then
+    created ASC. Out-of-order rows from the DB are reordered by the SQL
+    ORDER BY clause (tested by verifying the actual SELECT string the
+    function passes to repo_query, plus the returned ordering).
+
+    We provide rows already pre-ordered by the mock (mimicking SurrealDB's
+    ORDER BY) to confirm that the Python-layer filter doesn't break it.
+    The SQL clause is the source of truth; the integration test for a live
+    DB is handled by the migration + manual QA."""
+    from open_notebook.mcp.registry import list_enabled_servers
+
+    # Rows as SurrealDB would return them after ORDER BY priority, created:
+    # priority 10 → 50 → 100
+    ordered_rows = [
+        {"id": "mcp_server:3", "name": "FastOne",
+         "url": "http://a/mcp", "enabled": True, "priority": 10,
+         "created": "2026-01-01T00:00:00Z"},
+        {"id": "mcp_server:1", "name": "MidOne",
+         "url": "http://b/mcp", "enabled": True, "priority": 50,
+         "created": "2026-01-02T00:00:00Z"},
+        {"id": "mcp_server:2", "name": "SlowOne",
+         "url": "http://c/mcp", "enabled": True, "priority": 100,
+         "created": "2026-01-03T00:00:00Z"},
+    ]
+
+    async def _fake_repo_query(q, params=None):
+        # Verify the query includes the ORDER BY clause.
+        assert "ORDER BY priority ASC, created ASC" in q, (
+            f"Expected ORDER BY in query but got: {q!r}"
+        )
+        return ordered_rows
+
+    monkeypatch.setattr(
+        "open_notebook.database.repository.repo_query",
+        _fake_repo_query,
+    )
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        servers = loop.run_until_complete(list_enabled_servers())
+    finally:
+        loop.close()
+
+    assert len(servers) == 3
+    assert servers[0]["name"] == "FastOne"
+    assert servers[1]["name"] == "MidOne"
+    assert servers[2]["name"] == "SlowOne"
+
+
+def test_patch_mcp_server_updates_priority(monkeypatch):
+    """PATCH /api/mcp/{id} with {priority: 5} must call repo_update with
+    the correct arguments and return the updated record."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    _updated = {"id": "mcp_server:p1", "name": "PriorityServer",
+                "url": "http://x/mcp", "enabled": True, "priority": 5}
+
+    async def _fake_repo_update(table, id_, data):
+        assert table == "mcp_server"
+        assert "priority" in data
+        assert data["priority"] == 5
+        return [_updated]
+
+    import open_notebook.database.repository as _repo
+    monkeypatch.setattr(_repo, "repo_update", _fake_repo_update)
+
+    client = TestClient(app)
+    r = client.patch("/api/mcp/mcp_server:p1", json={"priority": 5})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["priority"] == 5
+
+
+def test_patch_mcp_server_rejects_empty_body(monkeypatch):
+    """PATCH /api/mcp/{id} with an empty body {} must return 400."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    client = TestClient(app)
+    r = client.patch("/api/mcp/mcp_server:x1", json={})
+    assert r.status_code == 400, r.text
+    assert "No fields to update" in r.json()["detail"]
