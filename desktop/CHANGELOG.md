@@ -20,6 +20,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased — v0.7.36 → v0.7.212 (in flight)
 
+- **✨ Phase 1 — Local-model health verification (v0.8.0 pre-release)**
+  Foundational probe system for active sidecar health checks, surfaced at
+  startup via launcher.log and on-demand via /api/local-models/health + badge
+  UI component. Five commits:
+  
+  1. `open_notebook/health/local_models.py` — Active probe module providing
+     `probe_local_model` and `probe_all_local_models` entry points. Detects
+     unallocated sidecars (port 0) and hits OpenAI-compatible `/v1/models`
+     endpoint on each sidecar with 5s read timeout + 9s total timeout. Returns
+     HealthResult dict with status, detail, latency.
+  
+  2. `/api/local-models/health` — Async aggregation endpoint returning
+     `{overall: string, models: [HealthResult]}`. Excluded from password auth
+     so splash-screen can poll before user logs in. Fetches local credential
+     config from SurrealDB, calls probe_all, normalizes overall status to
+     healthy/degraded/down based on model states.
+  
+  3. `useLocalModelsHealth()` hook + `LocalModelHealthBadges` sidebar
+     component. Hook polls /api/local-models/health every 30s with stale-time
+     caching; component renders colored dot badges (green/yellow/red) per model.
+     Full i18n across 10 locales (en, fr, de, es, it, ja, ko, pt, ru, zh). WCAG-AA
+     contrast on badge colors (no red < 5:1, green >= 4.5:1).
+  
+  4. Desktop `desktop/app.py:_phase_auto_register` startup probe. After the
+     existing auto_register block, probes each running sidecar (chat + embed) and
+     logs results to launcher.log as `phase1.health {name}: {status} ({detail}, Xms)`.
+     Non-fatal catch so stuck probes don't block UI launch.
+
 - **v0.7.212** 🐛 **Bootstrap partial-extraction recovery +
   mem0 backend-down short-circuit + wizard SSE thread leak.**
   Three follow-ups from the v0.7.210 deep-audit deferred list
