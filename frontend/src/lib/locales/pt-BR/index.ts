@@ -998,6 +998,8 @@ export const ptBR = {
     reasoningModelLabel: "Reasoning Model",
 
     reasoningModelDesc: "Used for hard questions and multi-step analysis - slow but deep",
+    autoRouteCloudLabel: "Auto-Route Cloud Model",
+    autoRouteCloudDesc: "Cloud fallback for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing. Receives oversized prompts when the local sidecar is unhealthy or the content exceeds its context window. Set this to a cloud model (GPT-4o, Claude, Gemini) — not your local chat default.",
     embeddingModelLabel: "Modelo de Embedding",
     embeddingModelDesc: "Usado para busca semântica e embeddings vetoriais",
     ttsModelLabel: "Modelo Text-to-Speech",

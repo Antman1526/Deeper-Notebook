@@ -103,7 +103,9 @@ class Model(ObjectModel):
                     default_embedding_model:
                         IF default_embedding_model = $mid THEN NONE ELSE default_embedding_model END,
                     default_tools_model:
-                        IF default_tools_model = $mid THEN NONE ELSE default_tools_model END
+                        IF default_tools_model = $mid THEN NONE ELSE default_tools_model END,
+                    auto_route_cloud:
+                        IF auto_route_cloud = $mid THEN NONE ELSE auto_route_cloud END
                 };
                 """,
                 {"mid": model_id},
@@ -166,6 +168,10 @@ class DefaultModels(RecordModel):
     # Nemotron etc.). Kept separate from chat so the casual chat model can stay
     # fast. Read by provision_langchain_model() when "reasoning" type requested.
     default_reasoning_model: Optional[str] = None
+    # v0.8.1 — dedicated cloud slot for the smart router. Distinct
+    # from default_chat_model so the router doesn't silently route
+    # cloud fallbacks to a locally-configured chat model. Migration 18.
+    auto_route_cloud: Optional[str] = None
 
     @classmethod
     async def get_instance(cls) -> "DefaultModels":
