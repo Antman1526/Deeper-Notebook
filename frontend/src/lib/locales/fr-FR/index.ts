@@ -997,6 +997,13 @@ export const frFR = {
     testModelFailed: "Test du modèle échoué",
     searchOrAddModel: "Rechercher ou saisir un nom de modèle...",
     addCustomModel: "Ajouter \"{name}\"",
+    status: {
+      healthy: "sain",
+      unhealthy: "non sain",
+      notConfigured: "non configuré",
+      unknown: "inconnu",
+      noDetail: "aucun détail",
+    },
   },
   apiKeys: {
     title: "Configurez votre IA avec vos propres clés API",

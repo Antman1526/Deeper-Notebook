@@ -997,6 +997,13 @@ export const ptBR = {
     testModelFailed: "Teste do Modelo Falhou",
     searchOrAddModel: "Pesquisar ou digitar nome do modelo...",
     addCustomModel: "Adicionar \"{name}\"",
+    status: {
+      healthy: "saudável",
+      unhealthy: "não saudável",
+      notConfigured: "não configurado",
+      unknown: "desconhecido",
+      noDetail: "sem detalhes",
+    },
   },
   apiKeys: {
     title: "Configure sua IA com suas próprias chaves de API",
