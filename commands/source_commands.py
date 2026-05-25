@@ -142,6 +142,43 @@ async def process_source_command(
         # Validation errors are permanent failures - don't retry
         processing_time = time.time() - start_time
         logger.error(f"Source processing failed: {e}")
+        # v0.7.209 — Orphan-row cleanup. The API created a
+        # placeholder source row with `title="Processing..."`
+        # BEFORE submitting this command (sources.py:509-514 /
+        # :601-605). On a permanent ValueError (extract failure
+        # on a corrupted PDF, unreadable file, etc.) the source
+        # row is left orphaned in the DB forever — the user sees
+        # a phantom "Processing..." entry that never updates and
+        # can only be removed via manual delete (which itself
+        # can fail because there's no asset / chunks to clean up).
+        #
+        # Delete the placeholder ONLY when its title still reads
+        # "Processing..." (means the user hadn't renamed it
+        # mid-flight) AND `full_text` is still empty (extraction
+        # never wrote anything). Both conditions together
+        # guarantee we're cleaning up an unsalvageable orphan,
+        # not a partially-processed source the user might want to
+        # retry manually.
+        try:
+            orphan = await Source.get(input_data.source_id)
+            if (
+                orphan
+                and (orphan.title or "") == "Processing..."
+                and not (orphan.full_text or "").strip()
+            ):
+                await orphan.delete()
+                logger.info(
+                    "v0.7.209 orphan-cleanup: deleted placeholder "
+                    "source %s after permanent extract failure",
+                    input_data.source_id,
+                )
+        except Exception as cleanup_exc:
+            logger.warning(
+                "v0.7.209 orphan-cleanup: failed to delete "
+                "placeholder source %s after extract failure "
+                "(leaving in place): %s",
+                input_data.source_id, cleanup_exc,
+            )
         return SourceProcessingOutput(
             success=False,
             source_id=input_data.source_id,

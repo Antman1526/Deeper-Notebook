@@ -32,23 +32,38 @@ class TransformationState(TypedDict):
 
 
 async def content_process(state: SourceState) -> dict:
-    content_settings = ContentSettings(
-        default_content_processing_engine_doc="auto",
-        default_content_processing_engine_url="auto",
-        default_embedding_option="ask",
-        auto_delete_files="yes",
-        youtube_preferred_languages=[
-            "en",
-            "pt",
-            "es",
-            "de",
-            "nl",
-            "en-GB",
-            "fr",
-            "hi",
-            "ja",
-        ],
-    )
+    # v0.7.209 — HIGH: previously this node constructed a FRESH
+    # `ContentSettings(...)` with hardcoded literals every time,
+    # silently overriding the user's persisted preferences. The
+    # Settings page in the UI writes to the singleton record
+    # `open_notebook:content_settings` (see
+    # `api/routers/settings.py`); toggling
+    # `default_content_processing_engine_doc` / `_url`,
+    # `auto_delete_files`, or `youtube_preferred_languages` then
+    # had ZERO effect on the actual ingest pipeline because this
+    # node ignored the DB record. Now load the singleton via the
+    # RecordModel base class.
+    #
+    # Defensive: if the DB load fails for any reason (cold cache,
+    # transient pool error, fresh install with no record yet),
+    # fall back to the same hardcoded defaults so a startup hiccup
+    # doesn't block source ingestion.
+    try:
+        content_settings = await ContentSettings.get_instance()
+    except Exception as exc:
+        logger.warning(
+            "content_process: failed to load ContentSettings "
+            "singleton (%s); using safe defaults", exc,
+        )
+        content_settings = ContentSettings(
+            default_content_processing_engine_doc="auto",
+            default_content_processing_engine_url="auto",
+            default_embedding_option="ask",
+            auto_delete_files="yes",
+            youtube_preferred_languages=[
+                "en", "pt", "es", "de", "nl", "en-GB", "fr", "hi", "ja",
+            ],
+        )
     content_state: dict[str, Any] = state["content_state"]  # type: ignore[assignment]
 
     content_state["url_engine"] = (

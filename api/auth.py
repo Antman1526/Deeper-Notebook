@@ -47,9 +47,24 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
         self.password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+        # v0.7.209 — defaults expanded to match what main.py passes
+        # in production. Previously the class default omitted the
+        # K8s/Docker probes (/livez, /readyz, /healthz/deep) and
+        # the Prometheus endpoint (/metrics). main.py:608-630
+        # constructs PasswordAuthMiddleware with the full list
+        # explicitly, so production was fine — but any test fixture
+        # or future re-wiring that instantiated
+        # `PasswordAuthMiddleware(app)` (without excluded_paths=)
+        # would get 401 on every probe and silently break health
+        # monitoring. Make the class default match the production
+        # call-site so the failure mode is impossible.
         self.excluded_paths = excluded_paths or [
             "/",
             "/health",
+            "/livez",
+            "/readyz",
+            "/healthz/deep",
+            "/metrics",
             "/docs",
             "/openapi.json",
             "/redoc",

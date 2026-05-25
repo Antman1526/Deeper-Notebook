@@ -43,6 +43,27 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
+    # v0.7.209 — `/models` discovery endpoint for the OpenAI-compatible
+    # credential probe. Same root cause as the whisper/piper fix in
+    # v0.7.207: the connection_tester hits `{base_url}/models` and
+    # 404s otherwise. Memory shim's base_url is registered WITHOUT
+    # a `/v1` prefix (see desktop/auto_register/memory.py:41), so
+    # the endpoint is `/models` here, NOT `/v1/models`. Surface a
+    # single OpenAI-shaped entry naming the local memory layer so
+    # the credential test in the UI goes green.
+    @app.get("/models")
+    def list_models() -> dict:
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": "memory-local",
+                    "object": "model",
+                    "owned_by": "open-notebook-plus",
+                }
+            ],
+        }
+
     @app.get("/api/memory/relevant")
     def relevant(topic: str = "", k: int = 5) -> dict:
         if not topic:

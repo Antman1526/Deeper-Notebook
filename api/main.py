@@ -653,10 +653,22 @@ app.add_middleware(RequestIDMiddleware)
 
 # CORS is OUTERMOST so it sees preflight OPTIONS before any other
 # middleware short-circuits them.
+#
+# v0.7.209 — `allow_credentials=True` combined with
+# `allow_origins=["*"]` is a contract the browser silently drops
+# (Fetch spec disallows credentials when the response advertises a
+# wildcard origin). The runtime then ends up sending
+# `Access-Control-Allow-Origin: *` AND
+# `Access-Control-Allow-Credentials: true`, which Chromium / Firefox
+# treat as an error and refuse the response. Make the contract
+# honest: when we're in the default-wildcard mode, allow_credentials
+# is False (matches what the browser would actually permit). Users
+# who explicitly set `CORS_ORIGINS=https://foo.example.com` keep
+# the credentialed-CORS behaviour they configured for.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=not CORS_IS_DEFAULT_WILDCARD,
     allow_methods=["*"],
     allow_headers=["*"],
 )
