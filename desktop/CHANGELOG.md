@@ -29,6 +29,32 @@ focused commit; each ships with regression tests.
     health + n_ctx headroom; honors user overrides (cloud/local/auto). 5 unit
     tests cover all branches: auto-mode (healthy+fits, oversized, unhealthy),
     forced overrides (both directions), error cases, and fallbacks (Phase 3 Task 11).
+  - `open_notebook/ai/provision.py` + `open_notebook/graphs/chat.py` —
+    `provision_langchain_chat_model()` wrapper invokes `pick_provider()` when
+    `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` is truthy (`1`/`true`/`yes`/`on`). Routing
+    is **opt-in** — default behavior (env unset) is byte-equivalent to the
+    existing `provision_langchain_model(content, None, "chat")` call.
+    Health is TTL-cached for 30 s so the router adds no probe latency per turn.
+    `chat.py:call_model_with_messages` now uses the smart wrapper when no
+    per-request `model_id` override is set; explicit overrides bypass routing
+    unchanged.
+
+    Env knobs for operators:
+    - `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` — enable smart routing (default: off)
+    - `OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID` — SurrealDB model ID for local sidecar
+    - `OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID` — SurrealDB model ID for cloud chat
+      (falls back to `DefaultModels.default_chat_model` when unset — see v0.8.1 note)
+    - `OPEN_NOTEBOOK_LOCAL_N_CTX` — local context window size (default: `32768`)
+    - `OPEN_NOTEBOOK_CHAT_PROVIDER` — force routing: `auto` | `local` | `cloud`
+      (default: `auto`)
+    - `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL` — sidecar URL for the health probe;
+      desktop bootstrap writes this on launch
+
+    v0.8.1 note: if `OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID` is unset and
+    `DefaultModels.default_chat_model` points to a local model, the router's
+    cloud branch will select that local model ID. A dedicated `auto_route_cloud`
+    field in DefaultModels (with migration) will fix this in v0.8.1.
+    (Phase 3 Task 12, Phase 3 closeout)
 
 - **✨ Phase 1 — Local-model health verification (v0.8.0 pre-release)**
   Foundational probe system for active sidecar health checks, surfaced at
