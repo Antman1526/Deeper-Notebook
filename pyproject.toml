@@ -48,6 +48,10 @@ dependencies = [
     # the only one with stable histogram-bucket semantics + multiprocess
     # support (we don't use multiprocess today but it's the standard).
     "prometheus-client>=0.20.0",
+    # v0.8.0 — MCP (Model Context Protocol) client for connecting to
+    # MCP servers. Used by Phase 2 to enable chat graph to call external
+    # MCP tools (web search, fetch, etc.) via streamable-http transport.
+    "mcp>=1.0.0",
     # v0.7.122 — Explicit pins for transitive deps with known CVEs.
     # These come in via langchain-* / fastapi / content-core / httpx
     # at versions below their published fix. Pinning here forces uv
