@@ -998,6 +998,13 @@ export const bnIN = {
     testModelFailed: "মডেল পরীক্ষা ব্যর্থ",
     searchOrAddModel: "মডেলের নাম খুঁজুন বা টাইপ করুন...",
     addCustomModel: "\"{name}\" যোগ করুন",
+    status: {
+      healthy: "সুস্থ",
+      unhealthy: "অসুস্থ",
+      notConfigured: "কনফিগার করা হয়নি",
+      unknown: "অজানা",
+      noDetail: "কোন বিবরণ নেই",
+    },
   },
   apiKeys: {
     title: "আপনার নিজের API কী দিয়ে আপনার AI কনফিগার করুন",

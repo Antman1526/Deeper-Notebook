@@ -997,6 +997,13 @@ export const ruRU = {
     testModelFailed: "Тест модели не пройден",
     searchOrAddModel: "Поиск или введите имя модели...",
     addCustomModel: "Добавить \"{name}\"",
+    status: {
+      healthy: "здоров",
+      unhealthy: "неисправен",
+      notConfigured: "не настроен",
+      unknown: "неизвестно",
+      noDetail: "нет сведений",
+    },
   },
   apiKeys: {
     title: "Настройте ИИ с помощью собственных API-ключей",

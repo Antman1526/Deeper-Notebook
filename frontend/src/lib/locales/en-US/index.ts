@@ -1008,6 +1008,13 @@ export const enUS = {
     testModelFailed: "Model Test Failed",
     searchOrAddModel: "Search or type a model name...",
     addCustomModel: "Add \"{name}\"",
+    status: {
+      healthy: "healthy",
+      unhealthy: "unhealthy",
+      notConfigured: "not configured",
+      unknown: "unknown",
+      noDetail: "no details available",
+    },
   },
   apiKeys: {
     title: "Configure your AI with your own API keys",

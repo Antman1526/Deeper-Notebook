@@ -997,6 +997,13 @@ export const zhCN = {
     testModelFailed: "模型测试失败",
     searchOrAddModel: "搜索或输入模型名称...",
     addCustomModel: "添加 \"{name}\"",
+    status: {
+      healthy: "正常",
+      unhealthy: "异常",
+      notConfigured: "未配置",
+      unknown: "未知",
+      noDetail: "无详情",
+    },
   },
   apiKeys: {
     title: "使用您自己的 API 密钥配置 AI",
