@@ -18,7 +18,71 @@ focused commit; each ships with regression tests.
 
 ---
 
-## Unreleased — v0.7.36 → v0.7.208 (in flight)
+## Unreleased — v0.7.36 → v0.7.209 (in flight)
+
+- **v0.7.209** 🐛 **Audit sweep: 5 fixes across memory shim,
+  source pipeline, auth middleware, CORS.** Fresh audit on
+  uncovered paths (source upload edges, auth middleware, SSRF
+  guards, CORS) plus a follow-up to v0.7.207's whisper/piper
+  /v1/models pattern.
+
+  1. **memory_shim missing `/models` endpoint.** Same v0.7.207-
+     class fix — connection_tester probes `{base_url}/models`
+     and the Memory (local) credential test 404'd. Memory's
+     base_url is registered without /v1 (per
+     `auto_register/memory.py:41`), so this endpoint sits at
+     `/models` (no /v1 prefix), distinguishing it from the
+     whisper/piper shims.
+
+  2. **HIGH — `content_process` ignored user ContentSettings.**
+     `open_notebook/graphs/source.py:34-51` constructed a fresh
+     `ContentSettings(...)` with hardcoded literals every time,
+     silently overriding the singleton record the user toggled
+     in Settings. The auto_delete_files toggle, processing-
+     engine choices for documents and URLs, YouTube language
+     preferences — all ignored. Now loads
+     `ContentSettings.get_instance()` with a hardcoded fallback
+     only on a DB load failure.
+
+  3. **MED — orphan "Processing..." source rows on permanent
+     extract failure.** `commands/source_commands.py`'s
+     `except ValueError` branch caught the corrupted-PDF /
+     unreadable-file failures from content-core but left the
+     API-created placeholder source row in the DB forever. User
+     saw a phantom source they couldn't make sense of. Added
+     three-way safe cleanup: title still "Processing..." AND
+     full_text empty AND delete wrapped in try/except so a
+     cleanup failure doesn't mask the original ValueError.
+
+  4. **MED — `PasswordAuthMiddleware` class-default
+     `excluded_paths` omitted health probes.** main.py's
+     production call-site passes the full list explicitly so
+     production is fine, but any future re-wiring or test
+     fixture instantiating `PasswordAuthMiddleware(app)`
+     without the kwarg returned 401 on /livez, /readyz,
+     /healthz/deep, /metrics. Footgun. Default now mirrors the
+     production list.
+
+  5. **MED — CORS `allow_credentials=True` with wildcard
+     origins.** The combination is silently dropped by browsers
+     per the Fetch spec; the response then asserted both
+     `Access-Control-Allow-Origin: *` AND
+     `Access-Control-Allow-Credentials: true` which Chromium /
+     Firefox refuse. Now `allow_credentials = not
+     CORS_IS_DEFAULT_WILDCARD` — honest contract when wildcard
+     is in effect; users who explicitly set CORS_ORIGINS to a
+     concrete origin keep the credentialed-CORS behaviour they
+     configured for.
+
+  Tests at `tests/test_v0_7_209_audit_sweep.py`: 6 new — AST
+  pin on memory_shim `/models`, runtime smoke that hits it via
+  TestClient, AST pin on the ContentSettings load, AST pin on
+  the orphan-cleanup three-way check, runtime test on the auth-
+  middleware default excluded_paths, AST pin on the CORS
+  honesty check.
+
+  Backend tests: **1073/1073** (was 1067; +6 new).
+  Desktop tests: **253/253**.
 
 - **v0.7.208** 🐛 **Two fixes from end-to-end source-upload +
   local-model audit:** the `embed` Form default + orphan
