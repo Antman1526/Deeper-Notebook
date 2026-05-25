@@ -51,6 +51,7 @@ from api.routers import (
     gmail as gmail_router,
 )
 from api.routers import local_models as _local_models_router
+from api.routers import mcp as _mcp_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -896,6 +897,7 @@ app.include_router(languages.router, prefix="/api", tags=["languages"])
 app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
 app.include_router(exports.router, prefix="/api", tags=["exports"])
 app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
+app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
 
 
 @app.get("/")
