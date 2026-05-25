@@ -35,6 +35,30 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     assert names == ["web_search", "fetch_url"]
 
 
+def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
+    """When at least one MCP server is enabled, the chat graph's
+    tool registry must include `mcp_search` and `mcp_fetch`."""
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        lambda: __import__("asyncio").Future(),
+    )
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(force_servers=[
+                {"id": "mcp_server:1", "name": "test",
+                 "url": "http://x", "enabled": True}
+            ])
+        )
+    finally:
+        loop.close()
+    tool_names = [t.name for t in tools]
+    assert "mcp_search" in tool_names
+    assert "mcp_fetch" in tool_names
+
+
 def test_mcp_registry_lists_enabled_servers(monkeypatch):
     """`list_enabled_servers()` returns only servers with
     `enabled=True`. Disabled servers are not used by the chat
