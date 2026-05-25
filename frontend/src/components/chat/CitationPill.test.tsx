@@ -43,6 +43,20 @@ vi.mock('@/lib/hooks/use-notes', () => ({
   }),
 }))
 
+// v0.8.1 Item 4 — insight pill now uses useInsight (not useSource).
+// Mock returns enough shape for the popover to render the title.
+vi.mock('@/lib/hooks/use-insights', () => ({
+  useInsight: (id: string) => ({
+    data: {
+      id,
+      insight_type: 'summary',
+      content: 'Generated insight content for the popover.',
+      title: 'Test Insight Title',
+    },
+    isLoading: false,
+  }),
+}))
+
 function makeWrapper() {
   const qc = new QueryClient()
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -113,5 +127,17 @@ describe('CitationPill', () => {
       wrapper: makeWrapper(),
     })
     expect(container.querySelector('button')).not.toBeNull()
+  })
+
+  it('insight pill popover shows the fetched insight title (v0.8.1 useInsight wire-up)', () => {
+    // v0.8.1 Item 4 — guards against regressing to useSource(id) which
+    // would silently 404 and show the italic fallback instead of the
+    // insight's own title.
+    render(<CitationPill kind="insight" value="source_insight:xyz" />, {
+      wrapper: makeWrapper(),
+    })
+
+    expect(screen.getByText(/chat\.citations\.insightLabel/)).toBeInTheDocument()
+    expect(screen.getByText('Test Insight Title')).toBeInTheDocument()
   })
 })

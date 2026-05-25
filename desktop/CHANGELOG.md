@@ -20,6 +20,15 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.1 Item 4 — citation pill insight popover uses the right hook**
+  - `frontend/src/components/chat/CitationPill.tsx` — `InsightPopoverContent`
+    was wired to `useSource(id)` on the assumption that insight IDs were source
+    records. The chat system prompt actually instructs the LLM to emit
+    `[insight:source_insight:xxx]` markers, so the source GET 404'd silently
+    and the popover always fell back to the italic placeholder. Now uses the
+    existing `useInsight(id)` hook so the popover shows the insight title.
+    Test added; CitationPill suite grew 7 → 8 cases.
+
 - **🐛 v0.8.1 Item 2 — cloud_model_id fallback fix**
   - `DefaultModels.auto_route_cloud` + migration 18 — dedicated slot for the
     smart router's cloud model. Stops the v0.8.0 bug where the router silently
