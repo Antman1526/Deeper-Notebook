@@ -771,34 +771,57 @@ async def _resolve_source_file(source_id: str) -> tuple[str, str]:
     if not file_path:
         raise HTTPException(status_code=404, detail="Source has no file to download")
 
-    safe_root = os.path.realpath(UPLOADS_FOLDER)
-    resolved_path = os.path.realpath(file_path)
+    # v0.8.23 SECURITY — use Path.is_relative_to() so a sibling-prefix
+    # attack (UPLOADS_FOLDER=/var/uploads vs file_path=/var/uploadsx/...)
+    # is correctly rejected. Pre-v0.8.23 this did
+    # `resolved_path.startswith(safe_root)` with no trailing separator,
+    # which is the v0.6.31 / v0.6.34 / v0.7.2 sibling-prefix bug — the
+    # exact pattern that was already fixed in podcasts.py
+    # `_resolve_audio_path` (uses is_relative_to). The sources.py
+    # helpers were missed in that pass. Vector: a tampered DB row that
+    # sets source.asset.file_path to `/var/uploadsbypass/etc-passwd`
+    # would pass the old check and be served by FileResponse on
+    # GET /sources/{id}/download.
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    try:
+        resolved_path = Path(file_path).resolve()
+    except (OSError, ValueError):
+        # Malformed path. Treat as "not found" rather than 500.
+        raise HTTPException(status_code=404, detail="File not found on server")
 
-    if not resolved_path.startswith(safe_root):
+    if not resolved_path.is_relative_to(safe_root):
         logger.warning(
-            f"Blocked download outside uploads directory for source {source_id}: {resolved_path}"
+            f"Blocked download outside uploads directory for source "
+            f"{source_id}: {resolved_path}"
         )
         raise HTTPException(status_code=403, detail="Access to file denied")
 
-    if not os.path.exists(resolved_path):
+    if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="File not found on server")
 
-    filename = os.path.basename(resolved_path)
-    return resolved_path, filename
+    return str(resolved_path), resolved_path.name
 
 
 def _is_source_file_available(source: Source) -> Optional[bool]:
     if not source or not source.asset or not source.asset.file_path:
         return None
 
-    file_path = source.asset.file_path
-    safe_root = os.path.realpath(UPLOADS_FOLDER)
-    resolved_path = os.path.realpath(file_path)
-
-    if not resolved_path.startswith(safe_root):
+    # v0.8.23 SECURITY — same is_relative_to() fix as _resolve_source_file
+    # above. This helper feeds /sources/{id} response's `file_available`
+    # field. Pre-v0.8.23 returned True for a sibling-prefix path
+    # (/var/uploadsbypass/foo when UPLOADS_FOLDER=/var/uploads), telling
+    # the UI the file exists — and the download endpoint would then
+    # actually serve it. Same bug, two sites; this is the parallel fix.
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    try:
+        resolved_path = Path(source.asset.file_path).resolve()
+    except (OSError, ValueError):
         return False
 
-    return os.path.exists(resolved_path)
+    if not resolved_path.is_relative_to(safe_root):
+        return False
+
+    return resolved_path.exists()
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)
