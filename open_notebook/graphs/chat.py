@@ -311,6 +311,90 @@ async def _resolve_chat_tools(
     ]
 
 
+async def bind_mcp_and_run_tool_loop(
+    model,
+    payload: list,
+    *,
+    max_iterations: int = 4,
+):
+    """v0.8.16 — Shared MCP tool-loop helper for both chat graphs.
+
+    Extracted from `call_model_with_messages` so source_chat.py can use
+    the same v0.8.9 in-node execution loop without duplicating the
+    logic. Both graphs are single-node (no LangGraph ToolNode) and need
+    to:
+      1. Discover MCP tools via `_resolve_chat_tools` (cached per
+         v0.8.12).
+      2. Bind to the model with `bind_tools` (fail-soft for local
+         providers that don't support tool calling — v0.8.0).
+      3. Invoke the model.
+      4. If the model emits `tool_calls`, execute each (v0.8.9 fix),
+         feed `ToolMessage` results back, re-invoke.
+      5. Bound at `max_iterations` re-invocations against runaway.
+
+    Returns a tuple `(final_ai_message, mcp_captures)`. `mcp_captures`
+    is the list of `{index, name, args, text, blocks}` records (per
+    v0.8.13) — empty when no MCP tools fired this turn. The caller is
+    responsible for cleaning the final message's thinking-content
+    wrappers and returning the right state shape for its graph.
+
+    The fail-soft bind, the in-node loop semantics, the direct
+    `tool.coroutine(**args)` dispatch (v0.8.10), and the runaway bound
+    are all preserved exactly as they were in the v0.8.9-v0.8.13 chain
+    — this is a pure code-motion refactor.
+    """
+    from langchain_core.messages import ToolMessage
+
+    mcp_captures: list = []
+    mcp_tools: list = []
+    try:
+        mcp_tools = await _resolve_chat_tools(captures=mcp_captures)
+        if mcp_tools:
+            model = model.bind_tools(mcp_tools)
+    except Exception:
+        # v0.8.0 — local providers may not implement bind_tools
+        mcp_tools = []
+
+    ai_message = await model.ainvoke(payload)
+
+    tool_lookup = {t.name: t for t in mcp_tools} if mcp_tools else {}
+    tool_iters = 0
+    running_payload = list(payload)
+    running_payload.append(ai_message)
+    while (
+        tool_lookup
+        and tool_iters < max_iterations
+        and getattr(ai_message, "tool_calls", None)
+    ):
+        tool_iters += 1
+        tool_msgs: list = []
+        for call in ai_message.tool_calls:
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+            args = call.get("args") if isinstance(call, dict) else getattr(call, "args", {})
+            call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", "")
+            tool = tool_lookup.get(name)
+            if tool is None:
+                tool_msgs.append(ToolMessage(
+                    content=f"Tool {name!r} is not available.",
+                    tool_call_id=call_id,
+                ))
+                continue
+            try:
+                safe_args = args if isinstance(args, dict) else {}
+                result = await tool.coroutine(**safe_args)
+            except Exception as tool_exc:
+                result = f"Tool {name!r} failed: {tool_exc}"
+            tool_msgs.append(ToolMessage(
+                content=str(result),
+                tool_call_id=call_id,
+            ))
+        running_payload.extend(tool_msgs)
+        ai_message = await model.ainvoke(running_payload)
+        running_payload.append(ai_message)
+
+    return ai_message, mcp_captures
+
+
 async def call_model_with_messages(
     state: ThreadState, config: RunnableConfig
 ) -> dict:
@@ -400,95 +484,14 @@ async def call_model_with_messages(
                 max_tokens=8192,
             )
 
-        # v0.8.0 Phase 2 Task 8 — bind MCP tools when any server is
-        # enabled. We resolve tools each turn so the list reflects the
-        # current registry state without requiring a server restart.
-        # Wrapped in try/except because local-only providers (llama-cpp,
-        # Ollama without tool support, etc.) raise NotImplementedError or
-        # AttributeError on .bind_tools(); the chat still works normally
-        # without MCP when binding fails.
-        #
-        # v0.8.1 Item 3 — accumulator for MCP tool-call payloads in this
-        # turn. Reset per turn so subsequent turns don't see stale entries.
-        mcp_captures: list = []
-        mcp_tools: list = []
-        try:
-            mcp_tools = await _resolve_chat_tools(captures=mcp_captures)
-            if mcp_tools:
-                model = model.bind_tools(mcp_tools)
-        except Exception:
-            # v0.8.0 — local providers may not implement bind_tools; degrade gracefully
-            mcp_tools = []
-
-        ai_message = await model.ainvoke(payload)
-
-        # v0.8.9 CRITICAL — in-node tool execution loop. Pre-v0.8.9 the
-        # chat graph was START → agent → END with no ToolNode, so
-        # `bind_tools(mcp_tools)` made the tools VISIBLE to the LLM
-        # (schemas in the system prompt) but no code ever executed any
-        # `tool_calls` the LLM emitted. mcp_captures stayed empty;
-        # [mcp:N] markers in the LLM's text were pure hallucination;
-        # the v0.8.1 Item 3 pill-popover payload pipeline never fired.
-        #
-        # Fix: loop here until the model stops emitting tool_calls or
-        # we hit MAX_TOOL_ITERATIONS (safety bound against runaway).
-        # Keeps the graph topology unchanged — no separate ToolNode —
-        # so /chat/execute's existing message-list extraction logic
-        # keeps working without surgery.
-        MAX_TOOL_ITERATIONS = 4
-        tool_lookup = {t.name: t for t in mcp_tools} if mcp_tools else {}
-        tool_iters = 0
-        # The history list we accumulate so the model sees its own
-        # earlier tool_call AI messages + the tool results on each
-        # re-invocation. The very first model.ainvoke already saw
-        # `payload`, so we start the history there.
-        running_payload = list(payload)
-        running_payload.append(ai_message)
-        while (
-            tool_lookup
-            and tool_iters < MAX_TOOL_ITERATIONS
-            and getattr(ai_message, "tool_calls", None)
-        ):
-            tool_iters += 1
-            from langchain_core.messages import ToolMessage
-            tool_msgs: list = []
-            for call in ai_message.tool_calls:
-                # langchain tool_call shape: {"name", "args", "id"}
-                name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
-                args = call.get("args") if isinstance(call, dict) else getattr(call, "args", {})
-                call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", "")
-                tool = tool_lookup.get(name)
-                if tool is None:
-                    # Model hallucinated a tool name we didn't bind.
-                    # Reply with an error so the model can recover
-                    # rather than spinning on the same call.
-                    tool_msgs.append(ToolMessage(
-                        content=f"Tool {name!r} is not available.",
-                        tool_call_id=call_id,
-                    ))
-                    continue
-                try:
-                    # v0.8.10 — call the coroutine directly with **args
-                    # rather than going through Tool.ainvoke(args). The
-                    # latter requires an args_schema; without one, the
-                    # dict gets bound to a single `input` arg and the
-                    # closure receives empty kwargs. The model's args
-                    # dict already matches the MCP call shape, so
-                    # direct dispatch is both correct and cheaper.
-                    safe_args = args if isinstance(args, dict) else {}
-                    result = await tool.coroutine(**safe_args)
-                except Exception as tool_exc:
-                    # Tool failure → ToolMessage with the error. The
-                    # model can decide to apologise to the user or
-                    # try a different approach next iteration.
-                    result = f"Tool {name!r} failed: {tool_exc}"
-                tool_msgs.append(ToolMessage(
-                    content=str(result),
-                    tool_call_id=call_id,
-                ))
-            running_payload.extend(tool_msgs)
-            ai_message = await model.ainvoke(running_payload)
-            running_payload.append(ai_message)
+        # v0.8.16 — Tool-binding + execution loop moved to
+        # `bind_mcp_and_run_tool_loop` so source_chat.py can reuse it.
+        # See the helper's docstring for the full semantics
+        # (v0.8.0 Phase 2 Task 8 binding, v0.8.9 in-node execution,
+        # v0.8.10 direct dispatch, v0.8.13 captures shape).
+        ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+            model, payload,
+        )
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
