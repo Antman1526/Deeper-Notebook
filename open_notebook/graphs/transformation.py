@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from ai_prompter import Prompter
@@ -10,10 +11,50 @@ from typing_extensions import TypedDict
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
-from open_notebook.exceptions import OpenNotebookError
+from open_notebook.exceptions import ExternalServiceError, OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.8.26 — Per-node LLM-call timeout for the transformation graph.
+# Same family as the v0.7.138 ask-graph fix that was missed for this
+# file. `run_transformation` calls `chain.ainvoke()` once; pre-v0.8.26
+# that call had NO timeout, so a wedged local LLM (llama-cpp-python
+# mid-generation hang, cloud provider brief outage, gRPC stream stuck)
+# would pin the surreal_commands worker holding the process_source
+# job indefinitely. With max_attempts=15 and wait_max=120s in the
+# process_source retry config, a wedge could keep a worker slot
+# unavailable for roughly half an hour before surreal_commands gives
+# up — backing up the entire transformation queue.
+#
+# Default 180s per node — more generous than ask.py's 120s because
+# transformations include outline + insight generation that runs over
+# the full (capped) source content, not just a short query.
+_DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC = 180.0
+
+
+def _transform_node_timeout_sec() -> float:
+    raw = (os.environ.get("ONP_TRANSFORM_NODE_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
+    try:
+        val = float(raw)
+        if val <= 0:
+            logger.warning(
+                "ONP_TRANSFORM_NODE_TIMEOUT_SEC={} must be positive; "
+                "using default {}s",
+                raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
+            )
+            return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
+        return val
+    except ValueError:
+        logger.warning(
+            "ONP_TRANSFORM_NODE_TIMEOUT_SEC={!r} not a float; using "
+            "default {}s",
+            raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
+        )
+        return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
 
 # v0.7.10 — Input-text cap for transformations.
 #
@@ -118,7 +159,21 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
             max_tokens=8192,
         )
 
-        response = await chain.ainvoke(payload)
+        # v0.8.26 — bound the LLM call so a wedged local model can't
+        # pin the surreal_commands worker indefinitely. TimeoutError
+        # maps to ExternalServiceError (502 at the global handler).
+        timeout = _transform_node_timeout_sec()
+        try:
+            response = await asyncio.wait_for(
+                chain.ainvoke(payload), timeout=timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            raise ExternalServiceError(
+                f"Transformation graph: LLM call timed out after "
+                f"{timeout:.0f}s. Try a smaller/faster model, raise "
+                f"ONP_TRANSFORM_NODE_TIMEOUT_SEC, or check that the "
+                f"provider is responsive."
+            ) from exc
 
         # Clean thinking content from the response
         response_content = extract_text_content(response.content)

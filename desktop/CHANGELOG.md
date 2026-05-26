@@ -20,6 +20,47 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛⚡ v0.8.26 — transformation + prompt graphs were missing per-node LLM timeouts**
+  - `open_notebook/graphs/transformation.py:121` and
+    `open_notebook/graphs/prompt.py:40` both called
+    `chain.ainvoke(payload)` with **no timeout**. v0.7.138 added per-node
+    timeouts to `ask.py` (`_ask_invoke()` wraps `asyncio.wait_for`)
+    but the same sweep missed transformation + prompt — both have the
+    identical bug shape: a wedged local LLM mid-generation pins the
+    caller indefinitely.
+  - **Why this matters more for transformation**: it's invoked from
+    `source_graph` (`open_notebook/graphs/source.py:180`), which runs
+    inside the `process_source` surreal-commands worker.
+    `commands/source_commands.py` configures retry with
+    `max_attempts=15`, `wait_max=120s`. A single wedged transformation
+    could keep the worker slot unavailable for **roughly half an hour**
+    before surreal_commands gave up, backing up the entire ingest
+    queue. The `/transformations/execute` endpoint has an outer
+    timeout (v0.7.95), but the graph-internal call from `source_graph`
+    does not — that's the gap.
+  - **Why prompt graph too**: notes router (`api/routers/notes.py:89`)
+    invokes the prompt graph for title generation. Same wedge =
+    same indefinite hang.
+  - Fix: introduce `_transform_node_timeout_sec()` in
+    `transformation.py` reading `ONP_TRANSFORM_NODE_TIMEOUT_SEC`
+    (default 180s — more generous than ask.py's 120s because
+    transformations run over capped source content, not just a query).
+    Wrap both `chain.ainvoke` calls in `asyncio.wait_for` and raise
+    `ExternalServiceError` on timeout. The prompt graph imports the
+    shared helper so both files use one env knob.
+  - **Tests** (8 new in `tests/test_v0_8_26_graph_node_timeouts.py`):
+    - `test_v0826_timeout_default_is_180_seconds`
+    - `test_v0826_timeout_respects_env_var`
+    - `test_v0826_timeout_falls_back_on_garbage_value`
+    - `test_v0826_timeout_falls_back_on_negative_value`
+    - `test_v0826_transformation_graph_times_out` — substitutes a
+      chain whose ainvoke sleeps 5s vs. a 0.1s timeout, asserts
+      ExternalServiceError fires with the env-knob name in the message
+    - `test_v0826_prompt_graph_times_out` — same shape, prompt graph
+    - `test_v0826_transformation_uses_wait_for` — source-text pin
+    - `test_v0826_prompt_uses_wait_for` — source-text pin
+  - Suite: 24 graph + transformation tests pass (16 existing + 8 new).
+
 - **🔒 v0.8.25 — onp theme endpoint leaked exception detail on save failure (fourth & final sweep site)**
   - `api/routers/onp.py:97` in `POST /onp/theme` had:
     ```python
