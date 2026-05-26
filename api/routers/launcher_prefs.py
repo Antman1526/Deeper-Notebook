@@ -53,6 +53,16 @@ async def get_launcher_prefs():
             status_code=400,
             detail=f"launcher.env is malformed: {exc}",
         )
+    except (PermissionError, OSError) as exc:
+        # v0.8.14 — also catch fs errors (file owned by another user,
+        # read-only DMG, etc.) so the UI gets an actionable 400 instead
+        # of a 500. The launcher_prefs module itself never raises these
+        # since it handles missing-file via path.exists(); but a chmod
+        # or fs quirk could leave the file unreadable.
+        raise HTTPException(
+            status_code=400,
+            detail=f"launcher.env could not be read: {exc}",
+        )
 
 
 @router.put("/api/launcher-prefs", response_model=PrefsResponse)
@@ -70,4 +80,13 @@ async def update_launcher_prefs(body: PrefsUpdate):
         raise HTTPException(
             status_code=400,
             detail=str(exc),
+        )
+    except (PermissionError, OSError) as exc:
+        # v0.8.14 — atomic write goes through `tmp.replace(path)`.
+        # Can fail with PermissionError (target unwritable) or OSError
+        # (different filesystem, no space, etc.). Surface as 400 with
+        # the underlying message so the UI can show actionable info.
+        raise HTTPException(
+            status_code=400,
+            detail=f"launcher.env could not be written: {exc}",
         )

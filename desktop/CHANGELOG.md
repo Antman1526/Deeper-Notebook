@@ -20,6 +20,17 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.14 audit fix — launcher_prefs API exception narrowness**
+  - `GET`/`PUT /api/launcher-prefs` only caught `ValueError`.
+    `PermissionError` (file owned by another user / chmod 600 by
+    something else) and `OSError` (read-only DMG, filesystem full,
+    cross-device rename failure) would surface as 500 instead of an
+    actionable 400. Added narrow `(PermissionError, OSError)` branch
+    on both handlers — same 400 contract, different detail message
+    pointing at the underlying fs cause.
+  - Existing 4 launcher_prefs API tests still pass unchanged (the new
+    branches are additive).
+
 - **🐛 v0.8.13 — MCP non-text content blocks (images, embedded resources)**
   (closes the v0.8.10 deferred Item #1)
   - `MCPClient.call_tool` pre-v0.8.13 only returned the FIRST content
