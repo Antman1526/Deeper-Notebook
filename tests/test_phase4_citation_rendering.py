@@ -36,14 +36,23 @@ def _rendered_system_prompt() -> str:
 
 
 def test_system_prompt_contains_mcp_citation_section():
-    """v0.8.0 Task 13 — the MCP CITATIONS section must survive
-    every template render. If it goes missing the LLM stops
-    emitting `[mcp:N]` markers and the frontend pills go dark."""
+    """v0.8.0 Task 13 / v0.8.10 — the MCP CITATIONS section must
+    survive every template render. If it goes missing the LLM stops
+    emitting `[mcp:N]` markers and the frontend pills go dark.
+    v0.8.10: assert the tool-name-agnostic `mcp_<name>` prefix
+    instead of the hardcoded mcp_search/mcp_fetch (which only existed
+    if the registered MCP server happened to have tools called
+    `search`/`fetch`)."""
     prompt = _rendered_system_prompt()
     assert "MCP TOOL CITATIONS" in prompt
     assert "[mcp:N]" in prompt
-    assert "mcp_search" in prompt
-    assert "mcp_fetch" in prompt
+    # v0.8.10 — the prompt now uses the generic mcp_<name> form
+    # since the actual tool names depend on which MCP server the
+    # operator registered (gbrain: search/think; OpenChronicle: ...).
+    assert "mcp_<name>" in prompt, (
+        "v0.8.10: system prompt must refer to MCP tools generically "
+        "as `mcp_<name>` since the actual names are server-dependent"
+    )
 
 
 def test_system_prompt_capabilities_mentions_mcp_tools():
@@ -51,10 +60,12 @@ def test_system_prompt_capabilities_mentions_mcp_tools():
     MCP tools. If it disappears the model under-uses MCP even
     when the user clearly needs live info."""
     prompt = _rendered_system_prompt()
-    assert "mcp_search" in prompt and "mcp_fetch" in prompt
-    # Look for the v0.8.0 marker so a future cleanup that drops
-    # the comment fails this test instead of silently breaking.
-    assert "v0.8.0" in prompt
+    # v0.8.10 — assert the generic mcp_<name> prefix (post-tool-name-
+    # agnostic refactor) instead of the v0.8.0 hardcoded names.
+    assert "mcp_<name>" in prompt
+    # Look for a v0.8.x marker so a future cleanup that drops the
+    # comment fails this test instead of silently breaking.
+    assert "v0.8.0" in prompt or "v0.8.10" in prompt
 
 
 def test_system_prompt_legacy_source_note_insight_citations_still_present():
