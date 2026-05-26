@@ -191,6 +191,71 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
             f"MEMORY_CHAT_LLM_URL={memory_url!r}, "
             f"OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL={local_url!r}"
         )
+        # v0.8.7 — OPEN_NOTEBOOK_LOCAL_N_CTX must be in session_env
+        # carrying the launcher's resolved n_ctx, so the router's
+        # pick_provider() math matches what the chat sidecar actually
+        # binds. Pre-v0.8.7 this key wasn't set, so the router
+        # defaulted to 32768 even when GGUF autodetect picked higher
+        # (e.g. Hermes-3 131k) — operators with capable models
+        # under-routed to cloud.
+        assert "OPEN_NOTEBOOK_LOCAL_N_CTX" in sv.session_env, (
+            "OPEN_NOTEBOOK_LOCAL_N_CTX missing from session_env; "
+            "v0.8.7 fix regressed — router falls back to 32768 default "
+            "instead of using launcher's auto-detected ceiling"
+        )
+        # Default config (no env override, no chat_llm_path GGUF on
+        # disk that's a real GGUF) falls back to ctx_max=32768.
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "32768", (
+            f"unexpected default n_ctx in session_env: "
+            f"{sv.session_env['OPEN_NOTEBOOK_LOCAL_N_CTX']!r} "
+            f"(expected '32768' with no override and no GGUF)"
+        )
+    finally:
+        sv.stop_all()
+
+
+def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
+    cfg, tmp_path, monkeypatch,
+):
+    """v0.8.7 — ONP_CHAT_LLM_CTX explicit override must reach the
+    router via OPEN_NOTEBOOK_LOCAL_N_CTX. Pre-v0.8.7 the operator's
+    ONP_CHAT_LLM_CTX=8192 made the SIDECAR bind 8k but the router
+    still thought it had 32k headroom (no propagation). v0.8.5
+    patched the router to read ONP_CHAT_LLM_CTX as a fallback;
+    v0.8.7 closes the propagation loop by exporting the resolved
+    value directly so the explicit-router-knob path
+    (OPEN_NOTEBOOK_LOCAL_N_CTX, set by the launcher) wins."""
+    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "8192")
+    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_N_CTX", raising=False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports",
+        lambda n: list(range(40001, 40001 + n)),
+    )
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+    )
+    sv.start_all()
+    try:
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "8192", (
+            f"launcher's resolved n_ctx (from ONP_CHAT_LLM_CTX env) "
+            f"must propagate to OPEN_NOTEBOOK_LOCAL_N_CTX in session_env; "
+            f"got {sv.session_env.get('OPEN_NOTEBOOK_LOCAL_N_CTX')!r}"
+        )
+        # And sv.chat_llm_n_ctx (the in-memory copy that
+        # _spawn_llamacpp_chat reads for --n_ctx argv) must match —
+        # single source of truth check, guards against a future edit
+        # that double-resolves and drifts.
+        assert sv.chat_llm_n_ctx == 8192, (
+            f"chat_llm_n_ctx in-memory={sv.chat_llm_n_ctx!r} but "
+            f"session_env says "
+            f"{sv.session_env.get('OPEN_NOTEBOOK_LOCAL_N_CTX')!r}; "
+            f"two sources of truth — v0.8.7 fix regressed"
+        )
     finally:
         sv.stop_all()
 
