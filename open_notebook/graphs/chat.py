@@ -83,17 +83,32 @@ class ThreadState(TypedDict):
     mcp_tool_calls: Optional[list]
 
 
-async def _resolve_chat_tools(*, force_servers=None, captures=None) -> list:
+async def _resolve_chat_tools(
+    *, force_servers=None, captures=None, force_tool_names=None,
+) -> list:
     """Phase 2 — when at least one MCP server is enabled in the
-    registry, expose `mcp_search` + `mcp_fetch` that route to the
-    first enabled server. Future: per-server tool surfaces (one
-    mcp_* function per server) for richer model decisions.
+    registry, expose its tools to the chat LLM.
+
+    v0.8.10 CRITICAL: pre-v0.8.10 this hardcoded `mcp_search` → MCP
+    tool `web_search` and `mcp_fetch` → `fetch_url`. Most MCP servers
+    in the wild expose different names — gbrain (the integration
+    documented in v0.8.2 Item B) ships `search`, `think`,
+    `find_trajectory`, etc. So registering gbrain would result in
+    `tool web_search not found` errors every time the LLM tried to
+    use it. Fix: discover the server's tools via
+    `client.list_tool_names()` and wrap each one as `mcp_<name>`. The
+    LLM sees what the server actually offers; arg dispatch is generic
+    via `{name, args}` rather than name-specific schemas (richer
+    schemas can come in v0.9 via `list_tools()` instead of just names).
 
     v0.8.1 Item 3 — `captures` is an optional list[dict] accumulator.
     When provided, each tool closure appends a record
     {index, name, args, text} on completion so callers can surface
     the real search query + result text in citation pill popovers.
     text is truncated to 4000 chars to keep response sizes sane.
+
+    `force_tool_names` is a test hook so unit tests can skip the
+    network discovery and pin the bound names.
     """
     from langchain_core.tools import Tool
     from open_notebook.mcp.client import MCPClient
@@ -105,42 +120,76 @@ async def _resolve_chat_tools(*, force_servers=None, captures=None) -> list:
     server = servers[0]
     client = MCPClient(url=server["url"])
 
-    async def _search(query: str) -> str:
-        result = await client.call_tool("web_search", {"query": query})
-        text = result.get("text") or "(no result)"
-        # v0.8.1 — capture for citation pill
-        if captures is not None:
-            captures.append({
-                "index": len(captures) + 1,  # 1-based, matches [mcp:N] marker
-                "name": "web_search",
-                "args": {"query": query},
-                # Truncate to 4000 chars; popover only shows ~500 anyway.
-                "text": text[:4000],
-            })
-        return text
+    # Discover the server's tools so we bind names that actually exist.
+    # Fail-soft: a discovery failure (server unreachable, transport
+    # error) returns no tools rather than raising — the chat still
+    # works in degraded "no MCP" mode and the user sees the failure
+    # via the empty tools list / pill popover placeholder.
+    if force_tool_names is not None:
+        available = list(force_tool_names)
+    else:
+        try:
+            available = await client.list_tool_names()
+        except Exception:
+            available = []
 
-    async def _fetch(url: str) -> str:
-        result = await client.call_tool("fetch_url", {"url": url})
-        text = result.get("text") or "(no result)"
-        # v0.8.1 — capture for citation pill
-        if captures is not None:
-            captures.append({
-                "index": len(captures) + 1,  # 1-based, matches [mcp:N] marker
-                "name": "fetch_url",
-                "args": {"url": url},
-                # Truncate to 4000 chars; popover only shows ~500 anyway.
-                "text": text[:4000],
-            })
-        return text
+    if not available:
+        return []
 
-    # Tool(name, func, description) — func is positional-required in this
-    # version of langchain_core; pass func=None + coroutine for async-only tools.
-    return [
-        Tool(name="mcp_search", func=None, description="Search the web via MCP",
-             coroutine=_search),
-        Tool(name="mcp_fetch", func=None, description="Fetch a URL via MCP",
-             coroutine=_fetch),
-    ]
+    def _make_tool(remote_name: str):
+        """Build a LangChain Tool that calls the server's `remote_name`.
+
+        Closure captures `remote_name` per iteration (not the loop
+        variable) so the bound tool calls the right MCP tool.
+
+        v0.8.10 — the coroutine accepts BOTH dispatch styles LangChain
+        Tool might use:
+        - `tool.ainvoke({"query": "..."})` with no `args_schema` ends
+          up calling the coroutine with `input={"query": "..."}` (the
+          whole dict bound to the default `input` arg).
+        - `tool.ainvoke({"query": "..."})` with an `args_schema` calls
+          the coroutine with `query="..."` (unpacked kwargs).
+        - `tool.coroutine(query="...")` direct calls work either way.
+        Without this defensive shape, the v0.8.9 chat-graph tool loop
+        runs the model twice but the captures stay empty because the
+        coroutine receives `input=<dict>` and never recognises it as
+        the args — silent dead-on-arrival exactly like the v0.8.9
+        bug that motivated this code.
+        """
+        async def _invoke(*args, **kwargs) -> str:
+            # Normalise to a single args dict regardless of dispatch style.
+            if "input" in kwargs and isinstance(kwargs["input"], dict):
+                # No-schema fallback path: whole dict bound to `input`.
+                invocation_args = kwargs["input"]
+            elif args and isinstance(args[0], dict):
+                # Positional dict (some StructuredTool paths).
+                invocation_args = args[0]
+            else:
+                # Unpacked kwargs (schema-driven path or direct call).
+                invocation_args = dict(kwargs)
+            result = await client.call_tool(remote_name, invocation_args)
+            text = result.get("text") or "(no result)"
+            if captures is not None:
+                captures.append({
+                    "index": len(captures) + 1,
+                    "name": remote_name,
+                    "args": invocation_args,
+                    "text": text[:4000],
+                })
+            return text
+
+        return Tool(
+            name=f"mcp_{remote_name}",
+            func=None,
+            description=(
+                f"Call the MCP server's `{remote_name}` tool. Use this "
+                f"when the user's question depends on information not in "
+                f"the notebook context."
+            ),
+            coroutine=_invoke,
+        )
+
+    return [_make_tool(name) for name in available]
 
 
 async def call_model_with_messages(
@@ -300,10 +349,15 @@ async def call_model_with_messages(
                     ))
                     continue
                 try:
-                    # The Tool's coroutine is the _search/_fetch closure
-                    # that captures into mcp_captures. ainvoke handles
-                    # both positional and kwarg dispatch.
-                    result = await tool.ainvoke(args)
+                    # v0.8.10 — call the coroutine directly with **args
+                    # rather than going through Tool.ainvoke(args). The
+                    # latter requires an args_schema; without one, the
+                    # dict gets bound to a single `input` arg and the
+                    # closure receives empty kwargs. The model's args
+                    # dict already matches the MCP call shape, so
+                    # direct dispatch is both correct and cheaper.
+                    safe_args = args if isinstance(args, dict) else {}
+                    result = await tool.coroutine(**safe_args)
                 except Exception as tool_exc:
                     # Tool failure → ToolMessage with the error. The
                     # model can decide to apologise to the user or

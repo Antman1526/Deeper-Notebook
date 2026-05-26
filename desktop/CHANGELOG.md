@@ -20,6 +20,29 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.10 CRITICAL — MCP tool names hardcoded; gbrain docs promise broken integration**
+  - `_resolve_chat_tools` bound `mcp_search` → `client.call_tool("web_search", ...)`
+    and `mcp_fetch` → `client.call_tool("fetch_url", ...)`. Most MCP
+    servers don't expose those exact names — gbrain (the integration
+    documented in v0.8.2 Item B) exposes `search`/`think`/`find_trajectory`.
+    Registering gbrain per the docs would have produced
+    `tool not found` errors every turn. v0.8.2 Item B was a promise
+    we couldn't keep.
+  - Fix: discover the server's tools via `client.list_tool_names()`
+    and wrap each as `mcp_<remote_name>`. Fail-soft on discovery
+    failure (empty list, no tools bound, chat continues without MCP).
+    `force_tool_names` test hook lets units bypass the network call.
+  - Subsidiary fix: chat-graph tool loop (v0.8.9) was going through
+    `Tool.ainvoke(args)` which requires an `args_schema` — without
+    one, LangChain bound the dict to a single `input` kwarg and the
+    closure received empty args. Captures populated but with `args={}`.
+    Switched to direct `tool.coroutine(**args)` dispatch — bypasses
+    the schema confusion entirely.
+  - 3 new tests: discovery returns `mcp_<remote_name>` correctly;
+    gbrain's real tool names (`search`, `think`, `find_trajectory`)
+    bind correctly; fail-soft when discovery raises. Phase 2 suite
+    13 → 15 cases, all passing.
+
 - **🐛 v0.8.9 CRITICAL — chat graph never executed MCP tool calls (the WHOLE Phase 2/3 MCP story was broken)**
   - Audit follow-on. The chat graph is `START → agent → END` (single
     `StateGraph` node, `agent_state.add_node("agent",
