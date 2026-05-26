@@ -168,6 +168,17 @@ class Supervisor:
         self.chat_llm_port: int = 0
         self.memory_port: int = 0
         self.openchronicle_port: int = 0
+        # v0.8.7 — resolved chat-LLM n_ctx, computed once at start_all
+        # time so BOTH session_env (for the router's
+        # OPEN_NOTEBOOK_LOCAL_N_CTX) and _spawn_llamacpp_chat
+        # (--n_ctx argv) read from the same value. Pre-v0.8.7 the
+        # resolution lived inside _spawn_llamacpp_chat — too late to
+        # propagate into session_env, which is built earlier — so the
+        # router defaulted to 32768 even when the GGUF auto-detect
+        # would have picked a higher native context (e.g. Hermes-3
+        # 131k). Operators with high-capacity GGUFs were under-routing
+        # to cloud. 0 = unresolved / no chat sidecar.
+        self.chat_llm_n_ctx: int = 0
 
     def start_all(self) -> None:
         # v0.7.142 — Singleton enforcement + orphan reaper.
@@ -238,6 +249,13 @@ class Supervisor:
             str(user_home())
         ) / ".open-notebook-plus" / "data"
         data_folder.mkdir(parents=True, exist_ok=True)
+        # v0.8.7 — Resolve chat-LLM n_ctx HERE, before session_env is
+        # built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
+        # ceiling the sidecar will use (env-override, GGUF-autodetect,
+        # or capped fallback). The router (provision.py) reads that
+        # env at chat-turn time; previously it always defaulted to
+        # 32768 because _spawn_llamacpp_chat resolved n_ctx later.
+        self.chat_llm_n_ctx = self._resolve_chat_llm_n_ctx()
         self.session_env = {
             **os.environ,
             **self.extra_env,
@@ -305,6 +323,17 @@ class Supervisor:
             "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
                 f"http://127.0.0.1:{chat_llm_port}/v1"
             ),
+            # v0.8.7 — Export the same n_ctx value the sidecar will
+            # use, so the router's pick_provider() math matches reality.
+            # Pre-v0.8.7 the router defaulted to 32768 regardless of
+            # what the launcher had auto-detected (e.g. Hermes-3
+            # native 131k → sidecar bound at 131k, but router only
+            # gave it ~31k of headroom before flipping to cloud).
+            # An explicit OPEN_NOTEBOOK_LOCAL_N_CTX already in
+            # os.environ wins (v0.8.5 precedence chain in provision.py
+            # reads it first), so this is the GGUF-autodetect channel
+            # rather than an override.
+            "OPEN_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
         }
 
         self._progress("supervisor.surreal", "running")
@@ -927,6 +956,70 @@ class Supervisor:
             )
         return fallback
 
+    def _resolve_chat_llm_n_ctx(self) -> int:
+        """v0.8.7 — Resolve the chat-LLM n_ctx ONCE, before session_env
+        is built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
+        ceiling the sidecar will use.
+
+        Precedence (mirrors the original v0.7.206 logic that used to
+        live inline in _spawn_llamacpp_chat):
+          1. `ONP_CHAT_LLM_CTX` explicit override (validated as int ≥ 512).
+          2. GGUF metadata `<arch>.context_length`, capped at
+             `ONP_CHAT_LLM_CTX_MAX` (default 32768).
+          3. The cap value if either the env or the GGUF read fails.
+
+        Returns 0 only when no chat_llm_path is configured at all
+        (memory writer + chat sidecar both skip in that case; the 0
+        sentinel lets callers detect "no chat LLM" without separate
+        flags). Any positive return is safe to pass through to
+        `llama_cpp.server --n_ctx <N>`.
+        """
+        try:
+            ctx_max = int(os.environ.get("ONP_CHAT_LLM_CTX_MAX", "32768"))
+            if ctx_max < 512:
+                ctx_max = 32768
+        except ValueError:
+            ctx_max = 32768
+
+        env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")
+        if env_n_ctx:
+            # Explicit user override — validate but otherwise trust.
+            try:
+                n_ctx_int = int(env_n_ctx)
+                if n_ctx_int < 512:
+                    log.warning(
+                        "ONP_CHAT_LLM_CTX=%s too low (<512); using %d instead",
+                        env_n_ctx, ctx_max,
+                    )
+                    n_ctx_int = ctx_max
+            except ValueError:
+                log.warning(
+                    "ONP_CHAT_LLM_CTX=%r is not an int; using %d",
+                    env_n_ctx, ctx_max,
+                )
+                n_ctx_int = ctx_max
+            return n_ctx_int
+
+        # No explicit override — try to read the GGUF's native context
+        # length and use min(native, ctx_max). If no chat_llm_path is
+        # configured, fall back to ctx_max so OPEN_NOTEBOOK_LOCAL_N_CTX
+        # in session_env still gets a sane value (the chat sidecar
+        # won't actually spawn, but the router won't crash trying to
+        # cast a stale env value either).
+        if self.chat_llm_path is None or not self.chat_llm_path.exists():
+            return ctx_max
+
+        n_ctx_int = self._detect_gguf_context_length(
+            self.chat_llm_path, fallback=ctx_max
+        )
+        n_ctx_int = min(n_ctx_int, ctx_max)
+        log.info(
+            "llamacpp_chat: n_ctx=%d (auto-detected, capped at "
+            "ONP_CHAT_LLM_CTX_MAX=%d). Override with ONP_CHAT_LLM_CTX.",
+            n_ctx_int, ctx_max,
+        )
+        return n_ctx_int
+
     def _spawn_llamacpp_chat(self, port: int) -> None:
         """Second llama-server, this one serving a chat-capable GGUF.
 
@@ -989,43 +1082,13 @@ class Supervisor:
         # `ONP_CHAT_LLM_CTX=8192`; users on a Mac Studio with 64GB+ can
         # raise via `ONP_CHAT_LLM_CTX_MAX=65536` (or set
         # `ONP_CHAT_LLM_CTX=65536` to skip auto-detection entirely).
-        env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")
-        try:
-            ctx_max = int(os.environ.get("ONP_CHAT_LLM_CTX_MAX", "32768"))
-            if ctx_max < 512:
-                ctx_max = 32768
-        except ValueError:
-            ctx_max = 32768
-
-        if env_n_ctx:
-            # Explicit user override — validate but otherwise trust.
-            try:
-                n_ctx_int = int(env_n_ctx)
-                if n_ctx_int < 512:
-                    log.warning(
-                        "ONP_CHAT_LLM_CTX=%s too low (<512); using %d instead",
-                        env_n_ctx, ctx_max,
-                    )
-                    n_ctx_int = ctx_max
-            except ValueError:
-                log.warning(
-                    "ONP_CHAT_LLM_CTX=%r is not an int; using %d",
-                    env_n_ctx, ctx_max,
-                )
-                n_ctx_int = ctx_max
-        else:
-            # No explicit override — try to read the GGUF's native
-            # context length and use min(native, ctx_max).
-            n_ctx_int = self._detect_gguf_context_length(
-                self.chat_llm_path, fallback=ctx_max
-            )
-            n_ctx_int = min(n_ctx_int, ctx_max)
-            log.info(
-                "llamacpp_chat: n_ctx=%d (auto-detected, capped at "
-                "ONP_CHAT_LLM_CTX_MAX=%d). Override with ONP_CHAT_LLM_CTX.",
-                n_ctx_int, ctx_max,
-            )
-        n_ctx = str(n_ctx_int)
+        # v0.8.7 — n_ctx is now resolved once in start_all() via
+        # _resolve_chat_llm_n_ctx() and stored on self.chat_llm_n_ctx so
+        # session_env can export it as OPEN_NOTEBOOK_LOCAL_N_CTX before
+        # any subprocess is spawned. The original v0.7.206 resolution
+        # logic lives in _resolve_chat_llm_n_ctx; this method just
+        # reads the cached result.
+        n_ctx = str(self.chat_llm_n_ctx) if self.chat_llm_n_ctx > 0 else "32768"
 
         args = [
             str(self.venv_python), "-m", "llama_cpp.server",

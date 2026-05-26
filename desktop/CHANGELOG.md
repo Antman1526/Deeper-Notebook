@@ -20,6 +20,26 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.7 CRITICAL — propagate launcher's auto-detected n_ctx into `OPEN_NOTEBOOK_LOCAL_N_CTX`** (closes the last v0.8.5 follow-on)
+  - The launcher's `_spawn_llamacpp_chat` resolves the chat-LLM n_ctx
+    (env override → GGUF metadata autodetect → `ctx_max` cap), but that
+    resolution lived INSIDE the spawn function — too late to propagate
+    into `session_env`. So even after v0.8.5's precedence-chain fix,
+    operators with high-capacity GGUFs and no explicit env override
+    still saw the router default to 32768 instead of, e.g., Hermes-3's
+    native 131k. Router conservatively over-routed to cloud for
+    33k–131k prompts when local could have handled them.
+  - Fix: extracted resolution into `Supervisor._resolve_chat_llm_n_ctx()`,
+    called from `start_all()` BEFORE `session_env` is built, cached on
+    `self.chat_llm_n_ctx`. `session_env` exports
+    `OPEN_NOTEBOOK_LOCAL_N_CTX=str(self.chat_llm_n_ctx)`; v0.8.5
+    precedence still honors an explicit operator override.
+    `_spawn_llamacpp_chat` now reads `self.chat_llm_n_ctx` for its
+    `--n_ctx` argv — single source of truth.
+  - 2 new tests pin propagation + in-memory/env single-source-of-truth.
+    Full launcher suite (31 tests) passes; v0.7.206 n_ctx tests
+    unchanged.
+
 - **✨ v0.8.6 Item D — Settings UI for launcher env vars**
   - `desktop/launcher_prefs.py` (new) — read/write
     `~/.open-notebook-plus/launcher.env` with a strict key whitelist
