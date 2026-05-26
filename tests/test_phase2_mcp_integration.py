@@ -43,8 +43,13 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
 
 
 def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
-    """When at least one MCP server is enabled, the chat graph's
-    tool registry must include `mcp_search` and `mcp_fetch`."""
+    """v0.8.10 — when at least one MCP server is enabled, the chat
+    graph's tool registry must contain `mcp_<remote_name>` for every
+    tool the server exposes. Pre-v0.8.10 this asserted `mcp_search`
+    and `mcp_fetch` (the hardcoded names), which silently broke any
+    server whose actual tools were named differently — gbrain
+    exposes `search`/`think`/`find_trajectory`, not `web_search`/
+    `fetch_url`."""
     monkeypatch.setattr(
         "open_notebook.mcp.registry.list_enabled_servers",
         lambda: __import__("asyncio").Future(),
@@ -54,16 +59,90 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(
-            _resolve_chat_tools(force_servers=[
-                {"id": "mcp_server:1", "name": "test",
-                 "url": "http://x", "enabled": True}
-            ])
+            _resolve_chat_tools(
+                force_servers=[
+                    {"id": "mcp_server:1", "name": "test",
+                     "url": "http://x", "enabled": True}
+                ],
+                # v0.8.10 — bypass network discovery for the unit test
+                force_tool_names=["web_search", "fetch_url"],
+            )
         )
     finally:
         loop.close()
     tool_names = [t.name for t in tools]
+    # Names are prefixed with `mcp_` so the LLM sees them as MCP tools
+    # and not as native LangChain tools (avoids confusion when the
+    # graph also binds local tools in the future).
+    assert "mcp_web_search" in tool_names
+    assert "mcp_fetch_url" in tool_names
+
+
+def test_chat_graph_binds_gbrain_style_tool_names(monkeypatch):
+    """v0.8.10 — regression for the gbrain integration documented in
+    v0.8.2 Item B. gbrain exposes `search`, `think`,
+    `find_trajectory`, etc. Pre-v0.8.10 the chat would call
+    `web_search` (which gbrain doesn't expose) and the tool would
+    fail every turn. Post-fix, each discovered remote name becomes a
+    `mcp_<remote_name>` LangChain Tool."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[
+                    {"id": "mcp_server:1", "name": "gbrain",
+                     "url": "http://localhost:8742/mcp",
+                     "enabled": True}
+                ],
+                force_tool_names=["search", "think", "find_trajectory"],
+            )
+        )
+    finally:
+        loop.close()
+
+    tool_names = [t.name for t in tools]
     assert "mcp_search" in tool_names
-    assert "mcp_fetch" in tool_names
+    assert "mcp_think" in tool_names
+    assert "mcp_find_trajectory" in tool_names
+    # And the v0.8.2 docs' promise that "mcp_search" works against
+    # gbrain holds — because gbrain HAS a `search` tool that becomes
+    # `mcp_search` after wrapping.
+
+
+def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
+    """v0.8.10 — fail-soft. If MCPClient.list_tool_names raises
+    (server unreachable, transport error, auth refused), the chat
+    must continue in degraded no-MCP mode rather than crashing the
+    whole turn."""
+    async def fake_list_enabled():
+        return [{"id": "mcp_server:1", "name": "test",
+                 "url": "http://x", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers", fake_list_enabled,
+    )
+
+    async def fake_list_tool_names(self):
+        raise ConnectionError("MCP server unreachable")
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tool_names",
+        fake_list_tool_names,
+    )
+
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(_resolve_chat_tools())
+    finally:
+        loop.close()
+    assert tools == [], (
+        "v0.8.10: discovery failure must degrade to empty tool list, "
+        "not raise — the chat turn would otherwise abort entirely "
+        "when the MCP server is briefly down"
+    )
 
 
 def test_mcp_registry_lists_enabled_servers(monkeypatch):
@@ -262,13 +341,13 @@ def test_patch_mcp_server_rejects_empty_body(monkeypatch):
 
 
 def test_resolve_chat_tools_captures_calls(monkeypatch):
-    """When captures is provided, mcp_search appends one record per call
-    with correct index, name, args, and text."""
+    """v0.8.10 — when captures is provided, the wrapped MCP tool appends
+    one record per call with correct index, name, args, and text.
+    Uses force_tool_names to bypass network discovery — the unit test
+    pins the captures behavior, not the discovery surface."""
     from open_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
-    # call_tool is an instance method — monkeypatching the class requires
-    # the replacement to accept `self` as the first positional argument.
     async def fake_call_tool(self, name, args):
         return {"text": "fake search result"}
 
@@ -285,23 +364,29 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
                 force_servers=[{"id": "mcp_server:1", "name": "test",
                                 "url": "http://x", "enabled": True}],
                 captures=captures,
+                force_tool_names=["web_search"],
             )
         )
-        # Invoke the mcp_search coroutine directly
-        mcp_search = next(t for t in tools if t.name == "mcp_search")
-        loop.run_until_complete(mcp_search.coroutine("test query"))
+        # v0.8.10 — tool name is `mcp_<remote_name>` and the coroutine
+        # accepts **kwargs (LangChain Tool .ainvoke unpacks dict args)
+        mcp_search = next(t for t in tools if t.name == "mcp_web_search")
+        loop.run_until_complete(mcp_search.coroutine(query="test query"))
     finally:
         loop.close()
 
     assert len(captures) == 1
     assert captures[0]["index"] == 1
+    # Remote name preserved in captures (for the pill popover label),
+    # not the mcp_ prefix — the popover shows what the server's tool
+    # is actually called.
     assert captures[0]["name"] == "web_search"
     assert captures[0]["args"] == {"query": "test query"}
     assert captures[0]["text"] == "fake search result"
 
 
 def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
-    """Calling mcp_search twice yields index 1 then 2 in captures."""
+    """v0.8.10 — calling the wrapped MCP tool twice yields index 1
+    then 2 in captures. Same as above but pins the index increment."""
     from open_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
@@ -321,11 +406,12 @@ def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
                 force_servers=[{"id": "mcp_server:1", "name": "test",
                                 "url": "http://x", "enabled": True}],
                 captures=captures,
+                force_tool_names=["web_search"],
             )
         )
-        mcp_search = next(t for t in tools if t.name == "mcp_search")
-        loop.run_until_complete(mcp_search.coroutine("first query"))
-        loop.run_until_complete(mcp_search.coroutine("second query"))
+        mcp_search = next(t for t in tools if t.name == "mcp_web_search")
+        loop.run_until_complete(mcp_search.coroutine(query="first query"))
+        loop.run_until_complete(mcp_search.coroutine(query="second query"))
     finally:
         loop.close()
 
@@ -357,10 +443,11 @@ def test_resolve_chat_tools_truncates_long_text(monkeypatch):
                 force_servers=[{"id": "mcp_server:1", "name": "test",
                                 "url": "http://x", "enabled": True}],
                 captures=captures,
+                force_tool_names=["web_search"],
             )
         )
-        mcp_search = next(t for t in tools if t.name == "mcp_search")
-        loop.run_until_complete(mcp_search.coroutine("any query"))
+        mcp_search = next(t for t in tools if t.name == "mcp_web_search")
+        loop.run_until_complete(mcp_search.coroutine(query="any query"))
     finally:
         loop.close()
 
@@ -405,6 +492,16 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         fake_call_tool,
     )
 
+    # v0.8.10 — also stub list_tool_names since _resolve_chat_tools
+    # now discovers tools dynamically. Without this, the test would
+    # try a real network call to "http://x".
+    async def fake_list_tools(self):
+        return ["web_search"]   # gbrain-realistic single tool surface
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tool_names",
+        fake_list_tools,
+    )
+
     # Fake model: first ainvoke returns an AIMessage with a tool_call,
     # second ainvoke returns a plain AIMessage with the final answer.
     call_count = {"n": 0}
@@ -414,11 +511,13 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         captured_payloads.append(list(payload))
         call_count["n"] += 1
         if call_count["n"] == 1:
-            # First call → emit a tool_call for mcp_search
+            # First call → emit a tool_call for the discovered tool
+            # (the v0.8.10 wrapping makes it mcp_<remote_name> =
+            # mcp_web_search since fake_list_tools returns ["web_search"]).
             return AIMessage(
                 content="",
                 tool_calls=[{
-                    "name": "mcp_search",
+                    "name": "mcp_web_search",
                     "args": {"query": "test query"},
                     "id": "call_abc",
                 }],
@@ -510,6 +609,13 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
         "open_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
+    # v0.8.10 — stub discovery
+    async def fake_list_tools(self):
+        return ["web_search"]
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tool_names",
+        fake_list_tools,
+    )
 
     call_count = {"n": 0}
 
@@ -519,7 +625,7 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
         return AIMessage(
             content="",
             tool_calls=[{
-                "name": "mcp_search",
+                "name": "mcp_web_search",
                 "args": {"query": f"iter{call_count['n']}"},
                 "id": f"call_{call_count['n']}",
             }],
