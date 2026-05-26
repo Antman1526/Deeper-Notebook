@@ -20,6 +20,74 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+_(no changes since v0.8.5)_
+
+---
+
+## v0.8.5 — 2026-05-25 — Smart-router production fixes + speculative decoding
+
+- **v0.8.5** Sync anchor for `test_version_matches_changelog`; pins
+  `desktop/__init__.py:__version__` to the headline release tag for this
+  rollup. See sections below for per-bullet detail.
+
+This release ships everything in the v0.8.1 → v0.8.5 lines as a single tag.
+The headline is that the v0.8.0 Phase 3 smart router (local-vs-cloud per
+chat turn) was **broken in production in four different ways** — every
+one of them silently shipped, and every one of them is fixed now:
+
+1. **v0.8.1 #2** — `cloud_model_id` fell back to `DefaultModels.default_chat_model`,
+   which often pointed at a local model → cloud branch silently masqueraded
+   as local. Fixed by adding the dedicated `auto_route_cloud` field (migration 18).
+2. **v0.8.3** — speculative decoding (v0.8.2 Item A) was wired into
+   `LlamaCppProvider`, which had been deprecated as a spawn path since v0.7.193.
+   Operators following the v0.8.2 docs got zero speedup. Fixed by moving the
+   wiring into `Supervisor._spawn_llamacpp_chat` (the LIVE spawn path).
+4. **v0.8.4** — `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL` was read by the router's
+   health probe but never set in production. `_local_chat_healthy_cached()`
+   always returned `False`, so the "prefer local when healthy" branch was
+   unreachable. Fixed by exporting it in `session_env`.
+5. **v0.8.5** — `OPEN_NOTEBOOK_LOCAL_N_CTX` (router) and `ONP_CHAT_LLM_CTX`
+   (launcher) were two names for the same concept with no cross-talk.
+   Low-RAM operators setting `ONP_CHAT_LLM_CTX=8192` got their sidecar
+   bound at 8k but the router still assumed 32k headroom →
+   `400 context_length_exceeded`. Fixed by reading either env var with a
+   precedence chain.
+
+Plus three smaller items that round out the local-models story:
+
+- **v0.8.1 Item 1** — `selected_provider` end-to-end on `/chat/execute` so
+  verify scripts can auto-assert routing.
+- **v0.8.1 Item 3** — MCP tool-call payloads stashed in TanStack Query cache;
+  citation pills now show real search/fetch results instead of placeholder.
+- **v0.8.1 Items 4 + 5** — `useInsight` hook for insight pills (was wrongly
+  fetching via `useSource`); priority-based MCP server ordering with ▲/▼
+  reorder UI in Settings.
+- **v0.8.2 Items A/B/C** — `--model_draft` + `--n_predict_draft` flags for
+  llama.cpp speculative decoding (now correctly wired to the live spawn
+  path); gbrain MCP integration docs at `docs/3-USER-GUIDE/integrating-gbrain-mcp.md`.
+
+### Backend test counts after v0.8.5
+- Phase 1-4 backend: 60/60 passing.
+- Launcher + provider: 42/42 passing.
+- Phase 3 routing alone: 22/22 (was 18 in v0.8.0).
+- Frontend: 110/110 passing.
+
+### v0.8.5 commit chain (all on `desktop-app`)
+
+`b95cc5a` v0.8.5: router/launcher n_ctx desync — read either env var
+`c110aaf` v0.8.4 CRITICAL: export OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL in session_env
+`dcdd673` v0.8.3 CRITICAL: dual llama.cpp spawn + Item A on the wrong path
+`ef49ddb` v0.8.2 item C + audit: --n_predict_draft knob; messageId propagation OK
+`a22bc56` v0.8.2 items A+B: speculative-decoding env var + gbrain MCP integration docs
+`aba5f88` v0.8.1 item 3: MCP tool-call payloads end-to-end (Phase 4 closeout)
+`704331e` v0.8.1 item 4 fix: insight popover matches SourceInsightResponse shape
+`6706a6b` v0.8.1 item 5: MCP server priority ordering + reorder UI
+`8c256ad` v0.8.1 item 4: CitationPill InsightPopoverContent uses useInsight
+`0b700df` v0.8.1 item 1: surface selected_provider end-to-end in /chat/execute
+`b81306c` v0.8.1 item 2: cloud_model_id fallback fix (migration 18)
+
+### Per-bullet detail follows.
+
 - **🐛 v0.8.5 — Router/launcher n_ctx desync (low-RAM operators saw context_length_exceeded)**
   - Audit follow-on to v0.8.4. The router read
     `OPEN_NOTEBOOK_LOCAL_N_CTX` (default 32768) while the launcher
