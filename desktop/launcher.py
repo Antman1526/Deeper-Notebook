@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 from desktop.config import Config
 from desktop.paths import user_home
 from desktop.ports import find_free_ports
+from desktop import launcher_prefs  # v0.8.6 — file-backed preference layer
 
 # v0.6.5 — debugging supervised-child failures was painful: every optional
 # service had `except Exception: pass`, so a misconfigured Piper voice path
@@ -182,6 +183,14 @@ class Supervisor:
         # can show a friendly "Open Notebook Plus is already running"
         # dialog. Then sweep any orphans from prior crashed launchers
         # before we bind our own ports.
+        # v0.8.6 — Merge launcher.env file values into os.environ BEFORE
+        # session_env is built below. Keys already in os.environ (shell
+        # export / CI override) are NOT overwritten — env wins. This
+        # single call makes every subsequent reader in this method
+        # (_spawn_llamacpp_chat, _local_chat_healthy_cached, etc.) see
+        # the file-backed values transparently without special-casing.
+        launcher_prefs.merge_with_env(os.environ)
+
         from desktop.singleton import (
             acquire_singleton,
             default_pid_file,
