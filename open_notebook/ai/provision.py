@@ -120,7 +120,34 @@ async def provision_langchain_chat_model(
         defaults = await model_manager.get_defaults()
         cloud_model_id = getattr(defaults, "auto_route_cloud", None) or None
 
-    local_n_ctx = int(os.getenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768"))
+    # v0.8.5 — read EITHER env var so the router stays in sync with
+    # the actual sidecar config. Pre-v0.8.5 this only read
+    # OPEN_NOTEBOOK_LOCAL_N_CTX (default 32768), but the launcher's
+    # _spawn_llamacpp_chat reads `ONP_CHAT_LLM_CTX` (also default
+    # 32768). Same concept, different names. An operator running
+    # `ONP_CHAT_LLM_CTX=8192` for low-RAM mode would get the sidecar
+    # bound at 8k context while the router still thought it had 32k
+    # headroom — long prompts got routed to local, llama.cpp returned
+    # 400 context_length_exceeded.
+    # Precedence: OPEN_NOTEBOOK_LOCAL_N_CTX wins (explicit router knob),
+    # ONP_CHAT_LLM_CTX is the v0.8.5 fallback, 32768 is the final default.
+    # Both share the same default so most operators see no change. A
+    # follow-on (v0.8.6) should propagate the GGUF-auto-detected value
+    # through env so even unset operators with high-capacity GGUFs
+    # benefit from the full native context; deferred because that
+    # requires a launcher refactor (n_ctx resolution happens after
+    # session_env is built).
+    try:
+        local_n_ctx = int(
+            os.getenv("OPEN_NOTEBOOK_LOCAL_N_CTX")
+            or os.getenv("ONP_CHAT_LLM_CTX")
+            or "32768"
+        )
+    except ValueError:
+        # Malformed value — fall back to the safe default rather than
+        # crash the chat turn over a bad env. Mirrors the launcher's
+        # own _spawn_llamacpp_chat fallback semantics (v0.7.206).
+        local_n_ctx = 32768
     default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "auto")
 
     choice = pick_provider(
