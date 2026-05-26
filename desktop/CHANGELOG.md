@@ -20,6 +20,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.11 — Tool-calling docs + StructuredTool args_schema for MCP**
+  (closes the v0.8.10 deferred list)
+  - `docs/4-AI-PROVIDERS/local-models-tool-calling.md` — compatibility
+    matrix for every GGUF in `scripts/download_models.sh`, split into
+    ✅ Supported / ⚠️ Inconsistent / ❌ Not supported. Documents the
+    silent no-MCP degradation (chat works, but `bind_tools` is a
+    no-op because the model wasn't fine-tuned for tool calls) and
+    points operators at the right model when they have MCP servers
+    registered.
+  - `MCPClient.list_tools_full()` — new method returning `name +
+    description + input_schema` per tool (not just names). The
+    `list_tool_names` shim stays for backward compat.
+  - `_resolve_chat_tools` now uses `list_tools_full` and builds a
+    `StructuredTool` per discovered tool with a Pydantic `args_schema`
+    derived from the server's JSON Schema via a small
+    `_json_schema_to_pydantic_model` converter. `bind_tools` now sends
+    the LLM the REAL arg names + types (`{name: "search",
+    parameters: {query: string, limit: integer}}`) instead of the
+    no-schema fallback (`{name: "search", parameters: {input: string}}`).
+    Pre-v0.8.11 the LLM had to guess server arg names; now they're
+    in the function-call schema.
+  - The chat-graph in-node loop still uses direct
+    `tool.coroutine(**args)` dispatch (v0.8.10) — works equally well
+    with StructuredTool and avoids any LangChain schema-validation
+    edge cases on the runtime path.
+  - 1 new test pins the StructuredTool + Pydantic args_schema shape;
+    Phase 2 suite 15 → 16 cases all passing.
+
 - **🐛 v0.8.10 CRITICAL — MCP tool names hardcoded; gbrain docs promise broken integration**
   - `_resolve_chat_tools` bound `mcp_search` → `client.call_tool("web_search", ...)`
     and `mcp_fetch` → `client.call_tool("fetch_url", ...)`. Most MCP

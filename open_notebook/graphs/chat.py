@@ -83,8 +83,55 @@ class ThreadState(TypedDict):
     mcp_tool_calls: Optional[list]
 
 
+def _json_schema_to_pydantic_model(
+    tool_name: str, schema: dict,
+):
+    """v0.8.11 — Build a Pydantic model from a JSON Schema dict.
+
+    Minimal converter covering the common MCP shapes:
+      {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+
+    Field types: string / integer / number / boolean / array / object →
+    Python primitives. Anything unrecognised falls through to `Any`.
+    Required fields are mandatory; the rest default to None.
+
+    The resulting model class name is `MCPArgs_<tool_name>` (sanitised)
+    so it shows up clearly in tracebacks and LangChain debug output.
+    """
+    from typing import Any, Optional
+    from pydantic import create_model, Field
+
+    type_map = {
+        "string": str, "integer": int, "number": float,
+        "boolean": bool, "array": list, "object": dict,
+    }
+
+    props = (schema or {}).get("properties", {}) or {}
+    required = set((schema or {}).get("required", []) or [])
+
+    fields: dict[str, tuple] = {}
+    for name, spec in props.items():
+        py_type = type_map.get(spec.get("type"), Any)
+        description = spec.get("description", "")
+        if name in required:
+            fields[name] = (py_type, Field(..., description=description))
+        else:
+            fields[name] = (Optional[py_type], Field(None, description=description))
+
+    safe_name = "".join(c if c.isalnum() else "_" for c in tool_name)
+    if not fields:
+        # No-arg tool — pydantic.create_model with no fields is fine
+        # but LangChain prefers a non-empty schema. Pydantic rejects
+        # leading-underscore field names, so use a normal name marked
+        # excluded from serialisation.
+        fields = {"unused": (Optional[str], Field(None, exclude=True))}
+
+    return create_model(f"MCPArgs_{safe_name}", **fields)
+
+
 async def _resolve_chat_tools(
-    *, force_servers=None, captures=None, force_tool_names=None,
+    *, force_servers=None, captures=None,
+    force_tool_names=None, force_tools_full=None,
 ) -> list:
     """Phase 2 — when at least one MCP server is enabled in the
     registry, expose its tools to the chat LLM.
@@ -110,7 +157,7 @@ async def _resolve_chat_tools(
     `force_tool_names` is a test hook so unit tests can skip the
     network discovery and pin the bound names.
     """
-    from langchain_core.tools import Tool
+    from langchain_core.tools import StructuredTool
     from open_notebook.mcp.client import MCPClient
     from open_notebook.mcp.registry import list_enabled_servers
 
@@ -120,52 +167,52 @@ async def _resolve_chat_tools(
     server = servers[0]
     client = MCPClient(url=server["url"])
 
-    # Discover the server's tools so we bind names that actually exist.
-    # Fail-soft: a discovery failure (server unreachable, transport
-    # error) returns no tools rather than raising — the chat still
-    # works in degraded "no MCP" mode and the user sees the failure
-    # via the empty tools list / pill popover placeholder.
-    if force_tool_names is not None:
-        available = list(force_tool_names)
+    # v0.8.11 — Discover the server's FULL tool surface (name +
+    # description + input_schema) so we can build StructuredTools
+    # with proper args_schema. Pre-v0.8.11 we only knew names; the
+    # LLM had to guess what args to pass via the no-schema fallback
+    # (`input: str`). With real schemas, `bind_tools` sends the LLM
+    # the real arg names + types, dramatically reducing tool-call
+    # malformatting.
+    #
+    # Backward compat: `force_tool_names` still works (just gives a
+    # name list; we synthesise empty schemas). `force_tools_full`
+    # is the new test hook for cases that want to pin the schemas.
+    if force_tools_full is not None:
+        available = list(force_tools_full)
+    elif force_tool_names is not None:
+        # Old test hook — synthesise minimal-shape entries so tests
+        # written against the v0.8.10 API keep passing.
+        available = [
+            {"name": n, "description": "", "input_schema": {"type": "object", "properties": {}}}
+            for n in force_tool_names
+        ]
     else:
         try:
-            available = await client.list_tool_names()
+            available = await client.list_tools_full()
         except Exception:
             available = []
 
     if not available:
         return []
 
-    def _make_tool(remote_name: str):
-        """Build a LangChain Tool that calls the server's `remote_name`.
+    def _make_tool(remote_name: str, description: str, schema: dict):
+        """Build a StructuredTool that calls the server's `remote_name`.
 
         Closure captures `remote_name` per iteration (not the loop
         variable) so the bound tool calls the right MCP tool.
 
-        v0.8.10 — the coroutine accepts BOTH dispatch styles LangChain
-        Tool might use:
-        - `tool.ainvoke({"query": "..."})` with no `args_schema` ends
-          up calling the coroutine with `input={"query": "..."}` (the
-          whole dict bound to the default `input` arg).
-        - `tool.ainvoke({"query": "..."})` with an `args_schema` calls
-          the coroutine with `query="..."` (unpacked kwargs).
-        - `tool.coroutine(query="...")` direct calls work either way.
-        Without this defensive shape, the v0.8.9 chat-graph tool loop
-        runs the model twice but the captures stay empty because the
-        coroutine receives `input=<dict>` and never recognises it as
-        the args — silent dead-on-arrival exactly like the v0.8.9
-        bug that motivated this code.
+        v0.8.10 retained behaviour: the coroutine still accepts BOTH
+        positional-dict and kwargs dispatch styles defensively (some
+        LangChain code paths still drop into either). With a proper
+        args_schema bound, kwargs is the common path.
         """
         async def _invoke(*args, **kwargs) -> str:
-            # Normalise to a single args dict regardless of dispatch style.
             if "input" in kwargs and isinstance(kwargs["input"], dict):
-                # No-schema fallback path: whole dict bound to `input`.
                 invocation_args = kwargs["input"]
             elif args and isinstance(args[0], dict):
-                # Positional dict (some StructuredTool paths).
                 invocation_args = args[0]
             else:
-                # Unpacked kwargs (schema-driven path or direct call).
                 invocation_args = dict(kwargs)
             result = await client.call_tool(remote_name, invocation_args)
             text = result.get("text") or "(no result)"
@@ -178,18 +225,23 @@ async def _resolve_chat_tools(
                 })
             return text
 
-        return Tool(
+        args_model = _json_schema_to_pydantic_model(remote_name, schema)
+        return StructuredTool.from_function(
+            coroutine=_invoke,
             name=f"mcp_{remote_name}",
-            func=None,
             description=(
-                f"Call the MCP server's `{remote_name}` tool. Use this "
+                description
+                or f"Call the MCP server's `{remote_name}` tool. Use this "
                 f"when the user's question depends on information not in "
                 f"the notebook context."
             ),
-            coroutine=_invoke,
+            args_schema=args_model,
         )
 
-    return [_make_tool(name) for name in available]
+    return [
+        _make_tool(t["name"], t.get("description", ""), t.get("input_schema") or {})
+        for t in available
+    ]
 
 
 async def call_model_with_messages(
