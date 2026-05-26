@@ -353,3 +353,140 @@ def test_safe_select_returns_results_when_query_fast(monkeypatch):
         memory_recall._safe_select("SELECT 1", {})
     )
     assert result == [{"text": "ok"}]
+
+
+# ============================================================================
+# v0.8.19 CRITICAL — recall_recent_memory SQL shape regression
+# ============================================================================
+
+
+def test_recall_recent_memory_uses_select_text_not_select_value(monkeypatch):
+    """v0.8.19 CRITICAL — pre-fix the query was `SELECT VALUE text ...
+    ORDER BY created_at DESC` which SurrealDB rejects with
+    'Missing order idiom in statement selection' because VALUE
+    requires the ORDER BY field to be in the projection.
+
+    `_safe_select` swallowed the parse error at DEBUG level so
+    memory recall silently returned empty every chat turn — users
+    thought memory was working but no fact was ever recalled.
+
+    This test pins the query shape against future regressions: any
+    edit that brings back `SELECT VALUE ... ORDER BY <other_field>`
+    fails immediately."""
+    captured_queries: list[str] = []
+
+    async def _capture(q, params):
+        captured_queries.append(q)
+        # Return realistic shape — SELECT text returns dicts, not strings
+        return [{"text": "fake fact"}]
+
+    from open_notebook.utils import memory_recall
+    monkeypatch.setattr(memory_recall, "repo_query", _capture)
+
+    result = _asyncio_for_timeout_test.run(
+        memory_recall.recall_recent_memory()
+    )
+
+    # Two queries should have fired (facts + preferences)
+    assert len(captured_queries) == 2
+    for q in captured_queries:
+        assert "SELECT text" in q, (
+            f"v0.8.19: must use SELECT text (not SELECT VALUE text) "
+            f"to keep SurrealDB happy on the ORDER BY created_at clause; "
+            f"got query: {q!r}"
+        )
+        assert "VALUE" not in q, (
+            f"v0.8.19: SELECT VALUE + ORDER BY <other_field> = SurrealDB "
+            f"parse error. Got: {q!r}"
+        )
+        assert "ORDER BY created_at DESC" in q
+
+    # And the consumer must still extract the text correctly from
+    # the dict shape (verifies _coerce_text on dicts works through
+    # the pipeline, not just in isolation).
+    assert result == {
+        "facts": [{"text": "fake fact"}],
+        "preferences": [{"text": "fake fact"}],
+    }
+
+
+def test_safe_select_logs_warning_on_schema_error(monkeypatch):
+    """v0.8.19 — schema/parse errors must surface as WARNING. Pre-fix
+    they were DEBUG, which masked the v0.8.19 bug for an entire
+    release cycle. 'Table missing' (genuine fresh-install case) stays
+    at DEBUG; SurrealDB parse errors get bumped to WARNING.
+
+    Uses loguru's add()-sink-to-list pattern rather than pytest's
+    caplog, because loguru writes directly to stderr and doesn't go
+    through stdlib logging."""
+    from loguru import logger
+
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda msg: captured.append(msg.record["message"] + "|" + msg.record["level"].name),
+        level="DEBUG",
+    )
+    try:
+        async def _raise_schema_err(q, params):
+            raise Exception(
+                "'There was a problem with the database: Parse error: "
+                "Missing order idiom `created_at` in statement selection'"
+            )
+
+        from open_notebook.utils import memory_recall
+        monkeypatch.setattr(memory_recall, "repo_query", _raise_schema_err)
+
+        result = _asyncio_for_timeout_test.run(
+            memory_recall._safe_select("SELECT VALUE x FROM y ORDER BY z", {})
+        )
+
+        assert result == [], "still returns empty (non-fatal contract)"
+        warning_msgs = [
+            m for m in captured
+            if "|WARNING" in m and "memory recall query failed" in m
+        ]
+        assert warning_msgs, (
+            "v0.8.19: SurrealDB Parse errors must log at WARNING so they "
+            "show up in launcher.log; pre-fix they were silently swallowed "
+            "at DEBUG and the entire memory recall path was dead for "
+            "multiple release cycles before anyone noticed. Captured: "
+            f"{captured!r}"
+        )
+    finally:
+        logger.remove(sink_id)
+
+
+def test_safe_select_keeps_table_missing_at_debug(monkeypatch):
+    """v0.8.19 — negative-space check for the previous test. 'Table
+    missing' / 'unknown table' on a fresh install is genuinely the
+    expected case (no chat turns yet, no memory_fact rows ever
+    written), so it should stay at DEBUG to avoid log spam. Only
+    actual SurrealDB syntax/parse errors get bumped to WARNING."""
+    from loguru import logger
+
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda msg: captured.append(msg.record["message"] + "|" + msg.record["level"].name),
+        level="DEBUG",
+    )
+    try:
+        async def _raise_table_missing(q, params):
+            raise Exception("Table memory_fact does not exist")
+
+        from open_notebook.utils import memory_recall
+        monkeypatch.setattr(memory_recall, "repo_query", _raise_table_missing)
+
+        result = _asyncio_for_timeout_test.run(
+            memory_recall._safe_select("SELECT text FROM memory_fact", {})
+        )
+
+        assert result == []
+        # Should be DEBUG (not WARNING) — fresh-install case
+        warning_msgs = [m for m in captured if "|WARNING" in m]
+        assert not warning_msgs, (
+            f"v0.8.19: 'table missing' must stay at DEBUG to avoid log "
+            f"spam on fresh installs (only parse errors get WARNING). "
+            f"Got warnings: {warning_msgs!r}"
+        )
+    finally:
+        logger.remove(sink_id)
