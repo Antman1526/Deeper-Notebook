@@ -20,6 +20,32 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛📚 v0.8.17 — SearXNG/Wikipedia (free + unlimited MCP) + source-chat SSE wiring fix (CRITICAL)**
+  - **Doc add:** the v0.8.15 page recommended Brave (2k/mo) and Tavily
+    (1k/mo) as "free" but both are bounded + require signup. Added two
+    truly-free + no-key options at the top:
+      - **SearXNG** (self-hosted Docker meta-search; aggregates Google,
+        Bing, DDG, Brave, Wikipedia, etc.) — unlimited, no signup.
+      - **Wikipedia MCP** — no Docker, no key, encyclopedic coverage.
+    Plus a decision matrix and explicit guidance that
+    `Wikipedia + Fetch` covers ~80% of use cases with zero setup
+    friction.
+  - **CRITICAL fix:** v0.8.16 wired the source-chat graph to surface
+    `mcp_tool_calls` in state, but the source-chat **SSE never emitted
+    the event**. The chat graph executed MCP tools, captures populated,
+    state had them — and the frontend never received them. Source-chat
+    citation pill popovers always showed the v0.8.10 placeholder
+    fallback even when notebook chat's pills had real payloads. This
+    is the **second** instance of the v0.8.0-Phase-2 "feature wired to
+    dead path" failure mode (cf. v0.8.3, v0.8.4, v0.8.7).
+  - Fix: `api/routers/source_chat.py` captures `mcp_tool_calls` in the
+    `on_chain_end` branch and emits `{"type": "mcp_tool_calls",
+    "calls": ...}` SSE event after the canonical `ai_message` event.
+    `frontend/src/lib/hooks/useSourceChat.ts` adds a parser branch
+    that stashes the calls in TanStack Query cache keyed by
+    `streamingAiId` — same pipeline as `useNotebookChat`.
+  - Phase 2 backend: 23/23 still pass. Frontend: 114/114, tsc clean.
+
 - **✨ v0.8.16 — Source-chat MCP integration (closes last MCP-deferred item)**
   - Pre-v0.8.16 `source_chat.py`'s `call_model_with_source_context`
     called `model.ainvoke(payload)` directly with no MCP binding. Any

@@ -629,6 +629,14 @@ async def stream_source_chat_response(
                     # ever yields a model instance the SSE consumer would
                     # otherwise never see the terminal context_indicators
                     # event.
+                    # v0.8.17 — also capture mcp_tool_calls so source-chat
+                    # gets the same citation-pill popover pipeline as
+                    # notebook chat. Pre-v0.8.17 v0.8.16 wired the chat
+                    # graph to surface MCP captures in state but the SSE
+                    # stream never relayed them — source-chat pills
+                    # always showed the v0.8.10 placeholder fallback
+                    # even though the backend executed the tools and
+                    # populated captures correctly.
                     output = event.get("data", {}).get("output")
                     if isinstance(output, dict):
                         final_state = output
@@ -637,6 +645,9 @@ async def stream_source_chat_response(
                             "messages": getattr(output, "messages", None),
                             "context_indicators": getattr(
                                 output, "context_indicators", None
+                            ),
+                            "mcp_tool_calls": getattr(
+                                output, "mcp_tool_calls", None
                             ),
                         }
 
@@ -662,6 +673,25 @@ async def stream_source_chat_response(
                     + json.dumps({
                         "type": "context_indicators",
                         "data": final_state["context_indicators"],
+                    })
+                    + "\n\n"
+                )
+
+            # v0.8.17 — emit mcp_tool_calls event so the frontend can
+            # stash the payloads in the TanStack Query cache keyed by
+            # the canonical AI message ID (same v0.8.1 Item 3
+            # pipeline as notebook chat). Pre-v0.8.17 the chat graph
+            # (v0.8.16) captured calls into state but the SSE never
+            # relayed them, so source-chat pill popovers always
+            # showed the v0.8.10 placeholder fallback even when the
+            # backend had real payloads. Only emit when there's
+            # actually something to show.
+            if final_state and final_state.get("mcp_tool_calls"):
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "mcp_tool_calls",
+                        "calls": final_state["mcp_tool_calls"],
                     })
                     + "\n\n"
                 )
