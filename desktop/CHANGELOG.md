@@ -20,6 +20,37 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.16 — Source-chat MCP integration (closes last MCP-deferred item)**
+  - Pre-v0.8.16 `source_chat.py`'s `call_model_with_source_context`
+    called `model.ainvoke(payload)` directly with no MCP binding. Any
+    MCP server registered via Settings → MCP Servers was invisible to
+    source chat — operators got MCP only on notebook chat. The v0.8.2
+    docs and citation-pill UI implied parity that didn't exist.
+  - Fix: extracted the v0.8.9 in-node tool execution loop from
+    `chat.py:call_model_with_messages` into a reusable
+    `bind_mcp_and_run_tool_loop(model, payload)` helper. Both graphs
+    now call it. `SourceChatState` gained `mcp_tool_calls: Optional[list]`
+    so the source-chat router can surface captures alongside the AI
+    message (same v0.8.1 Item 3 pill-popover pipeline). Full chain
+    works end-to-end on source chat now: v0.8.10 dynamic discovery,
+    v0.8.11 StructuredTool schemas, v0.8.12 cache, v0.8.13 multi-block
+    content.
+  - 2 new tests pin the helper extraction works in isolation and the
+    SourceChatState shape includes the new field. Phase 2 suite:
+    21 → 23, all passing.
+
+- **📚 v0.8.15 — Free MCP servers for internet search (user-facing doc)**
+  - `docs/3-USER-GUIDE/free-mcp-servers-web-search.md` — three
+    practical free options with setup steps: Brave Search
+    (Anthropic-official, 2000 free queries/mo with a free API key),
+    Fetch (Anthropic-official, no key, URL-only), and Tavily
+    (community, 1000/mo free, LLM-optimized output). Includes a
+    "pair them" recipe using the v0.8.1 Item 5 priority arrows so
+    the model can search then fetch. Verification steps reference
+    the v0.8.10 dynamic discovery, v0.8.9 in-node tool loop, and
+    v0.8.13 citation-pill payloads so operators can confirm the
+    full chain end-to-end.
+
 - **🐛 v0.8.14 audit fix — launcher_prefs API exception narrowness**
   - `GET`/`PUT /api/launcher-prefs` only caught `ValueError`.
     `PermissionError` (file owned by another user / chmod 600 by
