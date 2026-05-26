@@ -20,6 +20,42 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.25 — onp theme endpoint leaked exception detail on save failure (fourth & final sweep site)**
+  - `api/routers/onp.py:97` in `POST /onp/theme` had:
+    ```python
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    ```
+    `new_cfg.save(path)` can raise:
+    - `OSError` / `PermissionError` carrying the resolved config-file
+      path under the user's home directory
+    - `JSONEncodeError` if a dataclass field is corrupted
+    - Various internal errors from `Config.save`
+    `str(exc)` for OS errors typically reads like
+    `"[Errno 13] Permission denied: '/Users/operator/.open-notebook-plus/config.toml'"`
+    — leaking the operator's home directory layout into the response.
+  - **Systematic sweep** done this iteration: grep'd all 30+ `detail=str(e)`
+    / `detail=str(exc)` sites across `api/`, triaged each:
+    - All 400-status sites were `except InvalidInputError` or
+      `except ValueError` paths with user-controlled messages — safe.
+    - `studio.py:540` (`except InvalidInputError`) and
+      `launcher_prefs.py:82` (`except ValueError`) — safe.
+    - File-I/O paths in `exports.py`, `filesystem.py`, `launcher_prefs.py`
+      include operator-controlled paths + OS error text — borderline,
+      deferred (low severity for single-user local-deploy).
+    - **`onp.py:97` was the only remaining broad-Exception 500 leak.**
+    Sweep concludes the v0.7.177 → v0.8.22 → v0.8.24 → v0.8.25 chain.
+  - Fix: emit `f"Theme save failed ({type(exc).__name__}). Check
+    launcher.log for details."` and log the full traceback via
+    `logger.exception`.
+  - **Test:** 1 new in `tests/test_onp_router.py`:
+    - `test_v0825_post_theme_sanitizes_save_failure_detail`: injects
+      an `OSError("[Errno 13] Permission denied: '/Users/operator/...';
+      INTERNAL_TRACE: SurrealDB ws://127.0.0.1:8765")`; asserts none
+      of the operator path, errno, or internal URL leaks into the
+      response detail AND that the type name IS present for triage.
+  - Suite: 7 onp tests pass (6 existing + 1 new), zero regressions.
+
 - **🔒 v0.8.24 — gmail router leaked raw exception strings in two paths**
   - `api/routers/gmail.py:280` in the OAuth callback echoed
     `f"Token exchange error: {exc}"` into the HTML response page

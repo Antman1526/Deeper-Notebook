@@ -94,5 +94,20 @@ async def set_theme(body: ThemeRequest) -> ThemeResponse:
         # `except Exception` doesn't clobber them to 500.
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        # v0.8.25 — sanitize: same family as the v0.7.177 / v0.8.22 /
+        # v0.8.24 sanitization sweep. `new_cfg.save(path)` can raise
+        # OSError (disk full, read-only FS), PermissionError (config
+        # directory perms), JSONEncodeError (corrupted dataclass field),
+        # or anything Config.save uses internally. `str(exc)` typically
+        # includes the resolved config-file path under the user's home
+        # directory plus the OS-level error reason — both noise to the
+        # client and a minor info-disclosure of the operator's
+        # filesystem layout. Full detail stays in logger.
+        from loguru import logger
+        logger.exception("Theme save failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Theme save failed ({type(exc).__name__}). "
+            "Check launcher.log for details.",
+        )
     return ThemeResponse(theme=body.theme, available=sorted(_VALID_THEMES))

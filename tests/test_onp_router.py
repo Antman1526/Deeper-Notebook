@@ -139,3 +139,49 @@ def test_post_theme_surfaces_bundling_error(app, monkeypatch):
         r = client.post("/api/onp/theme", json={"theme": "dark"})
     assert r.status_code == 500
     assert "not bundled" in r.json()["detail"]
+
+
+def test_v0825_post_theme_sanitizes_save_failure_detail(app, monkeypatch):
+    """v0.8.25 — `new_cfg.save(path)` exceptions must NOT echo raw error
+    text into the 500 response. The save call can raise OSError /
+    PermissionError carrying the resolved config-file path under the
+    user's home directory (info disclosure of operator FS layout) and
+    OS-level error reasons. Same family as v0.7.177 / v0.8.22 / v0.8.24
+    sanitization sweep — this site was missed in those passes.
+    """
+    secret_in_exception = (
+        "[Errno 13] Permission denied: "
+        "'/Users/operator/.open-notebook-plus/config.toml' "
+        "INTERNAL_TRACE: SurrealDB ws://127.0.0.1:8765"
+    )
+
+    def _save_boom(self, path):
+        raise OSError(secret_in_exception)
+
+    monkeypatch.setattr(_FakeCfg, "save", _save_boom)
+    monkeypatch.setattr(
+        onp_mod, "_load_config",
+        lambda: (Path("/tmp/c.toml"), _FakeCfg()),
+    )
+
+    with TestClient(app) as client:
+        r = client.post("/api/onp/theme", json={"theme": "dark"})
+
+    assert r.status_code == 500, r.text
+    detail = r.json().get("detail", "")
+    # CRITICAL: no leak of operator home path, errno, or trace fragment.
+    assert "/Users/operator" not in detail, (
+        f"Operator home path leaked into 500 detail: {detail!r}. "
+        f"v0.8.25 fix: emit type(exc).__name__ only."
+    )
+    assert "[Errno 13]" not in detail, (
+        f"Errno fragment leaked into 500 detail: {detail!r}."
+    )
+    assert "ws://127.0.0.1" not in detail, (
+        f"Internal URL leaked: {detail!r}."
+    )
+    # And the type name IS present so the operator can correlate
+    # with the log line written by logger.exception above.
+    assert "OSError" in detail, (
+        f"Expected exception type name in {detail!r} for triage."
+    )
