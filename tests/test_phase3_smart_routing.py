@@ -453,6 +453,212 @@ async def _async_return(value):
     return value
 
 
+class TestNCtxEnvVarSync:
+    """v0.8.5 — the router must stay in sync with the launcher's n_ctx.
+
+    Pre-v0.8.5 the router only read OPEN_NOTEBOOK_LOCAL_N_CTX (default
+    32768); the launcher reads ONP_CHAT_LLM_CTX (also default 32768).
+    Same concept, different names. An operator running
+    `ONP_CHAT_LLM_CTX=8192` for low-RAM mode got the sidecar bound at
+    8k while the router still thought it had 32k headroom, so long
+    prompts got routed to local and llama.cpp returned 400
+    context_length_exceeded.
+
+    Fix: provision.py reads either var; OPEN_NOTEBOOK_LOCAL_N_CTX wins
+    when set (explicit router knob), ONP_CHAT_LLM_CTX is the fallback,
+    32768 is the final default.
+    """
+
+    def test_router_picks_up_onp_chat_llm_ctx_when_router_var_unset(
+        self, monkeypatch,
+    ):
+        """v0.8.5 — operator sets ONP_CHAT_LLM_CTX=8192 (low-RAM mode);
+        router must respect that 8k ceiling and flip to cloud for
+        prompts that would have fit a 32k local."""
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_N_CTX", raising=False)
+        monkeypatch.setenv("ONP_CHAT_LLM_CTX", "8192")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL",
+                           "http://localhost:1234/v1")
+
+        import open_notebook.ai.provision as provision_mod
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            lambda *a, **kw: True,
+        )
+
+        captured: dict = {}
+
+        async def _fake_inner(content, model_id, default_type, **kw):
+            captured["model_id"] = model_id
+            return object()
+
+        monkeypatch.setattr(
+            provision_mod, "provision_langchain_model", _fake_inner,
+        )
+
+        import asyncio
+        # Prompt that fits a 32k n_ctx (with 1k headroom) but overflows
+        # an 8k one. token_count for ~10000 chars ≈ 2.5k tokens, so
+        # we need bigger.
+        big = "x " * 4000   # ~ 8000 chars ≈ 2000 tokens — fits 8k
+        # Push it well past the 8192 - 1000 = 7192 headroom but under
+        # 32768 - 1000 = 31768 so the router answer differs between
+        # 8k and 32k.
+        big = "x " * 16000   # ~ 32000 chars ≈ 8000 tokens
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                provision_mod.provision_langchain_chat_model(big)
+            )
+        finally:
+            loop.close()
+
+        # With ONP_CHAT_LLM_CTX=8192 the local ctx is 8k → 8000 tokens
+        # of content overflow the 7192 headroom → router picks cloud.
+        # Pre-v0.8.5 this would have read default 32768 from
+        # OPEN_NOTEBOOK_LOCAL_N_CTX and incorrectly picked local.
+        assert captured["model_id"] == "model:gpt4", (
+            f"router should pick cloud when content exceeds 8k local "
+            f"ctx (set via ONP_CHAT_LLM_CTX); got "
+            f"{captured['model_id']!r} — v0.8.5 fix regressed and "
+            f"router fell back to its old 32k default"
+        )
+
+    def test_router_var_overrides_launcher_var_when_both_set(
+        self, monkeypatch,
+    ):
+        """v0.8.5 — explicit router knob wins over the launcher knob.
+        Operator can decouple router math from sidecar config if they
+        know what they're doing (e.g. running an external sidecar
+        with a different n_ctx than the bundled launcher's)."""
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "65536")
+        monkeypatch.setenv("ONP_CHAT_LLM_CTX", "8192")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL",
+                           "http://localhost:1234/v1")
+
+        import open_notebook.ai.provision as provision_mod
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            lambda *a, **kw: True,
+        )
+
+        captured: dict = {}
+
+        async def _fake_inner(content, model_id, default_type, **kw):
+            captured["model_id"] = model_id
+            return object()
+
+        monkeypatch.setattr(
+            provision_mod, "provision_langchain_model", _fake_inner,
+        )
+
+        import asyncio
+        # 8000 tokens of content. Fits the 65k explicit OPEN_NOTEBOOK
+        # ceiling; would overflow the 8k launcher ceiling. Router
+        # should pick LOCAL because the explicit var wins.
+        big = "x " * 16000
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                provision_mod.provision_langchain_chat_model(big)
+            )
+        finally:
+            loop.close()
+
+        assert captured["model_id"] == "model:hermes", (
+            f"explicit OPEN_NOTEBOOK_LOCAL_N_CTX=65536 must win over "
+            f"ONP_CHAT_LLM_CTX=8192; got {captured['model_id']!r}"
+        )
+
+    def test_router_falls_back_to_32768_default_when_both_unset(
+        self, monkeypatch,
+    ):
+        """v0.8.5 — neither env var set → 32768 default. Mirrors the
+        launcher's own default so the no-config case stays correct."""
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_N_CTX", raising=False)
+        monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL",
+                           "http://localhost:1234/v1")
+
+        import open_notebook.ai.provision as provision_mod
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            lambda *a, **kw: True,
+        )
+
+        captured: dict = {}
+
+        async def _fake_inner(content, model_id, default_type, **kw):
+            captured["model_id"] = model_id
+            return object()
+
+        monkeypatch.setattr(
+            provision_mod, "provision_langchain_model", _fake_inner,
+        )
+
+        import asyncio
+        # Small prompt that comfortably fits 32k (and 8k for that matter).
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                provision_mod.provision_langchain_chat_model("hi")
+            )
+        finally:
+            loop.close()
+
+        assert captured["model_id"] == "model:hermes", (
+            f"with both env vars unset and small content, router must "
+            f"pick local (32k default headroom); got {captured['model_id']!r}"
+        )
+
+    def test_router_falls_back_to_32768_when_var_is_malformed(
+        self, monkeypatch,
+    ):
+        """v0.8.5 — operator typo ('32k' instead of '32768') must not
+        crash the chat turn. Mirrors v0.7.206's same-shape guard in
+        the launcher: fall back to 32768 with no warning to the user
+        (the log line will surface it once they check)."""
+        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "thirtytwo-thousand")
+        monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL",
+                           "http://localhost:1234/v1")
+
+        import open_notebook.ai.provision as provision_mod
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            lambda *a, **kw: True,
+        )
+
+        async def _fake_inner(content, model_id, default_type, **kw):
+            return object()
+
+        monkeypatch.setattr(
+            provision_mod, "provision_langchain_model", _fake_inner,
+        )
+
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            # Should NOT raise ValueError despite the garbage env value
+            loop.run_until_complete(
+                provision_mod.provision_langchain_chat_model("hi")
+            )
+        finally:
+            loop.close()
+
+
 class TestHealthCacheTTL:
     """_local_chat_healthy_cached() must call the probe at most once within TTL."""
 
