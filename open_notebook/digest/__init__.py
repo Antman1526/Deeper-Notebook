@@ -10,8 +10,29 @@ import html as _html
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from loguru import logger
+
 from open_notebook.database.repository import repo_query
 from open_notebook.domain.gmail import GmailIntegration
+
+
+# v0.8.27 — Substrings in SurrealDB error messages that indicate a
+# SCHEMA / QUERY-SYNTAX problem (genuine bug — should log at WARNING).
+# Mirrors the same set used by `_safe_select` in
+# open_notebook/utils/memory_recall.py (v0.8.19). Keeping the lists
+# aligned so a future SurrealDB upgrade only needs one place updated.
+_SCHEMA_ERROR_SUBSTRINGS = (
+    "Parse error",
+    "Missing order idiom",
+    "Idiom missing",
+    "unexpected token",
+)
+# Substrings indicating a TABLE MISSING (benign — fresh-install case,
+# log at DEBUG so we don't spam the launcher log on every digest tick).
+_TABLE_MISSING_SUBSTRINGS = (
+    "Table missing",
+    "table does not exist",
+)
 
 
 async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
@@ -178,13 +199,55 @@ def _render_memory(r: dict) -> str:
 
 async def _safe_query(query: str, vars: dict) -> list[dict]:
     """Run a query, return empty list on any error (don't break the digest
-    over one missing table — e.g. memory_fact may not exist on fresh DBs)."""
+    over one missing table — e.g. memory_fact may not exist on fresh DBs).
+
+    v0.8.27 — Added severity-aware logging. Pre-v0.8.27 this swallowed
+    EVERY error silently with no log — the same anti-pattern that hid
+    the v0.8.19 memory_recall bug for 50+ releases. If SurrealDB had
+    rejected one of these queries (schema change, syntax issue, driver
+    bump), the digest would silently omit that section and the user
+    would just see "no activity" — no signal that something was broken.
+
+    Now we classify the error:
+      - "Table missing" → DEBUG (benign fresh-install case, no need
+        to log on every digest tick).
+      - "Parse error" / "Missing order idiom" / "Idiom missing" /
+        "unexpected token" → WARNING (genuine schema/query bug —
+        digest is misreporting activity, operator should know).
+      - Everything else → WARNING (an unknown query-time error
+        suppressing a section is also a bug worth surfacing).
+    """
     try:
         result = await repo_query(query, vars)
         if isinstance(result, list):
             return result
         return []
-    except Exception:
+    except Exception as exc:
+        msg = str(exc)
+        if any(s in msg for s in _TABLE_MISSING_SUBSTRINGS):
+            # Benign: table doesn't exist yet (fresh install). DEBUG
+            # keeps launcher.log quiet on the every-tick scheduler.
+            logger.debug(
+                "digest _safe_query: table-missing (benign): {}", exc,
+            )
+        elif any(s in msg for s in _SCHEMA_ERROR_SUBSTRINGS):
+            # Genuine bug — the query is no longer valid against the
+            # current SurrealDB schema. Digest is silently omitting a
+            # section. Same severity as the v0.8.19 memory_recall fix.
+            logger.warning(
+                "digest _safe_query: SCHEMA ERROR — section will be "
+                "omitted from digest, FIX the query in "
+                "open_notebook/digest/__init__.py. error={}",
+                exc,
+            )
+        else:
+            # Unknown error — also worth surfacing because the digest
+            # is misreporting activity.
+            logger.warning(
+                "digest _safe_query: unexpected error — section will "
+                "be omitted: {}",
+                exc,
+            )
         return []
 
 
