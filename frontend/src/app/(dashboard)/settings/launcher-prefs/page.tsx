@@ -1,0 +1,298 @@
+'use client'
+
+// v0.8.6 Item D — Settings page for launcher env-var preferences.
+//
+// Surfaces four knobs that are otherwise env-var-only:
+//   OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH — absolute path to a draft GGUF
+//   OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT  — draft tokens per verification pass
+//   ONP_CHAT_LLM_CTX                    — local context window (n_ctx)
+//   ONP_CHAT_LLM_CTX_MAX                — n_ctx upper ceiling
+//
+// Design choices:
+//   - Only the diff (changed fields) is submitted; unchanged fields are
+//     omitted from the PUT payload. Computed by comparing form state against
+//     the GET response at submit time.
+//   - Cleared numeric fields send null (removes the key from launcher.env)
+//     so the launcher falls back to its built-in auto-detection.
+//   - A "restart to apply" banner is shown after a successful save since
+//     env vars are read once at launcher startup (before the API exists).
+//   - All strings i18n'd via settings.launcherPrefs.* keys.
+
+import { useState, useEffect } from 'react'
+import { AlertTriangle, Rocket } from 'lucide-react'
+import { AppShell } from '@/components/layout/AppShell'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import {
+  useLauncherPrefs,
+  useUpdateLauncherPrefs,
+} from '@/lib/hooks/use-launcher-prefs'
+
+// ---------------------------------------------------------------------------
+// Whitelisted keys — must match desktop/launcher_prefs.py:ALLOWED_KEYS.
+// Frontend guard: do not submit any key outside this set even if form state
+// somehow contains one (belt-and-suspenders alongside the backend check).
+// ---------------------------------------------------------------------------
+const ALLOWED_KEYS = new Set([
+  'OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
+  'OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
+  'OPEN_NOTEBOOK_LOCAL_N_CTX',
+  'ONP_CHAT_LLM_CTX',
+  'ONP_CHAT_LLM_CTX_MAX',
+])
+
+export default function LauncherPrefsPage() {
+  const { t } = useTranslation()
+  const { data, isLoading } = useLauncherPrefs()
+  const update = useUpdateLauncherPrefs()
+
+  // Form state — we keep separate string fields for each control.
+  const [draftModelPath, setDraftModelPath] = useState('')
+  const [draftNPredict, setDraftNPredict] = useState('')
+  const [nCtx, setNCtx] = useState('')
+  const [nCtxMax, setNCtxMax] = useState('')
+
+  // Show "restart required" banner only after a successful save.
+  const [showRestartBanner, setShowRestartBanner] = useState(false)
+
+  // Seed form from the GET response once loaded.
+  useEffect(() => {
+    if (!data?.prefs) return
+    const p = data.prefs
+    setDraftModelPath(p['OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH'] ?? '')
+    setDraftNPredict(p['OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT'] ?? '')
+    setNCtx(p['ONP_CHAT_LLM_CTX'] ?? '')
+    setNCtxMax(p['ONP_CHAT_LLM_CTX_MAX'] ?? '')
+  }, [data])
+
+  // ---------------------------------------------------------------------------
+  // Diff computation — only changed / cleared fields go in the PUT payload.
+  // An empty string means "clear this key" → send null.
+  // An unchanged field is omitted from the payload entirely.
+  // ---------------------------------------------------------------------------
+  const buildDiff = (): { [key: string]: string | null } => {
+    const current = data?.prefs ?? {}
+    const diff: { [key: string]: string | null } = {}
+
+    const check = (
+      key: string,
+      newVal: string,
+    ) => {
+      if (!ALLOWED_KEYS.has(key)) return  // frontend whitelist guard
+      const old = current[key] ?? ''
+      if (newVal === old) return          // no change — skip
+      diff[key] = newVal.trim() === '' ? null : newVal.trim()
+    }
+
+    check('OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH', draftModelPath)
+    check('OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT', draftNPredict)
+    check('ONP_CHAT_LLM_CTX', nCtx)
+    check('ONP_CHAT_LLM_CTX_MAX', nCtxMax)
+
+    return diff
+  }
+
+  const handleSave = () => {
+    const diff = buildDiff()
+    if (Object.keys(diff).length === 0) return  // nothing changed
+    update.mutate(
+      { prefs: diff },
+      {
+        onSuccess: () => setShowRestartBanner(true),
+      },
+    )
+  }
+
+  const isDirty = Object.keys(buildDiff()).length > 0
+
+  return (
+    <AppShell>
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 py-10 sm:px-8">
+          <div className="mx-auto max-w-3xl space-y-10">
+
+            <header className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {t('settings.launcherPrefs.title')}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {t('settings.launcherPrefs.description')}
+              </p>
+            </header>
+
+            {/* Restart-required banner — shown after a successful save */}
+            {showRestartBanner && (
+              <div
+                className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                role="alert"
+                data-testid="restart-banner"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t('settings.launcherPrefs.restartRequired')}</span>
+              </div>
+            )}
+
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : (
+              <form
+                className="space-y-8"
+                onSubmit={(e) => { e.preventDefault(); handleSave() }}
+              >
+
+                {/* ── Speculative decoding section ───────────────────── */}
+                <section className="space-y-6">
+                  <h2 className="text-lg font-medium">
+                    {t('settings.launcherPrefs.speculativeDecodingTitle')}
+                  </h2>
+
+                  {/* Draft model path */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="draft-model-path"
+                      className="text-sm font-medium"
+                    >
+                      {t('settings.launcherPrefs.draftModelPathLabel')}
+                    </label>
+                    <Input
+                      id="draft-model-path"
+                      data-testid="draft-model-path"
+                      placeholder={t('settings.launcherPrefs.draftModelPathPlaceholder')}
+                      value={draftModelPath}
+                      onChange={(e) => setDraftModelPath(e.target.value)}
+                      className="w-full font-mono text-sm"
+                      aria-describedby="draft-model-path-desc"
+                    />
+                    <p
+                      id="draft-model-path-desc"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t('settings.launcherPrefs.draftModelPathDesc')}
+                    </p>
+                  </div>
+
+                  {/* Draft n_predict */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="draft-n-predict"
+                      className="text-sm font-medium"
+                    >
+                      {t('settings.launcherPrefs.draftNPredictLabel')}
+                      {' '}
+                      <span className="font-normal text-muted-foreground">
+                        ({t('common.optional')})
+                      </span>
+                    </label>
+                    <Input
+                      id="draft-n-predict"
+                      data-testid="draft-n-predict"
+                      type="number"
+                      min={1}
+                      max={128}
+                      placeholder={t('settings.launcherPrefs.draftNPredictPlaceholder')}
+                      value={draftNPredict}
+                      onChange={(e) => setDraftNPredict(e.target.value)}
+                      className="w-40"
+                      aria-describedby="draft-n-predict-desc"
+                    />
+                    <p
+                      id="draft-n-predict-desc"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t('settings.launcherPrefs.draftNPredictDesc')}
+                    </p>
+                  </div>
+                </section>
+
+                {/* ── Context window section ─────────────────────────── */}
+                <section className="space-y-6">
+                  <h2 className="text-lg font-medium">
+                    {t('settings.launcherPrefs.contextWindowTitle')}
+                  </h2>
+
+                  {/* ONP_CHAT_LLM_CTX */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="n-ctx"
+                      className="text-sm font-medium"
+                    >
+                      {t('settings.launcherPrefs.nCtxLabel')}
+                      {' '}
+                      <span className="font-normal text-muted-foreground">
+                        ({t('common.optional')})
+                      </span>
+                    </label>
+                    <Input
+                      id="n-ctx"
+                      data-testid="n-ctx"
+                      type="number"
+                      min={512}
+                      max={131072}
+                      placeholder={t('settings.launcherPrefs.nCtxPlaceholder')}
+                      value={nCtx}
+                      onChange={(e) => setNCtx(e.target.value)}
+                      className="w-40"
+                      aria-describedby="n-ctx-desc"
+                    />
+                    <p
+                      id="n-ctx-desc"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t('settings.launcherPrefs.nCtxDesc')}
+                    </p>
+                  </div>
+
+                  {/* ONP_CHAT_LLM_CTX_MAX */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="n-ctx-max"
+                      className="text-sm font-medium"
+                    >
+                      {t('settings.launcherPrefs.nCtxMaxLabel')}
+                      {' '}
+                      <span className="font-normal text-muted-foreground">
+                        ({t('common.optional')})
+                      </span>
+                    </label>
+                    <Input
+                      id="n-ctx-max"
+                      data-testid="n-ctx-max"
+                      type="number"
+                      min={512}
+                      max={131072}
+                      placeholder={t('settings.launcherPrefs.nCtxMaxPlaceholder')}
+                      value={nCtxMax}
+                      onChange={(e) => setNCtxMax(e.target.value)}
+                      className="w-40"
+                      aria-describedby="n-ctx-max-desc"
+                    />
+                    <p
+                      id="n-ctx-max-desc"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t('settings.launcherPrefs.nCtxMaxDesc')}
+                    </p>
+                  </div>
+                </section>
+
+                {/* Save button */}
+                <div>
+                  <Button
+                    type="submit"
+                    disabled={!isDirty || update.isPending}
+                    data-testid="save-button"
+                  >
+                    {update.isPending
+                      ? t('common.saving')
+                      : t('settings.launcherPrefs.saveButton')}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  )
+}

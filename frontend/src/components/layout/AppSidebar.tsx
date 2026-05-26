@@ -50,6 +50,7 @@ import {
   Wrench,
   Command,
   Sparkles,
+  Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
 const getNavigation = (t: TFunction) => [
@@ -84,6 +85,8 @@ const getNavigation = (t: TFunction) => [
       { name: t('navigation.settings'), href: '/settings', icon: Settings },
       // v0.8.0 Phase 2 Task 10 — MCP Servers settings page
       { name: t('settings.mcp.navTitle'), href: '/settings/mcp', icon: Plug },
+      // v0.8.6 Item D — Launch preferences (env-var knobs for local LLM)
+      { name: t('settings.launcherPrefs.navTitle'), href: '/settings/launcher-prefs', icon: Sliders },
       { name: t('navigation.advanced'), href: '/advanced', icon: Wrench },
     ],
   },

@@ -1,0 +1,184 @@
+"""v0.8.6 Item D — File-backed launcher preference layer.
+
+Reads and writes ``~/.open-notebook-plus/launcher.env`` as a KEY=VALUE file
+so non-CLI users can configure the same knobs that are otherwise set via
+shell env or ``.env`` files.
+
+Format
+------
+- One ``KEY=VALUE`` per line.
+- Lines starting with ``#`` are comments and are preserved through round-trips.
+- Blank lines are preserved.
+- No quoting support (values are taken verbatim after the ``=``).
+
+Env-var precedence
+------------------
+``merge_with_env(env)`` applies file values ONLY for keys not already present
+in ``env``. This means a shell-level ``export OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/x``
+always wins over anything in the file — consistent with ops/CI override workflows.
+
+Whitelist
+---------
+Only whitelisted keys may be written to the file. A PUT request with an
+unknown key returns 400. This prevents the file from becoming an accidental
+secrets store if the caller sends an arbitrary env var.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Whitelist — only these keys may land in launcher.env.
+# Do NOT add arbitrary env vars here; the goal is to expose a small, well-
+# understood set of knobs — not a general-purpose secrets store.
+# ---------------------------------------------------------------------------
+ALLOWED_KEYS: frozenset[str] = frozenset({
+    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+    "OPEN_NOTEBOOK_LOCAL_N_CTX",    # canonical alias mirroring the spec table
+    "ONP_CHAT_LLM_CTX",
+    "ONP_CHAT_LLM_CTX_MAX",
+})
+
+
+def _prefs_path() -> Path:
+    """Return the canonical path to the launcher.env file."""
+    return Path.home() / ".open-notebook-plus" / "launcher.env"
+
+
+def _parse_file(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE text into a dict.
+
+    Comments (#) and blank lines are ignored for the return value but are
+    preserved by ``_render_file`` when round-tripping.
+
+    Raises ``ValueError`` for non-blank, non-comment lines with no ``=``.
+    """
+    result: dict[str, str] = {}
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError(
+                f"launcher.env line {lineno}: expected KEY=VALUE, got {raw!r}"
+            )
+        key, _, value = line.partition("=")
+        result[key.strip()] = value  # value may be empty
+    return result
+
+
+def _render_file(existing_text: str, merged: dict[str, str]) -> str:
+    """Rebuild the file content, preserving comments and blank lines.
+
+    Strategy:
+    - Walk the existing lines; update values for keys that appear.
+    - Append new keys (those in ``merged`` but not in the old content).
+    - Lines for keys whose value is absent from ``merged`` are dropped
+      (i.e. the key was removed via ``update_prefs(key=None)``).
+    """
+    lines = existing_text.splitlines(keepends=True)
+    updated_keys: set[str] = set()
+    out: list[str] = []
+
+    for raw in lines:
+        line = raw.rstrip("\n").rstrip("\r")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+            continue
+        if "=" not in stripped:
+            # Malformed — preserve as-is (will be flagged on next parse).
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+            continue
+        key = stripped.partition("=")[0].strip()
+        if key in merged:
+            out.append(f"{key}={merged[key]}\n")
+            updated_keys.add(key)
+        # If key not in merged: omit the line (key was removed).
+
+    # Append keys that weren't in the existing file.
+    for key, value in merged.items():
+        if key not in updated_keys:
+            out.append(f"{key}={value}\n")
+
+    return "".join(out)
+
+
+def get_prefs() -> dict[str, str]:
+    """Return current launcher preferences from the file.
+
+    Returns an empty dict if the file does not exist or is empty.
+    Raises ``ValueError`` for malformed lines.
+    """
+    path = _prefs_path()
+    if not path.exists():
+        return {}
+    return _parse_file(path.read_text(encoding="utf-8"))
+
+
+def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
+    """Merge ``updates`` into the current preferences and write the file.
+
+    Parameters
+    ----------
+    updates:
+        ``{KEY: VALUE}`` — sets the key.  ``{KEY: None}`` — removes the key.
+
+    Returns the new merged dict (reflecting what is now in the file).
+
+    Raises ``ValueError`` if any key is not in ``ALLOWED_KEYS`` or if the
+    existing file has a malformed line.
+    """
+    unknown = set(updates) - ALLOWED_KEYS
+    if unknown:
+        raise ValueError(
+            f"Key(s) not in whitelist: {sorted(unknown)}. "
+            f"Allowed: {sorted(ALLOWED_KEYS)}"
+        )
+
+    path = _prefs_path()
+    existing_text = path.read_text(encoding="utf-8") if path.exists() else ""
+    current = _parse_file(existing_text)
+
+    for key, value in updates.items():
+        if value is None:
+            current.pop(key, None)
+        else:
+            current[key] = str(value)
+
+    # Write atomically (write to a temp file, rename).
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new_text = _render_file(existing_text, current)
+    tmp = path.with_suffix(".env.tmp")
+    tmp.write_text(new_text, encoding="utf-8")
+    tmp.replace(path)
+
+    return current
+
+
+def merge_with_env(env: dict[str, str]) -> dict[str, str]:
+    """Return a copy of ``env`` with file values filled in for missing keys.
+
+    Keys already present in ``env`` are NOT overwritten — shell env wins.
+    This should be called early in the launcher startup sequence so all
+    downstream readers (session_env builder, _spawn_llamacpp_chat, etc.)
+    see the file values without special-casing.
+
+    Returns the merged dict (the same dict that was passed in, mutated in
+    place AND returned so callers can use it fluently).
+    """
+    try:
+        prefs = get_prefs()
+    except Exception:
+        # Malformed file — log is not available here; silently skip.
+        # A misconfigured launcher.env must never block app startup.
+        return env
+
+    for key, value in prefs.items():
+        if key not in env:
+            env[key] = value
+
+    return env
