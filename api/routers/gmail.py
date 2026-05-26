@@ -274,10 +274,21 @@ async def callback(
             # `except Exception` doesn't clobber them to 500.
             raise
         except Exception as exc:
+            # v0.8.24 — sanitize what we echo into the HTML response page
+            # rendered in the user's browser. Same family as the v0.7.177
+            # podcast_service sweep and the v0.8.22 credentials migration
+            # sweep — gmail.py was missed. Google's token-exchange error
+            # responses can include the OAuth client_id, the redirect_uri,
+            # and (rarely) fragments of the auth code; surfacing them in
+            # the browser tab leaks operator config beyond what the user
+            # needs to triage. Full detail stays in log.exception above.
             log.exception("Gmail OAuth token exchange failed")
             return _result_page(
                 "Gmail connection failed",
-                f"Token exchange error: {exc}",
+                f"Token exchange error ({type(exc).__name__}). "
+                "Check launcher.log for details — the response from "
+                "Google may contain config-specific information that "
+                "is safer to inspect server-side.",
                 ok=False,
             )
 
@@ -337,7 +348,19 @@ async def send_test() -> SendResult:
         # `except Exception` doesn't clobber them to 500.
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        # v0.8.24 — sanitize: same family as the v0.7.177 / v0.8.22 sweep.
+        # `_send_digest_now` can raise from build_digest_html (DB errors
+        # with SurrealDB internals) or from the Gmail API path before
+        # the status-code branch is reached (network errors carrying
+        # request URLs + Authorization-header fragments in the traceback).
+        # The full error stays in launcher.log via log.exception below;
+        # the client gets the type name for triage.
+        log.exception("Gmail send-test failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Send-test failed ({type(exc).__name__}). "
+            "Check launcher.log for the full error.",
+        )
     return SendResult(ok=ok, message=msg, items_included=n)
 
 
