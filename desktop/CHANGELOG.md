@@ -20,6 +20,41 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.22 — credentials migration was leaking raw exception strings into the response**
+  - Both `migrate_from_provider_config` and `migrate_from_env`
+    (`api/credentials_service.py:864, :954`) wrote
+    `errors.append(f"{provider}/{name}: {e}")` into the API response.
+    The raw exception `e` can carry:
+    - **SurrealDB driver internals**: WS frames, partial RecordIDs,
+      connection-pool diagnostics, internal SurrealQL fragments
+      (e.g. the `repo_query` text from line 932 / 842).
+    - **Fernet ciphertext fragments**: if `Credential.save()` raises
+      mid-encryption, the partial base64 string can land in
+      `str(e)`.
+    - **api_key prefixes**: a Pydantic validation error on a malformed
+      `api_key` includes the offending value in the message.
+  - Same family as the v0.7.177 sweep that sanitized
+    `podcast_service.py`. The credentials_service was missed in
+    that pass. Authenticated, yes — but the v0.7.177 contract is
+    that raw exception text NEVER leaves the process via response
+    payloads, regardless of the auth layer (reverse proxies log
+    response bodies, browser dev tools show them, screenshots get
+    shared).
+  - Fix: emit `f"{provider}/{name}: {type(e).__name__}"` instead.
+    Operator gets enough to correlate with the log line; the full
+    detail is already preserved in `logger.error(..., exc_info=True)`
+    that runs alongside the append.
+  - **Tests:** 2 new regression tests in `tests/test_credentials_api.py`:
+    - `test_migrate_from_env_sanitizes_exception_in_response` —
+      injects a `RuntimeError("INTERNAL: api_key=sk-VERYSECRET; WS frame=…; encrypted=gAAAAAB…")`
+      into the env migration path; asserts none of the secret
+      tokens appear in `response.json()["errors"]` AND that the
+      type name `"RuntimeError"` is present for triage.
+    - `test_migrate_from_provider_config_sanitizes_exception` —
+      same shape for the ProviderConfig migration path, injecting
+      a `RuntimeError` containing `"SELECT * FROM credential api_key=sk-LEAKME-123"`
+      and asserting neither the SQL fragment nor the key leak.
+
 - **🐛 v0.8.21 — chat-hook refetch was clobbering optimistic state on rapid sends**
   - Both `useSourceChat` and `useNotebookChat` had:
     ```ts
