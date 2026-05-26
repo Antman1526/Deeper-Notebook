@@ -20,6 +20,66 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.23 SECURITY — sources download helpers had the sibling-prefix path-traversal bug**
+  - `api/routers/sources.py` `_resolve_source_file` (called by
+    `GET /sources/{id}/download`) and `_is_source_file_available`
+    (called by `GET /sources/{id}` to set the response's
+    `file_available` field) both did:
+    ```python
+    safe_root = os.path.realpath(UPLOADS_FOLDER)
+    resolved_path = os.path.realpath(file_path)
+    if not resolved_path.startswith(safe_root):
+        ...
+    ```
+    The `startswith(safe_root)` check has **no trailing separator**. If
+    `UPLOADS_FOLDER = "/var/uploads"`, then a tampered or stale
+    `source.asset.file_path` of `"/var/uploadsbypass/etc-passwd"`
+    passes the check — `"/var/uploadsbypass/...".startswith("/var/uploads")`
+    is `True`. The download endpoint then serves the file via
+    `FileResponse`, and the source detail response misreports
+    `file_available: true` for it.
+  - **Same bug family** as: v0.6.31 (model_manager), v0.6.34
+    (Source.delete), v0.7.2 (podcasts.py `_resolve_audio_path`). The
+    v0.7.2 fix introduced the `Path.is_relative_to()` idiom for the
+    podcasts router but the sources router helpers were missed. The
+    other two callsites in this same file (`generate_unique_filename`
+    line 109, `create_source` line 467) DO add `+ os.sep` and are
+    safe — only the download helpers had the unprotected form.
+  - **Attack vector severity (local-deploy):** requires a tampered
+    `source.asset.file_path` value. Sources for that:
+    - A future API endpoint or migration that writes raw file paths
+      from user input without scoping to `UPLOADS_FOLDER`
+    - Manual DB row edits by an attacker who got SurrealDB write
+      access via another vector
+    - A bug in `parse_source_form_data` future evolution
+    The fix removes the class of bug — `is_relative_to()` cannot be
+    defeated by sibling-prefix tricks.
+  - Fix: switch both helpers from `os.path.realpath` + `startswith`
+    to `Path(...).resolve()` + `is_relative_to()`. Matches the
+    v0.7.2 podcasts.py idiom. Also tolerates `OSError`/`ValueError`
+    on malformed paths (e.g. embedded null bytes) by treating them
+    as "not found" rather than crashing the endpoint.
+  - **Tests:** 6 new in `tests/test_sources_path_containment_v0823.py`:
+    - `test_is_source_file_available_rejects_sibling_prefix` — the
+      headline attack scenario: builds `<tmp>/uploads/` and
+      `<tmp>/uploadsbypass/secret.txt`, asserts the helper returns
+      False for the bypass path.
+    - `test_is_source_file_available_accepts_legitimate_path` —
+      sanity: the fix doesn't over-reject genuine paths.
+    - `test_is_source_file_available_tolerates_malformed_path` —
+      embedded null byte → False, not 500.
+    - `test_resolve_source_file_rejects_sibling_prefix` — async
+      version: asserts 403 (not 200 + wrong file bytes).
+    - `test_resolve_source_file_serves_legitimate_path` — sanity.
+    - `test_no_startswith_path_check_in_source_helpers` —
+      AST-based contract test that pins the `is_relative_to`
+      idiom in both helper bodies. Uses `ast.unparse` for exact
+      function-body extraction rather than the brittle "\\n\\n"
+      heuristic. Catches a future refactor that "simplifies"
+      the fix back into the bug.
+  - Suite: 22 sources-related tests pass (16 existing + 6 new),
+    zero regressions.
+
 - **🔒 v0.8.22 — credentials migration was leaking raw exception strings into the response**
   - Both `migrate_from_provider_config` and `migrate_from_env`
     (`api/credentials_service.py:864, :954`) wrote
