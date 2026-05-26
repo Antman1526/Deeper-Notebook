@@ -4,11 +4,11 @@
 
 The v0.8.0 Phase 2 MCP integration lets your local LLM call any MCP
 server registered in **Settings → MCP Servers**. This page lists
-three **free** MCP servers that give your model live internet
-access — web search, URL fetching, deep research — without paying
-for OpenAI or Anthropic.
+**free** MCP servers that give your model live internet access — web
+search, URL fetching, deep research — without paying for OpenAI or
+Anthropic.
 
-All three run **locally** on your machine. Your queries never go
+All of them run **locally** on your machine. Your queries never go
 through a third-party LLM. The MCP server contacts the search
 provider directly; the local LLM consumes the result.
 
@@ -17,6 +17,107 @@ provider directly; the local LLM consumes the result.
 > [Local-model tool-calling compatibility](../4-AI-PROVIDERS/local-models-tool-calling.md).
 > If you're running Gemma-2 or Yi-1.5, MCP will silently no-op — pick
 > a Hermes-3, Qwen2.5, or Llama-3.2 GGUF instead.
+
+---
+
+## 🆓 Option 0: SearXNG (truly free + unlimited, no API key)
+
+**Self-hosted meta-search aggregator.** SearXNG queries dozens of
+upstream engines (Google, Bing, DuckDuckGo, Brave, Wikipedia,
+GitHub, …) and merges the results — without API keys. Run a local
+SearXNG instance once, point an MCP wrapper at it, and you have
+unlimited web search for the lifetime of your machine.
+
+- **Cost:** $0 forever. No signup, no key, no per-query cap.
+- **Setup time:** ~10 minutes (Docker + npm).
+- **Strengths:** Truly unlimited. Searches Google, Bing, DDG,
+  Brave, Wikipedia, ArXiv, GitHub, Stack Overflow, etc. in one
+  query. Privacy-respecting (SearXNG doesn't log or track you).
+- **Weaknesses:** Requires Docker (or a manual binary install).
+  Upstream engines occasionally block aggregators — if Google
+  rate-limits your IP for a minute, search briefly degrades to
+  DDG/Brave only.
+
+### Step 1 — Run SearXNG locally (Docker, ~2 min)
+
+```bash
+# Use the official searxng-docker image; one container, no compose needed.
+docker run --rm -d \
+  -p 8888:8080 \
+  --name onp-searxng \
+  -e BASE_URL=http://localhost:8888 \
+  -e INSTANCE_NAME=onp-searxng \
+  searxng/searxng:latest
+
+# Verify it's up — should return JSON results
+curl -s "http://127.0.0.1:8888/search?q=test&format=json" | head -c 200
+```
+
+If you prefer not to use Docker, the
+[SearXNG install guide](https://docs.searxng.org/admin/installation-docker.html)
+covers Python source install + uwsgi/nginx for permanent setups.
+
+### Step 2 — Install the MCP wrapper
+
+Use the community **mcp-searxng** server (Node.js):
+
+```bash
+SEARXNG_URL=http://127.0.0.1:8888 \
+  npx -y mcp-searxng \
+  | npx -y @modelcontextprotocol/server-proxy --port 8770 --mode http
+```
+
+(Or `uvx` equivalents if you have uv installed — check the project's
+README for current install instructions.)
+
+### Step 3 — Register in Open Notebook Plus
+
+1. Sidebar → **Settings → MCP Servers**
+2. **Add server** → Name `SearXNG`, URL `http://127.0.0.1:8770/mcp`
+3. Click **Test** — should show "Connected — 1+ tool(s) available".
+
+Per v0.8.10 the chat model will see whatever tools the SearXNG
+wrapper exposes (typically `mcp_search` or `mcp_searxng_search`)
+with the real Pydantic schema from v0.8.11. Per v0.8.12 the
+discovery result is cached 30s. Per v0.8.13 multi-block responses
+(text + image thumbnails from the search results) are preserved
+in the citation pill popover.
+
+### Why this isn't the default
+
+SearXNG requires Docker (or a manual install), which is a barrier
+for non-CLI operators. The Brave/Tavily options below are
+zero-Docker but bounded by free-tier query caps. **Pick SearXNG if
+you want truly unlimited; pick Brave if you want zero Docker.**
+
+---
+
+## 📚 Option 0b: Wikipedia (no key, no Docker, encyclopedic search)
+
+For fact-lookup questions ("What's the capital of Bhutan?", "Who
+discovered penicillin?") Wikipedia alone is often enough — and
+there's a maintained MCP wrapper with **zero setup friction**:
+
+```bash
+uvx mcp-server-wikipedia --port 8771 --mode http
+# or:
+npx -y @modelcontextprotocol/server-wikipedia --port 8771 --mode http
+```
+
+Register at `http://127.0.0.1:8771/mcp`. The model will see
+`mcp_search_wikipedia` and `mcp_get_article` (names depend on the
+wrapper version).
+
+- **Cost:** $0 forever, no key.
+- **Strengths:** No Docker. Encyclopedic coverage. Wikipedia's API
+  doesn't rate-limit personal use.
+- **Weaknesses:** Wikipedia only — no current-events news, no
+  technical docs outside Wikipedia, no source-code search.
+
+**Pair Wikipedia + Fetch (Option 2 below).** Wikipedia gives you
+broad reference, Fetch lets the user paste any URL into chat for
+the model to read. Combined they cover ~80% of "answer my question
+from the web" use cases without any signup.
 
 ---
 
@@ -147,18 +248,31 @@ more LLM-friendly.
 
 ---
 
-## Why no zero-key search server here?
+## Quick decision matrix
 
-Search-engine APIs without a key (scraping Google, DuckDuckGo HTML,
-etc.) break frequently because the underlying engines block
-unauthenticated traffic. We've intentionally left them off this
-list — operators kept reporting "the chat says Tool failed" because
-the upstream scraper rate-limited them. Brave's free 2000/month
-tier solves this without adding cost.
+| Need | Best fit |
+|------|---------|
+| Truly unlimited + no key + willing to run Docker | 🆓 **SearXNG** |
+| No key + no Docker + Wikipedia is enough | 📚 **Wikipedia** |
+| Best raw web-search quality + happy to sign up once | 🥇 **Brave** |
+| Just need to fetch URLs the user pastes | 🥈 **Fetch** |
+| Want AI-optimised results + happy to sign up once | 🥉 **Tavily** |
 
-If you genuinely need zero-signup, run **Option 2 (Fetch) alone**
-and let the model ask the user for URLs to read. The chat works;
-it just can't search.
+**For most ONP users wanting "free web search now":** start with
+**Wikipedia + Fetch** (no setup friction at all). If you need
+broader web results, layer **SearXNG** on top. The v0.8.1 Item 5
+▲/▼ priority arrows let you keep all three registered and reorder
+which the chat-graph picks first.
+
+## Why no scraping-based zero-key search server?
+
+Standalone DuckDuckGo-HTML-scraping or "Google parsing" MCP servers
+exist on npm, but they break frequently because the underlying
+engines block unauthenticated traffic. Operators kept reporting
+"the chat says Tool failed" within a week of registering one.
+**SearXNG sidesteps this** by rotating through dozens of engines
+under the hood and falling back when individual ones block — that's
+the value SearXNG adds over a raw HTML scraper.
 
 ---
 
