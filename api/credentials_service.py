@@ -861,7 +861,20 @@ async def migrate_from_provider_config() -> dict:
                     f"{type(e).__name__}: {e}",
                     exc_info=True,
                 )
-                errors.append(f"{provider}/{old_cred.name}: {e}")
+                # v0.8.22 — sanitize what we put in the response payload.
+                # Pre-v0.8.22 this was `f"{provider}/{name}: {e}"` which
+                # echoed the raw exception message — same family of leak
+                # that v0.7.177 swept in podcast_service.py. The exception
+                # can carry SurrealDB driver internals (WS frames, partial
+                # RecordIDs), Fernet base64 fragments (encryption errors
+                # mid-save), or Pydantic validation messages that include
+                # the offending value (an api_key prefix, for instance).
+                # The credentials_service was missed in the v0.7.177 sweep
+                # — fixing it now closes the gap. Full detail is preserved
+                # in logger.error above for ops triage.
+                errors.append(
+                    f"{provider}/{old_cred.name}: {type(e).__name__}"
+                )
 
     logger.info(
         f"=== ProviderConfig migration complete === "
@@ -951,7 +964,15 @@ async def migrate_from_env() -> dict:
                 f"[{provider}] Migration FAILED: {type(e).__name__}: {e}",
                 exc_info=True,
             )
-            errors.append(f"{provider}: {e}")
+            # v0.8.22 — sanitize: same rationale as the
+            # migrate_from_provider_config sibling above. The exception
+            # path here additionally covers `create_credential_from_env`
+            # (which raises ValueError with key-related messages on the
+            # Azure branch) and the `Model(**model_data).save()` link
+            # step (SurrealDB writes that can fail mid-transaction with
+            # driver internals). Type name is enough for the operator
+            # to triage; full detail is in logger.error.
+            errors.append(f"{provider}: {type(e).__name__}")
 
     logger.info(
         f"=== Environment variable migration complete === "
