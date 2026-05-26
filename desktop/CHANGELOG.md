@@ -20,6 +20,35 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.5 — Router/launcher n_ctx desync (low-RAM operators saw context_length_exceeded)**
+  - Audit follow-on to v0.8.4. The router read
+    `OPEN_NOTEBOOK_LOCAL_N_CTX` (default 32768) while the launcher
+    reads `ONP_CHAT_LLM_CTX` (also default 32768) — same concept, two
+    names. Operators running `ONP_CHAT_LLM_CTX=8192` for low-RAM
+    mode got their sidecar bound at 8k context, but the router
+    still assumed 32k headroom, so prompts of 9k–32k tokens were
+    routed to local and the sidecar returned 400
+    `context_length_exceeded`. Default-config operators were
+    unaffected (both defaults match), but the bug bit any user
+    overriding the launcher knob.
+  - Fix: `open_notebook/ai/provision.py` now reads either env var
+    with a precedence chain — `OPEN_NOTEBOOK_LOCAL_N_CTX` wins
+    (explicit router knob), `ONP_CHAT_LLM_CTX` is the v0.8.5
+    fallback, `32768` is the final default. Malformed value falls
+    back to 32768 rather than crashing the chat turn
+    (mirrors v0.7.206's launcher-side guard).
+  - 4 new tests in `tests/test_phase3_smart_routing.py::TestNCtxEnvVarSync`
+    pin the precedence chain + malformed-value handling.
+  - Known follow-on for v0.8.6 (deferred): the launcher's
+    `_spawn_llamacpp_chat` auto-detects n_ctx from GGUF metadata
+    (e.g. Hermes-3 native 131k, capped at `ONP_CHAT_LLM_CTX_MAX`).
+    The router still defaults to 32768 if neither env var is set,
+    so operators with high-capacity GGUFs and high
+    `ONP_CHAT_LLM_CTX_MAX` ceilings under-route to cloud. Closing
+    this needs the launcher to propagate its resolved n_ctx through
+    env, which requires moving the n_ctx resolution before
+    `session_env` is built.
+
 - **🐛 v0.8.4 — CRITICAL: smart router's local branch was dead on arrival**
   - `open_notebook/ai/provision.py:_local_chat_healthy_cached` reads
     `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL` to know where to probe the
