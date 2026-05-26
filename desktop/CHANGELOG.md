@@ -20,6 +20,49 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.27 — digest builder silently swallowed query errors (same shape as v0.8.19)**
+  - `open_notebook/digest/__init__.py:_safe_query` did
+    `except Exception: return []` with **no log** — identical to the
+    v0.8.19 memory_recall bug that hid a production-broken SurrealDB
+    query for 50+ releases. If any of the digest's six queries fails
+    (schema mismatch, syntax issue, driver bump, the same `SELECT VALUE`
+    + `ORDER BY` class of error that v0.8.19 fixed elsewhere), the
+    digest silently omits that section — and the user just sees
+    "no activity in the digest window" instead of an alarm.
+  - **Why this hid:** the digest scheduler runs every 5 minutes
+    (`open_notebook/digest/scheduler.py:_TICK_INTERVAL_SEC=300`). A
+    silent-swallow on a broken query produces no log and the user-
+    visible symptom is just "fewer items in the digest email" — which
+    looks indistinguishable from a quiet week. The audit pattern that
+    surfaced this is the same as v0.8.19: any `except Exception:`
+    that returns a sentinel without logging is a hiding place.
+  - **Fix:** classify the exception:
+    - `"Table missing"` / `"table does not exist"` → DEBUG (benign
+      fresh-install case — `memory_fact` may not exist before the
+      first memory write; DEBUG so launcher.log isn't spammed every
+      5-minute tick).
+    - `"Parse error"` / `"Missing order idiom"` / `"Idiom missing"` /
+      `"unexpected token"` → WARNING tagged `SCHEMA ERROR` so a
+      future SurrealDB upgrade that breaks one of the digest queries
+      surfaces loudly in launcher.log.
+    - Everything else → WARNING. Better to err on visibility — an
+      unknown error suppressing a section is still a bug.
+    Same substring lists as v0.8.19's `_safe_select` in
+    `open_notebook/utils/memory_recall.py` so a future SurrealDB
+    upgrade only needs one place updated.
+  - **Tests:** 3 new in `tests/test_digest_builder.py`:
+    - `test_v0827_safe_query_logs_warning_on_schema_error`:
+      injects a "Parse error: Missing order idiom" RuntimeError;
+      asserts a WARNING is emitted with `SCHEMA ERROR` token.
+      Uses a loguru sink (loguru bypasses stdlib `caplog`).
+    - `test_v0827_safe_query_stays_debug_on_table_missing`:
+      injects "Table missing"; asserts DEBUG only, no
+      WARNING/ERROR (otherwise launcher.log spams every 5 min).
+    - `test_v0827_safe_query_logs_warning_on_unknown_error`:
+      injects "ConnectionDropped: WS frame 0x4F2C"; asserts
+      WARNING fires (visibility wins on unknown errors).
+  - Suite: 9 digest tests pass (6 existing + 3 new), zero regressions.
+
 - **🐛⚡ v0.8.26 — transformation + prompt graphs were missing per-node LLM timeouts**
   - `open_notebook/graphs/transformation.py:121` and
     `open_notebook/graphs/prompt.py:40` both called
