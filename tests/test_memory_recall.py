@@ -400,6 +400,18 @@ def test_recall_recent_memory_uses_select_text_not_select_value(monkeypatch):
             f"parse error. Got: {q!r}"
         )
         assert "ORDER BY created_at DESC" in q
+        # v0.8.30 CRITICAL — v0.8.19's drop-VALUE was incomplete.
+        # SurrealDB ALSO requires the ORDER BY field in the projection.
+        # `SELECT text ... ORDER BY created_at DESC` STILL fails with
+        # the same "Missing order idiom" parse error. The complete
+        # fix adds `created_at` to the projection.
+        assert "created_at" in q.split("FROM")[0], (
+            f"v0.8.30: must SELECT created_at alongside text — "
+            f"otherwise SurrealDB rejects ORDER BY created_at with "
+            f"'Missing order idiom'. Got: {q!r}. v0.8.19 dropped VALUE "
+            f"but missed this — memory recall has been silently empty "
+            f"across v0.8.19 → v0.8.29 until v0.8.30 closed the loop."
+        )
 
     # And the consumer must still extract the text correctly from
     # the dict shape (verifies _coerce_text on dicts works through

@@ -80,13 +80,28 @@ async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
     # The downstream `_coerce_text` already handles both scalar
     # and dict shapes (per its v0.7.71 docstring), so consumers
     # are robust to the shape change.
+    #
+    # v0.8.30 CRITICAL — v0.8.19's drop-VALUE fix was INCOMPLETE.
+    # SurrealDB's "Missing order idiom" rejection is not just about
+    # the VALUE projection — it requires the ORDER BY field
+    # (`created_at`) to ALSO be IN the projection. The post-v0.8.19
+    # state `SELECT text FROM memory_fact ORDER BY created_at DESC`
+    # STILL fails with the same parse error. v0.8.19's severity-
+    # bumped WARNING log (which originally surfaced the v0.7.71 bug)
+    # kept firing every chat turn — memory recall has STILL been
+    # returning empty across v0.8.19 → v0.8.29. Surfaced by
+    # `tests/test_chat_history_cap.py` running against a live
+    # SurrealDB this session.
+    # Fix: include `created_at` in the projection. `_coerce_text`
+    # still picks out the `text` field — the extra column is ignored
+    # by consumers.
     facts = await _safe_select(
-        "SELECT text FROM memory_fact "
+        "SELECT text, created_at FROM memory_fact "
         "ORDER BY created_at DESC LIMIT $limit",
         {"limit": _MAX_FACTS},
     )
     preferences = await _safe_select(
-        "SELECT text FROM memory_preference "
+        "SELECT text, created_at FROM memory_preference "
         "ORDER BY created_at DESC LIMIT $limit",
         {"limit": _MAX_PREFERENCES},
     )
