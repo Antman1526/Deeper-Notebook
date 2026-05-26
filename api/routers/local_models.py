@@ -5,6 +5,9 @@ launcher also calls it via the in-process function at startup
 so launcher.log captures verified-working status.
 """
 from __future__ import annotations
+
+import asyncio
+
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -55,11 +58,23 @@ def _is_local_sidecar_url(url: str) -> bool:
 async def local_models_health():
     """Active health probe across all local sidecars. Each probe
     has its own ≤9s timeout; total endpoint latency scales with
-    the number of registered local credentials (typically 4-5)."""
+    the number of registered local credentials (typically 4-5).
+
+    v0.8.20 CRITICAL — `probe_all_local_models` drives sync
+    `httpx.Client` requests with up to a 9s per-probe budget. The
+    earlier code called it directly inside this `async def` handler,
+    so a wedged sidecar (or a couple of them) would block the
+    FastAPI event loop for the full 9-45s sweep — every other
+    in-flight request (chat SSE streams, status polls, frontend
+    badge polls) stalled in lockstep. With the frontend polling
+    /api/local-models/health every 30s, a single hung local model
+    cascaded into freezing the app for 9s every poll. `to_thread`
+    pushes the sync httpx calls onto the default executor so the
+    loop keeps serving everyone else."""
     from open_notebook.health.local_models import probe_all_local_models
 
     creds = await _load_local_credentials()
-    results = probe_all_local_models(creds)
+    results = await asyncio.to_thread(probe_all_local_models, creds)
     healthy = sum(1 for r in results if r["status"] == "healthy")
     total_configured = sum(
         1 for r in results if r["status"] != "not_configured"

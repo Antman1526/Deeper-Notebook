@@ -20,6 +20,65 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛⚡ v0.8.20 CRITICAL — sync httpx probe was blocking the FastAPI event loop**
+  - The v0.8.0 health-probe surface (`open_notebook/health/local_models.py`)
+    drives `httpx.Client.get()` **synchronously** with a structured 9s
+    budget (connect=2.0, read=5.0, write=2.0, pool=2.0). Two production
+    code paths called it from inside `async def` functions:
+    1. `api/routers/local_models.py:62` — `/api/local-models/health`
+       (the endpoint the frontend's sidebar badge polls every 30s).
+    2. `open_notebook/ai/provision.py:155` — `_local_chat_healthy_cached()`,
+       invoked on every chat turn that hits the v0.8.0 smart router.
+  - In both, a wedged or slow sidecar pinned the entire FastAPI event
+    loop for up to 9s — every concurrent request stalled: chat SSE
+    streams froze, status polls timed out, the launcher's own status
+    poll hung, the very 30s frontend poll that triggered the freeze
+    came back to find the UI unresponsive. Combined with the v0.8.0
+    "sequential probe" design, a single hung local model could cascade
+    into a multi-second app-wide freeze every poll cycle.
+  - **Why this hid for 20 patch releases:** with a healthy local
+    sidecar the probe returns in 5-50ms — well under any timeout that
+    would show up as user-visible jank. The bug only bit when a sidecar
+    actually died mid-session (process crash, OOM kill, port collision).
+    `tests/test_phase1_local_model_health.py` mocked the probe with a
+    sync `lambda` (returns instantly) so the test harness gave no
+    signal. This is the **16th** silently-shipped production-broken
+    bug found by audit this session and the second event-loop-blocking
+    bug after v0.7.55's `submit_command` fix (the same pattern shape).
+  - Fix:
+    1. **`_local_chat_healthy_cached` → `async def`**: wrap the inner
+       `probe_all_local_models(creds)` call in `await asyncio.to_thread`
+       so the blocking httpx call lands on the default executor. The
+       single caller in `provision_langchain_chat_model` now awaits
+       it before passing the result to the sync `pick_provider`. Cache
+       semantics unchanged.
+    2. **`/api/local-models/health` endpoint**: same `asyncio.to_thread`
+       wrap. The launcher's sync caller at `desktop/app.py:787` keeps
+       calling `probe_all_local_models` directly — it's already off
+       the FastAPI event loop.
+    3. Sync `probe_all_local_models` itself stays sync (launcher needs
+       a synchronous entry point; no point in async-rewriting it).
+  - **Test updates:**
+    - Existing monkeypatches in `tests/test_phase3_smart_routing.py`
+      (8 sites) and `tests/test_v0_8_1_selected_provider.py` (2 sites)
+      switched from sync `lambda: True/False` to `AsyncMock(return_value=...)`
+      so `await _local_chat_healthy_cached()` still resolves correctly.
+    - `TestHealthCacheTTL.test_health_cache_respects_ttl` now drives
+      the helper on a fresh event loop so the awaited form works.
+    - 3 new regression tests in `tests/test_phase1_local_model_health.py`:
+      - `test_local_chat_healthy_cached_is_awaitable` — asserts
+        `inspect.iscoroutinefunction(...)` so a future sync regression
+        fails loudly at import time.
+      - `test_local_models_health_endpoint_yields_event_loop` —
+        live `TestClient` call with a 0.5s blocking stub probe;
+        proves the endpoint still returns the right shape even when
+        the probe is slow.
+      - `test_local_models_health_uses_to_thread` — AST/text check
+        that the router source literally contains
+        `asyncio.to_thread(probe_all_local_models`. Catches a future
+        refactor that drops the wrap even when the runtime stubs are
+        fast enough to mask the bug.
+
 - **🐛 v0.8.19 CRITICAL — memory recall has been silently broken for many releases**
   - `recall_recent_memory()` (used on every chat turn since v0.7.71)
     ran `SELECT VALUE text FROM memory_fact ORDER BY created_at DESC`,

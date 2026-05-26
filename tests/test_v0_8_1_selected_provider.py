@@ -17,6 +17,8 @@ provision layer through the graph state actually surfaces the value
 """
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 
@@ -83,8 +85,10 @@ class TestProvisionChatModelExposesSelection:
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
         monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached", lambda: True
+            provision_mod, "_local_chat_healthy_cached",
+            AsyncMock(return_value=True),
         )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
@@ -113,8 +117,10 @@ class TestProvisionChatModelExposesSelection:
         monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
         monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached", lambda: True
+            provision_mod, "_local_chat_healthy_cached",
+            AsyncMock(return_value=True),
         )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
