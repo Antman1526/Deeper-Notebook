@@ -6,4 +6,4 @@
 # `tests/test_v0_7_210_version_sync.py` pins this in step with
 # the latest `## v0.7.NNN` header in desktop/CHANGELOG.md so
 # future bumps can't drift.
-__version__ = "0.8.0"
+__version__ = "0.8.5"
