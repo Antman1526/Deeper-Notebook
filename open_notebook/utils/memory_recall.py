@@ -70,13 +70,23 @@ async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
     recall path — v0.7.84's orchestrator (`recall_memory`) falls
     through to here on any semantic-search failure.
     """
+    # v0.8.19 CRITICAL — Drop the `VALUE` projection. SurrealDB rejects
+    # `SELECT VALUE <field> ... ORDER BY <other_field>` with
+    # "Missing order idiom in statement selection" because the order
+    # idiom must be in the projection. Pre-v0.8.19 this raised on
+    # every chat turn, _safe_select swallowed the parse error at
+    # DEBUG level, and memory recall returned empty silently —
+    # users thought memory was working but no fact was ever recalled.
+    # The downstream `_coerce_text` already handles both scalar
+    # and dict shapes (per its v0.7.71 docstring), so consumers
+    # are robust to the shape change.
     facts = await _safe_select(
-        "SELECT VALUE text FROM memory_fact "
+        "SELECT text FROM memory_fact "
         "ORDER BY created_at DESC LIMIT $limit",
         {"limit": _MAX_FACTS},
     )
     preferences = await _safe_select(
-        "SELECT VALUE text FROM memory_preference "
+        "SELECT text FROM memory_preference "
         "ORDER BY created_at DESC LIMIT $limit",
         {"limit": _MAX_PREFERENCES},
     )
@@ -398,9 +408,25 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
             pass
         return []
     except Exception as exc:
-        # debug — every chat turn would log otherwise; the empty path
-        # is the expected case on fresh installs.
-        logger.debug("memory recall query failed (returning empty): {}", exc)
+        # v0.8.19 — Was DEBUG only ("the empty path is the expected
+        # case on fresh installs"), but that masked the v0.8.19
+        # SurrealQL parse error for an entire release cycle. Split:
+        # "table missing" is genuinely expected (no chat turns yet)
+        # and stays at DEBUG; "Parse error" / "Missing order idiom"
+        # / "Idiom missing" / "unexpected token" are bugs and must
+        # be visible. WARNING level surfaces them in launcher.log
+        # without spamming on healthy fresh installs.
+        msg = str(exc)
+        is_schema_error = (
+            "Parse error" in msg
+            or "Missing order idiom" in msg
+            or "Idiom missing" in msg
+            or "unexpected token" in msg
+        )
+        log_fn = logger.warning if is_schema_error else logger.debug
+        log_fn(
+            "memory recall query failed (returning empty): {}", exc,
+        )
         # v0.7.124 — Prometheus counter for the error path (distinct
         # from timeout — useful for differentiating "table missing"
         # vs "pool overloaded").

@@ -20,6 +20,32 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.19 CRITICAL — memory recall has been silently broken for many releases**
+  - `recall_recent_memory()` (used on every chat turn since v0.7.71)
+    ran `SELECT VALUE text FROM memory_fact ORDER BY created_at DESC`,
+    which SurrealDB rejects with **"Missing order idiom in statement
+    selection"** — the `VALUE` projection requires the `ORDER BY`
+    field to also be projected. `_safe_select` swallowed the parse
+    error at `DEBUG` level. Net effect: **memory recall returned
+    empty every chat turn in production.** Users saw memory writes
+    succeed and assumed recall worked; in fact no fact was ever
+    surfaced to the chat system prompt. This is the **15th**
+    silently-shipped production-broken bug found by audit this
+    session and the longest-lived (introduced in v0.7.71).
+  - Fix in two parts:
+    1. Drop `VALUE` from both queries — return list of `{text: ...}`
+       dicts. Downstream `_coerce_text` already handles dict shape
+       per its v0.7.71 docstring, so consumers are robust.
+    2. **Bump silent-swallow severity:** `_safe_select` now classifies
+       SurrealDB schema/parse errors (substrings "Parse error",
+       "Missing order idiom", "Idiom missing", "unexpected token")
+       as `WARNING`. "Table missing" stays at `DEBUG` (genuine
+       fresh-install case). Pre-v0.8.19 this exact bug was invisible
+       in launcher.log unless someone enabled debug logging.
+  - 3 new tests in `tests/test_memory_recall.py`: pins the SQL shape
+    against regression, asserts schema errors log at WARNING, asserts
+    table-missing stays at DEBUG. Suite: 25 → 28, all passing.
+
 - **🐛📚 v0.8.17 — SearXNG/Wikipedia (free + unlimited MCP) + source-chat SSE wiring fix (CRITICAL)**
   - **Doc add:** the v0.8.15 page recommended Brave (2k/mo) and Tavily
     (1k/mo) as "free" but both are bounded + require signup. Added two
