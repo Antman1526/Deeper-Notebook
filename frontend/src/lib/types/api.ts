@@ -229,15 +229,39 @@ export interface UpdateNotebookChatSessionRequest {
 
 // v0.8.1 Item 3 — shape of a single MCP tool-call capture.
 // Each record maps to one [mcp:N] marker in the AI message text.
+// v0.8.18 — interface updated to match the post-v0.8.10/v0.8.13
+// backend shape:
+//   - `name` is the remote MCP tool name as exposed by the server
+//     (gbrain: "search"/"think"/"find_trajectory"; Brave:
+//     "brave_web_search"; etc.) — was wrongly documented as a
+//     fixed "web_search"/"fetch_url" pair pre-v0.8.10.
+//   - `blocks` is the new optional rich-content array from v0.8.13
+//     (text / image / resource / unknown). Future frontend work
+//     (v0.9) will render image thumbnails + resource chips in the
+//     pill popover; declaring it now prevents type drift between
+//     wire and UI when that lands.
 export interface McpToolCall {
   /** 1-based index matching the [mcp:N] citation marker */
   index: number
-  /** Tool name: "web_search" or "fetch_url" */
+  /** Remote MCP tool name as exposed by the server (server-dependent). */
   name: string
-  /** Tool arguments (query string or URL) */
+  /** Tool arguments forwarded to the MCP call. Shape depends on the tool. */
   args: Record<string, unknown>
-  /** Result text, truncated to 4000 chars by the backend */
+  /** Concatenated text from all returned content blocks, truncated to 4000 chars. */
   text: string
+  /**
+   * v0.8.13 — Full content block list. Optional for back-compat with
+   * cache entries written by pre-v0.8.13 backends. Each block has a
+   * `type` discriminator: "text", "image", "resource", or "unknown".
+   * Pill popover currently renders `text` only; thumbnails/resource
+   * chips are v0.9 frontend work.
+   */
+  blocks?: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; mime_type: string; data: string; bytes: number }
+    | { type: 'resource'; uri: string; mime_type: string; text?: string; data?: string; bytes?: number }
+    | { type: 'unknown'; repr: string }
+  >
 }
 
 export interface SendNotebookChatMessageRequest {
