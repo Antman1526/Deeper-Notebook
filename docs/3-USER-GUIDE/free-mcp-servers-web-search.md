@@ -57,18 +57,27 @@ If you prefer not to use Docker, the
 [SearXNG install guide](https://docs.searxng.org/admin/installation-docker.html)
 covers Python source install + uwsgi/nginx for permanent setups.
 
-### Step 2 — Install the MCP wrapper
+### Step 2 — Install an MCP → SearXNG wrapper
 
-Use the community **mcp-searxng** server (Node.js):
+The MCP ecosystem moves fast — search [npm](https://www.npmjs.com/search?q=mcp+searxng)
+and [PyPI](https://pypi.org/search/?q=mcp+searxng) for current
+SearXNG MCP wrappers. As of this writing, popular options include
+community projects under the `mcp-searxng` / `searxng-mcp` naming
+patterns. The recipe is:
 
-```bash
-SEARXNG_URL=http://127.0.0.1:8888 \
-  npx -y mcp-searxng \
-  | npx -y @modelcontextprotocol/server-proxy --port 8770 --mode http
-```
+1. Pick a wrapper whose README mentions **streamable HTTP transport**
+   (what ONP's MCPClient speaks). If a wrapper is **stdio-only**,
+   bridge it with a transport adapter (search `mcp proxy` or
+   `mcp streamablehttp` on the same registries).
+2. Install + run it with `SEARXNG_URL=http://127.0.0.1:8888` in the
+   environment so it talks to your local SearXNG.
+3. Bind it to a fixed local port (e.g. `8770`) for the next step.
 
-(Or `uvx` equivalents if you have uv installed — check the project's
-README for current install instructions.)
+> **Verifying the wrapper actually works**: before registering in
+> ONP, `curl http://127.0.0.1:8770/mcp` or open it in a browser —
+> a working MCP server returns a JSON-RPC handshake / SSE stream
+> header. If it returns 404 or connection-refused, the wrapper
+> isn't running on the port you think.
 
 ### Step 3 — Register in Open Notebook Plus
 
@@ -96,17 +105,26 @@ you want truly unlimited; pick Brave if you want zero Docker.**
 
 For fact-lookup questions ("What's the capital of Bhutan?", "Who
 discovered penicillin?") Wikipedia alone is often enough — and
-there's a maintained MCP wrapper with **zero setup friction**:
+several MCP wrappers exist with **zero ongoing setup**.
+
+Search [npm](https://www.npmjs.com/search?q=mcp+wikipedia) and
+[PyPI](https://pypi.org/search/?q=mcp+wikipedia) for current
+Wikipedia MCP wrappers (the ecosystem changes frequently; package
+names like `mcp-wikipedia`, `wikipedia-mcp`, or
+`mcp-server-wikipedia` are common). Pick one whose README mentions
+**streamable HTTP transport** and run it on a fixed port:
 
 ```bash
-uvx mcp-server-wikipedia --port 8771 --mode http
-# or:
-npx -y @modelcontextprotocol/server-wikipedia --port 8771 --mode http
+# Example shape (replace PACKAGE_NAME with whatever the current
+# wrapper is called):
+npx -y PACKAGE_NAME --port 8771 --mode http
+# Then verify:
+curl -sS http://127.0.0.1:8771/mcp
 ```
 
-Register at `http://127.0.0.1:8771/mcp`. The model will see
-`mcp_search_wikipedia` and `mcp_get_article` (names depend on the
-wrapper version).
+Register at `http://127.0.0.1:8771/mcp` in Settings → MCP Servers.
+The model will see one or more `mcp_<tool>` entries depending on
+the wrapper (typical tools: `search`, `get_article`, `summarize`).
 
 - **Cost:** $0 forever, no key.
 - **Strengths:** No Docker. Encyclopedic coverage. Wikipedia's API
