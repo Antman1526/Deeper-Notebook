@@ -20,6 +20,50 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.21 — chat-hook refetch was clobbering optimistic state on rapid sends**
+  - Both `useSourceChat` and `useNotebookChat` had:
+    ```ts
+    useEffect(() => {
+      if (currentSession?.messages) setMessages(currentSession.messages)
+    }, [currentSession])
+    ```
+    Every refetch of `currentSession` overwrote local messages — including
+    the in-flight optimistic user bubble and streaming AI placeholder for
+    a second rapid send. The race:
+    1. User sends msg #1 → stream completes → `await refetchCurrentSession()` starts.
+    2. User rapidly sends msg #2 → `setMessages(prev => [...prev, user_2_optimistic])`,
+       then (as tokens arrive) `ai_2_streaming_placeholder`.
+    3. The refetch from step 1 returns with only `[user_1, ai_1]` (msg #2
+       not yet persisted) → useEffect fires → `setMessages([user_1, ai_1])` →
+       user_2 + ai_2_streaming **WIPED from the UI**.
+    4. Subsequent token deltas for msg #2 try to map onto `streamingAiId_2`,
+       but that ID is no longer in local state → no-op → user only sees
+       msg #2's response after its OWN stream-complete refetch.
+  - **Why this hid:** requires rapid user input (within the ~100-500ms
+    refetch window). Normal pacing never triggers it. Single-user
+    local-deploy testing tends to be deliberate. Surfaced by an audit
+    pass on the SSE consumer surfaces this session.
+  - Fix: introduce `inFlightSendsRef = useRef(0)`, incremented at the
+    start of `sendMessage` (BEFORE any await) and decremented in
+    `finally{}` (AFTER the awaited refetch). The useEffect now skips
+    its overwrite when the counter is > 0.
+  - **Why a counter, not a boolean:** msg #1's `finally{}` runs while
+    msg #2 is still in flight. A boolean would get cleared by msg #1's
+    exit, reopening the race for msg #2's lifecycle. The counter stays
+    > 0 until BOTH have settled. The `Math.max(0, ... - 1)` defends
+    against future double-decrement bugs.
+  - **Trade-off:** cross-tab edits made during a send don't appear in
+    local state until the send finishes. Acceptable for the single-user
+    local-deploy target.
+  - **Test:** `frontend/src/lib/hooks/chat-race-guard.test.ts` —
+    source-text contract assertion (counter declared, `=== 0` guard
+    present in useEffect, `+= 1` increment present in sendMessage,
+    `Math.max(0, … - 1)` decrement present in finally). Catches a
+    refactor that drops or weakens the guard. Behavioral integration
+    test deferred — existing test scaffolding only covers single-call
+    hooks; a streaming-send simulation would need a sizable mock
+    harness out of scope for this fix.
+
 - **🐛⚡ v0.8.20 CRITICAL — sync httpx probe was blocking the FastAPI event loop**
   - The v0.8.0 health-probe surface (`open_notebook/health/local_models.py`)
     drives `httpx.Client.get()` **synchronously** with a structured 9s
