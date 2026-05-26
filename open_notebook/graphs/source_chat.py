@@ -82,6 +82,11 @@ class SourceChatState(TypedDict):
     context: Optional[str]
     model_override: Optional[str]
     context_indicators: Optional[dict[str, list[str]]]
+    # v0.8.16 — MCP tool-call payloads from this turn, surfaced via
+    # the source-chat router so the same v0.8.1 Item 3 + v0.8.13
+    # citation pill popovers work in source chat. None when no MCP
+    # tools fired (no enabled servers, or model can't tool-call).
+    mcp_tool_calls: Optional[list[dict]]
 
 
 async def call_model_with_source_context(
@@ -215,7 +220,14 @@ async def _call_model_with_source_context_inner(
         max_tokens=8192,
     )
 
-    ai_message = await model.ainvoke(payload)
+    # v0.8.16 — bind MCP tools + run the v0.8.9 in-node tool loop so
+    # source-chat gets the same MCP capabilities as notebook chat.
+    # Pre-v0.8.16 source-chat called model.ainvoke directly and any
+    # registered MCP server was invisible — operators got no MCP
+    # behaviour on the source-chat surface. Both graphs now share
+    # `bind_mcp_and_run_tool_loop` from chat.py.
+    from open_notebook.graphs.chat import bind_mcp_and_run_tool_loop
+    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(model, payload)
 
     # Clean thinking content from AI response (e.g., <think>...</think> tags)
     content = extract_text_content(ai_message.content)
@@ -229,6 +241,10 @@ async def _call_model_with_source_context_inner(
         "insights": insights,
         "context": formatted_context,
         "context_indicators": context_indicators,
+        # v0.8.16 — surface MCP captures so the source-chat router can
+        # include them in the SSE stream (same pipeline as v0.8.1 #3
+        # for notebook chat). None when no MCP calls fired this turn.
+        "mcp_tool_calls": mcp_captures if mcp_captures else None,
     }
 
 

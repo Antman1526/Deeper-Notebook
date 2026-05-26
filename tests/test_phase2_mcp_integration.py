@@ -452,6 +452,91 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
     )
 
 
+def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
+    """v0.8.16 — the v0.8.9 in-node tool execution loop was extracted
+    into `bind_mcp_and_run_tool_loop` so source_chat.py can reuse it.
+    This test exercises the helper directly: fake model emits one
+    tool_call, helper runs the tool, feeds ToolMessage back,
+    re-invokes the model, returns (final_message, captures)."""
+    from open_notebook.graphs.chat import bind_mcp_and_run_tool_loop
+    from langchain_core.messages import AIMessage, HumanMessage
+    from unittest.mock import MagicMock
+    import asyncio
+
+    async def fake_list_enabled():
+        return [{"id": "mcp_server:1", "name": "test",
+                 "url": "http://EXTRACT-TEST-URL", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        fake_list_enabled,
+    )
+
+    async def fake_list_tools_full(self):
+        return [{
+            "name": "search", "description": "",
+            "input_schema": {"type": "object", "properties": {
+                "query": {"type": "string"}
+            }, "required": ["query"]},
+        }]
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_full,
+    )
+
+    async def fake_call_tool(self, name, args):
+        return {"text": f"called {name} with {args}", "blocks": []}
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    n = {"calls": 0}
+    async def fake_ainvoke(payload):
+        n["calls"] += 1
+        if n["calls"] == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "mcp_search", "args": {"query": "x"}, "id": "c1"}],
+            )
+        return AIMessage(content="final answer [mcp:1]")
+
+    fake_model = MagicMock()
+    fake_model.ainvoke = fake_ainvoke
+    fake_model.bind_tools = lambda tools: fake_model
+
+    loop = asyncio.new_event_loop()
+    try:
+        final, captures = loop.run_until_complete(
+            bind_mcp_and_run_tool_loop(
+                fake_model, [HumanMessage(content="hi")],
+            )
+        )
+    finally:
+        loop.close()
+
+    assert n["calls"] == 2, (
+        f"v0.8.16: helper must drive the tool loop (got {n['calls']} model invocations)"
+    )
+    assert len(captures) == 1
+    assert captures[0]["name"] == "search"
+    assert final.content == "final answer [mcp:1]"
+
+
+def test_source_chat_state_carries_mcp_tool_calls_field(monkeypatch):
+    """v0.8.16 — SourceChatState gained `mcp_tool_calls: Optional[list]`
+    so the source-chat router can include MCP captures in its stream.
+    Cheap structural check — the v0.7.183 source_chat tests + the new
+    bind_mcp_and_run_tool_loop integration give end-to-end coverage."""
+    from open_notebook.graphs.source_chat import SourceChatState
+    annotations = getattr(SourceChatState, "__annotations__", {})
+    assert "mcp_tool_calls" in annotations, (
+        "v0.8.16: SourceChatState must declare mcp_tool_calls so the "
+        "source-chat router can surface MCP captures alongside the "
+        "AI message — otherwise pill popovers are silently empty in "
+        "source chat even though notebook chat populates them."
+    )
+
+
 def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
     """v0.8.10 — fail-soft. If MCPClient.list_tool_names raises
     (server unreachable, transport error, auth refused), the chat
