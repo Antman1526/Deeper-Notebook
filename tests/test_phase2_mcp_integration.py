@@ -112,6 +112,69 @@ def test_chat_graph_binds_gbrain_style_tool_names(monkeypatch):
     # `mcp_search` after wrapping.
 
 
+def test_chat_graph_builds_structured_tool_with_real_args_schema(monkeypatch):
+    """v0.8.11 — `_resolve_chat_tools` must build `StructuredTool`s with
+    a real `args_schema` Pydantic model derived from the MCP server's
+    inputSchema. Pre-v0.8.11 it used plain `Tool` with no schema, so
+    `bind_tools` told the LLM the function took a single `input: str`
+    arg; the LLM had to guess the real arg names and routinely sent
+    wrong/empty args. Post-fix, `bind_tools` sends the real arg names
+    + types so the LLM formats calls correctly first try."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    from langchain_core.tools import StructuredTool
+    import asyncio
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search text"},
+            "limit": {"type": "integer", "description": "Max results"},
+        },
+        "required": ["query"],
+    }
+
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[{"id": "mcp_server:1", "name": "test",
+                                "url": "http://x", "enabled": True}],
+                force_tools_full=[{
+                    "name": "search",
+                    "description": "Search the brain repo",
+                    "input_schema": schema,
+                }],
+            )
+        )
+    finally:
+        loop.close()
+
+    assert len(tools) == 1
+    tool = tools[0]
+    # Must be a StructuredTool, not the old plain Tool — that's how
+    # bind_tools learns about the real arg shape.
+    assert isinstance(tool, StructuredTool), (
+        f"v0.8.11: must be StructuredTool to carry args_schema; got {type(tool).__name__}"
+    )
+    assert tool.name == "mcp_search"
+    assert tool.args_schema is not None
+    # Pydantic v2 — model_fields exposes the declared fields.
+    fields = tool.args_schema.model_fields
+    assert "query" in fields, (
+        f"v0.8.11: args_schema must include the server-declared 'query' "
+        f"field; LangChain bind_tools needs it. Got fields: {list(fields)}"
+    )
+    assert "limit" in fields
+    # 'query' is in required; field must NOT be Optional.
+    # 'limit' is NOT required; field default should be None.
+    assert fields["query"].is_required(), (
+        "v0.8.11: required schema fields must be required on the model"
+    )
+    assert not fields["limit"].is_required(), (
+        "v0.8.11: non-required schema fields must default to None"
+    )
+
+
 def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
     """v0.8.10 — fail-soft. If MCPClient.list_tool_names raises
     (server unreachable, transport error, auth refused), the chat
@@ -124,11 +187,17 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
         "open_notebook.mcp.registry.list_enabled_servers", fake_list_enabled,
     )
 
-    async def fake_list_tool_names(self):
+    # v0.8.11 — discovery is now via list_tools_full (returns schemas).
+    # Mock both methods so any future refactor still hits a raise.
+    async def fake_list_tools_raise(self):
         raise ConnectionError("MCP server unreachable")
     monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_raise,
+    )
+    monkeypatch.setattr(
         "open_notebook.mcp.client.MCPClient.list_tool_names",
-        fake_list_tool_names,
+        fake_list_tools_raise,
     )
 
     from open_notebook.graphs.chat import _resolve_chat_tools
@@ -492,14 +561,23 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         fake_call_tool,
     )
 
-    # v0.8.10 — also stub list_tool_names since _resolve_chat_tools
-    # now discovers tools dynamically. Without this, the test would
-    # try a real network call to "http://x".
-    async def fake_list_tools(self):
-        return ["web_search"]   # gbrain-realistic single tool surface
+    # v0.8.10 / v0.8.11 — also stub list_tools_full since
+    # _resolve_chat_tools now discovers tools (with input_schemas)
+    # dynamically. Without this, the test would try a real network
+    # call to "http://x".
+    async def fake_list_tools_full(self):
+        return [{
+            "name": "web_search",
+            "description": "Search the web",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tool_names",
-        fake_list_tools,
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_full,
     )
 
     # Fake model: first ainvoke returns an AIMessage with a tool_call,
@@ -609,12 +687,20 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
         "open_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
-    # v0.8.10 — stub discovery
-    async def fake_list_tools(self):
-        return ["web_search"]
+    # v0.8.10 / v0.8.11 — stub list_tools_full discovery
+    async def fake_list_tools_full(self):
+        return [{
+            "name": "web_search",
+            "description": "Search the web",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tool_names",
-        fake_list_tools,
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_full,
     )
 
     call_count = {"n": 0}
