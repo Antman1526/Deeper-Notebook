@@ -6,7 +6,15 @@ smart routing behind OPEN_NOTEBOOK_AUTO_ROUTE_CHAT and forwards the router's
 choice to provision_langchain_model.
 
 All tests are deterministic, require no I/O, and exercise every branch.
+
+v0.8.20 — the health-cache helper `_local_chat_healthy_cached` became
+async (so the inner httpx probe lands on a worker thread instead of
+blocking the FastAPI event loop). The monkeypatches below switched
+from sync lambdas to `AsyncMock` instances so the same shape continues
+to satisfy `await _local_chat_healthy_cached()` in production code.
 """
+from unittest.mock import AsyncMock
+
 import pytest
 from open_notebook.ai.router import pick_provider, ModelChoice
 
@@ -246,7 +254,7 @@ class TestProvisionLangchainChatModelEnabled:
         monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
 
         # Patch health cache to return healthy
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
 
         captured: list[dict] = []
 
@@ -275,7 +283,7 @@ class TestProvisionLangchainChatModelEnabled:
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
         monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
 
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
 
         captured: list[dict] = []
 
@@ -323,7 +331,7 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is unhealthy so the router will try to use the cloud model.
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: False)
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False))
 
         # Stub get_defaults: auto_route_cloud points at cloud; default_chat_model at local.
         from open_notebook.ai.models import DefaultModels
@@ -365,7 +373,7 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:env_z")
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
 
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: False)
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False))
 
         # Stub defaults with a different field value — env must take priority.
         from open_notebook.ai.models import DefaultModels
@@ -407,7 +415,7 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is healthy; content fits — pick_provider should return local.
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", lambda: True)
+        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
 
         # Stub defaults: auto_route_cloud is None (not configured).
         from open_notebook.ai.models import DefaultModels
@@ -486,7 +494,7 @@ class TestNCtxEnvVarSync:
         import open_notebook.ai.provision as provision_mod
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
-            lambda *a, **kw: True,
+            AsyncMock(return_value=True),
         )
 
         captured: dict = {}
@@ -545,7 +553,7 @@ class TestNCtxEnvVarSync:
         import open_notebook.ai.provision as provision_mod
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
-            lambda *a, **kw: True,
+            AsyncMock(return_value=True),
         )
 
         captured: dict = {}
@@ -592,7 +600,7 @@ class TestNCtxEnvVarSync:
         import open_notebook.ai.provision as provision_mod
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
-            lambda *a, **kw: True,
+            AsyncMock(return_value=True),
         )
 
         captured: dict = {}
@@ -638,7 +646,7 @@ class TestNCtxEnvVarSync:
         import open_notebook.ai.provision as provision_mod
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
-            lambda *a, **kw: True,
+            AsyncMock(return_value=True),
         )
 
         async def _fake_inner(content, model_id, default_type, **kw):
@@ -660,11 +668,20 @@ class TestNCtxEnvVarSync:
 
 
 class TestHealthCacheTTL:
-    """_local_chat_healthy_cached() must call the probe at most once within TTL."""
+    """_local_chat_healthy_cached() must call the probe at most once within TTL.
+
+    v0.8.20 — the helper is now `async def` so we drive it from an event
+    loop. The inner sync probe is wrapped in `asyncio.to_thread`, which
+    forwards args positionally to the worker; the fake below accepts that
+    same shape. Two awaited calls within the TTL must still hit the probe
+    exactly once — the cache semantics are unchanged.
+    """
 
     def test_health_cache_respects_ttl(self, monkeypatch):
         """Two back-to-back calls within the TTL window must hit the probe
         exactly once (the second call returns the cached result)."""
+        import asyncio
+
         import open_notebook.ai.provision as provision_mod
 
         # Reset the module-level cache so the test starts clean
@@ -685,10 +702,18 @@ class TestHealthCacheTTL:
         # Provide a base URL so the cache path actually builds creds
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
-        # First call — cache miss, probe runs
-        result1 = provision_mod._local_chat_healthy_cached()
-        # Second call — cache hit within TTL, probe should NOT run again
-        result2 = provision_mod._local_chat_healthy_cached()
+        async def _drive() -> tuple[bool, bool]:
+            # First call — cache miss, probe runs
+            r1 = await provision_mod._local_chat_healthy_cached()
+            # Second call — cache hit within TTL, probe should NOT run again
+            r2 = await provision_mod._local_chat_healthy_cached()
+            return r1, r2
+
+        loop = asyncio.new_event_loop()
+        try:
+            result1, result2 = loop.run_until_complete(_drive())
+        finally:
+            loop.close()
 
         assert probe_call_count[0] == 1, (
             f"Expected probe to be called exactly once, got {probe_call_count[0]}"

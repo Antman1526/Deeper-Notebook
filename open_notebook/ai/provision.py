@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 
@@ -19,7 +20,7 @@ def _truthy_env(name: str) -> bool:
     return os.getenv(name, "").lower() in ("1", "true", "yes", "on")
 
 
-def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bool:
+async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bool:
     """v0.8.0 — TTL-cached health lookup for the chat sidecar.
 
     Reads the sidecar base URL from OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL (set by
@@ -30,6 +31,19 @@ def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bo
     The TTL (30s) prevents calling probe_all_local_models on every chat turn;
     the probe itself has a 5s read-timeout so without caching it would add
     5-10s of blocking latency before every model invocation.
+
+    v0.8.20 CRITICAL — was sync, called from the async smart-router path
+    in `provision_langchain_chat_model`. The inner `probe_all_local_models`
+    drives `httpx.Client.get()` synchronously with up to a 9s structured
+    timeout (connect=2.0, read=5.0, write=2.0, pool=2.0). Inside an
+    async FastAPI request that blocks the WHOLE event loop — every other
+    in-flight request (chat streams, SSE polls, the launcher's status
+    poll, the frontend's 30s health badge poll) stalls for up to 9s
+    every cache-miss tick. We now `await asyncio.to_thread(...)` so the
+    blocking probe lands on the default executor and the event loop
+    keeps serving everyone else. Sync callers (desktop/app.py launcher
+    startup) keep using `probe_all_local_models` directly — they're not
+    racing the event loop.
     """
     global _health_cache
     now = time.monotonic()
@@ -49,7 +63,13 @@ def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bo
                         "base_url": base_url,
                     }
                 )
-            results = probe_all_local_models(creds) if creds else []
+            # v0.8.20 — push the sync httpx call onto a worker thread so
+            # the FastAPI event loop stays responsive during the probe.
+            results = (
+                await asyncio.to_thread(probe_all_local_models, creds)
+                if creds
+                else []
+            )
             _health_cache = (
                 now,
                 {r["name"]: r["status"] == "healthy" for r in results},
@@ -150,9 +170,13 @@ async def provision_langchain_chat_model(
         local_n_ctx = 32768
     default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "auto")
 
+    # v0.8.20 — was a sync call; the helper now awaits its inner
+    # httpx probe on the default executor so the event loop stays
+    # responsive even when a wedged local sidecar takes 9s to time
+    # out. pick_provider itself stays sync — only the input changed.
     choice = pick_provider(
         content_tokens=content_tokens,
-        local_chat_healthy=_local_chat_healthy_cached(),
+        local_chat_healthy=await _local_chat_healthy_cached(),
         local_chat_n_ctx=local_n_ctx,
         cloud_model_id=cloud_model_id,
         local_model_id=local_model_id,
