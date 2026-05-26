@@ -277,11 +277,18 @@ async def _resolve_chat_tools(
             result = await client.call_tool(remote_name, invocation_args)
             text = result.get("text") or "(no result)"
             if captures is not None:
+                # v0.8.13 — include the full block list so the pill
+                # popover (frontend) can render image thumbnails or
+                # resource links in a future v0.9 enhancement.
+                # Pre-v0.8.13 only the text concatenation was surfaced;
+                # any image/PDF content from the MCP tool was lost.
+                blocks = result.get("blocks") or []
                 captures.append({
                     "index": len(captures) + 1,
                     "name": remote_name,
                     "args": invocation_args,
                     "text": text[:4000],
+                    "blocks": blocks,
                 })
             return text
 

@@ -32,6 +32,114 @@ def _clear_mcp_tool_cache():
     _clear_tool_discovery_cache()
 
 
+def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch):
+    """v0.8.13 — MCPClient.call_tool must surface ALL content blocks
+    from the MCP response, not just the first, and preserve type +
+    mime type. Pre-v0.8.13 only the first block was returned and
+    non-text content was either missing its mime type
+    (ImageContent → no `mimeType` field on the return) or silently
+    lost (EmbeddedResource → returned None)."""
+    from open_notebook.mcp.client import MCPClient
+    import asyncio
+
+    # Fake content block shapes — mirror the public attrs from mcp's
+    # TextContent / ImageContent / EmbeddedResource without needing
+    # the real mcp package types.
+    class _Text:
+        def __init__(self, text): self.text = text
+    class _Image:
+        def __init__(self, data, mime):
+            self.data, self.mimeType = data, mime
+    class _Resource:
+        def __init__(self, uri, mime, text=None, blob=None):
+            class _R:
+                pass
+            r = _R()
+            r.uri, r.mimeType, r.text, r.blob = uri, mime, text, blob
+            self.resource = r
+    class _Result:
+        def __init__(self, blocks): self.content = blocks
+
+    captured_session = {}
+
+    class _FakeSession:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def call_tool(self, name, arguments=None):
+            captured_session["name"] = name
+            captured_session["arguments"] = arguments
+            return _Result([
+                _Text("Hello from search."),
+                _Image("AAAA" * 256, "image/png"),    # ~768 bytes
+                _Resource(uri="file:///tmp/a.pdf", mime="application/pdf",
+                          blob="BBBB" * 1024),
+                _Text("Trailing note."),
+            ])
+
+    monkeypatch.setattr(
+        "open_notebook.mcp.client._open_session",
+        lambda url: _FakeSession(),
+    )
+
+    client = MCPClient(url="http://x")
+    loop = asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(client.call_tool("search", {"q": "x"}))
+    finally:
+        loop.close()
+
+    # Top-level text is the concatenation of all readable text
+    assert "Hello from search." in result["text"]
+    assert "Trailing note." in result["text"]
+    # Image and resource summarised inline so the LLM at least sees
+    # something arrived
+    assert "[image: image/png" in result["text"]
+    assert "[resource: file:///tmp/a.pdf" in result["text"]
+
+    # Full block list preserved for the pill popover to render rich
+    blocks = result["blocks"]
+    assert len(blocks) == 4
+    assert blocks[0] == {"type": "text", "text": "Hello from search."}
+    assert blocks[1]["type"] == "image"
+    assert blocks[1]["mime_type"] == "image/png"
+    assert blocks[1]["bytes"] > 0
+    assert blocks[2]["type"] == "resource"
+    assert blocks[2]["uri"] == "file:///tmp/a.pdf"
+    assert blocks[2]["mime_type"] == "application/pdf"
+    assert blocks[2]["bytes"] > 0
+    assert blocks[3] == {"type": "text", "text": "Trailing note."}
+
+
+def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
+    """v0.8.13 — empty content list must return text="" + blocks=[]
+    rather than KeyError'ing on the chat-graph side."""
+    from open_notebook.mcp.client import MCPClient
+    import asyncio
+
+    class _Result:
+        content = []
+
+    class _FakeSession:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def call_tool(self, name, arguments=None):
+            return _Result()
+
+    monkeypatch.setattr(
+        "open_notebook.mcp.client._open_session",
+        lambda url: _FakeSession(),
+    )
+
+    client = MCPClient(url="http://x")
+    loop = asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(client.call_tool("noop", {}))
+    finally:
+        loop.close()
+    assert result["text"] == ""
+    assert result["blocks"] == []
+
+
 def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     """Given a working streamable-http MCP server URL, the client
     must `list_tools()` and return the discovered tool names."""
