@@ -20,6 +20,21 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.33 — GmailIntegration.get() silent-except trailing cleanup**
+  - `open_notebook/domain/gmail.py:202` was the last unlogged
+    `except Exception: return cls()` in the silent-swallow family
+    (v0.8.19 + v0.8.27 + v0.8.28 + v0.8.29 + v0.8.33 = 8 sites
+    total this session). The TimeoutError branch right above logs
+    WARNING but the broad-Exception branch was silent.
+  - Impact: when a transient DB error (connection drop, auth fail,
+    schema mismatch) hits the cache-miss path of `GmailIntegration.get()`,
+    the UI silently displayed "Connect Gmail" as if the user had never
+    configured the integration — no signal in launcher.log to
+    correlate. Recoverable on next successful poll, but confusing
+    and indistinguishable from genuine unconfigured state.
+  - Fix: log WARNING on non-timeout DB errors, mirroring the
+    TimeoutError handler immediately above for symmetry.
+
 - **🧪 v0.8.32 — memory_recall integration test (v0.8.30 lesson operationalized)**
   - v0.8.30 documented that the v0.8.19 fix was incomplete because
     the unit tests only mocked `repo_query` — SurrealDB's real query

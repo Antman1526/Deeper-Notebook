@@ -199,7 +199,21 @@ class GmailIntegration(BaseModel):
                 "polls will retry on the next cache miss."
             )
             return cls()
-        except Exception:
+        except Exception as exc:
+            # v0.8.33 — log non-timeout failures. Pre-v0.8.33 this was
+            # silent: any DB error other than timeout (connection drop,
+            # schema mismatch, auth fail) returned a default
+            # GmailIntegration so the UI showed the user "Connect Gmail"
+            # as if they'd never configured it. The timeout path above
+            # logs at WARNING; mirror that for symmetry so operators can
+            # see WHY the integration appears unconfigured.
+            # Same family as the v0.8.28 silent-swallow sweep.
+            logger.warning(
+                "GmailIntegration.get(): SurrealDB query failed "
+                "({}) — returning default. UI will appear "
+                "unconfigured until the next successful poll.",
+                exc,
+            )
             return cls()
         if not result:
             instance = cls()
