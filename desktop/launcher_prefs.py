@@ -25,9 +25,14 @@ secrets store if the caller sends an arbitrary env var.
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
+
+# v0.8.8 — log handle so merge_with_env can surface a malformed
+# launcher.env (was silently swallowing ValueError pre-v0.8.8).
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Whitelist — only these keys may land in launcher.env.
@@ -112,11 +117,21 @@ def get_prefs() -> dict[str, str]:
 
     Returns an empty dict if the file does not exist or is empty.
     Raises ``ValueError`` for malformed lines.
+
+    v0.8.8 — filters to ``ALLOWED_KEYS``. Pre-v0.8.8 the whitelist was
+    only enforced on writes, so a file with non-whitelist keys (from a
+    pre-whitelist history, manual edits, or a removed-from-whitelist
+    release) leaked them through this function and into the API
+    response of ``GET /api/launcher-prefs``. Filtering here aligns the
+    function with its docstring promise and the v0.8.6 spec's "strict
+    whitelist" wording.
     """
     path = _prefs_path()
     if not path.exists():
         return {}
-    return _parse_file(path.read_text(encoding="utf-8"))
+    parsed = _parse_file(path.read_text(encoding="utf-8"))
+    # Defense in depth — only surface whitelisted keys.
+    return {k: v for k, v in parsed.items() if k in ALLOWED_KEYS}
 
 
 def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
@@ -172,12 +187,29 @@ def merge_with_env(env: dict[str, str]) -> dict[str, str]:
     """
     try:
         prefs = get_prefs()
-    except Exception:
-        # Malformed file — log is not available here; silently skip.
-        # A misconfigured launcher.env must never block app startup.
+    except Exception as exc:
+        # v0.8.8 — Surface the failure instead of silently swallowing
+        # it. Pre-v0.8.8 a single malformed line reverted ALL prefs
+        # with no indication to the user. Still non-fatal so a
+        # misconfigured launcher.env doesn't block startup; the
+        # launcher's logging is initialised before Supervisor.start_all,
+        # so this log line lands in launcher.log where operators can
+        # find it.
+        log.warning(
+            "launcher.env could not be parsed (%s); ignoring "
+            "file-based prefs this launch. Fix the file and restart, "
+            "or use Settings → Launch Preferences to overwrite it.",
+            exc,
+        )
         return env
 
+    # v0.8.8 — second-line defense matching the get_prefs filter:
+    # even if a non-whitelist key slipped through (e.g. a file edited
+    # by hand outside the Settings UI), don't inject it into the
+    # launcher's os.environ. The whitelist is the security boundary.
     for key, value in prefs.items():
+        if key not in ALLOWED_KEYS:
+            continue
         if key not in env:
             env[key] = value
 

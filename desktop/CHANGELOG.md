@@ -20,6 +20,24 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.8 — `launcher_prefs` whitelist leaked on read paths**
+  - Audit follow-on. v0.8.6 Item D enforced the 5-key whitelist on
+    WRITES via `update_prefs` but `get_prefs` returned all file keys
+    verbatim and `merge_with_env` wrote all file keys into the env
+    dict. A `launcher.env` with `MY_SECRET=foo` (from a pre-whitelist
+    history, a manual edit, or a future release that drops a key from
+    the whitelist) leaked them through `GET /api/launcher-prefs` AND
+    into `os.environ` at launcher startup.
+  - Fix: both READ paths now filter to `ALLOWED_KEYS`. Defense in
+    depth so the whitelist holds even if one layer misbehaves.
+  - Also: `merge_with_env` silently swallowed `ValueError` on
+    malformed files (operator edited one line wrong → all prefs
+    reverted with no indication). Now logs a `WARNING` to launcher.log
+    with the parse error and a recovery hint, still non-fatal so a
+    broken `launcher.env` can't block startup.
+  - 3 new tests in `desktop/tests/test_launcher_prefs.py`. Suite grew
+    8 → 11 cases, all passing.
+
 - **🐛 v0.8.7 CRITICAL — propagate launcher's auto-detected n_ctx into `OPEN_NOTEBOOK_LOCAL_N_CTX`** (closes the last v0.8.5 follow-on)
   - The launcher's `_spawn_llamacpp_chat` resolves the chat-LLM n_ctx
     (env override → GGUF metadata autodetect → `ctx_max` cap), but that

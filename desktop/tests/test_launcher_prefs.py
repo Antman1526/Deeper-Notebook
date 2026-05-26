@@ -119,3 +119,90 @@ def test_merge_with_env_fills_missing_keys(tmp_path, monkeypatch):
     env: dict[str, str] = {}
     merge_with_env(env)
     assert env.get("ONP_CHAT_LLM_CTX") == "16384"
+
+
+# ---------------------------------------------------------------------------
+# v0.8.8 audit fixes — whitelist enforcement on READ paths + malformed
+# file logging.
+# ---------------------------------------------------------------------------
+
+
+def test_get_prefs_filters_non_whitelist_keys(tmp_path, monkeypatch):
+    """v0.8.8 — pre-fix, get_prefs returned ALL keys from launcher.env
+    including non-whitelisted ones (from pre-whitelist history, manual
+    edits, or a removed-from-whitelist release). That leaked them
+    through to the API's GET /api/launcher-prefs response. Fix:
+    get_prefs filters to ALLOWED_KEYS as defense-in-depth, matching
+    the docstring promise of a 'strict whitelist'."""
+    path = _write(
+        tmp_path,
+        "ONP_CHAT_LLM_CTX=16384\n"
+        "MY_SECRET=should-not-leak\n"
+        "OPEN_NOTEBOOK_LOCAL_N_CTX=32768\n",
+    )
+    monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
+    from desktop.launcher_prefs import get_prefs
+
+    result = get_prefs()
+    assert "ONP_CHAT_LLM_CTX" in result
+    assert "OPEN_NOTEBOOK_LOCAL_N_CTX" in result
+    assert "MY_SECRET" not in result, (
+        "v0.8.8: non-whitelist keys must be filtered out of get_prefs() — "
+        "otherwise they leak through the API endpoint"
+    )
+
+
+def test_merge_with_env_skips_non_whitelist_keys(tmp_path, monkeypatch):
+    """v0.8.8 — pre-fix, merge_with_env wrote ALL file keys into the
+    env dict, so a file with MY_SECRET=foo set os.environ['MY_SECRET']
+    at launcher startup. Second-line defense matching get_prefs."""
+    path = _write(
+        tmp_path,
+        "ONP_CHAT_LLM_CTX=8192\n"
+        "MY_SECRET=should-not-leak\n",
+    )
+    monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
+    from desktop.launcher_prefs import merge_with_env
+
+    env: dict[str, str] = {}
+    merge_with_env(env)
+    assert env.get("ONP_CHAT_LLM_CTX") == "8192"
+    assert "MY_SECRET" not in env, (
+        "v0.8.8: non-whitelist keys must NOT be injected into env — "
+        "otherwise a hand-edited launcher.env can pollute os.environ"
+    )
+
+
+def test_merge_with_env_logs_warning_on_malformed_file(
+    tmp_path, monkeypatch, caplog,
+):
+    """v0.8.8 — pre-fix, merge_with_env silently swallowed ValueError
+    when the file had a malformed line. Operator edited one line wrong
+    → ALL their prefs reverted with no indication. Fix: log a warning
+    to launcher.log with the parse error and a hint about how to
+    recover. Still non-fatal so a misconfigured file doesn't block
+    startup."""
+    path = _write(
+        tmp_path,
+        "ONP_CHAT_LLM_CTX=8192\n"
+        "this is not a valid line\n"   # missing '='
+        "OPEN_NOTEBOOK_LOCAL_N_CTX=32768\n",
+    )
+    monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
+    from desktop.launcher_prefs import merge_with_env
+    import logging
+
+    env: dict[str, str] = {}
+    with caplog.at_level(logging.WARNING, logger="desktop.launcher_prefs"):
+        merge_with_env(env)
+
+    # Env must be unchanged (non-fatal) — but a warning must surface
+    # so operators can find the broken line.
+    assert env == {}, "merge_with_env on malformed file must not partially apply"
+    assert any(
+        "launcher.env could not be parsed" in rec.message
+        for rec in caplog.records
+    ), (
+        "v0.8.8: malformed launcher.env must log a WARNING so operators "
+        "see they have a broken config; pre-v0.8.8 was silent"
+    )
