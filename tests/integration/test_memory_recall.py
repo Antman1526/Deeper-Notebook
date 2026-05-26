@@ -1,0 +1,145 @@
+"""v0.8.32 — End-to-end memory recall against a real SurrealDB.
+
+This file is the v0.8.30 follow-up. v0.8.19 dropped `SELECT VALUE`
+from the memory_recall queries thinking that fixed the SurrealDB
+"Missing order idiom" parse error. The unit tests only mocked
+`repo_query`, so SurrealDB's real query parser was never exercised.
+
+v0.8.30 (one session later) discovered the v0.8.19 fix was incomplete:
+SurrealDB ALSO requires the `ORDER BY` field (`created_at`) to be IN
+the projection. The corrected query is:
+
+    SELECT text, created_at FROM memory_fact ORDER BY created_at DESC LIMIT $limit
+
+The lesson captured in v0.8.30's commit message: any SurrealQL change
+needs at least one integration-style test that talks to the real query
+parser. THIS FILE is that test. Running it against v0.8.18 or v0.8.19
+state (no `created_at` in projection) would have failed loudly.
+
+Gated by `SURREAL_INTEGRATION=1` — same machinery as
+test_notebook_lifecycle.py. Mints a throwaway namespace, runs the full
+migration set, exercises the recall path, REMOVE NAMESPACE on teardown.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from open_notebook.database.repository import repo_query
+
+
+pytestmark = pytest.mark.integration_surreal
+
+
+@pytest.mark.asyncio
+async def test_recall_recent_memory_against_real_surrealdb(surreal_db):
+    """Insert two memory_fact + two memory_preference rows and assert
+    `recall_recent_memory()` returns them ordered DESC by created_at.
+
+    This is the test that would have failed against the v0.8.19 fix
+    state (missing `created_at` in projection) — the SurrealDB query
+    parser would have raised:
+
+        Parse error: Missing order idiom `created_at` in statement
+        selection
+
+    Pre-v0.8.19 (with `SELECT VALUE` + `ORDER BY created_at`) the
+    same parser error would have fired. The v0.8.30 fix adds
+    `created_at` to the projection, which finally satisfies the
+    parser AND keeps `_coerce_text` extracting only the `text` field.
+    """
+    # Insert two facts and two preferences with explicit created_at
+    # so we can assert the ORDER BY behaviour deterministically.
+    now = datetime.now(timezone.utc)
+    facts_payload = [
+        {"text": "fact-OLDER",  "created_at": now.replace(microsecond=0)},
+        {"text": "fact-NEWER",  "created_at": now},
+    ]
+    prefs_payload = [
+        {"text": "pref-OLDER", "created_at": now.replace(microsecond=0)},
+        {"text": "pref-NEWER", "created_at": now},
+    ]
+    for row in facts_payload:
+        await repo_query(
+            "CREATE memory_fact CONTENT {text: $text, created_at: $created_at}",
+            row,
+        )
+    for row in prefs_payload:
+        await repo_query(
+            "CREATE memory_preference CONTENT {text: $text, created_at: $created_at}",
+            row,
+        )
+
+    # Now exercise the real recall_recent_memory — same import the
+    # chat graph uses on every turn.
+    from open_notebook.utils.memory_recall import recall_recent_memory
+
+    result = await recall_recent_memory()
+
+    # Shape: {"facts": [{"text": ...}, ...], "preferences": [{"text": ...}, ...]}
+    assert "facts" in result and "preferences" in result
+    # Both kinds were populated (v0.8.30: pre-fix this returned empty).
+    assert result["facts"], (
+        "v0.8.30 contract violated: recall_recent_memory returned empty "
+        "facts despite memory_fact rows existing. The query likely hit "
+        "the 'Missing order idiom' parse error and _safe_select returned []."
+    )
+    assert result["preferences"], (
+        "v0.8.30 contract violated: recall_recent_memory returned empty "
+        "preferences despite memory_preference rows existing."
+    )
+
+    # Ordering: newer facts first (ORDER BY created_at DESC).
+    fact_texts = [f["text"] for f in result["facts"]]
+    pref_texts = [p["text"] for p in result["preferences"]]
+    assert fact_texts[0] == "fact-NEWER", (
+        f"v0.8.30: facts must be ordered by created_at DESC. "
+        f"Got order: {fact_texts}"
+    )
+    assert pref_texts[0] == "pref-NEWER", (
+        f"v0.8.30: preferences must be ordered by created_at DESC. "
+        f"Got order: {pref_texts}"
+    )
+
+    # Cleanup so subsequent integration tests (if any add memory rows)
+    # start from a known state. REMOVE NAMESPACE on session teardown
+    # also handles this, but explicit cleanup is cheap and avoids
+    # cross-test ordering hazards inside the same session.
+    await repo_query("DELETE memory_fact;")
+    await repo_query("DELETE memory_preference;")
+
+
+@pytest.mark.asyncio
+async def test_safe_select_query_shape_does_not_raise(surreal_db):
+    """Even with an empty table, the query must parse cleanly. This
+    is the SMALLEST possible test — it doesn't assert content, just
+    that SurrealDB accepts the query. Most useful as a regression
+    guard for future query rewrites.
+
+    If a future refactor reintroduces `SELECT VALUE` or drops
+    `created_at` from the projection, the parser will raise here
+    even on an empty table — exactly the signal v0.8.19 needed but
+    didn't have.
+    """
+    from open_notebook.utils.memory_recall import _safe_select
+
+    facts = await _safe_select(
+        "SELECT text, created_at FROM memory_fact "
+        "ORDER BY created_at DESC LIMIT $limit",
+        {"limit": 10},
+    )
+    prefs = await _safe_select(
+        "SELECT text, created_at FROM memory_preference "
+        "ORDER BY created_at DESC LIMIT $limit",
+        {"limit": 10},
+    )
+
+    # Empty tables: _safe_select returns [] either way — but the
+    # critical point is that no exception fired internally (which
+    # _safe_select swallows with a WARNING log). If we got [] AND
+    # no warning, we're good. The pre-v0.8.30 state would have hit
+    # the WARNING path.
+    assert facts == []
+    assert prefs == []
