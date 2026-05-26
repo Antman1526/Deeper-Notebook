@@ -20,6 +20,40 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🧪 v0.8.32 — memory_recall integration test (v0.8.30 lesson operationalized)**
+  - v0.8.30 documented that the v0.8.19 fix was incomplete because
+    the unit tests only mocked `repo_query` — SurrealDB's real query
+    parser was never exercised. The lesson: any SurrealQL change
+    needs at least one integration-style test against a real query
+    parser.
+  - This commit ships that test as `tests/integration/test_memory_recall.py`.
+    Gated by `SURREAL_INTEGRATION=1` (same machinery as
+    `test_notebook_lifecycle.py`); mints a throwaway namespace, runs
+    the full migration set, exercises `recall_recent_memory()` against
+    real `memory_fact` / `memory_preference` rows, then REMOVE
+    NAMESPACE on teardown.
+  - **Coverage:**
+    - `test_recall_recent_memory_against_real_surrealdb`: inserts 2
+      facts + 2 preferences with distinct `created_at`, asserts the
+      response has the right shape AND ordering (newest first).
+      Would have failed against the v0.8.18 / v0.8.19 state with the
+      parser error `Missing order idiom`.
+    - `test_safe_select_query_shape_does_not_raise`: smallest possible
+      regression guard — runs each query against an empty table and
+      asserts no WARNING-level exception fires. Catches a future
+      refactor that drops `created_at` from the projection or
+      reintroduces `SELECT VALUE` even when no rows exist.
+  - Both tests correctly skip when `SURREAL_INTEGRATION` is unset
+    (verified locally: `2 skipped in 0.06s`). Running them requires
+    a live SurrealDB at `ws://localhost:8000/rpc` and the env var
+    set, matching the existing integration suite UX.
+  - **Why this matters going forward:** the existing integration
+    job in CI now has a memory-recall regression guard. If a future
+    SurrealDB version (or schema change) re-introduces the "Missing
+    order idiom" error, CI fails immediately instead of the bug
+    being silently shipped and surfaced by a user months later
+    (the v0.7.71 → v0.8.29 story).
+
 - **🐛 v0.8.31 — mcp.py router violated the v0.7.135 HTTPException re-raise convention**
   - The v0.8.30 follow-up sweep (run full test suite to catch silent
     regressions) found the v0.7.135 AST meta test failing:
