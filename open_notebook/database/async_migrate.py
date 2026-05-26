@@ -233,8 +233,28 @@ async def get_all_versions() -> list[dict]:
     try:
         result = await repo_query("SELECT * FROM _sbl_migrations ORDER BY version;")
         return result
-    except Exception:
-        # If table doesn't exist, return empty list
+    except Exception as exc:
+        # v0.8.28 — classify like the v0.8.19 / v0.8.27 silent-swallow
+        # fixes. Pre-v0.8.28 this just swallowed everything with a
+        # comment claiming "table doesn't exist". On a fresh install
+        # that's correct; but a connection drop, auth failure, or
+        # SurrealDB schema bug all hit the same path and the migration
+        # runner would think there are no versions — potentially
+        # re-running every migration. DEBUG for the table-missing
+        # bootstrap case; WARNING for anything else.
+        msg = str(exc)
+        if "Table missing" in msg or "table does not exist" in msg:
+            logger.debug(
+                "get_all_versions: _sbl_migrations table missing "
+                "(bootstrap case): {}", exc,
+            )
+        else:
+            logger.warning(
+                "get_all_versions: unexpected error reading "
+                "_sbl_migrations — treating as version 0, which may "
+                "cause already-applied migrations to re-run. error={}",
+                exc,
+            )
         return []
 
 
