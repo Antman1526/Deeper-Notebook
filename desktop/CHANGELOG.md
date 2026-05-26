@@ -20,6 +20,62 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛🔒 v0.8.28 — silent-except sweep closing 4 remaining sites with no logging**
+  - After v0.8.19 (memory_recall) and v0.8.27 (digest) closed the two
+    highest-impact instances of `except Exception: return <sentinel>`
+    with no log, this iteration's grep across `api/`, `open_notebook/`,
+    and `commands/` surfaced **four more** sites with the same shape:
+    - `open_notebook/domain/gmail.py:_fernet` — **silent at security
+      boundary**. When `OPEN_NOTEBOOK_ENCRYPTION_KEY` is set but
+      `Fernet(fkey)` raises (cryptography library bug, binary-garbage
+      env var), pre-v0.8.28 returned None silently. The downstream
+      `_enc` then raised `"OPEN_NOTEBOOK_ENCRYPTION_KEY not set"` —
+      **misleading the operator** about the real root cause. Fix:
+      WARNING with explicit "the downstream RuntimeError saying the
+      key is unset is misleading — real cause is here".
+    - `open_notebook/domain/gmail.py:_dec` — split the over-broad
+      `except (InvalidToken, Exception)`. `InvalidToken` is the
+      canonical key-rotation case and stays quiet (otherwise every
+      legacy unencrypted row would WARN on read). Anything else
+      (binary garbage, cryptography lib bug, OOM) → WARNING so
+      Gmail integration doesn't silently disappear.
+    - `open_notebook/database/async_migrate.py:get_all_versions` —
+      classify like v0.8.19/v0.8.27: `"Table missing"` → DEBUG
+      (bootstrap case; fresh installs would otherwise spam WARN on
+      every startup); anything else → WARNING with the consequence
+      explicit ("treating as version 0, which may cause already-
+      applied migrations to re-run").
+    - `open_notebook/utils/chunking.py:detect_content_type_from_extension` —
+      Path/.suffix is normally infallible but exotic input (embedded
+      null byte, etc.) could raise. DEBUG only because the fallback
+      to heuristic detection is correct — but a recurring failure
+      should be diagnosable.
+  - **Pattern observation:** the silent-swallow anti-pattern has now
+    surfaced 6 times in this session (v0.8.19 memory_recall, v0.8.27
+    digest, and the 4 here in v0.8.28). The grep `except Exception`
+    + sentinel return is a high-yield audit query — anywhere a
+    function returns `[]`/`None`/`False`/`{}`/`""` after an exception
+    with no log is a hiding place where downstream symptoms become
+    impossible to triage.
+  - **Tests** (7 new in `tests/test_v0_8_28_silent_swallow_sweep.py`):
+    - `test_v0828_fernet_logs_warning_on_construction_failure`:
+      mocks `Fernet` to raise; asserts WARNING with the "misleading"
+      verbiage.
+    - `test_v0828_fernet_silent_when_key_unset`: confirms the
+      intentional no-key path stays quiet.
+    - `test_v0828_dec_quiet_on_invalid_token`: ensures
+      `InvalidToken` does NOT log (key-rotation case).
+    - `test_v0828_dec_warns_on_unexpected_exception`: ensures
+      non-`InvalidToken` errors DO log WARNING.
+    - `test_v0828_get_all_versions_debug_on_table_missing`: fresh
+      install stays DEBUG (no startup WARN noise).
+    - `test_v0828_get_all_versions_warns_on_other_errors`:
+      connection drops WARN with "re-run" verbiage.
+    - `test_v0828_detect_content_type_logs_debug_on_exception`:
+      DEBUG only for the low-impact fallback.
+  - Suite: 53 tests pass across gmail/chunking/digest/v0.8.28
+    (46 existing + 7 new), zero regressions.
+
 - **🐛 v0.8.27 — digest builder silently swallowed query errors (same shape as v0.8.19)**
   - `open_notebook/digest/__init__.py:_safe_query` did
     `except Exception: return []` with **no log** — identical to the

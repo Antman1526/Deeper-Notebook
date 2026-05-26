@@ -158,7 +158,19 @@ def detect_content_type_from_extension(
     try:
         extension = Path(file_path).suffix.lower()
         return _EXTENSION_TO_CONTENT_TYPE.get(extension)
-    except Exception:
+    except Exception as exc:
+        # v0.8.28 — log the exception. Pre-v0.8.28 this swallowed
+        # silently. The Path/.suffix path is normally infallible on
+        # str input, but exotic inputs (path with embedded null,
+        # unusually long path on some filesystems) could raise. DEBUG
+        # because chunking falls back gracefully to heuristic detection
+        # and PLAIN content type — not a critical failure — but if
+        # this ever fires regularly the operator should know that
+        # extension-based detection isn't contributing.
+        logger.debug(
+            "detect_content_type_from_extension({!r}) raised: {}",
+            file_path, exc,
+        )
         return None
 
 
