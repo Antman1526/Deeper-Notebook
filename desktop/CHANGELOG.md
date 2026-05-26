@@ -20,6 +20,50 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.24 — gmail router leaked raw exception strings in two paths**
+  - `api/routers/gmail.py:280` in the OAuth callback echoed
+    `f"Token exchange error: {exc}"` into the HTML response page
+    rendered in the user's browser. Google's token-exchange errors
+    can include the OAuth `client_id`, the `redirect_uri`, and
+    (in error-response bodies) hint fragments of the `client_secret`
+    — operator config that shouldn't leak into the browser tab.
+  - `api/routers/gmail.py:340` in `POST /onp/gmail/send-test`
+    raised `HTTPException(status_code=500, detail=str(exc))`.
+    The `_send_digest_now` exception can carry:
+    - `build_digest_html` errors with SurrealDB internals
+    - Network errors carrying request URLs + `Authorization`-header
+      fragments via traceback formatting libraries
+    - Email addresses from `g.email_address`
+  - **Third sweep** in this audit chain: v0.7.177 swept
+    `podcast_service.py`, v0.8.22 caught `credentials_service.py`,
+    and v0.8.24 closes `gmail.py`. The pattern is consistent:
+    auth-gated endpoints that built error responses with `str(exc)`
+    were missed because their exception surfaces felt "operator-only"
+    — but the v0.7.177 contract is that raw exception text NEVER
+    leaves the process via response bodies regardless of the auth
+    layer (reverse proxies, browser dev tools, screenshots).
+  - Fix: both sites now emit `f"... ({type(exc).__name__}). Check
+    launcher.log for details"`. Full detail stays in
+    `log.exception()` for ops triage.
+  - **Tests:** 2 new regression tests in `tests/test_gmail_router.py`:
+    - `test_v0824_send_test_endpoint_sanitizes_exception_detail`:
+      mocks `_send_digest_now` to raise with a payload containing
+      `Bearer ya29.SECRET_TOKEN_DO_NOT_LEAK`, a SurrealDB WS frame
+      ref, and an email address; asserts none leak and the type
+      name IS present for triage.
+    - `test_v0824_oauth_callback_sanitizes_token_exchange_error`:
+      mocks the httpx.AsyncClient `post` to raise with a payload
+      containing the full `client_id`, a `client_secret` hint, and
+      the `redirect_uri`; asserts none leak into the HTML page body.
+  - Suite: 5 gmail tests pass (3 existing + 2 new), zero regressions.
+  - **Deferred — out of scope this turn:**
+    - `_oauth_states` is module-level mutable state (`api/routers/gmail.py:58`).
+      With multi-worker deploys, state set in worker A doesn't reach
+      worker B → spurious "OAuth state mismatch" CSRF errors. Safe
+      for the desktop default (workers=1), real bug for any
+      production deploy. Worth a v0.8.25+ pass with a Redis or
+      cookie-signed-state design decision.
+
 - **🔒 v0.8.23 SECURITY — sources download helpers had the sibling-prefix path-traversal bug**
   - `api/routers/sources.py` `_resolve_source_file` (called by
     `GET /sources/{id}/download`) and `_is_source_file_available`

@@ -53,3 +53,141 @@ def test_purge_stale_states_drops_expired_entries():
     assert "fresh" in gmail_mod._oauth_states
     # Cleanup so we don't pollute later runs
     gmail_mod._oauth_states.clear()
+
+
+# ---------------------------------------------------------------------------
+# v0.8.24 — sanitization regression tests for the two exception-leak sites.
+# Same family as the v0.7.177 podcast_service sweep and v0.8.22 credentials
+# migration sweep. The gmail router was missed in both.
+# ---------------------------------------------------------------------------
+
+
+def test_v0824_send_test_endpoint_sanitizes_exception_detail():
+    """POST /api/gmail/send-test must NOT echo raw exception text. The
+    _send_digest_now exception can carry build_digest_html DB internals
+    or Gmail API response fragments (including Authorization-header
+    leaks via traceback formatting libraries). The 500 detail must
+    name only the exception TYPE."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    secret_in_exception = (
+        "INTERNAL: SurrealDB WS frame=0x4F2C; "
+        "Authorization=Bearer ya29.SECRET_TOKEN_DO_NOT_LEAK; "
+        "user_email=alice@example.com"
+    )
+
+    fake_g = MagicMock()
+    fake_g.is_connected = True
+
+    with patch(
+        "api.routers.gmail.GmailIntegration.get",
+        AsyncMock(return_value=fake_g),
+    ):
+        with patch(
+            "api.routers.gmail._send_digest_now",
+            AsyncMock(side_effect=RuntimeError(secret_in_exception)),
+        ):
+            client = TestClient(app)
+            # Router prefix is /onp/gmail, mounted under /api (see api/main.py).
+            response = client.post("/api/onp/gmail/send-test")
+
+    assert response.status_code == 500, response.text
+    detail = response.json().get("detail", "")
+    # CRITICAL: no leak of any sensitive token.
+    assert "ya29.SECRET_TOKEN_DO_NOT_LEAK" not in detail, (
+        f"OAuth access token leaked into send-test response: {detail!r}. "
+        f"v0.8.24 fix: emit type(exc).__name__, not str(exc)."
+    )
+    assert "WS frame" not in detail, (
+        f"SurrealDB internal leaked: {detail!r}."
+    )
+    assert "alice@example.com" not in detail, (
+        f"User email leaked: {detail!r}."
+    )
+    # And the type name IS present so the operator can correlate
+    # with the log line written by log.exception above.
+    assert "RuntimeError" in detail, (
+        f"Expected exception type name in {detail!r} for operator "
+        f"triage."
+    )
+
+
+def test_v0824_oauth_callback_sanitizes_token_exchange_error():
+    """The OAuth callback HTML page must NOT echo raw exception text
+    from the Google token exchange. Google's error responses include
+    the OAuth client_id and redirect_uri, which leak operator config
+    in the user's browser tab beyond what the user needs to triage."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+    from api.routers import gmail as gmail_mod
+
+    # Arm a valid OAuth state so the callback advances past the CSRF
+    # check into the token-exchange try/except.
+    state = "test-state-v0824"
+    gmail_mod._oauth_states[state] = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    fake_g = MagicMock()
+    fake_g.client_id = "client-abc.apps.googleusercontent.com"
+    fake_g.client_secret = "GOCSPX-SUPERSECRET"
+
+    # The exception we will assert does NOT leak. Mimics a Google error
+    # response that included echo-back of our config.
+    secret_in_exception = (
+        "TokenExchangeError 400: invalid_request "
+        "client_id=client-abc.apps.googleusercontent.com "
+        "client_secret_hint=GOCSPX-SUPER... "
+        "redirect_uri=http://127.0.0.1:5055/api/gmail/callback"
+    )
+
+    # Patch httpx.AsyncClient so `client.post(...)` raises with the
+    # sensitive content. Use a context-manager mock for `async with`.
+    class _BoomClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            raise RuntimeError(secret_in_exception)
+
+    with patch(
+        "api.routers.gmail.GmailIntegration.get",
+        AsyncMock(return_value=fake_g),
+    ):
+        with patch(
+            "api.routers.gmail.httpx.AsyncClient",
+            lambda *_a, **_kw: _BoomClient(),
+        ):
+            client = TestClient(app)
+            response = client.get(
+                "/api/onp/gmail/callback",
+                params={"code": "irrelevant", "state": state},
+            )
+
+    # Cleanup the state map entry the test added (the callback handler
+    # also tries to pop it; safe either way).
+    gmail_mod._oauth_states.pop(state, None)
+
+    assert response.status_code == 200, response.text  # HTML page, not API error
+    body = response.text
+    # CRITICAL: no leak of client_id / client_secret / redirect_uri.
+    assert "client-abc.apps.googleusercontent.com" not in body, (
+        f"OAuth client_id leaked into HTML page. v0.8.24 fix: emit "
+        f"only type(exc).__name__, point user at launcher.log."
+    )
+    assert "GOCSPX-SUPER" not in body, (
+        f"Client-secret fragment leaked into HTML page."
+    )
+    # And the type name IS present for operator triage.
+    assert "RuntimeError" in body, (
+        f"Expected exception type name in callback HTML for triage."
+    )
