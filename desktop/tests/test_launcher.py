@@ -167,6 +167,30 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
+        # v0.8.4 — CRITICAL: OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
+        # in session_env so the API child can probe llama.cpp sidecar
+        # health. Without this, v0.8.0 Phase 3 smart routing's
+        # "prefer local when healthy" branch was dead in production —
+        # `_local_chat_healthy_cached` always saw an empty URL and
+        # returned False, so every routed turn went to cloud. Guards
+        # against silent regression if a future edit drops the key.
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].startswith(
+            "http://127.0.0.1:"
+        ), (
+            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL missing from session_env; "
+            "v0.8.4 fix regressed — smart router's local-prefer branch "
+            "is dead again"
+        )
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].endswith("/v1")
+        # And the port should match the chat_llm_port the launcher
+        # already wires into MEMORY_CHAT_LLM_URL — same source of truth.
+        memory_url = sv.session_env["MEMORY_CHAT_LLM_URL"]
+        local_url = sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"]
+        assert memory_url == local_url, (
+            f"both env vars must point at the SAME chat_llm_port. "
+            f"MEMORY_CHAT_LLM_URL={memory_url!r}, "
+            f"OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL={local_url!r}"
+        )
     finally:
         sv.stop_all()
 
