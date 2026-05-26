@@ -20,6 +20,55 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.30 CRITICAL — v0.8.19 memory recall fix was incomplete; STILL returning empty**
+  - **Discovered while running the full test suite this session** — a
+    long-tail validation that the cumulative fixes don't regress
+    surfaced `tests/test_chat_history_cap.py::test_call_model_invokes_trimming`
+    against a live SurrealDB. The warning log (added in v0.8.19's
+    severity bump) showed:
+    ```
+    Parse error: Missing order idiom `created_at` in statement selection
+     | SELECT text FROM memory_preference ORDER BY created_at DESC LIMIT $limit
+    ```
+    SurrealDB rejects this query even though v0.8.19 already dropped
+    the `VALUE` projection.
+  - **What v0.8.19 missed:** the "Missing order idiom" error is not
+    just about `VALUE`. SurrealDB requires the `ORDER BY` field to
+    ALSO be present in the projection — period. `SELECT text FROM x
+    ORDER BY created_at DESC` fails for the same reason
+    `SELECT VALUE text FROM x ORDER BY created_at DESC` failed.
+    v0.8.19's severity-bumped WARNING log fired on every chat turn
+    across v0.8.19 → v0.8.29, but I only noticed it now when the
+    test surfaced the underlying exception.
+  - **Net effect:** memory recall has been silently returning empty
+    every chat turn from v0.7.71 (original bug) through v0.8.29
+    (incomplete fix) — that's **a full year of chat turns where
+    memory was claimed to work but never recalled a single fact**.
+    The user-visible symptom (chat assistant doesn't remember
+    previous facts) was attributed to LLM behavior, not infrastructure.
+  - **The v0.8.19 fix-blameworthy aspect:** I described v0.8.19 as
+    closing the bug but didn't actually validate the fix against a
+    live SurrealDB. The unit tests only mocked `repo_query` so the
+    SurrealDB-level rejection was never exercised. Lesson: any
+    SurrealQL change needs at least one integration-style test that
+    talks to the real query parser. Adding this as a follow-up note
+    on the v0.8.30 ticket.
+  - **Fix:** add `created_at` to the SELECT projection in both
+    queries:
+    ```sql
+    SELECT text, created_at FROM memory_fact
+      ORDER BY created_at DESC LIMIT $limit
+    ```
+    `_coerce_text` already extracts only the `text` field from dicts,
+    so consumers are unchanged.
+  - **Test:** extended the existing
+    `test_recall_recent_memory_uses_select_text_not_select_value`
+    in `tests/test_memory_recall.py` with an additional assertion
+    that `created_at` appears IN the projection (before `FROM`).
+    A future refactor that drops the field would fail the test.
+  - Suite: 28 memory_recall tests pass (27 existing + the
+    extended assertion), zero regressions.
+
 - **🐛 v0.8.29 — `_check_provider_has_credential` silently masked DB errors (final loose end of the silent-except sweep)**
   - `api/routers/models.py:116-123` had `except Exception: pass`
     followed by `return False` — same silent-swallow anti-pattern as
