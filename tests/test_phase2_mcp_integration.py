@@ -366,3 +366,192 @@ def test_resolve_chat_tools_truncates_long_text(monkeypatch):
 
     assert len(captures) == 1
     assert len(captures[0]["text"]) == 4000
+
+
+# ---------------------------------------------------------------------------
+# v0.8.9 CRITICAL — chat graph in-node tool execution loop
+# ---------------------------------------------------------------------------
+
+
+def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
+    """v0.8.9 — pre-fix, the chat graph was START → agent → END with no
+    ToolNode. `bind_tools(mcp_tools)` exposed the tools to the LLM but
+    nothing actually executed any `tool_calls` the LLM emitted. So the
+    v0.8.1 Item 3 mcp_captures accumulator was always empty, [mcp:N]
+    pill markers in the LLM text were hallucinated, and citation pill
+    popovers always showed the placeholder. This test pins the in-node
+    tool execution loop: when the model emits a tool_call, the node
+    must (a) invoke the matching tool, (b) feed the result back as a
+    ToolMessage, (c) re-invoke the model, (d) populate mcp_captures
+    with the executed call's payload."""
+    import asyncio
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+
+    # Mock MCP server registry → one enabled server
+    async def fake_list():
+        return [{"id": "mcp_server:1", "name": "test",
+                 "url": "http://x", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        fake_list,
+    )
+
+    # Mock MCPClient.call_tool → deterministic result
+    async def fake_call_tool(self, name, args):
+        return {"text": f"executed {name} with {args}"}
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    # Fake model: first ainvoke returns an AIMessage with a tool_call,
+    # second ainvoke returns a plain AIMessage with the final answer.
+    call_count = {"n": 0}
+    captured_payloads: list[list] = []
+
+    async def fake_ainvoke(payload):
+        captured_payloads.append(list(payload))
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # First call → emit a tool_call for mcp_search
+            return AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "mcp_search",
+                    "args": {"query": "test query"},
+                    "id": "call_abc",
+                }],
+            )
+        # Second call (after tool result fed back) → final answer
+        return AIMessage(
+            content="Found the answer based on the search [mcp:1].",
+        )
+
+    fake_model = MagicMock()
+    fake_model.ainvoke = fake_ainvoke
+    fake_model.bind_tools = lambda tools: fake_model  # passthrough
+
+    # Stub the provision so the node uses our fake model
+    import open_notebook.graphs.chat as chat_mod
+    async def fake_provision(content, model_id, default_type, **kw):
+        return fake_model
+    monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
+
+    # Run the node
+    from langchain_core.messages import HumanMessage
+    state = {
+        "messages": [HumanMessage(content="search for something")],
+        "notebook": None,
+        "context": None,
+        "context_config": None,
+        "model_override": "model:test",   # bypass smart router for clean test
+        "selected_provider": None,
+        "selected_model_id": None,
+        "mcp_tool_calls": None,
+    }
+    loop = asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(
+            chat_mod.call_model_with_messages(state, {"configurable": {}})
+        )
+    finally:
+        loop.close()
+
+    # Model must have been invoked TWICE — once to get the tool_call,
+    # once with the tool result fed back.
+    assert call_count["n"] == 2, (
+        f"v0.8.9: model.ainvoke should run twice (tool_call → tool result "
+        f"→ final answer); ran {call_count['n']} time(s). Tool loop is broken."
+    )
+
+    # mcp_captures (returned as mcp_tool_calls) must be populated.
+    captures = result.get("mcp_tool_calls")
+    assert captures is not None and len(captures) == 1, (
+        f"v0.8.9: mcp_tool_calls must contain the executed call; got {captures!r}. "
+        f"This means the tool closure never fired — chat graph isn't executing "
+        f"tools despite the bind_tools call."
+    )
+    assert captures[0]["name"] == "web_search"  # _search calls call_tool("web_search", ...)
+    assert captures[0]["args"] == {"query": "test query"}
+    assert "executed web_search" in captures[0]["text"]
+
+    # The second model invocation must have seen a ToolMessage in the payload.
+    from langchain_core.messages import ToolMessage
+    second_payload = captured_payloads[1]
+    tool_msgs = [m for m in second_payload if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1, (
+        f"v0.8.9: second model.ainvoke payload must include a ToolMessage "
+        f"with the tool result; got {[type(m).__name__ for m in second_payload]}"
+    )
+    assert tool_msgs[0].tool_call_id == "call_abc"
+
+
+def test_call_model_bounds_tool_loop_iterations(monkeypatch):
+    """v0.8.9 — runaway protection. If the model keeps emitting
+    tool_calls forever (broken prompt, faulty fine-tune, etc.), the
+    loop must terminate at MAX_TOOL_ITERATIONS instead of infinite-
+    looping the API. Pin the bound at <=4 model invocations."""
+    import asyncio
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    async def fake_list():
+        return [{"id": "mcp_server:1", "name": "test",
+                 "url": "http://x", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        fake_list,
+    )
+
+    async def fake_call_tool(self, name, args):
+        return {"text": "result"}
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.call_tool",
+        fake_call_tool,
+    )
+
+    call_count = {"n": 0}
+
+    async def fake_ainvoke(payload):
+        call_count["n"] += 1
+        # ALWAYS emit a tool_call → would loop forever without the bound
+        return AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "mcp_search",
+                "args": {"query": f"iter{call_count['n']}"},
+                "id": f"call_{call_count['n']}",
+            }],
+        )
+
+    fake_model = MagicMock()
+    fake_model.ainvoke = fake_ainvoke
+    fake_model.bind_tools = lambda tools: fake_model
+
+    import open_notebook.graphs.chat as chat_mod
+    async def fake_provision(content, model_id, default_type, **kw):
+        return fake_model
+    monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
+
+    state = {
+        "messages": [HumanMessage(content="loop")],
+        "notebook": None, "context": None, "context_config": None,
+        "model_override": "model:test",
+        "selected_provider": None, "selected_model_id": None,
+        "mcp_tool_calls": None,
+    }
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            chat_mod.call_model_with_messages(state, {"configurable": {}})
+        )
+    finally:
+        loop.close()
+
+    # 1 initial + up to MAX_TOOL_ITERATIONS=4 re-invocations = 5 max.
+    # Test that the bound holds and we don't keep spinning forever.
+    assert call_count["n"] <= 5, (
+        f"v0.8.9: tool loop must terminate at MAX_TOOL_ITERATIONS; "
+        f"got {call_count['n']} model invocations (runaway)"
+    )
