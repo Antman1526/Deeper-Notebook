@@ -8,6 +8,29 @@ Task 9 additions (lines below the original 3 tests):
 """
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_mcp_tool_cache():
+    """v0.8.12 — _resolve_chat_tools added a TTL cache for MCP
+    list_tools_full discovery (keyed by server URL). Cross-test
+    pollution: a test that registers `http://x` and then poisons it
+    to empty would leave that empty result cached for any later test
+    in this file using the same URL. The discovery_fails test poisons
+    `http://x` to [] which then made test_call_model_with_messages_
+    executes_mcp_tool_calls see an empty tool list (loop never enters,
+    call_count==1 instead of 2). Clear before AND after every test
+    in this file."""
+    try:
+        from open_notebook.graphs.chat import _clear_tool_discovery_cache
+    except ImportError:
+        yield
+        return
+    _clear_tool_discovery_cache()
+    yield
+    _clear_tool_discovery_cache()
+
 
 def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     """Given a working streamable-http MCP server URL, the client
@@ -172,6 +195,152 @@ def test_chat_graph_builds_structured_tool_with_real_args_schema(monkeypatch):
     )
     assert not fields["limit"].is_required(), (
         "v0.8.11: non-required schema fields must default to None"
+    )
+
+
+def test_resolve_chat_tools_handles_nullable_json_schema(monkeypatch):
+    """v0.8.12 — JSON Schema's `"type": ["string", "null"]` nullable
+    shape (real-world MCP servers use it) must build a valid optional
+    Pydantic field. Pre-v0.8.12 the type_map.get(list) returned None
+    and propagated as a broken field type."""
+    from open_notebook.graphs.chat import _resolve_chat_tools
+    import asyncio
+
+    schema = {
+        "type": "object",
+        "properties": {
+            # JSON-Schema-nullable string
+            "query": {"type": ["string", "null"], "description": "Query or null"},
+            # Plain optional string with explicit default
+            "limit": {"type": "string", "default": "10"},
+            # Only-null type (degenerate but legal)
+            "stub": {"type": ["null"]},
+        },
+        "required": ["query"],   # required-but-nullable → still optional
+    }
+
+    loop = asyncio.new_event_loop()
+    try:
+        tools = loop.run_until_complete(
+            _resolve_chat_tools(
+                force_servers=[{"id": "mcp_server:1", "name": "test",
+                                "url": "http://x", "enabled": True}],
+                force_tools_full=[{
+                    "name": "nullable_search", "description": "",
+                    "input_schema": schema,
+                }],
+            )
+        )
+    finally:
+        loop.close()
+
+    assert len(tools) == 1
+    fields = tools[0].args_schema.model_fields
+    # Nullable required → optional in the model (key may be null)
+    assert not fields["query"].is_required(), (
+        "v0.8.12: ['string','null'] type makes the field optional even when in required"
+    )
+    # Default from JSON Schema is preserved
+    assert fields["limit"].default == "10", (
+        f"v0.8.12: JSON Schema default should propagate; got {fields['limit'].default!r}"
+    )
+    # ['null'] only → no error, stays optional
+    assert "stub" in fields
+
+
+def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
+    """v0.8.12 — list_tools_full() must be cached for ~30s so each
+    chat turn doesn't pay an MCP handshake. Pre-v0.8.12 every turn
+    re-discovered tools (~50-500ms per turn). Cache key = server URL,
+    TTL = 30s."""
+    from open_notebook.graphs.chat import (
+        _resolve_chat_tools, _clear_tool_discovery_cache,
+    )
+    import asyncio
+
+    _clear_tool_discovery_cache()
+
+    call_count = {"n": 0}
+
+    async def fake_list_tools_full(self):
+        call_count["n"] += 1
+        return [{
+            "name": "search", "description": "",
+            "input_schema": {"type": "object", "properties": {
+                "query": {"type": "string"}
+            }, "required": ["query"]},
+        }]
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_full,
+    )
+
+    async def fake_list_enabled():
+        return [{"id": "mcp_server:1", "name": "test",
+                 "url": "http://CACHE-TEST-URL", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        fake_list_enabled,
+    )
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_resolve_chat_tools())
+        loop.run_until_complete(_resolve_chat_tools())
+        loop.run_until_complete(_resolve_chat_tools())
+    finally:
+        loop.close()
+        _clear_tool_discovery_cache()   # don't leak into other tests
+
+    assert call_count["n"] == 1, (
+        f"v0.8.12: list_tools_full should be cached across turns; "
+        f"got {call_count['n']} calls (expected 1 cold + 2 warm = 1 network call)"
+    )
+
+
+def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
+    """v0.8.12 — when discovery fails (server unreachable), cache the
+    empty result too so the next turn doesn't retry. Otherwise a
+    flaky/down MCP server adds discovery latency to every chat turn
+    until the operator removes it. Operator who fixes the server
+    sees recovery on the next turn after the TTL window expires."""
+    from open_notebook.graphs.chat import (
+        _resolve_chat_tools, _clear_tool_discovery_cache,
+    )
+    import asyncio
+
+    _clear_tool_discovery_cache()
+
+    call_count = {"n": 0}
+
+    async def fake_list_tools_raise(self):
+        call_count["n"] += 1
+        raise ConnectionError("MCP server unreachable")
+    monkeypatch.setattr(
+        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        fake_list_tools_raise,
+    )
+
+    async def fake_list_enabled():
+        return [{"id": "mcp_server:1", "name": "broken",
+                 "url": "http://BROKEN-URL", "enabled": True}]
+    monkeypatch.setattr(
+        "open_notebook.mcp.registry.list_enabled_servers",
+        fake_list_enabled,
+    )
+
+    loop = asyncio.new_event_loop()
+    try:
+        t1 = loop.run_until_complete(_resolve_chat_tools())
+        t2 = loop.run_until_complete(_resolve_chat_tools())
+    finally:
+        loop.close()
+        _clear_tool_discovery_cache()
+
+    assert t1 == [] and t2 == []
+    assert call_count["n"] == 1, (
+        f"v0.8.12: discovery failure must be cached negatively; "
+        f"got {call_count['n']} retries (expected 1)"
     )
 
 

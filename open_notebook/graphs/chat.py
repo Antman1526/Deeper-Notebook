@@ -106,17 +106,40 @@ def _json_schema_to_pydantic_model(
         "boolean": bool, "array": list, "object": dict,
     }
 
+    def _resolve_type(type_spec):
+        """v0.8.12 — JSON Schema allows `"type": ["string", "null"]`
+        (nullable shape, common in real-world MCP servers). The v0.8.11
+        converter did `type_map.get(type_spec)` which returned None for
+        a list and propagated as a broken Pydantic field. Now: handle
+        single strings AND lists. If a list contains `"null"`, mark
+        the field as optional; pick the first non-null entry as the
+        primary type, fall to Any if no recognised type."""
+        if isinstance(type_spec, list):
+            non_null = [t for t in type_spec if t != "null"]
+            if not non_null:
+                return Any, True   # only null → Any + optional
+            primary = type_map.get(non_null[0], Any)
+            return primary, ("null" in type_spec)
+        return type_map.get(type_spec, Any), False
+
     props = (schema or {}).get("properties", {}) or {}
     required = set((schema or {}).get("required", []) or [])
 
     fields: dict[str, tuple] = {}
     for name, spec in props.items():
-        py_type = type_map.get(spec.get("type"), Any)
+        py_type, is_nullable = _resolve_type(spec.get("type"))
         description = spec.get("description", "")
-        if name in required:
+        default = spec.get("default", None)
+        # JSON-Schema-nullable forces optional even when listed in
+        # `required`. JSON Schema's required-but-nullable shape means
+        # "the key must be present but its value can be null."
+        if name in required and not is_nullable:
             fields[name] = (py_type, Field(..., description=description))
         else:
-            fields[name] = (Optional[py_type], Field(None, description=description))
+            fields[name] = (
+                Optional[py_type],
+                Field(default, description=description),
+            )
 
     safe_name = "".join(c if c.isalnum() else "_" for c in tool_name)
     if not fields:
@@ -127,6 +150,29 @@ def _json_schema_to_pydantic_model(
         fields = {"unused": (Optional[str], Field(None, exclude=True))}
 
     return create_model(f"MCPArgs_{safe_name}", **fields)
+
+
+# v0.8.12 — TTL cache for MCP discovery. _resolve_chat_tools used to
+# call list_tools_full() on EVERY chat turn — an MCP handshake +
+# session.initialize + list round-trip per turn, ~50-500ms depending
+# on the server. With v0.8.0 Phase 3's smart routing already adding
+# health-probe time, this added up. Mirror the 30s TTL window the
+# Phase 1 local-model health cache uses (provision.py
+# _local_chat_healthy_cached); MCP server tool surfaces change less
+# often than that and an operator who adds/removes a tool will see
+# it on the next turn after the TTL expires.
+import time as _time
+
+_TOOL_DISCOVERY_TTL_S = 30.0
+# Keyed by server URL so multiple registered servers each get their
+# own cache slot. Value is (timestamp, tools_full_list).
+_tool_discovery_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _clear_tool_discovery_cache() -> None:
+    """Test hook — `monkeypatch.setattr` can call this to force a
+    cold lookup in tests that exercise the discovery path."""
+    _tool_discovery_cache.clear()
 
 
 async def _resolve_chat_tools(
@@ -188,10 +234,24 @@ async def _resolve_chat_tools(
             for n in force_tool_names
         ]
     else:
-        try:
-            available = await client.list_tools_full()
-        except Exception:
-            available = []
+        # v0.8.12 — TTL-cached discovery. ~50-500ms saved per chat
+        # turn for the same MCP server.
+        url = server["url"]
+        now = _time.monotonic()
+        cached = _tool_discovery_cache.get(url)
+        if cached is not None and now - cached[0] < _TOOL_DISCOVERY_TTL_S:
+            available = cached[1]
+        else:
+            try:
+                available = await client.list_tools_full()
+                _tool_discovery_cache[url] = (now, available)
+            except Exception:
+                # Negative cache too — TTL prevents the chat node from
+                # retrying a known-broken MCP server every single turn.
+                # Operator who fixes the server sees recovery on the
+                # next turn after the TTL window expires.
+                _tool_discovery_cache[url] = (now, [])
+                available = []
 
     if not available:
         return []

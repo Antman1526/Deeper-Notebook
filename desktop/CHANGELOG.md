@@ -20,6 +20,33 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.12 audit fixes — JSON Schema nullable types + per-turn MCP discovery cache**
+  - **Fix 1 (nullable JSON Schema):** v0.8.11's
+    `_json_schema_to_pydantic_model` did `type_map.get(spec.get("type"))`,
+    which returned None when type was a list (real-world MCP servers
+    use `"type": ["string", "null"]` for nullable fields). The None
+    propagated to Pydantic and broke field construction. Now: list
+    types are resolved to the first non-null primary + an optional
+    nullability flag; required-but-nullable fields are correctly
+    marked optional on the Pydantic model; JSON Schema `default`
+    values propagate to Pydantic `Field(default, ...)`.
+  - **Fix 2 (perf, real bug):** v0.8.11's `_resolve_chat_tools` called
+    `MCPClient.list_tools_full()` on EVERY chat turn — an MCP
+    handshake + session.initialize + list round-trip per turn
+    (~50–500ms depending on server). Added a 30s TTL cache keyed by
+    server URL, mirroring the v0.8.0 Phase 1 local-model health
+    probe pattern. Negative results are cached too so a flaky/down
+    MCP server doesn't add discovery latency to every chat turn
+    until removed.
+  - **Fix 3 (test pollution from #2):** the test file already had
+    one test that intentionally poisons `http://x` with an empty
+    discovery result; the v0.8.12 cache made that poison persist
+    across tests, breaking the v0.8.9 tool-loop assertion that
+    runs later. Added autouse fixture clearing the cache before
+    and after every test in `test_phase2_mcp_integration.py`.
+  - 3 new tests (nullable shape + positive-cache + negative-cache).
+    Phase 2 suite: 16 → 19 cases, all passing.
+
 - **✨ v0.8.11 — Tool-calling docs + StructuredTool args_schema for MCP**
   (closes the v0.8.10 deferred list)
   - `docs/4-AI-PROVIDERS/local-models-tool-calling.md` — compatibility
