@@ -238,6 +238,21 @@ export function useSourceChat(sourceId: string) {
                 }
               } else if (data.type === 'context_indicators') {
                 setContextIndicators(data.data)
+              } else if (data.type === 'mcp_tool_calls') {
+                // v0.8.17 — mirrors useNotebookChat's handling. Stash
+                // the MCP tool-call payloads in the TanStack Query
+                // cache keyed by streamingAiId so CitationPill's
+                // McpPopoverContent can look them up by messageId.
+                // Pre-v0.8.17 v0.8.16 wired the chat graph + SSE
+                // event but no client handler stashed the payloads,
+                // so source-chat pills always showed the v0.8.10
+                // placeholder fallback.
+                if (Array.isArray(data.calls) && data.calls.length > 0) {
+                  queryClient.setQueryData(
+                    ['mcp', 'tool-calls', streamingAiId],
+                    data.calls,
+                  )
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.message || 'Stream error')
               }
