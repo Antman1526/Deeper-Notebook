@@ -280,6 +280,22 @@ class Supervisor:
             "MEMORY_CHAT_LLM_URL": f"http://127.0.0.1:{chat_llm_port}/v1",
             "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
             "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
+            # v0.8.4 — CRITICAL fix: the v0.8.0 Phase 3 smart router
+            # in open_notebook/ai/provision.py reads this env var to
+            # know where the local llama.cpp chat sidecar lives so it
+            # can probe `/v1/models` for health. Without it set,
+            # `_local_chat_healthy_cached()` returns False every call,
+            # so `pick_provider(local_chat_healthy=False)` always took
+            # the cloud branch — i.e. v0.8.0 smart routing's "prefer
+            # local when healthy" code path was effectively dead in
+            # production. The launcher's chat_llm_port matches what
+            # auto_register registers as the Local-GGUF credential
+            # (since v0.7.193), so threading the same value through
+            # here gives provision.py the URL it expected the whole
+            # time.
+            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
+                f"http://127.0.0.1:{chat_llm_port}/v1"
+            ),
         }
 
         self._progress("supervisor.surreal", "running")

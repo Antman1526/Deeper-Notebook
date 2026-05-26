@@ -20,6 +20,26 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.4 — CRITICAL: smart router's local branch was dead on arrival**
+  - `open_notebook/ai/provision.py:_local_chat_healthy_cached` reads
+    `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL` to know where to probe the
+    llama.cpp sidecar. Nothing in production code set that env var
+    (audited: only test files monkeypatched it; the launcher set
+    `MEMORY_CHAT_LLM_URL` at the same site but not this one). So the
+    probe always returned `False`, `pick_provider(local_chat_healthy=
+    False)` always took the cloud branch, and v0.8.0 Phase 3's
+    "prefer local when healthy" code path was effectively dead — every
+    routed turn went to cloud regardless of model size, sidecar state,
+    or n_ctx headroom.
+  - Fix: `desktop/launcher.py` now exports
+    `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL=http://127.0.0.1:{chat_llm_port}/v1`
+    in `session_env` (right next to the existing `MEMORY_CHAT_LLM_URL`
+    line, same source of truth). Test
+    `test_supervisor_writes_session_env` extended to pin the new key
+    AND assert it matches the memory URL so a future edit can't desync
+    the two.
+  - Full regression: 60/60 pass (launcher + provider + phase-3 router).
+
 - **🐛 v0.8.3 — Dual llama.cpp spawn + draft-model wiring fix (CRITICAL)**
   - **Bug 1 (resource waste):** `desktop/app.py:_phase_select_provider`
     called `LlamaCppProvider.start()`, which spawned a `llama_cpp.server`
