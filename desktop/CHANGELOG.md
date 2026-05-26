@@ -20,7 +20,22 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
-_(no changes since v0.8.5)_
+- **✨ v0.8.6 Item D — Settings UI for launcher env vars**
+  - `desktop/launcher_prefs.py` (new) — read/write
+    `~/.open-notebook-plus/launcher.env` with a strict key whitelist
+    so accidental secrets can't land in it. `Supervisor.start_all`
+    merges the file values into `os.environ` (env wins) at the top
+    of the start sequence so every downstream reader sees them.
+  - `api/routers/launcher_prefs.py` (new) — `GET`/`PUT`
+    `/api/launcher-prefs`, admin-auth-protected.
+  - `frontend/src/app/(dashboard)/settings/launcher-prefs/page.tsx`
+    (new) — form with four fields covering speculative-decoding
+    knobs (`OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH`,
+    `OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT`) and n_ctx tuning
+    (`ONP_CHAT_LLM_CTX`, `ONP_CHAT_LLM_CTX_MAX`). Saves show a
+    "restart launcher to apply" banner since env is only read at
+    startup. Sidebar nav entry added under Manage. Full i18n
+    across 10 locales.
 
 ---
 

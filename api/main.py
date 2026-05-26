@@ -52,6 +52,7 @@ from api.routers import (
 )
 from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
+from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -898,6 +899,7 @@ app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
 app.include_router(exports.router, prefix="/api", tags=["exports"])
 app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
 app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
+app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
 
 
 @app.get("/")
