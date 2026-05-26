@@ -20,6 +20,38 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.29 — `_check_provider_has_credential` silently masked DB errors (final loose end of the silent-except sweep)**
+  - `api/routers/models.py:116-123` had `except Exception: pass`
+    followed by `return False` — same silent-swallow anti-pattern as
+    v0.8.19/v0.8.27/v0.8.28 but at a smaller blast radius: the
+    `/providers` status endpoint's `has_cred or has_env` fallback
+    (line 418) covers the env-var path, so a DB blip only
+    misreports providers configured exclusively via DB credentials,
+    until the next poll succeeds.
+  - **Cross-file anti-pattern sweep summary** for this session
+    (v0.8.19 → v0.8.29) — the silent-except family was the most
+    productive: **7 sites closed**, all with the same shape
+    (`except Exception` → return sentinel → no log). The fix
+    pattern is also consistent: classify schema-error/genuine-bug
+    vs. table-missing/expected-bootstrap, log accordingly.
+  - **Sweep audit yield trend:** v0.8.19 (memory recall, CRITICAL) →
+    v0.8.27 (digest, MEDIUM) → v0.8.28 (4 sites, MEDIUM-LOW) →
+    v0.8.29 (1 site, LOW). The anti-pattern grep is hitting
+    diminishing returns. With no remaining "real" sites of this
+    shape in `api/` / `open_notebook/` / `commands/`, the silent-
+    except family is closed for this session.
+  - Fix: emit `logger.debug(...)` naming the provider and the error.
+    DEBUG (not WARNING) because the endpoint is polled by the Settings
+    UI and a sustained DB outage would spam launcher.log on every
+    poll. DEBUG keeps the diagnostic available without the noise.
+  - **Test:** 1 new in `tests/test_models_api.py`:
+    `test_v0829_check_provider_has_credential_logs_debug_on_db_error`
+    mocks `Credential.get_by_provider` to raise; asserts the
+    function still returns False (correct fallback) AND a DEBUG line
+    naming the provider is emitted.
+  - Suite: 13 model API tests pass (12 existing + 1 new), zero
+    regressions.
+
 - **🐛🔒 v0.8.28 — silent-except sweep closing 4 remaining sites with no logging**
   - After v0.8.19 (memory_recall) and v0.8.27 (digest) closed the two
     highest-impact instances of `except Exception: return <sentinel>`
