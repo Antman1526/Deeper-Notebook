@@ -56,6 +56,17 @@ async def create_mcp_server(body: MCPServerCreate):
         if isinstance(result, list):
             return result[0]
         return result
+    except HTTPException:
+        # v0.8.31 — Honor the v0.7.135 meta-test convention: any time
+        # an `except Exception → HTTPException(500)` pattern exists, an
+        # `except HTTPException: raise` clause must come first to keep
+        # typed 4xx/5xx exceptions from being clobbered. Today
+        # `repo_create` doesn't raise HTTPException, so the bare `raise`
+        # in the generic branch below would still propagate it — but a
+        # future refactor of the repo layer that adds typed HTTP errors
+        # could regress. Defensive convention. Caught by the v0.7.135
+        # AST meta-test in `tests/test_v0_7_135_meta.py`.
+        raise
     except Exception as exc:
         # v0.8.0 — mcp_server_name_unique index raises on duplicate names.
         exc_str = str(exc).lower()

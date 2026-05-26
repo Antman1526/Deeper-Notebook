@@ -20,6 +20,23 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.31 — mcp.py router violated the v0.7.135 HTTPException re-raise convention**
+  - The v0.8.30 follow-up sweep (run full test suite to catch silent
+    regressions) found the v0.7.135 AST meta test failing:
+    ```
+    mcp.py:53: create_mcp_server() try/except at line 53 converts any
+    Exception to HTTPException(500) but lacks an `except HTTPException:
+    raise` clause earlier — typed 4xx/5xx exceptions raised inside the
+    try will be clobbered to 500.
+    ```
+    Today `repo_create` doesn't raise `HTTPException` so the bare
+    `raise` at the end of the generic branch still propagates it
+    correctly, but the v0.7.135 convention guards against future
+    refactors of the repo layer adding typed HTTP errors.
+  - Fix: add `except HTTPException: raise` before the generic
+    `except Exception:` branch.
+  - Suite: 33 meta tests pass.
+
 - **🐛 v0.8.30 CRITICAL — v0.8.19 memory recall fix was incomplete; STILL returning empty**
   - **Discovered while running the full test suite this session** — a
     long-tail validation that the cumulative fixes don't regress
