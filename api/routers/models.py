@@ -118,8 +118,26 @@ async def _check_provider_has_credential(provider: str) -> bool:
     try:
         credentials = await Credential.get_by_provider(provider)
         return len(credentials) > 0
-    except Exception:
-        pass
+    except Exception as exc:
+        # v0.8.29 — log the failure. Pre-v0.8.29 this was silent —
+        # any DB error (connection drop, schema mismatch, auth
+        # failure) returned False, causing the /providers status
+        # endpoint to silently report "provider not configured" for
+        # an actually-configured-via-DB provider. The downstream
+        # `has_env` fallback in /providers covers the env-var path
+        # so impact is limited, but a credential-only install
+        # would briefly show all providers as unconfigured during
+        # a DB blip with no signal in launcher.log. DEBUG because
+        # the endpoint is read-heavy (polled by the Settings UI)
+        # and a WARNING would spam launcher.log on every poll
+        # during a sustained DB outage.
+        logger.debug(
+            "_check_provider_has_credential({!r}) failed; "
+            "treating as 'no DB credential' — env-var fallback "
+            "in /providers will still surface env-configured "
+            "providers correctly. error={}",
+            provider, exc,
+        )
     return False
 
 
