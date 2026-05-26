@@ -20,6 +20,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.9 CRITICAL — chat graph never executed MCP tool calls (the WHOLE Phase 2/3 MCP story was broken)**
+  - Audit follow-on. The chat graph is `START → agent → END` (single
+    `StateGraph` node, `agent_state.add_node("agent",
+    call_model_with_messages)`). `model.bind_tools(mcp_tools)` makes
+    the tools VISIBLE to the LLM (schemas in the system prompt) but
+    **nothing in the graph actually executes any `tool_calls` the LLM
+    emits.** No `ToolNode`. No conditional edge dispatching to a tool
+    executor. The `mcp_captures` accumulator from v0.8.1 Item 3 stayed
+    empty forever; the `[mcp:N]` markers in the LLM's text were pure
+    hallucination (system prompt told it to emit them when it "called"
+    a tool, but no call ever happened); the citation pill popovers
+    always showed the v0.8.1 Item 3 placeholder fallback.
+  - Fix: in-node tool execution loop in `call_model_with_messages`.
+    After the first `model.ainvoke(payload)`, if the AI message has
+    `tool_calls`, iterate them, await each matching tool's coroutine
+    (which fires the v0.8.1 captures path), feed the results back as
+    `ToolMessage`s, and re-invoke the model. Loop up to
+    `MAX_TOOL_ITERATIONS=4` (runaway safety against models that
+    spin on tool calls). Keeps the graph topology unchanged — no
+    separate ToolNode — so `/chat/execute`'s message-list extraction
+    keeps working.
+  - 2 new tests in `tests/test_phase2_mcp_integration.py` pin: (a)
+    end-to-end execution loop (model emits tool_call → tool fires →
+    ToolMessage fed back → second model invocation → captures
+    populated → final answer returned), (b) runaway bound holds at
+    ≤5 total invocations even if the model never stops emitting
+    tool_calls.
+
 - **🐛 v0.8.8 — `launcher_prefs` whitelist leaked on read paths**
   - Audit follow-on. v0.8.6 Item D enforced the 5-key whitelist on
     WRITES via `update_prefs` but `get_prefs` returned all file keys
