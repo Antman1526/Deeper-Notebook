@@ -20,6 +20,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.13 — MCP non-text content blocks (images, embedded resources)**
+  (closes the v0.8.10 deferred Item #1)
+  - `MCPClient.call_tool` pre-v0.8.13 only returned the FIRST content
+    block from the MCP server's response and only handled
+    `TextContent`. `ImageContent` worked accidentally
+    (`getattr(.data)` returned the base64) but lost its mime type.
+    `EmbeddedResource` returned `None` because the resource's `text`/`blob`
+    live one level deeper on `.resource`. Multi-block responses
+    (e.g. `[text, image]` or `[text, attached_pdf]`) silently dropped
+    everything after the first block.
+  - Fix: walk ALL content blocks and surface them with type
+    preserved. New return shape:
+    `{ok, text: "<all readable text concatenated>", blocks:
+    [{type, ...per-type fields}]}`. `text` stays at the top level
+    so the v0.8.11 closure (`result.get("text")`) keeps working
+    without change. The chat-graph closure also stashes `blocks`
+    into `mcp_captures` so v0.9 frontend work can render image
+    thumbnails / resource links in the pill popover.
+  - For images, the inline text fallback gives the LLM a placeholder
+    line like `[image: image/png, ~768 bytes]` so it at least knows
+    something arrived even if it can't see the bytes.
+  - Future-proof: unknown content types are surfaced as
+    `{"type": "unknown", "repr": ...}` rather than dropped, so the
+    next MCP content-block class surfaces immediately instead of
+    silently failing.
+  - 2 new tests pin the multi-block round-trip and the empty-result
+    case. Phase 2 suite: 19 → 21, all passing.
+
 - **🐛 v0.8.12 audit fixes — JSON Schema nullable types + per-turn MCP discovery cache**
   - **Fix 1 (nullable JSON Schema):** v0.8.11's
     `_json_schema_to_pydantic_model` did `type_map.get(spec.get("type"))`,
