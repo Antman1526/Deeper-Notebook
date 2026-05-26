@@ -77,7 +77,23 @@ def _fernet() -> Optional[Fernet]:
         digest = hashlib.sha256(key.encode()).digest()
         fkey = base64.urlsafe_b64encode(digest)
         return Fernet(fkey)
-    except Exception:
+    except Exception as exc:
+        # v0.8.28 — log the failure. Pre-v0.8.28 this swallowed the
+        # exception silently and the caller (_enc) raised
+        # "OPEN_NOTEBOOK_ENCRYPTION_KEY not set; cannot encrypt Gmail
+        # tokens" — a misleading message because the key WAS set,
+        # Fernet construction just failed (cryptography library bug,
+        # binary-garbage env var, etc.). Without this log the operator
+        # chases a non-existent missing-env-var problem when the real
+        # issue is Fernet itself. WARNING level because this is a
+        # security-boundary failure even if it's edge-case-y.
+        logger.warning(
+            "_fernet: Fernet construction failed despite "
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY being set. The downstream "
+            "RuntimeError saying the key is unset is misleading — the "
+            "real cause is here: %s",
+            exc,
+        )
         return None
 
 
@@ -101,9 +117,26 @@ def _dec(v: Optional[str]) -> Optional[str]:
     f = _fernet()
     if f is None:
         return None
+    # v0.8.28 — split the two cases. InvalidToken is the canonical
+    # "wrong key" / "tampered ciphertext" path and is benign at this
+    # callsite (we're loading an existing row; the operator may have
+    # rotated the encryption key, and the token shows as None until
+    # they reconnect Gmail). Anything ELSE (binary garbage input,
+    # cryptography library bug, OOM) is a real bug worth surfacing
+    # so we don't silently drop GmailIntegration credentials.
     try:
         return f.decrypt(v.encode()).decode()
-    except (InvalidToken, Exception):
+    except InvalidToken:
+        # Quiet: expected when keys rotate or the row was never
+        # encrypted (legacy data).
+        return None
+    except Exception as exc:
+        logger.warning(
+            "_dec: unexpected error decrypting Gmail token — "
+            "returning None and the integration will appear "
+            "unconfigured. error=%s",
+            exc,
+        )
         return None
 
 
