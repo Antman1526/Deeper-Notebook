@@ -20,6 +20,19 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.34 — useAsk hook missing BUFFER_MAX cap (parity with useSourceChat)**
+  - `frontend/src/lib/hooks/use-ask.ts` accumulates the SSE stream
+    chunks into `buffer` and splits on `\n`. The companion hook
+    `useSourceChat.ts` got a 4 MiB BUFFER_MAX cap in v0.7.49 to
+    defend against a stream that never emits a newline (server
+    bug, transport corruption) and would otherwise grow `buffer`
+    unbounded. `use-ask.ts` was missed in that pass.
+  - Low severity in practice — the ask endpoint is server-
+    controlled, so the threat is server-bug-induced rather than
+    adversarial. But defense-in-depth says match the pattern;
+    a long-running browser tab with a hung ask stream now fails
+    fast instead of OOMing.
+
 - **🐛 v0.8.33 — GmailIntegration.get() silent-except trailing cleanup**
   - `open_notebook/domain/gmail.py:202` was the last unlogged
     `except Exception: return cls()` in the silent-swallow family

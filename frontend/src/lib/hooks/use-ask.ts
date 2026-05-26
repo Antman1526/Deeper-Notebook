@@ -93,6 +93,13 @@ export function useAsk() {
       reader = response.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      // v0.8.34 — defense-in-depth cap. Matches the v0.7.49 buffer
+      // cap in useSourceChat; a stream that never emits a newline
+      // (server bug, transport corruption) would otherwise grow
+      // `buffer` unbounded and exhaust browser memory. 4 MiB is
+      // generous for SSE event lines (longest realistic event is
+      // the final_answer payload, < 100 KB).
+      const BUFFER_MAX = 4 * 1024 * 1024
 
       while (true) {
         // Bail if unmounted between chunks — don't bother reading further.
@@ -104,6 +111,9 @@ export function useAsk() {
         }
 
         buffer += decoder.decode(value, { stream: true })
+        if (buffer.length > BUFFER_MAX) {
+          throw new Error('ask stream buffer exceeded 4 MiB')
+        }
         const lines = buffer.split('\n')
 
         // Keep the last incomplete line in buffer
