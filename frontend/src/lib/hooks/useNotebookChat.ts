@@ -43,6 +43,15 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   // it for a separate race guard); we extend its existing cleanup to
   // also abort the streaming controller.
   const abortControllerRef = useRef<AbortController | null>(null)
+  // v0.8.21 — See the matching ref in useSourceChat for full rationale.
+  // TL;DR: blocks the message-sync useEffect from clobbering optimistic
+  // state when a refetch returns mid-second-send. Notebook chat already
+  // applies canonical messages via the `done` event's `setMessages(
+  // canonicalMessages)`, so the subsequent refetch's setMessages call
+  // here is redundant in the happy path and harmful during rapid sends.
+  // Counter (not boolean) so msg #1's finally{} running mid-send #2
+  // doesn't release the guard while msg #2 is still in flight.
+  const inFlightSendsRef = useRef(0)
 
   // Fetch sessions for this notebook
   const {
@@ -66,8 +75,11 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   })
 
   // Update messages when current session changes
+  // v0.8.21 — Skip overwrite while a send is in flight (see
+  // isHandlingSendRef rationale above). Prevents a refetch from
+  // wiping a concurrent rapid second send's optimistic state.
   useEffect(() => {
-    if (currentSession?.messages) {
+    if (currentSession?.messages && inFlightSendsRef.current === 0) {
       setMessages(currentSession.messages)
     }
   }, [currentSession])
@@ -276,6 +288,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
     setMessages(prev => [...prev, userMessage])
     setIsSending(true)
+    // v0.8.21 — Increment in-flight counter BEFORE any await so the
+    // currentSession useEffect doesn't clobber optimistic state when
+    // a concurrent refetch returns. Decremented in finally{}.
+    inFlightSendsRef.current += 1
 
     // v0.7.38 — token-streaming send. Replaces the buffered
     // chatApi.sendMessage with chatApi.streamMessage. While streaming,
@@ -428,6 +444,13 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         abortControllerRef.current = null
       }
       setIsSending(false)
+      // v0.8.21 — Decrement the in-flight counter. Counter pattern
+      // means another concurrent send keeps the guard armed even after
+      // THIS send finishes. Math.max guards against the (purely
+      // defensive) underflow case.
+      inFlightSendsRef.current = Math.max(
+        0, inFlightSendsRef.current - 1,
+      )
     }
   }, [
     notebookId,
