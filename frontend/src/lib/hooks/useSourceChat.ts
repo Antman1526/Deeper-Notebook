@@ -22,6 +22,26 @@ export function useSourceChat(sourceId: string) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [contextIndicators, setContextIndicators] = useState<SourceChatContextIndicator | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  // v0.8.21 — Guard against the message-sync useEffect (line 41-45)
+  // clobbering optimistic / streamed messages when a refetch returns
+  // during or right after a send. Race scenario this prevents:
+  //   1) User sends msg #1 → stream completes → refetch starts
+  //   2) User rapidly sends msg #2 → setMessages adds user_2_optimistic
+  //      and (once tokens arrive) ai_2_streaming placeholder
+  //   3) Refetch from step 1 returns with [user_1, ai_1] (msg #2 not
+  //      yet persisted) → useEffect fires → setMessages overwrites
+  //      → user_2_optimistic + ai_2_streaming WIPED from the UI
+  //   4) Token deltas for msg #2 try to map onto streamingAiId_2 but
+  //      that ID is no longer in local state → no-op → user sees msg
+  //      #2's response only after its OWN stream-complete refetch
+  // Why a counter, not a boolean: msg #1's finally{} runs while msg #2
+  // is still in flight. A boolean would get cleared by msg #1's exit
+  // even though msg #2 is mid-send, reopening the race. The counter
+  // stays > 0 until BOTH have settled.
+  // Trade-off: cross-tab edits made during a send won't appear locally
+  // until the send finishes — acceptable for a single-user local-deploy
+  // app.
+  const inFlightSendsRef = useRef(0)
 
   // Fetch sessions
   const { data: sessions = [], isLoading: loadingSessions, refetch: refetchSessions } = useQuery<SourceChatSession[]>({
@@ -38,8 +58,12 @@ export function useSourceChat(sourceId: string) {
   })
 
   // Update messages when session changes
+  // v0.8.21 — Skip the overwrite while a send is in flight (see the
+  // isHandlingSendRef rationale above). The guard prevents the
+  // refetch-after-stream from wiping a concurrent rapid second send's
+  // optimistic user bubble + streaming AI placeholder.
   useEffect(() => {
-    if (currentSession?.messages) {
+    if (currentSession?.messages && inFlightSendsRef.current === 0) {
       setMessages(currentSession.messages)
     }
   }, [currentSession])
@@ -133,6 +157,13 @@ export function useSourceChat(sourceId: string) {
     }
     setMessages(prev => [...prev, userMessage])
     setIsStreaming(true)
+    // v0.8.21 — Increment the in-flight counter BEFORE any await so the
+    // useEffect's overwrite path is closed for the full duration of
+    // THIS send (including the trailing refetchCurrentSession in
+    // finally{}). Counter is decremented in finally{}; the counter
+    // pattern means msg #1's finally{} running while msg #2 is mid-flight
+    // doesn't clobber msg #2's optimistic state (counter still >0).
+    inFlightSendsRef.current += 1
 
     // v0.6.32 — actually wire the AbortController. The previous version
     // declared abortControllerRef but NEVER assigned to .current, so
@@ -315,8 +346,20 @@ export function useSourceChat(sourceId: string) {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null
       }
-      // Refetch session to get persisted messages
-      refetchCurrentSession()
+      // Refetch session to get persisted messages.
+      // v0.8.21 — Await the refetch BEFORE decrementing the counter so
+      // the useEffect fired by the resulting currentSession change
+      // still sees inFlightSendsRef.current >= 1 and skips the
+      // overwrite. Without `await`, the counter could drop to 0 before
+      // the refetch settles, reopening the race for the very query
+      // whose return we're trying to filter out.
+      try {
+        await refetchCurrentSession()
+      } finally {
+        inFlightSendsRef.current = Math.max(
+          0, inFlightSendsRef.current - 1,
+        )
+      }
     }
   }, [sourceId, currentSessionId, refetchCurrentSession, queryClient, t])
 
