@@ -64,6 +64,29 @@ export function useMCPServers() {
 }
 
 // ---------------------------------------------------------------------------
+// v0.8.65 — built-in web_search tool availability.
+// The chat tool loop binds a `web_search` tool when a provider is configured
+// via env (SERPER_API_KEY / TAVILY_API_KEY / SEARXNG_BASE_URL). It is NOT an
+// MCP registry row, so the picker needs this signal to render a synthetic
+// toggle. `provider` is a label (serper/tavily/searxng) — never a key.
+// ---------------------------------------------------------------------------
+export interface WebSearchStatus {
+  enabled: boolean
+  provider: string | null
+  tool_name: string
+}
+
+export function useWebSearchStatus() {
+  return useQuery<WebSearchStatus>({
+    queryKey: ['mcp', 'web-search-status'],
+    queryFn: async () => {
+      const res = await apiClient.get<WebSearchStatus>('/mcp/web-search')
+      return res.data
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Mutation — create
 // ---------------------------------------------------------------------------
 export function useCreateMCPServer() {
