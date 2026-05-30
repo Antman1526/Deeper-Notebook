@@ -20,6 +20,24 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **📄 v0.8.65c — Docs + deploy: private localhost SearXNG for web search**
+  - **Problem:** v0.8.65 confirmed live that every public SearXNG mirror blocks the
+    JSON API (403/418/429), so the keyless SearXNG path only works against a
+    self-hosted instance. This ships that instance + the guide.
+  - **Deploy (`deploy/searxng-private/`):** ready-to-run `docker-compose.yml` (binds
+    `127.0.0.1:8889` only) + `searxng/settings.yml` with `formats: [html, json]`
+    (the actual fix — enables the JSON API) and `limiter: false` (safe for a
+    localhost-bound instance). `secret_key` is a **placeholder** with an
+    `openssl rand -hex 32` instruction — no real secret committed. `docker compose
+    config` validated.
+  - **Guide (`docs/5-CONFIGURATION/private-searxng-web-search.md`):** adapted to ONP —
+    primary path is the native `web_search` tool (`SEARXNG_BASE_URL` in `.env`),
+    with the Kindly Web Search MCP + Claude Code / Cursor / Antigravity stdio
+    sections kept for other tools. Linked from the Configuration index.
+  - **Doc gap closed:** `onp-env-reference.md` now documents the
+    `SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL` / `ONP_WEB_SEARCH_*`
+    vars (previously only in `.env.example`).
+
 - **🩹 v0.8.65b — Web-search audit fixes: total-budget guard + tool-calling hint**
   - **Latency guard (audit fix):** the failover chain could block a chat turn for
     up to ~70s if SearXNG instances *hang* (vs the fast 429s) — and a slow early
