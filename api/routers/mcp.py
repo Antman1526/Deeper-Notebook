@@ -60,6 +60,33 @@ async def list_mcp_recommendations():
     return {"recommendations": RECOMMENDATIONS}
 
 
+@router.get("/api/mcp/web-search")
+async def web_search_status():
+    """v0.8.65 — availability of the built-in `web_search` chat tool.
+
+    The tool is bound into the chat tool loop (independently of any MCP server)
+    whenever a provider is configured via env — SERPER_API_KEY / TAVILY_API_KEY
+    / SEARXNG_BASE_URL. It isn't a registry row, so the chat MCP picker can't
+    discover it from `GET /api/mcp`. This endpoint lets the picker render a
+    synthetic `web_search` toggle (and name the active provider) so the user
+    can SEE it's on and disable it per-turn via `disabled_mcp_servers`.
+
+    Returns ``{enabled, provider, tool_name}``. No secrets — provider is a
+    label (serper/tavily/searxng), never the key.
+    """
+    from open_notebook.tools.web_search import (
+        WEB_SEARCH_TOOL_NAME,
+        active_provider,
+        web_search_enabled,
+    )
+
+    return {
+        "enabled": web_search_enabled(),
+        "provider": active_provider(),
+        "tool_name": WEB_SEARCH_TOOL_NAME,
+    }
+
+
 @router.post("/api/mcp", status_code=201)
 async def create_mcp_server(body: MCPServerCreate):
     """Register a new MCP server.

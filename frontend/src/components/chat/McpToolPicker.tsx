@@ -34,8 +34,12 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { useMCPServers } from '@/lib/hooks/use-mcp-servers'
+import { useMCPServers, useWebSearchStatus } from '@/lib/hooks/use-mcp-servers'
 import { useTranslation } from '@/lib/hooks/use-translation'
+
+// v0.8.65 — literal tool name the chat tool loop matches in
+// `disabled_mcp_servers` to exclude the built-in web_search tool.
+const WEB_SEARCH_TOOL_NAME = 'web_search'
 
 export interface McpToolPickerProps {
   /** Names currently disabled — controlled. Pass `useNotebookChat.disabledMcpServers`. */
@@ -51,11 +55,25 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
   // bind tools regardless of our state.
   const servers = rawServers.filter(s => s.enabled)
 
-  if (servers.length === 0) return null
+  // v0.8.65 — the built-in `web_search` tool isn't a registry row, so it never
+  // appears in useMCPServers(). Surface it as a synthetic toggle when a
+  // provider is configured (Serper/Tavily/SearXNG) so the user can see it's on
+  // and untick it for a turn. onToggle('web_search') maps straight to the
+  // exclude name the chat tool loop already honours (v0.8.64).
+  const { data: webSearch } = useWebSearchStatus()
+  const webSearchAvailable = !!webSearch?.enabled
+  const webSearchOff = disabled.some(
+    d => d.trim().toLowerCase() === WEB_SEARCH_TOOL_NAME,
+  )
 
-  const enabledCount = servers.filter(
-    s => !disabled.some(d => d.trim().toLowerCase() === (s.name || '').trim().toLowerCase()),
-  ).length
+  // Hide the picker only when there is genuinely nothing to toggle.
+  if (servers.length === 0 && !webSearchAvailable) return null
+
+  const total = servers.length + (webSearchAvailable ? 1 : 0)
+  const enabledCount =
+    servers.filter(
+      s => !disabled.some(d => d.trim().toLowerCase() === (s.name || '').trim().toLowerCase()),
+    ).length + (webSearchAvailable && !webSearchOff ? 1 : 0)
 
   return (
     <Popover>
@@ -70,7 +88,7 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
           {t('chat.mcpPicker.label', {
             defaultValue: '{{count}}/{{total}} tools',
             count: enabledCount,
-            total: servers.length,
+            total: total,
           })}
         </Button>
       </PopoverTrigger>
@@ -93,6 +111,28 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
           })}
         </p>
         <ul className="space-y-1.5 max-h-60 overflow-y-auto">
+          {webSearchAvailable && (
+            <li
+              className="flex items-center gap-2"
+              data-testid="mcp-pick-web-search-row"
+            >
+              <Checkbox
+                id="mcp-pick-web-search"
+                checked={!webSearchOff}
+                onCheckedChange={() => onToggle(WEB_SEARCH_TOOL_NAME)}
+                data-testid="mcp-pick-web-search"
+              />
+              <Label
+                htmlFor="mcp-pick-web-search"
+                className="text-xs cursor-pointer flex-1 min-w-0"
+              >
+                <span className="truncate block">
+                  {t('chat.mcpPicker.webSearch', { defaultValue: 'Web search' })}
+                  {webSearch?.provider ? ` (${webSearch.provider})` : ''}
+                </span>
+              </Label>
+            </li>
+          )}
           {servers.map(s => {
             const isOff = disabled.some(
               d => d.trim().toLowerCase() === (s.name || '').trim().toLowerCase(),

@@ -56,12 +56,17 @@ vi.mock('@/components/ui/label', () => ({
 }))
 
 const mockServers = vi.fn()
+const mockWebSearch = vi.fn()
 vi.mock('@/lib/hooks/use-mcp-servers', () => ({
   useMCPServers: () => ({ data: mockServers() }),
+  useWebSearchStatus: () => ({ data: mockWebSearch() }),
 }))
 
 beforeEach(() => {
   mockServers.mockReset()
+  mockWebSearch.mockReset()
+  // Default: web search not configured (most existing tests assume this).
+  mockWebSearch.mockReturnValue(undefined)
 })
 
 describe('McpToolPicker', () => {
@@ -118,5 +123,59 @@ describe('McpToolPicker', () => {
     const cb = screen.getByTestId('mcp-pick-1')
     fireEvent.click(cb)
     expect(onToggle).toHaveBeenCalledWith('SearXNG')
+  })
+
+  // v0.8.65 — built-in web_search tool surfaced as a synthetic row.
+  it('renders the web_search row (with provider) when web search is enabled', () => {
+    mockServers.mockReturnValue([])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    expect(screen.getByTestId('mcp-pick-web-search')).toBeInTheDocument()
+    expect(screen.getByText(/web search \(serper\)/i)).toBeInTheDocument()
+  })
+
+  it('shows the picker even with ZERO MCP servers when web search is enabled', () => {
+    mockServers.mockReturnValue([])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'tavily', tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    // 1/1: just web_search
+    expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/1 tools/)
+  })
+
+  it('counts web_search alongside MCP servers in the trigger label', () => {
+    mockServers.mockReturnValue([
+      { id: '1', name: 'Crawl4AI', url: 'http://y', enabled: true, priority: 100 },
+    ])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    // web_search + Crawl4AI both on → 2/2
+    expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/2\/2 tools/)
+  })
+
+  it('web_search checkbox reflects the disabled array', () => {
+    mockServers.mockReturnValue([])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+    render(<McpToolPicker disabled={['web_search']} onToggle={() => {}} />)
+    const cb = screen.getByTestId('mcp-pick-web-search') as HTMLInputElement
+    expect(cb.checked).toBe(false)
+  })
+
+  it('clicking web_search calls onToggle("web_search")', () => {
+    mockServers.mockReturnValue([])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+    const onToggle = vi.fn()
+    render(<McpToolPicker disabled={[]} onToggle={onToggle} />)
+    fireEvent.click(screen.getByTestId('mcp-pick-web-search'))
+    expect(onToggle).toHaveBeenCalledWith('web_search')
+  })
+
+  it('hides the web_search row when web search is disabled (no provider)', () => {
+    mockServers.mockReturnValue([
+      { id: '1', name: 'Crawl4AI', url: 'http://y', enabled: true, priority: 100 },
+    ])
+    mockWebSearch.mockReturnValue({ enabled: false, provider: null, tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    expect(screen.queryByTestId('mcp-pick-web-search')).not.toBeInTheDocument()
+    expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/1 tools/)
   })
 })

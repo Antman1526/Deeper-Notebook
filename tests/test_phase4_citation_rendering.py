@@ -36,15 +36,17 @@ def _rendered_system_prompt() -> str:
 
 
 def test_system_prompt_contains_mcp_citation_section():
-    """v0.8.0 Task 13 / v0.8.10 — the MCP CITATIONS section must
-    survive every template render. If it goes missing the LLM stops
-    emitting `[mcp:N]` markers and the frontend pills go dark.
-    v0.8.10: assert the tool-name-agnostic `mcp_<name>` prefix
-    instead of the hardcoded mcp_search/mcp_fetch (which only existed
-    if the registered MCP server happened to have tools called
-    `search`/`fetch`)."""
+    """v0.8.0 Task 13 / v0.8.10 / v0.8.64 — the external-tool CITATIONS
+    section must survive every template render. If it goes missing the
+    LLM stops emitting `[mcp:N]` markers and the frontend pills go dark.
+    v0.8.10: assert the tool-name-agnostic `mcp_<name>` prefix instead of
+    the hardcoded mcp_search/mcp_fetch. v0.8.64: the section was renamed
+    "MCP TOOL CITATIONS" → "EXTERNAL TOOL CITATIONS" so the built-in
+    `web_search` tool shares the same `[mcp:N]` citation scheme as MCP
+    tools (they append to one per-turn capture list)."""
     prompt = _rendered_system_prompt()
-    assert "MCP TOOL CITATIONS" in prompt
+    # v0.8.64 — renamed from "MCP TOOL CITATIONS" to cover web_search too.
+    assert "EXTERNAL TOOL CITATIONS" in prompt
     assert "[mcp:N]" in prompt
     # v0.8.10 — the prompt now uses the generic mcp_<name> form
     # since the actual tool names depend on which MCP server the
@@ -52,6 +54,11 @@ def test_system_prompt_contains_mcp_citation_section():
     assert "mcp_<name>" in prompt, (
         "v0.8.10: system prompt must refer to MCP tools generically "
         "as `mcp_<name>` since the actual names are server-dependent"
+    )
+    # v0.8.64 — the built-in web_search tool must be named so the model
+    # knows it exists and cites it via the shared [mcp:N] scheme.
+    assert "web_search" in prompt, (
+        "v0.8.64: system prompt must name the built-in `web_search` tool"
     )
 
 
