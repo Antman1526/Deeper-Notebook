@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 
 from loguru import logger
 
@@ -66,6 +67,13 @@ _DEFAULT_MAX_RESULTS = 5
 _DEFAULT_TIMEOUT_SEC = 10.0
 _MAX_RESULTS_CEILING = 20
 _TIMEOUT_CEILING_SEC = 60.0
+# v0.8.65 — total wall-clock budget across the whole failover chain. Kept under
+# the chat loop's per-tool-call timeout (ONP_MCP_TOOL_TIMEOUT_SEC, default 30s)
+# so web_search self-bounds + returns a graceful empty rather than being hard-
+# killed mid-attempt. Each attempt gets min(per-attempt timeout, remaining
+# budget) so a slow/hanging early instance can't starve a fast later one.
+_DEFAULT_TOTAL_BUDGET_SEC = 25.0
+_TOTAL_BUDGET_CEILING_SEC = 120.0
 
 
 def _env(name: str) -> str:
@@ -170,6 +178,17 @@ def _timeout_sec() -> float:
     return max(1.0, min(t, _TIMEOUT_CEILING_SEC))
 
 
+def _total_budget_sec() -> float:
+    raw = _env("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC")
+    if not raw:
+        return _DEFAULT_TOTAL_BUDGET_SEC
+    try:
+        t = float(raw)
+    except ValueError:
+        return _DEFAULT_TOTAL_BUDGET_SEC
+    return max(1.0, min(t, _TOTAL_BUDGET_CEILING_SEC))
+
+
 def _normalise(items, *, url_key: str, snippet_key: str, n: int) -> list[dict]:
     """Map a provider's raw result list to ``[{title,url,snippet}]``.
 
@@ -192,10 +211,14 @@ def _normalise(items, *, url_key: str, snippet_key: str, n: int) -> list[dict]:
 
 
 async def _do_attempt(
-    client, provider: str, target: str | None, query: str, n: int
+    client, provider: str, target: str | None, query: str, n: int, timeout: float
 ) -> list[dict]:
     """Run ONE provider attempt. Raises on transport/HTTP error so the caller
-    treats that attempt as failed and moves to the next in the chain."""
+    treats that attempt as failed and moves to the next in the chain.
+
+    v0.8.65 — `timeout` is applied PER REQUEST (not on the client) so the chain
+    can shorten later attempts as the total budget runs down.
+    """
     if provider == "serper":
         resp = await client.post(
             _SERPER_ENDPOINT,
@@ -204,6 +227,7 @@ async def _do_attempt(
                 "Content-Type": "application/json",
             },
             json={"q": query, "num": n},
+            timeout=timeout,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -223,6 +247,7 @@ async def _do_attempt(
                 "max_results": n,
                 "search_depth": "basic",
             },
+            timeout=timeout,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -238,6 +263,7 @@ async def _do_attempt(
     resp = await client.get(
         f"{base}/search",
         params={"q": query, "format": "json"},
+        timeout=timeout,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -260,6 +286,12 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
       * a paid provider (Serper/Tavily) returning a legitimate empty 2xx result
         is accepted as-is rather than spending quota on the next paid provider.
 
+    The whole chain is bounded by a total wall-clock budget
+    (``ONP_WEB_SEARCH_TOTAL_BUDGET_SEC``, default 25s, kept under the chat
+    loop's 30s per-tool-call timeout) and each attempt gets
+    ``min(per-attempt timeout, remaining budget)`` so a slow/hanging early
+    instance can't starve a fast later one or freeze the chat turn.
+
     Returns ``[]`` if every attempt fails. Never raises into the chat turn.
     """
     chain = _provider_chain()
@@ -272,10 +304,24 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     # and so tests can monkeypatch ``httpx.AsyncClient`` cleanly.
     import httpx
 
-    async with httpx.AsyncClient(timeout=_timeout_sec()) as client:
+    per_attempt_cap = _timeout_sec()
+    deadline = time.monotonic() + _total_budget_sec()
+
+    # No fixed client timeout — each request gets a per-call timeout below so
+    # the chain can shrink later attempts as the budget runs down.
+    async with httpx.AsyncClient() as client:
         for provider, target in chain:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                logger.debug(
+                    "web_search total budget exhausted; stopping failover chain"
+                )
+                break
+            attempt_timeout = min(per_attempt_cap, remaining)
             try:
-                results = await _do_attempt(client, provider, target, query, n)
+                results = await _do_attempt(
+                    client, provider, target, query, n, attempt_timeout
+                )
             except Exception as exc:
                 # WARNING (not DEBUG): a *configured* attempt failing is worth
                 # seeing. We log provider + (for searxng) the instance URL +

@@ -154,6 +154,16 @@ def test_timeout_default_and_clamp(monkeypatch):
     assert ws._timeout_sec() == 10.0
 
 
+def test_total_budget_default_and_clamp(monkeypatch):
+    assert ws._total_budget_sec() == 25.0
+    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "5")
+    assert ws._total_budget_sec() == 5.0
+    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "9999")
+    assert ws._total_budget_sec() == 120.0  # ceiling
+    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "garbage")
+    assert ws._total_budget_sec() == 25.0  # falls back
+
+
 # ---------------------------------------------------------- run_web_search()
 
 
@@ -379,6 +389,23 @@ async def test_all_attempts_fail_returns_empty(monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", _scripted_httpx(handler))
     assert await ws.run_web_search("q") == []
+
+
+@pytest.mark.asyncio
+async def test_per_request_timeout_passed(monkeypatch):
+    """Each attempt receives a per-request `timeout` kwarg so the chain can
+    shrink later attempts as the total budget runs down (v0.8.65)."""
+    monkeypatch.setenv("SERPER_API_KEY", "k")
+    calls: list = []
+    payload = {"organic": [{"title": "T", "link": "http://a", "snippet": "S"}]}
+    monkeypatch.setattr(
+        httpx, "AsyncClient", _scripted_httpx(lambda *a: payload, calls=calls)
+    )
+    await ws.run_web_search("q")
+    assert calls, "no request was made"
+    _, _, kw = calls[0]
+    assert "timeout" in kw
+    assert isinstance(kw["timeout"], (int, float)) and kw["timeout"] > 0
 
 
 # ----------------------------------------------------------- format_results()
