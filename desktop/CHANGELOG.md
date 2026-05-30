@@ -20,6 +20,26 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🩹 v0.8.65d — Decouple web_search from MCP/DB failures (found via an end-to-end test run)**
+  - **Bug:** in `bind_mcp_and_run_tool_loop`, MCP tool resolution (which hits
+    SurrealDB via `list_enabled_servers → repo_query`), the native `web_search`
+    binding, and `model.bind_tools` shared ONE try/except. So a DB error during
+    MCP server lookup would silently drop `web_search` too — even though
+    web_search is DB-independent (v0.8.64). Latent in normal operation (DB is up)
+    but a real robustness gap.
+  - **Fix:** split into three independent steps, each fail-soft on its own — an
+    MCP-resolve failure no longer disables web search, and a web_search build
+    failure no longer disables MCP tools; a `bind_tools` failure still degrades
+    both (the model can't call any tool). Logged at DEBUG per the silent-except
+    convention.
+  - **End-to-end verification:** drove the real tool loop with a local LLM
+    (Ollama `llama3.1:8b`) bound to the real `web_search` tool against live
+    Serper — the model called `web_search`, got real results, and produced a
+    URL-cited answer ("Python 3.14"). Confirms the full LLM → web_search →
+    provider → cited-answer path works, including on a local model.
+  - **Test:** `tests/test_v0_8_64_web_search.py::test_loop_binds_web_search_even_when_mcp_resolve_fails`
+    (web_search still binds when `_resolve_chat_tools` raises) → file now 35 tests.
+
 - **📄 v0.8.65c — Docs + deploy: private localhost SearXNG for web search**
   - **Problem:** v0.8.65 confirmed live that every public SearXNG mirror blocks the
     JSON API (403/418/429), so the keyless SearXNG path only works against a

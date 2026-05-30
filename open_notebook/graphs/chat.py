@@ -408,24 +408,38 @@ async def bind_mcp_and_run_tool_loop(
 
     mcp_captures: list = []
     mcp_tools: list = []
+    # v0.8.65d — three INDEPENDENT steps with separate error handling. Pre-
+    # v0.8.65d MCP resolution, web_search binding, and bind_tools shared ONE
+    # try/except, so a SurrealDB error during MCP server lookup
+    # (list_enabled_servers → repo_query) would drop the native web_search tool
+    # too — even though web_search is DB-independent (v0.8.64). Now an
+    # MCP-resolve failure no longer disables web search, and a web_search build
+    # failure no longer disables MCP tools.
+
+    # 1. MCP tools (hits the registry / SurrealDB) — fail-soft to no MCP tools.
     try:
-        # v0.8.42 — pass the per-request disable list through to the
-        # resolver so the user's "load only what I need" picks land
-        # BEFORE network discovery happens (saves a round-trip for the
-        # all-excluded case too).
+        # v0.8.42 — pass the per-request disable list through to the resolver so
+        # the user's "load only what I need" picks land BEFORE network discovery.
         mcp_tools = await _resolve_chat_tools(
             captures=mcp_captures,
             exclude_server_names=exclude_server_names,
         )
-        # v0.8.64 — native env-keyed web_search tool. Independent of MCP
-        # servers (works with ZERO MCP servers configured), so it's appended
-        # here rather than inside `_resolve_chat_tools` (which early-returns []
-        # when no MCP server is registered). Bound only when a provider key is
-        # configured (SERPER_API_KEY / TAVILY_API_KEY / SEARXNG_BASE_URL) AND
-        # the user hasn't disabled "web_search" via the per-request MCP picker
-        # — same case-insensitive exclude convention as MCP servers. This is
-        # the opt-in: no key => tool absent => zero behaviour change. Shared by
-        # both chat surfaces since source_chat reuses this helper (v0.8.16).
+    except Exception as mcp_exc:
+        # DEBUG per the v0.8.27+ silent-except convention — a missing/erroring
+        # MCP registry (e.g. a transient DB blip) is benign for chat.
+        _logger.debug(
+            "MCP tool resolve failed (degrading to no MCP tools): {}",
+            mcp_exc,
+        )
+        mcp_tools = []
+
+    # 2. Native env-keyed web_search tool — INDEPENDENT of MCP/DB (v0.8.64).
+    # Bound only when a provider is configured (SERPER_API_KEY / TAVILY_API_KEY
+    # / SEARXNG_BASE_URL) AND the user hasn't disabled "web_search" via the
+    # per-request MCP picker (same case-insensitive exclude convention). Opt-in:
+    # no key => tool absent => zero behaviour change. Shared by both chat
+    # surfaces since source_chat reuses this helper (v0.8.16).
+    try:
         from open_notebook.tools.web_search import (
             WEB_SEARCH_TOOL_NAME,
             build_web_search_tool,
@@ -437,21 +451,18 @@ async def bind_mcp_and_run_tool_loop(
         }
         if web_search_enabled() and WEB_SEARCH_TOOL_NAME not in _excluded_names:
             mcp_tools = list(mcp_tools) + [build_web_search_tool(mcp_captures)]
+    except Exception as ws_exc:
+        _logger.debug("web_search tool build failed (skipping): {}", ws_exc)
+
+    # 3. Bind tools to the model — fail-soft for local providers that don't
+    # implement tool calling (v0.8.0 / v0.8.35f). If bind fails the model can't
+    # call ANY tool this turn, so reset the lookup to empty.
+    try:
         if mcp_tools:
             model = model.bind_tools(mcp_tools)
     except Exception as bind_exc:
-        # v0.8.0 — local providers may not implement bind_tools
-        # v0.8.35f — log the swallowed exception at DEBUG. Pre-v0.8.35f
-        # this was fully silent — operators debugging "why doesn't MCP
-        # work on my local model?" had no signal at all. Matches the
-        # v0.8.27/v0.8.28/v0.8.33 silent-except sweep convention:
-        # DEBUG for benign/expected failures (local models without
-        # tool-calling support), WARNING for surprises. Same except
-        # runs in source-chat now (since v0.8.16 shared the helper),
-        # so this lights up diagnostics for both chat surfaces at
-        # once.
         _logger.debug(
-            "MCP tool bind failed (degrading to no-tools): {}",
+            "tool bind failed (degrading to no-tools): {}",
             bind_exc,
         )
         mcp_tools = []

@@ -486,6 +486,24 @@ async def test_loop_binds_web_search_when_key_set(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_loop_binds_web_search_even_when_mcp_resolve_fails(monkeypatch):
+    """v0.8.65d — a DB/MCP-registry error must NOT drop the DB-independent
+    web_search tool. Pre-fix, MCP resolve + web_search bind shared one
+    try/except, so a SurrealDB blip during MCP server lookup silently disabled
+    web search too."""
+
+    async def _boom(**kwargs):
+        raise RuntimeError("surrealdb unreachable")
+
+    monkeypatch.setattr(chat_mod, "_resolve_chat_tools", _boom)
+    monkeypatch.setenv("SERPER_API_KEY", "k")  # web search configured
+    model = _RecordingModel([_FakeAIMessage([])])
+    await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=2)
+    assert model.bound is not None, "web_search should still bind despite MCP failure"
+    assert any(getattr(t, "name", None) == "web_search" for t in model.bound)
+
+
+@pytest.mark.asyncio
 async def test_loop_omits_web_search_without_key(monkeypatch):
     monkeypatch.setattr(
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
