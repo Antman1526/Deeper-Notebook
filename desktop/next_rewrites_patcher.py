@@ -224,6 +224,28 @@ def patch_rewrites_for_api_port(
         )
         return frontend_dir
 
+    # v0.8.65e — resolve the symlinked-bundle case. PyInstaller 6.x's macOS
+    # BUNDLE step relocates the frontend to Contents/Resources/frontend (real
+    # files) and leaves Contents/Frameworks/frontend/{server.js,.next,
+    # package.json,public} as symlinks INTO Resources. The launcher passes the
+    # Frameworks path (repo_root/frontend = MEIPASS/frontend). Copying that
+    # read-only dir with copytree(symlinks=True) reproduces the symlinks in
+    # ~/.open-notebook-plus/frontend-runtime, where they DANGLE — they point
+    # `../../Resources/...` relative to the new location, which does not exist.
+    # The patcher then finds no server.js/.next manifests, can't inject the
+    # dynamic API port, and the frontend falls back to the baked localhost:5055
+    # — the exact "API config endpoint returned status 500" failure. Operate on
+    # the RESOLVED real directory instead (it has all real files incl
+    # node_modules). No-op when the frontend isn't symlinked (dev / Windows).
+    server_js = frontend_dir / "server.js"
+    if server_js.is_symlink():
+        real_dir = server_js.resolve().parent
+        log.info(
+            "Frontend exposed via symlinks; using resolved real dir: %s -> %s",
+            frontend_dir, real_dir,
+        )
+        frontend_dir = real_dir
+
     # First: see if we can write to the bundle. If not, copy to a
     # per-user writable location and patch there.
     work_dir = frontend_dir
