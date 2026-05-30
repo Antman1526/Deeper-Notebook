@@ -1,4 +1,4 @@
-# Open Notebook Plus
+# Open notebook+
 
 A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, fail-closed cloud-privacy gating, agent-reliability state machine, end-to-end source ingestion + chat + podcast generation, complete observability, and **130+ production-hardening commits** on top of upstream.
 
@@ -17,7 +17,7 @@ A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-note
 
 Upload PDFs, audio, video, web pages, or text. Take notes. Chat with AI grounded in your sources. Run multi-step "Ask" synthesis across your library. Generate multi-speaker podcasts. **Memory** — facts and preferences automatically extracted from each chat persist across sessions. Everything runs locally if you want it to.
 
-## Why open-notebook-Plus over NotebookLM?
+## Why Open notebook+ over NotebookLM?
 
 v0.8.0 differentiators:
 
@@ -71,15 +71,15 @@ Desktop bundle additionally spawns:
 
 ### macOS (desktop app)
 
-1. Download the `.dmg` from [Releases](https://github.com/Antman1526/open-notebook-Plus/releases)
+1. Download the `.dmg` from [Releases](https://github.com/Antman1526/open-notebook/releases)
 2. Drag the app to **Applications**
 3. **Right-click → Open** the first time (unsigned build; macOS Gatekeeper)
 
 ### Self-host (Docker Compose)
 
 ```bash
-git clone https://github.com/Antman1526/open-notebook-Plus
-cd open-notebook-Plus
+git clone https://github.com/Antman1526/open-notebook
+cd open-notebook
 cp .env.template .env                    # fill in passwords + encryption key
 docker compose --profile multi up -d
 # UI: http://localhost:3000, API: http://localhost:5055, Metrics: http://localhost:5055/metrics
@@ -88,8 +88,8 @@ docker compose --profile multi up -d
 ### Local development
 
 ```bash
-git clone https://github.com/Antman1526/open-notebook-Plus
-cd open-notebook-Plus
+git clone https://github.com/Antman1526/open-notebook
+cd open-notebook
 
 # Backend
 uv sync                                  # creates .venv via uv
@@ -224,7 +224,7 @@ first launch: right-click → Open to clear Gatekeeper):
 ```bash
 make build-mac          # test → lockfile → build venv → Next.js build →
                         # fetch runtimes → PyInstaller → hdiutil dmg (~20–40 min first run)
-open "dist/Open Notebook Plus.app"
+open "dist/Open notebook+.app"
 ```
 
 **Windows** (must run on a Windows host — PyInstaller is not a cross-compiler):
@@ -299,7 +299,7 @@ All Tests jobs green: **1587 backend tests + 183 frontend vitest tests** (+ Surr
 
 ## Support
 
-- **Plus fork issues**: https://github.com/Antman1526/open-notebook-Plus/issues
+- **Plus fork issues**: https://github.com/Antman1526/open-notebook/issues
 - **Upstream issues**: https://github.com/lfnovo/open-notebook/issues
 - **Upstream Discord**: https://discord.gg/37XJPXfz2w
 

@@ -20,6 +20,23 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🏷️ v0.8.65f — Rename display name to "Open notebook+" + GitHub repo → `open-notebook`**
+  - **Display-name only** (identity/filesystem unchanged): `.app` filename
+    (`Open Notebook Plus.app`), data dir (`~/.open-notebook-plus`), bundle
+    identifier (`com.antman1526.open-notebook-plus`), and the `open_notebook`
+    Python package all stay — so no data loss / no path breakage.
+  - **Changed:** macOS app label via `CFBundleName`/`CFBundleDisplayName`
+    (`pyinstaller.spec`) + the mic-permission string; the desktop window title
+    (`window.py`); all frontend UI strings incl. the locale `appName`/
+    `loginTitle`/`apiTitle`/`apiDesc`/`docLink` across 10 languages (`Open
+    Notebook Plus` and the bare product name `Open Notebook` → `Open notebook+`);
+    README. Upstream `lfnovo/open-notebook` references untouched.
+  - **GitHub:** repository renamed `open-notebook-Plus` → **`open-notebook`**
+    (`Antman1526/open-notebook`); git remote + README/CHANGELOG URLs updated;
+    GitHub keeps an old→new redirect.
+  - **Gotcha fixed:** `+` is a regex metacharacter — `CitationPill.test.tsx`'s
+    `getByText(/…notebook+…/)` had to be escaped (`\+`). Frontend 183/183 green.
+
 - **🛠️ v0.8.65e — Fix desktop app "Unable to Connect to API Server" (symlinked-bundle patch failure)**
   - **Symptom:** the freshly-built `.dmg` showed *"Unable to Connect to API Server
     — API config endpoint returned status 500"* even though the API was healthy.
@@ -3794,7 +3811,7 @@ the release.
   5. **Frontend (LOW) — SetupBanner upstream-repo URL.** Docs
      link in the encryption-required banner pointed at
      `lfnovo/open-notebook`; now points at
-     `Antman1526/open-notebook-Plus`. Plus users land on Plus
+     `Antman1526/open-notebook`. Plus users land on Plus
      docs that match their build.
 
   6. **Frontend (LOW) — MarkdownEditor hardcoded light mode.**

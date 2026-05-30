@@ -160,7 +160,7 @@ describe('CitationPill', () => {
         index: 1,
         name: 'web_search',
         args: { query: 'open notebook plus features' },
-        text: 'Open Notebook Plus is a desktop research app.',
+        text: 'Open notebook+ is a desktop research app.',
       },
     ]
     qc.setQueryData(['mcp', 'tool-calls', 'msg-test-123'], calls)
@@ -180,8 +180,8 @@ describe('CitationPill', () => {
     expect(screen.getByText(/open notebook plus features/)).toBeInTheDocument()
     // Result section
     expect(screen.getByText(/chat\.citations\.mcpResult/)).toBeInTheDocument()
-    // Result excerpt
-    expect(screen.getByText(/Open Notebook Plus is a desktop/)).toBeInTheDocument()
+    // Result excerpt ('+' escaped — it's a regex metacharacter in the brand name)
+    expect(screen.getByText(/Open notebook\+ is a desktop/)).toBeInTheDocument()
   })
 
   it('mcp pill popover falls back to placeholder when no cached payload exists', () => {

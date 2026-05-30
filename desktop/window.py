@@ -333,7 +333,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
 
 
 def open_window(url: str, on_close: Callable[[], None],
-                title: str = "Open Notebook Plus",
+                title: str = "Open notebook+",
                 width: int = 1280, height: int = 800,
                 theme: str = "light-blue",
                 memory_url: str | None = None,

@@ -122,7 +122,7 @@ export default function DashboardPage() {
           {/* Header */}
           <header className="space-y-1">
             <h1 className="text-3xl font-bold tracking-tight">
-              Open Notebook Plus
+              Open notebook+
             </h1>
             <p className="text-sm text-muted-foreground">
               Local-first research and reasoning · {totalNotebooks} notebook

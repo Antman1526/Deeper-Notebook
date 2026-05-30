@@ -1,4 +1,4 @@
-/* Open Notebook Plus design tokens — layered on top of shadcn's --foreground,
+/* Open notebook+ design tokens — layered on top of shadcn's --foreground,
  * --background, --primary etc. set at runtime by desktop/window.py. These
  * tokens use color-mix() against shadcn variables so they auto-adapt to the
  * active theme (light-blue, dracula, nord, …) without per-theme overrides. */
