@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🩹 v0.8.65b — Web-search audit fixes: total-budget guard + tool-calling hint**
+  - **Latency guard (audit fix):** the failover chain could block a chat turn for
+    up to ~70s if SearXNG instances *hang* (vs the fast 429s) — and a slow early
+    instance could starve a fast later one, since the chat loop's per-tool-call
+    timeout (30s) would hard-kill it mid-attempt. `run_web_search` now enforces a
+    total wall-clock budget (`ONP_WEB_SEARCH_TOTAL_BUDGET_SEC`, default 25s, under
+    the 30s loop cap) and passes `min(per-attempt timeout, remaining budget)` as a
+    PER-REQUEST timeout, so the chain self-bounds gracefully and still reaches a
+    fast instance. Live-verified: auto→Serper 1.6s; forced-SearXNG fails across
+    all 5 instances in 2.9s.
+  - **Deferred `d` follow-up — capability hint:** the `McpToolPicker` web_search
+    row now carries a static help line ("Web search needs a chat model that
+    supports tool calling — most cloud models do; many small local models do
+    not"), so a user whose local model silently can't tool-call understands why
+    search isn't firing (it isn't a config bug). i18n via `defaultValue`.
+  - **Test:** +3 (total-budget parse/clamp + per-request-timeout wiring backend;
+    +2 frontend hint show/hide). `tests/test_v0_8_64_web_search.py` → 33;
+    `McpToolPicker.test.tsx` → 13.
+
 - **🔁 v0.8.65 — Web-search failover chain + `web_search` visible in the chat MCP picker**
   - **Failover (`open_notebook/tools/web_search.py`):** `run_web_search` now walks
     an ordered *chain* of attempts instead of a single provider. `SEARXNG_BASE_URL`

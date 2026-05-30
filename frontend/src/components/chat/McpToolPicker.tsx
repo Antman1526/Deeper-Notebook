@@ -155,6 +155,21 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
             )
           })}
         </ul>
+        {webSearchAvailable && (
+          // v0.8.65 — the built-in web_search tool (like all bound tools) only
+          // fires if the active chat model supports function/tool calling.
+          // Surface that so a user whose local model silently can't tool-call
+          // understands why web search isn't happening (it isn't a config bug).
+          <p
+            className="text-[10px] text-muted-foreground border-t pt-2"
+            data-testid="mcp-pick-web-search-hint"
+          >
+            {t('chat.mcpPicker.webSearchHint', {
+              defaultValue:
+                'Web search needs a chat model that supports tool calling — most cloud models do; many small local models do not.',
+            })}
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   )

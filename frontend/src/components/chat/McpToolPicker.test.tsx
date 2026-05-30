@@ -178,4 +178,20 @@ describe('McpToolPicker', () => {
     expect(screen.queryByTestId('mcp-pick-web-search')).not.toBeInTheDocument()
     expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/1 tools/)
   })
+
+  it('shows the tool-calling capability hint when web search is enabled', () => {
+    mockServers.mockReturnValue([])
+    mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    expect(screen.getByTestId('mcp-pick-web-search-hint').textContent).toMatch(/tool calling/i)
+  })
+
+  it('does NOT show the capability hint when web search is off', () => {
+    mockServers.mockReturnValue([
+      { id: '1', name: 'Crawl4AI', url: 'http://y', enabled: true, priority: 100 },
+    ])
+    mockWebSearch.mockReturnValue({ enabled: false, provider: null, tool_name: 'web_search' })
+    render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+    expect(screen.queryByTestId('mcp-pick-web-search-hint')).not.toBeInTheDocument()
+  })
 })
