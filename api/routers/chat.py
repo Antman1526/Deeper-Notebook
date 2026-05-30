@@ -215,6 +215,15 @@ class UpdateSessionRequest(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
     )
+    # v0.8.43 — Persistent per-conversation MCP server disable picks.
+    # When the user toggles the v0.8.42 MCP tool picker, the new state
+    # gets PATCHed here so the picks survive page reloads. null clears
+    # all picks ("all servers enabled"); empty list [] means the same
+    # in practice but is preserved as-is so the UI can distinguish "I
+    # explicitly cleared the list" from "I never set it."
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None, description="MCP server names disabled for this session",
+    )
 
 
 class ChatMessage(BaseModel):
@@ -236,6 +245,10 @@ class ChatSessionResponse(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
     )
+    # v0.8.43 — persistent MCP server disable picks (null = none).
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None, description="MCP server names disabled for this session",
+    )
 
 
 class ChatSessionWithMessagesResponse(ChatSessionResponse):
@@ -252,6 +265,33 @@ class ExecuteChatRequest(BaseModel):
     )
     model_override: Optional[str] = Field(
         None, description="Optional model override for this message"
+    )
+    # v0.8.42 — per-request MCP server disable list. Frontend sends this
+    # so the user can untick "load only what I need" picks for the
+    # current chat turn (the XDA Developers / Pi-harness pattern). The
+    # chat-graph node passes it into bind_mcp_and_run_tool_loop's
+    # exclude_server_names; server-name match is case-insensitive +
+    # trimmed (`_resolve_chat_tools` normalises both sides). Empty list
+    # or null = all enabled servers visible (the v0.8.0 default).
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None,
+        description=(
+            "MCP server names to skip for this chat turn. Each entry "
+            "matches `mcp_server.name` case-insensitively. Omit / null "
+            "to expose all enabled servers (default)."
+        ),
+    )
+    # v0.8.63 — explicit user consent to send THIS turn to cloud even though
+    # the fail-closed privacy gate flagged it (the "Re-ask allowing cloud"
+    # action in the redaction-review sheet). Default False — the gate stays
+    # active. Set True ONLY by a deliberate user action; never a default path.
+    bypass_privacy_gate: bool = Field(
+        False,
+        description=(
+            "When True, skip the fail-closed privacy gate for THIS turn "
+            "(explicit user consent to send flagged content to cloud). "
+            "Default False — the gate stays active."
+        ),
     )
 
 
@@ -285,6 +325,32 @@ class ExecuteChatResponse(BaseModel):
             "{index: int (1-based, matches [mcp:N] markers), name: str, "
             "args: dict, text: str (truncated to 4000 chars)}. None when "
             "no MCP tools fired."
+        ),
+    )
+    privacy_gated: Optional[bool] = Field(
+        None,
+        description=(
+            "v0.8.58 — True when the fail-closed privacy gate kept this turn "
+            "on the local model because sensitive content was detected "
+            "(rather than letting the smart router send it to cloud). None "
+            "when the gate didn't act."
+        ),
+    )
+    privacy_categories: Optional[List[str]] = Field(
+        None,
+        description=(
+            "v0.8.58 — category LABELS of the sensitive content the gate "
+            "detected (e.g. 'email', 'person_name'). NEVER the matched secret "
+            "values. None when the gate didn't act."
+        ),
+    )
+    agent_state: Optional[str] = Field(
+        None,
+        description=(
+            "v0.8.60 — agent-FSM terminal state of the tool loop when "
+            "ONP_AGENT_FSM is on: 'complete', 'clarify' (the model paused to "
+            "ask the user), or 'truncated' (hit the tool-iteration cap). None "
+            "when the FSM is off."
         ),
     )
 
@@ -364,6 +430,10 @@ async def get_sessions(
                 updated=iso(session.updated),
                 message_count=msg_count,
                 model_override=getattr(session, "model_override", None),
+            # v0.8.43 — surface the persistent MCP disable picks. Use
+            # getattr so pre-migration rows (where the field isn't on
+            # the model instance yet) return None safely.
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
             )
             for session, msg_count in zip(sessions_list, msg_counts)
         ]
@@ -414,6 +484,7 @@ async def create_session(request: CreateSessionRequest):
             updated=iso(session.updated),
             message_count=0,
             model_override=session.model_override,
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
@@ -499,6 +570,10 @@ async def get_session(session_id: str):
             message_count=len(messages),
             messages=messages,
             model_override=getattr(session, "model_override", None),
+            # v0.8.43 — surface the persistent MCP disable picks. Use
+            # getattr so pre-migration rows (where the field isn't on
+            # the model instance yet) return None safely.
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -536,6 +611,14 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         if "model_override" in update_data:
             session.model_override = update_data["model_override"]
 
+        # v0.8.43 — persist the v0.8.42 MCP server disable picks.
+        # `exclude_unset=True` above means we ONLY touch the field
+        # when the client explicitly sends it (omitted in PATCH ≠
+        # clear-to-null), so the v0.7.x "rename session" flow keeps
+        # working untouched.
+        if "disabled_mcp_servers" in update_data:
+            session.disabled_mcp_servers = update_data["disabled_mcp_servers"]
+
         await session.save()
 
         # Find notebook_id
@@ -563,6 +646,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             updated=iso(session.updated),
             message_count=msg_count,
             model_override=session.model_override,
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -602,6 +686,16 @@ async def delete_session(session_id: str):
         await _fire_memory_summarize_session(
             full_session_id,
             model_override=getattr(session, "model_override", None),
+            # v0.8.46d — the v0.8.43 `replace_all` that added
+            # `disabled_mcp_servers=getattr(session, ...)` after every
+            # `model_override=getattr(session, "model_override", None),`
+            # in this file ALSO matched this fire-and-forget call —
+            # passing a kwarg `_fire_memory_summarize_session` doesn't
+            # accept (its signature is just chat_session_id +
+            # model_override). That raised TypeError on EVERY session
+            # delete, killing the v0.7.70 session-summary memory write
+            # (the delete itself then 500'd before `session.delete()`).
+            # The summarizer has no use for the MCP picks — removed.
         )
 
         await session.delete()
@@ -620,9 +714,16 @@ async def delete_session(session_id: str):
         # `delete_thread` on the checkpointer (the SqliteSaver method
         # introduced for exactly this purpose). Wrapped in best-effort
         # try/except so a checkpoint-cleanup failure doesn't block the
-        # primary SurrealDB delete — the row IS gone; the orphan
-        # checkpoint will be cleaned by the existing
-        # `checkpoint_prune` background task (api/main.py v0.7.125).
+        # primary SurrealDB delete — the row IS gone.
+        # v0.8.48 — corrected an earlier comment that claimed the
+        # `checkpoint_prune` background task (api/main.py v0.7.125) would
+        # reclaim the orphan on failure: it WON'T. prune_old_checkpoints
+        # uses per-thread retention (keep newest 50 PER thread_id), so it
+        # only trims old snapshots WITHIN an over-retention thread — it
+        # never deletes an orphaned thread whose session is gone. If
+        # delete_thread below fails, this thread's (≤50) checkpoints
+        # persist; the leak is bounded to one session and this path is
+        # rare, so we accept it rather than add an orphan-sweep pass.
         try:
             checkpointer = getattr(chat_graph, "checkpointer", None)
             delete_thread = getattr(checkpointer, "delete_thread", None)
@@ -707,6 +808,23 @@ async def execute_chat(request: ExecuteChatRequest):
             state_values["messages"] = state_values.get("messages", [])
             state_values["context"] = request.context
             state_values["model_override"] = model_override
+            # v0.8.42 — propagate the per-request MCP-server disable
+            # list into LangGraph state. The chat node reads this in
+            # `bind_mcp_and_run_tool_loop` so the user's "load only
+            # what I need" pick takes effect on this turn only — no
+            # persistent state mutation.
+            # v0.8.43 — per-request value wins; fall back to the
+            # session's persisted picks (set via PATCH /chat/sessions/{id}
+            # when the user toggles the v0.8.42 tool picker). Pre-
+            # v0.8.43 the only signal was the request body, which
+            # didn't survive page reloads.
+            state_values["disabled_mcp_servers"] = (
+                request.disabled_mcp_servers
+                if request.disabled_mcp_servers is not None
+                else getattr(session, "disabled_mcp_servers", None)
+            )
+            # v0.8.63 — per-request privacy-gate bypass (explicit user consent).
+            state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)
 
             # Add user message to state
             from langchain_core.messages import HumanMessage
@@ -809,6 +927,20 @@ async def execute_chat(request: ExecuteChatRequest):
             result.get("mcp_tool_calls") if isinstance(result, dict)
             else getattr(result, "mcp_tool_calls", None)
         )
+        # v0.8.58 — privacy-gate decision (None when the gate didn't act).
+        privacy_gated = (
+            result.get("privacy_gated") if isinstance(result, dict)
+            else getattr(result, "privacy_gated", None)
+        )
+        privacy_categories = (
+            result.get("privacy_categories") if isinstance(result, dict)
+            else getattr(result, "privacy_categories", None)
+        )
+        # v0.8.60 — agent-FSM terminal state (None when the FSM is off).
+        agent_state = (
+            result.get("agent_state") if isinstance(result, dict)
+            else getattr(result, "agent_state", None)
+        )
 
         # Convert messages to response format
         messages: list[ChatMessage] = []
@@ -851,6 +983,9 @@ async def execute_chat(request: ExecuteChatRequest):
             selected_provider=selected_provider,
             selected_model_id=selected_model_id,
             mcp_tool_calls=mcp_tool_calls,
+            privacy_gated=privacy_gated,
+            privacy_categories=privacy_categories,
+            agent_state=agent_state,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -961,6 +1096,23 @@ async def _stream_chat_events(
             state_values["messages"] = state_values.get("messages", [])
             state_values["context"] = request.context
             state_values["model_override"] = model_override
+            # v0.8.42 — propagate the per-request MCP-server disable
+            # list into LangGraph state. The chat node reads this in
+            # `bind_mcp_and_run_tool_loop` so the user's "load only
+            # what I need" pick takes effect on this turn only — no
+            # persistent state mutation.
+            # v0.8.43 — per-request value wins; fall back to the
+            # session's persisted picks (set via PATCH /chat/sessions/{id}
+            # when the user toggles the v0.8.42 tool picker). Pre-
+            # v0.8.43 the only signal was the request body, which
+            # didn't survive page reloads.
+            state_values["disabled_mcp_servers"] = (
+                request.disabled_mcp_servers
+                if request.disabled_mcp_servers is not None
+                else getattr(session, "disabled_mcp_servers", None)
+            )
+            # v0.8.63 — per-request privacy-gate bypass (explicit user consent).
+            state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)
 
             from langchain_core.messages import HumanMessage
 
@@ -1045,9 +1197,49 @@ async def _stream_chat_events(
                             output.get("mcp_tool_calls") if isinstance(output, dict)
                             else getattr(output, "mcp_tool_calls", None)
                         )
+                        # v0.8.1 follow-up — also capture the smart-router
+                        # selection so the `done` event can include
+                        # selected_provider / selected_model_id (parity
+                        # with the non-streaming /chat/execute response).
+                        # AUDIT FIX: the previous Pydantic-fallback dict
+                        # below was `{"messages": msgs, "mcp_tool_calls":
+                        # mcp_calls_raw}` which dropped these two fields
+                        # on the Pydantic-state branch — frontends saw
+                        # null even when the graph populated them.
+                        selected_provider_raw = (
+                            output.get("selected_provider") if isinstance(output, dict)
+                            else getattr(output, "selected_provider", None)
+                        )
+                        selected_model_id_raw = (
+                            output.get("selected_model_id") if isinstance(output, dict)
+                            else getattr(output, "selected_model_id", None)
+                        )
+                        # v0.8.58 — same dual-path capture for the privacy-gate
+                        # decision so the Pydantic-state branch doesn't drop it.
+                        privacy_gated_raw = (
+                            output.get("privacy_gated") if isinstance(output, dict)
+                            else getattr(output, "privacy_gated", None)
+                        )
+                        privacy_categories_raw = (
+                            output.get("privacy_categories") if isinstance(output, dict)
+                            else getattr(output, "privacy_categories", None)
+                        )
+                        # v0.8.60 — agent-FSM terminal state (dual-path).
+                        agent_state_raw = (
+                            output.get("agent_state") if isinstance(output, dict)
+                            else getattr(output, "agent_state", None)
+                        )
                         final_result = (
                             output if isinstance(output, dict)
-                            else {"messages": msgs, "mcp_tool_calls": mcp_calls_raw}
+                            else {
+                                "messages": msgs,
+                                "mcp_tool_calls": mcp_calls_raw,
+                                "selected_provider": selected_provider_raw,
+                                "selected_model_id": selected_model_id_raw,
+                                "privacy_gated": privacy_gated_raw,
+                                "privacy_categories": privacy_categories_raw,
+                                "agent_state": agent_state_raw,
+                            }
                         )
         finally:
             # v0.7.174 — release the per-session lock. Runs on every exit
@@ -1119,7 +1311,43 @@ async def _stream_chat_events(
                 "calls": mcp_tool_calls_out,
             }) + "\n"
 
-        yield json.dumps({"type": "done", "messages": messages}) + "\n"
+        # v0.8.1 follow-up — surface smart-router decision in the `done`
+        # event so SSE clients can render the local/cloud badge without
+        # an extra round trip. Keys are ALWAYS present (null when smart
+        # routing didn't run / explicit model_override / no on_chain_end
+        # event) to keep the wire shape stable for clients that destructure.
+        selected_provider_out = (
+            final_result.get("selected_provider") if isinstance(final_result, dict)
+            else None
+        )
+        selected_model_id_out = (
+            final_result.get("selected_model_id") if isinstance(final_result, dict)
+            else None
+        )
+        # v0.8.58 — privacy-gate decision parity with /chat/execute.
+        privacy_gated_out = (
+            final_result.get("privacy_gated") if isinstance(final_result, dict)
+            else None
+        )
+        privacy_categories_out = (
+            final_result.get("privacy_categories") if isinstance(final_result, dict)
+            else None
+        )
+        # v0.8.60 — agent-FSM terminal state parity with /chat/execute.
+        agent_state_out_evt = (
+            final_result.get("agent_state") if isinstance(final_result, dict)
+            else None
+        )
+
+        yield json.dumps({
+            "type": "done",
+            "messages": messages,
+            "selected_provider": selected_provider_out,
+            "selected_model_id": selected_model_id_out,
+            "privacy_gated": privacy_gated_out,
+            "privacy_categories": privacy_categories_out,
+            "agent_state": agent_state_out_evt,
+        }) + "\n"
 
     except NotFoundError:
         # Streaming context — the HTTP response has already started

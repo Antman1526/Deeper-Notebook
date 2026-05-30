@@ -175,7 +175,9 @@ class TestMemoryRecallBudget:
             new=slow_inner,
         ):
             result = await mr_mod.recall_memory("anything")
-            assert result == {"facts": [], "preferences": []}
+            # v0.8.49 — empty dict now carries the `episodes` key too so
+            # the recall-dict shape is stable across all return paths.
+            assert result == {"facts": [], "preferences": [], "episodes": []}
 
 
 # ---------------------------------------------------------------------- #

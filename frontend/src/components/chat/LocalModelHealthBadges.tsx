@@ -2,6 +2,8 @@
 
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.8.38 — click a red badge → log popover with classified failure hint
+import { SidecarLogPopover, sidecarKindFromName } from './SidecarLogPopover'
 
 // Phase 1 — traffic-light dots so the user can see at-a-glance
 // which sidecars are reachable. Mapped to Tailwind tokens so
@@ -28,17 +30,33 @@ export function LocalModelHealthBadges() {
   if (isLoading || !data) return null
   return (
     <div className="space-y-1 text-[10px]">
-      {data.models.map((m) => (
-        <div key={m.name} className="flex items-center gap-1.5">
-          {/* v0.8.0 — i18n: status strings translated per frontend convention (was hardcoded EN) */}
+      {data.models.map((m) => {
+        // v0.8.38 — only the unhealthy dot is interactive. Healthy +
+        // not_configured + unknown dots stay static; popping a log on
+        // "everything's fine" would just confuse the user.
+        const kind = m.status === 'unhealthy' ? sidecarKindFromName(m.name) : null
+        const dot = (
           <span
-            className={`h-2 w-2 rounded-full ${STATUS_DOT[m.status] ?? STATUS_DOT.unknown}`}
+            className={`h-2 w-2 rounded-full ${STATUS_DOT[m.status] ?? STATUS_DOT.unknown} ${kind ? 'cursor-pointer ring-offset-1 hover:ring-2 hover:ring-rose-300' : ''}`}
             title={`${t(`models.status.${m.status}`)}: ${m.detail ?? t('models.status.noDetail')}`}
             aria-label={`${m.name}: ${t(`models.status.${m.status}`)}`}
+            role={kind ? 'button' : undefined}
+            tabIndex={kind ? 0 : undefined}
           />
-          <span className="truncate text-muted-foreground">{m.name}</span>
-        </div>
-      ))}
+        )
+        return (
+          <div key={m.name} className="flex items-center gap-1.5">
+            {/* v0.8.0 — i18n: status strings translated per frontend convention (was hardcoded EN) */}
+            {/* v0.8.38 — wrap unhealthy dots in a popover; static otherwise. */}
+            {kind ? (
+              <SidecarLogPopover kind={kind}>{dot}</SidecarLogPopover>
+            ) : (
+              dot
+            )}
+            <span className="truncate text-muted-foreground">{m.name}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -87,6 +87,13 @@ class SourceChatState(TypedDict):
     # citation pill popovers work in source chat. None when no MCP
     # tools fired (no enabled servers, or model can't tool-call).
     mcp_tool_calls: Optional[list[dict]]
+    # v0.8.44 — per-request MCP server disable list (parity with
+    # notebook chat's `disabled_mcp_servers` from v0.8.42). The
+    # source-chat router writes this onto the LangGraph state from
+    # the request body; the node passes it to
+    # `bind_mcp_and_run_tool_loop` so the same "load only what I
+    # need" affordance works on source-focused conversations.
+    disabled_mcp_servers: Optional[list[str]]
 
 
 async def call_model_with_source_context(
@@ -227,7 +234,12 @@ async def _call_model_with_source_context_inner(
     # behaviour on the source-chat surface. Both graphs now share
     # `bind_mcp_and_run_tool_loop` from chat.py.
     from open_notebook.graphs.chat import bind_mcp_and_run_tool_loop
-    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(model, payload)
+    # v0.8.44 — thread the per-request MCP disable list into the
+    # source-chat tool loop (parity with notebook chat's v0.8.42).
+    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+        model, payload,
+        exclude_server_names=state.get("disabled_mcp_servers") or None,
+    )
 
     # Clean thinking content from AI response (e.g., <think>...</think> tags)
     content = extract_text_content(ai_message.content)

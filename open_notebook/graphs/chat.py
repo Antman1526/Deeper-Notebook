@@ -1,6 +1,9 @@
+import asyncio
+import os
 from typing import Annotated, Optional
 
 from ai_prompter import Prompter
+from loguru import logger as _logger
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -75,12 +78,33 @@ class ThreadState(TypedDict):
     # it stays None and the response field is omitted/None.
     selected_provider: Optional[str]
     selected_model_id: Optional[str]
+    # v0.8.58 — privacy-gate decision plumbed back to /chat/execute so the
+    # response (and the planned 5.2c review UI) can show that a turn was kept
+    # on-device for privacy. `privacy_gated` True when the gate rerouted
+    # cloud→local; `privacy_categories` lists the detected category LABELS
+    # (e.g. "email", "person_name") — NEVER the matched secret values.
+    privacy_gated: Optional[bool]
+    privacy_categories: Optional[list]
+    # v0.8.60 — agent-FSM terminal state for the tool loop ("complete",
+    # "clarify", "truncated") when ONP_AGENT_FSM is on; None otherwise.
+    agent_state: Optional[str]
     # v0.8.1 Item 3 — list of MCP tool-call records made during this
     # turn. Reset per turn (call_model_with_messages clears it before
     # binding tools). The /chat router includes this in
     # ExecuteChatResponse so the frontend can render citation pill
     # popovers with the real search query + result text.
     mcp_tool_calls: Optional[list]
+    # v0.8.42 — Per-request MCP server disable list. Frontend sends
+    # this on `ExecuteChatRequest.disabled_mcp_servers` so the user
+    # can untick specific tools for a given chat turn ("load only what
+    # I need" — the XDA Developers / Pi-harness pattern). Empty / None
+    # = all enabled servers visible (the v0.8.0 default behaviour, no
+    # regression for users who never touch the picker).
+    disabled_mcp_servers: Optional[list[str]]
+    # v0.8.63 — per-request privacy-gate bypass (explicit user consent to send
+    # this turn to cloud even though the gate flagged it). None/False = gate
+    # active (default).
+    bypass_privacy_gate: Optional[bool]
 
 
 def _json_schema_to_pydantic_model(
@@ -178,6 +202,7 @@ def _clear_tool_discovery_cache() -> None:
 async def _resolve_chat_tools(
     *, force_servers=None, captures=None,
     force_tool_names=None, force_tools_full=None,
+    exclude_server_names=None,
 ) -> list:
     """Phase 2 — when at least one MCP server is enabled in the
     registry, expose its tools to the chat LLM.
@@ -208,6 +233,18 @@ async def _resolve_chat_tools(
     from open_notebook.mcp.registry import list_enabled_servers
 
     servers = force_servers if force_servers is not None else await list_enabled_servers()
+    # v0.8.42 — per-request filter. The chat-graph node reads the
+    # caller-supplied `disabled_mcp_servers` from state and passes it
+    # here so the user can "load only the tools they need" on a given
+    # turn (the XDA Developers / Pi-harness pattern). Server names are
+    # normalised (case-insensitive, trimmed) on both sides so a UI
+    # typo doesn't silently fail to filter.
+    if exclude_server_names:
+        excluded = {n.strip().lower() for n in exclude_server_names if n}
+        servers = [
+            s for s in servers
+            if (s.get("name") or "").strip().lower() not in excluded
+        ]
     if not servers:
         return []
     server = servers[0]
@@ -311,11 +348,35 @@ async def _resolve_chat_tools(
     ]
 
 
+# v0.8.60 — Phase 5.3c-full. Lightweight agent-FSM integration for the chat
+# tool loop, gated by ONP_AGENT_FSM (default off). The loop already terminates
+# when the model stops calling tools; we don't change that. Instead, when
+# enabled, we (a) tell the model it MAY end its turn by declaring a state, and
+# (b) classify the terminal state (clarify / complete / truncated) from the
+# final message and surface it to the caller — so a model that PAUSES to ask
+# the user a question (clarify) is visible to the client, not silently treated
+# as a finished answer. Tolerant: a missing/garbled tag → None → "complete".
+def _agent_fsm_enabled() -> bool:
+    raw = (os.environ.get("ONP_AGENT_FSM") or "").strip().lower()
+    return raw in ("on", "1", "true", "yes")
+
+
+_AGENT_FSM_TOOL_LOOP_INSTRUCTION = (
+    "When you have fully answered, you MAY end your reply with a line "
+    "`<state>complete</state>`. If you cannot proceed without more "
+    "information from the user, ask your question and end with "
+    "`<state>clarify</state>`. This is optional and must be the very last "
+    "line if used."
+)
+
+
 async def bind_mcp_and_run_tool_loop(
     model,
     payload: list,
     *,
     max_iterations: int = 4,
+    exclude_server_names: list[str] | None = None,
+    agent_state_out: dict | None = None,
 ):
     """v0.8.16 — Shared MCP tool-loop helper for both chat graphs.
 
@@ -348,12 +409,42 @@ async def bind_mcp_and_run_tool_loop(
     mcp_captures: list = []
     mcp_tools: list = []
     try:
-        mcp_tools = await _resolve_chat_tools(captures=mcp_captures)
+        # v0.8.42 — pass the per-request disable list through to the
+        # resolver so the user's "load only what I need" picks land
+        # BEFORE network discovery happens (saves a round-trip for the
+        # all-excluded case too).
+        mcp_tools = await _resolve_chat_tools(
+            captures=mcp_captures,
+            exclude_server_names=exclude_server_names,
+        )
         if mcp_tools:
             model = model.bind_tools(mcp_tools)
-    except Exception:
+    except Exception as bind_exc:
         # v0.8.0 — local providers may not implement bind_tools
+        # v0.8.35f — log the swallowed exception at DEBUG. Pre-v0.8.35f
+        # this was fully silent — operators debugging "why doesn't MCP
+        # work on my local model?" had no signal at all. Matches the
+        # v0.8.27/v0.8.28/v0.8.33 silent-except sweep convention:
+        # DEBUG for benign/expected failures (local models without
+        # tool-calling support), WARNING for surprises. Same except
+        # runs in source-chat now (since v0.8.16 shared the helper),
+        # so this lights up diagnostics for both chat surfaces at
+        # once.
+        _logger.debug(
+            "MCP tool bind failed (degrading to no-tools): {}",
+            bind_exc,
+        )
         mcp_tools = []
+
+    # v0.8.60 — gated agent-FSM prompt contract: tell the model it MAY declare
+    # a terminal <state> (complete/clarify). Default off → payload unchanged.
+    fsm_enabled = _agent_fsm_enabled()
+    if fsm_enabled:
+        from langchain_core.messages import SystemMessage as _SystemMessage
+
+        payload = list(payload) + [
+            _SystemMessage(content=_AGENT_FSM_TOOL_LOOP_INSTRUCTION)
+        ]
 
     ai_message = await model.ainvoke(payload)
 
@@ -381,7 +472,35 @@ async def bind_mcp_and_run_tool_loop(
                 continue
             try:
                 safe_args = args if isinstance(args, dict) else {}
-                result = await tool.coroutine(**safe_args)
+                # v0.8.35e — per-tool-call timeout. A hung MCP tool
+                # (slow web fetch, server stuck, network black hole)
+                # used to block the entire chat turn. /chat/execute
+                # was bounded by the v0.7.99 outer wrap
+                # (ONP_CHAT_TIMEOUT_SEC, default 300s) but /chat/stream
+                # only halts on client disconnect — a hung tool froze
+                # the user's stream indefinitely. asyncio.wait_for
+                # raises TimeoutError, which the existing except
+                # branch converts into a ToolMessage error string so
+                # the model can adapt (apologize, try a different
+                # tool, give up). Default 30s is generous — MCP tools
+                # for web search/fetch typically complete in 1-5s; a
+                # tool taking 30s is almost certainly broken.
+                _tool_timeout = float(
+                    os.environ.get("ONP_MCP_TOOL_TIMEOUT_SEC", "30").strip() or 30
+                )
+                try:
+                    result = await asyncio.wait_for(
+                        tool.coroutine(**safe_args),
+                        timeout=_tool_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    # Re-raise as a plain exception so the outer
+                    # except below records it with the tool's name —
+                    # keeps the error-feedback shape consistent with
+                    # all other tool failures.
+                    raise Exception(
+                        f"timed out after {_tool_timeout}s"
+                    )
             except Exception as tool_exc:
                 result = f"Tool {name!r} failed: {tool_exc}"
             tool_msgs.append(ToolMessage(
@@ -391,6 +510,48 @@ async def bind_mcp_and_run_tool_loop(
         running_payload.extend(tool_msgs)
         ai_message = await model.ainvoke(running_payload)
         running_payload.append(ai_message)
+
+    # v0.8.56 — Phase 5.3c (observability slice). Surface the loop's terminal
+    # state: if we exited because tool_iters hit max_iterations while the model
+    # STILL wanted to call tools, the turn was force-stopped — the tool budget
+    # (not the model) was the limiting factor and the answer is likely
+    # incomplete. Previously silent. Only meaningful when tools were actually
+    # bound (no tools → no loop). Pure observation: no behavior change, no gate.
+    # The full FSM loop driver (declared-state + anti-hallucinated-done) is the
+    # staged 5.3c-full; this just makes the existing terminal state visible.
+    truncated = (
+        bool(tool_lookup)
+        and tool_iters >= max_iterations
+        and bool(getattr(ai_message, "tool_calls", None))
+    )
+    if tool_lookup:
+        if truncated:
+            _logger.warning(
+                "chat tool loop hit max_iterations ({}) with the model still "
+                "requesting tools — answer may be incomplete (truncated). "
+                "Raise the iteration cap or check why the model keeps calling "
+                "tools.", max_iterations,
+            )
+        try:
+            from api.metrics import record_agent_tool_loop_outcome
+            record_agent_tool_loop_outcome("truncated" if truncated else "complete")
+        except Exception:
+            pass
+
+    # v0.8.60 — when the FSM is enabled, classify the terminal state from the
+    # final message's declared <state> and surface it (clarify is the valuable
+    # signal: the model paused to ask the user rather than finishing). Tolerant
+    # parse → a missing/garbled tag falls back to truncated/complete.
+    if fsm_enabled and agent_state_out is not None:
+        from open_notebook.graphs.agent_fsm import AgentState, parse_state
+
+        declared = parse_state(getattr(ai_message, "content", "") or "")
+        if declared == AgentState.CLARIFY:
+            agent_state_out["agent_state"] = AgentState.CLARIFY.value
+        elif truncated:
+            agent_state_out["agent_state"] = "truncated"
+        else:
+            agent_state_out["agent_state"] = AgentState.COMPLETE.value
 
     return ai_message, mcp_captures
 
@@ -482,6 +643,9 @@ async def call_model_with_messages(
                 content_for_sizing,
                 selection_out=selection_out,
                 max_tokens=8192,
+                # v0.8.63 — honor the user's explicit "send to cloud anyway"
+                # consent for this turn (skips the privacy gate).
+                privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
             )
 
         # v0.8.16 — Tool-binding + execution loop moved to
@@ -489,8 +653,16 @@ async def call_model_with_messages(
         # See the helper's docstring for the full semantics
         # (v0.8.0 Phase 2 Task 8 binding, v0.8.9 in-node execution,
         # v0.8.10 direct dispatch, v0.8.13 captures shape).
+        # v0.8.42 — thread the per-request MCP disable list from state
+        # into the tool loop. When the user unticks "SearXNG" in the
+        # chat UI, the next turn binds without that server's tools.
+        # v0.8.60 — capture the agent-FSM terminal state (clarify/complete/
+        # truncated) when ONP_AGENT_FSM is on. Empty dict when off.
+        agent_state_out: dict = {}
         ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
             model, payload,
+            exclude_server_names=state.get("disabled_mcp_servers") or None,
+            agent_state_out=agent_state_out,
         )
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
@@ -510,6 +682,11 @@ async def call_model_with_messages(
             "messages": cleaned_message,
             "selected_provider": selection_out.get("selected_provider"),
             "selected_model_id": selection_out.get("selected_model_id"),
+            # v0.8.58 — privacy-gate decision (None when the gate didn't act).
+            "privacy_gated": selection_out.get("privacy_gated"),
+            "privacy_categories": selection_out.get("privacy_categories"),
+            # v0.8.60 — agent-FSM terminal state (None when ONP_AGENT_FSM off).
+            "agent_state": agent_state_out.get("agent_state"),
             "mcp_tool_calls": mcp_captures if mcp_captures else None,
         }
     except OpenNotebookError:

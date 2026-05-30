@@ -192,6 +192,38 @@ so chat never blocks.
 |---|---:|---|
 | `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` | 5 | Embed call on the recall query string |
 | `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` | 5 | Each SurrealQL query in the recall path |
+| `ONP_MEMORY_RECALL_BUDGET_SEC` (v0.7.133) | 12 | Outer wall on the whole recall flow |
+| `ONP_MEMORY_RECALL_MODE` (v0.7.84) | `auto` | `recent` \| `semantic` \| `auto` recall strategy |
+
+## Memory recall content + retention (v0.8.49 + v0.8.50)
+
+| Env var | Default | What it controls |
+|---|---:|---|
+| `ONP_MEMORY_RECALL_EPISODES` (v0.8.49) | `1` (on) | Recall whole-session summaries (`memory_episode`) into the chat prompt, alongside facts/preferences. Set `0`/`false`/`off` to suppress (stops old conversations resurfacing; reclaims ~1k chars of prompt budget). |
+| `ONP_MEMORY_KEEP_PER_TABLE` (v0.8.50) | `500` | Retention ceiling — newest N rows kept per memory table (`memory_fact`/`preference`/`episode`); older rows are pruned at session end and behind a per-turn high-water gate. Closes the unbounded-growth gap (Finding #3). Invalid / `<1` values fall back to the default. |
+| `ONP_MEMORY_BATCH_TURNS` (v0.8.54) | `1` | Fact-extraction batching. `1` = extract once per turn (default, unchanged). `N>1` buffers turns per session and runs ONE extraction over the combined transcript every N turns (drained at session end) — fewer LLM calls + whole-conversation context. Invalid / `<1` → `1`. |
+| `ONP_MEMORY_CONFIDENCE_FLOOR` (v0.8.55) | `0.0` | Drop extracted facts/preferences whose model-assigned confidence is below this (0.0-1.0). `0.0` = keep everything (default, unchanged). Raise it to filter speculative/low-confidence memories. A missing/garbled score counts as `1.0` (never dropped). Invalid / out-of-range → `0.0`. |
+
+## Fail-closed privacy gate (v0.8.51, Phase 5.2a)
+
+| Env var | Default | What it controls |
+|---|---:|---|
+| `ONP_PRIVACY_GATE` | `off` | When `on` (aliases `1`/`true`/`yes`/`local`), turns the smart router would send to **cloud** are scanned for structured secrets/PII (API keys, AWS/GitHub/Google/Slack tokens, private-key blocks, SSNs, Luhn-valid card numbers, emails, `secret=`-style assignments). On a hit the turn is kept on the **local** model instead; if no local model is configured the request is **blocked** (HTTP 422) rather than leaked. Off → zero change to routing. |
+
+| `ONP_PRIVACY_CLASSIFIER_URL` (v0.8.57) | _unset_ | Optional local OpenAI-compatible endpoint for a model-backed PII layer that catches **unstructured** PII (names/addresses/health in prose) the regex misses. Unset → regex-only (the v0.8.51 behaviour). Set to a URL, or to `auto` (v0.8.59 — aliases `sidecar`/`chat-sidecar`/`local`) to reuse the running local chat sidecar as the classifier (no second model to provision). Findings are UNIONed with the regex floor (model can only catch *more*); best-effort (a flaky/missing classifier never blocks chat). Only called on gate-on, cloud-bound turns. |
+| `ONP_PRIVACY_CLASSIFIER_MODEL` (v0.8.57) | `default` | Model name sent to the classifier endpoint. |
+| `ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC` (v0.8.57) | `5` | Per-call timeout for the classifier; invalid/≤0 → 5. |
+
+Scope: gates the **auto-route cloud-fallback** path only (turns going through
+the smart router). The regex floor catches *structured* secrets reliably; the
+optional `ONP_PRIVACY_CLASSIFIER_URL` model layer (v0.8.57) adds unstructured
+PII. See `docs/7-DEVELOPMENT/phase-5-advanced-memory.md`.
+
+## Agent-loop FSM (v0.8.52 core, v0.8.53 ask gate, Phase 5.3)
+
+| Env var | Default | What it controls |
+|---|---:|---|
+| `ONP_AGENT_FSM` | `off` | When `on` (aliases `1`/`true`/`yes`): (a) the `ask` graph declares `clarify` and asks the user to refine instead of synthesizing an ungrounded answer when no searches returned grounded content (v0.8.53); and (b) the chat MCP tool loop lets the model declare a terminal `<state>complete|clarify</state>`, surfaced as `agent_state` on the chat response / stream `done` event (v0.8.60 — `clarify` = the model paused to ask the user). Off → unchanged. |
 
 ## Connection-test + discover (v0.7.100 + v0.7.110 + v0.7.116)
 

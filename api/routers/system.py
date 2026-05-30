@@ -1,0 +1,122 @@
+"""v0.8.40d — System control endpoints for launcher → API IPC.
+
+The v0.8.40 control plane gave the API a way to call into the launcher
+(`POST /restart_sidecar`, `/hot_swap_chat`). This module gives the
+launcher the reverse channel: a way to push state updates INTO the
+running API process. Currently one use case:
+
+  - After `hot_swap_chat` succeeds, the launcher needs to update
+    `OPEN_NOTEBOOK_LOCAL_N_CTX` in the API's environment so the smart
+    router (provision.py) sees the new GGUF's native context length on
+    the very next chat turn. Without this push, the n_ctx stays at the
+    OLD GGUF's value until the next app launch — documented as a
+    known limitation in v0.8.40b CHANGELOG, closed here.
+
+Design choices:
+  - **Path bypasses the password middleware** (added to
+    main.py:excluded_paths) so the launcher doesn't need to know the
+    user-facing password.
+  - **Auth via the same bearer token the launcher control plane uses**
+    (`OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`). Both the launcher and the
+    API have this token via session_env; reusing it for the reverse
+    direction is symmetric. A future v0.8.40e could split the token
+    if scope separation matters, but the trust boundary is the same
+    (launcher and its child API process).
+  - **Strict whitelist** of allowed env var names. Without this, a
+    compromised process anywhere in the box could overwrite arbitrary
+    env vars (PATH, PYTHONPATH…) and execute code on the next subprocess
+    spawn. The whitelist is explicit; new use cases require adding the
+    var name + a CHANGELOG note explaining why it's safe.
+"""
+from __future__ import annotations
+
+import os
+
+import secrets
+
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
+router = APIRouter()
+
+
+# Whitelist of env var names the launcher is permitted to push into
+# the running API. Keep this list narrow + audited — each entry should
+# correspond to a documented launcher-side mutation flow.
+#
+# OPEN_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
+#   hot_swap_chat so provision.py's router sees the new GGUF's native
+#   context length without app restart.
+_ALLOWED_ENV_VARS: frozenset[str] = frozenset({
+    "OPEN_NOTEBOOK_LOCAL_N_CTX",
+})
+
+
+class EnvRefreshRequest(BaseModel):
+    """Body for POST /api/system/env-refresh.
+
+    Map of {env_var_name: new_value}. Only keys in `_ALLOWED_ENV_VARS`
+    are honored; everything else is rejected with a 400 listing the
+    offending names so the launcher knows to update its allowlist.
+    """
+    vars: dict[str, str]
+
+
+@router.post("/api/system/env-refresh")
+async def env_refresh(
+    body: EnvRefreshRequest,
+    authorization: str | None = Header(default=None),
+):
+    """v0.8.40d — Mutate selected env vars in the running API process.
+
+    Called by the launcher's `hot_swap_chat` to push the new
+    `OPEN_NOTEBOOK_LOCAL_N_CTX` value so subsequent chat turns route
+    against the new GGUF's actual native context window (not the stale
+    pre-swap value).
+
+    Auth: bearer token matching `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`.
+    The launcher and API both receive this token via session_env at
+    boot; nothing else on the box should know it. Constant-time compare
+    via `secrets.compare_digest` so a timing attack on the token isn't
+    feasible from a chatty localhost neighbor.
+
+    Returns `{updated: [keys], rejected: [keys]}` so the caller can
+    distinguish "applied" from "ignored" without parsing log lines.
+    """
+    expected_token = os.environ.get(
+        "OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "",
+    ).strip()
+    if not expected_token:
+        # No token configured → endpoint is disabled. Return 503 so
+        # the caller (launcher) doesn't retry indefinitely.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "env-refresh is disabled — OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN "
+                "is not set in the API environment. The API is likely "
+                "running outside the desktop launcher."
+            ),
+        )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or malformed Authorization header",
+        )
+    presented = authorization[len("Bearer "):].strip()
+    if not secrets.compare_digest(presented, expected_token):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    updated: list[str] = []
+    rejected: list[str] = []
+    for k, v in (body.vars or {}).items():
+        if k not in _ALLOWED_ENV_VARS:
+            rejected.append(k)
+            continue
+        # `os.environ` mutation is process-wide and thread-safe per
+        # CPython's GIL. The router reads via `os.getenv()` lazily at
+        # chat-turn time, so the next turn picks up the new value.
+        os.environ[k] = str(v)
+        updated.append(k)
+
+    return {"updated": updated, "rejected": rejected}

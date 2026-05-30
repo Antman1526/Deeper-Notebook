@@ -333,6 +333,11 @@ async def get_default_models():
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
             default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
+            # v0.8.1 / v0.8.37 — surface the smart-router config so
+            # Settings can render the toggle + provider-pref dropdown.
+            auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
+            auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
+            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
         )
     except HTTPException:
         # v0.7.135 — re-raise typed HTTPExceptions so the generic
@@ -375,6 +380,23 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             defaults.default_tools_model = defaults_data.default_tools_model  # type: ignore[attr-defined]
         if defaults_data.default_reasoning_model is not None:
             defaults.default_reasoning_model = defaults_data.default_reasoning_model  # type: ignore[attr-defined]
+        # v0.8.1 — auto_route_cloud is the dedicated cloud slot for the
+        # smart router. Empty string sent from the UI dropdown means
+        # "unset" — translate to None so it actually unlinks the field.
+        if defaults_data.auto_route_cloud is not None:
+            defaults.auto_route_cloud = defaults_data.auto_route_cloud or None  # type: ignore[attr-defined]
+        # v0.8.37 — UI smart-routing toggle + provider-pref dropdown.
+        # Booleans always overwrite (False is a meaningful value, unlike
+        # "unset"), so we check for explicit None rather than truthiness.
+        if defaults_data.auto_route_enabled is not None:
+            defaults.auto_route_enabled = bool(defaults_data.auto_route_enabled)  # type: ignore[attr-defined]
+        if defaults_data.auto_route_provider_pref is not None:
+            # Defensive — clamp to the allowed set so a future schema
+            # drift can't write garbage to the DB.
+            pref = defaults_data.auto_route_provider_pref
+            if pref not in ("auto", "local", "cloud"):
+                pref = "auto"
+            defaults.auto_route_provider_pref = pref  # type: ignore[attr-defined]
 
         await defaults.update()
 
@@ -389,6 +411,9 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
             default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
+            auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
+            auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
+            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
         )
     except HTTPException:
         raise

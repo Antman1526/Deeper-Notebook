@@ -20,6 +20,1706 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.63 — Interactive privacy redaction-review sheet + cloud-consent bypass**
+  - The On-device privacy badge is now **clickable** → a review popover that
+    lists the detected category labels + an explanation, and (in notebook chat)
+    offers a **"Re-ask allowing cloud"** action: explicit user consent that
+    re-sends the question with the fail-closed gate bypassed for that one turn.
+  - **Backend bypass (least-privilege):** new `ExecuteChatRequest.bypass_privacy_gate`
+    (**default False** — gate stays active), threaded request → chat state →
+    `ThreadState` → `provision_langchain_chat_model(privacy_gate_bypass=…)`,
+    which then skips the gate + classifier for that turn and **logs the bypass**
+    for auditability. Mirrors the v0.8.42 `disabled_mcp_servers` per-request
+    plumbing. Set True ONLY by the deliberate "Re-ask allowing cloud" action.
+  - **Frontend:** `ChatMessagePrivacyBadge` became a Popover (categories +
+    explanation + optional re-ask button); `ChatPanel` gained `onReaskAllowCloud`
+    (finds the preceding user question and re-sends it); `ChatColumn` wires it to
+    `useNotebookChat.sendMessage(text, undefined, /*bypass*/ true)`. Source chat
+    omits the handler → review-only popover there.
+  - **Test:** `tests/test_v0_8_63_privacy_bypass.py` (default-False contract +
+    cross-layer source guards) and the rewritten `ChatMessagePrivacyBadge.test.tsx`
+    (popover, categories, re-ask present/calls/absent). Backend privacy/gate
+    suite + chat/source/ChatColumn vitest re-run green.
+
+- **🎨 v0.8.62 — Agent-FSM "needs input"/"truncated" chip in the chat UI (Phase 5.3c UI)**
+  - Surfaces the v0.8.60 `agent_state`: a `❓ Needs your input` chip (when the
+    model declared `clarify` — it paused to ask the user) or `✂ Truncated`
+    chip (hit the tool-iteration cap) next to the AI message, via
+    `ChatMessageAgentStateBadge` reading the cached `done`-event state. Renders
+    nothing for `complete`/null → no chrome when `ONP_AGENT_FSM` is off
+    (default). Test: `ChatMessageAgentStateBadge.test.tsx` (4 cases).
+
+- **🎨 v0.8.61 — "On-device" privacy badge in the chat UI (Phase 5.2c frontend)**
+  - The visible payoff of the v0.8.58 backend: a small `🛡 On-device` chip
+    renders next to an AI message when the fail-closed privacy gate kept that
+    turn on the local model — so the user SEES that their sensitive content
+    was protected instead of silently sent to cloud. The tooltip lists the
+    detected category labels (e.g. "email, person_name") — labels only, never
+    the matched values.
+  - New `frontend/src/components/chat/ChatMessagePrivacyBadge.tsx`, mirroring
+    the v0.8.35c provider badge: reads `privacy_gated`/`privacy_categories`
+    from the same TanStack Query cache entry that `useNotebookChat` stashes on
+    the `/chat/stream` `done` event; mounted next to the provider badge in
+    `ChatPanel`. The `chat.ts` stream/response types + the done-event caching
+    were extended for `privacy_gated`/`privacy_categories`/`agent_state`.
+    Renders nothing unless `privacy_gated === true` → zero change to existing
+    messages.
+  - **Test:** `ChatMessagePrivacyBadge.test.tsx` (4 cases) green; the full
+    chat/source component suite (40 tests) re-runs green.
+  - **Follow-up:** an interactive redaction-review sheet (edit/approve before
+    a cloud resend) and surfacing `agent_state="clarify"` in the UI are the
+    remaining 5.2c/5.3c UI polish.
+
+- **✨ v0.8.60 — Agent-FSM in the chat tool loop (Phase 5.3c-full)**
+  - Completes the agent-FSM thread. When `ONP_AGENT_FSM` is on, the chat MCP
+    tool loop (`bind_mcp_and_run_tool_loop`) tells the model it MAY end its
+    turn with `<state>complete</state>` / `<state>clarify</state>`, then
+    classifies the terminal state from the final message and surfaces it as
+    `agent_state` on `ExecuteChatResponse` + the `/chat/stream` `done` event.
+    The valuable signal is **clarify** — a model that pauses to ask the user a
+    question is now visible to the client as `agent_state="clarify"` instead
+    of being indistinguishable from a finished answer; `truncated` reuses the
+    v0.8.56 cap detection.
+  - **Deliberately lightweight + low-risk.** The chat loop is a tool-calling
+    loop (not a plan-execute agent), so we do NOT drive/redesign the loop —
+    it still terminates exactly as before (model stops calling tools, or the
+    `max_iterations` backstop). The FSM only adds a gated prompt hint + a
+    terminal-state *classification* (`agent_fsm.parse_state`, tolerant → a
+    missing/garbled tag falls back to complete/truncated). A full plan-execute
+    agent (todo plan + anti-hallucinated-done) would be a separate graph, not a
+    retrofit of chat.
+  - **Safety:** **default `ONP_AGENT_FSM` off → zero change** (no `<state>`
+    injection, `agent_state` None, response shape stable). The terminal-state
+    plumbing reuses the proven v0.8.1/v0.8.58 path; a new `agent_state_out`
+    out-param keeps `bind_mcp_and_run_tool_loop`'s signature back-compatible
+    (source_chat caller unaffected).
+  - **Test:** `tests/test_v0_8_60_agent_fsm_tool_loop.py` — clarify/complete
+    classification from `<state>` tags, complete when no tag, truncated on
+    cap, and FSM-off → no injection + untouched out-param. Env doc:
+    `ONP_AGENT_FSM` now also affects the chat tool loop.
+
+- **🔒 v0.8.59 — Reuse the chat sidecar as the PII classifier (Phase 5.2b-2)**
+  - The v0.8.57 model-backed PII layer needed a separately-configured
+    `ONP_PRIVACY_CLASSIFIER_URL`. Now setting it to `auto` (aliases `sidecar`
+    / `chat-sidecar` / `local`) resolves to the running local chat sidecar
+    (`OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL`, same OpenAI-compatible
+    `/chat/completions` shape) — so the model PII layer works without
+    provisioning a second model. Explicit opt-in (we never silently point at
+    the sidecar); resolves to no-classifier if the sidecar URL is also unset.
+  - **Test:** `tests/test_privacy_classifier.py` — explicit-URL passthrough,
+    `auto`/`sidecar`/… → sidecar URL, `auto` without a sidecar → None, unset →
+    None. Env doc updated.
+
+- **🔒 v0.8.58 — Surface the privacy-gate decision in the chat response (5.2c backend)**
+  - When the gate reroutes a turn cloud→local for privacy, the client now
+    learns WHY: `ExecuteChatResponse` (and the `/chat/stream` `done` event)
+    gain `privacy_gated: bool` + `privacy_categories: [str]`. Previously the
+    reroute showed only as `selected_provider="local"` (indistinguishable from
+    ordinary size/health routing) plus a server-side log/metric.
+  - **Plumbing** mirrors the v0.8.1 `selected_provider` path exactly:
+    `apply_privacy_gate` gained `findings_out` (populated with the acted-on
+    category LABELS); `provision.py` copies them into `selection_out`
+    (`privacy_gated`/`privacy_categories`); the chat-graph node returns them in
+    `ThreadState`; the router reads `result.get(...)` into the response (both
+    `/chat/execute` and the stream `done` event, incl. the Pydantic-state
+    fallback).
+  - **Safety:** exposes only category LABELS (e.g. `email`, `person_name`) —
+    **never the matched secret values** — so the response/logs can't re-leak
+    what the gate caught. None when the gate didn't act → no behavior change.
+    This is the backend foundation for the 5.2c redaction-review UI (frontend
+    follows).
+  - **Test:** `tests/test_v0_8_58_privacy_response.py` (response-model shape +
+    cross-layer wiring + label-only safety guards) and new `findings_out` cases
+    in `tests/test_privacy_classifier.py` (populated on act/block, empty on
+    passthrough, model categories included).
+
+- **🔒 v0.8.57 — Model-backed PII layer for the privacy gate (Phase 5.2b-1)**
+  - Starts the "big" privacy-classifier item. The v0.8.51 gate catches
+    *structured* secrets (keys, SSNs, cards, emails) via regex; this adds an
+    OPTIONAL model layer for *unstructured* PII — names, postal addresses,
+    health/financial details in prose — that regex can't match.
+  - **Reframed** from the design doc's "bundle a ~2.8 GB GGUF" to a **pluggable
+    local OpenAI-compatible endpoint** (`ONP_PRIVACY_CLASSIFIER_URL`): BYO model
+    or reuse the chat sidecar. Leaner, no giant bundle, fits the local-first
+    ethos. New `open_notebook/ai/privacy_classifier.py:classify_via_model_async`
+    POSTs the text with a PII-classification prompt and tolerantly parses a
+    JSON category array.
+  - **Architecture:** the classifier call is **async** (`httpx.AsyncClient`) and
+    lives in `provision.py` — NOT inside the sync `apply_privacy_gate` — so it
+    can't block the event loop (the sync-I/O-in-async bug family). The gate
+    gained an `extra_findings` param; findings are **UNIONed** with the regex
+    floor, so the model layer can only ever catch MORE — it never weakens the
+    fail-closed regex guarantee. The classifier runs only when the gate is on
+    AND the turn is cloud-bound; otherwise zero cost.
+  - **Safety:** **default `ONP_PRIVACY_CLASSIFIER_URL` unset → regex-only,
+    exactly the v0.8.51 behaviour.** Best-effort: any failure (unconfigured,
+    endpoint down, malformed response, timeout) → `[]`, never blocks chat.
+    Bounded by `ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC` (default 5s).
+  - **Test:** `tests/test_privacy_classifier.py` — tolerant category parsing
+    (clean/prose/fenced/normalized/invalid), `classify_via_model_async`
+    (unconfigured/empty/parsed/error/no-choices, all httpx-mocked), and gate
+    integration (model finding reroutes cloud→local even when regex-clean;
+    regex+model union). Existing v0.8.51 gate tests unchanged (no URL → regex).
+  - **Next:** 5.2b-2 (wire a default classifier endpoint in the launcher) and
+    5.2c (redaction-review UI). See the design doc.
+
+- **🔭 v0.8.56 — Surface chat tool-loop truncation (Phase 5.3c observability slice)**
+  - The chat MCP tool loop (`bind_mcp_and_run_tool_loop`) stops either when the
+    model emits no more tool calls (natural completion) OR when it hits the
+    `max_iterations=4` backstop. The latter means the model still wanted to
+    call tools but was **cut off** — the tool budget, not the model, limited
+    the turn, so the answer is likely incomplete. This was **completely
+    silent**.
+  - **Fix:** after the loop (only when MCP tools were actually bound), classify
+    the terminal state and emit `onp_agent_tool_loop_outcomes_total{outcome}`
+    (`complete` | `truncated`) plus a `WARNING` log on truncation. A rising
+    `truncated` ratio tells operators the iteration cap / `ONP_MCP_TOOL_TIMEOUT_SEC`
+    may be too tight. Uses the agent-FSM (v0.8.52) terminal vocabulary.
+  - **Safety:** pure observation — **no behavior change, no gate, no signature
+    change**; the loop terminates exactly as before. The full FSM loop *driver*
+    (model-declared `<state>` + anti-hallucinated-done) remains the staged
+    5.3c-full.
+  - **Test:** `tests/test_v0_8_56_tool_loop_outcome.py` — truncated when the
+    loop hits the cap with pending tool calls; complete on natural stop;
+    complete when tools are bound but unused; no outcome recorded when no tools
+    are bound. (Mirrors the v0.8.35e mock harness.)
+
+- **✨ v0.8.55 — Confidence-aware memory (Phase 5.1c)**
+  - The extract prompt already asks the model for a `confidence` (0.0-1.0) on
+    each fact/preference, but it was **ignored**: `apply_tool_call`
+    (desktop/memory/writer.py) never read it and `surreal_store.insert` always
+    persisted `1.0`. Now we use it:
+    - **Floor:** candidates below `ONP_MEMORY_CONFIDENCE_FLOOR` are dropped
+      before the write (filters out the model's own low-confidence /
+      speculative "facts"). A missing or garbled score is treated as `1.0` —
+      we never drop a fact just because the model omitted the number.
+    - **Persist:** the real score is carried in metadata and written through
+      to the `confidence` column (`surreal_store.insert` now reads it from
+      metadata, mirroring how `scope` is carried), enabling confidence-based
+      retention/recall ranking in future.
+  - **Safety:** **default floor `0.0` → keep everything (unchanged).** Invalid
+    / out-of-range floor values fall back to `0.0`. mem0 already performs its
+    own ADD/UPDATE/NOOP dedup on write, so this slice focuses on the scoring
+    half of 5.1c; confidence-weighted eviction in `prune` is a future
+    refinement (today's retention is recency-based, v0.8.50).
+  - **Test:** `tests/test_memory_confidence.py` — coerce/clamp, floor parsing,
+    default-keeps-all, floor-drops-low, missing-score-not-dropped,
+    metadata persistence, and `surreal_store.insert` reading confidence from
+    metadata (+ defaulting to 1.0 when absent). Writer/store/retention/batching
+    clusters re-run green.
+
+- **✨ v0.8.54 — Batched memory extraction (Phase 5.1b)**
+  - The memory writer (`desktop/memory/writer.py`) ran one extractor LLM call
+    **per chat turn**. With `ONP_MEMORY_BATCH_TURNS=N>1` the worker now buffers
+    turns per session and runs ONE extraction over the combined transcript
+    every N turns — collapsing O(turns) extraction calls to O(turns/N) and
+    giving the model whole-conversation context (better cross-turn facts,
+    fewer near-duplicate writes for the v0.8.50 retention ceiling to prune).
+  - **Mechanics:** a process-local, lock-guarded per-session buffer in the
+    long-lived worker; `extract_turn` buffers and flushes a combined
+    `render_extract_user_batch(turns)` extraction at the threshold;
+    `summarize_session` calls the new `flush_session_buffer` FIRST so the
+    session's tail isn't stranded below the threshold when the conversation
+    ends. The extract→parse→apply→prune body was refactored into a shared
+    `_extract_and_apply` so the single-turn and batched paths can't drift.
+  - **Safety:** **default `ONP_MEMORY_BATCH_TURNS=1` → byte-for-byte the prior
+    per-turn behaviour** (the buffer code path is never entered). Batching is
+    opt-in. A worker restart drops any un-flushed tail — acceptable for
+    best-effort memory and only relevant when batching is enabled. Invalid /
+    `<1` values fall back to 1 so a typo can't disable extraction.
+  - **Test:** `tests/test_memory_batching.py` — buffering until threshold, the
+    combined transcript carrying all turns, session-end flush draining the
+    buffer, per-session isolation, facts written on flush, empty-flush no-op,
+    env parsing, and the unchanged default path. Existing writer/retention
+    tests re-run green against the refactor.
+  - **Note:** this batches the *trigger*; the multi-turn extraction *prompt
+    quality* is an operator's opt-in concern (the shared
+    `EXTRACT_TURN_SYSTEM_PROMPT` is unchanged). Scoring/dedup of candidates is
+    the staged Phase 5.1c.
+
+- **✨ v0.8.53 — Agent-FSM completion gate on the ask graph (Phase 5.3b)**
+  - Gives the v0.8.52 FSM core its first real consumer. The `ask` graph
+    (open_notebook/graphs/ask.py) fans out the strategy's searches and then
+    synthesizes a final answer. When **none** of the searches return grounded
+    content, asking the LLM to "synthesize" means writing from an empty
+    context — exactly where weak local models confidently hallucinate.
+  - **Fix:** when `ONP_AGENT_FSM` is on, `write_final_answer` now checks for
+    grounded answers first; if there are none it declares `AgentState.CLARIFY`
+    and returns a "refine your question / add sources" message **without
+    calling the synthesis LLM**, rather than emitting an ungrounded answer.
+    Otherwise it synthesizes as before and tags `agent_state="complete"`.
+  - **Streaming-safe:** `api/routers/search.py` captures `final_answer` from
+    this node's `on_chain_end` terminal event (its documented "fallback for
+    clients that ignore deltas"), so the clarify message is delivered even
+    though that path streams no token deltas. No new graph node, no edge
+    changes.
+  - **Scope:** the `ask` DAG doesn't loop, so this adopts the FSM's *state
+    vocabulary* (CLARIFY/COMPLETE); the FSM's loop *driver* + backstop is for
+    the chat tool loop (5.3c). Default **off** via `ONP_AGENT_FSM` → unchanged
+    behaviour; aliases `1`/`true`/`yes`.
+  - **Test:** `tests/test_agent_fsm_ask_gate.py` — 5 cases (clarify on
+    empty/whitespace-only answers with the LLM NOT called; synthesis +
+    complete on grounded answers; flag-off synthesizes regardless with no
+    tag; flag parsing). Docs: `ONP_AGENT_FSM` in the env reference + design
+    doc 5.3b status.
+
+- **✨ v0.8.52 — Agent-loop state-machine core (Phase 5.3a)**
+  - **What:** new pure module `open_notebook/graphs/agent_fsm.py` — the
+    dependency-free core of the agent reliability FSM. Weak local models tend
+    to claim "done" with work still open, or loop without progress; the FSM
+    gives an explicit lifecycle (`TODO → WORKING → COMPLETE`, with `CLARIFY`
+    for user input and `FAILED` terminal) and enforces two guarantees:
+    - **Anti-hallucinated-done:** a declared `COMPLETE` with any open todo
+      item is downgraded to `WORKING` — completion is only honored when every
+      todo is satisfied.
+    - **Backstop:** a `max_steps` ceiling force-terminates so a model that
+      never declares completion can't loop forever.
+  - **API:** `AgentState`, `can_transition`/`is_terminal`, `parse_state` (a
+    tolerant parser for a model-declared `<state>…</state>` tag or `STATE: …`
+    line, last-wins), `TodoItem`/`completion_satisfied`, and a pure
+    `AgentLoop.advance(declared, todos)` driver (no I/O).
+  - **Scope:** this is the CORE only (5.3a). Wiring it into the `ask` graph and
+    the chat MCP tool loop behind `ONP_AGENT_FSM` (default off) is 5.3b/c —
+    the `ask` graph (a fixed strategy→fan-out→synthesize DAG) and the tool
+    loop are the wiring targets; see the design doc. Shipping the tested core
+    first keeps each step independently reviewable.
+  - **Test:** `tests/test_agent_fsm.py` — 27 cases (transition table incl.
+    illegal/terminal, parser tag/line/last-wins/invalid/empty, completion
+    validation, and the driver: default-to-working, honor/downgrade COMPLETE,
+    backstop→COMPLETE/FAILED, terminal idempotence, illegal-declared fallback,
+    CLARIFY round-trip).
+
+- **🔒 v0.8.51 — Fail-closed privacy gate before cloud routing (Phase 5.2a)**
+  - **What:** the smart router can route a chat turn to a CLOUD provider when
+    the local sidecar is unhealthy or the content is too big for the local
+    context window — shipping the turn's text (which may hold pasted API keys,
+    SSNs, card numbers, …) off-device. New `open_notebook/ai/privacy_gate.py`
+    runs a fast, high-confidence **structured-secret** detector over the
+    outbound content and, when enabled and the router chose cloud, **fails
+    closed**: reroutes the turn to the local model so the secret never leaves
+    the machine — or, if no local model is configured, blocks the request
+    (clear HTTP 422) rather than leaking.
+  - **Detector** (`detect_sensitive`): emails, US SSNs, AWS/GitHub/OpenAI/
+    Google/Slack tokens, PEM private-key blocks, `secret=`/`password:`-style
+    assignments, and Luhn-validated credit-card numbers (Luhn check rejects
+    arbitrary 16-digit IDs/order numbers to keep false positives low). Returns
+    category labels so logs + the routing reason say WHAT was caught.
+  - **Seam:** one wrapped call (`apply_privacy_gate`) at the `pick_provider`
+    call site in `provision.py:provision_langchain_chat_model`, before the log
+    + `selected_provider` labeling so both reflect the gated decision.
+  - **Config / safety:** `ONP_PRIVACY_GATE` — **default off** (zero change to
+    routing). On → `on`/`1`/`true`/`yes`/`local`. Observability:
+    `onp_privacy_gate_redirects_total{outcome="local"|"blocked"}` (a rising
+    counter is a security-relevant signal).
+  - **Scope (honest):** gates the **auto-route cloud-fallback** path only;
+    catches *structured* secrets — unstructured PII (names/addresses in prose)
+    needs the local classifier model planned for Phase 5.2b. Gating
+    explicit-cloud-default turns is a documented follow-up.
+  - **Test:** `tests/test_privacy_gate.py` — 33 cases (every detector category,
+    clean text, Luhn accept/reject, dedup/sort; gate off/on, cloud+sensitive→
+    local, cloud+clean→passthrough, already-local→passthrough, no-local→blocks,
+    env-driven mode). Docs: `ONP_PRIVACY_GATE` in the env reference + design doc
+    updated.
+
+- **📐 v0.8.50 — Phase 5 design doc + memory retention ceiling (Phase 5.1a)**
+  - **Design:** new `docs/7-DEVELOPMENT/phase-5-advanced-memory.md` — a full
+    design + phased implementation plan for the three deferred Phase-5
+    capabilities (distill-and-score memory pipeline, fail-closed privacy
+    filter before cloud fallback, agent-loop state machine), each mapped to
+    concrete files/seams in this codebase, sequenced by payoff/risk, and
+    broken into independently shippable `v0.8.NN` sub-phases.
+  - **Implemented Phase 5.1a — closes Finding #3 (unbounded memory growth).**
+    The `memory_fact`/`memory_preference`/`memory_episode` tables grew without
+    bound: recall caps RESULTS, never ROWS, and the semantic path does an O(N)
+    full-table cosine scan every turn. Added a per-table recency ceiling:
+    - `SurrealMemoryStore.prune(keep_per_table)` + `.count(table)`
+      (desktop/memory/surreal_store.py). `prune` keeps the newest N rows by
+      `created_at` and deletes the rest, using a deliberate select-then-delete
+      shape (`SELECT id, created_at … ORDER BY created_at DESC` → slice in
+      Python → `DELETE … WHERE id IN $ids`) that sidesteps the v0.8.19/v0.8.30
+      "missing order idiom" trap and batches large eviction lists (1000/stmt).
+    - `desktop/memory/writer.py:prune_memories()` — best-effort wrapper
+      (never raises; a retention failure can't break a memory write). Invoked
+      at **session end** in `summarize_session` (always — the natural,
+      infrequent boundary) and **per turn** in `extract_turn` behind a cheap
+      high-water `count()` gate (`keep × 1.5`), so a user who never deletes
+      sessions still stays bounded while the common path pays nothing.
+    - Config: `ONP_MEMORY_KEEP_PER_TABLE` (default 500).
+  - **Safety:** purely additive to the write path; pruning is best-effort and
+    recency-based (no semantic loss of recent memories). Also made
+    `surreal_store.py`'s mem0 `VectorStoreBase` import defensive (mirrors
+    `client.py`) so the store's pure logic is unit-testable in the mem0-less
+    dev/test venv — zero production change (the worker venv ships mem0).
+  - **Test:** `tests/test_memory_retention.py` — 17 cases (prune keeps
+    newest/deletes rest, no-op under ceiling, query-shape guard, large-list
+    batching, count; writer wrapper no-op/high-water/never-raises; env
+    parsing).
+  - **Docs:** `ONP_MEMORY_KEEP_PER_TABLE` + the v0.8.49
+    `ONP_MEMORY_RECALL_EPISODES` flag documented in
+    `docs/5-CONFIGURATION/onp-env-reference.md`.
+  - **Staged (designed, not yet built):** Phase 5.1b batch buffering, 5.1c
+    scoring/dedup, 5.2 privacy filter, 5.3 agent-loop FSM — see the design doc.
+
+- **✨ v0.8.49 — Wire episode recall (the missing read half of v0.7.70)**
+  - The memory layer has three tables — `memory_fact`, `memory_preference`,
+    `memory_episode` (routed by metadata `kind` in
+    `desktop/memory/surreal_store.py`). Facts and preferences are recalled
+    into every chat / source-chat system prompt. **Episodes never were.**
+    `summarize_session` (v0.7.70) fires an ~800-token LLM call on every
+    session delete to distill the conversation into one `memory_episode`
+    row — but a codebase-wide search confirmed NOTHING ever read those
+    rows back (recall only queried fact + preference; the Gmail digest
+    reads the unrelated podcast `episode` table). The whole-conversation
+    memory layer was write-only dead data.
+  - **Fix:** wired the read path. `recall_recent_memory` and
+    `recall_relevant_memory` (open_notebook/utils/memory_recall.py) now
+    also pull `memory_episode` — recency via
+    `SELECT text, created_at … ORDER BY created_at DESC` and semantic via
+    the same `vector::similarity::cosine` idiom, both following the
+    v0.8.30 "order-idiom" projection rule. `render_memory_block` renders a
+    sanitized (v0.8.47) `## Earlier conversation summaries` section,
+    ordered LAST (coarsest / least authoritative). The recall dict gains
+    an `episodes` key (always present for shape stability).
+  - **Scope/safety:** purely additive — the write side (`summarize_session`)
+    is untouched; this only makes the already-written episodes usable.
+    Capped tight at `_MAX_EPISODES = 2` (summaries are long) and gated by
+    `ONP_MEMORY_RECALL_EPISODES` — **default ON** for parity with
+    facts/preferences (already recalled by default in this single-user
+    local app), set `=0`/`false`/`off` to suppress (privacy: stop old
+    conversations resurfacing; or reclaim ~1k chars of prompt budget on a
+    tiny local model).
+  - **Test:** 7 new cases in `tests/test_memory_recall.py` (episode query
+    fires + follows the hardened idiom; disable flag suppresses it;
+    flag-parsing; render section + ordering; only-episodes renders;
+    episodes are sanitized). Updated the v0.8.19/v0.8.30 query-shape test
+    for the now-3-query recency path.
+  - **Deferred (still Phase 5):** unbounded `memory_*` table growth +
+    full-table cosine scan — needs a retention/distillation pass against
+    the separate `MEMORY_SURREAL_URL` store, not cleanly testable here.
+
+- **🐛 v0.8.48 — Notebook delete leaked cascade-deleted sessions' checkpoints**
+  - Deleting a notebook cascade-deletes its linked `chat_session` rows
+    (v0.7.61), but — unlike the single-session delete path, which cleans
+    LangGraph checkpoints since v0.7.171 — it never removed those
+    sessions' checkpoint THREADS. The blobs leaked **permanently**: the
+    `checkpoint_prune` background task uses per-thread retention
+    (`ROW_NUMBER() … PARTITION BY thread_id`, keep newest 50), so it only
+    trims old snapshots *within* an over-retention thread — an orphaned
+    sub-50-checkpoint thread belonging to a deleted session is never
+    reached. A user who creates and deletes notebooks accumulates dead
+    checkpoint/writes rows in `checkpoints.sqlite` forever. (Surfaced
+    while auditing delete-cascade completeness after the v0.8.46d
+    session-delete fix.)
+  - **Fix (layering-aware):** `Notebook.delete()`
+    (open_notebook/domain/notebook.py) now returns the stringified
+    cascade-deleted session ids as `deleted_chat_session_ids`. The
+    domain layer must not import the chat graph/checkpointer, so the
+    notebooks API router (api/routers/notebooks.py) owns the cleanup: a
+    new best-effort `_cleanup_checkpoint_threads()` helper calls the same
+    `chat_graph.checkpointer.delete_thread` the chat router uses, one
+    thread per id, each isolated in its own try/except so one failure
+    can't abort the rest or fail the (already-committed) delete.
+  - **Test:** `tests/test_v0_8_48_notebook_delete_checkpoint_cleanup.py`
+    — behavioral tests for the helper (delete_thread called per session;
+    best-effort continuation past a failing thread without raising;
+    no-op on empty list / on a checkpointer lacking `delete_thread`)
+    plus a two-halves source guard pinning the `deleted_chat_session_ids`
+    contract between the domain return and the router read. (The domain
+    delete itself is a live-SurrealDB integration path covered by the
+    integration suite.)
+
+- **🔒 v0.8.47 — Harden recalled memory against stored prompt injection**
+  - `render_memory_block` (open_notebook/utils/memory_recall.py)
+    interpolated each recalled fact/preference **verbatim** into the
+    chat SYSTEM prompt (`f"- {p['text']}"`). Memory rows are
+    auto-extracted by the mem0 WRITE path (v0.7.68) from chat turns —
+    **including turns where the user pasted untrusted external content**
+    (PDFs, web pages, emails — ONP's core research workflow). A planted
+    "fact" containing newlines + a forged `## SYSTEM` header (or
+    "ignore prior instructions …") would render on its own lines and
+    fabricate a brand-new prompt section that persists across sessions:
+    a textbook stored-prompt-injection vector.
+  - **Fix:** new `_sanitize_memory_text()` collapses ALL whitespace
+    (newlines, tabs, control chars) in each fact to a single space and
+    caps length at 600 chars before interpolation. Flattening to one
+    line is the core mitigation — the text can no longer start a fresh
+    line to forge block-level markdown; whatever survives stays inside
+    its `- ` bullet, clearly framed as untrusted "facts learned about
+    the user" data. Bullets that sanitize to empty (and now-empty
+    sections) are dropped. Deliberately does NOT strip a leading
+    `-`/`*` run (would mangle legit facts like "-5°C preferred"; the
+    enclosing bullet already prevents a leading `#` from forming a
+    heading).
+  - **Test:** 8 new cases in `tests/test_memory_recall.py` — sanitizer
+    unit tests (flatten newlines/tabs/CR, length cap, empty handling)
+    plus end-to-end render assertions that a forged `## SYSTEM` section
+    never becomes a standalone heading line and empty bullets/sections
+    are dropped.
+  - **Audit (memory_recall.py), findings dispositioned:**
+    - *Count-query "missing order idiom" (claimed):* **false positive** —
+      `SELECT VALUE count() FROM memory_fact GROUP ALL` has no `ORDER
+      BY`, so the v0.8.19/v0.8.30 idiom-bug family cannot apply; the
+      aggregate returns `[N]` and the code reads `rows[0]` correctly.
+    - *Metrics async-safety (claimed):* **false positive** —
+      `record_memory_fallthrough` is a `prometheus_client` Counter
+      `.inc()`, a synchronous thread-safe non-blocking in-memory op;
+      safe to call from async without `await`, and already import-guarded.
+    - *Unbounded memory-table growth:* **real, deferred** — the recall
+      side caps result COUNT (15 facts / 10 prefs) but the WRITE side
+      grows the tables without bound, and the semantic path does a
+      full-table cosine scan. This is the Phase-5 "distill-and-score
+      memory pipeline" design item, not an inline fix.
+
+- **🐛 v0.8.46d — Session delete 500'd on EVERY call since v0.8.43 (regression)**
+  - `DELETE /chat/sessions/{id}` raised `TypeError` → 500 for every
+    session delete from v0.8.43 onward. Root cause: the v0.8.43
+    `replace_all` that appended
+    `disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None)`
+    after each `model_override=getattr(session, "model_override", None),`
+    in `api/routers/chat.py` was too broad — it ALSO matched the
+    fire-and-forget `_fire_memory_summarize_session(...)` call inside
+    `delete_session`. That helper's signature only accepts
+    `chat_session_id` + `model_override`, so the injected kwarg failed
+    at call-binding time, and the handler's `except Exception` re-wrapped
+    it as a 500. The four *intended* insertions (inside the
+    `ChatSessionResponse` / `ChatSessionWithMessagesResponse`
+    constructions) and the two `_fire_memory_extract_turn` calls were
+    unaffected.
+  - **Fix:** removed the stray kwarg from the summarizer call (the
+    session-end summarizer has no use for the per-conversation MCP
+    picks) and left a `# v0.8.46d` comment explaining the `replace_all`
+    over-match so it isn't reintroduced.
+  - **Test:** new `tests/test_v0_8_46d_delete_session_summarize_kwargs.py`
+    — (1) a signature contract asserting `_fire_memory_summarize_session`
+    does NOT accept `disabled_mcp_servers`, and (2) a behavioral test
+    that drives the **real** `delete_session` handler (DB + checkpoint
+    deps mocked, summarizer NOT mocked so the call-binding is actually
+    exercised) and asserts it returns `SuccessResponse` instead of
+    raising. The pre-existing v0.7.171 delete tests are source-text
+    guards that never invoke the handler, which is why they couldn't
+    catch a call-binding error — this one closes that gap.
+
+- **🐛 v0.8.46c — Fix 10 full-suite test failures the curated subset masked**
+  - Running the **entire** backend suite (`uv run pytest tests/`, not the
+    curated per-feature subset used during the v0.8.36→v0.8.46 work)
+    surfaced 10 failures invisible to the smaller runs. Two distinct
+    root causes:
+  - **(A) Event-loop pollution → "Event loop is closed" (9 tests).**
+    `tests/test_v0_8_1_selected_provider.py` and
+    `tests/test_phase3_smart_routing.py` drove their async-under-test
+    via `asyncio.get_event_loop().run_until_complete(coro)`. Under
+    `asyncio_mode = "auto"` (pytest-asyncio 1.x), an earlier async
+    test in the full collection leaves the process-wide "current"
+    event loop **closed**; these sync driver tests then inherited it
+    and raised `RuntimeError: Event loop is closed` (with a
+    "coroutine ... was never awaited" warning). They passed in
+    isolation / the curated subset only because no prior test had
+    closed the loop. **Fix:** switched the `_run` helpers (and one
+    inline call) to `asyncio.run(coro)`, which creates + closes a
+    fresh loop per call — immune to the pollution. The inline
+    `new_event_loop()` tests (`TestNCtxEnvVarSync`, `TestHealthCacheTTL`)
+    were already immune and untouched.
+  - **(B) Drifted mock target (1 test).**
+    `tests/test_chat_history_cap.py::test_call_model_invokes_trimming`
+    patched `chat.provision_langchain_model`, but since **v0.8.0
+    Phase 3 Task 12** the chat node's no-model-override path calls the
+    smart-route wrapper `provision_langchain_chat_model` instead —
+    which invoked the *real* `model_manager.get_defaults()` → a live
+    SurrealDB connect → failure. The test broke at v0.8.0 but was
+    never in a curated sweep, so only the full run caught it.
+    **Fix:** also patch `chat.provision_langchain_chat_model`.
+  - **(C) Network in unit tests (speed/robustness).** The v0.8.37
+    disabled-path `get_defaults()` toggle-check made two
+    disabled-path tests open a live SurrealDB connection (caught, so
+    they "passed" — but ~33s each on a connection timeout in a
+    DB-less environment). **Fix:** mock `model_manager.get_defaults`
+    with an `AsyncMock` returning a stub (`auto_route_enabled=False`)
+    in those tests. The 3 disabled-path tests now run in 3.9s total.
+  - **No production code changed** — all three are test-only fixes
+    (fragile loop driver, stale mock target, missing DB mock). The
+    app behavior was correct; the tests had drifted from it and the
+    curated subset never exercised the failing ordering.
+  - **Lesson:** a green curated subset can hide both test-isolation
+    bugs (loop pollution only manifests at full-collection scale) and
+    mock-drift (a call site moves to a wrapper the test doesn't
+    patch). Periodic full-suite runs are the only thing that catches
+    these. (Also fixed two `react-hooks/exhaustive-deps` warnings —
+    see v0.8.46b below.)
+
+- **🐛 v0.8.46b — Stale-closure deps in the two chat-send callbacks**
+  - The full-suite lint pass flagged `react-hooks/exhaustive-deps` on
+    `sendMessage` in both `useNotebookChat` and `useSourceChat`: each
+    reads `disabledMcpServers` (v0.8.42/v0.8.44 per-turn MCP picks)
+    inside the `useCallback` body but omitted it from the deps array.
+    Real stale-closure bug: toggling a server then sending — with no
+    other dependency changing — would capture the *previous* disable
+    list, so the backend saw the picks from before the last toggle.
+  - **Fix:** added `disabledMcpServers` to both deps arrays. Verified
+    by ESLint (warnings cleared) + the existing hook/chat tests.
+
+- **🐛 v0.8.46 — Mount the MCP tool picker in chat UI (feature was unreachable)**
+  - **Bug:** v0.8.42→v0.8.44b built the per-conversation MCP tool
+    picker end-to-end — `<McpToolPicker>` component (with its own 5
+    tests), the `disabledMcpServers` + `toggleDisabledMcpServer` state
+    on both `useNotebookChat` and `useSourceChat`, the request/state/
+    session plumbing, and the persistence migration — **but never
+    mounted `<McpToolPicker>` in any actual chat UI.** `ChatPanel`
+    (the shared notebook + source chat surface) neither imported it
+    nor accepted the toggle props, so the entire feature chain was
+    dead code from the user's perspective: no way to open the picker,
+    so `disabled_mcp_servers` was always empty in practice.
+  - **Fix:**
+    - `ChatPanel` gains optional `disabledMcpServers?: string[]` +
+      `onToggleMcpServer?: (name) => void` props and renders
+      `<McpToolPicker>` on the model-selector row (the picker self-
+      hides when there are no enabled MCP servers, so the row
+      gracefully collapses to just the model selector for users
+      without MCP configured).
+    - `ChatColumn` (notebook chat) forwards
+      `chat.disabledMcpServers` + `chat.toggleDisabledMcpServer`.
+    - `sources/[id]/page.tsx` (source chat) forwards the same from
+      `useSourceChat`.
+  - **Tests:** `frontend/.../ChatPanel.mcp-picker.test.tsx` — 3 new
+    tests as a permanent regression guard for exactly this class of
+    gap: picker renders + receives the forwarded disable list/handler
+    when `onToggleMcpServer` is provided; picker is absent when the
+    prop is omitted; empty array forwarded when `disabledMcpServers`
+    is undefined. (Stubs ChatPanel's heavy child tree + the JSDOM
+    `scrollIntoView` gap.) Frontend suite: 166/166 across 30 files.
+  - **Lesson:** plumbing + component + tests can all be green while
+    the feature is still unreachable if nothing wires the component
+    into a rendered tree. The new test asserts the *mount*, not just
+    the component in isolation.
+
+- **✨ v0.8.39d — Persistent download jobs across API restart**
+  - **What:** The GGUF downloader's job registry was in-memory, so an
+    API restart mid-download lost the job record — the user had to
+    rediscover which model was downloading. v0.8.39d makes interrupted
+    downloads survive a restart by reconciling against on-disk
+    sidecars, so the Local Models page proactively shows a "Resume"
+    button for them. (v0.8.39e already handled the actual resume from
+    the `.part` byte offset on the next click; v0.8.39d adds the
+    *visibility* so the user doesn't have to remember.)
+  - **Mechanism (`open_notebook/local_models/downloader.py`):**
+    - Each in-flight download now writes a tiny `{filename}.part.meta`
+      JSON sidecar `{job_id, repo_id, filename, bytes_total}` alongside
+      the `.part`. The `repo_id` is the key bit — a bare `.part`
+      filename tells us the model name but not which HF repo to resume
+      from. Written at stream start, refreshed once `bytes_total` is
+      known, removed on successful completion (best-effort; a sidecar
+      write/remove failure never breaks the download).
+    - New `reconcile_jobs(dest_dir)` scans `*.part.meta` sidecars and,
+      for any whose (repo_id, filename) isn't already a live job,
+      reconstructs a `DownloadJob` with `status="cancelled"` +
+      `resume_from_bytes`=current `.part` size. Reusing the existing
+      `cancelled` terminal status means the frontend's existing Resume
+      affordance (v0.8.39e) lights up with zero new enum handling.
+      Prunes orphan sidecars (no surviving `.part`) and corrupt
+      sidecars. Idempotent — safe to call on every list request.
+  - **API (`api/routers/local_models.py`):** new
+    `GET /local-models/downloads` reconciles + returns all known jobs.
+    (`GET /downloads/{job_id}` docstring updated to point at it for
+    post-restart repopulation.)
+  - **Frontend (`DownloadPanel.tsx`):** on mount, queries
+    `/local-models/downloads` and seeds `jobByKey` (without clobbering
+    any actively-polled job) so a recommendation card whose download
+    was interrupted shows "Resume" immediately. Refetch-on-focus
+    surfaces newly-reconciled jobs when returning to the tab.
+  - **Tests:** `tests/test_v0_8_39d_persistent_jobs.py` — 8 backend
+    tests: reconcile rebuilds from sidecar+`.part`, cancelled status +
+    resume offset, idempotency, orphan-sidecar prune, corrupt-sidecar
+    prune (no crash), skip-live-job, missing-dir, and the list
+    endpoint. Plus 1 frontend test (URL-routed mock → Resume button
+    seeded from a reconciled job). Downloader regression: 35/35.
+    Frontend: 163/163 across 29 files.
+
+- **🐛 v0.8.45 — Log silent metric-increment excepts in studio.py**
+  - The bug-hunt sweep (recurring-pattern checklist from CLAUDE.md)
+    surfaced 4 best-effort metric blocks in `api/routers/studio.py`
+    (`_record_outcome`, two `record_studio_outline_parse_failure`
+    sites, `record_studio_single_note_fallback`) using bare
+    `except Exception: pass` with NO logging — the last stragglers of
+    the v0.8.27→v0.8.35f silent-except family.
+  - Fixed: each now `logger.debug(...)` the swallowed exception so a
+    broken metrics path is discoverable. DEBUG (not WARNING) because
+    these are genuinely best-effort observability increments that must
+    never mask the user's actual response — but total silence made
+    "why aren't my Studio metrics moving?" undebuggable. The line-770
+    `except Exception: _record_outcome("failed"); raise` site was
+    already correct (re-raises) and left untouched.
+  - The rest of the hunt (sync submit_command in async, LangGraph
+    state-shape variance, SSE is_disconnected gaps, reader cancel
+    ordering, edge-table direction, delete cascades, str(payload)
+    overcount, blocking I/O on the loop) came back **clean** — no new
+    instances. Reported explicitly per the standing-workflow
+    requirement.
+
+- **✨ v0.8.44b — Source-chat session persistence for MCP picks**
+  - **What:** v0.8.44 made source-chat MCP picks per-request (hook-local).
+    v0.8.44b persists them on the session row so source-chat picks
+    survive page reloads + session switches — full parity with
+    notebook chat's v0.8.43. No new migration: source-chat sessions
+    share the `chat_session` table, so migration 20 (v0.8.43) already
+    provisions the `disabled_mcp_servers` column.
+  - **Backend (`api/routers/source_chat.py`):**
+    - `UpdateSourceChatSessionRequest` + `SourceChatSessionResponse`
+      (and the `WithMessages` subclass) gain the `disabled_mcp_servers`
+      field.
+    - The update handler switches to `model_dump(exclude_unset=True)`
+      semantics so a PATCH that only carries `disabled_mcp_servers`
+      doesn't clobber title/model_override (and vice-versa) — mirrors
+      the notebook-chat v0.8.43 handler.
+    - All 4 response-construction sites (create / list / get / update)
+      now echo the persisted picks via `getattr(session, ...)` /
+      `session_data.get(...)` (the list path uses `SELECT *` so the
+      field is present).
+    - **Precedence rule:** the send-message handler resolves the
+      effective per-turn disable list — request body wins; a null
+      body falls back to the session's persisted picks; an explicit
+      `[]` is preserved as "no disables this turn" (`is not None`).
+      Resolved in the handler (where `session` is loaded) and passed
+      to the SSE generator, which only receives `session_id`.
+  - **Frontend:**
+    - `UpdateSourceChatSessionRequest` type extended (the session
+      type already inherited `disabled_mcp_servers` from
+      `BaseChatSession`).
+    - `useSourceChat`: hydrates `disabledMcpServers` from the session
+      on load (gated on `!updateSessionMutation.isPending` to avoid
+      the v0.8.43b clobber race), and `toggleDisabledMcpServer`
+      PATCHes via a mutation ref (same forward-ref TDZ-safe pattern
+      as the notebook-chat v0.8.43b fix).
+  - **Tests:** `tests/test_v0_8_44b_source_chat_persistence.py` — 4
+    tests: update-request exclude_unset semantics, response schema
+    field exposure, per-request field coexistence, and a precedence-
+    rule reproduction (request-wins / null-fallback / empty-list-
+    preserved / both-null). Existing source-chat regression
+    (`test_source_chat_context_caps`, `test_source_chat_history_cap`)
+    + the v0.8.44 suite all pass. Frontend: 162/162 across 29 files.
+
+- **✨ v0.8.44 — Source-chat MCP picker parity**
+  - **What:** The v0.8.42/v0.8.43 MCP server disable picker shipped on
+    notebook chat only. Source chat (the per-source focused chat surface
+    that uses the same `bind_mcp_and_run_tool_loop` helper) was a feature
+    gap: users could untick SearXNG on a notebook chat but the same toggle
+    didn't exist on a source-focused conversation. v0.8.44 closes the gap.
+  - **Backend:**
+    - `open_notebook/graphs/source_chat.py:SourceChatState` gains the
+      `disabled_mcp_servers: Optional[list[str]]` field (parallel to
+      v0.8.42's `ThreadState`).
+    - The source-chat node now passes `state.get("disabled_mcp_servers")`
+      into `bind_mcp_and_run_tool_loop(exclude_server_names=...)` —
+      same filtering semantics as notebook chat (case-insensitive name
+      match, blank-string + None handling already covered by the
+      v0.8.42 resolver).
+    - `api/routers/source_chat.py:SendMessageRequest` accepts the new
+      `disabled_mcp_servers` field; the streaming handler forwards it
+      to `stream_source_chat_response` (signature updated to accept the
+      kwarg) which writes it onto `state_values`.
+  - **Frontend:**
+    - `SendMessageRequest` (source-chat type) extended with
+      `disabled_mcp_servers?: string[]`.
+    - `useSourceChat` exposes `disabledMcpServers` state +
+      `toggleDisabledMcpServer` callback. The send path passes
+      `disabled_mcp_servers: disabledMcpServers.length > 0 ?
+      disabledMcpServers : undefined` to the API client.
+    - The existing `<McpToolPicker>` component (v0.8.42) is reusable
+      as-is — UI consumers can drop it into source-chat surfaces with
+      the same prop shape.
+  - **Persistence parity (deferred to v0.8.44b):** The v0.8.43 work
+    persists notebook-chat picks on the `chat_session` row. Source-chat
+    sessions use the same `chat_session` table so the `disabled_mcp_servers`
+    column already exists for them — the only missing piece is the
+    source-chat router writing through to it on session PATCH and the
+    `useSourceChat` hydration effect mirror. Tracked separately.
+  - **Tests:**
+    - `tests/test_v0_8_44_source_chat_mcp_disable.py` — 3 backend
+      tests: `SendMessageRequest` schema (absent / null / empty list /
+      list), `SourceChatState` TypedDict declares the field (regression
+      guard against accidental rollback), `stream_source_chat_response`
+      signature accepts the kwarg with default None (back-compat for
+      any pre-v0.8.44 caller).
+    - Combined v0.8.42 + v0.8.43 + v0.8.44 MCP tests: 17/17 pass in
+      ~1.2s. Frontend: 162/162 across 29 files. Existing v0.8.42 case-
+      insensitive filter + empty-list no-op tests cover the source-chat
+      path implicitly through the shared `_resolve_chat_tools` helper.
+
+- **🐛 v0.8.43b — Two v0.8.43 audit fixes (forward-ref + hydration race)**
+  - **Audit finding A — useCallback forward-reference (MEDIUM).**
+    `toggleDisabledMcpServer` (declared near the top of `useNotebookChat`)
+    referenced `updateSessionMutation` which is hoisted later in the
+    same function body. JS temporal-dead-zone forbids const references
+    in deps arrays declared earlier than the const itself. Fix: assign
+    the live mutation object into a ref (`updateSessionMutationRef`) via
+    a useEffect placed AFTER the mutation declaration; the callback
+    dereferences `.current` at call time so the stale-closure bug
+    (mutation hot-swap) is avoided AND the deps array stays clean.
+    Pattern matches `abortControllerRef` / `inFlightSendsRef` already
+    used elsewhere in the hook.
+  - **Audit finding B — hydration race (MEDIUM).**
+    Pre-v0.8.43b, a rapid double-toggle could lose the user's second
+    click. Sequence: toggle #1 → setDisabledMcpServers; PATCH fires;
+    onSuccess invalidates session query; refetch returns the post-#1
+    server value; user toggles #2 while refetch in flight →
+    setDisabledMcpServers updates; refetch lands → hydration useEffect
+    fires → overwrites local state with stale-by-one server value.
+    Fix: gate hydration on `!updateSessionMutation.isPending` so the
+    optimistic state survives until the user's last write lands. Also
+    moved the hydration useEffect AFTER the mutation declaration (same
+    TDZ rule as fix A) and added `currentSession?.disabled_mcp_servers`
+    + `updateSessionMutation.isPending` to the deps array so the effect
+    correctly re-runs on either signal change.
+  - **Audit also confirmed clean** (no action needed):
+    - Migration 20 `TYPE option<array<string>>` matches the pattern in
+      migrations 1, 12, 14 — valid SurrealDB syntax.
+    - `/chat/execute` precedence rule correctly uses `is not None` so
+      an empty list (`[]`) is treated as "explicit clear" not "fall back
+      to session value".
+    - `ChatSession` domain-model `nullable_fields` membership +
+      `Optional[list[str]]` Pydantic field correctly serializes the new
+      field on save / round-trips it on load via the existing
+      `_prepare_save_data` helper.
+
+- **✨ v0.8.43 — Persistent per-conversation MCP picks**
+  - **What:** v0.8.42 made tool selection per-request (hook-local
+    state). v0.8.43 persists the picks on the `chat_session` row so
+    the user's "load only what I need" choices stick across page
+    reloads, browser tabs, and session navigation. Click "untick
+    Crawl4AI" once → it stays unticked for every future turn in
+    that session until ticked back.
+  - **Backend (migration 20):**
+    - `open_notebook/database/migrations/20.surrealql` —
+      `DEFINE FIELD disabled_mcp_servers ON chat_session
+      TYPE option<array<string>> DEFAULT NONE`. Existing rows stay
+      NULL ⇒ behavior unchanged for any chat created before this
+      migration.
+    - `20_down.surrealql` — `REMOVE FIELD` for a clean rollback.
+  - **Backend (`open_notebook/domain/notebook.py:ChatSession`):**
+    - New `disabled_mcp_servers: Optional[list[str]] = None` field.
+      Added to `nullable_fields` so the SurrealDB serializer treats
+      NULL correctly across the create/save round-trip.
+  - **Backend (`api/routers/chat.py`):**
+    - `UpdateSessionRequest` accepts `disabled_mcp_servers` with
+      `exclude_unset=True` semantics — omitting it on PATCH does
+      NOT clear the persisted value (so the existing v0.7.x rename-
+      session flow keeps working).
+    - `ChatSessionResponse` surfaces the field via `getattr(..., None)`
+      so pre-migration rows return null safely without raising.
+    - `/chat/execute` and `/chat/stream` precedence: per-request
+      body wins (v0.8.42 semantic); falls back to the session's
+      persisted picks if the body omits the field. Pre-v0.8.43,
+      the request body was the only signal.
+  - **Frontend (`useNotebookChat`):**
+    - On session load (`currentSessionId` change), hydrate
+      `disabledMcpServers` state from `session.disabled_mcp_servers`.
+    - `toggleDisabledMcpServer` now PATCHes the session via
+      `updateSessionMutation` after updating local state — best-
+      effort, the optimistic UI toggle doesn't block on the
+      network round-trip.
+  - **Type sync (`api.ts`):** `BaseChatSession.disabled_mcp_servers`
+    + `UpdateNotebookChatSessionRequest.disabled_mcp_servers` added.
+  - **Tests:**
+    - `tests/test_v0_8_43_persistent_mcp_picks.py` — 5 backend
+      tests: UpdateSessionRequest exclude_unset behavior (absent /
+      null / empty list / non-empty); ChatSessionResponse field
+      exposure; ChatSession domain model field + nullable_fields
+      membership; ExecuteChatRequest v0.8.42 field unaffected;
+      migration files exist + reference the right field name
+      (cheap sanity check against typos that would propagate to
+      every install).
+  - **Combined with v0.8.42** — A user can now: open a notebook
+    chat, untick SearXNG in the picker, send a turn, close the
+    tab, come back tomorrow, see SearXNG is still unticked.
+    Toggle it back on → stored. The XDA-Developers / Pi-harness
+    "load only what I need" pattern is now a first-class affordance.
+
+- **🐛 v0.8.42b — Two HIGH-severity audit fixes against v0.8.39e / v0.8.40b**
+  - External post-v0.8.42 audit caught two real bugs:
+    - **`Supervisor.hot_swap_chat` n_ctx rollback**
+      (`desktop/launcher.py`): on respawn failure, `chat_llm_path`
+      was restored to the pre-swap value but `chat_llm_n_ctx`
+      kept the newly-resolved value. Next retry saw a mismatched
+      (path, n_ctx) pair. Now we snapshot `old_n_ctx` alongside
+      `old_path` and restore BOTH on the failure path. Test:
+      `test_hot_swap_chat_restores_n_ctx_on_restart_failure` —
+      runs `hot_swap_chat` against a stub `restart_sidecar` that
+      returns failure, asserts both attributes are back to their
+      pre-call values.
+    - **Downloader Content-Range mismatch detection**
+      (`open_notebook/local_models/downloader.py`): v0.8.39e's
+      Range-resume path checked for a `200` response (server
+      doesn't support Range → would corrupt the append by
+      duplicating leading bytes). It did NOT verify that a `206`
+      response's `Content-Range` start matches the requested
+      offset. A broken / malicious mirror could return 206 with
+      `bytes 0-1499/3000` to a `bytes=1500-` request and silently
+      corrupt the file. Now we parse `Content-Range`, compare
+      the start byte to `resume_from`, and fail with a readable
+      error BEFORE opening the .part file. Tests: one for the
+      mismatch case (asserts `failed` + .part untouched), one
+      regression check for the matching happy path.
+  - **Audit also confirmed clean**:
+    - `PasswordAuthMiddleware` excluded_paths uses exact `in` match
+      (`api/auth.py:79`); `/api/system/env-refresh/foo` cannot
+      bypass auth.
+    - `cancel_job` flag mutation is CPython GIL-safe for the
+      read-modify scenario in the stream loop (documented).
+    - `_resolve_chat_tools` exclude-list normalization correctly
+      handles `None`, `[]`, missing `name`, and blank-string
+      entries (already covered by v0.8.42 tests).
+    - `recommendations.py` URLs all valid.
+
+- **✨ v0.8.42 — Per-request MCP server disable list (XDA "load only what I need" pattern)**
+  - **What:** Implements the deeper XDA Developers lesson from the
+    article evaluation in v0.8.41: "load only 5-6 tools you actually
+    need; dynamically unload unused tools from context." A new
+    `<McpToolPicker>` widget sits above the notebook chat input,
+    listing every registry-enabled MCP server with a checkbox.
+    Unchecking a server adds its name to the chat request's
+    `disabled_mcp_servers` field; the chat graph skips that server's
+    tools for the turn. Persistent registry state untouched —
+    purely a per-turn affordance.
+  - **Backend (`open_notebook/graphs/chat.py`):**
+    - `_resolve_chat_tools()` gets a new `exclude_server_names: list[str]
+      | None = None` kwarg. Names are normalised (case-insensitive,
+      `strip()`-trimmed) on both sides so frontend typos don't
+      silently fail to filter. Empty list and None are both
+      "no-disables" sentinels — defends against an accidental
+      "exclude=[]" wiping all tools.
+    - `bind_mcp_and_run_tool_loop()` threads the kwarg through to the
+      resolver. `call_model_with_messages` reads
+      `state.disabled_mcp_servers` from `ThreadState`.
+    - New `disabled_mcp_servers: Optional[list[str]]` field on
+      `ThreadState`.
+  - **Backend (`api/routers/chat.py`):**
+    - `ExecuteChatRequest` gets the optional `disabled_mcp_servers:
+      List[str]` field. Default null = all servers visible
+      (back-compat for existing clients). The router writes it onto
+      `state_values["disabled_mcp_servers"]` for both `/chat/execute`
+      and `/chat/stream`.
+  - **Frontend (`SendNotebookChatMessageRequest`,
+    `useNotebookChat`):**
+    - Type extended with `disabled_mcp_servers?: string[]`.
+    - Hook owns the `disabledMcpServers: string[]` state +
+      `toggleDisabledMcpServer(name)` helper. State is hook-local
+      (not persisted to the chat_session row — sticky-per-conversation
+      memory is deferred to v0.8.42b which would need a schema
+      migration).
+  - **Frontend (`components/chat/McpToolPicker.tsx`):**
+    - New compact Popover widget. Trigger chip shows "N/T tools"
+      so the user sees state at a glance. Picker hides
+      registry-disabled servers (those can't bind tools anyway —
+      handled by the v0.8.0 admin Settings → MCP page). Checkbox
+      state reflects case-insensitive name match against the
+      disabled array.
+  - **Tests:**
+    - `tests/test_v0_8_42_mcp_disable_filter.py` — 6 backend tests:
+      filter excludes matching servers, case-insensitive matching
+      (3 variants), empty/None is no-op (regression guard against
+      accidental wipe), blank-string entries ignored,
+      `bind_mcp_and_run_tool_loop` forwards the kwarg, and
+      `ExecuteChatRequest` schema accepts absent/null/empty/non-empty.
+    - `frontend/.../McpToolPicker.test.tsx` — 5 frontend tests:
+      empty registry → hidden; N/T trigger count math; registry-
+      disabled hidden; case-insensitive disabled-array match;
+      onToggle propagation. Frontend suite: 162/162 across 29 files.
+    - Full v0.8.x backend sweep: TBD — all v0.8.42 unit tests
+      green (6/6); existing v0.8.35e (per-tool timeout) +
+      v0.8.35f (silent-except log) + v0.8.1 plumbing remain.
+
+- **✨ v0.8.39e — GGUF download cancel + resume**
+  - **What:** The v0.8.39b downloader gets two features one tier of
+    "real-world UX" away: in-flight Cancel and automatic Resume from a
+    partial `.part` file. A 7 GB Qwen download interrupted by an
+    accidental window close, a flaky wifi blip, or a user closing the
+    laptop lid no longer means starting over from byte 0.
+  - **Backend (`open_notebook/local_models/downloader.py`):**
+    - `DownloadJob` gets `cancelled: bool`, `resume_from_bytes: int`,
+      and a new `"cancelled"` terminal status. `cancel_job(job_id)`
+      sets the flag; the stream loop checks it on every 1 MiB chunk
+      boundary and tears down cleanly, leaving the `.part` file on
+      disk.
+    - `start_download` detects a pre-existing `.part` file at the
+      target name; if non-empty, seeds `resume_from_bytes` from the
+      stat'd size. The stream loop sends a `Range: bytes=N-` header
+      and opens the `.part` in `ab` (append-binary) mode.
+    - `_stream_download` uses `Content-Range` (not `Content-Length`)
+      to derive `bytes_total` on a Range request, and **fails clearly
+      when the server returns 200 to a Range request** — a mirror
+      that ignored Range would send the FULL file from byte 0,
+      append-mode would duplicate the leading bytes and corrupt the
+      GGUF. Detect-and-fail rather than silently corrupt.
+  - **Backend endpoint (`api/routers/local_models.py`):**
+    - `POST /api/local-models/downloads/{job_id}/cancel`. 200 +
+      `{ok, detail}` on happy path; 404 for unknown job_id; 409
+      Conflict when the job is already in a terminal state (so the
+      client doesn't retry-loop on an already-done job).
+  - **Frontend (`DownloadPanel.tsx`):**
+    - Cancel button on every in-flight card (loader spinner). New
+      "Cancelled. Click Resume to continue from where it stopped"
+      copy on cards in the cancelled state. The Download/Retry/Resume
+      button label adapts to the prior job's status — "Resume" when
+      a `.part` exists from a cancelled prior run.
+  - **Tests:**
+    - `tests/test_v0_8_39e_cancel_resume.py` — 10 backend tests:
+      `cancel_job` unknown/in-flight/already-terminal; stream-loop
+      aborts on cancel; resume seeds `resume_from_bytes` from
+      existing `.part`; Range header sent; `Content-Range` derives
+      `bytes_total`; 200-to-Range-request corruption guard fails
+      with a readable error (and verifies the `.part` file is
+      untouched); endpoint 200/404/409.
+    - Existing v0.8.39b + v0.8.40c test stubs updated to accept the
+      new `headers=None` kwarg `_stream_download` now passes; their
+      semantics are unchanged. Full v0.8.x backend sweep:
+      **153/153** in ~5m11s.
+    - Frontend: +1 case on `DownloadPanel.test.tsx` (in-flight
+      Cancel POSTs `/cancel`); 28 files / **157/157** tests.
+
+- **✨ v0.8.40d — Hot-swap n_ctx synced into the running API process**
+  - **Closes the v0.8.40b limitation:** after a successful chat-GGUF
+    swap, the launcher now PUSHES the new `OPEN_NOTEBOOK_LOCAL_N_CTX`
+    into the running API's environment via a new auth-gated endpoint
+    so the smart router (`provision.py`) sees the right native
+    context window on the very next chat turn. Pre-v0.8.40d this
+    required an app relaunch — documented in v0.8.40b's CHANGELOG
+    as a known limitation, closed here.
+  - **New API endpoint (`api/routers/system.py`):**
+    `POST /api/system/env-refresh` body `{vars: {KEY: VALUE}}`.
+    Bypasses the password middleware (the launcher doesn't have the
+    user-facing password); auth via the same
+    `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` the launcher uses for its
+    control-plane calls, constant-time compared via
+    `secrets.compare_digest`. **Strict whitelist** of allowed env
+    var names (just `OPEN_NOTEBOOK_LOCAL_N_CTX` for now) — defense
+    against a compromised process arbitrarily mutating `PATH`,
+    `PYTHONPATH`, etc. Mixed payloads return both `updated` and
+    `rejected` lists so the launcher can submit best-effort without
+    pre-filtering.
+  - **Launcher (`desktop/launcher.py`):** `Supervisor._push_env_to_api`
+    helper + a `try/except` around the call in `hot_swap_chat`
+    (best-effort — a push failure logs a WARNING but does NOT undo
+    the successful sidecar swap; user is no worse off than v0.8.40b).
+    Token + API port lifted from `session_env` (already populated by
+    v0.8.40).
+  - **Tests (`tests/test_v0_8_40d_env_refresh.py`):** 7 endpoint
+    cases — 503 when no token configured; 401 missing/malformed/
+    mismatched header; 200 whitelist mutation actually changes
+    `os.environ`; non-whitelisted key rejected without touching
+    `os.environ`; mixed payload returns both lists. Confirms `PATH`
+    is never mutable through this endpoint (defense check).
+
+- **✨ v0.8.41 — Curated MCP server recommendations (XDA Developers picks)**
+  - **What:** Settings → MCP page now shows a "Recommended MCP servers"
+    panel above the manual add-form. Three curated, locally-runnable
+    servers — SearXNG (web search, replaces paid search subs),
+    Crawl4AI (web→markdown, replaces Firecrawl), Playwright MCP
+    (browser automation). Each card has install instructions
+    (upstream link), pre-filled default URL, and a one-click Connect
+    button that registers the server via the existing v0.8.0
+    `POST /api/mcp` endpoint.
+  - **Selection rationale:** Inspired by the XDA Developers article
+    on local-LLM MCP stacks. We skipped picks we already cover
+    server-side (Mem0 — v0.7.68/70 memory writer + recall; Qdrant
+    — SurrealDB native vector search; sentence-transformers — our
+    llama-cpp embed sidecar) and picks that don't fit our research-
+    assistant use case (Context7 — code-doc lookup; our users
+    research, they don't code).
+  - **Backend (`open_notebook/mcp/recommendations.py`):** New module
+    with the `RECOMMENDATIONS` table. Schema parity with
+    `local_models/downloader.py:RECOMMENDATIONS` (v0.8.39b) so the
+    frontend pattern is the same: `{id, label, description,
+    default_url, install_url, tags, replaces}`. Three entries; first
+    one tagged "recommended" for the default UI prominence.
+  - **Backend (`api/routers/mcp.py`):** New `GET /api/mcp/recommendations`
+    endpoint. Same `{recommendations: [...]}` envelope as the GGUF
+    endpoint.
+  - **Frontend (`/settings/mcp/RecommendationsPanel.tsx`):**
+    Card-per-recommendation grid with tag badges (search / scraping
+    / browser / recommended / "Replaces X"), install-instructions
+    link, Connect button. De-duplicates against the existing-servers
+    query: case-insensitive name match OR exact URL match → button
+    flips to a disabled "Connected" state with the check icon.
+    Toast feedback on connect success/failure. Manual add-form
+    below stays for any server not in the curated list.
+  - **Tests:**
+    - `tests/test_v0_8_41_mcp_recommendations.py` — 5 backend
+      tests: required-field shape, unique IDs, localhost-only
+      URLs (defense against accidentally curating a remote SaaS),
+      "recommended" tag presence, endpoint smoke.
+    - `frontend/.../RecommendationsPanel.test.tsx` — 5 frontend
+      tests: render with tags + Replaces badge, Connect calls
+      create-server mutation with defaults, name-match dedupe,
+      URL-match dedupe, failure → error toast.
+    - Existing `mcp/page.test.tsx` extended to stub out the new
+      panel (avoids needing a QueryClientProvider just for the
+      panel's useQuery). All 156/156 frontend tests across 28
+      files pass.
+
+- **🐛 v0.8.40c — Skip redownload when GGUF already exists locally**
+  - **Bug:** `open_notebook/local_models/downloader.py:start_download`
+    deduplicated only IN-FLIGHT jobs, not COMPLETED ones. A user who
+    triggered Download → completion → came back days later and
+    clicked Download again would re-download the same multi-GB GGUF
+    for no benefit. Surfaced by the post-v0.8.40b audit.
+  - **Fix:** Pre-check `dest_dir/filename` size at start_download
+    time; if non-empty, return a synthetic `status="completed"`
+    job immediately without firing the HTTP stream or registering
+    in the dedupe table (so a subsequent re-trigger after file
+    deletion produces a fresh real download). Zero-byte files are
+    NOT treated as "already downloaded" — those are failed-prior-
+    download artifacts the v0.8.39 inventory already filters.
+  - **Audit also surfaced** (no action): three lower-severity items
+    that I evaluated and documented as not-actionable — race on
+    `_procs[-1]` read in `_try_spawn` is GIL-protected per the
+    docstring; `Path.replace()` on Windows is atomic since Python
+    3.3 (the agent flagged this as a bug but the claim was a false
+    alarm — `pathlib.Path.replace()` uses `os.replace()` which is
+    cross-platform); `_check_auth` token race during ControlServer
+    shutdown is a spurious 401 at worst, not a security hole.
+  - **Test:** `tests/test_v0_8_40c_downloader_skip_existing.py` — 3
+    cases: skip when file exists (zero HTTP fired); subsequent
+    download after deletion runs real flow with a fresh job_id;
+    zero-byte file is NOT skipped. Existing 12 v0.8.39b tests
+    unaffected.
+
+- **✨ v0.8.40b — Hot-swap chat GGUF without app restart**
+  - **What:** The Settings → Local Models inventory page (v0.8.39)
+    now sports a "Set as active chat model" button on each row. Click
+    → the chat sidecar is killed and respawned with the new GGUF —
+    no app relaunch, no terminal. Closes the last big foundational
+    UX gap from the Phase-1 audit (#5 — "no model swapping during
+    the session").
+  - **Launcher (`desktop/launcher.py:Supervisor.hot_swap_chat`):**
+    Validates the new path (exists + `.gguf` + lives under
+    `cfg.model_dir`), updates `chat_llm_path`, re-resolves
+    `chat_llm_n_ctx` from the new GGUF's metadata, then delegates
+    to the v0.8.40 `restart_sidecar("chat")` so the existing
+    SIGTERM→SIGKILL→respawn flow is reused. Rolls back the path on
+    respawn failure so subsequent attempts don't compound. Returns
+    `(ok, detail)` like other control-plane callbacks.
+  - **Launcher control plane (`desktop/launcher_control.py`):**
+    `do_POST` refactored from single-route to a small dispatch
+    table `ROUTE_MAP` so adding new operations no longer requires
+    duplicating auth/body/length/error-handling boilerplate. New
+    `/hot_swap_chat` route expects `{path: str}`. Response shape
+    echoes the request field (`kind` for restart, `path` for
+    swap) so HTTP callers can correlate without inspecting body
+    contents. The original `/restart_sidecar` route is regression-
+    tested in v0.8.40b to confirm the refactor didn't break it.
+  - **API endpoint (`api/routers/local_models.py`):** New
+    `POST /api/local-models/set-active` body `{path}`. Defense-in-
+    depth validation at the edge — exists + `.gguf` + resolved
+    parent inside the configured `model_dir` — before forwarding
+    to the launcher's own checks. 60s read timeout (large GGUFs
+    can take time to mmap on a cold disk). Maps launcher 5xx→502
+    and 4xx→400 with detail surfaced.
+  - **Frontend (`/settings/local-models/page.tsx`):** "Set as
+    active chat model" button on every inventory card with
+    `Power` icon + `Loader2` spinner during the swap. `activatingPath`
+    state so the user sees which card is in flight if they click
+    rapidly. Toast success/failure with the launcher's `detail`.
+    Invalidates the local-models-health query so badges can flip
+    red briefly as the new sidecar mmaps the GGUF and back to
+    green once it binds.
+  - **Tests:**
+    - `tests/test_v0_8_40b_hot_swap.py` — 13 backend tests across
+      two layers. ControlServer `/hot_swap_chat` route (6 cases:
+      auth, missing-field, happy-path callback dispatch, failure
+      → 400, no callback → 503, regression check for the
+      original `/restart_sidecar` route after the dispatcher
+      refactor). Endpoint `POST /local-models/set-active`
+      (7 cases: missing path, nonexistent, non-`.gguf`, outside
+      `model_dir` path-traversal block, no control URL → 503,
+      real-launcher round-trip with a happy-path callback +
+      resolved-path verification, launcher rejection → 400 with
+      detail).
+    - `frontend/.../page.test.tsx` — extended from 3 → 5 cases:
+      Set Active POSTs to `/set-active` and toasts success;
+      failure → error toast with detail. Mocks `sonner` to
+      capture toasts; DownloadPanel stubbed out to avoid
+      coupling.
+    - Backend suite: **29/29** combined v0.8.40 + v0.8.40b in
+      ~12s. Frontend: **151/151** across 27 files.
+  - **Known limitation (documented):** The hot-swap updates
+    `chat_llm_path` + `chat_llm_n_ctx` on the launcher side but
+    does NOT push the new n_ctx into the API subprocess's
+    `OPEN_NOTEBOOK_LOCAL_N_CTX` env var (subprocess env is fixed
+    at spawn time). If the new GGUF has a SMALLER native context
+    than the old, the v0.8.0 smart router may still route prompts
+    that fit the old context to local, and the new sidecar will
+    reject them with 400 context_length_exceeded for that edge.
+    Common case (same family / same quant) is unaffected. A
+    follow-on (deferred v0.8.40c) could add a control-plane
+    endpoint that the launcher calls to push env-var updates to
+    the running API process.
+
+- **✨ v0.8.40 — Launcher↔API control plane + in-place sidecar restart (Phase 4c of Osaurus plan)**
+  - **What:** Closes the v0.8.38b deferred item. The frontend's
+    `SidecarLogPopover` (v0.8.38) now sports a "Restart" button that
+    actually restarts the relevant sidecar — chat, embed, whisper,
+    piper, memory — without quitting the app. Pre-v0.8.40 the
+    popover surfaced the crash cause but the only recovery action
+    was "quit and relaunch."
+  - **New IPC infrastructure (`desktop/launcher_control.py`):**
+    - Tiny `ThreadingHTTPServer` running inside the launcher
+      process. Binds 127.0.0.1 only on an OS-assigned random port.
+      Stdlib only — no aiohttp/uvicorn dragged into the launcher's
+      sync world.
+    - Random 32-byte bearer token (`secrets.token_urlsafe(32)`)
+      generated per session. `secrets.compare_digest` so a timing
+      attack on the token isn't possible from a chatty local
+      neighbor.
+    - `/health` (unauth) for liveness probes. `/restart_sidecar`
+      (auth + POST) dispatches into a registered callback.
+    - Callback registry pattern (`register_callback(name, fn)`) so
+      the Supervisor can wire in `restart_sidecar` (and, in
+      v0.8.39c, `hot_swap_chat`) without import cycles.
+  - **Launcher integration (`desktop/launcher.py`):**
+    - Per-kind Popen tracking (`_sidecar_procs: dict[str, Popen]`)
+      + spawn args (`_sidecar_spawn_args`) populated automatically
+      via `_try_spawn`'s post-spawn hook. No per-spawn-function
+      changes required.
+    - New `restart_sidecar(kind) → (ok, detail)` method. SIGTERM
+      → wait → SIGKILL the process group (same pattern as
+      `stop_all`), drop from `_procs`, re-invoke `_spawn_<kind>`
+      via the original `_try_spawn` path so progress events fire
+      consistently.
+    - `start_all` stands up the ControlServer BEFORE `session_env`
+      is built and exports `OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL` +
+      `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` to the API subprocess.
+      Best-effort: a port-bind failure logs a warning and leaves
+      the URL empty — the API's restart endpoint returns 503 with
+      a clear message rather than crashing.
+    - `stop_all` tears down the ControlServer first so in-flight
+      requests fail-fast with connect-refused, before the
+      subprocess teardown could leave them hanging.
+  - **API endpoint (`api/routers/local_models.py`):**
+    - `POST /api/healthz/sidecars/{kind}/restart`. Reuses the same
+      kind allowlist as the v0.8.38 log endpoint (path-traversal
+      safe). Reads `OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL/TOKEN` from
+      env; httpx-POSTs to the launcher with the bearer token;
+      maps launcher 5xx → 502 and 4xx → 400 with the detail
+      surfaced. No control URL → 503 with the friendly "running
+      outside launcher" hint.
+    - 15s read timeout — long enough for a real GGUF mmap on a
+      slow disk, short enough that a hung launcher doesn't tie
+      up the API request slot.
+  - **Frontend (`SidecarLogPopover.tsx`):**
+    - "Restart" button replaces the v0.8.38 "quit and relaunch"
+      footer copy. Loader2 spinner during the mutation; toast
+      success/error with the launcher's detail string.
+    - On success, invalidates the log + local-models-health
+      queries so the badge dot can flip green and the popover
+      refetches the new sidecar's stderr tail.
+  - **Tests:**
+    - `tests/test_v0_8_40_launcher_control.py` — 16 backend tests
+      across two layers. ControlServer layer (11): bind+health,
+      OS-assigned port, missing/mismatched token → 401, callback
+      dispatch on happy path, failure → 400, callback exception →
+      500 + readable error, missing kind → 400, no callback → 503,
+      unknown path → 404, idempotent stop. Endpoint layer (5):
+      unknown kind → 404, no control URL → 503, real-launcher
+      happy-path proxy round-trip (stands up a ControlServer
+      in-test), connect-refused → 502, launcher-rejected → 400
+      with detail.
+    - `frontend/.../SidecarLogPopover.test.tsx` — extended from 8
+      → 10 cases: Restart POSTs to the right endpoint + toasts on
+      success; failure → error toast with detail. Mocks `sonner`
+      to capture toasts.
+  - **Out of scope this iteration (v0.8.40b/c):** Hot-swap chat
+    GGUF (`POST /local-models/set-active`) — needs the same
+    control plane but with a `hot_swap_chat` callback that updates
+    `chat_llm_path` + re-resolves `chat_llm_n_ctx` before
+    respawning. Foundation is in place; one more callback + a
+    matching API endpoint will land it.
+
+- **✨ v0.8.39b — HuggingFace GGUF downloader (Phase 4b of Osaurus plan)**
+  - **What:** Adds curated HuggingFace GGUF recommendations with
+    one-click download to the Settings → Local Models page. The
+    foundation v0.8.39 (Phase 4a) shipped READ-only inventory; this
+    closes the second half: zero-friction model acquisition straight
+    from the UI. The user goes from "fresh install" → "downloaded
+    Qwen 2.5 7B" → "talking to a local model" in three clicks, no
+    terminal, no Finder.
+  - **Backend (`open_notebook/local_models/downloader.py`):** New
+    module. `RECOMMENDATIONS` table — 3 curated entries (Qwen 2.5
+    7B for the default user, Qwen 2.5 3B for low-RAM machines,
+    Nomic Embed for the embeddings slot). Each entry has stable
+    React key, label, description, repo_id+filename, approx size,
+    capability tags, context length. `start_download(repo_id,
+    filename, dest_dir)` spawns an `asyncio.create_task` that
+    streams via `httpx.AsyncClient` into `{filename}.part`, writes
+    bytes_downloaded as it goes, then atomic-renames to the final
+    `{filename}` on success — same atomic pattern the v0.8.38 tail
+    drainer uses so `enumerate_models` never sees a partial file.
+    Deduplicates in-flight (repo_id, filename) requests via a
+    lazy-init `asyncio.Lock` so two tabs hitting Download at the
+    same time can't corrupt the .part file. Surfaces HTTP / network
+    / disk errors as `job.status="failed"` + readable
+    `job.error` — the background task never raises.
+  - **Backend (`api/routers/local_models.py`):** Three new endpoints.
+    `GET /local-models/recommendations` returns the curated list.
+    `POST /local-models/download` body `{repo_id, filename}` →
+    `{job_id, status, ...}`; defense-in-depth validation rejects
+    missing fields, path-traversal filenames (`..`, `/`, `\\`),
+    and non-`.gguf` extensions. `GET /local-models/downloads/{job_id}`
+    polls progress (404 for unknown job_id).
+  - **Frontend (`frontend/src/app/(dashboard)/settings/local-models/DownloadPanel.tsx`):**
+    Card-per-recommendation grid above the inventory list. Each
+    card shows label, description, tag badges (chat/tools/small/
+    recommended/embedding), size hint, context window, repo path.
+    Click "Download" → POST `/local-models/download` → in-flight
+    state with `<Progress>` bar + percentage + status line.
+    Polling loop (1s interval while queued/downloading) updates
+    the bar; on completion invalidates the inventory query so the
+    new model appears in the table below without manual refresh.
+    Failed downloads surface the error inline with a Retry button.
+    All i18n via `defaultValue`, no locale-parity churn.
+  - **Page integration:** DownloadPanel rendered whenever the model
+    dir is reachable — including the empty-inventory state. That's
+    the most useful place for it: brand-new install, nothing yet,
+    here are some good first picks.
+  - **Tests:**
+    - `tests/test_v0_8_39b_downloader.py` — 12 backend tests:
+      RECOMMENDATIONS shape + unique IDs + URL composition + happy-
+      path download (mocked httpx with chunked aiter_bytes) +
+      atomic-rename verification + dedupe on in-flight + HTTP
+      error → failed job (no raise) + 4 endpoint validation cases +
+      404 on unknown job_id + recommendations-endpoint smoke.
+    - `frontend/.../DownloadPanel.test.tsx` — 3 tests: cards render,
+      Download POSTs + shows in-flight progress, completed state
+      renders. Frontend suite: 147/147 across 27 files; backend
+      adds 12 → 100/100 in the v0.8.x phase sweep.
+  - **Deferred to v0.8.39d (persistent jobs):** Job state is in-
+    memory; a mid-download API restart loses the progress tracker
+    (the `.part` file stays on disk for manual cleanup; re-trigger
+    starts over). Multi-user/multi-tenant deployments should
+    persist to SurrealDB via `surreal_commands`. Standalone scope.
+  - **Deferred to v0.8.39e (cancel + resume):** No cancel button
+    today; the underlying httpx stream isn't cancellable cleanly.
+    HuggingFace serves Range so resume is feasible. Both fit the
+    same UI iteration; tracked together.
+
+- **✨ v0.8.39 — Local GGUF inventory page (Phase 4a of Osaurus plan)**
+  - **What:** New `Settings → Local Models` page lists every GGUF in
+    the configured model directory with metadata: architecture
+    (qwen2, llama, phi3, gemma…), parameter count (7B, 13B…),
+    quantization (Q4_K_M, Q5_K_M…), native context length, file
+    size. Empty state guides the user to drop a GGUF file in (with
+    a HuggingFace link to a curated starting point). Closes one of
+    the biggest UX gaps surfaced by the Phase-1 audit: pre-v0.8.39
+    users had to know the exact path to drop GGUFs into, and could
+    only see what was registered by guessing names in Settings →
+    API Keys.
+  - **Backend (`open_notebook/local_models/`):**
+    - New module. `gguf_metadata.py` — `parse_gguf_metadata(path)`
+      uses the optional `gguf` library when installed
+      (authoritative `general.architecture` + `<arch>.context_length`),
+      falls back to filename heuristics (quant from a longest-match
+      table of llama.cpp quant schemes, params via regex, arch via
+      family-name substring). `os.stat` for size always works.
+    - `inventory.py` — `enumerate_models(model_dir)` non-recursive
+      scan. Filters non-`.gguf`, dotfiles, `.tmp`/`.part`/zero-byte
+      stubs. Returns sorted `LocalModelInfo` list. Defensive: empty
+      list on missing/unreadable dir; never raises.
+  - **Backend (`api/routers/local_models.py`):**
+    - New `GET /api/local-models/inventory` endpoint. Resolves
+      model dir from env precedence (OPEN_NOTEBOOK_MODEL_DIR →
+      OPEN_NOTEBOOK_MODEL_DIR_DEFAULT → POSIX default
+      ~/Desktop/AI_Models matching `desktop/config.py`). Returns
+      `{model_dir, available, models[]}` with `available: false`
+      for missing dirs (frontend renders a friendly state). Sync
+      filesystem stat pushed to `asyncio.to_thread` so a slow disk
+      doesn't stall the event loop.
+  - **Frontend (`frontend/src/app/(dashboard)/settings/local-models/page.tsx`):**
+    - New page. Card-per-model layout matching the existing
+      `api-keys` page rhythm (`max-w-4xl`, `space-y-8`, secondary
+      `Badge`s for quant + arch). `Refresh` button. Three top-
+      level states: error, dir-missing, empty-list, populated.
+      Uses TanStack Query with `refetchOnWindowFocus: true` so
+      Finder-drag-and-drop new files show up on tab return.
+    - All i18n strings use `defaultValue` fallback so no locale
+      parity churn.
+  - **Tests:**
+    - `tests/test_v0_8_39_local_models_inventory.py` — 24 backend
+      tests covering parse_quant (7 cases), parse_param_count_b
+      (7 cases), parse_gguf_metadata filename-fallback + missing-
+      file paths, enumerate_models filter/empty/missing/metadata/
+      sort, and the inventory endpoint (env precedence, missing
+      dir, listing).
+    - `frontend/src/app/(dashboard)/settings/local-models/page.test.tsx`
+      — 3 smoke tests for the three top-level UI states. Frontend
+      suite now 26 files / 144 tests, all green; locale parity
+      preserved (no new keys).
+  - **Deferred to v0.8.39b (HuggingFace downloader):** One-click
+    download via `huggingface_hub` with progress polling. Requires
+    background-task infrastructure beyond inline FastAPI — the
+    existing `surreal_commands` async-job pattern is the right
+    home but adding a command requires touching the desktop
+    bundle's worker registry. Standalone scope.
+  - **Deferred to v0.8.39c (hot-swap):** `POST /local-models/set-active`
+    that signals the launcher to re-spawn the chat sidecar with a
+    different GGUF. Depends on the bidirectional launcher↔API IPC
+    that v0.8.38b also needs — implementing them together makes
+    more sense than each separately.
+
+- **✨🐛 v0.8.38 — Sidecar lifecycle visibility (Phase 3 of Osaurus plan)**
+  - **Pain solved:** Pre-v0.8.38, when a local sidecar (chat / embed /
+    whisper / piper / memory) crashed at launch — bad GGUF path,
+    OOM, port collision, CUDA/Metal error — the frontend just
+    rendered a red badge with no signal. Users had to enable
+    `debug_mode`, relaunch the app, and hunt log files in
+    `~/.open-notebook-plus/logs/` to diagnose. Now: click the red
+    badge → popover with the last ~50 stderr lines + a one-line
+    user-friendly hint ("Model file not found", "Out of memory",
+    "Port already in use", etc).
+  - **Launcher (`desktop/launcher.py`):**
+    - `_spawn()` now sets `stderr=subprocess.PIPE` in non-debug
+      mode (was DEVNULL) so the new tail drainer can read it. stdout
+      stays DEVNULL — only stderr matters for crash diagnostics.
+    - New `_start_tail_drainer()` keeps a
+      `collections.deque(maxlen=50)` per sidecar and atomically
+      rewrites `{log_dir}/{name}.tail` on each new line. Secret
+      redaction (`--pass=…`, encryption keys) mirrors the v0.7.58
+      debug-mode drainer. Drain thread is daemon + joined-with-
+      timeout in `stop_all` just like the existing one.
+    - Exports `OPEN_NOTEBOOK_LAUNCHER_LOG_DIR` in `session_env` so
+      the API process knows where to read the tail files. Default
+      `~/.open-notebook-plus/logs`.
+  - **Backend (`open_notebook/utils/error_classifier.py`):**
+    - New `classify_sidecar_error(tail_text)` function. Plain
+      first-match-wins substring scan over `_SIDECAR_PATTERNS`
+      mapping known stderr signatures to user-friendly hints. Pure
+      function, zero I/O. Patterns ordered narrowest-first so
+      specific errors (model load, GGUF) win over generic ones
+      (segfault, killed).
+  - **Backend (`api/routers/local_models.py`):**
+    - New `GET /healthz/sidecars/{kind}/log` endpoint. `kind` is
+      validated against a fixed allowlist (chat / embed / whisper
+      / piper / memory) BEFORE composing the filename — path-
+      traversal-safe. Returns `{kind, log, hint, available}` with
+      `available: false` when no log dir is set (API running
+      outside launcher) or the tail file doesn't exist (sidecar
+      never spawned). Defensive 8 KiB cap on response size.
+      Sync `read_bytes` pushed to `asyncio.to_thread` so a slow
+      disk doesn't stall the event loop.
+  - **Frontend (`frontend/src/components/chat/`):**
+    - New `SidecarLogPopover` component renders a Radix Popover
+      with the hint (in an amber callout when present) + the raw
+      tail (monospace, scrollable, max-h-64) + a footer noting
+      that in-app restart is a future feature. Lazy-fetches on
+      open — badges that never get clicked pay no bandwidth.
+    - Helper `sidecarKindFromName()` maps credential-name strings
+      from `/api/local-models/health` (e.g. "Local GGUF
+      (llama.cpp)", "Local Embeddings") to the canonical kind.
+    - `LocalModelHealthBadges` wraps the red (unhealthy) status
+      dot in the popover; healthy / not_configured / unknown
+      dots stay static. Dots get a `ring-offset` + hover ring +
+      `role="button"` for accessibility when clickable.
+  - **Tests:**
+    - `tests/test_v0_8_38_sidecar_log.py` — 20 backend tests:
+      11 classifier patterns (case-insensitive, first-match-wins,
+      empty input, no-match), 8 endpoint cases (unknown kind 404,
+      no log dir, missing file, present file with hint, 8 KiB
+      cap, all 5 known kinds, path-traversal block, raw byte
+      handling).
+    - `frontend/src/components/chat/SidecarLogPopover.test.tsx` —
+      8 tests covering all 5 heuristic mappings and 3 popover
+      content states (unavailable, log+hint, empty-log).
+  - **Deferred to v0.8.38b:** `POST /healthz/sidecars/{kind}/restart`.
+    The launcher and API are separate processes; there's no
+    bidirectional IPC today. Restart requires a control-plane
+    channel (Unix domain socket, named pipe, or sentinel file)
+    that's a meaningful build of its own. For now the popover
+    surfaces the cause + "quit and relaunch" as the action — a
+    huge upgrade over the v0.8.0 zero-signal experience.
+
+- **✨🐛 v0.8.37 — Smart routing UI toggle (Phase 2 of Osaurus plan) + audit fix for v0.8.1 missing API field**
+  - **Feature:** Pre-v0.8.37, smart routing was opt-in via the
+    `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1` env var only — invisible to UI-
+    driven users. v0.8.37 adds a "Smart routing" card at the top of
+    Settings → API Keys with a master enable toggle and an
+    auto/local/cloud provider-preference dropdown. Env var still wins
+    when set (back-compat for ops); otherwise the new
+    `DefaultModels.auto_route_enabled` and
+    `DefaultModels.auto_route_provider_pref` fields drive
+    `provision_langchain_chat_model`.
+  - **Audit bug fix:** While wiring the new fields through the API
+    schema, found that `auto_route_cloud` (added on the domain side
+    in v0.8.1 Migration 18) was MISSING from
+    `api/models.py:DefaultModelsResponse` — the frontend's
+    `useUpdateModelDefaults` PUT body included it but the Pydantic
+    schema silently dropped it before the router could persist it.
+    The field never actually round-tripped in the v0.8.1 release. Now
+    explicitly declared + handled in the GET + PUT paths.
+  - **Backend:**
+    - `open_notebook/ai/models.py:DefaultModels` — new
+      `auto_route_enabled: bool = False` and
+      `auto_route_provider_pref: str = "auto"` fields.
+    - `open_notebook/ai/provision.py` — `provision_langchain_chat_model`
+      now consults DefaultModels when the env var is unset (back-compat
+      preserved). Provider preference falls through to
+      `pick_provider()` the same way. Defaults-fetch failure safely
+      defaults the toggle to OFF.
+    - `api/models.py:DefaultModelsResponse` — adds `auto_route_cloud`
+      (v0.8.1 audit fix), `auto_route_enabled`,
+      `auto_route_provider_pref`.
+    - `api/routers/models.py` — GET + PUT both surface and persist
+      the three fields. PUT clamps `provider_pref` to the allowed set.
+  - **Frontend:**
+    - `frontend/src/lib/types/models.ts:ModelDefaults` — typed the
+      two new fields.
+    - `frontend/src/components/settings/SmartRoutingPanel.tsx` — new
+      card with `Checkbox` toggle + `Select` provider-pref dropdown.
+      Hint copy explains env-var precedence. Uses i18next
+      `defaultValue` fallback so no locale parity churn.
+    - `frontend/src/app/(dashboard)/settings/api-keys/page.tsx` —
+      panel rendered above `<DefaultModelSelectors>`. Narrowed the
+      page's internal `DefaultConfig.key` type from
+      `keyof ModelDefaults` to a string-only union so the new boolean
+      field doesn't widen the `currentValue` access type.
+  - **Tests:**
+    - `tests/test_v0_8_37_smart_routing_ui_toggle.py` — 7 backend
+      tests covering the 4-way env-vs-field precedence matrix and
+      the provider_pref override paths.
+    - All existing `test_phase3_smart_routing.py` (15),
+      `test_v0_8_1_*` (11), `test_v0_8_35*` (11),
+      `test_v0_8_36_osaurus*` (10), and the new v0.8.37 (7) pass —
+      54 chat-platform-surface tests green. Frontend: 133/133
+      including locale parity.
+  - **scripts/verify-chat-platform.sh:** header updated to document
+    the UI-toggle path alongside the env-var path.
+
+- **✨ v0.8.36 — Osaurus first-class local provider integration (Phase 1 of Osaurus plan)**
+  - **What:** Native macOS users running [Osaurus](https://github.com/osaurus-ai/osaurus)
+    (MIT, 5.5k★, MLX-accelerated local AI server on port 1337) now get
+    auto-detection + one-click connect from Open Notebook Plus.
+    Apple-Silicon throughput is typically 2-4× llama-cpp on the same
+    hardware, so this is a meaningful default for Mac users without us
+    having to ship or maintain MLX.
+  - **Backend:**
+    - `desktop/auto_register/osaurus.py` — new module mirroring the
+      `register_llamacpp_models` / `register_ollama_models` pattern.
+      Probes `http://127.0.0.1:1337/v1/models` (port overridable via
+      `OPEN_NOTEBOOK_OSAURUS_PORT`); on 200 creates an
+      `openai_compatible` credential named "Osaurus (local MLX)"
+      pointed at `/v1` and registers each discovered model. Idempotent
+      across re-launches; safe on non-Mac platforms (`ConnectError`
+      logged at DEBUG, returns False).
+    - `desktop/auto_register/__init__.py` — wired into the existing
+      auto-register pipeline alongside Ollama + llama-cpp.
+    - `api/routers/credentials.py` — new `POST /credentials/detect-osaurus`
+      endpoint. Runs the same probe + register flow on demand for
+      users who install Osaurus AFTER launching ONP, no restart needed.
+      Returns `{running, port, models_registered, credential_id, detail}`.
+  - **Frontend:**
+    - `frontend/src/components/settings/OsaurusDetectionBanner.tsx` —
+      banner card on Settings → API Keys that renders ONLY when (a)
+      no Osaurus credential exists yet AND (b) the backend probe
+      reports `running: true`. One-click "Connect" calls
+      `/credentials/detect-osaurus`, invalidates the credentials +
+      models query keys, toast confirms. Includes a "Learn more"
+      link to the Osaurus GitHub. All i18n strings use `defaultValue`
+      fallback so no locale parity churn is required.
+  - **Tests:**
+    - `tests/test_v0_8_36_osaurus_auto_register.py` (10 backend tests)
+      covering default/env-override/garbage port; happy-path probe;
+      ConnectError fallthrough; non-200 fallthrough; happy-path
+      registration; no-op when not running; credential-failure
+      bailout; explicit-port kwarg override.
+    - `frontend/src/components/settings/OsaurusDetectionBanner.test.tsx`
+      (4 frontend tests) covering already-connected (hidden); not
+      running (hidden); running + click Connect; toast on success.
+    - Backend regression: 30/30 across the v0.8.1, v0.8.35b/c/d/e/f
+      and Osaurus suites pass. Frontend regression: 133/133
+      including locale parity.
+
+- **🐛 v0.8.35f — log silent MCP-bind failure (audit deferred from v0.8.35e)**
+  - The bare `except Exception: mcp_tools = []` at
+    `open_notebook/graphs/chat.py:354-356` (in
+    `bind_mcp_and_run_tool_loop`) was the last silent-except left over
+    from the v0.8.27 → v0.8.33 sweep. Operators debugging "why doesn't
+    MCP work on my local model?" had zero signal — the failure
+    looked identical to "no MCP server configured."
+  - Now logs at DEBUG (matches v0.8.27/v0.8.28/v0.8.33 severity:
+    DEBUG for benign/expected — local providers without tool-calling
+    support — WARNING for surprises). Same except runs in source-chat
+    since v0.8.16 shared the helper, so this lights up diagnostics
+    for both chat surfaces with one line. Pure observability, no
+    behavior change. Promoted `from loguru import logger` to a
+    module-level import (continuing the v0.8.35e import-hygiene
+    pass).
+
+- **🐛🔒 v0.8.35e — `bind_mcp_and_run_tool_loop` per-tool-call timeout**
+  - **Bug:** `open_notebook/graphs/chat.py:bind_mcp_and_run_tool_loop`
+    (the shared MCP tool-execution helper for both `chat.py` and
+    `source_chat.py` since v0.8.16) called `await tool.coroutine(**args)`
+    with NO timeout. An MCP tool that hangs — slow web fetch, server
+    stuck, network black hole, MCP server crashed mid-response — used
+    to block the whole chat turn indefinitely. `/chat/execute` was
+    bounded by the v0.7.99 outer wrap (`ONP_CHAT_TIMEOUT_SEC`,
+    default 300s) so the request eventually 504'd, but
+    `/chat/stream` only halts on client disconnect — a hung tool
+    froze the user's stream until they reloaded the tab.
+  - **CLAUDE.md standing audit ties:** "missing timeouts" is named
+    in the recurring-footgun list. The fix matches the per-call
+    timeout pattern already used in `api/chat_service.py:_DEFAULT_TIMEOUT`
+    and the v0.7.99 chat-wrap in `api/routers/chat.py`.
+  - **Fix:** Wrapped `tool.coroutine(**args)` in `asyncio.wait_for`
+    with a budget from `ONP_MCP_TOOL_TIMEOUT_SEC` (default 30s,
+    parsed same way as `ONP_CHAT_TIMEOUT_SEC`). On timeout, re-raise
+    as a plain `Exception("timed out after Ns")` so the existing
+    `except Exception as tool_exc` branch converts it into the
+    standard `f"Tool {name!r} failed: ..."` ToolMessage — same
+    error-feedback channel any other tool failure uses, so the model
+    can adapt (apologize, try a different tool, give up) instead of
+    the stream freezing forever. 30s default is generous: typical
+    MCP web-search/fetch tools complete in 1-5s; a tool taking 30s
+    is almost certainly broken. Tightened the chat.py imports
+    (added `import asyncio` + `import os` at the top instead of
+    inline-importing).
+  - **Test:** `tests/test_v0_8_35e_mcp_tool_timeout.py` — 3 tests
+    using `pytest.mark.asyncio` + scripted `_ScriptedModel`/
+    `_FakeAIMessage` fakes. (1) Fast tool: regression guard — a
+    sub-millisecond tool returns its real result, not a timeout
+    string. (2) Hanging tool: with `ONP_MCP_TOOL_TIMEOUT_SEC=0.05`
+    and a `_hang` tool that `asyncio.sleep(60)`s, the loop completes
+    within an outer 5s safety bound and the second-round payload
+    contains a ToolMessage mentioning the timeout. (3) Env-unset
+    default: a 0.5s tool completes under the 30s default — guards
+    against an overly-aggressive default that would false-timeout
+    legitimate slow tools. All 3 pass. Regression sweep:
+    `test_chat_stream.py` (5), `test_v0_8_1_stream_selected_provider.py`
+    (4), `test_v0_8_35_health_cache_single_flight.py` (2),
+    `test_v0_8_35d_gmail_single_flight.py` (2), `test_gmail_cache.py`
+    (4) — 20/20 unaffected.
+
+- **⚡🐛 v0.8.35d — `GmailIntegration.get()` thundering-herd race (same family as v0.8.35b)**
+  - **Bug:** While sweeping the codebase for the same TTL-cache
+    anti-pattern fixed in v0.8.35b for `_local_chat_healthy_cached`,
+    found the *exact* same race in
+    `open_notebook/domain/gmail.py:GmailIntegration.get()`. The
+    v0.7.157 cache fixed the SECOND-caller case but the v0.7.157
+    comment itself names the FIRST-caller race that wasn't closed —
+    "the /settings/api-keys page mounts BOTH the GmailIntegration
+    panel AND the GmailSidebarButton, so two concurrent slow queries
+    fire on every cold load → 8+ seconds of perceived freeze."
+    Both callers raced past the cache check, both fired `repo_query`,
+    both wrote the same result. The 30-second TTL hit only worked
+    once the first query completed — but the second concurrent
+    caller had already started its own query before that point.
+  - **Fix:** Same single-flight pattern as v0.8.35b:
+    lazily-constructed `asyncio.Lock` (`_CACHE_LOCK` +
+    `_get_cache_lock()`) wraps the cache-miss path with a
+    double-check on the cache state inside the lock. Cache-HIT
+    callers skip the lock entirely so steady-state polls have zero
+    extra latency. The query, timeout/exception handling, row
+    parsing, Fernet decryption, AND the cache write are now all
+    inside the lock so followers always re-read the cache before
+    deciding whether to query.
+  - **Test:** `tests/test_v0_8_35d_gmail_single_flight.py` — 2 new
+    tests with the same shape as the v0.8.35b suite. (1)
+    Concurrency: 5 `asyncio.gather`'d cache-miss callers with a
+    100ms-slow `repo_query` AsyncMock must result in exactly 1
+    query. Pre-fix the assertion fails with `5`. (2) Cache-hit
+    non-serialization: with a pre-populated cache, 3 concurrent
+    callers must never reach the query. Both pass after the fix.
+    Existing 4 `test_gmail_cache.py` regressions and the 7
+    `test_gmail_router.py` tests all still pass.
+
+- **✨🎨 v0.8.35c — local/cloud routing badge on AI messages**
+  - **Feature:** Small `<ChatMessageProviderBadge>` chip (live in
+    `frontend/src/components/chat/ChatMessageProviderBadge.tsx`)
+    renders next to AI messages when the smart router decided this
+    turn, showing "local" or "cloud" with a tooltip carrying the
+    actual model ID. Closes the user-visible loop of v0.8.1: the
+    routing decision is now plumbed all the way from `pick_provider()`
+    → graph state → /chat/execute & /chat/stream response → TanStack
+    cache → chip in the message list.
+  - **Plumbing:**
+    1. `useNotebookChat.ts` on the `done` SSE event now stashes
+       `{ selected_provider, selected_model_id }` in the TanStack
+       Query cache keyed by the last AI message ID
+       (`['chat', 'selected-provider', messageId]`). Same pattern as
+       v0.8.1 Item 3's `mcp_tool_calls` stash.
+    2. `ChatPanel.tsx` renders the new badge alongside
+       `MessageActions` for AI messages. The badge reads from the
+       cache only (no fetch); renders null when no cache entry
+       exists (source-chat, pre-v0.8.1 sessions) or when
+       `selected_provider` is null (smart routing didn't run / explicit
+       model_override).
+  - **i18n:** Badge labels and tooltip use i18next's `defaultValue`
+    fallback (no locale entries required), keeping the locale-parity
+    test (`src/lib/locales/index.test.ts`) green without 7×4 = 28
+    locale rows of translation churn.
+  - **Tests:** new
+    `frontend/src/components/chat/ChatMessageProviderBadge.test.tsx`
+    covers 5 cases — local pick, cloud pick, no cache entry (null
+    render), explicit-null cache entry (null render), and the
+    model-id-missing edge case (tooltip falls back to the
+    provider-only string, no `{{model}}` interpolation marker leaks).
+    Full frontend suite: 129/129 passing including locale parity
+    (23 files, ~44s). TypeScript `tsc --noEmit` and ESLint on the
+    touched files both clean.
+
+- **⚡🐛 v0.8.35b — `_local_chat_healthy_cached` thundering-herd race**
+  - **Bug:** `open_notebook/ai/provision.py:_local_chat_healthy_cached`
+    had no single-flight guard. When N concurrent chat requests (e.g.
+    user with multiple tabs open) hit a TTL boundary at the same time,
+    each coroutine independently entered the cache-miss branch and
+    called `await asyncio.to_thread(probe_all_local_models, ...)` in
+    parallel. The probe itself takes up to ~9s (httpx structured
+    timeout) so N concurrent callers = N × 9s of duplicate work on
+    the local sidecar every 30s TTL window. The existing
+    `TestHealthCacheTTL` regression only drove the helper
+    sequentially, so the race was invisible to the test suite.
+  - **Fix:** Added a lazily-constructed `asyncio.Lock` and reworked
+    the function into a fast cache-hit path (no lock) + a single-
+    flight slow path (`async with`). The first cache-miss caller
+    acquires the lock, probes, and writes the cache; subsequent
+    callers wait, re-check the cache under the lock, and return the
+    leader's result without probing. Cache-hit callers never touch
+    the lock so steady-state latency is unchanged.
+  - **Test:** `tests/test_v0_8_35_health_cache_single_flight.py` —
+    new file with two cases. (1) Concurrency test: 5 cache-miss
+    callers in `asyncio.gather` with a 100ms slow-probe stub must
+    result in exactly 1 probe call. Pre-fix the assertion fails with
+    `5 probes`. (2) Cache-hit non-serialization: with a pre-populated
+    cache, 3 concurrent callers must never reach the probe. Both
+    pass after the fix; the existing `TestHealthCacheTTL` and v0.8.1
+    plumbing tests are unaffected.
+
+- **✨🐛 v0.8.35 — `/chat/stream` now surfaces `selected_provider` + Pydantic-fallback bug fix**
+  - **Feature:** The streaming endpoint's `done` NDJSON event now
+    carries `selected_provider` ("local"/"cloud"/null) and
+    `selected_model_id`, matching the `/chat/execute` response shape
+    added in the original v0.8.1 work. SSE clients (frontend
+    `useNotebookChat`) no longer need a follow-up GET to discover
+    which side served the turn. Fields are ALWAYS present in the
+    wire payload (null when smart routing didn't run), keeping the
+    shape stable for destructuring consumers.
+  - **Bug fix (closely related, found during the streaming audit):**
+    in `api/routers/chat.py` `_stream_chat_events()`, the
+    `on_chain_end` capture's Pydantic-state fallback synthesised
+    `final_result = {"messages": msgs, "mcp_tool_calls": mcp_calls_raw}`
+    — which silently dropped `selected_provider` and
+    `selected_model_id` whenever LangGraph emitted a Pydantic-typed
+    state instead of a dict. The dict path was OK; the Pydantic path
+    erased the routing decision. The synthetic dict now includes all
+    four keys, with the same dict-vs-attribute dual-read guard the
+    rest of the file uses.
+  - **Frontend type sync:** `frontend/src/lib/api/chat.ts` —
+    `ChatStreamEvent` `done` variant and `sendMessage` return type
+    updated to declare the new fields, so TS consumers compile
+    cleanly. Existing destructure of `event.messages` keeps working
+    unchanged.
+  - **Tests:** new `tests/test_v0_8_1_stream_selected_provider.py`
+    covers four cases — dict output local, dict output cloud, dict
+    output without the keys (wire-shape stability check), AND the
+    Pydantic-state regression that motivated the bug fix. All four
+    pass alongside the existing 5 `tests/test_chat_stream.py` cases
+    and the 7 `tests/test_v0_8_1_selected_provider.py` cases (16
+    total in the chat-platform surface).
+
 - **🐛 v0.8.34 — useAsk hook missing BUFFER_MAX cap (parity with useSourceChat)**
   - `frontend/src/lib/hooks/use-ask.ts` accumulates the SSE stream
     chunks into `buffer` and splits on `\n`. The companion hook

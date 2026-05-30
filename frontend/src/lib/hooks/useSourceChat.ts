@@ -21,6 +21,39 @@ export function useSourceChat(sourceId: string) {
   const [messages, setMessages] = useState<SourceChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [contextIndicators, setContextIndicators] = useState<SourceChatContextIndicator | null>(null)
+  // v0.8.44 — per-request MCP server disable picks for source chat
+  // (parity with the notebook-chat v0.8.42 picker).
+  // v0.8.44b — now session-persistent: hydrated from the session row
+  // on load + PATCHed on toggle (source-chat sessions share the
+  // `chat_session` table, so migration 20 already provisions the
+  // `disabled_mcp_servers` column — no new migration needed).
+  const [disabledMcpServers, setDisabledMcpServers] = useState<string[]>([])
+  // v0.8.44b — ref to the (later-declared) update mutation so the
+  // toggle callback can persist without a forward-const reference in
+  // its deps array (JS temporal dead zone). Same pattern as the
+  // notebook-chat hook's v0.8.43b fix. `.current` is assigned in a
+  // useEffect placed after `updateSessionMutation` is in scope.
+  const updateSessionMutationRef = useRef<{
+    mutate: (args: { sessionId: string; data: UpdateSourceChatSessionRequest }) => void
+  } | null>(null)
+  const toggleDisabledMcpServer = useCallback((name: string) => {
+    setDisabledMcpServers(prev => {
+      const next = prev.includes(name)
+        ? prev.filter(n => n !== name)
+        : [...prev, name]
+      // v0.8.44b — persist to SurrealDB (best-effort; optimistic
+      // local state already updated). Requires a current session —
+      // a brand-new source-chat with no session yet just keeps the
+      // pick in local state until the first send creates one.
+      if (currentSessionId && updateSessionMutationRef.current) {
+        updateSessionMutationRef.current.mutate({
+          sessionId: currentSessionId,
+          data: { disabled_mcp_servers: next },
+        })
+      }
+      return next
+    })
+  }, [currentSessionId])
   const abortControllerRef = useRef<AbortController | null>(null)
   // v0.8.21 — Guard against the message-sync useEffect (line 41-45)
   // clobbering optimistic / streamed messages when a refetch returns
@@ -107,6 +140,29 @@ export function useSourceChat(sourceId: string) {
     }
   })
 
+  // v0.8.44b — keep the toggle callback's ref pointed at the live
+  // mutation (see updateSessionMutationRef rationale near its decl).
+  useEffect(() => {
+    updateSessionMutationRef.current = updateSessionMutation
+  }, [updateSessionMutation])
+
+  // v0.8.44b — hydrate the source-chat MCP picks from the session row
+  // on load / switch. Gated on `!updateSessionMutation.isPending` so
+  // an in-flight PATCH (triggered by toggling) doesn't get clobbered
+  // by the refetch it itself triggers — identical race + fix as the
+  // notebook-chat hook's v0.8.43b hydration guard.
+  useEffect(() => {
+    if (currentSession && !updateSessionMutation.isPending) {
+      setDisabledMcpServers(currentSession.disabled_mcp_servers ?? [])
+    }
+  }, [
+    currentSessionId,
+    currentSession?.id,
+    currentSession?.disabled_mcp_servers,
+    updateSessionMutation.isPending,
+    currentSession,
+  ])
+
   // Delete session mutation
   const deleteSessionMutation = useMutation({
     mutationFn: (sessionId: string) => 
@@ -184,7 +240,15 @@ export function useSourceChat(sourceId: string) {
     try {
       const response = await sourceChatApi.sendMessage(
         sourceId, sessionId,
-        { message, model_override: modelOverride },
+        {
+          message,
+          model_override: modelOverride,
+          // v0.8.44 — surface the source-chat MCP picks. Empty array =
+          // no disables (default v0.8.0 behavior, no regression for
+          // users who never touch the picker).
+          disabled_mcp_servers:
+            disabledMcpServers.length > 0 ? disabledMcpServers : undefined,
+        },
         controller.signal,
       )
 
@@ -361,7 +425,14 @@ export function useSourceChat(sourceId: string) {
         )
       }
     }
-  }, [sourceId, currentSessionId, refetchCurrentSession, queryClient, t])
+  }, [
+    sourceId, currentSessionId, refetchCurrentSession, queryClient, t,
+    // v0.8.46b — same stale-closure fix as the notebook hook:
+    // `sendMessage` reads `disabledMcpServers` (v0.8.44) for the
+    // per-turn MCP disable list, so it must be a dependency or a
+    // toggle-then-send captures a stale list.
+    disabledMcpServers,
+  ])
 
   // v0.6.32 — abort the in-flight controller on unmount.
   useEffect(() => () => {
@@ -415,6 +486,13 @@ export function useSourceChat(sourceId: string) {
     switchSession,
     sendMessage,
     cancelStreaming,
-    refetchSessions
+    refetchSessions,
+    // v0.8.44 — per-request MCP server disable picks for source chat.
+    // Mirror of the notebook-chat v0.8.42 exposure. UI passes
+    // `disabledMcpServers` as the `disabled` prop and
+    // `toggleDisabledMcpServer` as `onToggle` to the shared
+    // `<McpToolPicker>` component.
+    disabledMcpServers,
+    toggleDisabledMcpServer,
   }
 }

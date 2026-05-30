@@ -365,6 +365,7 @@ marshmallow==3.26.2
 mcp==1.27.1
     # via
     #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
     #   fastmcp
 mdurl==0.1.2
     # via markdown-it-py

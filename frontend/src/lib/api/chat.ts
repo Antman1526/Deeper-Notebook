@@ -15,11 +15,25 @@ import {
 // v0.7.38 — streaming chat events. One discriminated union per
 // type emitted by /chat/stream's NDJSON wire format.
 // v0.8.1 Item 3 — added mcp_tool_calls event emitted just before done.
+// v0.8.1 follow-up — `done` now also carries `selected_provider` /
+// `selected_model_id` (parity with the /chat/execute response). The
+// fields are always present in the wire payload (null when smart
+// routing didn't run), so destructuring is safe without optional chains.
 export type ChatStreamEvent =
   | { type: 'start'; session_id: string }
   | { type: 'token'; content: string }
   | { type: 'mcp_tool_calls'; calls: McpToolCall[] }
-  | { type: 'done'; messages: NotebookChatMessage[] }
+  | {
+      type: 'done'
+      messages: NotebookChatMessage[]
+      selected_provider: string | null
+      selected_model_id: string | null
+      // v0.8.58 — privacy-gate decision (kept-on-device). v0.8.60 —
+      // agent-FSM terminal state. Optional: older backends omit them.
+      privacy_gated?: boolean | null
+      privacy_categories?: string[] | null
+      agent_state?: string | null
+    }
   | { type: 'error'; detail: string }
 
 export const chatApi = {
@@ -60,10 +74,20 @@ export const chatApi = {
   },
 
   // Messaging (synchronous, no streaming)
+  // v0.8.1 — response now includes selected_provider / selected_model_id
+  // (the chat smart-router decision) and mcp_tool_calls (Item 3). Inline
+  // type stays here rather than in lib/types/api.ts to keep call-site
+  // typing tight; promote if a second consumer appears.
   sendMessage: async (data: SendNotebookChatMessageRequest) => {
     const response = await apiClient.post<{
       session_id: string
       messages: NotebookChatMessage[]
+      selected_provider: string | null
+      selected_model_id: string | null
+      mcp_tool_calls: McpToolCall[] | null
+      privacy_gated?: boolean | null
+      privacy_categories?: string[] | null
+      agent_state?: string | null
     }>(
       `/chat/execute`,
       data

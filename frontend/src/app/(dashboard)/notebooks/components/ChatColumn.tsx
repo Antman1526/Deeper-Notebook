@@ -91,6 +91,9 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       isStreaming={chat.isSending}
       contextIndicators={null}
       onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
+      // v0.8.63 — privacy review sheet "Re-ask allowing cloud": re-send the
+      // question with the fail-closed gate bypassed (explicit user consent).
+      onReaskAllowCloud={(message) => chat.sendMessage(message, undefined, true)}
       modelOverride={chat.currentSession?.model_override ?? chat.pendingModelOverride ?? undefined}
       onModelChange={(model) => chat.setModelOverride(model ?? null)}
       sessions={chat.sessions}
@@ -102,6 +105,9 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       loadingSessions={chat.loadingSessions}
       notebookContextStats={contextStats}
       notebookId={notebookId}
+      // v0.8.46 — wire the per-conversation MCP tool picker (v0.8.42/43).
+      disabledMcpServers={chat.disabledMcpServers}
+      onToggleMcpServer={chat.toggleDisabledMcpServer}
     />
   )
 }
