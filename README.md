@@ -71,15 +71,15 @@ Desktop bundle additionally spawns:
 
 ### macOS (desktop app)
 
-1. Download the `.dmg` from [Releases](https://github.com/Antman1526/open-notebook/releases)
+1. Download the `.dmg` from [Releases](https://github.com/Antman1526/open-notebook-Plus/releases)
 2. Drag the app to **Applications**
 3. **Right-click → Open** the first time (unsigned build; macOS Gatekeeper)
 
 ### Self-host (Docker Compose)
 
 ```bash
-git clone https://github.com/Antman1526/open-notebook
-cd open-notebook
+git clone https://github.com/Antman1526/open-notebook-Plus
+cd open-notebook-Plus
 cp .env.template .env                    # fill in passwords + encryption key
 docker compose --profile multi up -d
 # UI: http://localhost:3000, API: http://localhost:5055, Metrics: http://localhost:5055/metrics
@@ -88,8 +88,8 @@ docker compose --profile multi up -d
 ### Local development
 
 ```bash
-git clone https://github.com/Antman1526/open-notebook
-cd open-notebook
+git clone https://github.com/Antman1526/open-notebook-Plus
+cd open-notebook-Plus
 
 # Backend
 uv sync                                  # creates .venv via uv
@@ -299,7 +299,7 @@ All Tests jobs green: **1587 backend tests + 183 frontend vitest tests** (+ Surr
 
 ## Support
 
-- **Plus fork issues**: https://github.com/Antman1526/open-notebook/issues
+- **Plus fork issues**: https://github.com/Antman1526/open-notebook-Plus/issues
 - **Upstream issues**: https://github.com/lfnovo/open-notebook/issues
 - **Upstream Discord**: https://discord.gg/37XJPXfz2w
 
