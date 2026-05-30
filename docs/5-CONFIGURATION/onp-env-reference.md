@@ -225,6 +225,28 @@ PII. See `docs/7-DEVELOPMENT/phase-5-advanced-memory.md`.
 |---|---:|---|
 | `ONP_AGENT_FSM` | `off` | When `on` (aliases `1`/`true`/`yes`): (a) the `ask` graph declares `clarify` and asks the user to refine instead of synthesizing an ungrounded answer when no searches returned grounded content (v0.8.53); and (b) the chat MCP tool loop lets the model declare a terminal `<state>complete|clarify</state>`, surfaced as `agent_state` on the chat response / stream `done` event (v0.8.60 — `clarify` = the model paused to ask the user). Off → unchanged. |
 
+## Native chat web search (v0.8.64 + v0.8.65)
+
+Opt-in: the built-in `web_search` chat tool is bound only when at least one
+provider below is configured — no key/URL → tool absent → zero behaviour change.
+When several are set they form a **failover chain** (precedence Serper > Tavily >
+SearXNG; an attempt that errors falls through to the next). Public SearXNG
+mirrors usually block the JSON API — see
+**[Private SearXNG](private-searxng-web-search.md)** to run your own.
+
+| Env var | Default | What it controls |
+|---|---:|---|
+| `SERPER_API_KEY` | _unset_ | Serper (Google Search API) — https://serper.dev |
+| `TAVILY_API_KEY` | _unset_ | Tavily search API — https://tavily.com |
+| `SEARXNG_BASE_URL` | _unset_ | SearXNG instance URL. Comma-separate several for per-instance failover, e.g. `http://127.0.0.1:8889/,https://searx.example/` |
+| `ONP_WEB_SEARCH_PROVIDER` | `auto` | Force one of `serper`/`tavily`/`searxng` (a stale value naming an unconfigured provider is ignored → auto) |
+| `ONP_WEB_SEARCH_MAX_RESULTS` | `5` | Results per query (clamped 1–20) |
+| `ONP_WEB_SEARCH_TIMEOUT_SEC` | `10` | Per-request HTTP timeout (1–60) |
+| `ONP_WEB_SEARCH_TOTAL_BUDGET_SEC` | `25` | Total wall-clock across the whole failover chain (1–120; kept under the 30s chat tool-call timeout). Each attempt gets `min(per-attempt, remaining budget)` so a slow/hanging instance can't starve a fast later one. |
+
+> The `web_search` tool only fires if the active chat model supports tool/function
+> calling — most cloud models do; many small local GGUFs do not.
+
 ## Connection-test + discover (v0.7.100 + v0.7.110 + v0.7.116)
 
 | Env var | Default | What it bounds |

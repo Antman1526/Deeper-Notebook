@@ -1,0 +1,36 @@
+# Minimal SearXNG config for a PRIVATE, localhost-only instance used by
+# Open Notebook Plus's native web_search tool.
+#
+# The two settings that matter for LLM web search:
+#   1. `search.formats` includes `json`  -> enables the JSON API the tool calls.
+#      (This is exactly what public SearXNG mirrors disable, returning 403/418/429.)
+#   2. `server.limiter: false`           -> no bot-rate-limiting. Safe ONLY because
+#      this instance is bound to 127.0.0.1 (see docker-compose.yml `ports`).
+use_default_settings: true
+
+server:
+  # Container-internal bind. The host-side localhost-only bind is enforced by the
+  # compose `ports: "127.0.0.1:8889:8080"` mapping, not here.
+  bind_address: "0.0.0.0"
+  port: 8080
+  # REQUIRED. Generate your own and paste it here:  openssl rand -hex 32
+  secret_key: "REPLACE_ME_run_openssl_rand_hex_32"
+  # Disable the limiter ONLY for a private, localhost-bound instance.
+  limiter: false
+  image_proxy: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  # CRITICAL — expose the JSON API that web_search depends on.
+  formats:
+    - html
+    - json
+
+general:
+  instance_name: "onp-private-searxng"
+  donation_url: false
+  contact_url: false
+
+ui:
+  static_use_hash: true
