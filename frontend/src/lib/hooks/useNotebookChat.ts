@@ -33,6 +33,46 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [charCount, setCharCount] = useState<number>(0)
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
+  // v0.8.42 — per-conversation MCP server disable picks. Reset implicitly
+  // when the user switches session (we keep it simple: state is hook-
+  // local, not persisted to the chat session row). UI surfaces a small
+  // tool picker above the message input; setters expose Add/Remove
+  // semantics so consumers don't have to immutably-clone the array.
+  const [disabledMcpServers, setDisabledMcpServers] = useState<string[]>([])
+  // v0.8.43b — ref-based access to `updateSessionMutation` so the
+  // useCallback can reference it WITHOUT needing it in the deps
+  // array (the mutation object is hoisted later in this function
+  // body — JS temporal dead zone makes the deps-array fix
+  // syntactically impossible without a forward decl). Pattern
+  // matches how `abortControllerRef` etc. are used elsewhere in
+  // this hook to dodge the same circular-dep problem.
+  //
+  // The ref's `.current` is assigned in a useEffect below (after
+  // `updateSessionMutation` is in scope). The callback dereferences
+  // at call time, so stale-closure is impossible: by the time the
+  // user clicks, the ref points at the live mutation object.
+  const updateSessionMutationRef = useRef<{
+    mutate: (args: { sessionId: string; data: UpdateNotebookChatSessionRequest }) => void
+  } | null>(null)
+  const toggleDisabledMcpServer = useCallback((name: string) => {
+    setDisabledMcpServers(prev => {
+      const next = prev.includes(name)
+        ? prev.filter(n => n !== name)
+        : [...prev, name]
+      // v0.8.43 — persist to SurrealDB so the picks survive page
+      // reload + session navigation. Best-effort: a failed PATCH
+      // logs (via the existing toast surface on updateSession) but
+      // doesn't block the local UI toggle — the optimistic state
+      // already updated above.
+      if (currentSessionId && updateSessionMutationRef.current) {
+        updateSessionMutationRef.current.mutate({
+          sessionId: currentSessionId,
+          data: { disabled_mcp_servers: next },
+        })
+      }
+      return next
+    })
+  }, [currentSessionId])
 
   // v0.7.50 — AbortController for the v0.7.38 streaming send. Was
   // missing — useSourceChat / use-ask both wire one and the streaming
@@ -84,6 +124,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   }, [currentSession])
 
+  // v0.8.43 hydration effect was here; v0.8.43b moved it BELOW
+  // `updateSessionMutation` to honor the JS temporal-dead-zone rule
+  // (the effect's deps array references `updateSessionMutation.isPending`).
+
   // Auto-select most recent session when sessions are loaded
   useEffect(() => {
     if (sessions.length > 0 && !currentSessionId) {
@@ -130,6 +174,56 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToUpdateSession'))
     }
   })
+
+  // v0.8.43b — Keep `updateSessionMutationRef.current` in sync with
+  // the live mutation object on every render. The
+  // `toggleDisabledMcpServer` callback (declared earlier — JS
+  // temporal-dead-zone forbids forward `const` references in its
+  // deps array) reads through this ref so the call always hits the
+  // current mutation, not a stale closure capture. Pattern matches
+  // the `abortControllerRef` / `inFlightSendsRef` usage elsewhere in
+  // this hook.
+  useEffect(() => {
+    updateSessionMutationRef.current = updateSessionMutation
+  }, [updateSessionMutation])
+
+  // v0.8.43 — Hydrate `disabledMcpServers` from the session's
+  // persisted picks when a session is loaded or switched into. The
+  // toggle path then writes any picks made this session back to
+  // SurrealDB via PATCH. Initial load → state matches server; per-turn
+  // changes → state diverges → next PATCH sync keeps server in sync.
+  //
+  // v0.8.43b — Gate the hydration on `updateSessionMutation.isPending`
+  // so the in-flight PATCH triggered by `toggleDisabledMcpServer`
+  // doesn't clobber the optimistic local state when the session
+  // refetch returns. Without this guard, a rapid double-click could
+  // lose the user's second toggle to a stale-data race:
+  //   1. toggle off → setDisabledMcpServers([X])
+  //   2. PATCH fires → mutation.onSuccess invalidates session query
+  //   3. session refetches with disabled_mcp_servers=[X]
+  //   4. user toggles on while #3 in flight → setDisabledMcpServers([])
+  //   5. refetch lands → useEffect overwrites with [X] from server
+  //   ⇒ user's second click lost.
+  // Skipping hydration while ANY PATCH is in flight keeps the
+  // optimistic state visible until the user's last write lands.
+  // Declared AFTER `updateSessionMutation` because JS temporal-
+  // dead-zone forbids const references in deps arrays defined
+  // earlier than the const itself — same reason
+  // `updateSessionMutationRef` exists for the toggle callback.
+  useEffect(() => {
+    if (currentSession && !updateSessionMutation.isPending) {
+      setDisabledMcpServers(currentSession.disabled_mcp_servers ?? [])
+    }
+  }, [
+    currentSessionId,
+    currentSession?.id,
+    // v0.8.43b — react to changes in the persisted field, not just
+    // the session-id rotation. A different tab editing the same
+    // session should re-hydrate this tab on the next refetch.
+    currentSession?.disabled_mcp_servers,
+    updateSessionMutation.isPending,
+    currentSession,
+  ])
 
   // Delete session mutation
   const deleteSessionMutation = useMutation({
@@ -238,7 +332,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   }, [notebookId, sourcesKey, notesKey, selectionsKey])
 
   // Send message (synchronous, no streaming)
-  const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
+  // v0.8.63 — `bypassPrivacyGate` is the explicit "Re-ask allowing cloud"
+  // consent from the redaction-review sheet; threaded to the request body so
+  // the backend skips the fail-closed gate for this one turn. Default false.
+  const sendMessage = useCallback(async (
+    message: string,
+    modelOverride?: string,
+    bypassPrivacyGate?: boolean,
+  ) => {
     let sessionId = currentSessionId
 
     // Auto-create session if none exists
@@ -334,6 +435,15 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         message,
         context: built.context,
         model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+        // v0.8.42 — surface the user's MCP server disable picks for
+        // THIS turn. The disabledMcpServers state lives on the
+        // useNotebookChat hook itself so the UI can manage it as a
+        // simple Set<string>. undefined / empty array → no disables
+        // (default v0.8.0 behaviour, no regression).
+        disabled_mcp_servers:
+          disabledMcpServers.length > 0 ? disabledMcpServers : undefined,
+        // v0.8.63 — only sent (true) on an explicit "Re-ask allowing cloud".
+        bypass_privacy_gate: bypassPrivacyGate || undefined,
       }, controller.signal)) {
         // v0.7.50 — bail mid-stream if the component unmounted. Avoids
         // setState-on-dead-component warnings + extra setMessages
@@ -366,14 +476,36 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
             // v0.8.1 Item 3 — now that we have canonical message IDs,
             // stash any pending MCP call payloads keyed by the last
             // AI message's ID so CitationPill can look them up.
-            if (pendingMcpCalls && pendingMcpCalls.length > 0) {
-              const lastAiMsg = [...event.messages].reverse().find(m => m.type === 'ai')
-              if (lastAiMsg) {
-                queryClient.setQueryData(
-                  ['mcp', 'tool-calls', lastAiMsg.id],
-                  pendingMcpCalls,
-                )
-              }
+            const lastAiMsg = [...event.messages].reverse().find(m => m.type === 'ai')
+            if (pendingMcpCalls && pendingMcpCalls.length > 0 && lastAiMsg) {
+              queryClient.setQueryData(
+                ['mcp', 'tool-calls', lastAiMsg.id],
+                pendingMcpCalls,
+              )
+            }
+            // v0.8.35c — stash the smart-router decision keyed by the
+            // last AI message ID, same pattern as MCP captures above.
+            // <ChatMessageProviderBadge messageId={...}> reads it via
+            // useQuery and renders a small "local"/"cloud" chip next
+            // to the message. We stash unconditionally (even when
+            // selected_provider is null) so the badge consumer can
+            // distinguish "smart routing didn't run" (null cached →
+            // no badge) from "no data yet" (no cache entry → no
+            // badge). The result is identical UI but the cache key's
+            // presence is meaningful for debugging.
+            if (lastAiMsg) {
+              queryClient.setQueryData(
+                ['chat', 'selected-provider', lastAiMsg.id],
+                {
+                  selected_provider: event.selected_provider,
+                  selected_model_id: event.selected_model_id,
+                  // v0.8.58/v0.8.60 — privacy-gate decision + agent-FSM state,
+                  // read by ChatMessagePrivacyBadge from the same cache entry.
+                  privacy_gated: event.privacy_gated ?? null,
+                  privacy_categories: event.privacy_categories ?? null,
+                  agent_state: event.agent_state ?? null,
+                },
+              )
             }
           }
         } else if (event.type === 'error') {
@@ -460,7 +592,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     buildContext,
     refetchCurrentSession,
     queryClient,
-    t
+    t,
+    // v0.8.46b — `sendMessage` reads `disabledMcpServers` (v0.8.42) to
+    // build the per-turn MCP disable list. It was missing from the
+    // deps, so a toggle-then-send with no other dep change captured a
+    // stale list (the server would see the picks from BEFORE the last
+    // toggle). Adding it here makes the next send always reflect the
+    // current picks. Caught by react-hooks/exhaustive-deps.
+    disabledMcpServers,
   ])
 
   // Switch session
@@ -573,6 +712,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     tokenCount,
     charCount,
     pendingModelOverride,
+
+    // v0.8.42 — per-conversation MCP server disable state. UI uses
+    // these to render a tool picker above the chat input. Names are
+    // matched case-insensitively + whitespace-trimmed on the backend
+    // (`_resolve_chat_tools` normalises both sides), so the UI can
+    // pass the raw `mcp_server.name` from the registry.
+    disabledMcpServers,
+    toggleDisabledMcpServer,
 
     // Actions
     createSession,

@@ -48,10 +48,37 @@ SINGLETON_ID = "gmail_integration:singleton"
 _CACHE: dict = {"value": None, "ts": 0.0}
 _CACHE_TTL_S = 30.0
 
+# v0.8.35d — single-flight lock for cache-miss DB queries. Without
+# this, concurrent first-callers (the v0.7.157 comment above names them:
+# sidebar button + setup panel mounting together on the same page load)
+# each see `_CACHE["value"] is None`, each await `repo_query`, and each
+# write the same result. That's 2× ~4-8s of duplicate SurrealDB work
+# per cold load — exactly the problem v0.7.157 set out to solve, but
+# only solved for SECOND callers (cache hit). The lock closes the gap
+# for the FIRST set of concurrent callers. Lazy-constructed because
+# `asyncio.Lock()` doesn't need a running event loop in Python 3.10+
+# but lazy init mirrors the v0.8.35b pattern in
+# `open_notebook/ai/provision.py` for the same reasons.
+_CACHE_LOCK: "asyncio.Lock | None" = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """v0.8.35d — lazily construct the cache-miss lock. See _CACHE_LOCK
+    comment for motivation."""
+    global _CACHE_LOCK
+    if _CACHE_LOCK is None:
+        _CACHE_LOCK = asyncio.Lock()
+    return _CACHE_LOCK
+
 
 def _invalidate_cache() -> None:
     """Drop the cached singleton. Called on save / clear / disconnect so
-    the next .get() reads fresh data from SurrealDB."""
+    the next .get() reads fresh data from SurrealDB.
+
+    Note: does NOT reset the v0.8.35d _CACHE_LOCK — the lock has no
+    state that needs invalidating (it's just a mutex, not stale data).
+    Tests that want a clean lock state should set _CACHE_LOCK = None
+    explicitly (see tests/test_v0_8_35d_gmail_single_flight.py)."""
     _CACHE["value"] = None
     _CACHE["ts"] = 0.0
 
@@ -175,79 +202,95 @@ class GmailIntegration(BaseModel):
         poll within 30s is a free in-memory hit, and a misbehaving
         SurrealDB can no longer hold the request line beyond 3s.
         """
-        # v0.7.157 — TTL cache hit fast-path
+        # v0.7.157 — TTL cache hit fast-path (no lock — every chat
+        # poll would otherwise pay lock-acquire latency for nothing).
         now = time.monotonic()
         cached = _CACHE.get("value")
         if cached is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
             return cached
 
-        try:
-            # v0.7.157 — bounded wait. If SurrealDB hasn't responded in
-            # 3 seconds we give up and serve the default — better than
-            # holding a request line open for 8s.
-            result = await asyncio.wait_for(
-                repo_query(
-                    "SELECT * FROM ONLY $rid",
-                    {"rid": SINGLETON_ID},
-                ),
-                timeout=_QUERY_TIMEOUT_S,
+        # v0.8.35d — single-flight slow path. Before the lock, two
+        # concurrent first-callers (the v0.7.157 sidebar + setup panel
+        # case) each ran the query independently. Now the first
+        # acquirer queries + writes the cache; the others wait and
+        # re-check the cache under the lock, returning the leader's
+        # result without re-querying.
+        async with _get_cache_lock():
+            now = time.monotonic()
+            cached = _CACHE.get("value")
+            if cached is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
+                return cached
+
+            try:
+                # v0.7.157 — bounded wait. If SurrealDB hasn't responded in
+                # 3 seconds we give up and serve the default — better than
+                # holding a request line open for 8s.
+                result = await asyncio.wait_for(
+                    repo_query(
+                        "SELECT * FROM ONLY $rid",
+                        {"rid": SINGLETON_ID},
+                    ),
+                    timeout=_QUERY_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "GmailIntegration.get(): SurrealDB query exceeded "
+                    f"{_QUERY_TIMEOUT_S}s — returning default. Subsequent "
+                    "polls will retry on the next cache miss."
+                )
+                return cls()
+            except Exception as exc:
+                # v0.8.33 — log non-timeout failures. Pre-v0.8.33 this was
+                # silent: any DB error other than timeout (connection drop,
+                # schema mismatch, auth fail) returned a default
+                # GmailIntegration so the UI showed the user "Connect Gmail"
+                # as if they'd never configured it. The timeout path above
+                # logs at WARNING; mirror that for symmetry so operators can
+                # see WHY the integration appears unconfigured.
+                # Same family as the v0.8.28 silent-swallow sweep.
+                logger.warning(
+                    "GmailIntegration.get(): SurrealDB query failed "
+                    "({}) — returning default. UI will appear "
+                    "unconfigured until the next successful poll.",
+                    exc,
+                )
+                return cls()
+            if not result:
+                instance = cls()
+                _CACHE["value"] = instance
+                _CACHE["ts"] = now
+                return instance
+            # v0.8.35d — row parsing + decryption + cache write must
+            # remain INSIDE the single-flight lock so the leader's
+            # cache write happens before followers re-check the cache.
+            if isinstance(result, list):
+                row = result[0] if result else {}
+            else:
+                row = result
+            if not isinstance(row, dict):
+                return cls()
+            instance = cls(
+                client_id=_dec(row.get("client_id_enc")),
+                client_secret=_dec(row.get("client_secret_enc")),
+                access_token=_dec(row.get("access_token_enc")),
+                refresh_token=_dec(row.get("refresh_token_enc")),
+                token_expires_at=_parse_dt(row.get("token_expires_at")),
+                email_address=row.get("email_address"),
+                enabled=bool(row.get("enabled", False)),
+                frequency=row.get("frequency", "daily"),
+                include_notebooks=bool(row.get("include_notebooks", True)),
+                include_sources=bool(row.get("include_sources", True)),
+                include_notes=bool(row.get("include_notes", True)),
+                include_podcasts=bool(row.get("include_podcasts", True)),
+                include_memory=bool(row.get("include_memory", True)),
+                last_sent_at=_parse_dt(row.get("last_sent_at")),
             )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "GmailIntegration.get(): SurrealDB query exceeded "
-                f"{_QUERY_TIMEOUT_S}s — returning default. Subsequent "
-                "polls will retry on the next cache miss."
-            )
-            return cls()
-        except Exception as exc:
-            # v0.8.33 — log non-timeout failures. Pre-v0.8.33 this was
-            # silent: any DB error other than timeout (connection drop,
-            # schema mismatch, auth fail) returned a default
-            # GmailIntegration so the UI showed the user "Connect Gmail"
-            # as if they'd never configured it. The timeout path above
-            # logs at WARNING; mirror that for symmetry so operators can
-            # see WHY the integration appears unconfigured.
-            # Same family as the v0.8.28 silent-swallow sweep.
-            logger.warning(
-                "GmailIntegration.get(): SurrealDB query failed "
-                "({}) — returning default. UI will appear "
-                "unconfigured until the next successful poll.",
-                exc,
-            )
-            return cls()
-        if not result:
-            instance = cls()
+            # v0.7.157 — cache the fully-decrypted instance so subsequent
+            # polls within the TTL window skip both the DB hit AND the
+            # per-field Fernet decryption.
             _CACHE["value"] = instance
             _CACHE["ts"] = now
             return instance
-        if isinstance(result, list):
-            row = result[0] if result else {}
-        else:
-            row = result
-        if not isinstance(row, dict):
-            return cls()
-        instance = cls(
-            client_id=_dec(row.get("client_id_enc")),
-            client_secret=_dec(row.get("client_secret_enc")),
-            access_token=_dec(row.get("access_token_enc")),
-            refresh_token=_dec(row.get("refresh_token_enc")),
-            token_expires_at=_parse_dt(row.get("token_expires_at")),
-            email_address=row.get("email_address"),
-            enabled=bool(row.get("enabled", False)),
-            frequency=row.get("frequency", "daily"),
-            include_notebooks=bool(row.get("include_notebooks", True)),
-            include_sources=bool(row.get("include_sources", True)),
-            include_notes=bool(row.get("include_notes", True)),
-            include_podcasts=bool(row.get("include_podcasts", True)),
-            include_memory=bool(row.get("include_memory", True)),
-            last_sent_at=_parse_dt(row.get("last_sent_at")),
-        )
-        # v0.7.157 — cache the fully-decrypted instance so subsequent
-        # polls within the TTL window skip both the DB hit AND the
-        # per-field Fernet decryption.
-        _CACHE["value"] = instance
-        _CACHE["ts"] = now
-        return instance
 
     async def save(self) -> None:
         """Encrypt-and-persist. SurrealDB upsert preserves fields we don't set."""

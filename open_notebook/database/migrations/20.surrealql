@@ -1,0 +1,14 @@
+-- v0.8.43 — Persistent per-conversation MCP server disable picks.
+-- Stores the list of MCP server names the user has unticked for THIS
+-- chat session (the v0.8.42 per-request behavior, now sticky across
+-- page navigations). NULL = "all enabled servers visible" (the
+-- pre-v0.8.43 default; existing rows stay null so behavior is
+-- unchanged for any chat created before this migration).
+--
+-- Stored as a flat array of strings. Name matching against
+-- `mcp_server.name` is case-insensitive + whitespace-trimmed in the
+-- chat graph's `_resolve_chat_tools` — we do NOT normalize at write
+-- time so the UI can round-trip exactly what the registry holds.
+DEFINE FIELD IF NOT EXISTS disabled_mcp_servers ON chat_session
+    TYPE option<array<string>>
+    DEFAULT NONE;

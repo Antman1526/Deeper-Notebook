@@ -25,13 +25,16 @@
 #                                open-notebook-change-me if that is also unset
 #   NOTEBOOK_ID         Required — see USAGE above
 #
-# INTROSPECTION (Steps 4 + 5) — v0.8.1
+# INTROSPECTION (Steps 4 + 5) — v0.8.1 / v0.8.37
 #   ExecuteChatResponse now carries `selected_provider` ("local"/"cloud"/null).
 #   Steps 4 and 5 assert on that field directly — no more manual eyeball
-#   checks. Requires the API to be launched with
-#     OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1
+#   checks. Requires the API to be launched with:
+#     EITHER  OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1   (env-var path)
+#     OR      DefaultModels.auto_route_enabled=True via Settings → API Keys →
+#             Smart routing toggle                  (v0.8.37 UI path)
 #   plus a configured local model id, cloud model id, and (for Step 4) a
-#   healthy local chat sidecar.
+#   healthy local chat sidecar. The env var, when set, takes precedence
+#   over the UI toggle (back-compat for ops/scripted setups).
 #
 # =============================================================================
 

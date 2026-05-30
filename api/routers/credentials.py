@@ -19,6 +19,7 @@ NEVER returns actual API key values - only metadata.
 """
 
 import asyncio
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -530,6 +531,114 @@ async def migrate_from_provider_config():
     except Exception as e:
         logger.error(f"ProviderConfig migration FAILED: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Migration from provider config failed")
+
+
+@router.post("/detect-osaurus")
+async def detect_osaurus():
+    """v0.8.36 — On-demand probe + auto-register for a running Osaurus
+    instance (https://github.com/osaurus-ai/osaurus).
+
+    Mirrors the launcher's startup-time auto-register flow but exposed
+    as an API so users who installed Osaurus AFTER launching ONP can
+    one-click connect without restarting. Response shape:
+
+      { "running": bool, "port": int, "models_registered": int,
+        "credential_id": str | None, "detail": str }
+
+    Idempotent: if the Osaurus credential already exists, the call
+    refreshes its base_url (in case the port changed) and registers
+    any newly-discovered models that aren't already in the catalog.
+    """
+    from desktop.auto_register.osaurus import (
+        _osaurus_port,
+        _osaurus_running,
+        register_osaurus_models,
+    )
+    import httpx as _httpx
+
+    port = _osaurus_port()
+    running, discovered = _osaurus_running(port)
+    if not running:
+        return {
+            "running": False,
+            "port": port,
+            "models_registered": 0,
+            "credential_id": None,
+            "detail": (
+                f"No Osaurus instance reachable on http://127.0.0.1:{port}/v1/models. "
+                "Install via `brew install --cask osaurus` and launch it, "
+                "then retry."
+            ),
+        }
+
+    # Reuse the launcher's auto_register code path. It expects a sync
+    # httpx.Client + sets of existing credential names / model keys so
+    # it can be idempotent. We fetch those here on the API side.
+    base = "http://127.0.0.1:5055"  # self — same FastAPI process
+    headers = {}
+    pw = os.environ.get("OPEN_NOTEBOOK_PASSWORD")
+    if pw:
+        headers["Authorization"] = f"Bearer {pw}"
+
+    def _do_register() -> tuple[bool, int, str | None]:
+        # Sync httpx in a thread — auto_register helpers expect sync.
+        with _httpx.Client(base_url=base, headers=headers, timeout=10.0) as cli:
+            creds_resp = cli.get("/api/credentials")
+            creds_resp.raise_for_status()
+            existing_cred_names = {
+                c.get("name", "").lower() for c in creds_resp.json()
+            }
+            models_resp = cli.get("/api/models")
+            models_resp.raise_for_status()
+            existing_model_keys = {
+                (m.get("name", "").lower(), m.get("type", "").lower())
+                for m in models_resp.json()
+            }
+            before = len(existing_model_keys)
+            registered = register_osaurus_models(
+                client=cli,
+                existing_cred_names=existing_cred_names,
+                existing_model_keys=existing_model_keys,
+                port=port,
+            )
+            # Re-fetch to compute "how many new"; cheaper than tracking
+            # inside the helper (which returns a bool).
+            after_resp = cli.get("/api/credentials")
+            after_resp.raise_for_status()
+            cred_id = None
+            for c in after_resp.json():
+                if c.get("name", "").lower() == "osaurus (local mlx)":
+                    cred_id = c.get("id")
+                    break
+            new_models_resp = cli.get("/api/models")
+            new_models_resp.raise_for_status()
+            after = len(new_models_resp.json())
+            return registered, max(0, after - before), cred_id
+
+    # Run the sync auto-register in a worker thread so we don't block
+    # the FastAPI event loop on the network round-trips.
+    try:
+        registered, delta, cred_id = await asyncio.to_thread(_do_register)
+    except _httpx.HTTPError as exc:
+        logger.warning("Osaurus auto-register failed: {}", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Osaurus is reachable but the local model catalog could "
+                "not be synced. Try again or check API logs."
+            ),
+        )
+
+    return {
+        "running": True,
+        "port": port,
+        "models_registered": delta,
+        "credential_id": cred_id,
+        "detail": (
+            f"Connected to Osaurus on port {port}. "
+            f"{len(discovered)} model(s) discovered, {delta} newly registered."
+        ),
+    }
 
 
 @router.post("/migrate-from-env")

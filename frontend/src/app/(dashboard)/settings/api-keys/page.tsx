@@ -53,7 +53,7 @@ import {
 } from '@/lib/hooks/use-credentials'
 import { Credential, CreateCredentialRequest, UpdateCredentialRequest, DiscoveredModel } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
-import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog } from '@/components/settings'
+import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog, OsaurusDetectionBanner, SmartRoutingPanel } from '@/components/settings'
 // ONP shadow-layer components (see frontend/src/components/onp/README.md)
 import { ReasoningSlotCard, GmailIntegration } from '@/components/onp'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
@@ -670,8 +670,27 @@ function DefaultModelSelectors({
     }
   }, [defaults, setValue])
 
+  // v0.8.37 — narrowed from `keyof ModelDefaults` to the string-typed
+  // model-slot keys only. Pre-v0.8.37 every ModelDefaults field was
+  // `string | null`, so `keyof` worked. The new v0.8.37 fields
+  // (`auto_route_enabled: boolean`, `auto_route_provider_pref: string`)
+  // belong to <SmartRoutingPanel>, not the slot dropdowns, but they
+  // widened `keyof ModelDefaults` enough that `defaults[config.key]`
+  // started yielding `string | true | undefined` and tripped tsc.
+  // Narrowing here keeps the selector logic safely typed without
+  // touching the SmartRoutingPanel.
+  type ModelSlotKey =
+    | 'default_chat_model'
+    | 'default_transformation_model'
+    | 'large_context_model'
+    | 'default_text_to_speech_model'
+    | 'default_speech_to_text_model'
+    | 'default_embedding_model'
+    | 'default_tools_model'
+    | 'default_reasoning_model'
+    | 'auto_route_cloud'
   interface DefaultConfig {
-    key: keyof ModelDefaults
+    key: ModelSlotKey
     label: string
     description: string
     modelType: ModelType
@@ -1030,9 +1049,20 @@ export default function ApiKeysPage() {
           {/* Migration banner */}
           {encryptionReady && <MigrationBanner providersToMigrate={providersToMigrate} />}
 
+          {/* v0.8.36 — Osaurus auto-detect banner (Phase 1).
+              Renders only when (a) no Osaurus credential exists yet AND
+              (b) the backend probe finds Osaurus running on :1337. Mac
+              users with Osaurus installed get a one-click connect. */}
+          {encryptionReady && <OsaurusDetectionBanner credentials={credentials} />}
+
           {/* v0.7.153 — Defaults section: groups Default-Model selectors +
               the Reasoning-slot primer under one visual section. */}
           <section className="space-y-6">
+            {/* v0.8.37 — Smart routing toggle (Phase 2). Lives above
+                the default-model selectors so users see the routing
+                story BEFORE the slot picker, not as an afterthought. */}
+            {defaults && <SmartRoutingPanel defaults={defaults} />}
+
             {models && defaults && (
               <DefaultModelSelectors models={models} defaults={defaults} />
             )}

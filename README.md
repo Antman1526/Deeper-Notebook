@@ -1,6 +1,6 @@
 # Open Notebook Plus
 
-A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, end-to-end source ingestion + chat + podcast generation, complete observability, and **80+ production-hardening commits** on top of upstream.
+A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook) focused on **local-first AI research notebooks** with a closed-loop memory layer, fail-closed cloud-privacy gating, agent-reliability state machine, end-to-end source ingestion + chat + podcast generation, complete observability, and **130+ production-hardening commits** on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.11+ / 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
@@ -8,8 +8,8 @@ A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-note
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![FastAPI 0.104+](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-594%20%2B%2058%20%2B%206-success)
-![CVEs](https://img.shields.io/badge/CVEs%20closed-23-success)
+![Tests](https://img.shields.io/badge/tests-1554%20backend%20%2B%2047%20frontend-success)
+![Version](https://img.shields.io/badge/version-v0.8.63-blue)
 
 ---
 
@@ -29,12 +29,15 @@ v0.8.0 differentiators:
 
 ## What's different from upstream
 
-- **Native desktop app** — Mac `.dmg` (Windows in progress). No Docker, no terminal.
+- **Native desktop app** — Mac `.dmg` (`make build-mac`). Windows builds on a Windows host (PyInstaller is not a cross-compiler). No Docker, no terminal.
 - **Bundled SurrealDB + Node.js runtime** — single `.app`, no separate installs.
-- **Local-model-first** — bundled `llama-cpp-python` + Ollama auto-detect. Cloud APIs are opt-in.
-- **Closed-loop memory** — per-turn facts written to mem0/SurrealDB, recalled in the system prompt of every future chat. Auto-switches between recency and semantic search at ~30 rows.
-- **Complete observability** — request-ID correlation in every log line, Prometheus `/metrics` endpoint, slow-query log, checkpoint-prune metrics, memory-recall fallthrough metrics.
-- **80+ production-hardening commits (v0.7.49 → v0.7.129)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, XSS hardening in HTML exports, `/healthz/deep` per-subsystem probe, real-SurrealDB integration tests, CVE remediation across backend + frontend.
+- **Local-model-first** — bundled `llama-cpp-python` + Ollama auto-detect + a **GGUF Manager** (HuggingFace download, hot-swap). Cloud APIs are opt-in.
+- **Closed-loop memory (Phase 5.1)** — per-turn facts/preferences/episodes written to mem0/SurrealDB and recalled into every chat's system prompt, with **bounded retention** (`ONP_MEMORY_KEEP_PER_TABLE`), **batched extraction** (`ONP_MEMORY_BATCH_TURNS`), a **confidence floor** (`ONP_MEMORY_CONFIDENCE_FLOOR`), and **stored-prompt-injection sanitization**.
+- **Fail-closed privacy gate (Phase 5.2)** — `ONP_PRIVACY_GATE` keeps turns containing detected secrets/PII **on the local model** instead of sending them to cloud (or blocks them), with an **interactive "On-device" review badge** + a consent **"Re-ask allowing cloud"** action. Optional pluggable model classifier for unstructured PII.
+- **Agent-reliability FSM (Phase 5.3)** — `ONP_AGENT_FSM` lets the agent declare `clarify`/`complete`; the ask graph declines to synthesize ungrounded answers, and the chat tool loop surfaces `clarify`/`truncated` states in the UI.
+- **Smart routing & MCP** — per-turn local/cloud routing (`OPEN_NOTEBOOK_AUTO_ROUTE_CHAT`) + per-conversation MCP tool servers.
+- **Complete observability** — request-ID correlation, Prometheus `/metrics` (incl. privacy-gate + tool-loop counters), slow-query + checkpoint-prune + memory-recall metrics.
+- **130+ production-hardening commits (v0.7.49 → v0.8.63)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, the Osaurus-inspired Phase 5 work, and CVE remediation across backend + frontend.
 
 ## Three-tier architecture
 
@@ -214,15 +217,23 @@ Interactive treemap of the client bundle. Operator-facing guide at [`frontend/do
 
 ## Building from source
 
+**macOS** (produces `dist/Open-Notebook-Plus-mac-<arch>.dmg`, ~175 MB, unsigned —
+first launch: right-click → Open to clear Gatekeeper):
+
 ```bash
-make build-mac-test                              # ~30 min first build
+make build-mac          # test → lockfile → build venv → Next.js build →
+                        # fetch runtimes → PyInstaller → hdiutil dmg (~20–40 min first run)
 open "dist/Open Notebook Plus.app"
 ```
 
-For a signed + notarized macOS build:
+**Windows** (must run on a Windows host — PyInstaller is not a cross-compiler):
 
-```bash
-make build-mac
+```powershell
+cd frontend; npm ci; npm run build; cd ..
+python desktop/build/fetch_runtimes.py
+pyinstaller desktop/build/pyinstaller.spec
+powershell -ExecutionPolicy Bypass -File desktop/build/post_build_windows.ps1
+# Output: dist/open-notebook-Plus/
 ```
 
 ## Documentation
@@ -245,9 +256,9 @@ make build-mac
 | AI-reviewer context | `~/Desktop/OpenNotebook/open-notebook-Plus-AI-Context.md` |
 | Full technology audit | `~/Desktop/OpenNotebook/open-notebook-Plus-Technology-Audit.md` |
 
-## Hardening Summary (v0.7.49 → v0.7.129)
+## Hardening Summary (v0.7.49 → v0.8.63)
 
-80+ patch commits across the hardening run.
+130+ patch commits across the hardening run.
 
 **v0.7.49 → v0.7.87** — original reliability sweep: streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades.
 
@@ -266,9 +277,17 @@ make build-mac
 - **v0.7.128** — Documented deferral of `studio.py` / `exports.py` split (CHANGELOG-only)
 - **v0.7.129** — **Real-SurrealDB integration test fixture** that caught a real `Note.save()` bug on its first CI run; CI bumped to Node 24-era action versions; tests workflow now fires on `desktop-app` branch
 
-### CI status at v0.7.129g
+**v0.7.130 → v0.8.49** — the **v0.8 local-first chat platform**: smart local/cloud routing (`pick_provider`), MCP per-conversation tool servers + picker, GGUF Manager (HuggingFace download / hot-swap / cancel-resume), launcher↔API control plane, plus a run of audit fixes (session-delete regression, notebook-delete checkpoint leak, memory prompt-injection sanitization, episode recall).
 
-All three Tests jobs green: **594 backend tests + 58 frontend tests + 6 SurrealDB integration tests**. Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml).
+**v0.8.50 → v0.8.63** — the Osaurus-inspired **Phase 5** (all default-off):
+
+- **5.1 memory** — retention ceiling (`ONP_MEMORY_KEEP_PER_TABLE`), batched extraction (`ONP_MEMORY_BATCH_TURNS`), confidence floor + persistence (`ONP_MEMORY_CONFIDENCE_FLOOR`).
+- **5.2 privacy** — fail-closed gate (`ONP_PRIVACY_GATE`), optional model PII classifier (`ONP_PRIVACY_CLASSIFIER_URL`, `=auto`), gate decision surfaced on the chat response, interactive **On-device** review badge + **"Re-ask allowing cloud"** consent bypass.
+- **5.3 agent FSM** — `ONP_AGENT_FSM`: core state machine, ask-graph ungrounded→clarify gate, chat tool-loop truncation observability + `<state>` clarify/complete classification, UI chips.
+
+### CI status at v0.8.63
+
+All Tests jobs green: **1554 backend tests + ~47 frontend vitest tests** (+ SurrealDB integration tests). Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) Unreleased for per-commit detail.
 
 ## Support
 

@@ -96,6 +96,31 @@ memory_recall_seconds = Histogram(
     buckets=(0.005, 0.025, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0),
 )
 
+# v0.8.51 — Phase 5.2a privacy gate. How often the fail-closed gate caught
+# structured secrets/PII in a turn the router would have sent to cloud.
+# outcome='local' → rerouted on-device; 'blocked' → no local model, request
+# blocked rather than leaked. A rising counter is a SECURITY-relevant signal.
+privacy_gate_redirects_total = Counter(
+    "onp_privacy_gate_redirects_total",
+    "Times the fail-closed privacy gate diverted a cloud-bound turn that "
+    "contained structured secrets/PII. outcome: 'local' (rerouted to the "
+    "local model) | 'blocked' (no local model — request blocked, not leaked).",
+    ["outcome"],
+)
+
+# v0.8.56 — Phase 5.3c observability. Terminal state of the chat MCP tool
+# loop. outcome='truncated' means the loop hit max_iterations while the model
+# still wanted to call tools → the answer is likely incomplete (the tool
+# budget, not the model, was the limiting factor). A rising 'truncated' ratio
+# says ONP_MCP_TOOL_TIMEOUT_SEC / the iteration cap may be too tight.
+agent_tool_loop_outcomes_total = Counter(
+    "onp_agent_tool_loop_outcomes_total",
+    "Terminal state of the chat MCP tool loop (only counted when MCP tools "
+    "were bound). outcome: 'complete' (model stopped requesting tools) | "
+    "'truncated' (hit max_iterations with tool calls still pending).",
+    ["outcome"],
+)
+
 
 # -------------------------------------------------------------------- #
 # v0.7.125 — LangGraph SQLite checkpoint pruning metrics
@@ -201,6 +226,18 @@ def record_memory_fallthrough(reason: str) -> None:
     reason. Reasons: 'embed_timeout', 'embed_error', 'query_timeout',
     'query_error'."""
     memory_recall_fallthrough_total.labels(reason=reason).inc()
+
+
+def record_privacy_gate_redirect(outcome: str) -> None:
+    """v0.8.51 — Bump the privacy-gate counter. outcome: 'local'
+    (rerouted on-device) | 'blocked' (no local model — request blocked)."""
+    privacy_gate_redirects_total.labels(outcome=outcome).inc()
+
+
+def record_agent_tool_loop_outcome(outcome: str) -> None:
+    """v0.8.56 — Bump the chat tool-loop outcome counter. outcome:
+    'complete' | 'truncated' (hit max_iterations with pending tool calls)."""
+    agent_tool_loop_outcomes_total.labels(outcome=outcome).inc()
 
 
 def record_studio_generation(mode: str, outcome: str) -> None:

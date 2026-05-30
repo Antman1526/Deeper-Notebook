@@ -18,6 +18,62 @@ from open_notebook.exceptions import InvalidInputError, NotFoundError
 router = APIRouter()
 
 
+async def _cleanup_checkpoint_threads(
+    session_ids: list[str], *, context: str
+) -> int:
+    """v0.8.48 — best-effort LangGraph checkpoint cleanup for chat
+    sessions cascade-deleted by a notebook delete.
+
+    The domain `Notebook.delete()` removes the `chat_session` ROWS but
+    deliberately can't touch the LangGraph checkpointer (layering — the
+    domain layer must not import the chat graph). The single-session
+    delete path already cleans checkpoints (api/routers/chat.py
+    v0.7.171); without this, a notebook delete leaked every cascade-
+    deleted session's checkpoint thread forever, because
+    `prune_old_checkpoints` only trims the oldest snapshots WITHIN a
+    thread that exceeds the per-thread retention (50) — an orphaned
+    <50-checkpoint thread is never reached.
+
+    Best-effort by design: the SurrealDB rows are already gone, so a
+    checkpoint-cleanup failure must NOT fail the delete. Each thread is
+    isolated in its own try/except so one failure doesn't abort the
+    rest. Returns the count successfully cleaned. Never raises.
+    """
+    if not session_ids:
+        return 0
+    try:
+        import asyncio
+
+        from open_notebook.graphs.chat import chat_graph
+
+        checkpointer = getattr(chat_graph, "checkpointer", None)
+        delete_thread = getattr(checkpointer, "delete_thread", None)
+    except Exception as exc:  # import / attribute access failure
+        logger.warning(
+            "Checkpoint cleanup unavailable for {} (non-fatal): {}",
+            context, exc,
+        )
+        return 0
+    if delete_thread is None:
+        return 0
+    cleaned = 0
+    for sid in session_ids:
+        try:
+            await asyncio.to_thread(delete_thread, sid)
+            cleaned += 1
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Checkpoint cleanup failed for session {} ({}) — "
+                "non-fatal, row already deleted: {}",
+                sid, context, cleanup_exc,
+            )
+    logger.debug(
+        "Cleaned up {}/{} checkpoint thread(s) for {}",
+        cleaned, len(session_ids), context,
+    )
+    return cleaned
+
+
 @router.get("/notebooks", response_model=list[NotebookResponse])
 async def get_notebooks(
     archived: Optional[bool] = Query(None, description="Filter by archived status"),
@@ -403,6 +459,13 @@ async def delete_notebook(
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
+
+        # v0.8.48 — clean up the LangGraph checkpoint threads for the chat
+        # sessions this delete cascaded away (see _cleanup_checkpoint_threads).
+        await _cleanup_checkpoint_threads(
+            result.get("deleted_chat_session_ids") or [],
+            context=f"notebook {notebook_id}",
+        )
 
         return NotebookDeleteResponse(
             message="Notebook deleted successfully",

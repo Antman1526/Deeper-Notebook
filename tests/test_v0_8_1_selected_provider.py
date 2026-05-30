@@ -74,7 +74,13 @@ class TestProvisionChatModelExposesSelection:
 
     def _run(self, coro):
         import asyncio
-        return asyncio.get_event_loop().run_until_complete(coro)
+        # v0.8.46c — `asyncio.run()` creates a FRESH loop per call and
+        # closes it after. The prior `get_event_loop().run_until_complete()`
+        # inherited the process-wide "current" loop, which a preceding
+        # pytest-asyncio (auto-mode) test leaves CLOSED — so in the full
+        # suite this raised "Event loop is closed" and the coroutine was
+        # never awaited. Fresh-loop-per-call is immune to that pollution.
+        return asyncio.run(coro)
 
     def test_selection_out_populated_when_routing_picks_local(self, monkeypatch):
         """Smart router on, healthy local, small content → selection_out
@@ -146,6 +152,19 @@ class TestProvisionChatModelExposesSelection:
         import open_notebook.ai.provision as provision_mod
 
         monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+
+        # v0.8.46c — env var unset → v0.8.37 disabled-path consults
+        # `model_manager.get_defaults().auto_route_enabled`. Mock it so
+        # the test doesn't attempt a live SurrealDB connection (which
+        # made this test take ~33s on a connection timeout — caught,
+        # so it still "passed", but slow + network-dependent).
+        class _Defaults:
+            auto_route_enabled = False
+            auto_route_provider_pref = "auto"
+        monkeypatch.setattr(
+            provision_mod.model_manager, "get_defaults",
+            AsyncMock(return_value=_Defaults()),
+        )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
             return object()

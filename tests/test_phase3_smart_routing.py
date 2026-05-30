@@ -227,7 +227,22 @@ class TestProvisionLangchainChatModelDisabled:
 
         monkeypatch.setattr(router_mod, "pick_provider", _exploding_pick_provider)
 
-        asyncio.get_event_loop().run_until_complete(
+        # v0.8.46c — disabled path consults model_manager.get_defaults()
+        # (v0.8.37 toggle check). Mock it so this test doesn't open a
+        # live SurrealDB connection.
+        class _Defaults:
+            auto_route_enabled = False
+            auto_route_provider_pref = "auto"
+        monkeypatch.setattr(
+            provision_mod.model_manager, "get_defaults",
+            AsyncMock(return_value=_Defaults()),
+        )
+
+        # v0.8.46c — asyncio.run() instead of get_event_loop()...: the
+        # latter inherited a closed loop from a prior pytest-asyncio
+        # test in the full suite → "Event loop is closed". Fresh loop
+        # per call is immune.
+        asyncio.run(
             provision_mod.provision_langchain_chat_model("hello world")
         )
 
@@ -242,7 +257,11 @@ class TestProvisionLangchainChatModelEnabled:
 
     def _run(self, coro):
         import asyncio
-        return asyncio.get_event_loop().run_until_complete(coro)
+        # v0.8.46c — fresh loop per call; immune to a closed "current"
+        # loop left by a prior pytest-asyncio (auto-mode) test in the
+        # full suite. The old get_event_loop().run_until_complete()
+        # raised "Event loop is closed" in that ordering.
+        return asyncio.run(coro)
 
     def test_provision_calls_router_when_enabled_picks_local(self, monkeypatch):
         """Small content + healthy local → router picks local model."""
@@ -316,7 +335,11 @@ class TestCloudModelIdResolution:
 
     def _run(self, coro):
         import asyncio
-        return asyncio.get_event_loop().run_until_complete(coro)
+        # v0.8.46c — fresh loop per call; immune to a closed "current"
+        # loop left by a prior pytest-asyncio (auto-mode) test in the
+        # full suite. The old get_event_loop().run_until_complete()
+        # raised "Event loop is closed" in that ordering.
+        return asyncio.run(coro)
 
     def test_cloud_id_resolves_from_auto_route_cloud_field(self, monkeypatch):
         """Env var unset: cloud_model_id must come from auto_route_cloud, NOT

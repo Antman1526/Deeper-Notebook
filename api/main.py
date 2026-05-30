@@ -53,6 +53,7 @@ from api.routers import (
 from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
 from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
+from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -717,6 +718,14 @@ app.add_middleware(
         # the alias route below, the Setup Wizard's poll returns 404 and
         # hangs on "Loading..." indefinitely. See incident on 2026-05-20.
         "/api/healthz/deep",
+        # v0.8.40d — launcher → API env-refresh has its own auth via
+        # the OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN bearer header (the
+        # same secret the launcher control plane uses, scoped to the
+        # parent↔child trust boundary). The launcher doesn't have the
+        # user-facing OPEN_NOTEBOOK_PASSWORD so it can't satisfy the
+        # password middleware — the endpoint enforces its own typed
+        # auth instead.
+        "/api/system/env-refresh",
         "/docs",
         "/openapi.json",
         "/redoc",
@@ -900,6 +909,7 @@ app.include_router(exports.router, prefix="/api", tags=["exports"])
 app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
 app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
 app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
+app.include_router(_system_router.router, tags=["system"])  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
 
 
 @app.get("/")

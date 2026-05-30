@@ -51,6 +51,14 @@ def render_extract_user(user_text: str, assistant_text: str) -> str:
             f"ASSISTANT TURN: {assistant_text}")
 
 
+def render_extract_user_batch(turns: list[tuple[str, str]]) -> str:
+    """v0.8.54 — render N (user, assistant) turns as one transcript for the
+    batched extractor (Phase 5.1b). Reuses render_extract_user's per-turn
+    shape so the same EXTRACT_TURN_SYSTEM_PROMPT applies unchanged; the model
+    extracts explicit facts across all the turns in a single LLM call."""
+    return "\n\n".join(render_extract_user(u, a) for (u, a) in turns)
+
+
 def render_summarize_user(chat_session_id: str, transcript: str) -> str:
     return (f"CHAT SESSION ID: {chat_session_id}\n\n"
             f"TRANSCRIPT:\n{transcript}")

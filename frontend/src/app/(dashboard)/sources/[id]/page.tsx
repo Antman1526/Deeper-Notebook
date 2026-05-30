@@ -79,6 +79,10 @@ export default function SourceDetailPage() {
             onUpdateSession={(sessionId, title) => chat.updateSession(sessionId, { title })}
             onDeleteSession={chat.deleteSession}
             loadingSessions={chat.loadingSessions}
+            // v0.8.46 — wire the per-conversation MCP tool picker
+            // (v0.8.44/44b source-chat parity).
+            disabledMcpServers={chat.disabledMcpServers}
+            onToggleMcpServer={chat.toggleDisabledMcpServer}
           />
         </div>
       </div>

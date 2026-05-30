@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.graphs.agent_fsm import AgentState  # v0.8.53 — Phase 5.3b
 from open_notebook.domain.notebook import vector_search
 from open_notebook.exceptions import (
     ExternalServiceError,
@@ -81,6 +82,25 @@ async def _ask_invoke(model, payload, *, node: str):
             f"ONP_ASK_NODE_TIMEOUT_SEC, or check that the provider "
             f"is responsive."
         ) from exc
+
+# v0.8.53 — Phase 5.3b: optional agent-FSM completion gate for the ask graph.
+# The graph fans out the strategy's searches and then synthesizes a final
+# answer. When NONE of the searches returned grounded content, asking the LLM
+# to "synthesize" means writing from an empty context — precisely the case
+# where weak local models confidently hallucinate. When ONP_AGENT_FSM is on we
+# instead declare CLARIFY (per the agent_fsm state vocabulary) and ask the user
+# to refine, rather than emit an ungrounded answer. Default OFF → unchanged.
+_AGENT_FSM_CLARIFY_MESSAGE = (
+    "I couldn't find anything relevant to that question in your sources. "
+    "Try rephrasing it, using different keywords, or adding sources that "
+    "cover the topic — then ask again."
+)
+
+
+def _agent_fsm_enabled() -> bool:
+    raw = (os.environ.get("ONP_AGENT_FSM") or "").strip().lower()
+    return raw in ("on", "1", "true", "yes")
+
 
 # v0.7.9 — Per-result content cap for the Ask graph.
 #
@@ -190,11 +210,12 @@ class Strategy(BaseModel):
     )
 
 
-class ThreadState(TypedDict):
+class ThreadState(TypedDict, total=False):
     question: str
     strategy: Strategy
     answers: Annotated[list, operator.add]
     final_answer: str
+    agent_state: str  # v0.8.53 — Phase 5.3b: "complete" | "clarify" (FSM-gated)
 
 
 async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
@@ -282,6 +303,23 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
 
 async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict:
     try:
+        # v0.8.53 — Phase 5.3b agent-FSM completion gate (default off). If no
+        # search produced grounded content, don't ask the LLM to synthesize
+        # from an empty context (where weak local models hallucinate) — declare
+        # CLARIFY and prompt the user to refine. Streaming-safe: search.py
+        # captures `final_answer` from this node's on_chain_end terminal event,
+        # so the message is delivered even without streamed token deltas.
+        if _agent_fsm_enabled():
+            answers = state.get("answers") or []
+            if not any(isinstance(a, str) and a.strip() for a in answers):
+                logger.info(
+                    "ask agent-FSM: no grounded answers from the strategy's "
+                    "searches → declaring CLARIFY instead of ungrounded synthesis"
+                )
+                return {
+                    "final_answer": _AGENT_FSM_CLARIFY_MESSAGE,
+                    "agent_state": AgentState.CLARIFY.value,
+                }
         system_prompt = Prompter(prompt_template="ask/final_answer").render(data=state)  # type: ignore[arg-type]
         model = await provision_langchain_model(
             system_prompt,
@@ -296,7 +334,10 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
         # ONP_ASK_NODE_TIMEOUT_SEC.
         ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
         final_content = extract_text_content(ai_message.content)
-        return {"final_answer": clean_thinking_content(final_content)}
+        result: dict = {"final_answer": clean_thinking_content(final_content)}
+        if _agent_fsm_enabled():
+            result["agent_state"] = AgentState.COMPLETE.value
+        return result
     except OpenNotebookError:
         raise
     except Exception as e:

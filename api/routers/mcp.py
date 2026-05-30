@@ -38,6 +38,28 @@ async def list_mcp_servers():
     return rows or []
 
 
+@router.get("/api/mcp/recommendations")
+async def list_mcp_recommendations():
+    """v0.8.41 — Curated MCP server recommendations.
+
+    Static list maintained in
+    `open_notebook/mcp/recommendations.py:RECOMMENDATIONS`. Mirrors the
+    shape of the v0.8.39b GGUF recommendations endpoint — frontend
+    renders each as a one-click "Connect" card on the MCP settings
+    page. The user has to install the server externally (Docker, npm,
+    Python — link is in `install_url`); Connect just pre-fills the
+    new-server form with `(label, default_url)` and POSTs to the
+    existing `POST /api/mcp` create endpoint.
+
+    Selection inspired by the XDA Developers article on local-LLM
+    stacks; we skipped picks we already cover server-side (Mem0,
+    Qdrant, sentence-transformers) or that don't fit our research-
+    assistant use case (Context7 — code-doc lookup).
+    """
+    from open_notebook.mcp.recommendations import RECOMMENDATIONS
+    return {"recommendations": RECOMMENDATIONS}
+
+
 @router.post("/api/mcp", status_code=201)
 async def create_mcp_server(body: MCPServerCreate):
     """Register a new MCP server.
