@@ -20,6 +20,32 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠️ v0.8.65e — Fix desktop app "Unable to Connect to API Server" (symlinked-bundle patch failure)**
+  - **Symptom:** the freshly-built `.dmg` showed *"Unable to Connect to API Server
+    — API config endpoint returned status 500"* even though the API was healthy.
+  - **Root cause:** PyInstaller 6.x's macOS BUNDLE step relocates the Next.js
+    frontend to `Contents/Resources/frontend` (real files) and leaves
+    `Contents/Frameworks/frontend/{server.js,.next,package.json,public}` as
+    symlinks INTO Resources. The launcher passes the Frameworks path to
+    `next_rewrites_patcher`, which copied it with `copytree(symlinks=True)` —
+    reproducing the symlinks in `~/.open-notebook-plus/frontend-runtime` where
+    they **dangle** (they point `../../Resources` relative to the new location).
+    The patcher then found no `server.js`/`.next` manifests, couldn't replace the
+    build-time-baked `localhost:5055` with the launcher's dynamic API port, and
+    the frontend proxied `/api/*` to a dead `:5055` → `ECONNREFUSED` →
+    `/api/config` 500.
+  - **Fix (`desktop/next_rewrites_patcher.py`):** `patch_rewrites_for_api_port`
+    now detects a symlinked `server.js` and operates on the **resolved real dir**
+    (`Resources/frontend`, which has all real files incl `node_modules`). No-op
+    for the non-symlinked dev/Windows case.
+  - **Test:** `desktop/tests/test_next_rewrites_patcher.py` — reproduces the
+    symlinked-bundle shape and asserts the runtime copy gets a REAL `server.js`
+    and all 3 rewrite targets get the dynamic port (not `5055`); plus the
+    real-dir no-op path.
+  - *Deferred note:* `make build-mac-test` pipes pytest through `| tail -3`, so it
+    never gates on failures (4 pre-existing desktop-test failures slip through).
+    Flagged for a follow-up; not changed here to avoid scope creep on the app fix.
+
 - **🩹 v0.8.65d — Decouple web_search from MCP/DB failures (found via an end-to-end test run)**
   - **Bug:** in `bind_mcp_and_run_tool_loop`, MCP tool resolution (which hits
     SurrealDB via `list_enabled_servers → repo_query`), the native `web_search`
