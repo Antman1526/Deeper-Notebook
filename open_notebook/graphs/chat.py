@@ -417,6 +417,26 @@ async def bind_mcp_and_run_tool_loop(
             captures=mcp_captures,
             exclude_server_names=exclude_server_names,
         )
+        # v0.8.64 — native env-keyed web_search tool. Independent of MCP
+        # servers (works with ZERO MCP servers configured), so it's appended
+        # here rather than inside `_resolve_chat_tools` (which early-returns []
+        # when no MCP server is registered). Bound only when a provider key is
+        # configured (SERPER_API_KEY / TAVILY_API_KEY / SEARXNG_BASE_URL) AND
+        # the user hasn't disabled "web_search" via the per-request MCP picker
+        # — same case-insensitive exclude convention as MCP servers. This is
+        # the opt-in: no key => tool absent => zero behaviour change. Shared by
+        # both chat surfaces since source_chat reuses this helper (v0.8.16).
+        from open_notebook.tools.web_search import (
+            WEB_SEARCH_TOOL_NAME,
+            build_web_search_tool,
+            web_search_enabled,
+        )
+
+        _excluded_names = {
+            (n or "").strip().lower() for n in (exclude_server_names or []) if n
+        }
+        if web_search_enabled() and WEB_SEARCH_TOOL_NAME not in _excluded_names:
+            mcp_tools = list(mcp_tools) + [build_web_search_tool(mcp_captures)]
         if mcp_tools:
             model = model.bind_tools(mcp_tools)
     except Exception as bind_exc:

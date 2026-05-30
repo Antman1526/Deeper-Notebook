@@ -20,6 +20,81 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔁 v0.8.65 — Web-search failover chain + `web_search` visible in the chat MCP picker**
+  - **Failover (`open_notebook/tools/web_search.py`):** `run_web_search` now walks
+    an ordered *chain* of attempts instead of a single provider. `SEARXNG_BASE_URL`
+    accepts a comma/space-separated list of instances; an attempt that errors
+    (429/403/timeout/connection) falls through to the next — SearXNG URL-by-URL,
+    then across providers (Serper→Tavily→SearXNG) on the auto path. The happy
+    path still stops at the first provider (no extra API spend), and a paid
+    provider returning a *legitimate* empty 2xx is accepted rather than cascading
+    to the next paid provider (protects limited Tavily quota). A stale
+    `ONP_WEB_SEARCH_PROVIDER` override is still ignored → falls back to auto.
+    Provider keys are never logged (only provider name + instance URL + error).
+  - **Real-world note:** live-tested 5 public SearXNG instances — *all* reject the
+    JSON API (429/403/418), confirming the well-known "public mirrors block
+    `format=json`" reality. The chain degrades gracefully to empty; use a
+    self-hosted SearXNG (or rely on Serper/Tavily) for keyless search. `.env.example`
+    documents the multi-URL syntax + the caveat.
+  - **Picker UI (deferred `d` from v0.8.64):** the built-in `web_search` tool now
+    shows as a synthetic, toggleable row in the chat `McpToolPicker` (with the
+    active provider label), so users can SEE it's on and untick it for a turn —
+    backed by a new `GET /api/mcp/web-search` (`{enabled, provider, tool_name}`,
+    provider is a label, never a key) + `useWebSearchStatus()`. The picker now
+    renders even with zero MCP servers when web search is on, and counts it in
+    the `N/total tools` chip. `disabled_mcp_servers` already excludes `web_search`
+    (v0.8.64), so the toggle needed no chat-loop change.
+  - **Test:** +7 backend failover/chain tests + a `/api/mcp/web-search` endpoint
+    test (`tests/test_v0_8_64_web_search.py`, 31 total); +6 frontend picker tests
+    (`McpToolPicker.test.tsx`, 11 total). Live-verified the SearXNG failover walks
+    all 5 instances in order.
+
+- **🔍 v0.8.64 — Native env-keyed web search for chat (Serper / Tavily / SearXNG)**
+  - **Why:** the only web-search path in this fork was a user-stood-up MCP
+    server (the curated SearXNG/Crawl4AI recommendations). Users coming from
+    upstream tools expect to drop a provider API key into `.env` and get search.
+    `SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL` were referenced
+    nowhere in the codebase — so they did nothing.
+  - **Feature:** new `open_notebook/tools/web_search.py` exposes a built-in
+    `web_search` tool bound into the chat tool loop. Provider auto-selected from
+    whichever key/URL is set (precedence Serper > Tavily > SearXNG, override via
+    `ONP_WEB_SEARCH_PROVIDER`). Results render as the same citation pills as MCP
+    tool results (shared `{index,name,args,text,blocks}` capture shape).
+  - **Opt-in / default-off:** the tool only exists when a provider is
+    configured — no key ⇒ tool never bound ⇒ **zero behaviour change**. Also
+    respects the per-request MCP picker (disable `web_search` to turn it off for
+    a turn). Covers both chat surfaces (source_chat reuses the shared loop).
+  - **Safety:** all I/O via `httpx.AsyncClient` (no event-loop block);
+    best-effort (any provider error logs at WARNING and returns no results — the
+    turn never crashes); the API key is sent only to the provider endpoint and
+    **never logged** (provider name + error text only). Defensive parsing tolerates
+    provider JSON-shape changes. Tunables `ONP_WEB_SEARCH_MAX_RESULTS` (1-20) /
+    `ONP_WEB_SEARCH_TIMEOUT_SEC` (1-60).
+  - **Prompt nudge (so the LLM actually uses it):** `prompts/chat/system.jinja`
+    + `prompts/source_chat/system.jinja` now tell the model the built-in
+    `web_search` tool may exist and to call it for current/open-web questions,
+    and the citation section was generalised from "MCP tool" to "external tool"
+    so `web_search` results get the same `[mcp:N]` pill (they share one
+    per-turn capture counter). source_chat previously named no tools at all
+    despite binding them — fixed. Verified both templates still render. The
+    section heading was renamed "MCP TOOL CITATIONS" → "EXTERNAL TOOL
+    CITATIONS"; `tests/test_phase4_citation_rendering.py` updated to assert the
+    new heading + that `web_search` is named in the prompt.
+  - **Test-isolation fix (caught by the new keys):** adding real keys to `.env`
+    made conftest's `load_dotenv` enable `web_search` for the whole suite,
+    flipping v0.8.56's "no outcome when no tools bound" assertion (the tool was
+    now bound). `tests/conftest.py` gained an autouse fixture stripping all six
+    web-search env vars per test, so the suite is deterministic regardless of
+    the developer's `.env` and never makes accidental live web calls; web-search
+    tests opt in explicitly.
+  - **Test:** `tests/test_v0_8_64_web_search.py` (23 tests — provider detection +
+    precedence + override, per-provider request/parse with mocked httpx, blank/
+    no-key/error/malformed → empty, formatting, tool-builder capture, and loop
+    integration: bound when key set / absent without key / absent when disabled
+    by the picker). Live-verified against the real Serper + Tavily APIs (both
+    return parsed results); public SearXNG `priv.au` rate-limited the JSON API
+    (429 → graceful empty, as designed). `.env.example` documents the new block.
+
 - **🎨 v0.8.63 — Interactive privacy redaction-review sheet + cloud-consent bypass**
   - The On-device privacy badge is now **clickable** → a review popover that
     lists the detected category labels + an explanation, and (in notebook chat)
