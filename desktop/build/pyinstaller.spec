@@ -174,8 +174,13 @@ if is_mac:
         bundle_identifier="com.antman1526.open-notebook-plus",
         info_plist={
             "CFBundleShortVersionString": "0.1.0",
+            # v0.8.65f — user-facing display name. The .app filename + bundle
+            # identifier stay (filesystem/identity), but Finder/Dock/menu bar
+            # use these, so the app shows as "Open notebook+".
+            "CFBundleName": "Open notebook+",
+            "CFBundleDisplayName": "Open notebook+",
             "NSHighResolutionCapable": True,
             "NSMicrophoneUsageDescription":
-                "Open Notebook Plus uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
+                "Open notebook+ uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
         },
     )

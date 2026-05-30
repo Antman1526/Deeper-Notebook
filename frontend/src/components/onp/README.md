@@ -1,4 +1,4 @@
-# `onp/` — Open Notebook Plus shadow layer
+# `onp/` — Open notebook+ shadow layer
 
 This namespace exists to **replace or extend specific upstream React components**
 without ever editing upstream files. When upstream releases a new version, our
