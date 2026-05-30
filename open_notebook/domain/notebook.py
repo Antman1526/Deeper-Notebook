@@ -397,6 +397,21 @@ class Notebook(ObjectModel):
                 "DELETE refers_to WHERE out = $notebook_id",
                 {"notebook_id": notebook_id},
             )
+            # v0.8.48 — stringify the cascade-deleted session ids so the
+            # caller (the notebooks API router) can clean up each one's
+            # LangGraph checkpoint thread. The domain layer must NOT import
+            # the chat graph / checkpointer (layering), so we surface the
+            # ids and let the API layer — which already owns the
+            # checkpointer in the single-session delete path
+            # (api/routers/chat.py v0.7.171) — do the cleanup. Without
+            # this, notebook deletes leaked checkpoint blobs forever:
+            # `prune_old_checkpoints` only trims the OLDEST snapshots
+            # WITHIN a thread that exceeds the per-thread retention (50),
+            # so a deleted session's <50-checkpoint thread is never
+            # touched. The thread_id IS the str() form of the session id.
+            deleted_chat_session_ids = (
+                [str(cid) for cid in chat_session_ids] if chat_session_ids else []
+            )
             if chat_session_ids:
                 # v0.7.184 — Was `DELETE $ids` with the ids list bound
                 # as the entire post-DELETE expression. That isn't valid
@@ -424,6 +439,9 @@ class Notebook(ObjectModel):
                 "deleted_notes": deleted_notes,
                 "deleted_sources": deleted_sources,
                 "unlinked_sources": unlinked_sources,
+                # v0.8.48 — surface the cascade-deleted session ids for
+                # caller-side checkpoint cleanup (see above).
+                "deleted_chat_session_ids": deleted_chat_session_ids,
             }
 
         except Exception as e:
@@ -1127,9 +1145,18 @@ class Note(ObjectModel):
 
 class ChatSession(ObjectModel):
     table_name: ClassVar[str] = "chat_session"
-    nullable_fields: ClassVar[set[str]] = {"model_override"}
+    # v0.8.43 — disabled_mcp_servers joins model_override as nullable.
+    # None / unset = "all MCP servers visible for this session"
+    # (the v0.8.42 default, no regression for pre-migration rows).
+    nullable_fields: ClassVar[set[str]] = {"model_override", "disabled_mcp_servers"}
     title: Optional[str] = None
     model_override: Optional[str] = None
+    # v0.8.43 — Persistent per-conversation MCP server disable picks.
+    # The user's "load only what I need" choices stick across page
+    # navigations + browser reloads. Names match `mcp_server.name`
+    # case-insensitively in `_resolve_chat_tools`; we DON'T normalize
+    # at write-time so the registry's exact casing round-trips.
+    disabled_mcp_servers: Optional[list[str]] = None
 
     async def relate_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:

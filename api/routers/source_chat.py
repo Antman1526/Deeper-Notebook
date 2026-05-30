@@ -38,6 +38,16 @@ class UpdateSourceChatSessionRequest(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
     )
+    # v0.8.44b — persistent per-conversation MCP server disable picks.
+    # Parity with notebook chat's v0.8.43 `UpdateSessionRequest`. When
+    # the user toggles the source-chat MCP picker, the new state gets
+    # PATCHed here so picks survive page reloads. exclude_unset
+    # semantics in the handler mean omitting the field does NOT clear
+    # the persisted value (so the existing rename/model-override flow
+    # is untouched). null explicitly clears; [] is "explicitly none".
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None, description="MCP server names disabled for this session",
+    )
 
 class ChatMessage(BaseModel):
     id: str = Field(..., description="Message ID")
@@ -69,6 +79,14 @@ class SourceChatSessionResponse(BaseModel):
     message_count: Optional[int] = Field(
         None, description="Number of messages in session"
     )
+    # v0.8.44b — persistent MCP server disable picks (null = none).
+    # Source-chat sessions share the `chat_session` table with
+    # notebook chat, so migration 20 (v0.8.43) already provisions the
+    # column — no new migration needed. The frontend hydrates the
+    # source-chat picker from this on session load.
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None, description="MCP server names disabled for this session",
+    )
 
 class SourceChatSessionWithMessagesResponse(SourceChatSessionResponse):
     messages: list[ChatMessage] = Field(
@@ -82,6 +100,18 @@ class SendMessageRequest(BaseModel):
     message: str = Field(..., description="User message content")
     model_override: Optional[str] = Field(
         None, description="Optional model override for this message"
+    )
+    # v0.8.44 — per-request MCP server disable list (parity with
+    # notebook chat's v0.8.42 `ExecuteChatRequest.disabled_mcp_servers`).
+    # Names match `mcp_server.name` case-insensitively in
+    # `_resolve_chat_tools`. Null = all enabled servers visible (the
+    # pre-v0.8.44 default — no behavior change for existing clients).
+    disabled_mcp_servers: Optional[List[str]] = Field(
+        None,
+        description=(
+            "MCP server names to skip for this source-chat turn. "
+            "Names match `mcp_server.name` case-insensitively."
+        ),
     )
 
 class SuccessResponse(BaseModel):
@@ -125,6 +155,8 @@ async def create_source_chat_session(
             created=iso(session.created),
             updated=iso(session.updated),
             message_count=0,
+            # v0.8.44b — newly-created session has no picks yet.
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -204,6 +236,8 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
                     created=str(session_data.get("created")),
                     updated=str(session_data.get("updated")),
                     message_count=msg_count,
+                    # v0.8.44b — SELECT * includes the migration-20 field.
+                    disabled_mcp_servers=session_data.get("disabled_mcp_servers"),
                 )
             )
 
@@ -318,6 +352,8 @@ async def get_source_chat_session(
             message_count=len(messages),
             messages=messages,
             context_indicators=context_indicators,
+            # v0.8.44b — hydrate the source-chat picker from persisted picks.
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source or session not found")
@@ -383,10 +419,17 @@ async def update_source_chat_session(
             )
 
         # Update session fields
-        if request.title is not None:
+        # v0.8.44b — use exclude_unset so an omitted field is NOT a
+        # clear-to-null. Mirrors the notebook-chat v0.8.43 update
+        # handler so the rename / model-override flows are untouched
+        # when the picker PATCH only carries disabled_mcp_servers.
+        update_fields = request.model_dump(exclude_unset=True)
+        if "title" in update_fields:
             session.title = request.title
-        if request.model_override is not None:
+        if "model_override" in update_fields:
             session.model_override = request.model_override
+        if "disabled_mcp_servers" in update_fields:
+            session.disabled_mcp_servers = request.disabled_mcp_servers
 
         await session.save()
 
@@ -402,6 +445,9 @@ async def update_source_chat_session(
             created=iso(session.created),
             updated=iso(session.updated),
             message_count=msg_count,
+            # v0.8.44b — echo back the persisted picks so the client
+            # stays in sync after the PATCH.
+            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Source or session not found")
@@ -519,6 +565,10 @@ async def stream_source_chat_response(
     message: str,
     model_override: Optional[str] = None,
     fastapi_request: Optional["Request"] = None,
+    # v0.8.44 — per-request MCP server disable list (parity with
+    # notebook chat's v0.8.42). Threaded into ThreadState below; the
+    # source-chat node reads it in `bind_mcp_and_run_tool_loop`.
+    disabled_mcp_servers: Optional[list[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the source chat response as Server-Sent Events.
 
@@ -568,10 +618,18 @@ async def stream_source_chat_response(
             state_values["messages"] = state_values.get("messages", [])
             state_values["source_id"] = source_id
             state_values["model_override"] = model_override
-
-            # Add user message to state
-            user_message = HumanMessage(content=message)
-            state_values["messages"].append(user_message)
+            # v0.8.44 — propagate the per-request MCP server disable
+            # list into LangGraph state (parity with notebook chat's
+            # v0.8.42). The source-chat node reads this in
+            # `bind_mcp_and_run_tool_loop` so the user's "load only
+            # what I need" pick takes effect on this turn. Per-turn
+            # only — source-chat sessions don't yet have a persistent
+            # picks field (parallel deferred work to v0.8.43 for
+            # notebook chat); a future v0.8.44b could add migration
+            # 21 with `disabled_mcp_servers` on `source_chat_session`.
+            state_values["disabled_mcp_servers"] = (
+                disabled_mcp_servers or None
+            )
 
             # Send user message event
             user_event = {"type": "user_message", "content": message, "timestamp": None}
@@ -780,6 +838,20 @@ async def send_message_to_source_chat(
             session, "model_override", None
         )
 
+        # v0.8.44b — resolve the effective MCP disable list with the
+        # same precedence as notebook chat's v0.8.43: the per-request
+        # body wins; if omitted (null), fall back to the session's
+        # persisted picks. Resolved here (not in the generator) because
+        # the `session` object is already loaded and the generator
+        # only receives `session_id`. An explicit `[]` from the client
+        # is "use no disables this turn" and is preserved (it's
+        # `is not None`).
+        effective_disabled_mcp = (
+            request.disabled_mcp_servers
+            if request.disabled_mcp_servers is not None
+            else getattr(session, "disabled_mcp_servers", None)
+        )
+
         # Update session timestamp
         await session.save()
 
@@ -791,6 +863,9 @@ async def send_message_to_source_chat(
                 message=request.message,
                 model_override=model_override,
                 fastapi_request=fastapi_request,
+                # v0.8.44 / v0.8.44b — forward the EFFECTIVE per-turn
+                # disable list (request body, or session fallback).
+                disabled_mcp_servers=effective_disabled_mcp,
             ),
             media_type="text/plain",
             headers={

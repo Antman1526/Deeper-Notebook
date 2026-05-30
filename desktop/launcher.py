@@ -157,6 +157,20 @@ class Supervisor:
         # plenty given the drain loop is just iter(readline).
         self._drain_threads: list[threading.Thread] = []
         self.session_env: dict[str, str] = {}
+        # v0.8.40 — per-kind Popen tracker for the launcher control plane.
+        # Restart needs to find the *specific* sidecar Popen (not the
+        # whole _procs list which also contains surreal, api, frontend,
+        # etc). _spawn_llamacpp_chat / _spawn_llamacpp_embed /
+        # _spawn_whisper / _spawn_piper / _spawn_memory_retriever each
+        # populate this on successful spawn.
+        self._sidecar_procs: dict[str, subprocess.Popen] = {}
+        # v0.8.40 — also remember the (port, name) so restart can pass
+        # the same args as the original spawn. Filled in alongside
+        # _sidecar_procs at each successful spawn.
+        self._sidecar_spawn_args: dict[str, tuple[int, str]] = {}
+        # v0.8.40 — the launcher's control plane HTTP server.
+        # Lazily started in start_all; cleanly shut down in stop_all.
+        self._control_server: "object | None" = None
         self.frontend_url: str = ""
         self.embed_port: int = 0
         self.whisper_port: int = 0
@@ -256,10 +270,38 @@ class Supervisor:
         # env at chat-turn time; previously it always defaulted to
         # 32768 because _spawn_llamacpp_chat resolved n_ctx later.
         self.chat_llm_n_ctx = self._resolve_chat_llm_n_ctx()
+        # v0.8.40 — Bring up the launcher control plane BEFORE session_env
+        # is built so the URL + token can be exported to the API
+        # subprocess. The API uses these to POST sidecar-restart and
+        # (future) hot-swap commands; without them, the v0.8.38b
+        # restart endpoint has no way to call back into the launcher.
+        try:
+            from desktop.launcher_control import ControlServer
+            self._control_server = ControlServer()
+            self._control_server.register_callback("restart_sidecar", self.restart_sidecar)
+            # v0.8.40b — chat-GGUF hot-swap callback. Receives the
+            # new absolute path; updates chat_llm_path + restarts the
+            # chat sidecar without quitting the app.
+            self._control_server.register_callback("hot_swap_chat", self.hot_swap_chat)
+            self._control_server.start()
+            control_url = getattr(self._control_server, "url", "")
+            control_token = getattr(self._control_server, "token", "")
+        except Exception as exc:
+            # Control server is best-effort — the launcher must come
+            # up even if the control plane can't bind. Without it, the
+            # API's restart endpoint will return 503 with a clear
+            # message, but the rest of the app keeps working.
+            log.warning("launcher control server failed to start: %s", exc)
+            control_url = ""
+            control_token = ""
         self.session_env = {
             **os.environ,
             **self.extra_env,
             "DATA_FOLDER": str(data_folder),
+            # v0.8.40 — expose control plane to the API subprocess.
+            # Empty string when the control server failed to start.
+            "OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
+            "OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN": control_token,
             "SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
             "SURREAL_USER": self.cfg.surreal_user,
             "SURREAL_PASSWORD": self.cfg.surreal_password,
@@ -334,6 +376,12 @@ class Supervisor:
             # reads it first), so this is the GGUF-autodetect channel
             # rather than an override.
             "OPEN_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+            # v0.8.38 — point the API at the launcher's log dir so
+            # `GET /healthz/sidecars/{kind}/log` can read the per-
+            # sidecar `.tail` files (last ~50 stderr lines) the new
+            # _start_tail_drainer writes. Without this the API has
+            # no way to surface why a sidecar died.
+            "OPEN_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
         }
 
         self._progress("supervisor.surreal", "running")
@@ -503,6 +551,15 @@ class Supervisor:
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
 
     def stop_all(self) -> None:
+        # v0.8.40 — Tear down the launcher control plane first so any
+        # in-flight API calls fail-fast with a connection-refused
+        # rather than racing the subprocess teardown below.
+        if self._control_server is not None:
+            try:
+                self._control_server.stop()  # type: ignore[attr-defined]
+            except Exception as exc:
+                log.debug("launcher control server stop failed: %s", exc)
+            self._control_server = None
         # v0.7.142 — Release the singleton FIRST so a relaunch isn't
         # blocked while we're still tearing down. The singleton release
         # is idempotent (safe even if start_all never ran or already
@@ -626,15 +683,25 @@ class Supervisor:
     ) -> subprocess.Popen:
         # PIPE without a reader deadlocks long-running children once the OS
         # pipe buffer fills (Surreal, uvicorn, Next all emit plenty of output).
-        # In production we discard output entirely; in debug_mode we drain
-        # both streams on background threads into per-child log files so
-        # startup failures are recoverable.
+        # In production we discard stdout (chatty + uninteresting for crash
+        # post-mortem); in debug_mode we drain both streams to per-child
+        # full-log files.
+        #
+        # v0.8.38 — ALSO capture stderr in non-debug mode and write the
+        # last ~50 lines to a per-child `.tail` file. Cost: one drainer
+        # thread + a tiny rolling file per sidecar. Benefit: when a
+        # sidecar crashes (bad GGUF, OOM, port collision) the API can
+        # surface the actual cause via /healthz/sidecars/{kind}/log
+        # instead of just rendering a stale "down" badge. Pre-v0.8.38
+        # users had to enable debug_mode + relaunch + hunt the log dir
+        # — bad UX for the failure mode that matters most.
         if self.debug_mode:
             stdout: int = subprocess.PIPE
             stderr: int = subprocess.PIPE
         else:
             stdout = subprocess.DEVNULL
-            stderr = subprocess.DEVNULL
+            # v0.8.38 — stderr captured into a tail-only drainer.
+            stderr = subprocess.PIPE
 
         # v0.7.173 — Isolate each child into its own process group so
         # `stop_all` can kill the WHOLE subtree (including grandchildren)
@@ -691,6 +758,11 @@ class Supervisor:
 
         if self.debug_mode and proc.stdout is not None and proc.stderr is not None:
             self._start_drainers(proc, name)
+        elif proc.stderr is not None:
+            # v0.8.38 — non-debug mode: tail-only stderr drainer for
+            # the API's /healthz/sidecars/{kind}/log endpoint. stdout
+            # is DEVNULL so there's nothing to drain on that side.
+            self._start_tail_drainer(proc, name)
 
         return proc
 
@@ -728,6 +800,78 @@ class Supervisor:
             t.start()
             # v0.7.58 — track for join-before-log-close in stop_all
             self._drain_threads.append(t)
+
+    def _start_tail_drainer(self, proc: subprocess.Popen, name: str) -> None:
+        """v0.8.38 — non-debug-mode stderr tail capture.
+
+        Drains the child's stderr into a `collections.deque(maxlen=50)`
+        and writes the rolling tail to `{log_dir}/{name}.tail` on every
+        new line. The file is small (≤ 50 lines × line width) and gives
+        the API's `/healthz/sidecars/{kind}/log` endpoint a way to
+        surface the actual crash cause when a sidecar dies (bad GGUF,
+        OOM, port collision) — pre-v0.8.38 these failures landed only
+        in DEVNULL.
+
+        Secret redaction mirrors _start_drainers above so a child that
+        echoes its CLI flags doesn't leak passwords/keys.
+        """
+        from collections import deque
+
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        tail_path = self.log_dir / f"{name}.tail"
+        # Pre-create so the API can stat it without race.
+        try:
+            tail_path.touch(exist_ok=True)
+        except Exception:
+            # If we can't create the file (read-only FS, perms), just
+            # skip the tail drainer — the rest of the launcher must
+            # continue to function.
+            return
+
+        # Same secret-scrubber as the debug-mode drainer (v0.7.58 audit).
+        secret_pat = re.compile(
+            rb"(?i)(--pass=|password[=:]|surreal_password[=:]|encryption_key[=:])"
+            rb"([^\s\"']+)"
+        )
+        def _redact(b: bytes) -> bytes:
+            return secret_pat.sub(rb"\1[REDACTED]", b)
+
+        tail = deque(maxlen=50)
+        stderr_stream = proc.stderr  # type: IO[bytes] | None
+
+        def drain_tail() -> None:
+            if stderr_stream is None:
+                return
+            try:
+                for line in iter(stderr_stream.readline, b""):
+                    tail.append(_redact(line))
+                    # Rewrite tail file on each new line. Cheap: ≤50
+                    # lines of bytes; the cost is dominated by the
+                    # IO syscall, not the join. Atomic-rewrite pattern
+                    # avoids readers seeing a half-written file:
+                    # write to a sibling then rename.
+                    try:
+                        tmp = tail_path.with_suffix(".tail.tmp")
+                        with open(tmp, "wb") as f:
+                            for ln in tail:
+                                f.write(ln)
+                        tmp.replace(tail_path)
+                    except Exception:
+                        # IO failure (disk full, perms changed) —
+                        # keep draining the pipe so the child doesn't
+                        # block, but skip the rewrite this iteration.
+                        continue
+            except Exception:
+                # Stream closed / OSError — child likely exited. The
+                # last tail file write reflects the final state, which
+                # is what /healthz wants to surface.
+                return
+
+        t = threading.Thread(
+            target=drain_tail, name=f"drain-tail-{name}", daemon=True,
+        )
+        t.start()
+        self._drain_threads.append(t)
 
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
@@ -847,13 +991,291 @@ class Supervisor:
           - the progress event includes the str(exc) so the UI sees it
           - control flow is unchanged: failure here doesn't crash launcher
         """
+        # v0.8.40 — remember the spawn args so the control plane's
+        # restart_sidecar can re-invoke fn(*args) without re-deriving
+        # ports/paths.
+        kind = self._step_to_kind(step)
+        if kind is not None and args:
+            # Args is typically (port,) for sidecars. Store the int +
+            # the step name so restart logs the right label.
+            self._sidecar_spawn_args[kind] = (args[0] if args else 0, step)
         self._progress(step, "running")
         try:
             fn(*args)
+            # v0.8.40 — track the Popen by kind for restart lookup. The
+            # spawn fn pushed it onto _procs already; grab the last one.
+            if kind is not None and self._procs:
+                self._sidecar_procs[kind] = self._procs[-1]
             self._progress(step, "done")
         except Exception as exc:
             log.warning("%s spawn failed: %s", step, exc, exc_info=True)
             self._progress(step, "error", str(exc))
+
+    # v0.8.40 — map launcher step names to API-side `kind` strings.
+    # Must stay in sync with `_KIND_TO_SUPERVISOR` in
+    # `api/routers/local_models.py`.
+    _STEP_TO_KIND: dict[str, str] = {
+        "supervisor.llamacpp_chat": "chat",
+        "supervisor.llamacpp_embed": "embed",
+        "supervisor.whisper": "whisper",
+        "supervisor.piper": "piper",
+        "supervisor.memory": "memory",
+    }
+
+    def _step_to_kind(self, step: str) -> str | None:
+        return self._STEP_TO_KIND.get(step)
+
+    def restart_sidecar(self, kind: str) -> tuple[bool, str]:
+        """v0.8.40 — Kill the named sidecar's process group and respawn
+        it with the same args. Called by the launcher control plane
+        (`desktop/launcher_control.py:_ControlHandler.do_POST`) when
+        the API receives POST /healthz/sidecars/{kind}/restart.
+
+        Returns `(success, detail)`. Errors are returned as (False, msg)
+        rather than raised so the control plane can serialize them.
+
+        Steps:
+          1. Look up the original spawn args from _sidecar_spawn_args.
+             If missing, the sidecar was never spawned this session
+             (e.g. chat skipped because no GGUF) → fail with a clear msg.
+          2. If a current Popen exists, kill its process group (same
+             pattern as stop_all uses) and reap.
+          3. Re-invoke the original _spawn_<kind> function via the same
+             _try_spawn path used at start-up — so any failure produces
+             a `progress("error", ...)` event the UI can read.
+          4. Return success with the new pid in the detail.
+
+        Thread-safety: called from the launcher control plane's HTTP
+        thread (separate from the main launcher thread which is
+        usually idle waiting for stop_all). Popen + os.killpg are
+        thread-safe; the dict mutations protected by the GIL.
+        """
+        import os as _os
+        import signal as _signal
+
+        if kind not in self._STEP_TO_KIND.values():
+            return False, f"Unknown sidecar kind {kind!r}"
+
+        if kind not in self._sidecar_spawn_args:
+            return False, (
+                f"Sidecar {kind!r} was never spawned this session "
+                "(missing config? Try relaunching the app.)"
+            )
+
+        port, step = self._sidecar_spawn_args[kind]
+        log.info("restart_sidecar(%r): killing old proc + respawning", kind)
+
+        # Find the spawn function via name lookup. Mapping is
+        # parallel-keyed to _STEP_TO_KIND so a future sidecar addition
+        # only requires two table entries to wire up restart.
+        spawn_fn_name = {
+            "chat": "_spawn_llamacpp_chat",
+            "embed": "_spawn_llamacpp_embed",
+            "whisper": "_spawn_whisper",
+            "piper": "_spawn_piper",
+            "memory": "_spawn_memory_retriever",
+        }.get(kind)
+        if spawn_fn_name is None:
+            return False, f"No spawn function registered for kind={kind!r}"
+        spawn_fn = getattr(self, spawn_fn_name, None)
+        if spawn_fn is None:
+            return False, f"Spawn function {spawn_fn_name!r} missing on Supervisor"
+
+        # Kill the existing Popen if any. Use the same SIGTERM →
+        # SIGKILL pattern stop_all uses (process group) so any
+        # grandchildren of llama-cpp / whisper-cpp / piper-cpp are
+        # also reaped.
+        old = self._sidecar_procs.get(kind)
+        if old is not None and old.poll() is None:
+            try:
+                pgid = _os.getpgid(old.pid)
+                _os.killpg(pgid, _signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                # Already dead or never had a group — try a plain kill.
+                try:
+                    old.terminate()
+                except Exception:
+                    pass
+            try:
+                old.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    pgid = _os.getpgid(old.pid)
+                    _os.killpg(pgid, _signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    pass
+        # Drop the dead Popen from both trackers so the next spawn
+        # populates fresh entries.
+        self._sidecar_procs.pop(kind, None)
+        if old in self._procs:
+            self._procs.remove(old)
+
+        # Respawn via the same _try_spawn path used at boot — preserves
+        # progress events + the v0.8.40 _sidecar_procs/spawn_args
+        # tracking via the populator hook above.
+        self._try_spawn(step, spawn_fn, port)
+
+        # After _try_spawn, the new Popen (if any) is in _sidecar_procs.
+        new = self._sidecar_procs.get(kind)
+        if new is None or new.poll() is not None:
+            return False, (
+                f"Respawn of {kind!r} did not produce a live child. "
+                "Check API logs and the sidecar tail file."
+            )
+        return True, f"Sidecar {kind!r} respawned (pid={new.pid})"
+
+    def hot_swap_chat(self, new_path: str) -> tuple[bool, str]:
+        """v0.8.40b — Swap the chat sidecar's GGUF without quitting
+        the app.
+
+        Steps:
+          1. Validate `new_path` — must exist on disk and live under
+             the configured model_dir (defense against path-traversal
+             from the API caller — the API does its own check but we
+             defense-in-depth here too).
+          2. Update `self.chat_llm_path` so the next spawn reads it.
+          3. Re-resolve `chat_llm_n_ctx` from the new GGUF's metadata
+             (so subsequent restarts in this session use the right
+             context length, even if the OPEN_NOTEBOOK_LOCAL_N_CTX
+             env var seen by the API stays at the OLD value — that
+             mismatch is non-fatal but worth documenting; see
+             v0.8.40b CHANGELOG entry).
+          4. Restart the chat sidecar via `restart_sidecar("chat")`.
+
+        Returns (ok, detail). Like restart_sidecar, failures are
+        returned, never raised — control plane needs to serialize them.
+
+        Known limitations (acceptable for v0.8.40b, deferred):
+          - OPEN_NOTEBOOK_LOCAL_N_CTX in the API subprocess env is
+            NOT updated. If the new GGUF has a SMALLER n_ctx than the
+            old, the router might still route prompts that fit the
+            old context to local; the new sidecar then returns 400
+            context_length_exceeded for those edge prompts. Common
+            case (same family / same quant) works fine. A v0.8.40c
+            could expose a control-plane "refresh env" endpoint
+            that updates os.environ in the API process.
+        """
+        from pathlib import Path as _P
+
+        if not new_path:
+            return False, "Missing new_path"
+        target = _P(new_path)
+        if not target.exists() or not target.is_file():
+            return False, f"File not found: {new_path}"
+        if target.suffix.lower() != ".gguf":
+            return False, "new_path must be a .gguf file"
+        if self.cfg.model_dir not in target.parents and target.parent != self.cfg.model_dir:
+            # Path-traversal guard — must live under model_dir.
+            return False, (
+                f"new_path must be inside the configured model_dir "
+                f"({self.cfg.model_dir})"
+            )
+
+        old_path = self.chat_llm_path
+        # v0.8.42b — capture pre-swap n_ctx for full rollback. Pre-
+        # v0.8.42b, on respawn failure only `chat_llm_path` was
+        # restored — `chat_llm_n_ctx` kept the new GGUF's value,
+        # giving a mismatched (path, n_ctx) pair on next retry.
+        old_n_ctx = self.chat_llm_n_ctx
+        log.info(
+            "hot_swap_chat: %s → %s", old_path, target,
+        )
+        # Mutate the path BEFORE restart so the respawn picks it up.
+        self.chat_llm_path = target
+
+        # Re-resolve n_ctx for the new GGUF. The launcher's own
+        # _spawn_llamacpp_chat reads chat_llm_n_ctx via env or
+        # _resolve_chat_llm_n_ctx; we update the attribute here so
+        # future restarts of THIS sidecar in THIS session use the
+        # right value. The API's view of OPEN_NOTEBOOK_LOCAL_N_CTX
+        # is stale until app relaunch — documented limitation.
+        try:
+            self.chat_llm_n_ctx = self._resolve_chat_llm_n_ctx()
+        except Exception as exc:
+            log.warning(
+                "hot_swap_chat: n_ctx re-resolve failed (%s); "
+                "keeping old value %d",
+                exc, self.chat_llm_n_ctx,
+            )
+
+        # Now restart — the spawn function reads self.chat_llm_path
+        # which we just updated.
+        ok, detail = self.restart_sidecar("chat")
+        if not ok:
+            # Roll back the path so subsequent attempts don't compound
+            # the failure. The old sidecar is already dead at this
+            # point (restart_sidecar killed it before respawn), so
+            # we can't restore the old running state — but at least
+            # the next user-triggered restart will use the old path.
+            # v0.8.42b — ALSO restore n_ctx to its pre-swap value.
+            # Pre-v0.8.42b only `chat_llm_path` was restored, so the
+            # next retry would compute against an n_ctx that matched
+            # the rolled-back-out GGUF. Full rollback of the
+            # (path, n_ctx) pair keeps invariants tight.
+            self.chat_llm_path = old_path
+            self.chat_llm_n_ctx = old_n_ctx
+            return False, f"Restart with new GGUF failed: {detail}"
+
+        # v0.8.40d — Push the new n_ctx into the running API process so
+        # the smart router (provision.py) sees it on the very next
+        # chat turn. Closes the v0.8.40b "stale n_ctx" limitation.
+        # Best-effort: a push failure does NOT undo the swap — the
+        # sidecar is live with the new GGUF, the router just keeps
+        # using the OLD n_ctx until app relaunch. That's the v0.8.40b
+        # baseline behaviour, so we're never WORSE off here.
+        try:
+            self._push_env_to_api({
+                "OPEN_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+            })
+        except Exception as exc:
+            log.warning(
+                "hot_swap_chat: env-refresh push failed (router will "
+                "keep using stale n_ctx until app relaunch): %s",
+                exc,
+            )
+
+        return True, (
+            f"Chat sidecar swapped to {target.name} (n_ctx={self.chat_llm_n_ctx}). "
+            f"{detail}"
+        )
+
+    def _push_env_to_api(self, vars: dict[str, str]) -> None:
+        """v0.8.40d — POST `vars` to the API's /system/env-refresh
+        endpoint so it mutates os.environ in the running process.
+
+        Auth: reuse `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` (same secret
+        the API uses for its launcher-control-plane calls; symmetric
+        trust boundary).
+
+        Raises on any failure — caller wraps in try/except so a flaky
+        API doesn't undo a successful sidecar swap.
+        """
+        import httpx as _httpx
+
+        api_port = self.session_env.get("API_PORT")
+        token = self.session_env.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "")
+        if not api_port or not token:
+            raise RuntimeError(
+                "API_PORT / control token unavailable in session_env",
+            )
+        url = f"http://127.0.0.1:{api_port}/api/system/env-refresh"
+        # Sync httpx — we're already on a non-event-loop thread
+        # (control plane HTTP handler thread → no async context here).
+        # Tight timeouts because the local API should respond in ms.
+        with _httpx.Client(
+            timeout=_httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0),
+        ) as client:
+            resp = client.post(
+                url,
+                json={"vars": vars},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            log.info(
+                "env-refresh: updated=%s rejected=%s",
+                body.get("updated", []), body.get("rejected", []),
+            )
 
     def _spawn_llamacpp_embed(self, port: int) -> None:
         if self.nomic_embed_path is None or not self.nomic_embed_path.exists():

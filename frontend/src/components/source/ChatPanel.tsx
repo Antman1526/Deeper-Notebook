@@ -16,12 +16,21 @@ import {
   BaseChatSession
 } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
+import { McpToolPicker } from '@/components/chat/McpToolPicker'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
 import { splitCitations } from '@/lib/utils/citations'
 import { CitationPill } from '@/components/chat/CitationPill'
+// v0.8.35c — small "local"/"cloud" chip next to AI messages, lit when
+// the smart router (v0.8.0) actually ran for this notebook turn.
+// Reads from the TanStack Query cache populated by useNotebookChat on
+// the /chat/stream `done` event; renders null for source-chat (no
+// cache entry) and pre-v0.8.1 sessions.
+import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
+import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
+import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -56,6 +65,22 @@ interface ChatPanelProps {
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
   notebookId?: string
+  // v0.8.46 — MCP tool picker wiring. Optional so callers that don't
+  // care (or have no MCP servers) simply omit them — the picker
+  // self-hides when there are no enabled servers. `disabledMcpServers`
+  // is the current per-conversation disable list; `onToggleMcpServer`
+  // flips one server's state. Both come straight from
+  // useNotebookChat / useSourceChat (v0.8.42-v0.8.44b). Pre-v0.8.46
+  // the <McpToolPicker> existed + was tested but was never mounted,
+  // so the entire feature chain was unreachable from the UI.
+  disabledMcpServers?: string[]
+  onToggleMcpServer?: (name: string) => void
+  // v0.8.63 — "Re-ask allowing cloud" handler for the privacy review sheet.
+  // Given the original question text, re-sends it with the privacy gate
+  // bypassed (explicit user consent). Only notebook chat provides it; source
+  // chat omits it (no privacy badge there), so the review popover is
+  // review-only in that case.
+  onReaskAllowCloud?: (message: string) => void
 }
 
 export function ChatPanel({
@@ -75,7 +100,10 @@ export function ChatPanel({
   title,
   contextType = 'source',
   notebookContextStats,
-  notebookId
+  notebookId,
+  disabledMcpServers,
+  onToggleMcpServer,
+  onReaskAllowCloud,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -177,7 +205,7 @@ export function ChatPanel({
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
               </div>
             ) : (
-              messages.map((message) => (
+              messages.map((message, idx) => (
                 <div
                   key={message.id}
                   className={`flex gap-3 ${
@@ -215,10 +243,40 @@ export function ChatPanel({
                       )}
                     </div>
                     {message.type === 'ai' && (
-                      <MessageActions
-                        content={message.content}
-                        notebookId={notebookId}
-                      />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <MessageActions
+                          content={message.content}
+                          notebookId={notebookId}
+                        />
+                        {/* v0.8.35c — only shows for notebook chat
+                            sessions where the smart router populated
+                            the cache via /chat/stream's done event.
+                            Source-chat and pre-v0.8.1 sessions render
+                            null naturally (no cache entry). */}
+                        <ChatMessageProviderBadge messageId={message.id} />
+                        {/* v0.8.61 — "On-device" chip when the privacy gate
+                            kept this turn local. Renders null unless
+                            privacy_gated === true in the cached done event. */}
+                        <ChatMessagePrivacyBadge
+                          messageId={message.id}
+                          // v0.8.63 — re-ask the PRECEDING user question with
+                          // the privacy gate bypassed (explicit consent). Only
+                          // when the host wired onReaskAllowCloud (notebook
+                          // chat) and a preceding human message exists.
+                          onReask={
+                            onReaskAllowCloud &&
+                            idx > 0 &&
+                            messages[idx - 1]?.type === 'human'
+                              ? () =>
+                                  onReaskAllowCloud(messages[idx - 1].content)
+                              : undefined
+                          }
+                        />
+                        {/* v0.8.62 — agent-FSM "needs input"/"truncated" chip;
+                            null unless ONP_AGENT_FSM surfaced a non-complete
+                            terminal state on the done event. */}
+                        <ChatMessageAgentStateBadge messageId={message.id} />
+                      </div>
                     )}
                   </div>
                   {message.type === 'human' && (
@@ -286,15 +344,28 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
-          {/* Model selector */}
-          {onModelChange && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
-              <ModelSelector
-                currentModel={modelOverride}
-                onModelChange={onModelChange}
-                disabled={isStreaming}
-              />
+          {/* Model selector + v0.8.46 MCP tool picker on one row.
+              The picker self-hides when there are no enabled MCP
+              servers, so the row collapses to just the model selector
+              for users without MCP configured. */}
+          {(onModelChange || onToggleMcpServer) && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
+                {onModelChange && (
+                  <ModelSelector
+                    currentModel={modelOverride}
+                    onModelChange={onModelChange}
+                    disabled={isStreaming}
+                  />
+                )}
+              </div>
+              {onToggleMcpServer && (
+                <McpToolPicker
+                  disabled={disabledMcpServers ?? []}
+                  onToggle={onToggleMcpServer}
+                />
+              )}
             </div>
           )}
 

@@ -30,7 +30,15 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from mem0.vector_stores.base import VectorStoreBase
+# v0.8.50 — defensive mem0 import (mirrors desktop/memory/client.py). The
+# worker venv has mem0 installed, so this resolves to the real abstract base
+# in production. The dev/test venv does NOT ship mem0; falling back to `object`
+# keeps this module importable there so the pure store logic (prune/count/
+# query-shape) is unit-testable without standing up the whole mem0 stack.
+try:
+    from mem0.vector_stores.base import VectorStoreBase
+except ImportError:  # pragma: no cover - exercised only in mem0-less envs
+    VectorStoreBase = object  # type: ignore[assignment,misc]
 from pydantic import BaseModel
 
 # vector_id (mem0's `memory_id`) is interpolated into SurrealQL via f-strings
@@ -191,12 +199,18 @@ class SurrealMemoryStore(VectorStoreBase):
         for vec, payload, _id in zip(vectors, payloads, ids):
             table = self._table(payload)
             now = datetime.now(timezone.utc).isoformat()
+            # v0.8.55 — persist the real confidence. The writer sets it in
+            # metadata (mirroring how `scope` is carried), so read it from
+            # there first, then any top-level value mem0 may pass, then 1.0.
+            _meta = payload.get("metadata", {}) or {}
             row = {
                 "text": payload.get("text", ""),
                 "embedding": vec,
-                "metadata": payload.get("metadata", {}),
-                "scope": payload.get("metadata", {}).get("scope", "user"),
-                "confidence": payload.get("confidence", 1.0),
+                "metadata": _meta,
+                "scope": _meta.get("scope", "user"),
+                "confidence": _meta.get(
+                    "confidence", payload.get("confidence", 1.0)
+                ),
                 "created_at": now,
             }
             if _id:
@@ -272,6 +286,58 @@ class SurrealMemoryStore(VectorStoreBase):
             for row in rows or []:
                 out.append(self._to_output(row))
         return out
+
+    # ---------------------------------------------------------- retention (v0.8.50)
+
+    def count(self, table: str) -> int:
+        """v0.8.50 — row count for one memory table (cheap indexed
+        aggregate). Used as the high-water gate before a full prune so the
+        per-turn writer path doesn't pay a select-all every turn."""
+        self._ensure_connected()
+        rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")
+        if rows and isinstance(rows[0], dict):
+            return int(rows[0].get("n") or 0)
+        return 0
+
+    def prune(self, keep_per_table: int) -> dict[str, int]:
+        """v0.8.50 — retention ceiling. For each memory table keep the
+        newest `keep_per_table` rows (by `created_at`) and delete the rest.
+        Returns {table: n_deleted}. Closes Finding #3 (the `memory_*`
+        tables grew without bound — recall caps RESULTS, never ROWS).
+
+        Query shape is deliberate and avoids two SurrealDB traps:
+          * NOT `SELECT VALUE id … ORDER BY created_at` — the
+            "missing order idiom" rejection that silently broke recall
+            across v0.8.19→v0.8.29. The ORDER BY field MUST be in the
+            projection, so we select `id, created_at`.
+          * NOT a `WHERE id NOT IN (subquery)` complement — fragile when
+            the keep-set is empty. We slice survivors off in Python and
+            delete the remainder with the safe `DELETE … WHERE id IN $ids`
+            idiom (same one the v0.7.184 notebook-delete cascade uses).
+        """
+        self._ensure_connected()
+        keep = max(0, int(keep_per_table))
+        deleted: dict[str, int] = {}
+        for table in _ALL_TABLES:
+            rows = self._exec(
+                f"SELECT id, created_at FROM {table} ORDER BY created_at DESC"
+            ) or []
+            # rows[:keep] are the newest survivors; rows[keep:] are evicted.
+            old_ids = [
+                r["id"]
+                for r in rows[keep:]
+                if isinstance(r, dict) and r.get("id") is not None
+            ]
+            if old_ids:
+                # Batch very large eviction lists so a first-run prune on a
+                # huge table doesn't build a pathological IN clause.
+                for i in range(0, len(old_ids), 1000):
+                    self._exec(
+                        f"DELETE {table} WHERE id IN $ids",
+                        {"ids": old_ids[i:i + 1000]},
+                    )
+            deleted[table] = len(old_ids)
+        return deleted
 
     def reset(self):
         """Drop and recreate the 3 memory tables. mem0 invokes this from

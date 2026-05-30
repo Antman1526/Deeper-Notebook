@@ -33,6 +33,15 @@ vi.mock('@/lib/hooks/use-mcp-servers', () => ({
   useUpdateMCPServer: vi.fn(),
 }))
 
+// v0.8.41 — RecommendationsPanel has its own dedicated tests; stub it
+// out here so the page-level tests don't need a QueryClientProvider
+// wrapper just for the panel's useQuery call.
+vi.mock('./RecommendationsPanel', () => ({
+  RecommendationsPanel: () => React.createElement('div', {
+    'data-testid': 'mcp-recommendations-stub',
+  }),
+}))
+
 import {
   useMCPServers,
   useCreateMCPServer,

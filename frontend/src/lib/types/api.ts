@@ -151,6 +151,11 @@ export interface BaseChatSession {
   updated: string
   message_count?: number
   model_override?: string | null
+  // v0.8.43 — persistent per-conversation MCP server disable picks.
+  // `useNotebookChat` hydrates its `disabledMcpServers` state from
+  // this on session load so the v0.8.42 picks survive page reloads.
+  // null / undefined = no picks (all servers visible).
+  disabled_mcp_servers?: string[] | null
 }
 
 export interface SourceChatSession extends BaseChatSession {
@@ -185,11 +190,21 @@ export interface CreateSourceChatSessionRequest {
 export interface UpdateSourceChatSessionRequest {
   title?: string
   model_override?: string
+  // v0.8.44b — persistent source-chat MCP picks (parity with notebook
+  // chat's v0.8.43 UpdateNotebookChatSessionRequest). null clears;
+  // omitting the field leaves the persisted value untouched (the API
+  // uses exclude_unset semantics).
+  disabled_mcp_servers?: string[] | null
 }
 
 export interface SendMessageRequest {
   message: string
   model_override?: string
+  // v0.8.44 — per-request MCP server disable list (source-chat
+  // parity with notebook-chat's v0.8.42). Same shape, same backend
+  // case-insensitive matching against `mcp_server.name`. Undefined =
+  // all enabled servers visible.
+  disabled_mcp_servers?: string[]
 }
 
 export interface SourceChatStreamEvent {
@@ -225,6 +240,12 @@ export interface CreateNotebookChatSessionRequest {
 export interface UpdateNotebookChatSessionRequest {
   title?: string
   model_override?: string | null
+  // v0.8.43 — persistent per-conversation MCP server disable picks.
+  // Send `disabled_mcp_servers: [<names>]` to persist the picks
+  // across page reloads; send `null` to clear them. Omitting the
+  // field on PATCH does NOT touch the persisted value (the API
+  // uses `exclude_unset=True` to distinguish "absent" from "clear").
+  disabled_mcp_servers?: string[] | null
 }
 
 // v0.8.1 Item 3 — shape of a single MCP tool-call capture.
@@ -272,6 +293,17 @@ export interface SendNotebookChatMessageRequest {
     notes: Array<Record<string, unknown>>
   }
   model_override?: string
+  // v0.8.42 — per-request MCP server disable list. Names match
+  // `mcp_server.name` case-insensitively on the backend
+  // (`_resolve_chat_tools.exclude_server_names`). Omit / undefined =
+  // all enabled servers visible (the v0.8.0 default). Used by the
+  // MCP tool picker above the chat input to implement the
+  // XDA-Developers / Pi-harness "load only what I need" pattern.
+  disabled_mcp_servers?: string[]
+  // v0.8.63 — explicit user consent to send THIS turn to cloud even though the
+  // fail-closed privacy gate flagged it ("Re-ask allowing cloud"). Omit /
+  // false → the gate stays active (default).
+  bypass_privacy_gate?: boolean
 }
 
 export interface BuildContextRequest {

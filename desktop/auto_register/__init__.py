@@ -51,6 +51,7 @@ from desktop.auto_register.episode_profile import (
 )
 from desktop.auto_register.llamacpp import register_llamacpp_models
 from desktop.auto_register.ollama import register_ollama_models
+from desktop.auto_register.osaurus import register_osaurus_models
 from desktop.auto_register.speaker_profile import (
     register_default_speaker_profile,  # noqa: F401
 )
@@ -352,6 +353,20 @@ def _do_register(
         client, existing_cred_names, existing_model_keys,
         model_dir=cfg.model_dir, llamacpp_port=llamacpp_port,
         local_ggufs=local_ggufs,
+    ):
+        registered_any = True
+
+    # --- 4b. v0.8.36 — Osaurus (MLX, Apple Silicon) ------------------------
+    # If the user is running Osaurus (https://github.com/osaurus-ai/osaurus)
+    # on :1337, register it as an openai_compatible credential so the smart
+    # router can route to it. Silently no-ops on non-Apple platforms or when
+    # Osaurus isn't running — see desktop/auto_register/osaurus.py for the
+    # probe details. Mac users with Osaurus get MLX-optimized inference
+    # (typically 2-4× llama-cpp throughput) with zero manual config.
+    if register_osaurus_models(
+        client=client,
+        existing_cred_names=existing_cred_names,
+        existing_model_keys=existing_model_keys,
     ):
         registered_any = True
 

@@ -711,8 +711,11 @@ async def studio_generate(
         try:
             from api.metrics import record_studio_generation
             record_studio_generation(mode, outcome)
-        except Exception:
-            pass
+        except Exception as exc:
+            # v0.8.45 — best-effort metric increment must never mask the
+            # user's response, but log at DEBUG so a broken metrics path
+            # is discoverable (v0.8.27-v0.8.35f silent-except convention).
+            logger.debug("Studio: record_studio_generation failed: {}", exc)
 
     def _classify_outcome(resp: "StudioGenerateResponse") -> str:
         # Look at the response warnings to decide success vs partial.
@@ -965,8 +968,14 @@ async def _generate_outline(
         try:
             from api.metrics import record_studio_outline_parse_failure
             record_studio_outline_parse_failure("json_decode")
-        except Exception:
-            pass
+        except Exception as metric_exc:
+            # v0.8.45 — DEBUG log the swallowed metric failure (the
+            # ValueError below is the real signal; this guard only
+            # protects the metric increment). v0.8.35f convention.
+            logger.debug(
+                "Studio: record_studio_outline_parse_failure(json_decode) "
+                "failed: {}", metric_exc,
+            )
         raise ValueError(f"outline JSON parse failed: {exc}")
     outline, err = _validate_outline(payload, max_pages=_PAGES_MAX)
     if not outline:
@@ -979,8 +988,13 @@ async def _generate_outline(
         try:
             from api.metrics import record_studio_outline_parse_failure
             record_studio_outline_parse_failure("validation")
-        except Exception:
-            pass
+        except Exception as metric_exc:
+            # v0.8.45 — DEBUG log the swallowed metric failure
+            # (v0.8.35f convention; the ValueError below is the signal).
+            logger.debug(
+                "Studio: record_studio_outline_parse_failure(validation) "
+                "failed: {}", metric_exc,
+            )
         raise ValueError(f"outline validation failed: {err}")
     return outline
 
@@ -1196,8 +1210,13 @@ async def _dispatch_notebook_mode(
         try:
             from api.metrics import record_studio_single_note_fallback
             record_studio_single_note_fallback()
-        except Exception:
-            pass
+        except Exception as metric_exc:
+            # v0.8.45 — DEBUG log the swallowed metric failure
+            # (v0.8.35f convention). Fallback proceeds regardless.
+            logger.debug(
+                "Studio: record_studio_single_note_fallback failed: {}",
+                metric_exc,
+            )
         warnings.append(
             "Multi-page outline could not be parsed; fell back to a single "
             "study-note. Try regenerating, or pick a stronger chat model."

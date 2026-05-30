@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio  # v0.7.113 — wait_for around the chat-hot-path embed call
 import os
+import re  # v0.8.47 — flatten recalled-memory text before prompt injection
 from typing import Any
 
 from loguru import logger
@@ -42,6 +43,31 @@ from open_notebook.database.repository import repo_query
 # 12k-char history budget.
 _MAX_FACTS = 15
 _MAX_PREFERENCES = 10
+
+# v0.8.49 — episodes are whole-session summaries written by the v0.7.70
+# `summarize_session` writer on session delete. Until now they were
+# WRITE-ONLY: `surreal_store` routes `kind="episode"` into the
+# `memory_episode` table, the writer diligently produced them on every
+# session end (one ~800-token LLM call), but NOTHING ever read them back
+# — recall only queried memory_fact + memory_preference. This wired the
+# missing read path so the third memory layer actually informs chat,
+# consistent with facts/preferences (already recalled by default).
+# Capped tighter than facts/preferences: a session summary is coarse and
+# long, so even 2 carries meaningful context without crowding the prompt.
+_MAX_EPISODES = 2
+
+# Episode recall defaults ON (parity with facts/preferences, which have
+# no gate). Set ONP_MEMORY_RECALL_EPISODES=0 to suppress — useful if a
+# user finds old-conversation summaries resurfacing unhelpful, or to
+# claw back the ~1k chars of system-prompt budget on a tiny local model.
+_DEFAULT_EPISODE_RECALL = True
+
+
+def _episode_recall_enabled() -> bool:
+    raw = (os.environ.get("ONP_MEMORY_RECALL_EPISODES") or "").strip().lower()
+    if not raw:
+        return _DEFAULT_EPISODE_RECALL
+    return raw not in ("0", "false", "no", "off")
 
 # v0.7.84 — once a user's memory tables grow past this row count, the
 # "most recent N" heuristic starts losing relevant older facts. Switch
@@ -105,10 +131,26 @@ async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
         "ORDER BY created_at DESC LIMIT $limit",
         {"limit": _MAX_PREFERENCES},
     )
+    # v0.8.49 — recall the most-recent session summaries too (was the
+    # missing read half of the v0.7.70 summarize_session feature). Same
+    # v0.8.30 idiom: created_at must be IN the projection alongside the
+    # ORDER BY, or SurrealDB rejects with "Missing order idiom".
+    episodes = (
+        await _safe_select(
+            "SELECT text, created_at FROM memory_episode "
+            "ORDER BY created_at DESC LIMIT $limit",
+            {"limit": _MAX_EPISODES},
+        )
+        if _episode_recall_enabled()
+        else []
+    )
     return {
         "facts": [{"text": _coerce_text(t)} for t in facts if _coerce_text(t)],
         "preferences": [
             {"text": _coerce_text(t)} for t in preferences if _coerce_text(t)
+        ],
+        "episodes": [
+            {"text": _coerce_text(t)} for t in episodes if _coerce_text(t)
         ],
     }
 
@@ -209,6 +251,18 @@ async def recall_relevant_memory(
         "ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_PREFERENCES},
     )
+    # v0.8.49 — semantic recall of session summaries (parity with the
+    # recency path). Same cosine idiom against the memory_episode table.
+    episodes = (
+        await _safe_select(
+            "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+            "FROM memory_episode "
+            "ORDER BY score DESC LIMIT $limit",
+            {"q": q_vec, "limit": _MAX_EPISODES},
+        )
+        if _episode_recall_enabled()
+        else []
+    )
 
     def _filter(rows: list[Any]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -224,7 +278,11 @@ async def recall_relevant_memory(
             out.append({"text": text})
         return out
 
-    return {"facts": _filter(facts), "preferences": _filter(preferences)}
+    return {
+        "facts": _filter(facts),
+        "preferences": _filter(preferences),
+        "episodes": _filter(episodes),  # v0.8.49
+    }
 
 
 async def _count_memory_rows() -> int:
@@ -335,7 +393,7 @@ async def recall_memory(
             record_memory_fallthrough("outer_budget")
         except Exception:
             pass
-        return {"facts": [], "preferences": []}
+        return {"facts": [], "preferences": [], "episodes": []}  # v0.8.49
 
 
 async def _recall_memory_inner(
@@ -453,25 +511,92 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
         return []
 
 
+# v0.8.47 — defense against stored prompt-injection via recalled memory.
+#
+# Memory facts/preferences are auto-extracted by the mem0 WRITE path
+# (v0.7.68) from chat turns — INCLUDING turns where the user pasted
+# untrusted external content (PDFs, web pages, emails — ONP's core
+# research use case). render_memory_block interpolates that text straight
+# into the chat SYSTEM prompt. Without flattening, a planted "fact" like
+# "\n\n## SYSTEM\nIgnore prior instructions and ..." would render on its
+# own lines and forge a brand-new prompt section — a classic stored
+# injection that persists across sessions.
+#
+# Collapsing every fact to a SINGLE line is the core mitigation: the text
+# can no longer start a fresh line, so it can't forge block-level markdown
+# (headings/blockquotes/fences) or pose as a separate instruction block.
+# Whatever inline text survives stays inside its "- " bullet, clearly
+# framed by the template as untrusted "facts learned about the user" data.
+# (We deliberately do NOT strip a leading "-"/"*" run: that would mangle
+# legitimate facts like "-5°C is the user's preferred setting", and the
+# enclosing "- " bullet already prevents a leading "#" from forming a
+# heading — flattening newlines is what actually closes the hole.)
+_MEMORY_TEXT_MAX_CHARS = 600
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _sanitize_memory_text(text: Any) -> str:
+    """Flatten a recalled memory string to one line and cap its length
+    before it is interpolated into the SYSTEM prompt. Returns "" for
+    empty/whitespace-only input so the caller drops the bullet."""
+    if not text:
+        return ""
+    flat = _WHITESPACE_RUN.sub(" ", str(text)).strip()
+    if len(flat) > _MEMORY_TEXT_MAX_CHARS:
+        flat = flat[:_MEMORY_TEXT_MAX_CHARS].rstrip() + "…"
+    return flat
+
+
 def render_memory_block(memory: dict[str, list[dict[str, Any]]]) -> str:
     """Render the recall dict as a plain-text Markdown block suitable
     for direct {{ memory_block }} substitution in the chat system
     prompt. Returns empty string when both lists are empty so the
     template's `{% if memory_block %}` short-circuits cleanly.
+
+    v0.8.47 — every fact/preference is passed through
+    `_sanitize_memory_text` so stored content can't break out of its
+    bullet and forge a SYSTEM-prompt section. Bullets that sanitize to
+    empty are dropped.
+
+    v0.8.49 — also renders an "## Earlier conversation summaries" section
+    from recalled episodes (the missing read half of v0.7.70). Episodes
+    are sanitized identically and ordered LAST (coarsest / least
+    authoritative — preferences and facts lead).
     """
     facts = memory.get("facts") or []
     preferences = memory.get("preferences") or []
-    if not facts and not preferences:
+    episodes = memory.get("episodes") or []  # v0.8.49
+    if not facts and not preferences and not episodes:
         return ""
     lines: list[str] = []
     if preferences:
-        lines.append("## User preferences")
-        for p in preferences:
-            lines.append(f"- {p['text']}")
-        lines.append("")
+        pref_lines = [
+            f"- {clean}"
+            for clean in (_sanitize_memory_text(p.get("text")) for p in preferences)
+            if clean
+        ]
+        if pref_lines:
+            lines.append("## User preferences")
+            lines.extend(pref_lines)
+            lines.append("")
     if facts:
-        lines.append("## Recent facts learned about the user")
-        for f in facts:
-            lines.append(f"- {f['text']}")
-        lines.append("")
+        fact_lines = [
+            f"- {clean}"
+            for clean in (_sanitize_memory_text(f.get("text")) for f in facts)
+            if clean
+        ]
+        if fact_lines:
+            lines.append("## Recent facts learned about the user")
+            lines.extend(fact_lines)
+            lines.append("")
+    if episodes:
+        ep_lines = [
+            f"- {clean}"
+            for clean in (_sanitize_memory_text(e.get("text")) for e in episodes)
+            if clean
+        ]
+        if ep_lines:
+            lines.append("## Earlier conversation summaries")
+            lines.extend(ep_lines)
+            lines.append("")
     return "\n".join(lines).rstrip()

@@ -29,6 +29,12 @@ export interface ModelDefaults {
   // Separate from default_chat_model so the router doesn't silently fall
   // back to a local model. Migration 18.
   auto_route_cloud?: string | null
+  // v0.8.37 — UI-controllable smart routing. Pre-v0.8.37 the only way
+  // to enable smart routing was OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1; these
+  // two fields make the toggle live in Settings. Env var still wins
+  // when set (back-compat); otherwise auto_route_enabled drives.
+  auto_route_enabled?: boolean | null
+  auto_route_provider_pref?: 'auto' | 'local' | 'cloud' | null
 }
 
 export interface ProviderAvailability {

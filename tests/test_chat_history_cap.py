@@ -224,6 +224,17 @@ async def test_call_model_invokes_trimming(monkeypatch):
     monkeypatch.setattr(chat, "_trim_message_history", fake_trim)
     monkeypatch.setattr(chat, "Prompter", _FakePrompter)
     monkeypatch.setattr(chat, "provision_langchain_model", fake_provision)
+    # v0.8.46c — Since v0.8.0 Phase 3 Task 12, the chat node's
+    # no-model-override path calls `provision_langchain_chat_model`
+    # (the smart-route wrapper), NOT `provision_langchain_model`
+    # directly. With model_override=None below, the test hits that
+    # wrapper — so patching only `provision_langchain_model` left the
+    # real wrapper running, which calls `model_manager.get_defaults()`
+    # → a live SurrealDB connect → failure. Patch the wrapper too so
+    # the trimming-assertion path is exercised without any DB/network.
+    # (This test broke at v0.8.0 but was never in a curated sweep, so
+    # the full-suite run is what surfaced it.)
+    monkeypatch.setattr(chat, "provision_langchain_chat_model", fake_provision)
 
     msgs = _make_history(20, content_size=500)
     await chat.call_model_with_messages(

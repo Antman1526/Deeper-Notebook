@@ -25,6 +25,10 @@ import {
   useDeleteMCPServer,
   useUpdateMCPServer,
 } from '@/lib/hooks/use-mcp-servers'
+// v0.8.41 — curated MCP server recommendations (SearXNG, Crawl4AI,
+// Playwright) with one-click Connect. Lives alongside the existing
+// add-server form so the user has both paths.
+import { RecommendationsPanel } from './RecommendationsPanel'
 
 // Inline URL validity check — no extra dependency needed.
 function isValidUrl(url: string): boolean {
@@ -88,6 +92,12 @@ export default function MCPServersPage() {
                 {t('settings.mcp.description')}
               </p>
             </header>
+
+            {/* v0.8.41 — Curated recommendations panel. Renders
+                above the manual add-form so users see the curated
+                options first; the manual form below is still the
+                fallback for anything not in the list. */}
+            <RecommendationsPanel />
 
             {/* Add-server form */}
             <section className="space-y-4">

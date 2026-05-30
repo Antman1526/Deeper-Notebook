@@ -109,6 +109,16 @@ class DefaultModelsResponse(BaseModel):
     default_tools_model: Optional[str] = None
     # ONP v0.5 — slow-but-deep reasoning model slot (R1, gpt-oss, Nemotron etc.)
     default_reasoning_model: Optional[str] = None
+    # v0.8.1 — dedicated cloud slot for the smart router. Was added on
+    # the domain side in v0.8.1 (Migration 18) but the API schema was
+    # missed — the frontend wrote it through PUT but the field never
+    # round-tripped through the router. Adding it here closes that gap.
+    auto_route_cloud: Optional[str] = None
+    # v0.8.37 — UI-controllable smart-routing toggle + provider pref.
+    # Env var (OPEN_NOTEBOOK_AUTO_ROUTE_CHAT) still wins for back-compat;
+    # otherwise these fields drive `provision_langchain_chat_model`.
+    auto_route_enabled: Optional[bool] = None
+    auto_route_provider_pref: Optional[str] = None
 
 
 class ProviderAvailabilityResponse(BaseModel):

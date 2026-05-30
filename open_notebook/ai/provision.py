@@ -13,6 +13,25 @@ from open_notebook.utils import token_count
 # v0.8.0 — TTL cache so smart routing doesn't add 5-10s per chat turn.
 _HEALTH_CACHE_TTL_S = 30
 _health_cache: "tuple[float, dict[str, bool]] | None" = None
+# v0.8.35 — single-flight lock for cache-miss probing. Without this,
+# N concurrent chat requests hitting the same TTL-boundary all entered
+# the probe branch independently and ran `await asyncio.to_thread(
+# probe_all_local_models, ...)` in parallel — N × ~9s of duplicate work
+# every cache window. Lazy-constructed in _get_health_cache_lock() so
+# module import doesn't require a running event loop.
+_health_cache_lock: "asyncio.Lock | None" = None
+
+
+def _get_health_cache_lock() -> asyncio.Lock:
+    """v0.8.35 — lazily construct the cache-miss lock the first time
+    we need it. asyncio.Lock() in modern Python doesn't bind to a
+    specific event loop at construct time, but lazy init keeps imports
+    side-effect-free and mirrors the get_async_graph() pattern in
+    open_notebook/graphs/chat.py for the same reason."""
+    global _health_cache_lock
+    if _health_cache_lock is None:
+        _health_cache_lock = asyncio.Lock()
+    return _health_cache_lock
 
 
 def _truthy_env(name: str) -> bool:
@@ -47,7 +66,24 @@ async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)")
     """
     global _health_cache
     now = time.monotonic()
-    if _health_cache is None or now - _health_cache[0] >= _HEALTH_CACHE_TTL_S:
+    # v0.8.35 — fast path: cache hit. Read outside the lock so cache
+    # hits never serialize on the lock acquisition (every chat turn
+    # would otherwise pay lock-acquire latency, killing the point of
+    # the TTL cache).
+    if _health_cache is not None and now - _health_cache[0] < _HEALTH_CACHE_TTL_S:
+        return _health_cache[1].get(model_name, False)
+
+    # v0.8.35 — slow path: single-flight cache-miss. Before the lock,
+    # N concurrent callers at a TTL boundary each ran the probe
+    # independently. Now the first acquirer probes; the others wait
+    # and re-check the cache under the lock (the cache was just
+    # populated by the leader → they return its value without
+    # probing).
+    async with _get_health_cache_lock():
+        now = time.monotonic()
+        if _health_cache is not None and now - _health_cache[0] < _HEALTH_CACHE_TTL_S:
+            return _health_cache[1].get(model_name, False)
+
         try:
             from open_notebook.health.local_models import probe_all_local_models
 
@@ -85,6 +121,7 @@ async def provision_langchain_chat_model(
     content: str,
     *,
     selection_out: "dict | None" = None,
+    privacy_gate_bypass: bool = False,
     **kwargs,
 ) -> BaseChatModel:
     """v0.8.0 — Smart-routed chat provisioning.
@@ -110,7 +147,26 @@ async def provision_langchain_chat_model(
     the routing decision back to clients (replaces the v0.8.0 "manual
     eyeball check" workaround in scripts/verify-chat-platform.sh).
     """
-    if not _truthy_env("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT"):
+    # v0.8.37 — UI toggle takes effect when the env var is unset. Env var
+    # precedence preserved for back-compat + ops overrides: if an operator
+    # set OPEN_NOTEBOOK_AUTO_ROUTE_CHAT explicitly (even to "0"), respect it.
+    # Otherwise consult DefaultModels.auto_route_enabled (the new Settings
+    # toggle). Net effect: power-users keep their env-driven setup;
+    # UI-driven users get a click-to-enable workflow.
+    env_explicit = os.environ.get("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "").strip()
+    if env_explicit:
+        smart_routing_on = _truthy_env("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT")
+    else:
+        try:
+            defaults_for_toggle = await model_manager.get_defaults()
+            smart_routing_on = bool(getattr(defaults_for_toggle, "auto_route_enabled", False))
+        except Exception:
+            # Defaults fetch failure is non-fatal — fall back to OFF
+            # (the v0.8.0 default) so we never accidentally route to a
+            # half-configured local sidecar.
+            smart_routing_on = False
+
+    if not smart_routing_on:
         # Default path — identical to calling provision_langchain_model directly
         # with no model_id so existing DefaultModels config drives selection.
         # No selection_out fields set: the default path has no local/cloud
@@ -168,7 +224,23 @@ async def provision_langchain_chat_model(
         # crash the chat turn over a bad env. Mirrors the launcher's
         # own _spawn_llamacpp_chat fallback semantics (v0.7.206).
         local_n_ctx = 32768
-    default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "auto")
+    # v0.8.37 — UI provider preference. Env var still wins for back-compat;
+    # if unset, read `auto_route_provider_pref` from DefaultModels (new
+    # Settings dropdown). Final fallback: "auto".
+    default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "").strip()
+    if not default_provider:
+        try:
+            defaults_for_pref = await model_manager.get_defaults()
+            default_provider = (
+                getattr(defaults_for_pref, "auto_route_provider_pref", None)
+                or "auto"
+            )
+        except Exception:
+            default_provider = "auto"
+    if default_provider not in ("auto", "local", "cloud"):
+        # Defensive: bad user-entered value (e.g. via raw SurrealQL).
+        # Same fallback shape pick_provider would apply.
+        default_provider = "auto"
 
     # v0.8.20 — was a sync call; the helper now awaits its inner
     # httpx probe on the default executor so the event loop stays
@@ -182,6 +254,59 @@ async def provision_langchain_chat_model(
         local_model_id=local_model_id,
         default_provider=default_provider,
     )
+    # v0.8.51 — Phase 5.2a fail-closed privacy gate. When enabled
+    # (ONP_PRIVACY_GATE, default off) and the router picked CLOUD, scan the
+    # outbound content for structured secrets/PII; if found, keep the turn
+    # on the local model (or block when no local model exists) so sensitive
+    # data never leaves the machine. No-op when the gate is off — zero
+    # change to default routing. Runs before the log + selected_provider
+    # labeling so both reflect the gated decision.
+    from open_notebook.ai.privacy_gate import (
+        _privacy_gate_enabled,
+        apply_privacy_gate,
+    )
+
+    # v0.8.57 — Phase 5.2b optional model-backed PII layer. Only worth the
+    # extra local-LLM call when the gate is enabled AND this turn is actually
+    # cloud-bound; otherwise skip it entirely (unconfigured → returns [] fast,
+    # but we don't even await in the common case). The call is async so the
+    # event loop stays free; results are UNIONed into the gate's regex floor.
+    # v0.8.63 — explicit per-turn user consent ("Re-ask allowing cloud" in the
+    # redaction-review sheet) skips the gate entirely for this turn. Logged so
+    # the bypass is auditable. Default False → gate runs as normal.
+    gate_findings: list[str] = []
+    if privacy_gate_bypass:
+        logger.info(
+            "v0.8.63 privacy gate BYPASSED for this turn by explicit user "
+            "consent (bypass_privacy_gate)"
+        )
+    else:
+        extra_findings: list[str] = []
+        if (
+            _privacy_gate_enabled()
+            and cloud_model_id
+            and choice.model_id == cloud_model_id
+        ):
+            from open_notebook.ai.privacy_classifier import classify_via_model_async
+
+            extra_findings = await classify_via_model_async(content)
+
+        choice = apply_privacy_gate(
+            choice,
+            content=content,
+            local_model_id=local_model_id,
+            cloud_model_id=cloud_model_id,
+            extra_findings=extra_findings,
+            findings_out=gate_findings,
+        )
+    # v0.8.58 — when the gate acted (rerouted cloud→local), surface that it was
+    # a PRIVACY decision (not ordinary size/health routing) + the category
+    # labels, so the response / review UI can show "kept on-device". Only
+    # category labels — never the matched secret values. (On a block the gate
+    # raises before this, so this only fires for the reroute case.)
+    if selection_out is not None and gate_findings:
+        selection_out["privacy_gated"] = True
+        selection_out["privacy_categories"] = sorted(set(gate_findings))
     logger.info(f"v0.8.0 chat router → {choice.model_id} ({choice.reason})")
     # v0.8.1 — surface the routing decision so callers (chat graph node)
     # can plumb it back into the HTTP response. Provider derivation: the

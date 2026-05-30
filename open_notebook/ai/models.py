@@ -172,6 +172,20 @@ class DefaultModels(RecordModel):
     # from default_chat_model so the router doesn't silently route
     # cloud fallbacks to a locally-configured chat model. Migration 18.
     auto_route_cloud: Optional[str] = None
+    # v0.8.37 — UI-controllable smart-router toggle. Pre-v0.8.37 the
+    # only way to enable smart routing was the OPEN_NOTEBOOK_AUTO_ROUTE_CHAT
+    # env var, which meant power-users could enable it but the UI was
+    # invisible. These two fields make the toggle settable from
+    # Settings → API Keys → Smart Routing. The env var still wins (for
+    # back-compat + ops overrides) — see provision.py.
+    #
+    # auto_route_enabled — master switch; False keeps the pre-v0.8.1
+    #   behavior (single default_chat_model, no routing).
+    # auto_route_provider_pref — when smart routing is on, this is the
+    #   user preference passed to pick_provider()'s default_provider
+    #   arg: "auto" | "local" | "cloud". Defaults to "auto".
+    auto_route_enabled: Optional[bool] = False
+    auto_route_provider_pref: Optional[str] = "auto"
 
     @classmethod
     async def get_instance(cls) -> "DefaultModels":
