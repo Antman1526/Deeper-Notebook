@@ -8,8 +8,8 @@ A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-note
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![FastAPI 0.104+](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-1554%20backend%20%2B%2047%20frontend-success)
-![Version](https://img.shields.io/badge/version-v0.8.63-blue)
+![Tests](https://img.shields.io/badge/tests-1587%20backend%20%2B%20183%20frontend-success)
+![Version](https://img.shields.io/badge/version-v0.8.65d-blue)
 
 ---
 
@@ -36,8 +36,9 @@ v0.8.0 differentiators:
 - **Fail-closed privacy gate (Phase 5.2)** — `ONP_PRIVACY_GATE` keeps turns containing detected secrets/PII **on the local model** instead of sending them to cloud (or blocks them), with an **interactive "On-device" review badge** + a consent **"Re-ask allowing cloud"** action. Optional pluggable model classifier for unstructured PII.
 - **Agent-reliability FSM (Phase 5.3)** — `ONP_AGENT_FSM` lets the agent declare `clarify`/`complete`; the ask graph declines to synthesize ungrounded answers, and the chat tool loop surfaces `clarify`/`truncated` states in the UI.
 - **Smart routing & MCP** — per-turn local/cloud routing (`OPEN_NOTEBOOK_AUTO_ROUTE_CHAT`) + per-conversation MCP tool servers.
+- **Native web search (v0.8.64–65d)** — a built-in `web_search` chat tool, opt-in by key presence (`SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL`), with a **failover chain** (multi-URL SearXNG + cross-provider on error, total-budget bounded), results rendered as citation pills, a **toggleable picker row**, and a ship-it-yourself **private localhost SearXNG** (`deploy/searxng-private/`) since public mirrors block the JSON API. Verified end-to-end with a local Ollama model calling it against live Serper.
 - **Complete observability** — request-ID correlation, Prometheus `/metrics` (incl. privacy-gate + tool-loop counters), slow-query + checkpoint-prune + memory-recall metrics.
-- **130+ production-hardening commits (v0.7.49 → v0.8.63)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, the Osaurus-inspired Phase 5 work, and CVE remediation across backend + frontend.
+- **135+ production-hardening commits (v0.7.49 → v0.8.65d)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, the Osaurus-inspired Phase 5 work, the native web-search subsystem, and CVE remediation across backend + frontend.
 
 ## Three-tier architecture
 
@@ -256,9 +257,9 @@ powershell -ExecutionPolicy Bypass -File desktop/build/post_build_windows.ps1
 | AI-reviewer context | `~/Desktop/OpenNotebook/open-notebook-Plus-AI-Context.md` |
 | Full technology audit | `~/Desktop/OpenNotebook/open-notebook-Plus-Technology-Audit.md` |
 
-## Hardening Summary (v0.7.49 → v0.8.63)
+## Hardening Summary (v0.7.49 → v0.8.65d)
 
-130+ patch commits across the hardening run.
+135+ patch commits across the hardening run.
 
 **v0.7.49 → v0.7.87** — original reliability sweep: streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades.
 
@@ -285,9 +286,16 @@ powershell -ExecutionPolicy Bypass -File desktop/build/post_build_windows.ps1
 - **5.2 privacy** — fail-closed gate (`ONP_PRIVACY_GATE`), optional model PII classifier (`ONP_PRIVACY_CLASSIFIER_URL`, `=auto`), gate decision surfaced on the chat response, interactive **On-device** review badge + **"Re-ask allowing cloud"** consent bypass.
 - **5.3 agent FSM** — `ONP_AGENT_FSM`: core state machine, ask-graph ungrounded→clarify gate, chat tool-loop truncation observability + `<state>` clarify/complete classification, UI chips.
 
-### CI status at v0.8.63
+**v0.8.64 → v0.8.65d** — the **native web-search subsystem** (opt-in by key presence):
 
-All Tests jobs green: **1554 backend tests + ~47 frontend vitest tests** (+ SurrealDB integration tests). Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) Unreleased for per-commit detail.
+- **v0.8.64** — built-in `web_search` chat tool (`open_notebook/tools/web_search.py`) reading `SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL`; wired into the chat tool loop, citation-pill compatible; prompt nudge so the LLM calls + cites it; conftest env isolation.
+- **v0.8.65 / 65b** — failover chain (comma-separated multi-URL SearXNG + cross-provider on error; total-budget guard `ONP_WEB_SEARCH_TOTAL_BUDGET_SEC`); `web_search` surfaced as a toggleable row in the chat MCP picker (`GET /api/mcp/web-search`) with a tool-calling capability hint.
+- **v0.8.65c** — `deploy/searxng-private/` (localhost-only SearXNG with the JSON API enabled) + [config guide](docs/5-CONFIGURATION/private-searxng-web-search.md), since public mirrors block `format=json`.
+- **v0.8.65d** — decoupled `web_search` binding from MCP/DB failures (a SurrealDB blip during MCP lookup no longer drops web search). End-to-end verified: a local Ollama model called `web_search` against live Serper and produced a URL-cited answer.
+
+### CI status at v0.8.65d
+
+All Tests jobs green: **1587 backend tests + 183 frontend vitest tests** (+ SurrealDB integration tests). Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) Unreleased for per-commit detail.
 
 ## Support
 
