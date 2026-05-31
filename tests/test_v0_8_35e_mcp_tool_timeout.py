@@ -128,7 +128,10 @@ async def test_fast_tool_completes_normally(monkeypatch):
     second_payload = model.payloads[1]
     tool_msgs = [m for m in second_payload if type(m).__name__ == "ToolMessage"]
     assert len(tool_msgs) == 1
-    assert tool_msgs[0].content == "fast result"
+    # v0.8.66 (audit S-3/A-5) — tool output is wrapped in an untrusted-data
+    # fence; the raw result is contained inside it (not the whole message).
+    assert "fast result" in tool_msgs[0].content
+    assert "UNTRUSTED TOOL OUTPUT" in tool_msgs[0].content
 
 
 @pytest.mark.asyncio
@@ -222,4 +225,7 @@ async def test_default_timeout_when_env_var_unset(monkeypatch):
     # The model saw the real tool result, not a timeout error.
     second_payload = model.payloads[1]
     tool_msgs = [m for m in second_payload if type(m).__name__ == "ToolMessage"]
-    assert tool_msgs[0].content == "ok"
+    # v0.8.66 (audit S-3/A-5) — result fenced as untrusted data.
+    assert "ok" in tool_msgs[0].content
+    assert "UNTRUSTED TOOL OUTPUT" in tool_msgs[0].content
+    assert "timed out" not in tool_msgs[0].content.lower()
