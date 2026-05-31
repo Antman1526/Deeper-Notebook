@@ -73,6 +73,16 @@ _pool_lock: Optional[asyncio.Lock] = None
 _pool_total: int = 0
 _pool_cap: int = 0
 
+# v0.8.66 (audit H6) — sentinel enqueued by a BROKEN release to wake a
+# coroutine parked at cap on `await _pool.get()`. A broken release frees a
+# creation slot (decrements `_pool_total`) WITHOUT putting a connection in the
+# queue, so a parked acquirer would otherwise never wake even though capacity is
+# now available — an unbounded hang (the exact "chatbot wedged until restart"
+# class the pool exists to prevent). The sentinel means "a slot is free —
+# create a new connection." It carries no `.close()`, so `close_pool`'s drain
+# loop ignores it (the AttributeError is swallowed there).
+_SLOT_FREED = object()
+
 
 async def _ensure_pool_init() -> None:
     """Idempotent lazy init for the pool's asyncio primitives.
@@ -124,30 +134,46 @@ async def _acquire() -> AsyncSurreal:
     global _pool_total
     await _ensure_pool_init()
     assert _pool is not None and _pool_lock is not None
-    # Fast path: idle connection ready to go.
-    try:
-        return _pool.get_nowait()
-    except asyncio.QueueEmpty:
-        pass
-    # Slow path: under the lock, reserve a slot then create.
-    async with _pool_lock:
-        if _pool_total < _pool_cap:
-            _pool_total += 1
-            reserved = True
-        else:
-            reserved = False
-    if reserved:
+    # v0.8.66 (audit H6) — loop so a `_SLOT_FREED` sentinel (pulled from the
+    # queue either on the fast path or after parking) routes us into the
+    # reserve-and-create branch instead of being mistaken for a connection.
+    while True:
+        # Fast path: pull whatever is idle. A real connection → return it; a
+        # _SLOT_FREED sentinel → fall through to reserve the freed slot.
+        got_sentinel = False
         try:
-            return await _new_connection()
-        except Exception:
-            # Connection creation failed — give back our reserved slot
-            # so future acquires can try again. Otherwise total drifts
-            # up and the pool gradually wedges.
-            async with _pool_lock:
-                _pool_total -= 1
-            raise
-    # At cap: wait for someone to release.
-    return await _pool.get()
+            item = _pool.get_nowait()
+            if item is not _SLOT_FREED:
+                return item
+            got_sentinel = True
+        except asyncio.QueueEmpty:
+            pass
+        # Slow path: under the lock, reserve a slot then create.
+        async with _pool_lock:
+            if _pool_total < _pool_cap:
+                _pool_total += 1
+                reserved = True
+            else:
+                reserved = False
+        if reserved:
+            try:
+                return await _new_connection()
+            except Exception:
+                # Connection creation failed — give back our reserved slot
+                # so future acquires can try again. Otherwise total drifts
+                # up and the pool gradually wedges.
+                async with _pool_lock:
+                    _pool_total -= 1
+                raise
+        # At cap. If we just consumed a sentinel but lost the slot race to a
+        # concurrent acquirer, retry from the top. Otherwise park until a
+        # release enqueues a connection OR a _SLOT_FREED signal.
+        if got_sentinel:
+            continue
+        item = await _pool.get()
+        if item is _SLOT_FREED:
+            continue  # a broken release freed a slot — loop to reserve+create
+        return item
 
 
 async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
@@ -184,6 +210,22 @@ async def _release(conn: AsyncSurreal, *, broken: bool = False) -> None:
             pass  # already broken; close failure is fine to swallow
         async with _pool_lock:
             _pool_total -= 1
+        # v0.8.66 (audit H6) — we just freed a creation slot without enqueuing a
+        # connection. If an acquirer is parked at cap on `_pool.get()`, wake it
+        # with a sentinel so it can create a replacement; otherwise it would
+        # hang forever despite the now-available capacity. We ONLY enqueue when
+        # someone is actually waiting (asyncio.Queue hands a put straight to a
+        # parked getter, so qsize stays 0 in that case) — when nobody waits we
+        # must NOT leave a stray sentinel in the idle queue, since the next
+        # acquire's reserve-and-create path already covers the freed slot and an
+        # orphan sentinel would corrupt qsize-based bookkeeping (e.g. close_pool
+        # and the broken-conn-dropped invariant).
+        getters = getattr(_pool, "_getters", None)
+        if getters:
+            try:
+                _pool.put_nowait(_SLOT_FREED)
+            except asyncio.QueueFull:
+                pass
         return
     try:
         _pool.put_nowait(conn)
@@ -489,10 +531,20 @@ async def repo_update(
     """Update an existing record by table and id"""
     # If id already contains the table name, use it as is
     try:
-        if isinstance(id, RecordID) or (":" in id and id.startswith(f"{table}:")):
+        # v0.8.66 (audit H2 defense-in-depth) — ALWAYS coerce the id to a real
+        # RecordID and bind it as $rid below, instead of f-stringing it into the
+        # query body. This was the codebase's sole raw-interpolation primitive
+        # reachable from external input (PATCH /api/mcp/{id}); a crafted id like
+        # "mcp_server:x; DELETE notebook; --" composed a second statement that
+        # SurrealDB's multi-statement query() executed. ensure_record_id parses
+        # and angle-bracket-escapes the record portion, and parameter binding
+        # means the id can never break out of the value position again.
+        if isinstance(id, RecordID):
             record_id = id
+        elif ":" in id and id.startswith(f"{table}:"):
+            record_id = ensure_record_id(id)
         else:
-            record_id = f"{table}:{id}"
+            record_id = ensure_record_id(f"{table}:{id}")
         data.pop("id", None)
         if "created" in data and isinstance(data["created"], str):
             # v0.7.170 — Normalize naive datetimes to UTC-aware.
@@ -512,9 +564,10 @@ async def repo_update(
                 parsed = parsed.replace(tzinfo=timezone.utc)
             data["created"] = parsed
         data["updated"] = datetime.now(timezone.utc)
-        query = f"UPDATE {record_id} MERGE $data;"
+        # Bind the record id as a parameter — never interpolate it.
+        query = "UPDATE $rid MERGE $data;"
         # logger.debug(f"Update query: {query}")
-        result = await repo_query(query, {"data": data})
+        result = await repo_query(query, {"rid": record_id, "data": data})
         # if isinstance(result, list):
         #     return [_return_data(item) for item in result]
         return parse_record_ids(result)

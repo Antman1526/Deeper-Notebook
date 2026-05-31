@@ -73,8 +73,10 @@ def _bundled_python_tarball(arch: str) -> Path:
         bin_dir = Path(sys._MEIPASS) / "desktop" / "bin"  # type: ignore[attr-defined]
     else:
         bin_dir = repo_root() / "desktop" / "bin"
-    if sys.platform == "win32":
-        return bin_dir / f"python-{arch}.zip"
+    # v0.8.66 (audit H7) — python-build-standalone's `install_only` artifact is
+    # a gzip tarball on EVERY platform (incl. windows-x86_64), so the bundled
+    # file is always python-{arch}.tar.gz. The previous Windows `.zip` name
+    # mislabeled gzip-tar bytes → bootstrap raised BadZipFile on first launch.
     return bin_dir / f"python-{arch}.tar.gz"
 
 

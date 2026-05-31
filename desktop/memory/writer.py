@@ -249,9 +249,18 @@ def apply_tool_call(mem_client, call: dict) -> None:
         # mem0 2.x requires every add to be scoped to a user/agent/run.
         # We're a single-user desktop app — pin to "local".
         mem_client.add(
-            messages=text,
+            # v0.8.66 (audit C1) — infer=False. The Hermes writer ALREADY
+            # extracted this fact; with mem0's default infer=True it re-ran its
+            # own extraction + update-decision LLM over our curated text (a
+            # second pair of local-LLM round-trips per fact AND nondeterministic
+            # mutation), and persisted the message under the payload key `data`
+            # — which surreal_store.insert wasn't reading, so every row stored
+            # text="" and the whole memory subsystem was inert. infer=False
+            # stores the text verbatim as `data`; surreal_store now reads it.
+            messages=[{"role": "user", "content": text}],
             user_id="local",
             metadata=metadata,
+            infer=False,
         )
     except Exception as exc:
         import logging

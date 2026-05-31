@@ -7,7 +7,18 @@ from unittest.mock import MagicMock
 # inherits from VectorStoreBase (a sibling of the synthetic module's parent pkg).
 import pytest
 
-from desktop.memory import _register  # noqa: F401
+# Importing _register installs the synthetic `mem0.configs.vector_stores.surreal`
+# module — only meaningful when REAL mem0 is present (it inherits from mem0's
+# VectorStoreBase then). In the lightweight dev/test venv mem0 is absent;
+# surreal_store falls back to `object` for its base (see its defensive import),
+# so the pure store-logic tests below — which all drive a MOCK client via
+# `from_test_client` — run without standing up the whole mem0 stack. Guard the
+# import so this file is collectable in both environments.
+try:  # pragma: no cover - exercised only when mem0 is installed
+    from desktop.memory import _register  # noqa: F401
+except ImportError:  # pragma: no cover - mem0-less dev/test venv
+    pass
+
 from desktop.memory.surreal_store import (
     OutputData,
     SurrealMemoryStore,
@@ -52,6 +63,62 @@ def test_insert_routes_preferences_to_memory_preference_table():
     )
     sent_sql = store._client.query.call_args_list[0].args[0]
     assert "memory_preference" in sent_sql
+
+
+def test_insert_reads_real_mem0_flat_payload():
+    """v0.8.66 (audit C1) regression. With infer=False, mem0's _create_memory
+    stores the verbatim text under the payload key `data` and FLATTENS the
+    caller's metadata (kind/scope/confidence/…) onto the payload's top level —
+    there is NO nested `metadata` sub-dict and NO `text` key. The store MUST
+    read that real shape, otherwise every row persists text="" / scope="user"
+    and the entire memory subsystem is silently inert (all unit tests still
+    pass because they mocked the boundary)."""
+    from datetime import datetime as _dt
+
+    store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
+    store.insert(
+        vectors=[[0.1, 0.2, 0.3]],
+        payloads=[{
+            # This is exactly what mem0 1.x emits to vector_store.insert():
+            "data": "User prefers async meetings",
+            "kind": "preference",
+            "scope": "notebook",
+            "confidence": 0.73,
+            "hash": "deadbeef",
+            "user_id": "local",
+        }],
+        ids=["pref-flat-001"],
+    )
+    call = store._client.query.call_args_list[0]
+    sent_sql = call.args[0]
+    row = call.args[1]["row"]
+    assert "memory_preference" in sent_sql          # routed by top-level kind
+    assert row["text"] == "User prefers async meetings"   # read from `data`
+    assert row["scope"] == "notebook"               # read from top-level scope
+    assert row["confidence"] == 0.73                # read from top-level conf
+    # H5: created_at is a native datetime, not an ISO string.
+    assert isinstance(row["created_at"], _dt)
+    # Bulky `data`/`embedding` are not duplicated into the metadata blob, but
+    # the useful descriptive fields are preserved for recall filters.
+    assert "data" not in row["metadata"]
+    assert row["metadata"].get("kind") == "preference"
+    assert row["metadata"].get("hash") == "deadbeef"
+
+
+def test_insert_still_accepts_legacy_text_and_nested_metadata():
+    """Back-compat: a caller passing the OLD shape (top-level `text` + a nested
+    `metadata` dict carrying scope) must still round-trip correctly."""
+    store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
+    store.insert(
+        vectors=[[0.4]],
+        payloads=[{"kind": "fact", "text": "legacy fact",
+                   "metadata": {"scope": "user"}, "confidence": 0.6}],
+        ids=["legacy-001"],
+    )
+    row = store._client.query.call_args_list[0].args[1]["row"]
+    assert row["text"] == "legacy fact"
+    assert row["scope"] == "user"
+    assert row["confidence"] == 0.6
 
 
 def test_search_returns_outputdata_objects():

@@ -20,6 +20,125 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.66 — (Audit H7) Fix Windows-only first-launch crash: python runtime mislabeled `.zip`**
+  - **Bug (High, Windows-only):** python-build-standalone's `install_only` artifact
+    is a gzip **tarball** on every platform, but the bundle saved/named the Windows
+    one `python-windows-x86_64.zip`. `bootstrap.extract_python_runtime` dispatches on
+    the suffix → called `zipfile.ZipFile()` on gzip-tar bytes → `BadZipFile` → the
+    venv was never provisioned and the app died on first launch. macOS/Linux unaffected.
+  - **Fix:** always use `.tar.gz` for the python artifact name in all three sites —
+    `desktop/build/fetch_runtimes.py`, `desktop/app.py:_bundled_python_tarball`, and
+    `desktop/build/pyinstaller.spec`. `extract_python_runtime` already routes
+    `.tar.gz` to `tarfile`.
+  - **Tests:** 4 new in `desktop/tests/test_bootstrap.py` — bundled name is `.tar.gz`
+    on win32; a Windows `.tar.gz` extracts via tarfile to `python.exe`; and gzip-tar
+    bytes named `.zip` provably raise `BadZipFile` (documents the root cause).
+
+- **🔒 v0.8.66 — (Audit H6) Fix connection-pool deadlock: cap-waiter never woken on broken release**
+  - **Bug (High):** at capacity, an acquirer parks on `await _pool.get()`, woken only
+    by a non-broken release's `put_nowait`. If every checked-out connection released
+    **broken** (the multi-connection-poisoning scenario v0.8.65g addresses — a chat-
+    stream disconnect / SurrealDB hiccup), the broken path closed the conn + decremented
+    `_pool_total` but never enqueued anything, so the parked acquirer hung forever
+    despite the now-free capacity (the "chatbot wedged until restart" class). The runtime
+    `db_connection` acquire has no timeout, so the hang was unbounded.
+  - **Fix (`open_notebook/database/repository.py`):** a broken release now enqueues a
+    `_SLOT_FREED` sentinel **iff** a getter is parked (so no stray sentinel pollutes the
+    idle queue when nobody waits); `_acquire` loops, treating the sentinel as "a slot
+    freed — reserve and create a new connection." No reliance on `wait_for`/cancellation
+    semantics.
+  - **Tests:** new `tests/test_v0_8_66_pool_deadlock.py` (2): a broken release wakes a
+    parked acquirer (was an infinite hang); a broken release with no waiter leaves no
+    stray sentinel. Full pool suite still green.
+
+- **🔒 v0.8.66 — (Audit H2/H3/H4 + repo_update) Harden the MCP registry router**
+  - **H2 (SurrealQL injection):** `PATCH /api/mcp/{server_id}` passed the raw path id to
+    `repo_update`, which f-stringed it into `UPDATE {id} MERGE $data`; SurrealDB executes
+    multiple `;`-separated statements, so `mcp_server:x; DELETE notebook; --` ran an
+    injected `DELETE`. **Fix:** the router coerces the id via `ensure_record_id`, and
+    `repo_update` now binds it as `$rid` (parameterized) — killing the injection class for
+    *every* caller of the codebase's sole raw-interpolation primitive.
+  - **H3 (RecordID-vs-string no-op):** `DELETE /api/mcp/{id}` and `POST /api/mcp/{id}/test`
+    bound a plain string to `id = $id`; a RecordID never equals a string, so Delete was a
+    silent no-op (false success toast, row survived) and Test 404'd real servers. **Fix:**
+    bind `ensure_record_id(server_id)`.
+  - **H4 (SSRF):** `POST /api/mcp` stored an arbitrary URL (later fetched by /test and the
+    chat tool loop every turn) with no validation. **Fix:** reuse the existing
+    `validate_url` SSRF check (blocks link-local/cloud-metadata + bad schemes, allows
+    localhost/private IPs) on create and defensively before /test's outbound fetch.
+  - **Tests:** new `tests/test_v0_8_66_mcp_hardening.py` (8): repo_update parameterizes the
+    id; PATCH/DELETE/test pass a RecordID; malformed id → 400; link-local URL → 400;
+    loopback URL → 201. Existing MCP integration suite still green.
+
+- **🔒 v0.8.66 — (Audit H1) Stop GZip middleware buffering the token streams**
+  - **Bug (High):** the global `GZipMiddleware` only exempts `text/event-stream`, but the
+    token streams are `application/x-ndjson` (`/chat/stream`) and `text/plain`
+    (`/search/ask`, source-chat `/messages`), so it compressed them per-chunk
+    (compresslevel=9, no `Z_SYNC_FLUSH`), holding most token chunks back until a gzip frame
+    flushed — silently negating the real-time streaming UX for every gzip-capable client
+    (every browser + httpx) and delaying `is_disconnected()`.
+  - **Fix (`api/main.py`):** `SelectiveGZipMiddleware` bypasses GZip entirely for the
+    streaming paths (prefix match on `/api/chat/stream`, `/api/search/ask`; POST to
+    `…/messages`), while retaining GZip for the large JSON CRUD responses it was added for.
+  - **Tests:** new `tests/test_v0_8_66_gzip_streaming.py` (4): streaming endpoints are NOT
+    `Content-Encoding: gzip`; large JSON still is; path-matcher matrix.
+
+- **🔒 v0.8.66 — (Audit C2) Fix Gmail disconnect/forget not actually clearing tokens**
+  - **Bug (Critical):** `GmailIntegration.save()` stripped every None value from
+    the payload before `repo_upsert` (`UPSERT … MERGE $data`). Because SurrealDB's
+    MERGE only overwrites keys *present* in the payload and preserves omitted ones,
+    `disconnect()` and `forget_credentials()` — which set the tokens (and, for
+    forget, the OAuth client id/secret) to None then call save() — were **DB-level
+    no-ops**. The stale encrypted `refresh_token` survived in the row, so the
+    account stayed effectively connected and "forgotten" credentials lingered on
+    disk. A security/privacy defect: a user who clicks Disconnect still has a live
+    refresh token persisted.
+  - **Fix (`open_notebook/domain/gmail.py`):** the six credential/token keys
+    (`client_id_enc`, `client_secret_enc`, `access_token_enc`,
+    `refresh_token_enc`, `token_expires_at`, `email_address`) are now ALWAYS
+    written — even when None — so MERGE nulls them. The remaining config fields
+    (`enabled`/`frequency`/`include_*`/`last_sent_at`) keep the None-skip so a
+    partial save can't wipe them.
+  - **Tests:** new `tests/test_v0_8_66_gmail_clear.py` (3 tests): disconnect-save
+    force-writes all six keys as None; connected-save still encrypts+writes them;
+    a non-credential None field (`last_sent_at`) is still omitted.
+
+- **🔒 v0.8.66 — (Audit C1) Fix silently-inert memory subsystem: mem0↔store key mismatch**
+  - **Bug (Critical):** the BrainPulse memory subsystem persisted **empty** rows —
+    every stored fact/preference/episode had `text=""` and `scope="user"` — so
+    recall surfaced nothing. Two compounding causes:
+    1. `desktop/memory/writer.py` called `mem_client.add(messages=text, …)` with
+       mem0's **default `infer=True`**, so mem0 re-ran its OWN extraction +
+       update-decision LLM over our already-curated text (a second pair of local
+       round-trips per fact, plus nondeterministic mutation) and stored the result
+       under the payload key **`data`**.
+    2. `desktop/memory/surreal_store.py:insert` read `payload["text"]` (never set
+       by mem0 → `""`) and `payload["metadata"]["scope"]` (mem0 **flattens**
+       metadata to the payload top level → the nested dict never existed → always
+       `"user"`). Routing worked only because `_table` read the top-level `kind`.
+  - **Why every test passed anyway:** the unit suite mocked the mem0→store
+    boundary, so the contract mismatch was invisible — the classic "all green,
+    feature inert" failure the production audit was built to catch.
+  - **Fix:** writer now passes `infer=False` + a proper `messages=[{role,content}]`
+    list (stores our text verbatim, no extra LLM round-trips); `insert` reads
+    `payload.get("data") or payload.get("text", "")` for the text and the
+    **top-level** `scope`/`confidence` (with the old nested shape kept as a
+    back-compat fallback), and preserves the descriptive metadata for recall
+    filters. Full chain now consistent: writer → mem0 `data` → store `text` column
+    → `recall_recent_memory` `SELECT text`.
+  - **🐛 Folds in audit H5:** `created_at` is now written as a native tz-aware
+    `datetime` instead of an ISO string. Migration 15 defines these tables
+    **SCHEMAFULL** with `created_at TYPE datetime DEFAULT time::now()`; the
+    surrealdb client CBOR-tags only real `datetime` objects, so an ISO *string*
+    is rejected by SurrealDB v2's strict type check → the `CREATE` hard-fails and
+    the writer's broad `except` silently drops the fact. A native datetime
+    serializes correctly.
+  - **Tests:** new `test_insert_reads_real_mem0_flat_payload` (feeds the exact flat
+    payload mem0 emits; asserts `text`/`scope`/`confidence` land non-empty +
+    `created_at` is a `datetime`) and `test_insert_still_accepts_legacy_text_and_nested_metadata`
+    (back-compat). Made the store test file collectable in the mem0-less dev venv
+    (guarded `_register` import). 38 memory unit tests green.
+
 - **🧩 v0.8.65i — Make local-model auto-registration resilient (so local models are selectable in chat)**
   - **Context:** the project chat already has a model selector (the gear button
     by the input → `ModelSelector`) that lists every registered `type:language`
