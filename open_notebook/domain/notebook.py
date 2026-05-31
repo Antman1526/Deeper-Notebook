@@ -1128,6 +1128,14 @@ class Note(ObjectModel):
             )
         return await super().delete()
 
+    # v0.8.67 (audit A3) — "short" note context budget. Was a flat 100-CHAR
+    # slice (`self.content[:100]`) that truncated mid-word with no marker, so
+    # the LLM treated a fragment as the whole note. Now a token-based budget
+    # with an explicit ellipsis so the model knows the note was elided. ~160
+    # tokens ≈ a few sentences — enough to convey the gist in "short" mode
+    # without flooding the budget.
+    _SHORT_CONTEXT_MAX_TOKENS: ClassVar[int] = 160
+
     def get_context(
         self, context_size: Literal["short", "long"] = "short"
     ) -> dict[str, Any]:
@@ -1137,8 +1145,29 @@ class Note(ObjectModel):
             return dict(
                 id=self.id,
                 title=self.title,
-                content=self.content[:100] if self.content else None,
+                content=self._short_content(),
             )
+
+    def _short_content(self) -> Optional[str]:
+        """Trim note content to a token budget on a word boundary, appending
+        ' […]' when truncated. Returns None for empty content (v0.8.67 A3)."""
+        if not self.content:
+            return None
+        from open_notebook.utils.token_utils import token_count
+
+        if token_count(self.content) <= self._SHORT_CONTEXT_MAX_TOKENS:
+            return self.content
+        # Coarse char budget (~4 chars/token), then shrink to the token cap on
+        # whitespace boundaries so we don't cut mid-word.
+        approx = self._SHORT_CONTEXT_MAX_TOKENS * 4
+        trimmed = self.content[:approx]
+        while trimmed and token_count(trimmed) > self._SHORT_CONTEXT_MAX_TOKENS:
+            cut = trimmed.rsplit(None, 1)[0] if " " in trimmed.strip() else trimmed[:-50]
+            if cut == trimmed:
+                trimmed = trimmed[:-50]
+            else:
+                trimmed = cut
+        return trimmed.rstrip() + " […]"
 
 
 class ChatSession(ObjectModel):
