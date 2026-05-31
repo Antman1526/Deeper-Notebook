@@ -247,63 +247,45 @@ async def _resolve_chat_tools(
         ]
     if not servers:
         return []
-    server = servers[0]
-    client = MCPClient(url=server["url"])
-
-    # v0.8.11 — Discover the server's FULL tool surface (name +
+    # v0.8.11 — Discover each server's FULL tool surface (name +
     # description + input_schema) so we can build StructuredTools
-    # with proper args_schema. Pre-v0.8.11 we only knew names; the
-    # LLM had to guess what args to pass via the no-schema fallback
-    # (`input: str`). With real schemas, `bind_tools` sends the LLM
-    # the real arg names + types, dramatically reducing tool-call
-    # malformatting.
+    # with proper args_schema. With real schemas, `bind_tools` sends
+    # the LLM the real arg names + types, dramatically reducing
+    # tool-call malformatting.
     #
     # Backward compat: `force_tool_names` still works (just gives a
     # name list; we synthesise empty schemas). `force_tools_full`
     # is the new test hook for cases that want to pin the schemas.
-    if force_tools_full is not None:
-        available = list(force_tools_full)
-    elif force_tool_names is not None:
-        # Old test hook — synthesise minimal-shape entries so tests
-        # written against the v0.8.10 API keep passing.
-        available = [
-            {"name": n, "description": "", "input_schema": {"type": "object", "properties": {}}}
-            for n in force_tool_names
-        ]
-    else:
+    async def _discover(client, url: str) -> list[dict]:
+        if force_tools_full is not None:
+            return list(force_tools_full)
+        if force_tool_names is not None:
+            # Old test hook — synthesise minimal-shape entries so tests
+            # written against the v0.8.10 API keep passing.
+            return [
+                {"name": n, "description": "", "input_schema": {"type": "object", "properties": {}}}
+                for n in force_tool_names
+            ]
         # v0.8.12 — TTL-cached discovery. ~50-500ms saved per chat
         # turn for the same MCP server.
-        url = server["url"]
         now = _time.monotonic()
         cached = _tool_discovery_cache.get(url)
         if cached is not None and now - cached[0] < _TOOL_DISCOVERY_TTL_S:
-            available = cached[1]
-        else:
-            try:
-                available = await client.list_tools_full()
-                _tool_discovery_cache[url] = (now, available)
-            except Exception:
-                # Negative cache too — TTL prevents the chat node from
-                # retrying a known-broken MCP server every single turn.
-                # Operator who fixes the server sees recovery on the
-                # next turn after the TTL window expires.
-                _tool_discovery_cache[url] = (now, [])
-                available = []
+            return cached[1]
+        try:
+            available = await client.list_tools_full()
+            _tool_discovery_cache[url] = (now, available)
+            return available
+        except Exception:
+            # Negative cache too — TTL prevents the chat node from
+            # retrying a known-broken MCP server every single turn.
+            _tool_discovery_cache[url] = (now, [])
+            return []
 
-    if not available:
-        return []
-
-    def _make_tool(remote_name: str, description: str, schema: dict):
-        """Build a StructuredTool that calls the server's `remote_name`.
-
-        Closure captures `remote_name` per iteration (not the loop
-        variable) so the bound tool calls the right MCP tool.
-
-        v0.8.10 retained behaviour: the coroutine still accepts BOTH
-        positional-dict and kwargs dispatch styles defensively (some
-        LangChain code paths still drop into either). With a proper
-        args_schema bound, kwargs is the common path.
-        """
+    def _make_tool(client, remote_name: str, description: str, schema: dict):
+        """Build a StructuredTool that calls `client`'s `remote_name`. Both
+        `client` and `remote_name` are bound as params (not loop variables) so
+        the closure dispatches to the right server + tool."""
         async def _invoke(*args, **kwargs) -> str:
             if "input" in kwargs and isinstance(kwargs["input"], dict):
                 invocation_args = kwargs["input"]
@@ -314,11 +296,6 @@ async def _resolve_chat_tools(
             result = await client.call_tool(remote_name, invocation_args)
             text = result.get("text") or "(no result)"
             if captures is not None:
-                # v0.8.13 — include the full block list so the pill
-                # popover (frontend) can render image thumbnails or
-                # resource links in a future v0.9 enhancement.
-                # Pre-v0.8.13 only the text concatenation was surfaced;
-                # any image/PDF content from the MCP tool was lost.
                 blocks = result.get("blocks") or []
                 captures.append({
                     "index": len(captures) + 1,
@@ -342,10 +319,31 @@ async def _resolve_chat_tools(
             args_schema=args_model,
         )
 
-    return [
-        _make_tool(t["name"], t.get("description", ""), t.get("input_schema") or {})
-        for t in available
-    ]
+    # v0.8.66 (audit MCP-2) — bind tools from ALL enabled servers, not just
+    # servers[0]. Pre-v0.8.66 every server after the first (by the registry's
+    # `priority` order) was silently ignored, so the multi-server Settings UI
+    # was a de-facto single-server selector. On a tool-name collision across
+    # servers, the first (higher-priority) server wins and the dup is logged.
+    tools: list = []
+    seen_names: set[str] = set()
+    for server in servers:
+        client = MCPClient(url=server["url"])
+        available = await _discover(client, server["url"])
+        for t in available:
+            tool = _make_tool(
+                client, t["name"], t.get("description", ""),
+                t.get("input_schema") or {},
+            )
+            if tool.name in seen_names:
+                _logger.debug(
+                    "MCP tool name collision {!r} (server {!r}) — keeping the "
+                    "first/higher-priority server's tool",
+                    tool.name, server.get("name"),
+                )
+                continue
+            seen_names.add(tool.name)
+            tools.append(tool)
+    return tools
 
 
 # v0.8.60 — Phase 5.3c-full. Lightweight agent-FSM integration for the chat
