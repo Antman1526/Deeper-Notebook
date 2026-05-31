@@ -44,7 +44,9 @@ class SearchRequest(BaseModel):
     search_sources: bool = Field(True, description="Include sources in search")
     search_notes: bool = Field(True, description="Include notes in search")
     minimum_score: float = Field(
-        0.2, description="Minimum score for vector search", ge=0, le=1
+        # v0.8.67 (A1) — was 0.2; 0.0-0.3 is "unrelated" (matches the memory
+        # layer's _MIN_SCORE). Aligns the /search/ask default with vector_search.
+        0.3, description="Minimum score for vector search", ge=0, le=1
     )
 
 
