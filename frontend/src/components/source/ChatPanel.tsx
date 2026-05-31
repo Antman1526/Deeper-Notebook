@@ -44,6 +44,16 @@ interface NotebookContextStats {
   charCount?: number
 }
 
+// v0.8.67 (audit F5) — pure, testable predicate: is the scroll viewport within
+// `threshold` px of the bottom? Used to decide whether to keep auto-scrolling
+// during a streamed reply (don't yank a user who scrolled up to read).
+export function isNearBottom(
+  el: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  threshold = 120,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+
 interface ChatPanelProps {
   messages: SourceChatMessage[]
   isStreaming: boolean
@@ -112,6 +122,10 @@ export function ChatPanel({
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // v0.8.67 (F5) — true while the user is at/near the bottom; gates auto-scroll
+  // so streamed tokens don't yank a user who scrolled up. Defaults true so the
+  // first render + the common "user just sent" case scroll to bottom.
+  const stickToBottomRef = useRef(true)
   // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
@@ -142,9 +156,31 @@ export function ChatPanel({
     }
   }
 
-  // Auto-scroll to bottom when new messages arrive
+  // v0.8.67 (audit F5) — auto-scroll, fixed for streaming.
+  // Was: scrollIntoView({behavior:'smooth'}) on every `messages` change. During
+  // a streamed reply that fires on EVERY token (50+ stacked smooth animations →
+  // jank) AND yanked the view down even when the user had scrolled up to read.
+  // Now: (1) behavior:'auto' (no stacked animations), and (2) only stick to the
+  // bottom when the user is already near it. `stickToBottomRef` DEFAULTS true and
+  // is only ever set false by a real scroll event, so if the Radix viewport
+  // can't be found the behavior safely degrades to today's always-scroll.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const root = scrollAreaRef.current
+    const viewport = root?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (!viewport) return
+    const onScroll = () => {
+      stickToBottomRef.current = isNearBottom(viewport)
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (stickToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
   }, [messages])
 
   const handleSend = () => {
