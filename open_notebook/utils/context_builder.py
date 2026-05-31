@@ -31,8 +31,34 @@ class ContextItem:
     def __post_init__(self):
         """Calculate token count for the content if not provided."""
         if self.token_count is None:
-            content_str = str(self.content)
-            self.token_count = token_count(content_str)
+            self.token_count = token_count(_content_text(self.content))
+
+
+def _content_text(content: Any) -> str:
+    """v0.8.67 (audit A4) — extract only the human-readable text a ContextItem
+    contributes to the prompt, for token counting. Previously this was
+    `str(self.content)` over the whole dict, which counted Python dict syntax
+    ({}, quotes, keys like 'full_text', list brackets) that never reaches the
+    LLM — over-counting the budget and UNDER-including real content. We now sum
+    the actual text fields (title / content / full_text / insight contents),
+    recursing into the insights list. Non-dict content falls back to str()."""
+    if not isinstance(content, dict):
+        return str(content) if content is not None else ""
+    parts: list[str] = []
+    for key in ("title", "content", "full_text"):
+        val = content.get(key)
+        if isinstance(val, str) and val:
+            parts.append(val)
+    insights = content.get("insights")
+    if isinstance(insights, list):
+        for ins in insights:
+            if isinstance(ins, dict):
+                c = ins.get("content")
+                if isinstance(c, str) and c:
+                    parts.append(c)
+            elif isinstance(ins, str) and ins:
+                parts.append(ins)
+    return "\n".join(parts)
 
 
 @dataclass
