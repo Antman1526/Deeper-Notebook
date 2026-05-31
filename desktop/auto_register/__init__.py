@@ -328,14 +328,36 @@ def _do_register(
     _prune_orphan_legacy_credentials(client, existing_creds_full)
 
     existing_model_keys: set[tuple[str, str]] = set()  # (name.lower, type.lower)
-    try:
-        r = client.get("/api/models")
-        r.raise_for_status()
-        for m in r.json():
-            existing_model_keys.add((m.get("name", "").lower(), m.get("type", "").lower()))
-    except Exception as exc:
-        log.warning("Could not fetch existing models: %s — skipping auto-register", exc)
-        return
+    # v0.8.65i — RETRY the initial /api/models fetch instead of bailing on the
+    # first error. The whole auto-register (Ollama + llama.cpp GGUF + Osaurus)
+    # is skipped if this fetch fails, so a transient startup hiccup — the API not
+    # fully warm yet, or a one-off DB/pool blip (e.g. the v0.8.65g pool-poisoning
+    # bug) — used to leave ZERO local models registered, so the chat model
+    # selector had nothing to pick. A few quick retries make local-model
+    # registration reliable so the user can actually select a local model.
+    import time as _time
+
+    _models_json = None
+    for _attempt in range(5):
+        try:
+            r = client.get("/api/models")
+            r.raise_for_status()
+            _models_json = r.json()
+            break
+        except Exception as exc:
+            if _attempt == 4:
+                log.warning(
+                    "Could not fetch existing models after retries: %s — "
+                    "skipping auto-register", exc,
+                )
+                return
+            log.debug(
+                "auto-register: /api/models not ready (attempt %d/5): %s; retrying",
+                _attempt + 1, exc,
+            )
+            _time.sleep(1.0)
+    for m in (_models_json or []):
+        existing_model_keys.add((m.get("name", "").lower(), m.get("type", "").lower()))
 
     registered_any = False
 
