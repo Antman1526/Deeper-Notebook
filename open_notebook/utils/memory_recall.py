@@ -418,7 +418,15 @@ async def _recall_memory_inner(
 
     if mode == "semantic":
         result = await recall_relevant_memory(query)
-        if not result or (not result.get("facts") and not result.get("preferences")):
+        # v0.8.67 (audit A2) — also consider `episodes`. Without it an
+        # episodes-only store (session summaries, v0.8.49) looks "empty" here
+        # and silently downgrades to recency, discarding relevant episode hits.
+        # Same omission class as the v0.8.66 MEM-4 fix in _count_memory_rows.
+        if not result or (
+            not result.get("facts")
+            and not result.get("preferences")
+            and not result.get("episodes")
+        ):
             # Empty (failure or genuinely no matches) — recency is the
             # better default than an empty memory section.
             return await recall_recent_memory()
@@ -429,7 +437,13 @@ async def _recall_memory_inner(
     if total <= _SEMANTIC_THRESHOLD:
         return await recall_recent_memory()
     result = await recall_relevant_memory(query)
-    if not result or (not result.get("facts") and not result.get("preferences")):
+    # v0.8.67 (audit A2) — include `episodes` in the emptiness check (see the
+    # semantic-mode branch above) so an episodes-only store isn't discarded.
+    if not result or (
+        not result.get("facts")
+        and not result.get("preferences")
+        and not result.get("episodes")
+    ):
         return await recall_recent_memory()
     return result
 
