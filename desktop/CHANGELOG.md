@@ -20,6 +20,21 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.66l — (Audit S-3/A-5) Fence untrusted tool output against prompt injection**
+  - **Bug (Medium):** MCP-server + web-search tool results were fed back into the
+    conversation VERBATIM. That content is attacker-influenceable (a fetched page,
+    a search result, a malicious MCP server), so embedded "ignore previous
+    instructions" / role-change / system text could hijack the turn — and poison
+    long-term memory via the fire-and-forget extractor. (Recalled memory was
+    already hardened in v0.8.47; this closes the inbound live-tool gap.)
+  - **Fix (`open_notebook/graphs/chat.py`):** `_fence_untrusted_tool_output`
+    wraps each tool result in a `[BEGIN/END UNTRUSTED TOOL OUTPUT]` fence with a
+    directive to treat it as DATA only, and escapes any forged end-delimiter so a
+    result can't break out of the fence. The citation-popover capture still shows
+    the raw result (only the MODEL sees the fenced version).
+  - **Tests:** new `tests/test_v0_8_66_tool_output_fence.py`; updated the
+    tool-timeout assertions for the fenced content.
+
 - **🤖 v0.8.66k — Audit AI routing/streaming batch (A-M1, A-4, A-1, M-B5)**
   - **A-M1 (`open_notebook/graphs/source_chat.py`):** source-chat's no-override
     path now routes through `provision_langchain_chat_model`, so the highest-PII
