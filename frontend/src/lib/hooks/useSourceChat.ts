@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { sourceChatApi } from '@/lib/api/source-chat'
+import { pruneMessageScopedQueries } from '@/lib/api/query-client'
 import {
   SourceChatSession,
   SourceChatMessage,
@@ -100,6 +101,17 @@ export function useSourceChat(sourceId: string) {
       setMessages(currentSession.messages)
     }
   }, [currentSession])
+
+  // v0.8.66 (audit F-2) — on unmount, drop the ad-hoc per-message chat cache
+  // entries (mcp tool-calls + selected-provider/privacy/agent-state badges) so
+  // they don't accumulate across navigations. They only hold live-streamed data
+  // for this tab and are never refetched, so dropping on unmount is safe
+  // (mirrors the useNotebookChat cleanup).
+  useEffect(() => {
+    return () => {
+      pruneMessageScopedQueries()
+    }
+  }, [])
 
   // Auto-select most recent session when sessions are loaded
   useEffect(() => {
