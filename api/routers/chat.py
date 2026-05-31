@@ -1190,9 +1190,42 @@ async def _stream_chat_events(
                         "chat stream: client disconnected for session {}; "
                         "halting", full_session_id,
                     )
+                    # v0.8.66 (audit M-B5) — if the turn already COMPLETED
+                    # (final_result captured via the outer on_chain_end) but the
+                    # client dropped during the done phase, still fire the
+                    # fire-and-forget memory extraction so the checkpoint-
+                    # committed turn isn't silently left unextracted. We skip
+                    # when final_result is None (turn incomplete) so a partial
+                    # turn never pollutes memory.
+                    if final_result and "messages" in final_result:
+                        _ai_text = ""
+                        for _m in reversed(final_result["messages"]):
+                            if getattr(_m, "type", None) == "ai":
+                                _ai_text = _extract_text(_m)
+                                break
+                        if _ai_text:
+                            await _fire_memory_extract_turn(
+                                chat_session_id=full_session_id,
+                                user_text=request.message,
+                                assistant_text=_ai_text,
+                                model_override=model_override,
+                            )
                     return
 
                 etype = event.get("event")
+                if etype == "on_chat_model_start":
+                    # v0.8.66 (audit A-1) — a NEW model invocation begins (e.g.
+                    # the tool loop's post-tool re-invoke). Reset the
+                    # per-invocation streaming accumulators so <think>-stripping
+                    # is computed over THIS invocation's tokens only — not the
+                    # concatenation of every ainvoke this turn, where an unclosed
+                    # <think> from the tool-deciding call could swallow the final
+                    # answer's tokens (corrupted stream on chatty/tool-using
+                    # models). The `done` event still carries the canonical
+                    # cleaned final message.
+                    _stream_accum = ""
+                    _streamed_visible = ""
+                    continue
                 if etype == "on_chat_model_stream":
                     # Event shape: {"event": "on_chat_model_stream",
                     #               "data": {"chunk": AIMessageChunk(content="...")}}
