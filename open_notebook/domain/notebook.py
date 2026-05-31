@@ -1247,10 +1247,14 @@ async def vector_search(
     results: int,
     source: bool = True,
     note: bool = True,
-    minimum_score=0.2,
+    minimum_score: float | None = None,
 ):
     if not keyword:
         raise InvalidInputError("Search keyword cannot be empty")
+    # v0.8.67 (audit A1) — None → env-tunable default (0.3). An explicit caller
+    # value (e.g. the /search/ask request) is still honored as-is.
+    if minimum_score is None:
+        minimum_score = _vector_min_score()
     try:
         from open_notebook.utils.embedding import generate_embedding
 
