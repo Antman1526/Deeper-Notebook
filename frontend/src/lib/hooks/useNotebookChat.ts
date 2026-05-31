@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { chatApi } from '@/lib/api/chat'
-import { QUERY_KEYS } from '@/lib/api/query-client'
+import { QUERY_KEYS, pruneMessageScopedQueries } from '@/lib/api/query-client'
 import {
   NotebookChatMessage,
   CreateNotebookChatSessionRequest,
@@ -667,6 +667,11 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       // check fires. Otherwise the worker keeps producing tokens until
       // it finishes the full response.
       abortControllerRef.current?.abort()
+      // v0.8.66 (audit F-2) — drop the ad-hoc per-message chat cache entries
+      // (mcp tool-calls + selected-provider/privacy/agent-state badges) so they
+      // don't accumulate across navigations. They only hold live-streamed data
+      // for this tab and are never refetched, so dropping on unmount is safe.
+      pruneMessageScopedQueries()
     }
   }, [])
 
