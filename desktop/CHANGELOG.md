@@ -20,6 +20,32 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **📋 v0.8.66 — Audit remediation: explicitly DEFERRED items (with rationale)**
+  The v0.8.66 sweep fixed both Criticals, all seven Highs, and ~38 Medium/Low
+  items. The following are deferred — each is a large refactor of a hot path
+  and/or needs validation this environment can't provide (live SurrealDB, live
+  streaming metrics, or a running UI). They are real but lower-priority, and
+  shipping them blind would risk regressions the test suite can't catch:
+  - **M-B1** (pure-ASGI GZip/metrics middleware): observability-only — H1 already
+    fixed the user-facing streaming buffering; the residual is streaming-metric
+    accuracy. Needs live streaming-metrics validation.
+  - **M-B2** (`/chat/execute` session lock): the lock scope is INTENTIONAL
+    (per-session serialization prevents checkpoint corruption); the
+    "wait_for-doesn't-stop-the-sidecar" gap needs a sidecar abort-signal feature;
+    A-4 already bounds the tool-loop generation calls the stream runs through.
+  - **D-4** (SurrealDB HNSW `<|K|>` KNN for source/insight/note search): a
+    performance optimization (not a correctness bug) requiring a new index
+    migration + query rewrites that must be validated against a live SurrealDB;
+    high regression risk to semantic search without that.
+  - **F-1** (source-chat citation popover re-key), **F-2** (TanStack per-message
+    cache GC), **F-4** (source-chat `pendingModelOverride`), **F-7** (consolidate
+    the two theme systems): frontend changes that need live-UI validation +
+    hook state-management work; the three lowest-risk frontend Lows (F-3/F-5/F-6)
+    were done and tested.
+  - **I-2 / I-3** (runtime SHA-256 pinning, Dockerfile reproducibility): low value
+    for the native, non-Docker desktop distribution; I-2 needs upstream
+    per-runtime checksums.
+
 - **🎨 v0.8.66n — Audit frontend Lows (F-3, F-5, F-6)**
   - **F-3 (`frontend/src/lib/config.ts`):** a failed runtime-config fetch latched
     `configPromise` to a rejected promise, pinning EVERY future
