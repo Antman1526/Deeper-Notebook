@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from api.auth import PasswordAuthMiddleware
+from api.rate_limit import RateLimitMiddleware
 
 # v0.7.120 — cross-cutting middlewares split into api/middleware/.
 from api.middleware.metrics import PrometheusMetricsMiddleware
@@ -799,6 +800,13 @@ app.add_middleware(PrometheusMetricsMiddleware)
 # X-Request-ID response header. Lets operators grep a single request
 # across the codebase's log files.
 app.add_middleware(RequestIDMiddleware)
+
+# v0.8.66 (audit S-4) — env-gated rate limiter. Registered just BEFORE CORS, so
+# CORS stays outermost (preflight OPTIONS bypass) while rate-limiting still runs
+# BEFORE PasswordAuth — catching auth brute-force + download/discover
+# cost-amplification. DEFAULT OFF (ONP_RATE_LIMIT_PER_MIN unset/0) → zero change
+# to the single-user local-first desktop path.
+app.add_middleware(RateLimitMiddleware)
 
 # CORS is OUTERMOST so it sees preflight OPTIONS before any other
 # middleware short-circuits them.
