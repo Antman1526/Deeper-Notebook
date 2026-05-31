@@ -20,6 +20,60 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **📋 v0.8.67 — Accuracy & flow assessment backlog (read-only audit; NOT yet fixed)**
+  A read-only investigation of the accuracy (answer/recall/search correctness) and
+  flow (responsiveness/UX) hot paths surfaced 7 grounded, code-verified items.
+  These are deliberately DEFERRED to a focused session with a running app + live
+  SurrealDB, because the two highest-value ones need live validation (does the
+  threshold drop wanted results? does the scroll feel right?). Listed highest
+  value × confidence first:
+  - **A1 — `vector_search` default `minimum_score=0.2` too permissive
+    (`open_notebook/domain/notebook.py:1221`).** The codebase's own memory layer
+    uses `_MIN_SCORE=0.30` and its comment calls 0.0–0.3 "unrelated". Source/note
+    semantic search (and `ask.py:275`, which uses the default) lets 0.2 through,
+    surfacing near-random context. **Fix:** raise default to ~0.3–0.4. `/search/ask`
+    already takes a per-request override, so only the unset default changes.
+    Effort S / risk low — but **validate against a real corpus** that wanted hits
+    aren't dropped. HIGH accuracy impact.
+  - **A2 — episodes-only semantic recall fall-through
+    (`open_notebook/utils/memory_recall.py` ~L421,432).** The "is the semantic
+    result empty?" check tests `facts`/`preferences` but NOT `episodes` (same
+    omission class as the MEM-4 fix already shipped in `_count_memory_rows`), so an
+    episodes-only store silently downgrades to recency. **Fix:** add
+    `and not result.get("episodes")` to both conditions. Effort S / risk low.
+  - **A3 — `Note.get_context("short")` hard-cuts at 100 CHARS
+    (`notebook.py:1140`, `self.content[:100]`).** Notes in "short" mode are
+    truncated mid-word with no `[…]` marker → the LLM treats a fragment as the
+    whole note. **Fix:** token-based budget (~150 tok) + ellipsis. (Source's
+    "short" is fine — it returns insights, not truncated text.) Effort S / risk low.
+  - **A4 — `ContextItem` token count uses `str(self.content)` on a dict
+    (`context_builder.py:34`).** Sources/insights are dicts, so the count includes
+    `{`/`}`/key/quote overhead the prompt never sees → the budgeter OVER-counts and
+    UNDER-includes content. **Fix:** count only the text fields. Effort M /
+    risk medium (changes budget estimates — needs test coverage). Source-chat path.
+  - **F5 — chat auto-scroll churn (`ChatPanel.tsx:146-147`).** The effect depends
+    on `[messages]`, which changes on EVERY streamed token → 50+ stacked
+    `scrollIntoView({behavior:'smooth'})` per reply (jank), and it force-scrolls
+    even when the user has scrolled up to read. **Fix:** `behavior:'auto'` + only
+    autoscroll when already near bottom (copy the distance-from-bottom pattern in
+    `sources/page.tsx`). Effort S / risk low. HIGH flow impact.
+  - **F6 — cold-start blocks on async base-URL discovery (`client.ts:60-64` +
+    `config.ts`).** First API call awaits `/config`; if the API sidecar is still
+    starting that's a 1–3s stall before the UI is interactive. **Fix:** cache the
+    resolved URL in `sessionStorage`, use it immediately next launch, refetch in
+    background. (The shipped F-3 latch fix made this recoverable; this makes it
+    fast.) Effort S / risk low.
+  - **F7 — `refetchOnWindowFocus: true` override on stable data
+    (`use-settings.ts:25`).** Settings refetch on every tab-return is needless
+    churn (health/local-models overrides are legitimately volatile — leave those).
+    Effort S / risk low. LOW impact.
+  - **Verified already-good (no action):** memory recall `_MIN_SCORE=0.30` + caps +
+    timeouts + recency fallback; `token_count` tiktoken fallback; the streaming
+    race-guard; DB pool warmup; ConnectionGuard recovery; the `['sources']`
+    invalidation (already scoped via the `_isSourcesListQuery` predicate, not a
+    wildcard). No reranking exists (raw cosine) — a real future ENHANCEMENT
+    (L effort), not a bug.
+
 - **🔒 v0.8.66o — Gmail persistence was fully broken (found while live-validating repo_update)**
   - **Bug (Critical-class, pre-existing):** while validating the v0.8.66 H2
     `repo_update` change against a **live SurrealDB 2.1.0**, I found Gmail
