@@ -78,7 +78,11 @@ focused commit; each ships with regression tests.
     `data.setdefault("created", now)` — normal creates still auto-stamp. +2 tests.
   - **I-M1 (`Makefile:build-mac-test`):** `pytest … | tail -3` made the recipe's
     exit status `tail`'s (always 0), so a failing suite could not fail the build.
-    Dropped the pipe so pytest's non-zero exit aborts `build-mac`.
+    Dropped the pipe so pytest's non-zero exit aborts `build-mac`. **Follow-on:**
+    this surfaced 3 pre-existing `test_launcher` failures (the supervisor's
+    v0.8.38 sidecar-log drainer reads `proc.stderr`, but the tests' Popen mock
+    used `spec=subprocess.Popen`, which blocks instance attrs) — fixed the mocks
+    so the now-enforced build gate is green (desktop suite 332 passed).
 
 - **🔒 v0.8.66 — (Audit H7) Fix Windows-only first-launch crash: python runtime mislabeled `.zip`**
   - **Bug (High, Windows-only):** python-build-standalone's `install_only` artifact
