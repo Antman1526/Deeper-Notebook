@@ -27,6 +27,7 @@ def pick_provider(
     cloud_model_id: str | None,
     local_model_id: str | None,
     default_provider: str = "auto",
+    reply_headroom_tokens: int = 1000,
 ) -> ModelChoice:
     """Route a chat turn to local or cloud based on health, size, and user preference.
 
@@ -70,12 +71,19 @@ def pick_provider(
         # we still raise (user explicitly said local).
         raise ValueError("No model available — neither local nor cloud")
 
-    # Step 2: Auto mode — prefer local when healthy AND content fits with 1k headroom
-    # for the system prompt + reply tokens.
+    # Step 2: Auto mode — prefer local when healthy AND content fits with enough
+    # headroom for the reply + system prompt + tool schemas.
+    # v0.8.66 (audit A-6/A-7) — `reply_headroom_tokens` now reflects the ACTUAL
+    # reply reservation (callers pass max_tokens, default 8192) plus a margin for
+    # the system prompt + tool schemas that `content_tokens` (content-only)
+    # omits. Pre-v0.8.66 this was a flat 1000, so a ~(n_ctx-1k) prompt routed
+    # local then overflowed once the 8192-token reply was reserved → llama.cpp
+    # 400 context_length_exceeded. The default stays 1024 for direct/legacy
+    # callers; the chat caller passes the real reservation.
     if (
         local_chat_healthy
         and local_model_id
-        and content_tokens <= local_chat_n_ctx - 1000
+        and content_tokens <= local_chat_n_ctx - reply_headroom_tokens
     ):
         return ModelChoice(local_model_id, "local: healthy + fits in n_ctx")
 

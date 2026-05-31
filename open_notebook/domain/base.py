@@ -308,6 +308,19 @@ class ObjectModel(BaseModel):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         return value
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def _coerce_id_to_str(cls, value):
+        """v0.8.66 (audit D-6) — coerce a RecordID (or any non-str id) to a
+        string for EVERY ObjectModel subclass, so a DB-sourced id round-trips
+        uniformly into the `id: Optional[str]` contract. Previously only Source
+        defended this; the other 7 models relied on the caller having run
+        `parse_record_ids` first — a latent foot-gun that raised a Pydantic
+        validation error the moment a raw RecordID reached a model constructor."""
+        if value is None or value == "":
+            return None
+        return str(value)
+
 
 class RecordModel(BaseModel):
     model_config = ConfigDict(

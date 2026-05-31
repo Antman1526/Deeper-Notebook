@@ -393,6 +393,25 @@ async def db_connection():
         await _release(conn, broken=broken)
 
 
+def _is_retriable_conn_error(exc: BaseException) -> bool:
+    """v0.8.66 (audit I-INFRA-1) — heuristic: does this look like a dead /
+    idle-reaped pooled connection (SurrealDB closes idle WebSockets server-side)
+    rather than a genuine query error? Deliberately CONSERVATIVE — only the
+    socket-closed / connection-reset family — because it gates a retry, and we
+    only ever retry read-only queries."""
+    if isinstance(exc, (ConnectionError, ConnectionResetError, OSError,
+                        asyncio.IncompleteReadError)):
+        return True
+    msg = str(exc).lower()
+    return any(
+        s in msg
+        for s in (
+            "connection closed", "connection reset", "connection is closed",
+            "websocket", "going away", "broken pipe", "not connected",
+        )
+    )
+
+
 async def repo_query(
     query_str: str,
     vars: Optional[dict[str, Any]] = None,
@@ -443,9 +462,29 @@ async def repo_query(
                     logger.exception(e)
                     raise
 
-        if timeout_s is not None:
-            return await asyncio.wait_for(_run(), timeout=timeout_s)
-        return await _run()
+        async def _run_once() -> list[dict[str, Any]]:
+            if timeout_s is not None:
+                return await asyncio.wait_for(_run(), timeout=timeout_s)
+            return await _run()
+
+        # v0.8.66 (audit I-INFRA-1) — transparent single retry for a likely
+        # idle-reaped pooled connection. SurrealDB closes idle WebSockets; the
+        # first query after an idle stretch then hard-fails. db_connection has
+        # already marked + dropped the dead conn, so the retry acquires a FRESH
+        # one. RESTRICTED to read-only SELECT queries: a write might have reached
+        # the server before the socket error surfaced, so retrying it could
+        # double-execute. One retry only — never loop on a real outage.
+        _read_only = query_str.lstrip()[:6].upper() == "SELECT"
+        try:
+            return await _run_once()
+        except Exception as e:
+            if _read_only and _is_retriable_conn_error(e):
+                logger.debug(
+                    "repo_query: retrying SELECT once after connection error: {}",
+                    e,
+                )
+                return await _run_once()
+            raise
     finally:
         # Always log slow queries, even when the query failed — a slow
         # query that ALSO errored is doubly worth surfacing.

@@ -246,6 +246,21 @@ async def provision_langchain_chat_model(
     # httpx probe on the default executor so the event loop stays
     # responsive even when a wedged local sidecar takes 9s to time
     # out. pick_provider itself stays sync — only the input changed.
+    # v0.8.66 (audit A-6/A-7) — reserve headroom for the REPLY (chat callers use
+    # max_tokens=8192) plus a margin for the system prompt + tool schemas that
+    # `content_tokens` (content-only) doesn't count. Without this, a prompt just
+    # under n_ctx routed local then overflowed when the reply was reserved →
+    # llama.cpp 400. Env-tunable; default 8192 (reply) + 1024 (system/tools).
+    try:
+        _reply_headroom = int(
+            os.getenv("ONP_LOCAL_REPLY_HEADROOM_TOKENS") or "8192"
+        )
+        if _reply_headroom < 0:
+            _reply_headroom = 8192
+    except ValueError:
+        _reply_headroom = 8192
+    _reply_headroom += 1024  # system-prompt + tool-schema margin (A-7)
+
     choice = pick_provider(
         content_tokens=content_tokens,
         local_chat_healthy=await _local_chat_healthy_cached(),
@@ -253,6 +268,7 @@ async def provision_langchain_chat_model(
         cloud_model_id=cloud_model_id,
         local_model_id=local_model_id,
         default_provider=default_provider,
+        reply_headroom_tokens=_reply_headroom,
     )
     # v0.8.51 — Phase 5.2a fail-closed privacy gate. When enabled
     # (ONP_PRIVACY_GATE, default off) and the router picked CLOUD, scan the
