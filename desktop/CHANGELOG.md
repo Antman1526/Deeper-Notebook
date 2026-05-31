@@ -20,6 +20,19 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.66d — (Audit MCP-2) Bind chat tools from ALL enabled MCP servers**
+  - **Bug (Medium):** `_resolve_chat_tools` only ever built a client for
+    `servers[0]`, so every enabled MCP server after the first (by registry
+    `priority`) was silently ignored — the multi-server Settings UI was a de-facto
+    single-server selector.
+  - **Fix (`open_notebook/graphs/chat.py`):** iterate all enabled (non-excluded)
+    servers, discover + wrap each one's tools, and concatenate. On a tool-name
+    collision across servers the first/higher-priority server wins and the dup is
+    logged. Per-server discovery stays TTL-cached. Test hooks (`force_servers`,
+    `force_tools_full`, `force_tool_names`) preserved.
+  - **Tests:** new `tests/test_v0_8_66_mcp_multiserver.py` (tools from both
+    servers bind; collision deduped to the first). Existing MCP suite green.
+
 - **🐛 v0.8.66c — Audit Mediums batch 2 (chat tool-loop robustness + memory leak)**
   - **MCP-3 (`open_notebook/graphs/chat.py`):** `ONP_MCP_TOOL_TIMEOUT_SEC` was
     parsed UNGUARDED inside the per-tool-call loop — a malformed value raised
