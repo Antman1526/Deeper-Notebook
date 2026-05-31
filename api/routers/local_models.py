@@ -247,6 +247,22 @@ async def local_models_download(body: dict):
             status_code=400,
             detail="`filename` must end in .gguf.",
         )
+    # v0.8.66 (audit S-1) — validate repo_id to the HuggingFace
+    # `namespace/name` shape. It is interpolated into the download URL
+    # (https://huggingface.co/{repo_id}/resolve/main/{filename}); leaving it
+    # unsanitized let a caller smuggle path-traversal / query / fragment / `@`
+    # sequences into the path. The host is pinned to huggingface.co so this is
+    # defense-in-depth (matching the filename guard above), keeping malformed
+    # input + traversal out of the composed URL.
+    import re as _re
+    if not _re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*", repo_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="`repo_id` must be of the form `namespace/name` "
+            "(letters, digits, dot, dash, underscore only).",
+        )
 
     raw = (
         os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")

@@ -20,6 +20,19 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.66e — (Audit S-1) Validate GGUF download `repo_id`**
+  - **Bug (Medium):** `POST /api/local-models/download` interpolated the
+    user-supplied `repo_id` straight into the HuggingFace URL
+    (`https://huggingface.co/{repo_id}/resolve/main/{filename}`) with no
+    validation, while `filename` was already guarded. The host is pinned to
+    huggingface.co (so host-smuggling is weak), but path-traversal / query /
+    fragment / `@` sequences could be smuggled into the path.
+  - **Fix (`api/routers/local_models.py`):** require `repo_id` to match the HF
+    `namespace/name` shape (`[A-Za-z0-9][A-Za-z0-9._-]*` × 2, exactly one
+    slash) — defense-in-depth matching the existing filename guard.
+  - **Tests:** new `tests/test_v0_8_66_gguf_repo_id_validation.py` (9 malicious
+    repo_ids → 400; a valid one → 200).
+
 - **✨ v0.8.66d — (Audit MCP-2) Bind chat tools from ALL enabled MCP servers**
   - **Bug (Medium):** `_resolve_chat_tools` only ever built a client for
     `servers[0]`, so every enabled MCP server after the first (by registry
