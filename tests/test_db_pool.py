@@ -133,6 +133,38 @@ async def test_connection_is_reused_across_acquires(
 
 
 @pytest.mark.asyncio
+async def test_cancelled_query_marks_connection_broken(
+    monkeypatch, fake_async_surreal, fresh_pool
+):
+    """v0.8.65g — asyncio.CancelledError is a BaseException (not Exception), so
+    the old `except Exception` MISSED cancellation: a cancelled query (chat-
+    stream client disconnect, wait_for timeout, route-handler cancel) returned
+    a connection to the pool with a PENDING in-flight request, and the next
+    acquirer's query collided with the stale response → KeyError(<uuid>) in the
+    SurrealDB driver → the chatbot's model fetch failed and stayed broken until
+    restart. A cancelled query MUST mark the connection broken so the dirty
+    connection is closed + dropped, never reused.
+    """
+    broken_conn = None
+    with pytest.raises(asyncio.CancelledError):
+        async with repo.db_connection() as conn:
+            broken_conn = conn
+            raise asyncio.CancelledError()
+
+    assert broken_conn is not None
+    # Dirty connection must be CLOSED (broken path), not returned to the pool.
+    assert broken_conn.closed is True, (
+        "Cancelled-query connection was returned to the pool dirty — the bug "
+        "that poisoned the next acquirer with KeyError(uuid)"
+    )
+    # Pool is empty (broken conn dropped, not requeued).
+    assert repo._pool is not None and repo._pool.qsize() == 0
+    # Next acquire gets a FRESH connection, not the poisoned one.
+    async with repo.db_connection() as c2:
+        assert c2.id != broken_conn.id
+
+
+@pytest.mark.asyncio
 async def test_pool_grows_lazily_up_to_cap(
     monkeypatch, fake_async_surreal, fresh_pool
 ):

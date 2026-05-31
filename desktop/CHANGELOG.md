@@ -20,6 +20,33 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.65g — Fix chatbot "models stopped working" (pool poisoning) + chat Copy/Edit + launcher_prefs**
+  - **The chat-blocker (root cause):** `open_notebook/database/repository.py`
+    `db_connection` caught `except Exception` — but `asyncio.CancelledError` is a
+    `BaseException`, not an `Exception`. So when a chat-stream query was cancelled
+    (client disconnect, `wait_for` timeout, route-handler cancel), the connection
+    was returned to the pool **still holding a pending in-flight request**. The
+    next acquirer's query then collided with the stale response →
+    `KeyError(<uuid>)` deep in the SurrealDB driver (`async_ws.py:_send`) → the
+    chat's model-record fetch (`domain.base.get`) failed, and the **poisoned
+    connection lived on in the pool**, so the chatbot stayed broken until restart
+    ("models don't work"). Fix: `except BaseException` → a cancelled query marks
+    the connection broken (closed + dropped), never reused. Test:
+    `tests/test_db_pool.py::test_cancelled_query_marks_connection_broken`.
+  - **`/launcher-prefs` 500 (secondary):** the bundled app raised
+    `ModuleNotFoundError: desktop.launcher_prefs` (the module was missing from the
+    PyInstaller spec). Bundled it (`pyinstaller.spec` datas) + made the router
+    degrade to empty prefs on `ImportError` instead of 500.
+  - **Chat Copy/Edit (UI):** human messages in "Chat with Notebook" had no
+    actions. New `MessageCopyEditActions` adds **Copy** (to clipboard, for reuse)
+    + **Edit** (loads the message back into the chat input to tweak + resend) on
+    human messages, and an **Edit** affordance on AI messages (which already had
+    Copy via `MessageActions`). Frontend +4 tests (187 total).
+  - **Models verified:** representative local Ollama models were driven through
+    the real chat tool loop (`bind_mcp_and_run_tool_loop`) and confirmed to
+    produce answers; the fix is model-agnostic (it's in the DB pool layer, not
+    per-model).
+
 - **🏷️ v0.8.65f — Rename display name to "Open notebook+" (app only; repo unchanged)**
   - **Display-name only** (identity/filesystem unchanged): `.app` filename
     (`Open Notebook Plus.app`), data dir (`~/.open-notebook-plus`), bundle

@@ -63,6 +63,13 @@ async def get_launcher_prefs():
             status_code=400,
             detail=f"launcher.env could not be read: {exc}",
         )
+    except (ImportError, ModuleNotFoundError):
+        # v0.8.65g — `desktop.launcher_prefs` is a desktop-only module that
+        # wasn't always bundled into the PyInstaller app (missing from the
+        # spec hiddenimports), so this endpoint 500'd in the built app. Launcher
+        # prefs are an optional UI nicety; degrade to empty prefs instead of a
+        # 500. The spec now bundles the module, so this is belt-and-braces.
+        return {"prefs": {}}
 
 
 @router.put("/api/launcher-prefs", response_model=PrefsResponse)
