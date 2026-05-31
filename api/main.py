@@ -13,6 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Receive, Scope, Send
 
 from api.auth import PasswordAuthMiddleware
 
@@ -741,7 +742,47 @@ app.add_middleware(
 # the client sends `Accept-Encoding: gzip` (every modern browser + httpx
 # does). Smaller bodies skip compression — the overhead exceeds the
 # savings for short payloads.
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+#
+# v0.8.66 (audit H1) — but GZip must NOT wrap the streaming endpoints.
+# Starlette 0.50.0's GZipMiddleware only exempts content-type
+# `text/event-stream`; our token streams use `application/x-ndjson`
+# (/chat/stream) and `text/plain` (/search/ask, source-chat /messages),
+# so they would be compressed. `minimum_size` doesn't help — its
+# short-circuit only fires for non-streaming (`not more_body`) responses;
+# streaming chunks always carry `more_body=True` and get compressed per
+# chunk (compresslevel=9, no Z_SYNC_FLUSH), so most token chunks are held
+# back until a gzip frame flushes — defeating the real-time per-token
+# delivery the streaming UX (v0.7.38/42/43) is built on, and delaying
+# `is_disconnected()`. The SSE/NDJSON per-event payloads are tiny, so
+# streaming them uncompressed costs almost nothing while GZip is retained
+# for the large JSON CRUD responses it was added for.
+_NO_GZIP_PREFIXES = ("/api/chat/stream", "/api/search/ask")
+
+
+def _is_streaming_path(scope: Scope) -> bool:
+    path = scope.get("path", "")
+    if path.startswith(_NO_GZIP_PREFIXES):
+        return True
+    # Source-chat streams via POST to …/chat/sessions/{id}/messages. Gate on
+    # POST so a future GET message-list can still be gzipped.
+    if path.endswith("/messages") and scope.get("method") == "POST":
+        return True
+    return False
+
+
+class SelectiveGZipMiddleware(GZipMiddleware):
+    """GZipMiddleware that bypasses itself entirely for streaming endpoints,
+    so their token chunks flush in real time instead of buffering inside the
+    per-chunk gzip compressor."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and _is_streaming_path(scope):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
+app.add_middleware(SelectiveGZipMiddleware, minimum_size=1000)
 
 # v0.7.120 — defense-in-depth security headers. X-Content-Type-Options,
 # X-Frame-Options, Referrer-Policy, CSP (skipped on /docs paths).

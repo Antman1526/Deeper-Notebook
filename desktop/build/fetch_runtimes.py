@@ -153,7 +153,13 @@ def fetch_python_standalone(version: str, python_version: str, url: str, arch: s
         shutil.rmtree(out_dir)
 
     # Destination tarball path.
-    ext = ".zip" if is_win else ".tar.gz"
+    # v0.8.66 (audit H7) — python-build-standalone's `install_only` artifact is
+    # a gzip TARBALL on EVERY platform, including windows-x86_64 (see
+    # runtimes.toml: the Windows URL ends in `-install_only.tar.gz`). Saving it
+    # as `.zip` was a lie about the bytes: bootstrap's extractor dispatches on
+    # the suffix and called zipfile.ZipFile() on gzip-tar data → BadZipFile → a
+    # deterministic Windows-only first-launch crash. Always use .tar.gz.
+    ext = ".tar.gz"
     tarball = BIN / f"python-{arch}{ext}"
 
     download(url, tarball)

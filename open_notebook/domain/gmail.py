@@ -311,8 +311,29 @@ class GmailIntegration(BaseModel):
             "include_memory": self.include_memory,
             "last_sent_at": self.last_sent_at.isoformat() if self.last_sent_at else None,
         }
-        # Drop None so upsert doesn't clobber pre-existing values
-        data = {k: v for k, v in data.items() if v is not None}
+        # v0.8.66 (audit C2) — the credential/token surface must ALWAYS be
+        # written, even when None. `repo_upsert` issues `UPSERT … MERGE $data`,
+        # and SurrealDB's MERGE only overwrites keys PRESENT in the payload while
+        # silently preserving omitted ones. The previous blanket
+        # `if v is not None` filter dropped every None, which made
+        # `disconnect()` and `forget_credentials()` — both of which set these
+        # fields to None and then call save() — DB-level NO-OPs: the old
+        # encrypted refresh_token survived in the row, so the account stayed
+        # effectively connected and a "forgotten" client_id/secret lingered on
+        # disk. We force-write the six credential/token keys so clearing them
+        # actually nulls them in the database. The remaining config fields
+        # (enabled / frequency / include_* / last_sent_at) keep the None-skip,
+        # since they are never legitimately None and we don't want a partial
+        # save to wipe them.
+        _ALWAYS_WRITE = {
+            "client_id_enc", "client_secret_enc",
+            "access_token_enc", "refresh_token_enc",
+            "token_expires_at", "email_address",
+        }
+        data = {
+            k: v for k, v in data.items()
+            if v is not None or k in _ALWAYS_WRITE
+        }
         await repo_upsert(
             "gmail_integration", "singleton", data, add_timestamp=True,
         )

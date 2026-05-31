@@ -198,20 +198,48 @@ class SurrealMemoryStore(VectorStoreBase):
         ids = ids or [None for _ in vectors]
         for vec, payload, _id in zip(vectors, payloads, ids):
             table = self._table(payload)
-            now = datetime.now(timezone.utc).isoformat()
-            # v0.8.55 — persist the real confidence. The writer sets it in
-            # metadata (mirroring how `scope` is carried), so read it from
-            # there first, then any top-level value mem0 may pass, then 1.0.
+            # v0.8.66 (audit C1) — read the keys mem0 ACTUALLY emits. With
+            # infer=False (the writer's mode since v0.8.66), mem0's _create_memory
+            # stores the verbatim message under the payload key `data` and FLATTENS
+            # the caller's metadata (kind/scope/confidence/…) to the payload's top
+            # level — there is no nested `metadata` sub-dict. The previous code read
+            # `payload["text"]` (never set → every row stored text="") and
+            # `payload["metadata"]["scope"]` (never set → every row stored
+            # scope="user"), which silently inerted the entire memory subsystem.
+            # Order: mem0's `data` first, then a legacy/top-level `text`, then "".
             _meta = payload.get("metadata", {}) or {}
+            text_val = payload.get("data") or payload.get("text", "")
+            scope_val = payload.get("scope") or _meta.get("scope", "user")
+            confidence_val = payload.get(
+                "confidence", _meta.get("confidence", 1.0)
+            )
+            # Preserve the non-bulky metadata for recall filters. Drop `data`
+            # (held in `text`) and the raw embedding to avoid duplicating storage.
+            stored_meta = {
+                k: v
+                for k, v in payload.items()
+                if k not in ("data", "text", "embedding")
+            }
+            if _meta:
+                # Back-compat: if a caller ever DID nest a metadata dict, fold it in.
+                stored_meta = {**_meta, **stored_meta}
             row = {
-                "text": payload.get("text", ""),
+                "text": text_val,
                 "embedding": vec,
-                "metadata": _meta,
-                "scope": _meta.get("scope", "user"),
-                "confidence": _meta.get(
-                    "confidence", payload.get("confidence", 1.0)
-                ),
-                "created_at": now,
+                "metadata": stored_meta,
+                "scope": scope_val,
+                "confidence": confidence_val,
+                # v0.8.66 (audit H5) — store a NATIVE datetime object, not an
+                # ISO string. Migration 15 defines these tables SCHEMAFULL with
+                # `created_at TYPE datetime DEFAULT time::now()`. The surrealdb
+                # client's CBOR encoder only tags a real `datetime` as a Surreal
+                # datetime; a `str` is sent as CBOR text, which SurrealDB v2
+                # strictly REJECTS for a TYPE datetime field — the CREATE then
+                # hard-fails and the writer's broad except silently drops the
+                # fact. A tz-aware datetime serializes correctly. (Omitting the
+                # key entirely would also work via the schema DEFAULT, but an
+                # explicit value is deterministic and unit-testable.)
+                "created_at": datetime.now(timezone.utc),
             }
             if _id:
                 row["id"] = _id

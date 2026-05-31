@@ -124,6 +124,74 @@ def test_extract_python_runtime_extracts_zip(tmp_path: Path, monkeypatch: pytest
 
 
 # ---------------------------------------------------------------------------
+# v0.8.66 (audit H7) — the Windows python-build-standalone artifact is a gzip
+# TARBALL, not a zip. The bundle previously named it `python-windows-x86_64.zip`,
+# so bootstrap dispatched on the `.zip` suffix and called zipfile.ZipFile() on
+# gzip-tar bytes → BadZipFile → a deterministic Windows first-launch crash.
+# ---------------------------------------------------------------------------
+
+
+def _make_windows_python_targz(tmp_path: Path) -> Path:
+    """Gzip-tar with the Windows python-build-standalone layout, but correctly
+    named `.tar.gz` (the post-fix bundled name)."""
+    tarball = tmp_path / "python-windows-x86_64.tar.gz"
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for rel, content in (
+            ("python/python.exe", b"MZ\x00\x00"),
+            ("python/lib/python.lib", b""),
+        ):
+            info = tarfile.TarInfo(name=rel)
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+    tarball.write_bytes(buf.getvalue())
+    return tarball
+
+
+def test_bundled_python_tarball_is_targz_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bundled python artifact path must be `.tar.gz` on Windows too — never
+    `.zip`. (Regression for the mislabeled-archive Windows bootstrap crash.)"""
+    from desktop.app import _bundled_python_tarball
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    p = _bundled_python_tarball("windows-x86_64")
+    assert p.name.endswith(".tar.gz"), p.name
+    assert not p.name.endswith(".zip"), (
+        "Windows python artifact must NOT be named .zip — it is gzip-tar bytes "
+        "and bootstrap would raise BadZipFile."
+    )
+
+
+def test_extract_windows_targz_uses_tarfile_not_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Windows, a correctly-named `.tar.gz` extracts via tarfile and yields
+    python.exe — proving the post-H7 bundled name boots."""
+    tarball = _make_windows_python_targz(tmp_path)
+    dest_parent = tmp_path / "home" / ".open-notebook-plus"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = extract_python_runtime(tarball, dest_parent)
+
+    expected = dest_parent / "python-runtime" / "python" / "python.exe"
+    assert result == expected
+    assert result.exists()
+
+
+def test_gzip_tar_bytes_named_zip_would_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Documents the H7 root cause: gzip-tar bytes with a `.zip` name (the OLD
+    Windows bundled name) make extract_python_runtime raise BadZipFile."""
+    good = _make_windows_python_targz(tmp_path)
+    mislabeled = tmp_path / "python-windows-x86_64.zip"
+    mislabeled.write_bytes(good.read_bytes())  # same gzip-tar bytes, .zip name
+    dest_parent = tmp_path / "home" / ".open-notebook-plus"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    with pytest.raises(zipfile.BadZipFile):
+        extract_python_runtime(mislabeled, dest_parent)
+
+
+# ---------------------------------------------------------------------------
 # _lock_hash
 # ---------------------------------------------------------------------------
 
