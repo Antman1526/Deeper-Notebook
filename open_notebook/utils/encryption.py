@@ -418,5 +418,11 @@ def decrypt_value(value: str) -> str:
         # Not a valid token - treat as legacy plaintext
         return value
     except Exception as e:
+        # v0.8.66 (audit S-5) — log the detail for the operator, but do NOT
+        # embed `str(e)` in the raised ValueError: it propagates into API
+        # responses (credentials read paths) and can leak Fernet/cryptography
+        # internals or input fragments. Mirrors the v0.7.201 /readyz sanitization.
         logger.error(f"Decryption failed: {e}")
-        raise ValueError(f"Decryption failed: {str(e)}")
+        raise ValueError(
+            "Decryption failed due to an internal error. See server logs."
+        )

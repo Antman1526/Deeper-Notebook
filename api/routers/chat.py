@@ -15,6 +15,7 @@ from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
+    ConfigurationError,
     InvalidInputError,
     NotFoundError,
 )
@@ -1429,6 +1430,24 @@ async def _stream_chat_events(
         # matching the NotFoundError treatment above. Backend audit
         # finding #2.
         yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+    except ConfigurationError as e:
+        # v0.8.66 (audit A-2) — surface the ACTIONABLE ConfigurationError
+        # message (model-config guidance, or the fail-closed privacy-gate block)
+        # instead of the generic "failed unexpectedly". These are user-facing
+        # config messages, not secrets — same as the non-streaming 422 path.
+        # Flag the privacy-gate case so the client can offer a "re-ask allowing
+        # cloud" consent action instead of treating it as an opaque failure.
+        detail = str(e)
+        privacy_blocked = "privacy gate blocked" in detail.lower()
+        logger.info(
+            "chat stream: ConfigurationError for session {} "
+            "(privacy_blocked={})",
+            request.session_id, privacy_blocked,
+        )
+        evt: dict = {"type": "error", "detail": detail}
+        if privacy_blocked:
+            evt["privacy_blocked"] = True
+        yield json.dumps(evt) + "\n"
     except Exception as e:
         # v0.7.184 — Don't echo str(e) into the SSE error event. The
         # underlying exception can carry driver internals (SurrealDB

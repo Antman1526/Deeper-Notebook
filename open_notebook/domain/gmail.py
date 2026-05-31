@@ -210,7 +210,7 @@ class GmailIntegration(BaseModel):
         now = time.monotonic()
         cached = _CACHE.get("value")
         if cached is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
-            return cached
+            return cached.model_copy()  # v0.8.66 (E-3) — copy, never alias the cache
 
         # v0.8.35d — single-flight slow path. Before the lock, two
         # concurrent first-callers (the v0.7.157 sidebar + setup panel
@@ -222,7 +222,7 @@ class GmailIntegration(BaseModel):
             now = time.monotonic()
             cached = _CACHE.get("value")
             if cached is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
-                return cached
+                return cached.model_copy()  # v0.8.66 (E-3) — copy, never alias the cache
 
             try:
                 # v0.7.157 — bounded wait. If SurrealDB hasn't responded in
@@ -293,7 +293,13 @@ class GmailIntegration(BaseModel):
             # per-field Fernet decryption.
             _CACHE["value"] = instance
             _CACHE["ts"] = now
-            return instance
+            # v0.8.66 (audit E-3) — return a COPY, never the shared cached
+            # instance. Callers (disconnect/forget/settings/send) MUTATE the
+            # returned object before save(); handing out the cached instance
+            # aliased those mutations into every concurrent reader within the
+            # TTL window. model_copy() is shallow (all fields are scalars), so
+            # field reassignment on the copy can't touch the cached original.
+            return instance.model_copy()
 
     async def save(self) -> None:
         """Encrypt-and-persist. SurrealDB upsert preserves fields we don't set."""

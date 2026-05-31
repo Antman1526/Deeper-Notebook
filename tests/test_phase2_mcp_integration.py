@@ -78,7 +78,7 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
 
     monkeypatch.setattr(
         "open_notebook.mcp.client._open_session",
-        lambda url: _FakeSession(),
+        lambda url, headers=None: _FakeSession(),
     )
 
     client = MCPClient(url="http://x")
@@ -127,7 +127,7 @@ def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
 
     monkeypatch.setattr(
         "open_notebook.mcp.client._open_session",
-        lambda url: _FakeSession(),
+        lambda url, headers=None: _FakeSession(),
     )
 
     client = MCPClient(url="http://x")
@@ -161,7 +161,7 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
 
     monkeypatch.setattr(
         "open_notebook.mcp.client._open_session",
-        lambda url: FakeSession(),
+        lambda url, headers=None: FakeSession(),
     )
     client = MCPClient(url="http://127.0.0.1:8742/mcp")
     import asyncio

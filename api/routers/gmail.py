@@ -19,6 +19,7 @@ user clicks "Send digest now" when they want one.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import html as _html
 import logging
@@ -56,6 +57,21 @@ _GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 # process so this dict is safe; in a multi-tenant API it'd need to move to
 # session/redis.
 _oauth_states: dict[str, datetime] = {}
+# v0.8.66 (audit E-4) — serialize digest sends. The scheduler tick and a manual
+# /send-test (or two overlapping scheduler ticks) could previously interleave
+# into duplicate digest emails and race on the `last_sent_at` write. The lock is
+# created LAZILY (not at import) and matches the v0.8.35d `_get_cache_lock`
+# pattern in domain/gmail.py: a module-level `asyncio.Lock()` constructed at
+# import binds to whatever loop first touches it, which deadlocks tests that run
+# each case in a fresh event loop.
+_SEND_LOCK: "asyncio.Lock | None" = None
+
+
+def _get_send_lock() -> asyncio.Lock:
+    global _SEND_LOCK
+    if _SEND_LOCK is None:
+        _SEND_LOCK = asyncio.Lock()
+    return _SEND_LOCK
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -205,6 +221,17 @@ async def connect(request: Request):
     state = _secrets.token_urlsafe(24)
     _oauth_states[state] = datetime.now(timezone.utc) + timedelta(minutes=10)
     _purge_stale_states()
+    # v0.8.66 (audit E-6) — hard cap as a backstop. `_purge_stale_states` keeps
+    # only un-expired (<10 min) entries, so the map is already bounded by the
+    # connect rate in a 10-min window — tiny for a single-user desktop app. The
+    # cap defends the general/multi-user case: if a flood of `/connect`s without
+    # callbacks ever outpaces the TTL, evict the oldest (insertion-order) first.
+    _OAUTH_STATES_CAP = 256
+    while len(_oauth_states) > _OAUTH_STATES_CAP:
+        oldest = next(iter(_oauth_states))
+        if oldest == state:
+            break
+        del _oauth_states[oldest]
 
     redirect_uri = _callback_url(request)
     params = {
@@ -456,6 +483,14 @@ async def _refresh_access_token(g: GmailIntegration) -> bool:
 
 
 async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[bool, str, int]:
+    """Build + send a digest email under the single-flight send lock (E-4), so
+    concurrent sends (scheduler + /send-test, or overlapping ticks) serialize
+    and can't produce duplicate emails. Returns (ok, message, item_count)."""
+    async with _get_send_lock():
+        return await _send_digest_now_inner(g, label)
+
+
+async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> tuple[bool, str, int]:
     """Build + send a digest email. Returns (ok, message, item_count)."""
     if g.needs_refresh:
         refreshed = await _refresh_access_token(g)
@@ -487,7 +522,15 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
             json={"raw": raw},
         )
         if r.status_code >= 300:
-            return (False, f"Gmail API: HTTP {r.status_code} — {r.text[:200]}", n)
+            # v0.8.66 (audit E-5) — don't echo the Gmail API response body to
+            # the client: it can reflect request context (Authorization-header
+            # fragments via traceback/formatting, the raw base64 message). Log
+            # it for the operator; return only the status code. Mirrors the
+            # v0.8.24 sanitization sweep.
+            log.warning(
+                "Gmail send failed: HTTP %s — %s", r.status_code, r.text[:500]
+            )
+            return (False, f"Gmail API error (HTTP {r.status_code}).", n)
 
     # v0.7.81 — guard the post-send save. The Gmail API call ALREADY
     # succeeded (status < 300) so we know the email left our process; if

@@ -68,8 +68,14 @@ async def test_cache_hit_skips_db_query_within_ttl():
         f"v0.7.157 cache should serve repeated .get() from memory; "
         f"got {mock_query.call_count} DB calls instead of 1"
     )
-    # All three calls return the SAME instance (cache identity check).
-    assert first is second is third
+    # v0.8.66 (audit E-3) — the cache still serves all three WITHOUT re-querying
+    # (asserted by call_count == 1 above), but get() now returns an independent
+    # COPY each time rather than the shared cached instance, so callers that
+    # mutate the result (disconnect/forget/send) can't alias the cache. So the
+    # three are value-equal but distinct objects.
+    assert first.email_address == second.email_address == third.email_address
+    assert first.enabled == second.enabled == third.enabled
+    assert first is not second and second is not third
 
 
 @pytest.mark.asyncio

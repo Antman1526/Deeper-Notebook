@@ -335,13 +335,13 @@ class TestNotebookBulkDelete:
         ):
             deleted = await nb._bulk_delete_notes(notes)
             assert deleted == 50
-            assert len(statements) == 3
-            # First statement: artifact edges
-            assert "artifact" in statements[0]
-            # Second: note_embedding
-            assert "note_embedding" in statements[1]
-            # Third: note row
-            assert "note" in statements[2] and "embedding" not in statements[2]
+            # v0.8.66 (audit D-1 + D-5) — TWO statements now (the phantom
+            # `note_embedding` step was removed), and the note ROWS are deleted
+            # FIRST so a partial failure can't orphan searchable rows.
+            assert len(statements) == 2
+            assert "DELETE note WHERE" in statements[0]   # rows first
+            assert "artifact" in statements[1]            # edges second
+            assert all("note_embedding" not in s for s in statements)
 
     @pytest.mark.asyncio
     async def test_bulk_delete_failure_returns_zero(self):

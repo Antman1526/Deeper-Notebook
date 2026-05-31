@@ -20,6 +20,89 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.66j — Audit infra batch (I-INFRA-1, I-1, I-4; I-2/I-3 deferred)**
+  - **I-INFRA-1 (`open_notebook/database/repository.py`):** `repo_query` now
+    transparently retries ONCE on a likely idle-reaped pooled connection
+    (SurrealDB closes idle WebSockets; the first query after an idle stretch
+    hard-failed). RESTRICTED to read-only `SELECT` queries so a write whose
+    socket died after the server applied it can't be double-executed.
+  - **I-1 (`Dockerfile`):** `ENV MAKEFLAGS="-j$(nproc)"` set the LITERAL
+    `-j$(nproc)` (ENV doesn't command-substitute) → parallel build was a no-op.
+    Now a fixed `-j4`.
+  - **I-4:** shipped `examples/docker.env.example` so the `docker-compose-single`
+    / `-dev` examples (which `env_file: ./docker.env`) aren't dead on arrival.
+  - **Deferred (with rationale):** I-2 (runtime SHA-256 pinning — needs upstream
+    per-runtime checksums; the bundled artifacts already ship inside the
+    code-signed app) and I-3 (Dockerfile reproducibility) — low value for the
+    native, non-Docker desktop distribution.
+
+- **🐛 v0.8.66i — Audit email batch (E-3, E-4, E-5, E-6)**
+  - **E-3 (`open_notebook/domain/gmail.py`):** `GmailIntegration.get()` returned the
+    SHARED cached instance; callers (disconnect/forget/settings/send) mutate it
+    before `save()`, aliasing those mutations into concurrent readers within the
+    TTL window. `get()` now returns a `model_copy()`.
+  - **E-4 (`api/routers/gmail.py`):** the digest send is now serialized by a single
+    `_SEND_LOCK` (the scheduler tick and a manual `/send-test`, or overlapping
+    ticks, could interleave into duplicate emails / a race on `last_sent_at`).
+  - **E-5:** the Gmail send-API error no longer echoes the response body
+    (`r.text[:200]`) to the client (it can reflect request context); it's logged
+    and a generic `HTTP <code>` message is returned (mirrors v0.8.24).
+  - **E-6:** `_oauth_states` gets a hard 256-entry cap as a backstop to the
+    existing TTL purge.
+
+- **🧠 v0.8.66h — Audit memory batch (MEM-2, MEM-4; MEM-3 moot via C1)**
+  - **MEM-4 (`open_notebook/utils/memory_recall.py`):** `_count_memory_rows` now
+    also counts `memory_episode`, so auto-mode's recency-vs-semantic decision and
+    the "no matches" short-circuit no longer discard episodes-only semantic hits
+    (the v0.8.49 episode-recall regression).
+  - **MEM-2 (`desktop/memory/surreal_store.py`):** prune now orders by recency
+    PRIMARY + `confidence` as the tie-breaker, so the persisted confidence
+    (v0.8.55) finally influences eviction among same-age rows.
+  - **MEM-3:** moot — resolved by C1's `infer=False` (mem0 no longer does the
+    infer-time per-table dedup that the per-table `LIMIT` affected).
+
+- **🧹 v0.8.66g — Audit Mediums/Lows batch 4 (data integrity: D-1, D-3, D-5, D-6)**
+  - **D-1 (`open_notebook/domain/notebook.py`):** removed the dead
+    `DELETE note_embedding` statements (bulk + single note delete). `note_embedding`
+    is a **phantom table** — no migration defines it; a note's embedding is a column
+    on the `note` row, removed when the row is deleted. The statements were no-ops
+    and the comments misled maintainers.
+  - **D-5:** the bulk note-delete now deletes the note **rows before** the artifact
+    edges, so a partial failure can't strand searchable orphan note rows (any
+    leftover edges are swept by the notebook-level `DELETE artifact WHERE out=…`).
+  - **D-3:** `ChatSession.relate_to_notebook/_to_source` are now **idempotent** —
+    a retried session-create previously RELATE'd a second `refers_to` edge each
+    time (RELATE isn't upsert, and `dedup_edges` doesn't sweep `refers_to`). Now
+    returns the existing edge if present (mirrors the reference/artifact path).
+  - **D-6:** hoisted the RecordID→str `id` coercion from Source to the
+    `ObjectModel` base, so all 8 models coerce a DB-sourced id uniformly instead
+    of relying on incidental upstream `parse_record_ids`.
+  - **Tests:** updated `test_v0_7_133` for the 2-statement rows-first delete.
+
+- **🔒 v0.8.66f — Audit Mediums/Lows batch 3 (backend security/reliability)**
+  - **MCP-1 (`open_notebook/mcp/client.py`):** every MCP RPC is now bounded by
+    `ONP_MCP_RPC_TIMEOUT_SEC` (default 30s). A hung server previously pinned
+    discovery + `/api/mcp/{id}/test` up to the transport's ~300s SSE read timeout.
+  - **MCP-4:** optional auth headers (`ONP_MCP_AUTH_HEADER="Name: value"`, or
+    `MCPClient(headers=…)`) so protected streamable-http servers are usable.
+  - **A-6/A-7 (`open_notebook/ai/router.py`, `provision.py`):** `pick_provider`
+    now reserves headroom for the actual reply reservation (max_tokens=8192) +
+    a system/tool-schema margin instead of a flat 1000, so a near-full prompt
+    routes to cloud instead of overflowing the local sidecar (llama.cpp 400).
+    Env-tunable via `ONP_LOCAL_REPLY_HEADROOM_TOKENS`.
+  - **S-5 (`open_notebook/utils/encryption.py`):** `decrypt_value` no longer
+    embeds `str(e)` in the raised `ValueError` (it surfaced in API responses and
+    could leak Fernet/cryptography internals); detail is logged, message is generic.
+  - **M-B3 (`api/credentials_service.py`):** `discover_with_config` re-validates
+    `base_url` (SSRF) before any outbound discovery request.
+  - **M-B4:** `test_credential` matches HTTP status codes on word boundaries
+    (`\b401\b`) so a coincidental substring can't misclassify the result.
+  - **A-2 (`api/routers/chat.py`):** the streaming path now surfaces the
+    actionable `ConfigurationError` message (incl. the fail-closed privacy-gate
+    block, with a `privacy_blocked` flag) instead of a generic
+    "failed unexpectedly".
+  - **Tests:** new `test_v0_8_66_mcp_client_timeout.py`, `test_v0_8_66_router_headroom.py`.
+
 - **🔒 v0.8.66e — (Audit S-1) Validate GGUF download `repo_id`**
   - **Bug (Medium):** `POST /api/local-models/download` interpolated the
     user-supplied `repo_id` straight into the HuggingFace URL
