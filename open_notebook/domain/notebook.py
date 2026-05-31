@@ -1222,6 +1222,26 @@ class ChatSession(ObjectModel):
         return await self.relate("refers_to", source_id)
 
 
+# v0.8.67 (audit A1) — default semantic-search relevance floor. Raised from the
+# old 0.2 to 0.3 to match the memory layer's own _MIN_SCORE (memory_recall.py),
+# whose comment calls 0.0-0.3 "unrelated". 0.2 surfaced near-random sources into
+# the LLM context. Env-tunable so operators can dial it without a rebuild and so
+# the change is trivially reversible if a corpus needs a looser floor.
+_DEFAULT_VECTOR_MIN_SCORE = 0.3
+
+
+def _vector_min_score() -> float:
+    raw = (os.environ.get("ONP_VECTOR_MIN_SCORE") or "").strip()
+    if not raw:
+        return _DEFAULT_VECTOR_MIN_SCORE
+    try:
+        val = float(raw)
+    except ValueError:
+        return _DEFAULT_VECTOR_MIN_SCORE
+    # Clamp to a sane cosine range; outside [0,1] is always a misconfig.
+    return val if 0.0 <= val <= 1.0 else _DEFAULT_VECTOR_MIN_SCORE
+
+
 async def text_search(
     keyword: str, results: int, source: bool = True, note: bool = True
 ):
@@ -1251,7 +1271,7 @@ async def vector_search(
 ):
     if not keyword:
         raise InvalidInputError("Search keyword cannot be empty")
-    # v0.8.67 (audit A1) — None → env-tunable default (0.3). An explicit caller
+    # v0.8.67 (audit A1) — None → env-tunable default (0.3); an explicit caller
     # value (e.g. the /search/ask request) is still honored as-is.
     if minimum_score is None:
         minimum_score = _vector_min_score()
