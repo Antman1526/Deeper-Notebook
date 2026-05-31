@@ -19,7 +19,11 @@ from cryptography.fernet import Fernet, InvalidToken
 from loguru import logger
 from pydantic import BaseModel
 
-from open_notebook.database.repository import repo_query, repo_upsert
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_query,
+    repo_upsert,
+)
 
 SINGLETON_ID = "gmail_integration:singleton"
 
