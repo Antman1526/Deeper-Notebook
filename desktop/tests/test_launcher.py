@@ -341,8 +341,14 @@ def test_supervisor_skips_v03_children_when_paths_missing(cfg, tmp_path, monkeyp
     spawned: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen",
                         lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
+                                         # v0.8.66 — provide stdout/stderr (None) so the
+                                         # launcher's v0.8.38 sidecar-log drainer branch
+                                         # (`proc.stderr is not None`) sees a real attr.
+                                         # A spec=subprocess.Popen mock blocks these
+                                         # (instance attrs absent from the class) → the
+                                         # pre-existing AttributeError on `proc.stderr`.
+                                         MagicMock(poll=MagicMock(return_value=None),
+                                                   stdout=None, stderr=None))[1])
     monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
@@ -401,8 +407,14 @@ def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypat
     spawned: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen",
                         lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
+                                         # v0.8.66 — provide stdout/stderr (None) so the
+                                         # launcher's v0.8.38 sidecar-log drainer branch
+                                         # (`proc.stderr is not None`) sees a real attr.
+                                         # A spec=subprocess.Popen mock blocks these
+                                         # (instance attrs absent from the class) → the
+                                         # pre-existing AttributeError on `proc.stderr`.
+                                         MagicMock(poll=MagicMock(return_value=None),
+                                                   stdout=None, stderr=None))[1])
     monkeypatch.setattr("desktop.launcher.find_free_ports",
                        lambda n: list(range(40001, 40001 + n)))
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
@@ -427,8 +439,14 @@ def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
     spawned: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen",
                         lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
+                                         # v0.8.66 — provide stdout/stderr (None) so the
+                                         # launcher's v0.8.38 sidecar-log drainer branch
+                                         # (`proc.stderr is not None`) sees a real attr.
+                                         # A spec=subprocess.Popen mock blocks these
+                                         # (instance attrs absent from the class) → the
+                                         # pre-existing AttributeError on `proc.stderr`.
+                                         MagicMock(poll=MagicMock(return_value=None),
+                                                   stdout=None, stderr=None))[1])
     monkeypatch.setattr("desktop.launcher.find_free_ports",
                        lambda n: list(range(40001, 40001 + n)))
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
