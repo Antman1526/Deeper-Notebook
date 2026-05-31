@@ -20,6 +20,21 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.66b — Audit Mediums/Lows batch 1 (data/email/infra hygiene)**
+  - **E-2 (`open_notebook/domain/gmail.py`):** `_fernet`/`_dec` logged exceptions
+    with printf `%s` placeholders, but loguru uses `{}`-style formatting — so the
+    exception detail was silently dropped (defeating the v0.8.28 logging fix).
+    Changed both to `{}`.
+  - **D-2 (`migrations/5_down.surrealql`):** `REMOVE TABLE … SCHEMAFULL` is invalid
+    SurrealQL (SCHEMAFULL is a DEFINE-time modifier), so the migration-5 rollback
+    failed to parse. Now a plain `REMOVE TABLE IF EXISTS transformation;`.
+  - **D-M1 (`repository.py:repo_create`):** unconditionally stamped
+    `created = now`, clobbering a caller-supplied value on reimport/restore. Now
+    `data.setdefault("created", now)` — normal creates still auto-stamp. +2 tests.
+  - **I-M1 (`Makefile:build-mac-test`):** `pytest … | tail -3` made the recipe's
+    exit status `tail`'s (always 0), so a failing suite could not fail the build.
+    Dropped the pipe so pytest's non-zero exit aborts `build-mac`.
+
 - **🔒 v0.8.66 — (Audit H7) Fix Windows-only first-launch crash: python runtime mislabeled `.zip`**
   - **Bug (High, Windows-only):** python-build-standalone's `install_only` artifact
     is a gzip **tarball** on every platform, but the bundle saved/named the Windows

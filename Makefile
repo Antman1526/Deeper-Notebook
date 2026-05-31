@@ -365,7 +365,11 @@ build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build
 # which is separate from the build venv (3.12). P2-MED-12 audit fix.
 build-mac-test:
 	@echo "🧪 Running unit tests (precondition for build-mac)…"
-	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q 2>&1 | tail -3
+	# v0.8.66 (audit I-M1) — DON'T pipe to `tail`: a piped recipe's exit status
+	# is the LAST command's (tail, always 0), so a failing test suite could NOT
+	# fail the build (the "Stage 0 precondition" was toothless). Run pytest
+	# directly so its non-zero exit aborts `build-mac`.
+	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q
 
 # v0.7.141 — Stage 0.5: regenerate desktop/requirements.lock from
 # pyproject.toml BEFORE the bundle venv installs against it.

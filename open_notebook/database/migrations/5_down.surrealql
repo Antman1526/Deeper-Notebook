@@ -1,2 +1,6 @@
 
-REMOVE TABLE IF EXISTS transformation SCHEMAFULL;
+-- v0.8.66 (audit D-2) — `REMOVE TABLE` takes no SCHEMAFULL keyword; the old
+-- `REMOVE TABLE IF EXISTS transformation SCHEMAFULL` was invalid SurrealQL and
+-- made the migration-5 rollback fail to parse. SCHEMAFULL is a DEFINE-time
+-- modifier only.
+REMOVE TABLE IF EXISTS transformation;
