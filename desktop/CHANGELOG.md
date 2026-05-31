@@ -20,6 +20,27 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🧩 v0.8.65i — Make local-model auto-registration resilient (so local models are selectable in chat)**
+  - **Context:** the project chat already has a model selector (the gear button
+    by the input → `ModelSelector`) that lists every registered `type:language`
+    model with its provider — including local Ollama + bundled llama.cpp models,
+    which are auto-registered at launch (`register_ollama_models` registers every
+    Ollama model). The user couldn't pick a local model because **the pool-
+    poisoning bug (v0.8.65g) made the auto-register's first `GET /api/models`
+    fail, and the code `return`ed — skipping ALL registration**, leaving the
+    selector empty.
+  - **Improvement:** `desktop/auto_register/__init__.py` now **retries** that
+    initial `/api/models` fetch (5×, 1s backoff) before giving up, so a transient
+    startup hiccup (API not warm, a one-off DB/pool blip) can't skip every local
+    model. Combined with the v0.8.65g pool fix, local models register reliably
+    and appear in the chat selector after a restart.
+  - **Tests:** new `test_auto_register_retries_models_fetch_then_registers`; also
+    **fixed a pre-existing stale test** (`test_auto_register_is_idempotent`,
+    which drifted 2→3 POSTs when v0.8.36 added Osaurus auto-register and was
+    masked by `build-mac-test | tail -3`). Desktop suite now 324 passed (3
+    remaining failures are pre-existing `test_launcher` supervisor-drift, flagged
+    for a separate follow-up).
+
 - **🫥 v0.8.65h — Stop reasoning models leaking raw `<think>` while streaming**
   - **Bug:** `/chat/stream` yielded raw token chunks WITHOUT stripping `<think>`
     blocks, so reasoning models (Qwen3, Qwen3.5, DeepSeek-R1) flashed their raw

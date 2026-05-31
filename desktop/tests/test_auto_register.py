@@ -147,6 +147,10 @@ def test_auto_register_is_idempotent(tmp_path):
     with (
         patch("desktop.auto_register._list_ollama_models", return_value=ollama_names),
         patch("desktop.auto_register._list_local_ggufs", return_value=[]),
+        # v0.8.65i — isolate the Osaurus path. This test predates the v0.8.36
+        # Osaurus auto-register, which attempts its own credential POST (so the
+        # count drifted 2 → 3) and was being masked by `build-mac-test | tail -3`.
+        patch("desktop.auto_register.register_osaurus_models", return_value=False),
         patch("httpx.Client") as mock_client_cls,
     ):
         # First run: no existing creds/models
@@ -189,6 +193,58 @@ def test_auto_register_is_idempotent(tmp_path):
         # so we don't even enter the assignment phase.
         assert client2.post.call_count == 0
         assert client2.put.call_count == 0
+
+
+def test_auto_register_retries_models_fetch_then_registers(tmp_path, monkeypatch):
+    """v0.8.65i — a TRANSIENT /api/models failure must not skip ALL local-model
+    registration (which would leave the chat model selector empty). The fetch is
+    retried; registration then proceeds normally."""
+    import json
+
+    monkeypatch.setattr("time.sleep", lambda *a, **k: None)  # don't actually wait
+    cfg = _make_cfg(tmp_path)
+
+    def make_resp(status: int, data) -> MagicMock:
+        r = MagicMock(spec=httpx.Response)
+        r.status_code = status
+        r.json.return_value = data
+        r.text = json.dumps(data)
+        r.raise_for_status = MagicMock()
+        return r
+
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    registered_model = {"id": "model:1", "name": "llama3.1:latest", "type": "language"}
+    client.get.side_effect = [
+        make_resp(200, []),                  # GET /credentials (existence)
+        httpx.ConnectError("transient"),     # GET /api/models attempt 1 → fails
+        make_resp(200, []),                  # GET /api/models attempt 2 → ok (empty)
+        make_resp(200, {}),                  # GET /api/models/defaults
+        make_resp(200, [registered_model]),  # GET /api/models (scoring pool)
+    ]
+    client.post.side_effect = [
+        make_resp(201, {"id": "credential:1", "name": "Ollama (local)"}),  # POST /credentials
+        make_resp(200, registered_model),                                   # POST /models
+    ]
+    client.put.side_effect = [make_resp(200, {})]
+
+    with (
+        patch("desktop.auto_register._list_ollama_models", return_value=["llama3.1:latest"]),
+        patch("desktop.auto_register._list_local_ggufs", return_value=[]),
+        patch("desktop.auto_register.register_osaurus_models", return_value=False),
+        patch("httpx.Client", return_value=client),
+    ):
+        auto_register("http://127.0.0.1:9999", cfg)
+
+    # Despite the transient /api/models failure, registration PROCEEDED (it would
+    # be zero POSTs if auto-register had bailed). The Ollama credential + model
+    # were POSTed — robust to the exact provider count.
+    post_targets = [c.args[0] for c in client.post.call_args_list if c.args]
+    assert any("/credentials" in p for p in post_targets), (
+        "auto-register bailed on a transient /api/models error instead of retrying"
+    )
+    assert any("/models" in p for p in post_targets)
 
 
 def test_register_voice_models_creates_credentials_and_models(monkeypatch):
