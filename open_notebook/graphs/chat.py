@@ -361,6 +361,37 @@ def _agent_fsm_enabled() -> bool:
     return raw in ("on", "1", "true", "yes")
 
 
+def _agent_max_iterations(default: int = 4) -> int:
+    """v0.8.66 (audit A-3) — env knob for the tool-loop iteration cap. Every
+    other budget in this codebase is env-tunable, and the v0.8.56 truncation
+    notice even tells users to "raise the cap" — but there was no knob. Guarded
+    + clamped like `web_search._timeout_sec`: blank/garbage/<1 → the default."""
+    raw = (os.environ.get("ONP_AGENT_MAX_ITERATIONS") or "").strip()
+    if not raw:
+        return default
+    try:
+        val = int(raw)
+    except ValueError:
+        return default
+    return val if val >= 1 else default
+
+
+def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
+    """v0.8.66 (audit MCP-3) — parse ONP_MCP_TOOL_TIMEOUT_SEC ONCE, guarded.
+    The previous inline `float(os.environ.get(...))` ran inside the per-tool-call
+    loop and was unguarded: a malformed value raised ValueError that crashed the
+    whole batch (misattributed to the tool), and `0`/negative produced an
+    instant-timeout. Blank/garbage/<=0 → the default."""
+    raw = (os.environ.get("ONP_MCP_TOOL_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
 _AGENT_FSM_TOOL_LOOP_INSTRUCTION = (
     "When you have fully answered, you MAY end your reply with a line "
     "`<state>complete</state>`. If you cannot proceed without more "
@@ -374,7 +405,7 @@ async def bind_mcp_and_run_tool_loop(
     model,
     payload: list,
     *,
-    max_iterations: int = 4,
+    max_iterations: int | None = None,
     exclude_server_names: list[str] | None = None,
     agent_state_out: dict | None = None,
 ):
@@ -405,6 +436,11 @@ async def bind_mcp_and_run_tool_loop(
     — this is a pure code-motion refactor.
     """
     from langchain_core.messages import ToolMessage
+
+    # v0.8.66 (audit A-3) — resolve the iteration cap: an explicit caller arg
+    # wins, else the ONP_AGENT_MAX_ITERATIONS env knob, else 4.
+    if max_iterations is None:
+        max_iterations = _agent_max_iterations()
 
     mcp_captures: list = []
     mcp_tools: list = []
@@ -481,6 +517,9 @@ async def bind_mcp_and_run_tool_loop(
 
     tool_lookup = {t.name: t for t in mcp_tools} if mcp_tools else {}
     tool_iters = 0
+    # v0.8.66 (audit MCP-3) — parse the per-tool-call timeout ONCE, guarded,
+    # instead of re-parsing (unguarded) on every call inside the loop below.
+    tool_timeout = _mcp_tool_timeout_sec()
     running_payload = list(payload)
     running_payload.append(ai_message)
     while (
@@ -516,13 +555,12 @@ async def bind_mcp_and_run_tool_loop(
                 # tool, give up). Default 30s is generous — MCP tools
                 # for web search/fetch typically complete in 1-5s; a
                 # tool taking 30s is almost certainly broken.
-                _tool_timeout = float(
-                    os.environ.get("ONP_MCP_TOOL_TIMEOUT_SEC", "30").strip() or 30
-                )
+                # v0.8.66 (audit MCP-3) — `tool_timeout` is now parsed ONCE
+                # above the loop via the guarded `_mcp_tool_timeout_sec()`.
                 try:
                     result = await asyncio.wait_for(
                         tool.coroutine(**safe_args),
-                        timeout=_tool_timeout,
+                        timeout=tool_timeout,
                     )
                 except asyncio.TimeoutError:
                     # Re-raise as a plain exception so the outer
@@ -530,7 +568,7 @@ async def bind_mcp_and_run_tool_loop(
                     # keeps the error-feedback shape consistent with
                     # all other tool failures.
                     raise Exception(
-                        f"timed out after {_tool_timeout}s"
+                        f"timed out after {tool_timeout}s"
                     )
             except Exception as tool_exc:
                 result = f"Tool {name!r} failed: {tool_exc}"

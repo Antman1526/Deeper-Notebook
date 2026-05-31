@@ -72,6 +72,12 @@ _PRUNE_HIGH_WATER = 1.5  # prune from extract_turn only when a table > keep*this
 # and only relevant when batching is explicitly enabled.
 _SESSION_BUFFERS: dict[str, list[tuple[str, str]]] = {}
 _BUFFER_LOCK = threading.Lock()
+# v0.8.66 (audit MEM-1) — hard cap on the number of buffered sessions so
+# abandoned sessions (buffered below the batch threshold and never flushed)
+# can't leak the map unboundedly. Each buffer is small (≤ batch turns); 512
+# sessions is far above any realistic single-user concurrency. When exceeded we
+# evict oldest-inserted sessions — acceptable for best-effort memory.
+_MAX_BUFFERED_SESSIONS = 512
 
 
 def _batch_turns() -> int:
@@ -354,10 +360,20 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
     with _BUFFER_LOCK:
         buf = _SESSION_BUFFERS.setdefault(chat_session_id, [])
         buf.append((user_text, assistant_text))
+        # v0.8.66 (audit MEM-1) — evict oldest-inserted sessions beyond the cap
+        # so abandoned, never-flushed buffers can't grow the map without bound.
+        while len(_SESSION_BUFFERS) > _MAX_BUFFERED_SESSIONS:
+            oldest = next(iter(_SESSION_BUFFERS))
+            if oldest == chat_session_id:
+                break  # never evict the session we're actively buffering
+            del _SESSION_BUFFERS[oldest]
         if len(buf) < batch:
             return
         turns = buf[:]
-        _SESSION_BUFFERS[chat_session_id] = []
+        # v0.8.66 (audit MEM-1) — DELETE the key after a threshold flush rather
+        # than leaving an empty list behind (which lingered forever once a
+        # session ended). The next turn re-creates it via setdefault.
+        _SESSION_BUFFERS.pop(chat_session_id, None)
     _extract_and_apply(
         llm=llm, mem_client=mem_client, chat_session_id=chat_session_id,
         user_content=render_extract_user_batch(turns),
