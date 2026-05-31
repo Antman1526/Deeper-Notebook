@@ -20,13 +20,29 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
-- **📋 v0.8.67 — Accuracy & flow assessment backlog (read-only audit; NOT yet fixed)**
+- **✅ v0.8.67 — Accuracy & flow assessment: IMPLEMENTED (2026-05-31)**
   A read-only investigation of the accuracy (answer/recall/search correctness) and
-  flow (responsiveness/UX) hot paths surfaced 7 grounded, code-verified items.
-  These are deliberately DEFERRED to a focused session with a running app + live
-  SurrealDB, because the two highest-value ones need live validation (does the
-  threshold drop wanted results? does the scroll feel right?). Listed highest
-  value × confidence first:
+  flow (responsiveness/UX) hot paths surfaced 7 grounded, code-verified items. All
+  actionable ones are now FIXED with regression tests (backend suite 1692 passed,
+  frontend 195 passed). Shipped in the v0.8.67 desktop rebuild — pyproject keeps
+  the upstream 1.8.5 version; this fork tracks its own v0.8.NN cadence in this
+  changelog/commits only, so no pyproject bump. Status:
+  - **A1** — vector_search relevance floor 0.2 → 0.3 (env `ONP_VECTOR_MIN_SCORE`,
+    clamped [0,1]) + `SearchRequest.minimum_score` default 0.2 → 0.3. Commits
+    `f3e5094` (BROKEN — a silently-failed Edit left the helper undefined and
+    corrupted `vector_search`), repaired in `7590f86` + `f0117c8`. Tests:
+    `tests/test_v0_8_67_vector_min_score.py` (11 passed).
+  - **A2** — episodes-only semantic recall no longer downgrades to recency. `6fe5111`.
+  - **A3** — `Note.get_context("short")` token-budgeted (~160 tok) + ` […]` marker
+    instead of a 100-char hard cut. `8031583`, `9f80c93`.
+  - **A4** — `ContextItem` token count counts only text fields, not `str(dict)`. `9cf156e`.
+  - **F5** — chat auto-scroll `behavior:'auto'` + only when near bottom (no token
+    churn, no yank while reading up). `e36f7c0`.
+  - **F6** — DEFERRED (cold-start base-URL cache; needs live-app validation).
+  - **F7** — NON-ISSUE (real `useSettings` already inherits global
+    `refetchOnWindowFocus:false`; the flagged line is the intentional observability hook).
+
+  Original backlog detail (problem statements), highest value × confidence first:
   - **A1 — `vector_search` default `minimum_score=0.2` too permissive
     (`open_notebook/domain/notebook.py:1221`).** The codebase's own memory layer
     uses `_MIN_SCORE=0.30` and its comment calls 0.0–0.3 "unrelated". Source/note
