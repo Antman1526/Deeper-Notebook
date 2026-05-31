@@ -356,7 +356,9 @@ class GmailIntegration(BaseModel):
             if v is not None or k in _ALWAYS_WRITE
         }
         await repo_upsert(
-            "gmail_integration", "singleton", data, add_timestamp=True,
+            # v0.8.66 — FULL record id, not bare "singleton" (repo_upsert runs
+            # `UPSERT {id} MERGE`; a bare id is parsed as a TABLE → orphan rows).
+            "gmail_integration", SINGLETON_ID, data, add_timestamp=True,
         )
         # v0.7.157 — invalidate the read cache so the next .get() sees
         # the freshly-persisted state instead of a stale snapshot.
