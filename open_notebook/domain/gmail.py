@@ -231,7 +231,15 @@ class GmailIntegration(BaseModel):
                 result = await asyncio.wait_for(
                     repo_query(
                         "SELECT * FROM ONLY $rid",
-                        {"rid": SINGLETON_ID},
+                        # v0.8.66 (audit follow-up) — bind a RecordID, NOT the
+                        # raw "gmail_integration:singleton" STRING. SurrealDB
+                        # treats a bound string in `FROM ONLY $rid` as a string
+                        # value (not a record id), so this returned [] every
+                        # time and GmailIntegration.get() always saw an
+                        # unconfigured account. Same ensure_record_id-missing
+                        # class as the H3 MCP fix. Verified against live
+                        # SurrealDB 2.1.0.
+                        {"rid": ensure_record_id(SINGLETON_ID)},
                     ),
                     timeout=_QUERY_TIMEOUT_S,
                 )
