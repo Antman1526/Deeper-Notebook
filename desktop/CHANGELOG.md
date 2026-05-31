@@ -20,6 +20,19 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.66m — (Audit S-4) Env-gated rate limiter**
+  - **Gap (Medium):** no endpoint had rate limiting (auth brute-force,
+    download/discover cost-amplification); the `RateLimitError`/429 handler
+    existed but nothing raised it.
+  - **Fix (`api/rate_limit.py` + `api/main.py`):** a lightweight per-IP sliding-
+    window `RateLimitMiddleware`, registered just inside CORS so it runs BEFORE
+    PasswordAuth. **DEFAULT OFF** (`ONP_RATE_LIMIT_PER_MIN` unset/0) → zero change
+    to the single-user local-first desktop path; set `ONP_RATE_LIMIT_PER_MIN=N`
+    on the exposed/Docker/multi-user path to cap requests/IP/60s (health + version
+    + config probes exempt; 429 carries `Retry-After`).
+  - **Tests:** new `tests/test_v0_8_66_rate_limit.py` (off-by-default, limits
+    excess, health exempt, parse guard).
+
 - **🔒 v0.8.66l — (Audit S-3/A-5) Fence untrusted tool output against prompt injection**
   - **Bug (Medium):** MCP-server + web-search tool results were fed back into the
     conversation VERBATIM. That content is attacker-influenceable (a fetched page,
