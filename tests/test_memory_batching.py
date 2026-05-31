@@ -114,8 +114,9 @@ def test_buffers_until_threshold(monkeypatch):
     assert sys == EXTRACT_TURN_SYSTEM_PROMPT
     for tok in ("u0", "a0", "u1", "a1", "u2", "a2"):
         assert tok in user
-    # Buffer cleared after flush.
-    assert writer_mod._SESSION_BUFFERS["s1"] == []
+    # v0.8.66 (audit MEM-1) — the session key is now DELETED after a threshold
+    # flush (previously left as an empty list that lingered forever).
+    assert "s1" not in writer_mod._SESSION_BUFFERS
 
 
 def test_flush_at_session_end_drains_buffer(monkeypatch):
@@ -171,3 +172,37 @@ def test_flush_noop_when_buffer_empty(monkeypatch):
     # No buffered turns → flush is a no-op (no extraction call).
     writer_mod.flush_session_buffer(llm=llm, mem_client=mem, chat_session_id="none")
     assert llm.calls == []
+
+
+# ---------------------------------------------------------------------------
+# v0.8.66 (audit MEM-1) — buffer-map leak prevention
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_flush_removes_session_key(monkeypatch):
+    """After a threshold flush, the session key must be DELETED, not left as an
+    empty list that lingers forever once the session ends."""
+    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "2")
+    llm, mem = _FakeLLM(), _FakeMemClient()
+    writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
+                            user_text="u0", assistant_text="a0")
+    writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
+                            user_text="u1", assistant_text="a1")  # threshold → flush
+    assert "s1" not in writer_mod._SESSION_BUFFERS, (
+        "post-flush session key lingered (empty-list leak)"
+    )
+
+
+def test_buffer_map_bounded_for_abandoned_sessions(monkeypatch):
+    """Abandoned sessions (buffered below threshold, never flushed) must not
+    grow the map without bound — oldest entries are evicted past the cap."""
+    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "100")  # never flushes
+    monkeypatch.setattr(writer_mod, "_MAX_BUFFERED_SESSIONS", 5)
+    llm, mem = _FakeLLM(), _FakeMemClient()
+    for i in range(20):
+        writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id=f"s{i}",
+                                user_text="u", assistant_text="a")
+    assert len(writer_mod._SESSION_BUFFERS) <= 5, (
+        f"buffer map exceeded cap: {len(writer_mod._SESSION_BUFFERS)}"
+    )
+    assert llm.calls == []  # nothing reached the threshold

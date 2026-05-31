@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.66c — Audit Mediums batch 2 (chat tool-loop robustness + memory leak)**
+  - **MCP-3 (`open_notebook/graphs/chat.py`):** `ONP_MCP_TOOL_TIMEOUT_SEC` was
+    parsed UNGUARDED inside the per-tool-call loop — a malformed value raised
+    `ValueError` that crashed the whole batch (misattributed to the tool), and
+    `0`/negative gave an instant timeout. Now parsed ONCE via a guarded+clamped
+    `_mcp_tool_timeout_sec()` (blank/garbage/≤0 → default 30s).
+  - **A-3 (`chat.py`):** the tool-loop iteration cap was hardcoded to 4 with no
+    override, though the v0.8.56 truncation notice tells users to "raise the
+    cap." Added `ONP_AGENT_MAX_ITERATIONS` via guarded `_agent_max_iterations()`
+    (explicit caller arg still wins; blank/garbage/<1 → 4).
+  - **MEM-1 (`desktop/memory/writer.py`):** the batched-extraction
+    `_SESSION_BUFFERS` map leaked — a threshold flush left an empty-list key
+    behind forever, and abandoned sub-threshold sessions were never evicted. Now
+    the key is deleted after a flush, and the map is bounded
+    (`_MAX_BUFFERED_SESSIONS=512`, oldest-evicted past the cap).
+  - **Tests:** new `tests/test_v0_8_66_chat_env_knobs.py` (parametrized guards);
+    `test_memory_batching.py` gains MEM-1 leak-bound tests + an updated post-flush
+    assertion.
+
 - **🐛 v0.8.66b — Audit Mediums/Lows batch 1 (data/email/infra hygiene)**
   - **E-2 (`open_notebook/domain/gmail.py`):** `_fernet`/`_dec` logged exceptions
     with printf `%s` placeholders, but loguru uses `{}`-style formatting — so the
