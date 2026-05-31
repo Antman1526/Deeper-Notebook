@@ -144,6 +144,11 @@ async def test_source_chat_invokes_trim(monkeypatch):
     monkeypatch.setattr(source_chat, "ContextBuilder", _FakeContextBuilder)
     monkeypatch.setattr(source_chat, "Prompter", _FakePrompter)
     monkeypatch.setattr(source_chat, "provision_langchain_model", fake_provision)
+    # v0.8.66 (audit A-M1) — the no-override path now routes through
+    # provision_langchain_chat_model (smart-router + privacy gate); stub it too.
+    monkeypatch.setattr(
+        source_chat, "provision_langchain_chat_model", fake_provision
+    )
 
     msgs = _hist(20, content_size=500)
     await source_chat._call_model_with_source_context_inner(
