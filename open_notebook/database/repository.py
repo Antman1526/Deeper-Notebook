@@ -480,7 +480,10 @@ async def repo_create(table: str, data: dict[str, Any]) -> dict[str, Any]:
     """Create a new record in the specified table"""
     # Remove 'id' attribute if it exists in data
     data.pop("id", None)
-    data["created"] = datetime.now(timezone.utc)
+    # v0.8.66 (audit D-M1) — preserve a caller-supplied `created` (reimport /
+    # restore / migration paths) instead of stamping import-time over the
+    # original. Normal creates omit `created`, so they still get the auto-stamp.
+    data.setdefault("created", datetime.now(timezone.utc))
     data["updated"] = datetime.now(timezone.utc)
     try:
         async with db_connection() as connection:

@@ -118,7 +118,9 @@ def _fernet() -> Optional[Fernet]:
             "_fernet: Fernet construction failed despite "
             "OPEN_NOTEBOOK_ENCRYPTION_KEY being set. The downstream "
             "RuntimeError saying the key is unset is misleading — the "
-            "real cause is here: %s",
+            # v0.8.66 (audit E-2) — loguru uses {}-style formatting, not
+            # printf %s; with "%s" the exception detail was silently dropped.
+            "real cause is here: {}",
             exc,
         )
         return None
@@ -161,7 +163,8 @@ def _dec(v: Optional[str]) -> Optional[str]:
         logger.warning(
             "_dec: unexpected error decrypting Gmail token — "
             "returning None and the integration will appear "
-            "unconfigured. error=%s",
+            # v0.8.66 (audit E-2) — {}-style, not printf %s (loguru drops %s).
+            "unconfigured. error={}",
             exc,
         )
         return None
