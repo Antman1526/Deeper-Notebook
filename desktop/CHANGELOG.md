@@ -42,10 +42,17 @@ focused commit; each ships with regression tests.
     + **Edit** (loads the message back into the chat input to tweak + resend) on
     human messages, and an **Edit** affordance on AI messages (which already had
     Copy via `MessageActions`). Frontend +4 tests (187 total).
+  - **Reasoning-model blank-reply fix:** testing local models surfaced that
+    Qwen3 (a `<think>…</think>` reasoning model) returned an EMPTY chat answer —
+    `clean_thinking_content` stripped the think block and, when the model spent
+    its budget thinking, nothing was left. Now it falls back to the reasoning
+    text (and strips an unclosed `<think>` cut off mid-thought) so the chatbot
+    never renders a blank/raw-tag reply. +3 tests in `tests/test_utils.py`.
   - **Models verified:** representative local Ollama models were driven through
-    the real chat tool loop (`bind_mcp_and_run_tool_loop`) and confirmed to
-    produce answers; the fix is model-agnostic (it's in the DB pool layer, not
-    per-model).
+    the real chat tool loop (`bind_mcp_and_run_tool_loop`); llama3.2, gemma3:4b,
+    llama3.1:8b produced clean answers. The pool fix is model-agnostic (DB layer,
+    not per-model). Large 14B models exceeded the test harness's 200s/160-token
+    cap (a test artifact, not an app limit — the app's chat timeout is ~300s).
 
 - **🏷️ v0.8.65f — Rename display name to "Open notebook+" (app only; repo unchanged)**
   - **Display-name only** (identity/filesystem unchanged): `.app` filename

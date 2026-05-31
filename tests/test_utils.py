@@ -126,6 +126,30 @@ class TestTextUtilities:
         assert "Public response" in result
         assert "Internal thoughts" not in result
 
+    def test_clean_thinking_only_response_falls_back_to_reasoning(self):
+        """v0.8.65g — a thinking-ONLY response (no answer after </think>) must
+        NOT render blank; surface the reasoning so the chatbot always shows
+        something. Reproduces the Qwen3 'empty answer' case."""
+        content = "<think>The capital of France is Paris.</think>"
+        result = clean_thinking_content(content)
+        assert result.strip() != ""
+        assert "Paris" in result
+        assert "<think>" not in result
+
+    def test_clean_unclosed_think_tag_surfaces_text(self):
+        """v0.8.65g — an UNCLOSED <think> (model cut off mid-thought) must not
+        leave a raw '<think>' tag in the reply."""
+        # No text before the (unclosed) tag → show the reasoning tail.
+        assert clean_thinking_content("<think>still reasoning about it") == "still reasoning about it"
+        # Text BEFORE an unclosed tag → that's the answer.
+        assert clean_thinking_content("Paris.<think>but wait") == "Paris."
+        assert "<think>" not in clean_thinking_content("<think>x")
+
+    def test_clean_thinking_content_normal_answer_unchanged(self):
+        """Regression: a normal answer (with or without thinking) is untouched."""
+        assert clean_thinking_content("Just a plain answer.") == "Just a plain answer."
+        assert clean_thinking_content("<think>hmm</think>The answer is 4.") == "The answer is 4."
+
 
 # ============================================================================
 # TEST SUITE 2: Token Utilities

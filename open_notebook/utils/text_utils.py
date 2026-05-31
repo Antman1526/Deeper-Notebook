@@ -115,7 +115,32 @@ def clean_thinking_content(content: str) -> str:
         >>> clean_thinking_content(content)
         "Here's the answer"
     """
-    _, cleaned_content = parse_thinking_content(content)
+    thinking_content, cleaned_content = parse_thinking_content(content)
+    stripped = cleaned_content.strip()
+
+    # v0.8.65g — reasoning-model robustness: never render a BLANK reply. Models
+    # like Qwen3 emit <think>…</think> reasoning before the answer; if the model
+    # exhausts its token/context budget while still thinking, stripping the think
+    # block leaves nothing (observed: Qwen3 returned an empty chat answer). Two
+    # shapes cause this:
+    #   (a) a well-formed <think>…</think> with no answer after it → `cleaned`
+    #       is empty but `thinking` has the reasoning;
+    #   (b) an UNCLOSED <think>… (cut off mid-thought) → parse_thinking_content
+    #       can't match the pair, so the raw "<think>…" stays in `cleaned`.
+    # In both, surface the reasoning text instead of a blank / raw-tag reply.
+    if (
+        isinstance(content, str)
+        and "<think>" in content.lower()
+        and "</think>" not in content.lower()
+    ):
+        idx = content.lower().index("<think>")
+        before = content[:idx].strip()
+        tail = content[idx + len("<think>") :].strip()
+        return before or tail or stripped
+
+    if not stripped and thinking_content.strip():
+        return thinking_content.strip()
+
     return cleaned_content
 
 
