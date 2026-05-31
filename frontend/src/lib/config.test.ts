@@ -97,4 +97,29 @@ describe('Config Priority', () => {
     const url = await getApiUrl()
     expect(url).toBe('')
   })
+
+  it('clears the cached promise on failure so a retry re-fetches (F-3)', async () => {
+    delete process.env.NEXT_PUBLIC_API_URL
+
+    // Attempt 1: /config ok (empty) then /api/config FAILS → getApiUrl rejects.
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ apiUrl: '' }),
+    } as Response)
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503 } as Response)
+    await expect(getApiUrl()).rejects.toThrow()
+
+    // Attempt 2: both ok → MUST succeed. Pre-F-3 the rejected promise was
+    // latched and every subsequent call re-threw it; now the latch self-clears.
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ apiUrl: 'http://recovered.com' }),
+    } as Response)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ version: '1.0.0' }),
+    } as Response)
+    const url = await getApiUrl()
+    expect(url).toBe('http://recovered.com')
+  })
 })

@@ -20,6 +20,22 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.66n — Audit frontend Lows (F-3, F-5, F-6)**
+  - **F-3 (`frontend/src/lib/config.ts`):** a failed runtime-config fetch latched
+    `configPromise` to a rejected promise, pinning EVERY future
+    `getConfig()`/`getApiUrl()` to that rejection until ConnectionGuard manually
+    reset — the *expected* case on desktop launch (UI up before the API sidecar).
+    `startConfigFetch()` now self-clears the latch on failure so the next call
+    re-fetches. (+regression test)
+  - **F-5 (`frontend/src/components/source/ChatPanel.tsx`):** "Re-ask allowing
+    cloud" is hidden while a stream is in flight (`!isStreaming`), so it can't
+    fire a second send that aborts the in-flight one.
+  - **F-6 (`frontend/src/components/common/ConnectionGuard.tsx`):** the global
+    "R"-to-retry shortcut now ignores Cmd/Ctrl/Alt + key-repeat + typing in
+    inputs, so it stops hijacking Cmd/Ctrl+R reload (matches the CommandPalette
+    convention).
+  - **Verified:** `tsc --noEmit` clean; full vitest suite (187 → 188 tests) green.
+
 - **🔒 v0.8.66m — (Audit S-4) Env-gated rate limiter**
   - **Gap (Medium):** no endpoint had rate limiting (auth brute-force,
     download/discover cost-amplification); the `RateLimitError`/429 handler
