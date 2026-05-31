@@ -331,7 +331,20 @@ async def db_connection():
     broken = False
     try:
         yield conn
-    except Exception:
+    except BaseException:
+        # v0.8.65g — MUST be BaseException, not Exception. asyncio.CancelledError
+        # is a BaseException (since 3.8), so the old `except Exception` MISSED
+        # cancellation: when a query is cancelled (chat-stream client disconnect,
+        # asyncio.wait_for timeout, route-handler cancel), the connection still
+        # has a PENDING in-flight request, but `broken` stayed False and the
+        # `finally` returned it to the pool as "healthy". The next acquirer's
+        # query then collided with the stale response → KeyError(<uuid>) inside
+        # the SurrealDB driver's _send/recv (async_ws.py) → e.g. the chat
+        # model-record fetch (domain.base.get) failed and the whole chatbot
+        # "stopped working" until restart, because the poisoned connection
+        # lived on in the pool. Marking the connection broken on ANY abnormal
+        # exit (incl. cancellation) closes + drops it; we only set the flag and
+        # re-raise, so cancellation/exception semantics are unchanged.
         broken = True
         raise
     finally:

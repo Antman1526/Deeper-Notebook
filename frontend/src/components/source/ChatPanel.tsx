@@ -20,6 +20,7 @@ import { McpToolPicker } from '@/components/chat/McpToolPicker'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
+import { MessageCopyEditActions } from '@/components/chat/MessageCopyEditActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
 import { splitCitations } from '@/lib/utils/citations'
 import { CitationPill } from '@/components/chat/CitationPill'
@@ -111,7 +112,22 @@ export function ChatPanel({
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
+
+  // v0.8.65g — "Edit" a message: load its text into the chat input + focus so
+  // the user can tweak and resend it (reuse a prompt / refine an answer).
+  const handleEditMessage = (content: string) => {
+    setInput(content)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }
 
   const handleReferenceClick = (type: string, id: string) => {
     const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
@@ -242,11 +258,28 @@ export function ChatPanel({
                         <p className="text-sm break-words">{message.content}</p>
                       )}
                     </div>
+                    {message.type === 'human' && (
+                      // v0.8.65g — Copy (reuse) + Edit for the user's own
+                      // messages, which previously had no actions row.
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <MessageCopyEditActions
+                          content={message.content}
+                          onEdit={handleEditMessage}
+                        />
+                      </div>
+                    )}
                     {message.type === 'ai' && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <MessageActions
                           content={message.content}
                           notebookId={notebookId}
+                        />
+                        {/* v0.8.65g — Edit (reuse the answer as a new prompt);
+                            AI messages already expose Copy via MessageActions. */}
+                        <MessageCopyEditActions
+                          content={message.content}
+                          onEdit={handleEditMessage}
+                          showCopy={false}
                         />
                         {/* v0.8.35c — only shows for notebook chat
                             sessions where the smart router populated
@@ -372,6 +405,7 @@ export function ChatPanel({
           <div className="flex gap-2 items-end min-w-0">
             <Textarea
               id={chatInputId}
+              ref={textareaRef}
               name="chat-message"
               autoComplete="off"
               value={input}

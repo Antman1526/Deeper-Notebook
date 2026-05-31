@@ -115,8 +115,11 @@ datas = [
     # API routers import:
     #   - desktop.config           — used by /api/onp/theme (theme switcher)
     #   - desktop.auto_register.*  — used by /api/models/auto-assign-capability
+    #   - desktop.launcher_prefs   — used by GET/PUT /api/launcher-prefs (v0.8.65g;
+    #     was missing → ModuleNotFoundError → /launcher-prefs 500 in the built app)
     # Without these the imports raise ImportError → upstream surfaces HTTP 500.
     (str(PROJECT_ROOT / "desktop" / "config.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "launcher_prefs.py"), "upstream/desktop"),
     (str(PROJECT_ROOT / "desktop" / "auto_register"), "upstream/desktop/auto_register"),
     # Migration #15 ships inside upstream/open_notebook/database/migrations
     # (already covered by the upstream/open_notebook entry above).
