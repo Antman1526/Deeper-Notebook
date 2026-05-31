@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -1042,6 +1043,39 @@ async def execute_chat(request: ExecuteChatRequest):
 # that don't want SSE).
 # ---------------------------------------------------------------------------
 
+# v0.8.65h — strip <think> blocks from STREAMED tokens (reasoning models).
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _visible_streamed_text(accum: str) -> str:
+    """Return the user-visible (non-thinking) prefix of the accumulated stream.
+
+    Reasoning models (Qwen3, DeepSeek-R1, ...) emit ``<think>…</think>`` before
+    their answer. During STREAMING we must HIDE that — the opposite of
+    ``clean_thinking_content`` (which is for FINAL content and falls back to
+    surfacing reasoning when there's no answer). So:
+      * complete ``<think>…</think>`` blocks are removed, and
+      * an as-yet-UNCLOSED ``<think>`` (the model is still thinking) suppresses
+        everything from it onward.
+    No ``strip()`` — we must not mangle incremental whitespace across chunks.
+    Non-reasoning models have no think tags → returns ``accum`` unchanged → the
+    per-chunk delta is identical to the pre-v0.8.65h behaviour.
+    """
+    s = _THINK_BLOCK_RE.sub("", accum)
+    lowered = s.lower()
+    open_idx = lowered.find("<think>")
+    if open_idx != -1:  # dangling open tag → still thinking; hide the rest
+        return s[:open_idx]
+    # Withhold a trailing PARTIAL "<think>" prefix — the open tag may be split
+    # across chunks ("<th" then "ink>"), and emitting "<th" now would leak the
+    # start of a think tag. It's released on the next chunk once disambiguated;
+    # if it's the very end of the answer, the `done` event carries it.
+    low = s.lower()
+    for k in range(len("<think>") - 1, 0, -1):
+        if low.endswith("<think>"[:k]):
+            return s[:-k]
+    return s
+
 
 async def _stream_chat_events(
     request: ExecuteChatRequest,
@@ -1130,6 +1164,11 @@ async def _stream_chat_events(
             # v0.7.52 — removed dead `last_token_idx` counter (was incremented
             # but never read).
             final_result: Optional[dict[str, Any]] = None
+            # v0.8.65h — running buffers to strip <think> blocks from streamed
+            # tokens (reasoning models). `_stream_accum` is the raw concatenated
+            # stream; `_streamed_visible` is the non-think text already sent.
+            _stream_accum = ""
+            _streamed_visible = ""
             # v0.7.192 — AsyncSqliteSaver twin (lazily initialised).
             # See ainvoke call site above for the full rationale.
             _chat_graph_async = await get_async_graph()
@@ -1159,10 +1198,31 @@ async def _stream_chat_events(
                     chunk = event.get("data", {}).get("chunk")
                     content = getattr(chunk, "content", None)
                     if isinstance(content, str) and content:
-                        yield json.dumps({
-                            "type": "token",
-                            "content": content,
-                        }) + "\n"
+                        # v0.8.65h — suppress <think> reasoning live. Re-derive
+                        # the visible (non-think) text from the FULL accumulated
+                        # stream each chunk (handles tags spanning chunks), then
+                        # emit only the new delta. Pre-v0.8.65h the raw chunk
+                        # (incl. <think>…</think>) was streamed and only replaced
+                        # by the cleaned answer at `done` — reasoning models
+                        # (Qwen3, DeepSeek-R1) flashed their raw reasoning at the
+                        # user. Non-reasoning models are unaffected (no tags →
+                        # visible grows exactly like the raw stream).
+                        _stream_accum += content
+                        visible = _visible_streamed_text(_stream_accum)
+                        if visible.startswith(_streamed_visible) and len(visible) > len(
+                            _streamed_visible
+                        ):
+                            delta = visible[len(_streamed_visible):]
+                            _streamed_visible = visible
+                            yield json.dumps({
+                                "type": "token",
+                                "content": delta,
+                            }) + "\n"
+                        elif visible != _streamed_visible:
+                            # A <think> opened AFTER some answer text → visible
+                            # shrank; resync silently (the `done` event carries
+                            # the canonical cleaned message).
+                            _streamed_visible = visible
                 elif etype == "on_chain_end":
                     # The outer graph's on_chain_end carries the final state.
                     # We capture it to send the canonical messages list with

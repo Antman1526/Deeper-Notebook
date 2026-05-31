@@ -20,6 +20,22 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🫥 v0.8.65h — Stop reasoning models leaking raw `<think>` while streaming**
+  - **Bug:** `/chat/stream` yielded raw token chunks WITHOUT stripping `<think>`
+    blocks, so reasoning models (Qwen3, Qwen3.5, DeepSeek-R1) flashed their raw
+    `<think>…reasoning…</think>` at the user during streaming — only replaced by
+    the cleaned answer at the `done` event. (Notebook chat streams, so it was
+    affected.) `clean_thinking_content` only ran on the FINAL message.
+  - **Fix (`api/routers/chat.py`):** new `_visible_streamed_text` re-derives the
+    visible (non-think) prefix from the full accumulated stream each chunk and
+    emits only the delta — removing complete `<think>…</think>` blocks,
+    suppressing an as-yet-unclosed block, and withholding a trailing partial
+    `<think>` prefix split across chunks. Non-reasoning models stream identically
+    to before (no tags → same per-chunk delta).
+  - **Test:** `tests/test_v0_8_65h_stream_thinking.py` (9 — complete/unclosed/
+    multi-block/case-insensitive, chunk-split open + close tags, normal-model
+    passthrough). Full backend suite 1592 passed.
+
 - **🐛 v0.8.65g — Fix chatbot "models stopped working" (pool poisoning) + chat Copy/Edit + launcher_prefs**
   - **The chat-blocker (root cause):** `open_notebook/database/repository.py`
     `db_connection` caught `except Exception` — but `asyncio.CancelledError` is a
