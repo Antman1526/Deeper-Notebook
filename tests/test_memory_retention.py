@@ -37,7 +37,10 @@ class _FakeClient:
     def query(self, sql, vars=None):
         self.queries.append((sql, vars))
         s = sql.strip()
-        if s.startswith("SELECT id, created_at FROM"):
+        # v0.8.66 (audit MEM-2) — the prune SELECT now also projects
+        # `confidence` (ORDER BY created_at DESC, confidence DESC), so match the
+        # `SELECT id, created_at...` prefix loosely rather than the exact old form.
+        if s.startswith("SELECT id, created_at"):
             table = s.split("FROM")[1].split()[0]
             return list(self.table_rows.get(table, []))
         if s.startswith("DELETE"):
