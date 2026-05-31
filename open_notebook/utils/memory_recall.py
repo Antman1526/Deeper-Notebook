@@ -286,10 +286,15 @@ async def recall_relevant_memory(
 
 
 async def _count_memory_rows() -> int:
-    """Approximate row count across both memory tables.
+    """Approximate row count across ALL THREE memory tables.
 
     Used by `recall_memory()` to pick recency-vs-semantic when the env
     var leaves it on `auto`. Tolerates missing tables.
+
+    v0.8.66 (audit MEM-4) — now includes `memory_episode`. Omitting it made an
+    episodes-only store look empty, so auto-mode's recency-vs-semantic decision
+    and the "no matches" short-circuit discarded episodes-only semantic hits
+    (the v0.8.49 episode-recall regression).
     """
     rows = await _safe_select(
         "SELECT VALUE count() FROM memory_fact GROUP ALL", {}
@@ -299,7 +304,11 @@ async def _count_memory_rows() -> int:
         "SELECT VALUE count() FROM memory_preference GROUP ALL", {}
     )
     pref_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
-    return fact_n + pref_n
+    rows = await _safe_select(
+        "SELECT VALUE count() FROM memory_episode GROUP ALL", {}
+    )
+    episode_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
+    return fact_n + pref_n + episode_n
 
 
 # v0.7.133 — Outer budget for the whole memory-recall flow.

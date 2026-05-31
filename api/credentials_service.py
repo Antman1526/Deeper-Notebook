@@ -508,11 +508,17 @@ async def test_credential(credential_id: str) -> dict:
 
     except Exception as e:
         error_msg = str(e)
-        if "401" in error_msg or "unauthorized" in error_msg.lower():
+        low = error_msg.lower()
+        # v0.8.66 (audit M-B4) — match status codes on word boundaries so a
+        # coincidental substring (e.g. "1401 tokens", a model id containing
+        # "403") can't misclassify the result. The auth keywords stay as
+        # reliable substrings.
+        import re as _re
+        if _re.search(r"\b401\b", error_msg) or "unauthorized" in low:
             return {"provider": provider, "success": False, "message": "Invalid API key"}
-        elif "403" in error_msg or "forbidden" in error_msg.lower():
+        elif _re.search(r"\b403\b", error_msg) or "forbidden" in low:
             return {"provider": provider, "success": False, "message": "API key lacks required permissions"}
-        elif "rate" in error_msg.lower() and "limit" in error_msg.lower():
+        elif "rate" in low and "limit" in low:
             return {"provider": provider, "success": True, "message": "Rate limited - but connection works"}
         elif "not found" in error_msg.lower() and "model" in error_msg.lower():
             return {"provider": provider, "success": True, "message": "API key valid (test model not available)"}
@@ -550,6 +556,19 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
     """
     api_key = config.get("api_key")
     base_url = config.get("base_url")
+
+    # v0.8.66 (audit M-B3) — re-validate the base_url before any outbound
+    # discovery request (SSRF defense-in-depth). The create path validates URLs,
+    # but a credential whose URL predates validation or was written directly to
+    # the DB would otherwise be fetched here without a check. validate_url
+    # allows localhost/private IPs (self-hosted) and blocks link-local /
+    # cloud-metadata + bad schemes. Blocking getaddrinfo → run off the loop.
+    if base_url:
+        import asyncio as _asyncio
+        try:
+            await _asyncio.to_thread(validate_url, base_url, provider)
+        except ValueError as exc:
+            raise ValueError(f"Invalid {provider} base_url: {exc}")
 
     # Static model lists for providers without a listing API
     STATIC_MODELS: dict[str, list[str]] = {

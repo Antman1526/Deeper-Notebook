@@ -347,8 +347,16 @@ class SurrealMemoryStore(VectorStoreBase):
         keep = max(0, int(keep_per_table))
         deleted: dict[str, int] = {}
         for table in _ALL_TABLES:
+            # v0.8.66 (audit MEM-2) — order by recency PRIMARY, confidence as the
+            # tie-breaker, so the persisted confidence (v0.8.55) finally
+            # influences eviction: among rows of the same age the higher-
+            # confidence ones are kept. Recency stays primary (no behavior change
+            # for distinct timestamps). `confidence` is added to the projection
+            # because the ORDER BY field must be selected (the "missing order
+            # idiom" trap noted above).
             rows = self._exec(
-                f"SELECT id, created_at FROM {table} ORDER BY created_at DESC"
+                f"SELECT id, created_at, confidence FROM {table} "
+                "ORDER BY created_at DESC, confidence DESC"
             ) or []
             # rows[:keep] are the newest survivors; rows[keep:] are evicted.
             old_ids = [

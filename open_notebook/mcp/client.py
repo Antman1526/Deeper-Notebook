@@ -7,13 +7,44 @@ session lifecycle directly.
 """
 from __future__ import annotations
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+
+def _rpc_timeout(default: float = 30.0) -> float:
+    """v0.8.66 (audit MCP-1) — bound EVERY MCP RPC. Without this, an
+    unresponsive server pins the caller (discovery in `_resolve_chat_tools`,
+    the `/api/mcp/{id}/test` endpoint) up to the transport's ~300s SSE read
+    timeout. Guarded+clamped like the other env knobs: blank/garbage/≤0 →
+    default 30s."""
+    raw = (os.environ.get("ONP_MCP_RPC_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
+def _env_headers() -> Optional[dict[str, str]]:
+    """v0.8.66 (audit MCP-4) — optional auth header for protected MCP servers.
+    `ONP_MCP_AUTH_HEADER="Authorization: Bearer <token>"` (a single
+    `Name: value` pair) makes auth'd streamable-http servers usable without a
+    registry-schema change. Returns None when unset."""
+    raw = (os.environ.get("ONP_MCP_AUTH_HEADER") or "").strip()
+    if not raw or ":" not in raw:
+        return None
+    name, _, value = raw.partition(":")
+    name, value = name.strip(), value.strip()
+    return {name: value} if name and value else None
 
 
 @asynccontextmanager
-async def _open_session(url: str):
+async def _open_session(url: str, headers: Optional[dict[str, str]] = None):
     """Open an MCP ClientSession over streamable HTTP. Each call
     is a fresh session — MCP's streamable-http transport doesn't
     keep sessions across requests (per the openchronicle shim's
@@ -21,7 +52,10 @@ async def _open_session(url: str):
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
-    async with streamablehttp_client(url) as (read, write, _):
+    # v0.8.66 (audit MCP-4) — pass auth headers when provided (some MCP
+    # transports reject an explicit `headers=None`, so only forward when set).
+    kwargs = {"headers": headers} if headers else {}
+    async with streamablehttp_client(url, **kwargs) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             yield session
@@ -30,11 +64,17 @@ async def _open_session(url: str):
 @dataclass
 class MCPClient:
     url: str
+    headers: Optional[dict[str, str]] = field(default=None)
+
+    def _headers(self) -> Optional[dict[str, str]]:
+        return self.headers or _env_headers()
 
     async def list_tool_names(self) -> list[str]:
-        async with _open_session(self.url) as s:
-            result = await s.list_tools()
-            return [t.name for t in result.tools]
+        async def _do() -> list[str]:
+            async with _open_session(self.url, self._headers()) as s:
+                result = await s.list_tools()
+                return [t.name for t in result.tools]
+        return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
 
     async def list_tools_full(self) -> list[dict[str, Any]]:
         """v0.8.11 — Return the full tool surface: name, description,
@@ -54,19 +94,23 @@ class MCPClient:
         permissive empty object schema (LangChain treats as "no
         args"), so a tool with no args still binds cleanly.
         """
-        async with _open_session(self.url) as s:
-            result = await s.list_tools()
-            tools_out: list[dict[str, Any]] = []
-            for t in result.tools:
-                schema = getattr(t, "inputSchema", None) or {
-                    "type": "object", "properties": {}
-                }
-                tools_out.append({
-                    "name": t.name,
-                    "description": getattr(t, "description", "") or "",
-                    "input_schema": schema,
-                })
-            return tools_out
+        async def _do() -> list[dict[str, Any]]:
+            async with _open_session(self.url, self._headers()) as s:
+                result = await s.list_tools()
+                tools_out: list[dict[str, Any]] = []
+                for t in result.tools:
+                    schema = getattr(t, "inputSchema", None) or {
+                        "type": "object", "properties": {}
+                    }
+                    tools_out.append({
+                        "name": t.name,
+                        "description": getattr(t, "description", "") or "",
+                        "input_schema": schema,
+                    })
+                return tools_out
+        # v0.8.66 (audit MCP-1) — bound discovery; a hung server otherwise
+        # stalls every chat turn that resolves tools.
+        return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
         """v0.8.13 — return ALL content blocks, not just the first,
@@ -96,7 +140,15 @@ class MCPClient:
         non-text content was either missing its mime type
         (ImageContent) or silently lost (EmbeddedResource).
         """
-        async with _open_session(self.url) as s:
+        # v0.8.66 (audit MCP-1) — wrap the whole RPC in a timeout. The chat
+        # tool loop already wraps THIS call (v0.8.35e), but the `/test` endpoint
+        # and any direct caller did not; this makes the client safe by default.
+        return await asyncio.wait_for(
+            self._call_tool_inner(name, arguments), timeout=_rpc_timeout()
+        )
+
+    async def _call_tool_inner(self, name: str, arguments: dict) -> dict:
+        async with _open_session(self.url, self._headers()) as s:
             result = await s.call_tool(name, arguments=arguments)
             content = list(result.content or [])
 

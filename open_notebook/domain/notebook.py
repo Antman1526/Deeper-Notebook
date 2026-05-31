@@ -452,10 +452,13 @@ class Notebook(ObjectModel):
     async def _bulk_delete_notes(self, notes: list["Note"]) -> int:
         """v0.7.133 — Bulk-SQL cascade-delete for notes in this notebook.
 
-        Three statements, regardless of N notes:
-          1. DELETE artifact   WHERE in IN $note_ids           (edges)
-          2. DELETE note_embedding WHERE note IN $note_ids     (embeddings)
-          3. DELETE note       WHERE id IN $note_ids           (rows)
+        Two statements, regardless of N notes (v0.8.66 — was three; the
+        `note_embedding` step was dropped, see D-1 below). Rows are deleted
+        FIRST so a partial failure can't strand searchable orphan note rows:
+          1. DELETE note     WHERE id IN $note_ids             (rows; embedding
+                                                                is a column on
+                                                                the row)
+          2. DELETE artifact WHERE in IN $note_ids             (edges)
 
         Trade-offs vs the per-note gather path:
           + 3 round-trips total instead of ~N/pool_size batches.
@@ -478,16 +481,23 @@ class Notebook(ObjectModel):
         if not note_ids:
             return 0
         try:
-            await repo_query(
-                "DELETE artifact WHERE in IN $note_ids",
-                {"note_ids": note_ids},
-            )
-            await repo_query(
-                "DELETE note_embedding WHERE note IN $note_ids",
-                {"note_ids": note_ids},
-            )
+            # v0.8.66 (audit D-1 + D-5):
+            #  • D-1 — removed the dead `DELETE note_embedding` step.
+            #    `note_embedding` is a PHANTOM table (no migration defines it);
+            #    note embeddings live in the `note.embedding` column and are
+            #    removed when the row is deleted. The statement was a no-op and
+            #    the comment misled maintainers into thinking the table existed.
+            #  • D-5 — delete the note ROWS *before* the artifact edges, so a
+            #    partial failure can't leave searchable note rows whose edges
+            #    were already removed (orphans). If the edge delete then fails,
+            #    the leftover edges are swept by the notebook-level
+            #    `DELETE artifact WHERE out=$notebook_id` cleanup in delete().
             await repo_query(
                 "DELETE note WHERE id IN $note_ids",
+                {"note_ids": note_ids},
+            )
+            await repo_query(
+                "DELETE artifact WHERE in IN $note_ids",
                 {"note_ids": note_ids},
             )
             logger.info(
@@ -580,15 +590,8 @@ class Source(ObjectModel):
             return ensure_record_id(value)
         return value
 
-    @field_validator("id", mode="before")
-    @classmethod
-    def parse_id(cls, value):
-        """Parse id field to handle both string and RecordID inputs"""
-        if value is None:
-            return None
-        if isinstance(value, RecordID):
-            return str(value)
-        return str(value) if value else None
+    # v0.8.66 (audit D-6) — the per-Source `parse_id` validator was hoisted to
+    # ObjectModel base (`_coerce_id_to_str`) so all models coerce id uniformly.
 
     async def get_status(self) -> Optional[str]:
         """Get the processing status of the associated command"""
@@ -1090,7 +1093,8 @@ class Note(ObjectModel):
         return await self.relate("artifact", notebook_id)
 
     async def delete(self) -> bool:
-        """Delete the note and cascade artifact edges + note_embedding rows.
+        """Delete the note and cascade its artifact edges (the embedding is a
+        column on the row, removed with it — there is no note_embedding table).
 
         v0.7.76 — base ObjectModel.delete only deletes the note record.
         Without explicit cascade, the `artifact` edges pointing at the
@@ -1111,21 +1115,15 @@ class Note(ObjectModel):
                 "DELETE artifact WHERE in = $note_id",
                 {"note_id": note_id},
             )
-            # Also drop note_embedding rows so vector search doesn't
-            # return ghosts. Tolerant: table may not exist on very old
-            # databases.
-            try:
-                await repo_query(
-                    "DELETE note_embedding WHERE note = $note_id",
-                    {"note_id": note_id},
-                )
-            except Exception as exc:
-                logger.debug(
-                    f"Skipping note_embedding cleanup for {self.id}: {exc}"
-                )
+            # v0.8.66 (audit D-1) — removed the dead `DELETE note_embedding`
+            # cleanup. `note_embedding` is a phantom table (no migration defines
+            # it); the note's embedding is a column on the row and is removed by
+            # super().delete() below. (Edges are still deleted FIRST, above, to
+            # keep the get_notes FETCH path from racing a half-deleted note —
+            # v0.7.76.)
         except Exception as exc:
             logger.warning(
-                f"Failed to cascade-clean artifact/embeddings for note "
+                f"Failed to cascade-clean artifact edges for note "
                 f"{self.id}: {exc}. Continuing with note deletion."
             )
         return await super().delete()
@@ -1161,11 +1159,37 @@ class ChatSession(ObjectModel):
     async def relate_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:
             raise InvalidInputError("Notebook ID must be provided")
+        # v0.8.66 (audit D-3) — idempotent relate. A retried session-create
+        # (chat.py / source_chat.py) previously RELATE'd a SECOND `refers_to`
+        # edge each time (SurrealDB RELATE is not upsert), and `dedup_edges`
+        # doesn't sweep refers_to. Mirror the hardened reference/artifact path:
+        # return the existing edge if present, else create one.
+        if self.id:
+            existing = await repo_query(
+                "SELECT * FROM refers_to WHERE in = $sid AND out = $nid LIMIT 1",
+                {
+                    "sid": ensure_record_id(self.id),
+                    "nid": ensure_record_id(notebook_id),
+                },
+            )
+            if existing:
+                return existing[0]
         return await self.relate("refers_to", notebook_id)
 
     async def relate_to_source(self, source_id: str) -> Any:
         if not source_id:
             raise InvalidInputError("Source ID must be provided")
+        # v0.8.66 (audit D-3) — idempotent (see relate_to_notebook).
+        if self.id:
+            existing = await repo_query(
+                "SELECT * FROM refers_to WHERE in = $sid AND out = $tid LIMIT 1",
+                {
+                    "sid": ensure_record_id(self.id),
+                    "tid": ensure_record_id(source_id),
+                },
+            )
+            if existing:
+                return existing[0]
         return await self.relate("refers_to", source_id)
 
 

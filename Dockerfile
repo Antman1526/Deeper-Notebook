@@ -16,7 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Set build optimization environment variables
-ENV MAKEFLAGS="-j$(nproc)"
+# v0.8.66 (audit I-1) — `ENV` does NOT run command substitution, so
+# `MAKEFLAGS="-j$(nproc)"` set the LITERAL string `-j$(nproc)` (parallel build
+# was a no-op / invalid jobs arg). Use a fixed sensible parallelism; override at
+# build time with `--build-arg` + a RUN `export MAKEFLAGS="-j$(nproc)"` if you
+# need host-core-count scaling.
+ENV MAKEFLAGS="-j4"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
