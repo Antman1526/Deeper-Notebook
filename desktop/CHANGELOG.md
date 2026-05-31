@@ -20,6 +20,32 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.66o — Gmail persistence was fully broken (found while live-validating repo_update)**
+  - **Bug (Critical-class, pre-existing):** while validating the v0.8.66 H2
+    `repo_update` change against a **live SurrealDB 2.1.0**, I found Gmail
+    settings/tokens never persisted to the row `get()` reads — TWO id-form bugs
+    (same class as the H3 MCP fix the audit caught but didn't catch here):
+    1. **`get()`** bound `SINGLETON_ID` as a **string** in `SELECT * FROM ONLY
+       $rid`; SurrealDB treats a bound string as a string value, so it returned
+       `[]` every time → the account always looked unconfigured.
+    2. **`save()`** passed the **bare** `"singleton"` to `repo_upsert`, which runs
+       `UPSERT {id} MERGE` → `singleton` was parsed as a TABLE, writing a new
+       orphan `singleton:<random>` row on every save instead of updating the
+       singleton.
+    Net: Gmail connect/disconnect/settings were inert at the storage layer (and
+    the C2 "disconnect doesn't clear" fix was moot until this). Likely latent +
+    unnoticed because every gmail unit test mocks `repo_query`.
+  - **Fix (`open_notebook/domain/gmail.py`):** `get()` binds
+    `ensure_record_id(SINGLETON_ID)`; `save()` passes the full `SINGLETON_ID`.
+  - **Verified against a live SurrealDB 2.1.0:** real `GmailIntegration`
+    save→get now round-trips (email/enabled/token persist), disconnect actually
+    clears, and 2 saves → 1 idempotent row. Also confirmed `repo_update`'s
+    `UPDATE $rid MERGE $data` (the H2 change) is correct against the live DB with
+    string id, RecordID, and bare id, MERGE preserving other fields.
+  - **Tests:** new `tests/test_v0_8_66_gmail_persist.py` pins the id-form
+    (RecordID get + full-id save) at the mocked boundary. Also confirmed `repo_upsert`
+    has no other callers, so the bug was isolated to gmail.
+
 - **📋 v0.8.66 — Audit remediation: explicitly DEFERRED items (with rationale)**
   The v0.8.66 sweep fixed both Criticals, all seven Highs, and ~38 Medium/Low
   items. The following are deferred — each is a large refactor of a hot path
