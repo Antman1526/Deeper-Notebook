@@ -390,6 +390,23 @@ def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
     return val if val > 0 else default
 
 
+def _chat_model_timeout_sec(default: float = 300.0) -> float:
+    """v0.8.66 (audit A-4) — bound each `model.ainvoke` in the tool loop. The
+    per-tool-call timeout (v0.8.35e) bounds tool EXECUTION but not the model
+    GENERATION calls; on /chat/stream (which has no outer route timeout — it only
+    halts on client disconnect) a hung/wedged sidecar that never streams would
+    hang the turn forever. Generous default 300s (matches the /chat/execute outer
+    wrap). Blank/garbage/<=0 → default."""
+    raw = (os.environ.get("ONP_CHAT_MODEL_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
 _AGENT_FSM_TOOL_LOOP_INSTRUCTION = (
     "When you have fully answered, you MAY end your reply with a line "
     "`<state>complete</state>`. If you cannot proceed without more "
@@ -511,7 +528,11 @@ async def bind_mcp_and_run_tool_loop(
             _SystemMessage(content=_AGENT_FSM_TOOL_LOOP_INSTRUCTION)
         ]
 
-    ai_message = await model.ainvoke(payload)
+    # v0.8.66 (audit A-4) — bound the model generation calls. Resolved once.
+    model_timeout = _chat_model_timeout_sec()
+    ai_message = await asyncio.wait_for(
+        model.ainvoke(payload), timeout=model_timeout
+    )
 
     tool_lookup = {t.name: t for t in mcp_tools} if mcp_tools else {}
     tool_iters = 0
@@ -575,7 +596,10 @@ async def bind_mcp_and_run_tool_loop(
                 tool_call_id=call_id,
             ))
         running_payload.extend(tool_msgs)
-        ai_message = await model.ainvoke(running_payload)
+        # v0.8.66 (audit A-4) — same generation timeout on the loop re-invoke.
+        ai_message = await asyncio.wait_for(
+            model.ainvoke(running_payload), timeout=model_timeout
+        )
         running_payload.append(ai_message)
 
     # v0.8.56 — Phase 5.3c (observability slice). Surface the loop's terminal

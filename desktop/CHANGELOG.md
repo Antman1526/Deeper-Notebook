@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🤖 v0.8.66k — Audit AI routing/streaming batch (A-M1, A-4, A-1, M-B5)**
+  - **A-M1 (`open_notebook/graphs/source_chat.py`):** source-chat's no-override
+    path now routes through `provision_langchain_chat_model`, so the highest-PII
+    surface (raw source text) gets the SAME smart-router + fail-closed privacy
+    gate as notebook chat (it previously called `provision_langchain_model`
+    directly, bypassing both). An explicit model pick still goes direct.
+  - **A-4 (`open_notebook/graphs/chat.py`):** each `model.ainvoke` in the tool
+    loop is now bounded by `ONP_CHAT_MODEL_TIMEOUT_SEC` (default 300s). The
+    v0.8.35e per-tool-call timeout bounded tool execution but not generation; on
+    /chat/stream (no outer route timeout) a wedged sidecar could hang forever.
+  - **A-1 (`api/routers/chat.py`):** the streaming `<think>`-stripping
+    accumulator is reset on each `on_chat_model_start`, so a tool-using turn's
+    multiple `ainvoke`s no longer concatenate — an unclosed `<think>` from the
+    tool-deciding call could otherwise swallow the final answer's tokens.
+  - **M-B5:** on a client disconnect, if the turn already COMPLETED
+    (`final_result` captured) the fire-and-forget memory extraction still runs,
+    so a checkpoint-committed turn isn't left unextracted. Skipped for partial
+    turns so they never pollute memory.
+
 - **🛠 v0.8.66j — Audit infra batch (I-INFRA-1, I-1, I-4; I-2/I-3 deferred)**
   - **I-INFRA-1 (`open_notebook/database/repository.py`):** `repo_query` now
     transparently retries ONCE on a likely idle-reaped pooled connection

@@ -13,7 +13,10 @@ from langgraph.graph.message import add_messages
 from loguru import logger
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import (
+    provision_langchain_chat_model,
+    provision_langchain_model,
+)
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import OpenNotebookError
@@ -219,13 +222,26 @@ async def _call_model_with_source_context_inner(
     content_for_sizing = "\n".join(
         extract_text_content(m.content) for m in payload
     )
-    model = await provision_langchain_model(
-        content_for_sizing,
+    # v0.8.66 (audit A-M1) — route the NO-OVERRIDE path through
+    # provision_langchain_chat_model so source-chat (the highest-PII surface —
+    # raw ~4000-char source text) gets the SAME smart-router AND fail-closed
+    # privacy gate as notebook chat. Previously this always called
+    # provision_langchain_model directly, bypassing both. An explicit model
+    # pick still goes direct (the user chose that specific model).
+    _explicit_model = (
         config.get("configurable", {}).get("model_id")
-        or state.get("model_override"),
-        "chat",
-        max_tokens=8192,
+        or state.get("model_override")
     )
+    if _explicit_model:
+        model = await provision_langchain_model(
+            content_for_sizing, _explicit_model, "chat", max_tokens=8192
+        )
+    else:
+        model = await provision_langchain_chat_model(
+            content_for_sizing,
+            max_tokens=8192,
+            privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
+        )
 
     # v0.8.16 — bind MCP tools + run the v0.8.9 in-node tool loop so
     # source-chat gets the same MCP capabilities as notebook chat.
