@@ -97,7 +97,23 @@ async def create_mcp_server(body: MCPServerCreate):
 
     Raises 409 if the mcp_server_name_unique index fires (Migration 17).
     """
+    import asyncio
+
+    from api.credentials_service import validate_url
     from open_notebook.database.repository import repo_create
+
+    # v0.8.66 (audit H4) — SSRF validation. The stored URL is later fetched
+    # outbound by /test AND by the chat tool loop on every turn. Without this,
+    # an authenticated user could register `http://169.254.169.254/...` (cloud
+    # metadata) or an internal-service URL and have the server fetch it. We
+    # reuse the SAME validator credential URLs already use; it deliberately
+    # allows localhost/private IPs so self-hosted MCP servers still work, and
+    # blocks only bad schemes + link-local. `validate_url` does a blocking
+    # getaddrinfo, so run it off the event loop.
+    try:
+        await asyncio.to_thread(validate_url, body.url, "mcp")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         result = await repo_create("mcp_server", body.model_dump())
@@ -136,15 +152,26 @@ async def update_mcp_server(server_id: str, body: MCPServerUpdate):
     ``repo_update`` auto-bumps the ``updated`` timestamp.
     Returns 400 when the caller sends an empty body (nothing to write).
     """
-    from open_notebook.database.repository import repo_update
+    from open_notebook.database.repository import ensure_record_id, repo_update
 
     fields = body.model_dump(exclude_none=True)
     if not fields:
         raise HTTPException(400, "No fields to update")
+    # v0.8.66 (audit H2) — coerce the client-supplied path param to a real
+    # RecordID BEFORE it reaches repo_update. Previously the raw string was
+    # interpolated into `UPDATE {record_id} MERGE $data`, so
+    # `server_id="mcp_server:x; DELETE notebook; --"` composed a second
+    # statement that SurrealDB's multi-statement query() executed. ensure_
+    # record_id parses+escapes the record portion; repo_update now also binds
+    # it as $rid (defense in depth). A malformed id yields a clean 400.
+    try:
+        rid = ensure_record_id(server_id)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid server_id")
     # v0.8.1 — repo_update(table, id, data) auto-bumps `updated`; we only
     # set the fields the caller actually sent so enabled and priority can
     # each be changed independently without clobbering the other.
-    result = await repo_update("mcp_server", server_id, fields)
+    result = await repo_update("mcp_server", rid, fields)
     # repo_update returns a list from repo_query; normalise to dict.
     if isinstance(result, list):
         return result[0] if result else {}
@@ -154,9 +181,18 @@ async def update_mcp_server(server_id: str, body: MCPServerUpdate):
 @router.delete("/api/mcp/{server_id}")
 async def delete_mcp_server(server_id: str):
     """Remove an MCP server row by id."""
-    from open_notebook.database.repository import repo_query
+    from open_notebook.database.repository import ensure_record_id, repo_query
 
-    await repo_query("DELETE mcp_server WHERE id = $id", {"id": server_id})
+    # v0.8.66 (audit H3) — a SurrealDB record `id` column is a RecordID; the
+    # comparison `id = $id` is FALSE when `$id` is bound as a plain string, so
+    # the previous `{"id": server_id}` DELETE matched 0 rows and silently
+    # returned ok:true while the row survived (the UI showed a false success
+    # toast and the server reappeared on refetch). Bind a real RecordID to fix.
+    try:
+        rid = ensure_record_id(server_id)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid server_id")
+    await repo_query("DELETE mcp_server WHERE id = $id", {"id": rid})
     return {"ok": True}
 
 
@@ -169,15 +205,32 @@ async def test_mcp_server(server_id: str):
     can render a connectivity badge without catching exceptions on the
     client side.
     """
-    from open_notebook.database.repository import repo_query
+    import asyncio
+
+    from api.credentials_service import validate_url
+    from open_notebook.database.repository import ensure_record_id, repo_query
     from open_notebook.mcp.client import MCPClient
 
+    # v0.8.66 (audit H3) — bind a RecordID, not a string, or the SELECT matches
+    # 0 rows and Test 404s on a server that genuinely exists.
+    try:
+        rid = ensure_record_id(server_id)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid server_id")
     rows = await repo_query(
         "SELECT url FROM mcp_server WHERE id = $id LIMIT 1",
-        {"id": server_id},
+        {"id": rid},
     )
     if not rows:
         raise HTTPException(status_code=404, detail="MCP server not found")
+
+    # v0.8.66 (audit H4) — re-validate the stored URL before the outbound fetch
+    # so a row that predates create-time validation (or was written by a direct
+    # DB edit) can't be abused for SSRF via the Test button.
+    try:
+        await asyncio.to_thread(validate_url, rows[0]["url"], "mcp")
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)[:200]}
 
     client = MCPClient(url=rows[0]["url"])
     try:

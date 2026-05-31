@@ -19,8 +19,12 @@ class _FakeMemClient:
     def __init__(self):
         self.added: list[dict] = []
 
-    def add(self, messages, user_id=None, metadata=None):
-        self.added.append({"messages": messages, "metadata": metadata})
+    # v0.8.66 (audit C1) — accept `infer` (the writer now passes infer=False so
+    # mem0 stores the pre-extracted fact verbatim instead of re-running an LLM).
+    def add(self, messages, user_id=None, metadata=None, infer=None):
+        self.added.append(
+            {"messages": messages, "metadata": metadata, "infer": infer}
+        )
 
 
 def _call(conf=None, name="remember_fact", text="uses Python"):

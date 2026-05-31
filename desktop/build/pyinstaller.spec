@@ -33,9 +33,10 @@ bin_dir = ROOT / "bin"
 node_dir = bin_dir / f"node-{arch}"
 surreal_bin = bin_dir / (f"surreal-{arch}.exe" if is_win else f"surreal-{arch}")
 uv_bin = bin_dir / ("uv.exe" if is_win else "uv")
-python_standalone_tarball = bin_dir / (
-    f"python-{arch}.zip" if is_win else f"python-{arch}.tar.gz"
-)
+# v0.8.66 (audit H7) — always .tar.gz; the install_only artifact is a gzip
+# tarball on every platform (incl. Windows). The old Windows `.zip` name caused
+# bootstrap to BadZipFile on first launch.
+python_standalone_tarball = bin_dir / f"python-{arch}.tar.gz"
 frontend_dir = PROJECT_ROOT / "frontend"
 
 # ---------------------------------------------------------------------------

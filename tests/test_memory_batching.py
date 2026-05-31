@@ -33,8 +33,11 @@ class _FakeMemClient:
     def __init__(self):
         self.added: list[dict] = []
 
-    def add(self, messages, user_id=None, metadata=None):
-        self.added.append({"messages": messages, "metadata": metadata})
+    # v0.8.66 (audit C1) — accept `infer` (writer now passes infer=False).
+    def add(self, messages, user_id=None, metadata=None, infer=None):
+        self.added.append(
+            {"messages": messages, "metadata": metadata, "infer": infer}
+        )
 
 
 _FACT_OUTPUT = '<tool_call>{"name": "remember_fact", "arguments": {"text": "uses Python"}}</tool_call>'
