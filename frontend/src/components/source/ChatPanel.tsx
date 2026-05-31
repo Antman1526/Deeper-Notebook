@@ -298,6 +298,11 @@ export function ChatPanel({
                           // chat) and a preceding human message exists.
                           onReask={
                             onReaskAllowCloud &&
+                            // v0.8.66 (audit F-5) — don't offer "re-ask allowing
+                            // cloud" while a stream is in flight; firing it
+                            // mid-stream started a second send that aborted the
+                            // in-flight one. The control reappears once idle.
+                            !isStreaming &&
                             idx > 0 &&
                             messages[idx - 1]?.type === 'human'
                               ? () =>
