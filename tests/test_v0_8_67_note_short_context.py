@@ -35,6 +35,8 @@ def test_long_mode_is_full_content():
     assert _note(big).get_context("long")["content"] == big
 
 
-def test_empty_content_is_none():
-    assert _note("").get_context("short")["content"] is None
+def test_none_content_is_none():
+    # NB: empty-string content is rejected at construction
+    # (Note.content_must_not_be_empty), so only None is a valid "no content"
+    # case to exercise here. _short_content() returns None for it.
     assert _note(None).get_context("short")["content"] is None
