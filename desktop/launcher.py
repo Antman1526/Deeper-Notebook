@@ -473,7 +473,15 @@ class Supervisor:
         # a uvicorn that crashed in 200ms (binary missing, port
         # collision, EACCES on logging dir, etc.).
         _wait_http(
-            f"http://127.0.0.1:{api_port}/readyz", timeout=180,
+            # v0.8.67d — was a hard 180 s. A post-update first boot rebuilds the
+            # venv, so the API's cold import (langchain/langgraph/podcast_creator)
+            # can exceed 180 s and abort the whole app AT THIS GATE — exactly what
+            # happened on the boot right after the v0.8.67c reinstall. Raised +
+            # env-tunable; _wait_http still fail-fasts via proc.poll() on a real
+            # uvicorn crash, so the bigger ceiling only waits on a slow-but-alive
+            # cold import (never on a crash).
+            f"http://127.0.0.1:{api_port}/readyz",
+            timeout=_startup_timeout("ONP_API_READY_TIMEOUT", 300.0),
             proc=self._procs[-1] if self._procs else None,
         )
         self._progress("supervisor.api", "done")
@@ -512,7 +520,10 @@ class Supervisor:
         self._spawn_next(frontend_port, next_cwd=next_cwd)
         # v0.7.188 — same early-exit pattern as the API wait above.
         _wait_http(
-            f"http://127.0.0.1:{frontend_port}/", timeout=120,
+            # v0.8.67d — was 120 s; raised + env-tunable for the same post-update
+            # cold-start reason as the /readyz gate above.
+            f"http://127.0.0.1:{frontend_port}/",
+            timeout=_startup_timeout("ONP_FRONTEND_READY_TIMEOUT", 180.0),
             proc=self._procs[-1] if self._procs else None,
         )
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
