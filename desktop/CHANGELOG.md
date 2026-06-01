@@ -20,6 +20,30 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67g — SurrealDB shutdown grace is env-tunable + a one-command DB-repair tool**
+  - **Why:** an unclean SurrealDB shutdown (SIGKILL / force-quit / power loss)
+    leaves persisted live-query bookkeeping that collides when the next worker
+    runs `db.live("command")` → "key already exists" → source processing bricked
+    (the outage that needed a full DB re-import to fix this session).
+  - **Prevention (`desktop/launcher.py`):** `stop_all`'s teardown grace before the
+    SIGKILL fallback is now env-tunable — 5 s → **8 s** default (`ONP_SHUTDOWN_GRACE_SECS`)
+    — so SurrealDB reliably flushes its RocksDB + live-query state on a big/busy DB.
+  - **Recovery (`scripts/repair_desktop_db.sh`):** safe, backup-first script that
+    exports the DB, copies it physically, then re-imports into a fresh `surreal_data`
+    (clears the bad live-query state, preserves every notebook/source/note/chat).
+    Aborts if the app is still running; never deletes the old data.
+
+- **🛠 v0.8.67f — Boot can't hang on a stalling model directory (found live)**
+  - **Bug:** `pick_chat_llm_file` runs `os.scandir(gguf_dir)` on the launch's main
+    thread. When the model dir stalled (iCloud-evicted / TCC-gated `~/Desktop`, a
+    sleeping external drive), the underlying `open()` blocked UNINTERRUPTIBLY and
+    hung the ENTIRE app launch (`sample` of the wedged PID: main thread in
+    `os.scandir → open$NOCANCEL`).
+  - **Fix (`desktop/app.py`):** `_scan_chat_llm_with_timeout` runs the scan in a
+    daemon thread and gives up after **`ONP_MODEL_SCAN_TIMEOUT`** (default 20 s) —
+    the app boots (local chat degraded, with a clear warning) instead of hanging.
+    Tests: `desktop/tests/test_app_model_scan_timeout.py` (4 passed).
+
 - **🛠 v0.8.67e — `make build-mac-install` quits the running app before replacing it (found live)**
   - **Bug:** the install target ran `rm -rf "/Applications/Open Notebook Plus.app"`
     with the app still running. Deleting a running bundle orphaned its SurrealDB /

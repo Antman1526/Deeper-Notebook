@@ -1,0 +1,50 @@
+"""v0.8.67f — the chat-GGUF directory scan is time-bounded at boot.
+
+Regression for the boot-hang: `pick_chat_llm_file` runs `os.scandir` on the
+launch's main thread, and a stalling model folder (iCloud-evicted / TCC-gated
+Desktop, sleeping external drive) can block `open()` UNINTERRUPTIBLY and hang the
+whole app. `_scan_chat_llm_with_timeout` runs it in a daemon thread and gives up
+after ONP_MODEL_SCAN_TIMEOUT seconds, returning None (degraded local chat) so the
+app still boots.
+"""
+from __future__ import annotations
+
+import time
+
+import desktop.app as app
+import desktop.auto_register.assigner as asg
+
+
+def test_fast_scan_returns_result(monkeypatch):
+    monkeypatch.setattr(asg, "pick_chat_llm_file", lambda d: "X/model.gguf")
+    assert app._scan_chat_llm_with_timeout("/x") == "X/model.gguf"
+
+
+def test_slow_scan_times_out_to_none_without_hanging(monkeypatch):
+    monkeypatch.setenv("ONP_MODEL_SCAN_TIMEOUT", "1")
+
+    def slow(_d):
+        time.sleep(6)  # simulates a wedged scandir/open
+        return "SHOULD_NOT_RETURN"
+
+    monkeypatch.setattr(asg, "pick_chat_llm_file", slow)
+    t = time.time()
+    result = app._scan_chat_llm_with_timeout("/x")
+    elapsed = time.time() - t
+    assert result is None
+    assert elapsed < 3, f"timeout did not engage (waited {elapsed:.1f}s, expected ~1s)"
+
+
+def test_garbage_env_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("ONP_MODEL_SCAN_TIMEOUT", "not-a-number")
+    monkeypatch.setattr(asg, "pick_chat_llm_file", lambda d: "OK")
+    assert app._scan_chat_llm_with_timeout("/x") == "OK"
+
+
+def test_scan_exception_degrades_to_none(monkeypatch):
+    def boom(_d):
+        raise OSError("model dir vanished")
+
+    monkeypatch.setattr(asg, "pick_chat_llm_file", boom)
+    # A raising scan must not crash the boot — it degrades to None.
+    assert app._scan_chat_llm_with_timeout("/x") is None

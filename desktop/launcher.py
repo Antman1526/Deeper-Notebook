@@ -723,7 +723,20 @@ class Supervisor:
                 # Real subprocess.Popen always has .pid; tests that
                 # MagicMock(spec=Popen) may not.
                 log.debug("terminate pid=%s failed: %s", getattr(p, "pid", "?"), exc)
-        deadline = time.monotonic() + 5
+        # v0.8.67g — shutdown grace is env-tunable (was a hard 5 s). SurrealDB
+        # flushes its RocksDB + live-query bookkeeping on SIGTERM; if it gets
+        # SIGKILLed before finishing (too-short grace on a big/busy DB), the
+        # persisted live-query state can corrupt and block the next worker's
+        # db.live("command") with "key already exists" — the source-processing
+        # outage that needed a full DB re-import to repair. Default 8 s; raise via
+        # ONP_SHUTDOWN_GRACE_SECS for large databases.
+        try:
+            _grace = float(os.environ.get("ONP_SHUTDOWN_GRACE_SECS", "8") or 8)
+        except ValueError:
+            _grace = 8.0
+        if _grace <= 0:
+            _grace = 8.0
+        deadline = time.monotonic() + _grace
         for p in self._procs:
             try:
                 remaining = max(0.0, deadline - time.monotonic())
