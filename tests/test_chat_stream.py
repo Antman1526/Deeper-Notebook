@@ -230,6 +230,76 @@ def test_stream_emits_error_event_on_graph_exception(
     assert "LLM provider unreachable" not in resp.text
 
 
+def test_stream_surfaces_context_overflow_message(
+    monkeypatch, fake_graph, fake_session
+):
+    """v0.8.67i — a context_length_exceeded (the all-sources-too-large case)
+    surfaces as the ACTIONABLE classify_error() message, NOT the generic
+    'Chat stream failed unexpectedly.'. The crafted message is the user's
+    only hint to deselect sources or pick a larger-context model, so it must
+    reach the wire. It is a safe, app-crafted string (not raw provider text),
+    so echoing it does not regress the v0.7.184 info-leak tightening."""
+    from open_notebook.exceptions import ExternalServiceError
+
+    overflow_msg = (
+        "Content too large for the selected model. Try using a smaller "
+        "selection or a model with a larger context window."
+    )
+
+    async def boom(*args, **kw):
+        yield {"event": "on_chat_model_stream",
+               "data": {"chunk": _FakeChunk("partial")}}
+        raise ExternalServiceError(overflow_msg)
+
+    fake_graph.astream_events = boom  # type: ignore[method-assign]
+
+    app = _make_app([])
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"session_id": "chat_session:test",
+                  "message": "summarize all sources", "context": {}},
+        )
+
+    events = _parse_ndjson(resp.text)
+    err = next(e for e in events if e["type"] == "error")
+    assert err["detail"] == overflow_msg
+    assert "failed unexpectedly" not in resp.text
+
+
+def test_stream_surfaces_network_error_message(
+    monkeypatch, fake_graph, fake_session
+):
+    """v0.8.67i — NetworkError (e.g. the local sidecar not yet reachable on
+    a cold first request) likewise surfaces its actionable message instead
+    of the opaque generic failure."""
+    from open_notebook.exceptions import NetworkError
+
+    net_msg = (
+        "Could not reach the AI model server. If you're using a local "
+        "model (llama.cpp / Ollama), make sure it's running."
+    )
+
+    async def boom(*args, **kw):
+        yield {"event": "on_chat_model_stream",
+               "data": {"chunk": _FakeChunk("x")}}
+        raise NetworkError(net_msg)
+
+    fake_graph.astream_events = boom  # type: ignore[method-assign]
+
+    app = _make_app([])
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"session_id": "chat_session:test",
+                  "message": "hi", "context": {}},
+        )
+
+    events = _parse_ndjson(resp.text)
+    err = next(e for e in events if e["type"] == "error")
+    assert err["detail"] == net_msg
+
+
 def test_stream_filters_non_string_chunk_content(
     monkeypatch, fake_graph, fake_session
 ):

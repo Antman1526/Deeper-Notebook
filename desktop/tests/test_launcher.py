@@ -203,12 +203,16 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
             "v0.8.7 fix regressed — router falls back to 32768 default "
             "instead of using launcher's auto-detected ceiling"
         )
-        # Default config (no env override, no chat_llm_path GGUF on
-        # disk that's a real GGUF) falls back to ctx_max=32768.
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "32768", (
+        # v0.8.67i — no env override + no real GGUF falls back to the
+        # RAM-aware default ceiling (was a hardcoded "32768"). Assert the
+        # router's value tracks the launcher's own _default_ctx_max() so
+        # the linkage holds on any machine (32768 on CI / small RAM,
+        # higher on a big-RAM Mac).
+        expected_ctx = str(sv._default_ctx_max())
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == expected_ctx, (
             f"unexpected default n_ctx in session_env: "
             f"{sv.session_env['OPEN_NOTEBOOK_LOCAL_N_CTX']!r} "
-            f"(expected '32768' with no override and no GGUF)"
+            f"(expected {expected_ctx!r} with no override and no GGUF)"
         )
     finally:
         sv.stop_all()
@@ -574,18 +578,22 @@ def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
     # No per-test stubbing needed here.
 
 
-def test_chat_llm_n_ctx_defaults_to_32768(cfg, tmp_path, monkeypatch):
-    """v0.7.206 — No ONP_CHAT_LLM_CTX env var → server gets --n_ctx
-    32768 (was 16384 prior to v0.7.206).
+def test_chat_llm_n_ctx_defaults_to_ram_aware_cap(cfg, tmp_path, monkeypatch):
+    """v0.7.206 / v0.8.67i — No ONP_CHAT_LLM_CTX env var → the server gets
+    --n_ctx equal to the launcher's default ceiling.
 
-    Why bumped: a user hit `400 context_length_exceeded` after
-    selecting 2-3 sources for a chat (~21k tokens combined). The
-    16k cap was set when gemma-2-9b / codellama-13b were common;
-    Hermes-3 / Qwen2.5 / Llama-3.2 native 32k-131k.
+    v0.7.206 bumped the floor from 16384 to 32768 after a user hit
+    `400 context_length_exceeded` selecting 2-3 sources (~21k tokens; the
+    16k cap dated to gemma-2-9b / codellama-13b). v0.8.67i then made that
+    ceiling RAM-aware on Apple Silicon — a 26-source ~72K-token context
+    overflowed even the flat 32768 on a 64GB Mac whose model (Hermes-3,
+    131072 native) could hold it — so the default is now
+    Supervisor._default_ctx_max(): 32768 on small-RAM / non-darwin hosts,
+    higher on a big-RAM Mac. This test pins that the spawned --n_ctx
+    tracks that default (deterministic on any machine).
 
-    Auto-detection from GGUF metadata is also tried when no env
-    var is set — this test uses a fake GGUF path so the detection
-    falls back to ONP_CHAT_LLM_CTX_MAX (default 32768).
+    Auto-detection from GGUF metadata is also tried when no env var is set —
+    this test uses a fake GGUF path so detection falls back to the cap.
     """
     monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
     monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
@@ -596,7 +604,10 @@ def test_chat_llm_n_ctx_defaults_to_32768(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "32768", f"expected v0.7.206 default 32768, got {n_ctx!r}"
+        expected = str(sv._default_ctx_max())
+        assert n_ctx == expected, (
+            f"expected RAM-aware default {expected!r}, got {n_ctx!r}"
+        )
     finally:
         sv.stop_all()
 
@@ -638,7 +649,12 @@ def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "32768", f"expected v0.7.206 fallback 32768, got {n_ctx!r}"
+        # v0.8.67i — the fallback target is the RAM-aware default cap
+        # (Supervisor._default_ctx_max()), not a flat 32768.
+        expected = str(sv._default_ctx_max())
+        assert n_ctx == expected, (
+            f"expected fallback to default cap {expected!r}, got {n_ctx!r}"
+        )
     finally:
         sv.stop_all()
 
@@ -660,6 +676,11 @@ def test_chat_llm_n_ctx_falls_back_when_too_low(cfg, tmp_path, monkeypatch):
     sv.start_all()
     try:
         n_ctx = _capture_n_ctx(spawned)
-        assert n_ctx == "32768", f"expected v0.7.206 fallback 32768 for too-low value, got {n_ctx!r}"
+        # v0.8.67i — fallback target is the RAM-aware default cap.
+        expected = str(sv._default_ctx_max())
+        assert n_ctx == expected, (
+            f"expected fallback to default cap {expected!r} for too-low "
+            f"value, got {n_ctx!r}"
+        )
     finally:
         sv.stop_all()

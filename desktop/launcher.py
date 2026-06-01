@@ -1471,6 +1471,45 @@ class Supervisor:
             )
         return fallback
 
+    @staticmethod
+    def _default_ctx_max() -> int:
+        """v0.8.67i — RAM-aware default ceiling for the chat-LLM context
+        window, used only when ONP_CHAT_LLM_CTX_MAX is NOT explicitly set.
+
+        A llama.cpp KV cache for an 8B model costs ~0.125 MiB/token, so a
+        98304-token window ≈ 12 GiB. On Apple Silicon (unified memory)
+        that is cheap on a 64 GB machine but ruinous on a 16 GB one — so we
+        scale the ceiling to total physical RAM and keep the historical
+        32768 default on smaller or non-darwin hosts. Tiers leave generous
+        headroom for the model weights (~5 GiB), the embeddings sidecar,
+        and the OS.
+
+        Why this exists: pre-v0.8.67i the cap was hardcoded to 32768, so a
+        large all-sources chat context (e.g. ~72K tokens for a 26-source
+        notebook) failed with context_length_exceeded even on a 64 GB Mac
+        whose model (Hermes-3, 131072 native) could easily hold it. An
+        explicit ONP_CHAT_LLM_CTX_MAX (or ONP_CHAT_LLM_CTX) always wins
+        over this default — see _resolve_chat_llm_n_ctx.
+        """
+        default = 32768
+        if sys.platform != "darwin":
+            return default
+        try:
+            names = os.sysconf_names
+            if "SC_PHYS_PAGES" not in names or "SC_PAGE_SIZE" not in names:
+                return default
+            total = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        except (ValueError, OSError, AttributeError):
+            return default
+        gib = total / (1024 ** 3)
+        if gib >= 56:
+            return 98304
+        if gib >= 40:
+            return 65536
+        if gib >= 28:
+            return 49152
+        return default
+
     def _resolve_chat_llm_n_ctx(self) -> int:
         """v0.8.7 — Resolve the chat-LLM n_ctx ONCE, before session_env
         is built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
@@ -1489,12 +1528,18 @@ class Supervisor:
         flags). Any positive return is safe to pass through to
         `llama_cpp.server --n_ctx <N>`.
         """
+        # v0.8.67i — RAM-aware default ceiling (was hardcoded 32768). An
+        # explicit ONP_CHAT_LLM_CTX_MAX still wins; otherwise scale to
+        # available unified memory so capable Macs chat over large source
+        # selections without the user setting any env var.
+        _fallback = self._default_ctx_max()
         try:
-            ctx_max = int(os.environ.get("ONP_CHAT_LLM_CTX_MAX", "32768"))
+            _env_ctx_max = os.environ.get("ONP_CHAT_LLM_CTX_MAX")
+            ctx_max = int(_env_ctx_max) if _env_ctx_max else _fallback
             if ctx_max < 512:
-                ctx_max = 32768
+                ctx_max = _fallback
         except ValueError:
-            ctx_max = 32768
+            ctx_max = _fallback
 
         env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")
         if env_n_ctx:
