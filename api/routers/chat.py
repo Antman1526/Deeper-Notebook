@@ -16,7 +16,9 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
     ConfigurationError,
+    ExternalServiceError,
     InvalidInputError,
+    NetworkError,
     NotFoundError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
@@ -1481,6 +1483,24 @@ async def _stream_chat_events(
         if privacy_blocked:
             evt["privacy_blocked"] = True
         yield json.dumps(evt) + "\n"
+    except (ExternalServiceError, NetworkError) as e:
+        # v0.8.67i — surface the ACTIONABLE message produced by
+        # error_classifier.classify_error() and the *_node-timeout raises
+        # (e.g. "Content too large for the selected model. Try using a
+        # smaller selection or a model with a larger context window.",
+        # "The local model is still loading…", "Could not reach the AI
+        # model server…") instead of the opaque "Chat stream failed
+        # unexpectedly." below. These are crafted, user-facing strings —
+        # NOT raw provider/driver text — so they are safe to echo, same
+        # trust level as the ConfigurationError leg above. Before this, a
+        # too-large source selection on a local model with a small context
+        # window surfaced only the generic failure toast, giving the user
+        # no hint to deselect sources or pick a larger-context model.
+        logger.info(
+            "chat stream: {} for session {}: {}",
+            type(e).__name__, request.session_id, str(e),
+        )
+        yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
     except Exception as e:
         # v0.7.184 — Don't echo str(e) into the SSE error event. The
         # underlying exception can carry driver internals (SurrealDB
