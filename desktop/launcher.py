@@ -97,6 +97,34 @@ def _wait_http(
     raise TimeoutError(f"http {url} never returned <500 within {timeout}s")
 
 
+def _startup_timeout(env_key: str, default: float) -> float:
+    """v0.8.67b — env-tunable startup readiness timeout (core-service defaults
+    raised from the historical 30 s).
+
+    ROOT CAUSE this addresses: the first launch after an app update re-extracts
+    the Python runtime and rebuilds the venv; that disk I/O + a cold page cache
+    can delay SurrealDB's port bind past the old 30 s `_wait_tcp` gate. Because
+    SurrealDB is a *core* service, that gate raised TimeoutError and aborted the
+    ENTIRE supervisor (EARLY-INIT FAILURE) — no API, no sidecars, a dead app and
+    an empty chatbot.
+
+    Raising the ceiling is safe: `_wait_tcp`/`_wait_http` already early-exit via
+    `proc.poll()` the instant a child actually dies, so a larger timeout only
+    ever costs wall-clock on a slow-but-successful start (post-update I/O, or a
+    cold mmap of a large GGUF) — never on a real crash. Operators can override
+    per service via env without a rebuild; a non-positive or unparseable value
+    falls back to `default`."""
+    raw = (os.environ.get(env_key) or "").strip()
+    if raw:
+        try:
+            val = float(raw)
+        except ValueError:
+            return default
+        if val > 0:
+            return val
+    return default
+
+
 class Supervisor:
     def __init__(
         self,
@@ -390,7 +418,15 @@ class Supervisor:
         # probe can early-exit if the child dies before binding.
         # self._procs[-1] is the latest Popen pushed by _spawn().
         _wait_tcp(
-            "127.0.0.1", surreal_port, timeout=30,
+            # v0.8.67b — was a hard 30 s. On the first launch after an app
+            # update the bootstrap re-extracts the runtime + rebuilds the venv;
+            # that I/O delayed SurrealDB's bind past 30 s and, since this is a
+            # core service, aborted the WHOLE supervisor (EARLY-INIT FAILURE →
+            # dead app, empty chatbot). Raised + env-tunable; proc.poll() still
+            # fails fast on an actual crash, so the bigger ceiling only ever
+            # waits on a slow-but-alive start.
+            "127.0.0.1", surreal_port,
+            timeout=_startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0),
             proc=self._procs[-1] if self._procs else None,
         )
         self._progress("supervisor.surreal", "done")
@@ -527,7 +563,12 @@ class Supervisor:
                 _wait_tcp(
                     "127.0.0.1",
                     chat_llm_port,
-                    timeout=60.0,
+                    # v0.8.67b — was 60 s; raised + env-tunable. A cold mmap of
+                    # a large GGUF (the 14B-30B models here) can exceed 60 s.
+                    # This gate already LOGS-and-proceeds on timeout (below), so
+                    # it never aborts the app — the bump just lets big models be
+                    # marked healthy instead of prematurely red.
+                    timeout=_startup_timeout("ONP_SIDECAR_TCP_TIMEOUT", 90.0),
                     proc=self._procs[-1],
                 )
             except (TimeoutError, RuntimeError) as exc:
