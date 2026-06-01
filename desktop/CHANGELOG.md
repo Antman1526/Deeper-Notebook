@@ -20,6 +20,18 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67d — Harden the remaining startup gates (API `/readyz`, frontend) — completes v0.8.67b**
+  - **Gap:** v0.8.67b hardened only SurrealDB's `_wait_tcp` gate. The API `/readyz`
+    (`_wait_http`, 180 s) and frontend (120 s) gates stayed hardcoded — and the boot
+    right after the v0.8.67c reinstall aborted at exactly the `/readyz` gate (the
+    post-update venv rebuild made the API's cold import of langchain/langgraph
+    exceed 180 s). Every future app update's first launch could hit the same abort.
+  - **Fix (`desktop/launcher.py`):** both gates now use the env-tunable
+    `_startup_timeout` helper — `/readyz` 180 s → **300 s** (`ONP_API_READY_TIMEOUT`),
+    frontend 120 s → **180 s** (`ONP_FRONTEND_READY_TIMEOUT`). `_wait_http` already
+    fail-fasts via `proc.poll()` on a real crash, so the higher ceilings only ever
+    wait on a slow-but-alive cold start. Launcher suite 38 passed.
+
 - **🛠 v0.8.67c — CRITICAL: local chat/embed models ran on CPU (0 GPU layers) → chatbot never answered (found live)**
   - **Bug (the actual root cause of "no results in the chatbot"):** the launcher
     spawned the chat & embedding `llama_cpp.server` sidecars with **no
