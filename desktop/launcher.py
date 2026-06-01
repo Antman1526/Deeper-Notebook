@@ -38,6 +38,30 @@ from desktop import launcher_prefs  # v0.8.6 — file-backed preference layer
 log = logging.getLogger(__name__)
 
 
+def _n_gpu_layers(env_key: str, *, mac_default: int = -1) -> str:
+    """v0.8.67c — resolve llama.cpp `--n_gpu_layers` for a sidecar.
+
+    CRITICAL FIX. The chat/embed sidecars spawned `llama_cpp.server` with NO
+    `--n_gpu_layers`, so llama-cpp-python defaulted to 0 → the ENTIRE model ran
+    on CPU. On Apple Silicon that made an 8B chat model so slow it never returned
+    a completion within the chat timeout — the chatbot was silent for this reason
+    even once the backend was healthy. Measured on an M1 Max: 0/33 layers (CPU) →
+    no response in 90 s; -1 → 33/33 on Metal → 1.7 s.
+
+    Default: macOS ships a Metal build of llama-cpp-python and uses unified
+    memory, so full offload (-1 = all layers) is free and almost always correct
+    → mac_default=-1. Other OSes default to CPU (0) so a CUDA build with limited
+    VRAM can't OOM the box; those users opt in via `env_key`. Any value is
+    overridable per sidecar via the env var without a rebuild."""
+    raw = (os.environ.get(env_key) or "").strip()
+    if raw:
+        try:
+            return str(int(raw))
+        except ValueError:
+            pass
+    return str(mac_default) if sys.platform == "darwin" else "0"
+
+
 def _wait_tcp(
     host: str,
     port: int,
@@ -1326,6 +1350,10 @@ class Supervisor:
             "--model", str(self.nomic_embed_path),
             "--host", "127.0.0.1", "--port", str(port),
             "--embedding", "true",
+            # v0.8.67c — GPU-offload the embedder too (Metal on Apple Silicon).
+            # Tiny model, but it keeps source-embedding fast and consistent with
+            # the chat sidecar; CPU on non-macOS by default.
+            "--n_gpu_layers", _n_gpu_layers("ONP_EMBED_N_GPU_LAYERS"),
         ]
         self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
 
@@ -1558,6 +1586,11 @@ class Supervisor:
             "--model", str(self.chat_llm_path),
             "--host", "127.0.0.1", "--port", str(port),
             "--n_ctx", n_ctx,
+            # v0.8.67c — offload the model to the GPU (Metal on Apple Silicon).
+            # Without this, llama_cpp.server defaults to n_gpu_layers=0 and the
+            # whole model runs on CPU — so slow the chat never returns a
+            # completion (the silent-chatbot bug). -1 = all layers on macOS.
+            "--n_gpu_layers", _n_gpu_layers("ONP_CHAT_LLM_N_GPU_LAYERS"),
         ]
 
         # v0.8.3 — Speculative decoding via --model_draft. Originally
