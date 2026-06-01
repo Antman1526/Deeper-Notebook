@@ -483,6 +483,19 @@ build-mac-install:
 		exit 1; \
 	fi
 	@echo "📥 Installing to /Applications..."
+	@# v0.8.67e — quit a running instance BEFORE deleting its bundle. Deleting
+	@# the .app while it's running orphaned SurrealDB/uvicorn/llama sidecars and
+	@# left zombie Next.js frontend servers on stale ports (the app's webview
+	@# then showed "This page couldn't load"). Graceful quit first, wait, then
+	@# force-kill any stragglers so the cp lands on a clean slate.
+	@echo "⏹  Quitting any running Open Notebook Plus first…"
+	@osascript -e 'quit app "Open Notebook Plus"' 2>/dev/null || true
+	@for i in $$(seq 1 20); do pgrep -f '/Applications/Open Notebook Plus.app/Contents/MacOS' >/dev/null 2>&1 || break; sleep 1; done
+	@pkill -9 -f '/Applications/Open Notebook Plus.app' 2>/dev/null || true
+	@pkill -9 -f 'surreal-darwin' 2>/dev/null || true
+	@pkill -9 -f 'llama_cpp.server' 2>/dev/null || true
+	@pkill -9 -f 'surreal_commands.cli.worker' 2>/dev/null || true
+	@sleep 2
 	@rm -rf "/Applications/Open Notebook Plus.app"
 	@cp -R "dist/Open Notebook Plus.app" /Applications/
 	@xattr -dr com.apple.quarantine "/Applications/Open Notebook Plus.app" || true
