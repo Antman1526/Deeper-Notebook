@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67b — Launcher: a slow core service no longer aborts the whole app on startup (found live)**
+  - **Bug (diagnosed from a live "no results in the chatbot" report):** right after the
+    v0.8.67 reinstall, the first launch re-extracted the Python runtime + rebuilt the
+    venv (the normal post-update step). That disk I/O delayed SurrealDB's port bind past
+    the launcher's hard **30 s** `_wait_tcp` gate, and because SurrealDB is a *core*
+    service the gate raised `TimeoutError` and aborted the ENTIRE supervisor
+    (`EARLY-INIT FAILURE: tcp 127.0.0.1:53039 never came up within 30s`, `launcher.py
+    start_all → _wait_tcp`) → no API, no model sidecars, every sidecar badge red, and the
+    chat request failing with `NetworkError: Could not reach the AI model server`.
+  - **Fix (`desktop/launcher.py`):** new env-tunable `_startup_timeout(env_key, default)`;
+    SurrealDB gate 30 s → **90 s** (`ONP_SURREAL_TCP_TIMEOUT`), chat-sidecar readiness
+    60 s → **90 s** (`ONP_SIDECAR_TCP_TIMEOUT`, already log-and-proceed). Safe because
+    `_wait_tcp`/`_wait_http` already early-exit via `proc.poll()` the instant a child
+    actually dies, so the larger ceiling only ever waits on a slow-but-alive start
+    (post-update I/O, or a cold mmap of a 14B–30B GGUF). A non-positive/unparseable env
+    override falls back to the default, so the gate can never be made *more* fragile.
+  - **Tests:** `desktop/tests/test_launcher_startup_timeout.py` (12 passed) pin the
+    parse/fallback contract; existing `desktop/tests/test_launcher.py` (16) still green.
+
 - **✅ v0.8.67 — Accuracy & flow assessment: IMPLEMENTED (2026-05-31)**
   A read-only investigation of the accuracy (answer/recall/search correctness) and
   flow (responsiveness/UX) hot paths surfaced 7 grounded, code-verified items. All
