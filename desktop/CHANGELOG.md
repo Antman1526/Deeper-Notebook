@@ -20,6 +20,23 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67c — CRITICAL: local chat/embed models ran on CPU (0 GPU layers) → chatbot never answered (found live)**
+  - **Bug (the actual root cause of "no results in the chatbot"):** the launcher
+    spawned the chat & embedding `llama_cpp.server` sidecars with **no
+    `--n_gpu_layers`**, so llama-cpp-python defaulted to 0 and ran the ENTIRE model
+    on CPU. On Apple Silicon (M1 Max) an 8B chat model on CPU is so slow it never
+    returns a completion within the chat timeout — and the health badge (a
+    `/v1/models` ping) reported "healthy" while real inference was dead. Verified
+    live: 0/33 layers on CPU → `/v1/chat/completions` **HTTP 000 after 90 s**;
+    `--n_gpu_layers -1` → **33/33 layers on Metal → a correct answer in 1.7 s**.
+  - **Fix (`desktop/launcher.py`):** new `_n_gpu_layers()` helper; both the chat
+    (`ONP_CHAT_LLM_N_GPU_LAYERS`) and embed (`ONP_EMBED_N_GPU_LAYERS`) spawns now
+    pass `--n_gpu_layers`, defaulting to **-1 (all layers) on macOS** (Metal +
+    unified memory makes full offload free) and **0 (CPU) on other OSes** so a
+    low-VRAM CUDA build can't OOM; both env-overridable without a rebuild.
+  - **Tests:** `desktop/tests/test_launcher_gpu_layers.py` (10) pin the
+    platform-default + env-override contract; full launcher suite 38 passed.
+
 - **🛠 v0.8.67b — Launcher: a slow core service no longer aborts the whole app on startup (found live)**
   - **Bug (diagnosed from a live "no results in the chatbot" report):** right after the
     v0.8.67 reinstall, the first launch re-extracted the Python runtime + rebuilt the
