@@ -225,6 +225,19 @@ def pick_chat_llm_file(
     """
     if not gguf_dir.exists():
         return None
+    # v0.8.67h — explicit pin. ONP_CHAT_LLM_GGUF forces a specific chat GGUF
+    # (by filename, with or without the .gguf suffix, case-insensitive) instead
+    # of the heuristic scorer below. Addresses "the loaded chat model doesn't
+    # match what I picked" — e.g. ONP_CHAT_LLM_GGUF=Qwen3.5-9B-Q4_K_M.gguf pins
+    # Qwen over the auto-pick. If unset, or the named file isn't present, we fall
+    # through to the scorer so the sidecar always spawns with *something*.
+    _pin = (os.environ.get("ONP_CHAT_LLM_GGUF") or "").strip()
+    if _pin:
+        _pin_name = _pin if _pin.lower().endswith(".gguf") else f"{_pin}.gguf"
+        for _cand in sorted(gguf_dir.glob("*.gguf")):
+            if _cand.name.lower() == _pin_name.lower():
+                return _cand
+        # named pin not found in gguf_dir → fall through to the heuristic.
     ceiling = ram_ceiling_gb if ram_ceiling_gb is not None else _get_chat_ram_ceiling_gb()
     recipe = _RECIPES["chat"]
 

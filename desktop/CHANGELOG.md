@@ -20,6 +20,18 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.67h — Pin the local chat model with `ONP_CHAT_LLM_GGUF`**
+  - **Gap:** the launcher loads the chat GGUF via `pick_chat_llm_file`'s heuristic
+    scorer, independent of the model selected in the UI — so a user who picked
+    Qwen3.5-9B could find Hermes-3 loaded instead (chat works, but "what I picked
+    isn't what loads"). The full DB-driven resolution is a riskier boot-time
+    re-architecture (deferred).
+  - **Fix (`desktop/auto_register/assigner.py`):** `pick_chat_llm_file` now honors
+    `ONP_CHAT_LLM_GGUF` (a filename, with/without `.gguf`, case-insensitive) and
+    returns that file if present, else falls through to the scorer so the sidecar
+    always spawns. Safe, env-gated, no behavior change when unset.
+    Tests: `desktop/tests/test_assigner_chat_pin.py` (4 passed).
+
 - **🛠 v0.8.67g — SurrealDB shutdown grace is env-tunable + a one-command DB-repair tool**
   - **Why:** an unclean SurrealDB shutdown (SIGKILL / force-quit / power loss)
     leaves persisted live-query bookkeeping that collides when the next worker
