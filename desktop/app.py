@@ -39,6 +39,48 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+
+def _scan_chat_llm_with_timeout(gguf_dir):
+    """v0.8.67f — time-bound the chat-GGUF directory scan so a stalling model
+    folder can't hang the whole app launch.
+
+    `pick_chat_llm_file` runs `os.scandir(gguf_dir)` on the boot's main thread.
+    If that directory stalls — an iCloud-evicted / TCC-gated path, a sleeping
+    external drive — the underlying `open()` can block UNINTERRUPTIBLY and hang
+    the ENTIRE launch (the exact boot wedge seen when models lived on the iCloud
+    Desktop: `sample` showed the main thread stuck in scandir → open$NOCANCEL).
+    Run the scan in a daemon thread and give up after ONP_MODEL_SCAN_TIMEOUT
+    seconds: the app boots (local chat degraded, with a clear warning) instead of
+    hanging forever. A wedged scan thread leaks, but it's a daemon so it never
+    blocks process exit."""
+    import threading
+    from desktop.auto_register.assigner import pick_chat_llm_file
+    try:
+        timeout = float(os.environ.get("ONP_MODEL_SCAN_TIMEOUT", "20") or 20)
+    except ValueError:
+        timeout = 20.0
+    if timeout <= 0:
+        timeout = 20.0
+    result = [None]
+
+    def _run():
+        try:
+            result[0] = pick_chat_llm_file(gguf_dir)
+        except Exception as exc:  # never let the scan thread take down the boot
+            log.warning("chat-GGUF scan raised: %s", exc)
+
+    t = threading.Thread(target=_run, name="chat-gguf-scan", daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        log.error(
+            "chat-GGUF scan of %s timed out after %ss (stalled filesystem?) — "
+            "starting WITHOUT a local chat model. Move models off iCloud/Desktop, "
+            "or raise ONP_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
+        )
+        return None
+    return result[0]
+
 # ---------------------------------------------------------------------------
 # Path helpers (private, replicated from __main__.py)
 # ---------------------------------------------------------------------------
@@ -461,8 +503,8 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     # `default_tools_model` assignment if downloaded, since that slot has a
     # different recipe.
     gguf_dir = voice_model_dir / "GGUF"
-    from desktop.auto_register.assigner import pick_chat_llm_file
-    chat_llm_path = pick_chat_llm_file(gguf_dir)
+    # v0.8.67f — time-bounded so a stalling model dir can't hang the launch.
+    chat_llm_path = _scan_chat_llm_with_timeout(gguf_dir)
     # v0.7.211 — Surface "no local chat GGUF found" as a visible
     # progress event AND a launch warning the frontend can render.
     # Pre-v0.7.211 path: pick_chat_llm_file returned None, the if
