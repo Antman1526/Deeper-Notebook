@@ -20,6 +20,17 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67e — `make build-mac-install` quits the running app before replacing it (found live)**
+  - **Bug:** the install target ran `rm -rf "/Applications/Open Notebook Plus.app"`
+    with the app still running. Deleting a running bundle orphaned its SurrealDB /
+    uvicorn / llama.cpp sidecars and left **zombie Next.js frontend servers on stale
+    ports**, so the app's webview later showed **"This page couldn't load"** (it was
+    pointed at a dead port). It also caused a stuck `/readyz 503` from a half-deleted
+    zombie API on a re-install.
+  - **Fix (`Makefile`):** `build-mac-install` now `osascript quit`s the app, waits
+    for it to exit, then force-kills any stragglers (app, surreal, llama.cpp, worker)
+    **before** the `rm -rf` + `cp -R`. Installs land on a clean slate.
+
 - **🛠 v0.8.67d — Harden the remaining startup gates (API `/readyz`, frontend) — completes v0.8.67b**
   - **Gap:** v0.8.67b hardened only SurrealDB's `_wait_tcp` gate. The API `/readyz`
     (`_wait_http`, 180 s) and frontend (120 s) gates stayed hardcoded — and the boot
