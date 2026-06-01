@@ -20,6 +20,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.67i — Large source contexts no longer fail chat (RAM-aware n_ctx) + clear overflow message**
+  - **Bug:** selecting all sources in a notebook (e.g. 26 sources ≈ 72K tokens)
+    made `/chat/stream` fail with a bare *"Chat stream failed unexpectedly."* The
+    root cause was two-fold: (1) the launcher hardcoded the chat-LLM context
+    ceiling to `ONP_CHAT_LLM_CTX_MAX=32768`, so even on a 64 GB Mac whose model
+    (Hermes-3, 131072 native) could hold the prompt, llama.cpp returned HTTP 400
+    `context_length_exceeded`; (2) that overflow raised `ExternalServiceError`
+    which the stream handler had no `except` for, so it hit the generic catch-all
+    and the user got no hint to recover.
+  - **Fix 1 — RAM-aware default (`desktop/launcher.py`):** new
+    `Supervisor._default_ctx_max()` scales the context ceiling to total unified
+    memory on Apple Silicon (≥56 GiB → 98304, ≥40 → 65536, ≥28 → 49152, else the
+    historical 32768; non-darwin and sysconf-failure both keep 32768). So a
+    capable Mac now chats over large source selections with no env var. An
+    explicit `ONP_CHAT_LLM_CTX_MAX` (or `ONP_CHAT_LLM_CTX`) still wins.
+  - **Fix 2 — actionable error (`api/routers/chat.py`):** `_stream_chat_events`
+    now catches `ExternalServiceError`/`NetworkError` and surfaces the crafted
+    `classify_error()` message (*"Content too large for the selected model. Try
+    using a smaller selection or a model with a larger context window."*, local-
+    model-loading, unreachable-server) instead of the opaque generic failure.
+    These are app-crafted strings, not raw provider text — same safe-to-echo
+    trust as the existing `ConfigurationError` leg, so no v0.7.184 info-leak
+    regression.
+  - **Tests:** `desktop/tests/test_launcher_adaptive_nctx.py` (RAM tiers, non-darwin
+    floor, sysconf fallbacks, explicit-override precedence); two new cases in
+    `tests/test_chat_stream.py` (overflow + network messages surface verbatim,
+    generic text absent).
+
 - **🎨 v0.8.67h — Pin the local chat model with `ONP_CHAT_LLM_GGUF`**
   - **Gap:** the launcher loads the chat GGUF via `pick_chat_llm_file`'s heuristic
     scorer, independent of the model selected in the UI — so a user who picked
