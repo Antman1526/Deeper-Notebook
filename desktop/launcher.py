@@ -436,6 +436,12 @@ class Supervisor:
             "OPEN_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
         }
 
+        # v0.8.67l — self-heal a live-query-corrupted DB BEFORE SurrealDB starts
+        # (clean slate, nothing connected yet). The flag is set by the worker
+        # watcher on a prior boot's crash; repair is backup-first, abort-safe,
+        # and one-shot, so it can never cause a boot loop.
+        self._maybe_repair_db_on_boot()
+
         self._progress("supervisor.surreal", "running")
         self._spawn_surreal(surreal_port)
         # v0.7.188 — pass the just-spawned proc to _wait_tcp so the
@@ -488,6 +494,10 @@ class Supervisor:
 
         self._progress("supervisor.worker", "running")
         self._spawn_worker()
+        # v0.8.67l — watch worker.log for the live-query "key already exists"
+        # crash; if seen, flag an automatic repair for the next boot
+        # (non-blocking daemon thread, never delays startup).
+        self._watch_worker_for_lq_corruption()
         # Worker has no port; just give it a beat to subscribe.
         time.sleep(0.5)
         self._progress("supervisor.worker", "done")
@@ -1037,6 +1047,101 @@ class Supervisor:
         ]
         self._spawn(args, cwd=self.upstream_root, name="worker")
 
+    def _maybe_repair_db_on_boot(self) -> None:
+        """v0.8.67l — If a prior worker crash flagged live-query corruption,
+        repair the DB now — BEFORE SurrealDB/API start, when nothing is
+        connected. Backup-first, abort-safe, and ONE-SHOT (the flag is cleared
+        after a single attempt so a repair that doesn't help can't cause a boot
+        loop). Never raises: a repair failure just boots degraded with a clear
+        log pointing at the manual script."""
+        # Opt-out hook (set by the test conftest) so unit tests that drive
+        # start_all with mocked subprocesses never touch the real data dir.
+        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+            return
+        try:
+            from desktop import db_repair
+            data_home = user_home() / ".open-notebook-plus"
+            if not db_repair.needs_repair(data_home):
+                return
+            ext = ".exe" if self.surreal_arch.startswith("windows") else ""
+            log.warning(
+                "db_repair: a prior worker crash flagged live-query corruption — "
+                "running automatic backup-first repair before boot…"
+            )
+            try:
+                repair_port = int(os.environ.get("ONP_REPAIR_PORT", "18799") or 18799)
+            except ValueError:
+                repair_port = 18799
+            ok = db_repair.auto_repair(
+                surreal_bin=self.bin_dir / f"surreal-{self.surreal_arch}{ext}",
+                data_dir=user_home() / ".open-notebook-plus" / "surreal_data",
+                backup_dir=user_home() / "onp-backups",
+                surreal_user=self.cfg.surreal_user,
+                surreal_password=self.cfg.surreal_password,
+                ts=time.strftime("%Y%m%d-%H%M%S"),
+                port=repair_port,
+                log=log,
+            )
+            # One-shot: clear regardless of outcome so a non-fixing repair never
+            # re-triggers on the next boot.
+            db_repair.clear_needs_repair(data_home)
+            if not ok:
+                log.warning(
+                    "db_repair: automatic repair did not complete — booting anyway. "
+                    "If source processing stays broken, quit and run "
+                    "scripts/repair_desktop_db.sh."
+                )
+        except Exception as exc:
+            log.error("db_repair: pre-start check failed (non-fatal): %s", exc)
+
+    def _watch_worker_for_lq_corruption(self) -> None:
+        """v0.8.67l — Briefly watch worker.log for the live-query "key already
+        exists" crash. If seen, set the one-shot repair flag so the NEXT boot
+        auto-heals — we do NOT repair mid-boot, because the API is already
+        connected to the live DB. Runs in a daemon thread; never blocks boot."""
+        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+            return
+        worker_log = self.log_dir / "worker.log"
+        data_home = user_home() / ".open-notebook-plus"
+        # v0.8.67l — only consider content appended AFTER this boot's worker
+        # spawn. worker.log is append-only, so a stale crash from a PREVIOUS
+        # (already-repaired) session would otherwise falsely re-flag a repair.
+        try:
+            start_offset = worker_log.stat().st_size
+        except OSError:
+            start_offset = 0
+
+        def _watch() -> None:
+            try:
+                from desktop import db_repair
+            except Exception:
+                return
+            deadline = time.monotonic() + 30.0
+            while time.monotonic() < deadline:
+                time.sleep(2.0)
+                try:
+                    with open(worker_log, "r", errors="ignore") as fh:
+                        fh.seek(start_offset)
+                        txt = fh.read()
+                except Exception:
+                    continue
+                if db_repair.looks_like_lq_corruption(txt):
+                    db_repair.set_needs_repair(data_home)
+                    log.warning(
+                        "db_repair: detected SurrealDB live-query corruption in the "
+                        "worker (source processing is stuck). It will be repaired "
+                        "AUTOMATICALLY the next time you open the app — quit (Cmd+Q) "
+                        "and reopen."
+                    )
+                    return
+
+        try:
+            threading.Thread(
+                target=_watch, name="lq-corruption-watch", daemon=True
+            ).start()
+        except Exception as exc:
+            log.debug("db_repair: could not start worker watcher (%s)", exc)
+
     def _spawn_next(self, port: int, *, next_cwd: Path | None = None) -> None:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
             "node.exe" if self.node_arch.startswith("windows") else "bin/node"
@@ -1510,6 +1615,57 @@ class Supervisor:
             return 49152
         return default
 
+    # KV-cache cost for a typical 8B chat model: ~0.125 MiB per context token.
+    _KV_MIB_PER_TOKEN = 0.125
+
+    @staticmethod
+    def _available_ram_bytes() -> "int | None":
+        """v0.8.67l — Best-effort AVAILABLE physical RAM on darwin (via vm_stat).
+        Returns None when it can't be determined, so callers skip the pressure
+        backoff rather than guess. Counts free + inactive + speculative +
+        purgeable pages (the memory the OS can hand to a new allocation)."""
+        if sys.platform != "darwin":
+            return None
+        try:
+            out = subprocess.run(
+                ["vm_stat"], capture_output=True, text=True, timeout=3
+            ).stdout
+        except Exception:
+            return None
+        m = re.search(r"page size of (\d+) bytes", out)
+        page = int(m.group(1)) if m else 4096
+
+        def _pages(label: str) -> int:
+            mm = re.search(rf"{re.escape(label)}:\s+(\d+)\.", out)
+            return int(mm.group(1)) if mm else 0
+
+        pages = (
+            _pages("Pages free")
+            + _pages("Pages inactive")
+            + _pages("Pages speculative")
+            + _pages("Pages purgeable")
+        )
+        return pages * page if pages > 0 else None
+
+    @staticmethod
+    def _pressure_adjusted_ctx_max(tier: int, avail_bytes: "int | None") -> int:
+        """v0.8.67l — Step the context ceiling DOWN through the tiers while its
+        KV cache (~0.125 MiB/token) plus ~5 GiB for model weights + OS headroom
+        won't fit in `avail_bytes`. Prevents launching the chat sidecar into a
+        swap storm when the machine is already memory-saturated. No-op when
+        `avail_bytes` is None/unknown or already roomy — so on a healthy machine
+        the total-RAM tier from _default_ctx_max() is returned unchanged."""
+        if not avail_bytes or avail_bytes <= 0:
+            return tier
+        headroom = 5 * 1024 ** 3
+        for cand in (98304, 65536, 49152, 32768):
+            if cand > tier:
+                continue
+            kv = int(cand * Supervisor._KV_MIB_PER_TOKEN * 1024 * 1024)
+            if kv + headroom <= avail_bytes:
+                return cand
+        return 32768  # floor — smallest window we offer
+
     def _resolve_chat_llm_n_ctx(self) -> int:
         """v0.8.7 — Resolve the chat-LLM n_ctx ONCE, before session_env
         is built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
@@ -1529,10 +1685,15 @@ class Supervisor:
         `llama_cpp.server --n_ctx <N>`.
         """
         # v0.8.67i — RAM-aware default ceiling (was hardcoded 32768). An
-        # explicit ONP_CHAT_LLM_CTX_MAX still wins; otherwise scale to
-        # available unified memory so capable Macs chat over large source
-        # selections without the user setting any env var.
-        _fallback = self._default_ctx_max()
+        # explicit ONP_CHAT_LLM_CTX_MAX still wins; otherwise scale to total
+        # unified memory so capable Macs chat over large source selections
+        # without the user setting any env var.
+        # v0.8.67l — then step DOWN if AVAILABLE memory right now can't hold the
+        # tier's KV cache + headroom (avoids a swap storm when launching while
+        # the machine is already saturated). No-op on a healthy machine.
+        _fallback = self._pressure_adjusted_ctx_max(
+            self._default_ctx_max(), self._available_ram_bytes()
+        )
         try:
             _env_ctx_max = os.environ.get("ONP_CHAT_LLM_CTX_MAX")
             ctx_max = int(_env_ctx_max) if _env_ctx_max else _fallback
