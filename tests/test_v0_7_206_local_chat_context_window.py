@@ -37,14 +37,19 @@ def _src(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-def test_launcher_default_n_ctx_is_32768():
-    """v0.7.206 — the default cap for llama_cpp chat n_ctx must
-    be 32768 (was 16384 in v0.7.205-)."""
+def test_launcher_default_n_ctx_floor_is_32768():
+    """v0.7.206 / v0.8.67i — the default cap for llama_cpp chat n_ctx must keep
+    32768 as its FLOOR (was a flat 32768 literal; v0.8.67i made it RAM-aware via
+    _default_ctx_max(), scaling UP on big-RAM Macs but never below 32768 on
+    small / non-darwin / sysconf-failure hosts). Below 32768 the v0.7.205-era
+    400 context_length_exceeded returns for 2-3 selected sources."""
     src = _src("desktop/launcher.py")
-    assert 'int(os.environ.get("ONP_CHAT_LLM_CTX_MAX", "32768"))' in src, (
-        "v0.7.206 regression: default n_ctx cap is no longer 32768. "
-        "Users with 2-3 selected sources will start seeing 400 "
-        "context_length_exceeded again."
+    assert "def _default_ctx_max(" in src, (
+        "v0.8.67i regression: RAM-aware default n_ctx cap helper removed."
+    )
+    assert "default = 32768" in src, (
+        "v0.7.206/v0.8.67i regression: 32768 is no longer the n_ctx cap floor. "
+        "Users with 2-3 selected sources could see 400 context_length_exceeded."
     )
 
 
