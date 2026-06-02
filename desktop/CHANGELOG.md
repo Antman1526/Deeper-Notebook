@@ -20,6 +20,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.67p — Whisper STT: pre-download the model the shim actually uses (no first-use stall)**
+  - **Bug:** `_phase_download_models` pre-fetched a **whisper.cpp `ggml-base.en.bin`**,
+    but the STT shim uses **faster-whisper** (CTranslate2) and `app.py` passed the
+    bare name `"base.en"` — so faster-whisper ignored the pre-download and fetched
+    its *own* model from HuggingFace silently on first voice use. If that download
+    was slow/stalled, Whisper stayed "unhealthy" and the port never bound (no error,
+    just a hang).
+  - **Fix:** `ensure_stt_model` now downloads the real faster-whisper CTranslate2
+    model (`Systran/faster-whisper-base.en`: config.json, model.bin, tokenizer.json,
+    vocabulary.txt) into `STT/faster-whisper-base.en/` during the gated download
+    phase (with progress). `app.py` points the shim at that local directory **only
+    when every required file is present** — otherwise it falls back to the bare
+    `"base.en"` HF download (an incomplete dir would break the shim, so this is
+    regression-proof: worst case is the prior behavior).
+  - **Tests:** `test_model_downloads.py` (fetches faster-whisper not ggml; returns
+    None if any file fails so the launcher falls back).
+  - Note: builds *into* the next release; not hot-fixed today to avoid another
+    venv rebuild.
+
 - **🐛 v0.8.67o — Auto-export now actually fires (first export ~10 min after boot)**
   - **Bug (self-review of v0.8.67m):** the scheduled export thread slept the FULL
     interval (24h) BEFORE its first export. A desktop app is usually quit within a

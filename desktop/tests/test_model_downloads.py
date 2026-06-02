@@ -411,3 +411,48 @@ def test_download_one_min_bytes_override_rejects_tiny_html_error_page(tmp_path):
     # The old partial was rejected, fresh download succeeded.
     assert result is True
     assert dest.read_bytes() == fresh_content
+
+
+# ---------------------------------------------------------------------------
+# v0.8.67p — ensure_stt_model fetches the faster-whisper CTranslate2 model
+# ---------------------------------------------------------------------------
+
+def test_ensure_stt_model_downloads_faster_whisper_not_ggml(tmp_path):
+    """The whisper shim uses faster-whisper, so ensure_stt_model must fetch the
+    CTranslate2 model files (Systran/faster-whisper-base.en), NOT the legacy
+    whisper.cpp ggml .bin, and return the model dir when all files succeed."""
+    from desktop.model_downloads import (
+        ensure_stt_model,
+        FASTER_WHISPER_STT_DIR,
+        FASTER_WHISPER_STT_FILES,
+    )
+
+    calls = []
+
+    def fake_dl(url, dest, label, progress=None, expected_size_mb=0, min_bytes=0):
+        calls.append(url)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"x" * 1024)
+        return True
+
+    with patch("desktop.model_downloads._download_one", side_effect=fake_dl):
+        result = ensure_stt_model(tmp_path)
+
+    assert result == tmp_path / FASTER_WHISPER_STT_DIR
+    assert len(calls) == len(FASTER_WHISPER_STT_FILES)
+    assert all("Systran/faster-whisper-base.en" in u for u in calls)
+    assert all("ggml" not in u for u in calls)
+
+
+def test_ensure_stt_model_returns_none_if_any_file_fails(tmp_path):
+    """If any file fails, return None so the launcher falls back to the bare
+    'base.en' HF download — an INCOMPLETE local dir would break the shim."""
+    from desktop.model_downloads import ensure_stt_model
+
+    def fake_dl(url, dest, label, progress=None, expected_size_mb=0, min_bytes=0):
+        return "model.bin" not in url  # the big file "fails"
+
+    with patch("desktop.model_downloads._download_one", side_effect=fake_dl):
+        result = ensure_stt_model(tmp_path)
+
+    assert result is None

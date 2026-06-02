@@ -48,6 +48,28 @@ WHISPER_STT = (
     142,
 )
 
+# v0.8.67p — the whisper shim uses faster-whisper (CTranslate2 format), NOT
+# whisper.cpp. The WHISPER_STT ggml .bin above was NEVER loaded by the shim
+# (app.py passed the bare name "base.en", so faster-whisper re-downloaded its
+# own CTranslate2 model from HuggingFace on first voice use — a slow, silent
+# first-use stall). Pre-download the model the shim ACTUALLY loads, into
+# STT/faster-whisper-base.en/, so the shim loads it locally with no HF fetch.
+# Size floors (min_bytes) are deliberately loose — just enough to reject HTML
+# error pages — so we don't depend on exact upstream file sizes.
+_FW_BASE = "https://huggingface.co/Systran/faster-whisper-base.en/resolve/main"
+FASTER_WHISPER_STT_DIR = "STT/faster-whisper-base.en"
+FASTER_WHISPER_STT_FILES = (
+    # (url, filename, min_bytes)
+    (f"{_FW_BASE}/config.json?download=true", "config.json", 100),
+    (f"{_FW_BASE}/model.bin?download=true", "model.bin", 20_000_000),
+    (f"{_FW_BASE}/tokenizer.json?download=true", "tokenizer.json", 10_000),
+    (f"{_FW_BASE}/vocabulary.txt?download=true", "vocabulary.txt", 10_000),
+)
+# Files that must all be present before the local model is preferred over the
+# bare "base.en" HF-download fallback (an INCOMPLETE local dir would make
+# faster-whisper fail to load — worse than falling back).
+FASTER_WHISPER_STT_REQUIRED = tuple(f for _u, f, _m in FASTER_WHISPER_STT_FILES)
+
 PIPER_VOICE_MODEL = (
     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/"
     "en_US-amy-medium.onnx?download=true",
@@ -251,12 +273,27 @@ def ensure_stt_model(
     model_dir: Path,
     progress: Callable[[str], None] | None = None,
 ) -> Path | None:
-    """Download Whisper.cpp base.en model into model_dir/STT/."""
-    url, rel, label, size_mb = WHISPER_STT
-    dest = model_dir / rel
-    if _download_one(url, dest, label, progress, expected_size_mb=size_mb):
-        return dest
-    return None
+    """v0.8.67p — Download the faster-whisper base.en CTranslate2 model into
+    model_dir/STT/faster-whisper-base.en/ — the format the whisper shim actually
+    loads. Returns the model directory if ALL files downloaded, else None (the
+    launcher then falls back to the bare "base.en" name, which faster-whisper
+    fetches from HuggingFace on first use).
+
+    Pre-v0.8.67p this downloaded a whisper.cpp ggml .bin that the faster-whisper
+    shim never loaded, so first voice use always blocked on a silent HF
+    download. Fetching the real model here (in the gated download phase, with
+    progress) removes that stall.
+    """
+    dest_dir = model_dir / FASTER_WHISPER_STT_DIR
+    all_ok = True
+    for url, fname, min_bytes in FASTER_WHISPER_STT_FILES:
+        if not _download_one(
+            url, dest_dir / fname,
+            f"faster-whisper base.en / {fname}",
+            progress, min_bytes=min_bytes,
+        ):
+            all_ok = False
+    return dest_dir if all_ok else None
 
 
 # v0.7.150 — Piper `.onnx.json` voice configs are ~5 KB JSON descriptors

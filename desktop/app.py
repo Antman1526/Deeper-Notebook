@@ -490,8 +490,21 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     cfg = ctx.cfg
     voice_model_dir = Path(cfg.model_dir)
 
-    # faster-whisper uses model-name strings ("base.en"), not .bin file paths.
-    whisper_model_name = Path("base.en")  # Path so Supervisor type is satisfied
+    # v0.8.67p — the whisper shim (faster-whisper) loads either a model-name
+    # string ("base.en", downloaded from HF on first use) OR a local CTranslate2
+    # model directory. Prefer the model pre-downloaded by _phase_download_models
+    # so first voice use never blocks on a HF fetch — but ONLY when EVERY
+    # required file is present (an incomplete dir would make faster-whisper fail
+    # to load, which is worse than the HF-download fallback).
+    from desktop.model_downloads import (
+        FASTER_WHISPER_STT_DIR,
+        FASTER_WHISPER_STT_REQUIRED,
+    )
+    _local_whisper = voice_model_dir / FASTER_WHISPER_STT_DIR
+    if all((_local_whisper / f).exists() for f in FASTER_WHISPER_STT_REQUIRED):
+        whisper_model_name = _local_whisper
+    else:
+        whisper_model_name = Path("base.en")  # Path so Supervisor type is satisfied
     amy_path = voice_model_dir / "TTS" / "en_US-amy-medium.onnx"
     ryan_path = voice_model_dir / "TTS" / "en_US-ryan-high.onnx"
     nomic_path = voice_model_dir / "GGUF" / "nomic-embed-text-v1.5.f16.gguf"
