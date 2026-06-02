@@ -20,6 +20,29 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🔒 v0.8.67l — Self-healing DB live-query corruption + memory-pressure n_ctx backoff**
+  - **Auto-repair (`desktop/db_repair.py` + `desktop/launcher.py`):** the recurring
+    "source processing bricked" failure came from SurrealDB live-query state
+    corrupting after an unclean shutdown (SIGKILL / force-quit / power loss),
+    crashing the worker with *"The key being inserted already exists"* — fixable
+    only by running `scripts/repair_desktop_db.sh` by hand. Now a daemon watcher
+    detects that crash in `worker.log` (only content appended THIS boot, so a
+    stale already-repaired crash can't re-trigger) and sets a one-shot flag; on
+    the NEXT launch, BEFORE SurrealDB starts (clean slate), the launcher runs the
+    same backup-first export→move→reimport automatically. Abort-safe (restores
+    the original dir if the import fails) and one-shot (the flag clears after a
+    single attempt, so a non-fixing repair can never loop). `ONP_DISABLE_DB_AUTOREPAIR`
+    opts out.
+  - **Memory-pressure backoff (`desktop/launcher.py`):** the v0.8.67i RAM-aware
+    context default is now also stepped DOWN when AVAILABLE memory (vm_stat) can't
+    hold the chosen tier's KV cache + ~5 GiB headroom — avoids launching the chat
+    sidecar into a swap storm when the machine is already memory-saturated. No-op
+    on a healthy machine (the total-RAM tier is unchanged).
+  - **Tests:** `desktop/tests/test_db_repair.py` (signature detection, one-shot flag
+    lifecycle, abort-safe guard returns); pressure-backoff cases in
+    `test_launcher_adaptive_nctx.py`; `conftest.py` isolates tests from the real
+    data dir.
+
 - **🛠 v0.8.67k — Build & CI hardening (gate backend tests · fix dmg · stable-codesign opt-in)**
   - **Gate the backend suite (`Makefile` `build-mac-test`):** the build precondition
     ran only `desktop/tests/`, so a regression in `api/` or `open_notebook/` could

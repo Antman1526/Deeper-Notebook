@@ -39,6 +39,13 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
         raise ValueError(name)
 
     monkeypatch.setattr("desktop.launcher.os.sysconf", fake_sysconf)
+    # v0.8.67l — report ample AVAILABLE RAM so the pressure backoff is a no-op
+    # here; the backoff itself is covered by the _pressure_adjusted_ctx_max
+    # tests below. Keeps the total-RAM-tier assertions deterministic.
+    monkeypatch.setattr(
+        "desktop.launcher.Supervisor._available_ram_bytes",
+        staticmethod(lambda: gib * (1024 ** 3)),
+    )
 
 
 @pytest.mark.parametrize(
@@ -104,7 +111,36 @@ def test_no_env_uses_adaptive_default(monkeypatch):
     adaptive ctx_max (not the old hardcoded 32768) on a 64 GB Mac."""
     sup = Supervisor.__new__(Supervisor)
     sup.chat_llm_path = None
-    _patch_ram(monkeypatch, 64)
+    _patch_ram(monkeypatch, 64)  # also mocks _available_ram_bytes (ample)
     monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
     monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
     assert sup._resolve_chat_llm_n_ctx() == 98304
+
+
+# --- v0.8.67l memory-pressure backoff (pure) ----------------------------------
+
+_GIB = 1024 ** 3
+
+
+def test_pressure_backoff_noop_when_roomy():
+    # 64 GiB available easily holds the 98304 tier (~12 GiB KV + 5 GiB headroom).
+    assert Supervisor._pressure_adjusted_ctx_max(98304, 64 * _GIB) == 98304
+
+
+def test_pressure_backoff_steps_down_when_tight():
+    # ~15 GiB available: 98304 needs ~17 GiB → step down to 65536 (~13 GiB fits).
+    assert Supervisor._pressure_adjusted_ctx_max(98304, 15 * _GIB) == 65536
+
+
+def test_pressure_backoff_floor_when_starved():
+    assert Supervisor._pressure_adjusted_ctx_max(98304, 1 * _GIB) == 32768
+
+
+def test_pressure_backoff_noop_when_unknown():
+    assert Supervisor._pressure_adjusted_ctx_max(98304, None) == 98304
+    assert Supervisor._pressure_adjusted_ctx_max(65536, 0) == 65536
+
+
+def test_pressure_backoff_never_exceeds_tier():
+    # A small tier stays small even with huge available RAM.
+    assert Supervisor._pressure_adjusted_ctx_max(32768, 256 * _GIB) == 32768
