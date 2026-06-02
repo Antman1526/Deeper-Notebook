@@ -20,6 +20,14 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🐛 v0.8.67o — Auto-export now actually fires (first export ~10 min after boot)**
+  - **Bug (self-review of v0.8.67m):** the scheduled export thread slept the FULL
+    interval (24h) BEFORE its first export. A desktop app is usually quit within a
+    day, so most sessions produced **no backup at all** — the data-protection
+    feature rarely triggered. Now the first export runs shortly after boot
+    (default 10 min, `ONP_AUTO_EXPORT_FIRST_DELAY_SECS`), then every interval, so a
+    session longer than ~10 min always leaves at least one recoverable backup.
+
 - **🛠 v0.8.67m — Scheduled DB auto-export + remembered window size**
   - **Scheduled auto-export (`desktop/launcher.py`):** a background thread exports
     the running SurrealDB to `~/onp-backups/auto-export-*.surql` on an interval
