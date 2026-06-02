@@ -20,6 +20,22 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67m — Scheduled DB auto-export + remembered window size**
+  - **Scheduled auto-export (`desktop/launcher.py`):** a background thread exports
+    the running SurrealDB to `~/onp-backups/auto-export-*.surql` on an interval
+    (default every 24h, keeping the newest 7), so a corruption or accidental delete
+    is always recoverable without you thinking about it. Sleeps the interval first
+    (no boot I/O), prunes old exports, and tolerates failures (logs + retries).
+    Tunable via `ONP_AUTO_EXPORT_HOURS` (0 disables) and `ONP_AUTO_EXPORT_KEEP`.
+  - **Remember window size (`desktop/window.py` + `desktop/window_state.py`):** the
+    main window now reopens at the size you last left it (follow-up to v0.8.67j's
+    screen-aware default), clamped to the current screen so a size saved on a
+    larger monitor can't strand the window off-screen. Stored as a small JSON file;
+    a missing/corrupt file just falls back to the screen-aware default.
+  - **Tests:** `test_auto_export.py` (retention pruning, keep-floor, safety);
+    `test_window_state.py` (clamp floor/screen-cap, load/save roundtrip, corrupt-file
+    fallback).
+
 - **🔒 v0.8.67l — Self-healing DB live-query corruption + memory-pressure n_ctx backoff**
   - **Auto-repair (`desktop/db_repair.py` + `desktop/launcher.py`):** the recurring
     "source processing bricked" failure came from SurrealDB live-query state

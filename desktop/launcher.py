@@ -461,6 +461,11 @@ class Supervisor:
         )
         self._progress("supervisor.surreal", "done")
 
+        # v0.8.67m — start periodic background exports of the running DB so a
+        # corruption or accidental delete is always recoverable (daily by
+        # default, keeping the last 7; non-blocking).
+        self._start_periodic_export(surreal_port)
+
         self._progress("supervisor.api", "running")
         self._spawn_api(api_port)
         # First-launch SurrealDB schema migrations + the heavy upstream import
@@ -1141,6 +1146,91 @@ class Supervisor:
             ).start()
         except Exception as exc:
             log.debug("db_repair: could not start worker watcher (%s)", exc)
+
+    @staticmethod
+    def _prune_old_exports(backup_dir: Path, keep: int) -> None:
+        """v0.8.67m — Keep only the newest `keep` auto-export-*.surql files so
+        scheduled backups don't grow without bound. Best-effort; never raises."""
+        try:
+            files = sorted(
+                Path(backup_dir).glob("auto-export-*.surql"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return
+        for old in files[max(1, keep):]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    def _start_periodic_export(self, surreal_port: int) -> None:
+        """v0.8.67m — Periodically export the RUNNING SurrealDB to
+        ~/onp-backups so a corruption or accidental delete is recoverable.
+        Default every 24h, keep the newest 7; tunable via ONP_AUTO_EXPORT_HOURS
+        (0 disables) and ONP_AUTO_EXPORT_KEEP. Sleeps the interval FIRST, so it
+        never adds boot I/O and is inert in fast-finishing tests. Failures log
+        and retry next interval — never crash the supervisor."""
+        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+            return
+        try:
+            hours = float(os.environ.get("ONP_AUTO_EXPORT_HOURS", "24") or 24)
+        except ValueError:
+            hours = 24.0
+        if hours <= 0:
+            return
+        try:
+            keep = int(os.environ.get("ONP_AUTO_EXPORT_KEEP", "7") or 7)
+        except ValueError:
+            keep = 7
+        keep = max(1, keep)
+
+        ext = ".exe" if self.surreal_arch.startswith("windows") else ""
+        binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
+        backup_dir = user_home() / "onp-backups"
+        user = self.cfg.surreal_user
+        password = self.cfg.surreal_password
+
+        def _loop() -> None:
+            interval = hours * 3600.0
+            while True:
+                time.sleep(interval)
+                try:
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    ts = time.strftime("%Y%m%d-%H%M%S")
+                    out = backup_dir / f"auto-export-{ts}.surql"
+                    subprocess.run(
+                        [
+                            str(binary), "export",
+                            "--endpoint", f"http://127.0.0.1:{surreal_port}",
+                            "--username", user,
+                            "--password", password,
+                            "--namespace", "open_notebook",
+                            "--database", "open_notebook",
+                            str(out),
+                        ],
+                        check=True,
+                        timeout=600,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if out.exists() and out.stat().st_size > 0:
+                        log.info("auto-export: wrote %s (%d bytes)", out, out.stat().st_size)
+                        self._prune_old_exports(backup_dir, keep)
+                    else:
+                        log.warning("auto-export: produced an empty file; removing")
+                        try:
+                            out.unlink()
+                        except OSError:
+                            pass
+                except Exception as exc:
+                    log.warning("auto-export failed (retry next interval): %s", exc)
+
+        try:
+            threading.Thread(target=_loop, name="auto-export", daemon=True).start()
+        except Exception as exc:
+            log.debug("auto-export: could not start thread (%s)", exc)
 
     def _spawn_next(self, port: int, *, next_cwd: Path | None = None) -> None:
         node_bin = self.bin_dir / f"node-{self.node_arch}" / (
