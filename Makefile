@@ -351,6 +351,15 @@ BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
 # Detect CPU arch (arm64 vs x86_64) — drives the DMG filename.
 BUILD_ARCH := $(shell uname -m)
 
+# v0.8.67k — codesigning identity for the bundle re-seal. Defaults to '-'
+# (ad-hoc, no cert needed) so nothing changes for a plain build. Ad-hoc
+# signatures give the app a NEW identity on every rebuild, which makes macOS
+# reset its TCC (Files & Folders) permissions each time — the cause of the
+# iCloud/Desktop "scandir wedge" seen in the field. Set a STABLE identity to
+# fix that: run `bash scripts/create-signing-identity.sh` once, then build with
+#   make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+ONP_CODESIGN_IDENTITY ?= -
+
 build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
 	@echo ""
 	@echo "✅ macOS build complete:"
@@ -370,6 +379,13 @@ build-mac-test:
 	# fail the build (the "Stage 0 precondition" was toothless). Run pytest
 	# directly so its non-zero exit aborts `build-mac`.
 	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q
+	@# v0.8.67k — ALSO gate the backend suite. Previously the precondition ran
+	@# only desktop/tests/, so a regression in api/ or open_notebook/ (e.g. the
+	@# chat-stream overflow handling) could ship in a build with zero coverage.
+	@# Run the backend suite via the repo .venv (uv run, py3.12) the same way
+	@# `make test` does; integration tests (need a live SurrealDB) stay excluded.
+	@echo "🧪 Running backend tests (precondition for build-mac)…"
+	@uv run pytest tests/ -q --ignore=tests/integration
 
 # v0.7.141 — Stage 0.5: regenerate desktop/requirements.lock from
 # pyproject.toml BEFORE the bundle venv installs against it.
@@ -462,8 +478,8 @@ build-mac-runtimes:
 build-mac-pyinstaller:
 	@echo "🔧 Running PyInstaller (this is the slow step, ~5-10 min)..."
 	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
-	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign -)..."
-	@codesign --force --deep --sign - "dist/Open Notebook Plus.app"
+	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign $(ONP_CODESIGN_IDENTITY))..."
+	@codesign --force --deep --sign "$(ONP_CODESIGN_IDENTITY)" "dist/Open Notebook Plus.app"
 	@echo "   Verifying seal..."
 	@spctl -a -vvv "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || \
 		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);" && \

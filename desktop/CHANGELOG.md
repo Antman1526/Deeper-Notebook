@@ -20,6 +20,22 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.67k — Build & CI hardening (gate backend tests · fix dmg · stable-codesign opt-in)**
+  - **Gate the backend suite (`Makefile` `build-mac-test`):** the build precondition
+    ran only `desktop/tests/`, so a regression in `api/` or `open_notebook/` could
+    ship in a build with zero coverage (the v0.8.67i chat-stream fix wasn't gated).
+    Now also runs `uv run pytest tests/ --ignore=tests/integration` before a build.
+  - **Fix flaky `.dmg` step (`desktop/build/post_build_mac.sh`):** detaches any stale
+    mounted ONP image before `hdiutil create`, eliminating the
+    `hdiutil: create failed - Resource busy` that aborted the build at the dmg step
+    even when the `.app` was complete.
+  - **Opt-in stable codesigning (`Makefile` + `scripts/create-signing-identity.sh`):**
+    ad-hoc signing gives the app a new identity each rebuild, so macOS resets its TCC
+    (Files & Folders) grants every time — the cause of the iCloud/Desktop scandir
+    boot-wedge. `ONP_CODESIGN_IDENTITY` (default `-`, unchanged) lets you re-sign with
+    a stable self-signed identity created once via the new script. Default build
+    behavior is untouched.
+
 - **🎨 v0.8.67j — Main window opens larger (screen-aware) instead of a fixed 1280×800**
   - **Gap:** the desktop window always opened at a hardcoded 1280×800, which felt
     cramped on large displays — the three-pane layout and chat composer had little
