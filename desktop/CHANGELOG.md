@@ -20,6 +20,21 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.67j — Main window opens larger (screen-aware) instead of a fixed 1280×800**
+  - **Gap:** the desktop window always opened at a hardcoded 1280×800, which felt
+    cramped on large displays — the three-pane layout and chat composer had little
+    room.
+  - **Fix (`desktop/window.py`):** new pure `_fit_window_size()` sizes the window to
+    ~90% of the usable screen, floored at the previous 1280×800 (so it never opens
+    smaller than before) and capped to a fixed 1600×1000 fallback when the screen
+    can't be measured. `_preferred_window_size()` reads the macOS main-screen
+    *visible* frame (excludes menu bar + Dock) via AppKit — which pywebview's cocoa
+    backend already depends on — and degrades gracefully on any failure. The window
+    stays freely resizable (pywebview default).
+  - **Tests:** `desktop/tests/test_window_size.py` (scale fraction, floor-wins on
+    small screens, unmeasurable-screen fallback, never-smaller-than-floor across
+    7 common resolutions).
+
 - **🐛 v0.8.67i — Large source contexts no longer fail chat (RAM-aware n_ctx) + clear overflow message**
   - **Bug:** selecting all sources in a notebook (e.g. 26 sources ≈ 72K tokens)
     made `/chat/stream` fail with a bare *"Chat stream failed unexpectedly."* The

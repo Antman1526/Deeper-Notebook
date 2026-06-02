@@ -332,6 +332,39 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     return base_js + voice_injector + memory_injector
 
 
+def _fit_window_size(screen_w: int, screen_h: int,
+                     min_w: int, min_h: int, frac: float = 0.9) -> tuple[int, int]:
+    """v0.8.67j — Pure helper: size the window to `frac` of the usable
+    screen, never smaller than (min_w, min_h).
+
+    Why: the main window opened at a fixed 1280x800, which felt cramped on
+    large displays (the chat composer and three-pane layout had little
+    room). Scaling to the screen makes it spacious on a big monitor while
+    still fitting a small laptop (the floor guarantees it never shrinks
+    below the previous default). When the screen can't be measured
+    (screen_w/h <= 0), fall back to a generous fixed 1600x1000.
+    """
+    if screen_w <= 0 or screen_h <= 0:
+        return max(min_w, 1600), max(min_h, 1000)
+    return max(min_w, int(screen_w * frac)), max(min_h, int(screen_h * frac))
+
+
+def _preferred_window_size(min_w: int, min_h: int) -> tuple[int, int]:
+    """v0.8.67j — Screen-aware default size for the main window. Reads the
+    macOS main-screen *visible* frame (excludes the menu bar + Dock) via
+    AppKit, which pywebview's cocoa backend already depends on. Any failure
+    (non-cocoa backend, headless) degrades to the fixed fallback in
+    _fit_window_size — the window must always open.
+    """
+    try:
+        from AppKit import NSScreen  # pyobjc — present on the cocoa backend
+        vf = NSScreen.mainScreen().visibleFrame()
+        return _fit_window_size(int(vf.size.width), int(vf.size.height),
+                                min_w, min_h)
+    except Exception:
+        return _fit_window_size(0, 0, min_w, min_h)
+
+
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Open notebook+",
                 width: int = 1280, height: int = 800,
@@ -350,7 +383,11 @@ def open_window(url: str, on_close: Callable[[], None],
     the "STT failed: HTTP 404" toasts in the UI).
     """
     import webview  # lazy: only the desktop runtime path needs this
-    window = webview.create_window(title, url, width=width, height=height)
+    # v0.8.67j — open at ~90% of the usable screen instead of a fixed
+    # 1280x800 (which looked cramped on large monitors). The width/height
+    # args act as the floor so the window never opens smaller than before.
+    win_w, win_h = _preferred_window_size(width, height)
+    window = webview.create_window(title, url, width=win_w, height=win_h)
     window.events.closed += on_close
 
     def _on_loaded():
