@@ -1185,6 +1185,18 @@ class Supervisor:
         except ValueError:
             keep = 7
         keep = max(1, keep)
+        # v0.8.67o — do the FIRST export shortly after boot (default 10 min),
+        # not after a full interval. A desktop app is usually quit within a day,
+        # so sleeping the whole 24h interval FIRST (pre-v0.8.67o) meant most
+        # sessions produced NO backup at all — the protection rarely fired.
+        try:
+            first_delay = float(
+                os.environ.get("ONP_AUTO_EXPORT_FIRST_DELAY_SECS", "600") or 600
+            )
+        except ValueError:
+            first_delay = 600.0
+        if first_delay < 0:
+            first_delay = 0.0
 
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
         binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
@@ -1194,8 +1206,10 @@ class Supervisor:
 
         def _loop() -> None:
             interval = hours * 3600.0
+            delay = first_delay  # first export soon after boot, then every interval
             while True:
-                time.sleep(interval)
+                time.sleep(delay)
+                delay = interval
                 try:
                     backup_dir.mkdir(parents=True, exist_ok=True)
                     ts = time.strftime("%Y%m%d-%H%M%S")
