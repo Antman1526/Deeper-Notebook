@@ -20,6 +20,7 @@ mocks.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -43,13 +44,21 @@ def test_wait_tcp_called_between_llamacpp_chat_and_memory():
     )
     # The wait call itself must be present.
     assert "_wait_tcp(" in src
-    # Anchor the v0.7.198 region with the specific timeout the
-    # comment justifies for cold mmaps.
-    assert "timeout=60.0" in src, (
-        "v0.7.198 regression: chat-llm readiness probe timeout was "
-        "lowered. Cold-cache mmap of large GGUFs can legitimately "
-        "exceed the previous default — too-short timeout regresses "
-        "the original memory-retriever spawn race."
+    # v0.8.67 — the chat-llm readiness probe timeout is now env-tunable
+    # (ONP_SIDECAR_TCP_TIMEOUT) with a generous default for cold mmaps; it was a
+    # hardcoded 60.0. Assert the tunable AND a generous default (>=60s) so a
+    # refactor that lowers it — regressing the original memory-retriever spawn
+    # race — is still caught.
+    assert '_startup_timeout("ONP_SIDECAR_TCP_TIMEOUT"' in src, (
+        "v0.7.198/v0.8.67 regression: chat-llm readiness probe no longer uses "
+        "the env-tunable ONP_SIDECAR_TCP_TIMEOUT."
+    )
+    _m = re.search(
+        r'_startup_timeout\("ONP_SIDECAR_TCP_TIMEOUT",\s*([0-9.]+)\)', src
+    )
+    assert _m and float(_m.group(1)) >= 60.0, (
+        "v0.7.198 regression: chat-llm readiness probe default timeout < 60s. "
+        "Cold-cache mmap of large GGUFs can legitimately exceed it."
     )
     # The order assertion: chat_alive guard appears BEFORE memory spawn.
     idx_chat_alive = src.find("chat_alive = (")
