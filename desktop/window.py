@@ -383,12 +383,56 @@ def open_window(url: str, on_close: Callable[[], None],
     the "STT failed: HTTP 404" toasts in the UI).
     """
     import webview  # lazy: only the desktop runtime path needs this
-    # v0.8.67j — open at ~90% of the usable screen instead of a fixed
-    # 1280x800 (which looked cramped on large monitors). The width/height
-    # args act as the floor so the window never opens smaller than before.
-    win_w, win_h = _preferred_window_size(width, height)
+    from desktop import window_state
+    from desktop.paths import user_home
+
+    data_home = user_home() / ".open-notebook-plus"
+    # v0.8.67m — reopen at the size you last left the window, if remembered;
+    # otherwise v0.8.67j's screen-aware default. Clamp a remembered size to the
+    # CURRENT screen so a size saved on a bigger monitor can't strand the
+    # window off-screen. The width/height args remain the floor.
+    saved = window_state.load_size(data_home)
+    if saved is not None:
+        try:
+            from AppKit import NSScreen
+            vf = NSScreen.mainScreen().visibleFrame()
+            _sw, _sh = int(vf.size.width), int(vf.size.height)
+        except Exception:
+            _sw = _sh = 0
+        win_w, win_h = window_state.clamp(
+            saved[0], saved[1], _sw, _sh, min_w=width, min_h=height
+        )
+    else:
+        # v0.8.67j — open at ~90% of the usable screen instead of a fixed
+        # 1280x800 (which looked cramped on large monitors).
+        win_w, win_h = _preferred_window_size(width, height)
+
     window = webview.create_window(title, url, width=win_w, height=win_h)
-    window.events.closed += on_close
+
+    # Track live size via the resize event when available (defensive: the event
+    # name has varied across pywebview versions, so never let its absence break
+    # the window). Falls back to the window's own width/height at close time.
+    _live = {"w": win_w, "h": win_h}
+    try:
+        def _on_resized(w, h):  # pragma: no cover - pywebview callback
+            _live["w"], _live["h"] = int(w), int(h)
+        window.events.resized += _on_resized
+    except Exception:
+        pass
+
+    def _on_closed() -> None:  # pragma: no cover - pywebview callback
+        # v0.8.67m — remember the final window size for next launch.
+        try:
+            window_state.save_size(
+                data_home,
+                getattr(window, "width", None) or _live["w"],
+                getattr(window, "height", None) or _live["h"],
+            )
+        except Exception:
+            pass
+        on_close()
+
+    window.events.closed += _on_closed
 
     def _on_loaded():
         # v0.5.7 — re-read config.toml on every page load so live theme
