@@ -2,6 +2,7 @@
 
 import { AppSidebar } from './AppSidebar'
 import { SetupBanner } from './SetupBanner'
+import { DbRepairBanner } from './DbRepairBanner'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -13,6 +14,7 @@ export function AppShell({ children }: AppShellProps) {
       <AppSidebar />
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SetupBanner />
+        <DbRepairBanner />
         {children}
       </main>
     </div>
