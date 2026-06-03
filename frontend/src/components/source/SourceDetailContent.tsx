@@ -843,7 +843,10 @@ export function SourceDetailContent({
                       <h3 className="mb-2 text-sm font-semibold">{t('sources.topics')}</h3>
                       <div className="flex flex-wrap gap-2">
                         {source.topics.map((topic, idx) => (
-                          <Badge key={idx} variant="outline">
+                          // v0.8.67q — key by the topic value (stable) instead
+                          // of the array index, so React reconciles correctly
+                          // if the topic set changes.
+                          <Badge key={`${topic}-${idx}`} variant="outline">
                             {topic}
                           </Badge>
                         ))}

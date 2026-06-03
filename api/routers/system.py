@@ -120,3 +120,28 @@ async def env_refresh(
         updated.append(k)
 
     return {"updated": updated, "rejected": rejected}
+
+
+@router.get("/api/system/db-repair-needed")
+async def db_repair_needed() -> dict:
+    """v0.8.67q — Report whether the launcher flagged the SurrealDB live-query
+    state as corrupt.
+
+    The launcher's worker watcher (v0.8.67l) writes ~/.open-notebook-plus/
+    .needs_db_repair when it sees the "key being inserted already exists"
+    crash that bricks source processing. On the NEXT launch the launcher runs
+    a backup-first auto-repair and clears the flag. Between detection and that
+    relaunch the worker is down with no UI signal, so the user doesn't know to
+    restart — this endpoint lets the frontend show a banner telling them to.
+
+    Read-only, no secrets. Unlike the launcher→API push routes above, this is a
+    normal authenticated GET (the frontend calls it through the API client);
+    it is intentionally NOT in main.py's excluded_paths."""
+    from pathlib import Path
+
+    flag = Path.home() / ".open-notebook-plus" / ".needs_db_repair"
+    try:
+        needs = flag.exists()
+    except OSError:
+        needs = False
+    return {"needs_repair": needs}

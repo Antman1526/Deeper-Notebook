@@ -20,6 +20,28 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.67q — Self-heal DB-repair banner + frontend bug fixes**
+  - **DB-repair banner (the missing UI signal for v0.8.67l):** when the launcher
+    flags live-query corruption, source processing is stuck but nothing told the
+    user — the self-heal only triggered if they happened to restart. New
+    `GET /api/system/db-repair-needed` reads the launcher's `.needs_db_repair`
+    flag; a polling hook (`use-db-repair-status`) drives a non-dismissible
+    `DbRepairBanner` in `AppShell` telling the user to quit & reopen (where the
+    backup-first auto-repair runs). The banner self-clears after the repair.
+  - **🐛 Markdown editor ignored dark mode:** `markdown-editor.tsx` imported
+    `useTheme` from `next-themes`, whose provider is NOT initialized in this app
+    (we use a Zustand theme store) — so `resolvedTheme` was undefined and the
+    editor always rendered light (white editor inside a dark dialog). Now reads
+    the real theme store's `effectiveTheme`.
+  - **🐛 Topics list keyed by array index** (`SourceDetailContent.tsx`) → keyed by
+    the topic value so React reconciles correctly.
+  - **Audit note:** a frontend review also *cleared* two previously-suspected bugs
+    — the source-chat citation popover key (uses a stable `kind`+index, correct)
+    and the model-override "lost without a session" concern (the override is sent
+    on the same call that auto-creates the session). No change needed for either.
+  - **Tests:** `tests/test_v0_8_67q_db_repair_endpoint.py` (flag absent/present +
+    never-500 on unreadable home). Frontend typecheck clean.
+
 - **🐛 v0.8.67p — Whisper STT: pre-download the model the shim actually uses (no first-use stall)**
   - **Bug:** `_phase_download_models` pre-fetched a **whisper.cpp `ggml-base.en.bin`**,
     but the STT shim uses **faster-whisper** (CTranslate2) and `app.py` passed the
