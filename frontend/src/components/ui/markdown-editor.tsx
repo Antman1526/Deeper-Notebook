@@ -2,7 +2,11 @@
 
 import dynamic from 'next/dynamic'
 import { forwardRef } from 'react'
-import { useTheme } from 'next-themes'
+// v0.8.67q — was `next-themes`, whose provider is NOT initialized in this app
+// (we use the Zustand theme store). next-themes' useTheme() therefore returned
+// undefined, so the editor silently fell back to light mode regardless of the
+// app theme — a white editor inside a dark dialog. Use the real theme store.
+import { useTheme } from '@/lib/stores/theme-store'
 
 const MDEditor = dynamic(
   () => import('@uiw/react-md-editor').then((mod) => mod.default),
@@ -30,9 +34,9 @@ export const MarkdownEditor = forwardRef<HTMLDivElement, MarkdownEditorProps>(
     // editing. `resolvedTheme` resolves "system" to the actual
     // light/dark choice; SSR fallback is "light" because MDEditor
     // is ssr:false anyway.
-    const { resolvedTheme } = useTheme()
+    const { effectiveTheme } = useTheme()
     const colorMode: 'light' | 'dark' =
-      resolvedTheme === 'dark' ? 'dark' : 'light'
+      effectiveTheme === 'dark' ? 'dark' : 'light'
     return (
       <div className={className} ref={ref} data-color-mode={colorMode}>
         <MDEditor
