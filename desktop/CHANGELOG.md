@@ -20,6 +20,13 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.67s — Add enhanced Ralph Loop script**
+  - **🛠 Ralph Loop:** Added `scripts/ralph.sh` implementing an autonomous development loop supporting Claude Code (`claude`), cursor, and `opencode` with git persistence, circuit breakers, and automatic task tracking via `prd.json`.
+
+- **🐛 v0.8.67r — Add agentic capabilities and fix python runtime suffix in verification**
+  - **H7 Bug Fix:** Fix python runtime verification in `desktop/build/fetch_runtimes.py` on Windows by checking for `.tar.gz` unconditionally (since it was updated to be downloaded as a tarball).
+  - **✨ Agentic Capabilities:** Added secure local code execution via the `opencode_run` MCP tool and enabled autonomous web search result source ingestion via `add_web_source_to_notebook`.
+
 - **🎨 v0.8.67q — Self-heal DB-repair banner + frontend bug fixes**
   - **DB-repair banner (the missing UI signal for v0.8.67l):** when the launcher
     flags live-query corruption, source processing is stuck but nothing told the

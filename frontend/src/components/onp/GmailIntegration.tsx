@@ -316,7 +316,7 @@ export function GmailIntegration() {
               <ol className="ml-5 list-decimal text-xs text-[var(--muted-foreground)] space-y-1">
                 <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline inline-flex items-center gap-0.5">Google Cloud Console <ExternalLink className="h-3 w-3" /></a></li>
                 <li>Create an OAuth 2.0 Client ID (type: <em>Desktop app</em>)</li>
-                <li>Add <code>http://localhost</code> to authorized redirect URIs (we'll match the port dynamically)</li>
+                <li>Add <code>http://localhost</code> to authorized redirect URIs (we&apos;ll match the port dynamically)</li>
                 <li>Enable the <em>Gmail API</em> in your project</li>
                 <li>Paste the Client ID + Secret below</li>
               </ol>

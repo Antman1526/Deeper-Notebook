@@ -252,6 +252,15 @@ See dedicated CLAUDE.md files for detailed guidance:
 4. Deploy `docker compose --profile multi up`
 5. Verify migrations via API logs
 
+### Run Autonomous Development Loop (Ralph Loop)
+Run Claude Code, cursor, or opencode in an autonomous, self-correcting development loop:
+1. Run the script:
+   ```bash
+   ./scripts/ralph.sh --tool claude 10
+   ```
+2. This will auto-initialize the `.ralph/` directory (with `prd.json`, `progress.txt`, `prompt.md`).
+3. Customize `.ralph/prd.json` with your desired user stories/tasks, then run the script again.
+
 ---
 
 ## Support & Community

@@ -187,7 +187,8 @@ def main() -> int:
     surreal = BIN / (f"surreal-{arch}.exe" if is_win else f"surreal-{arch}")
     node_bin = BIN / f"node-{arch}" / ("node.exe" if is_win else "bin/node")
     uv_bin = BIN / ("uv.exe" if is_win else "uv")
-    py_ext = ".zip" if is_win else ".tar.gz"
+    # v0.8.67r — python-build-standalone uses .tar.gz on all platforms
+    py_ext = ".tar.gz"
     py_tarball = BIN / f"python-{arch}{py_ext}"
     print(f"\nVerifying:")
     print(f"  surreal: {surreal} ({surreal.stat().st_size // 1024 // 1024} MB)")
