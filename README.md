@@ -8,8 +8,8 @@ A desktop-app fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-note
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![FastAPI 0.104+](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-1587%20backend%20%2B%20183%20frontend-success)
-![Version](https://img.shields.io/badge/version-v0.8.65d-blue)
+![Tests](https://img.shields.io/badge/tests-1697%20backend%20%2B%20195%20frontend-success)
+![Version](https://img.shields.io/badge/version-v0.8.67q-blue)
 
 ---
 
@@ -38,7 +38,7 @@ v0.8.0 differentiators:
 - **Smart routing & MCP** — per-turn local/cloud routing (`OPEN_NOTEBOOK_AUTO_ROUTE_CHAT`) + per-conversation MCP tool servers.
 - **Native web search (v0.8.64–65d)** — a built-in `web_search` chat tool, opt-in by key presence (`SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL`), with a **failover chain** (multi-URL SearXNG + cross-provider on error, total-budget bounded), results rendered as citation pills, a **toggleable picker row**, and a ship-it-yourself **private localhost SearXNG** (`deploy/searxng-private/`) since public mirrors block the JSON API. Verified end-to-end with a local Ollama model calling it against live Serper.
 - **Complete observability** — request-ID correlation, Prometheus `/metrics` (incl. privacy-gate + tool-loop counters), slow-query + checkpoint-prune + memory-recall metrics.
-- **135+ production-hardening commits (v0.7.49 → v0.8.65d)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, the Osaurus-inspired Phase 5 work, the native web-search subsystem, and CVE remediation across backend + frontend.
+- **135+ production-hardening commits (v0.7.49 → v0.8.67q)** covering streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades, event-loop unblocking, encryption rotation + PBKDF2 KDF, local-LLM resilience, end-to-end timeout coverage, the Osaurus-inspired Phase 5 work, the native web-search subsystem, and CVE remediation across backend + frontend.
 
 ## Three-tier architecture
 
@@ -80,9 +80,9 @@ Desktop bundle additionally spawns:
 ```bash
 git clone https://github.com/Antman1526/open-notebook-Plus
 cd open-notebook-Plus
-cp .env.template .env                    # fill in passwords + encryption key
-docker compose --profile multi up -d
-# UI: http://localhost:3000, API: http://localhost:5055, Metrics: http://localhost:5055/metrics
+cp .env.example .env                     # fill in passwords + encryption key
+docker compose up -d
+# Legacy Docker UI: http://localhost:8502, API: http://localhost:5055, Metrics: http://localhost:5055/metrics
 ```
 
 ### Local development
@@ -93,7 +93,7 @@ cd open-notebook-Plus
 
 # Backend
 uv sync                                  # creates .venv via uv
-cp .env.template .env                    # set SURREAL_*, OPEN_NOTEBOOK_PASSWORD, ENCRYPTION_KEY
+cp .env.example .env                     # set SURREAL_*, OPEN_NOTEBOOK_PASSWORD, OPEN_NOTEBOOK_ENCRYPTION_KEY
 
 # Frontend
 cd frontend && npm ci && cd ..
@@ -107,8 +107,9 @@ make frontend                             # terminal 3: Next.js :3000
 Run the test suites:
 
 ```bash
-make test                                 # 594 hermetic backend tests + frontend
-make test-integration                     # 6 SurrealDB integration tests (requires `make database`)
+make test                                 # 1697 hermetic backend tests
+cd frontend && npm test                   # 195 frontend Vitest tests
+make test-integration                     # SurrealDB integration tests (requires `make database`)
 ```
 
 ## First run
@@ -257,9 +258,9 @@ powershell -ExecutionPolicy Bypass -File desktop/build/post_build_windows.ps1
 | AI-reviewer context | `~/Desktop/OpenNotebook/open-notebook-Plus-AI-Context.md` |
 | Full technology audit | `~/Desktop/OpenNotebook/open-notebook-Plus-Technology-Audit.md` |
 
-## Hardening Summary (v0.7.49 → v0.8.65d)
+## Hardening Summary (v0.7.49 → v0.8.67q)
 
-135+ patch commits across the hardening run.
+Patch commits across the hardening run.
 
 **v0.7.49 → v0.7.87** — original reliability sweep: streaming cancellation, SSE disconnect handling, connection-pool race correctness, delete cascades.
 
@@ -293,9 +294,11 @@ powershell -ExecutionPolicy Bypass -File desktop/build/post_build_windows.ps1
 - **v0.8.65c** — `deploy/searxng-private/` (localhost-only SearXNG with the JSON API enabled) + [config guide](docs/5-CONFIGURATION/private-searxng-web-search.md), since public mirrors block `format=json`.
 - **v0.8.65d** — decoupled `web_search` binding from MCP/DB failures (a SurrealDB blip during MCP lookup no longer drops web search). End-to-end verified: a local Ollama model called `web_search` against live Serper and produced a URL-cited answer.
 
-### CI status at v0.8.65d
+**v0.8.65g → v0.8.67q** — follow-up reliability and audit hardening: reasoning-model blank/`<think>` suppression, bounded chat/tool-loop env knobs, MCP registry/client hardening, multi-server tool binding, rate limiting, streaming gzip exemptions, vector relevance floor, context token-count accuracy, short-note context budgeting, and the desktop DB-repair status flag.
 
-All Tests jobs green: **1587 backend tests + 183 frontend vitest tests** (+ SurrealDB integration tests). Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) Unreleased for per-commit detail.
+### CI status at v0.8.67q
+
+The Tests workflow covers **1697 backend tests + 195 frontend Vitest tests** (+ SurrealDB integration tests). Workflow: [`/.github/workflows/test.yml`](.github/workflows/test.yml). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) Unreleased for per-commit detail.
 
 ## Support
 

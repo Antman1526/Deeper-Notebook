@@ -508,6 +508,9 @@ async def test_loop_omits_web_search_without_key(monkeypatch):
     monkeypatch.setattr(
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
     )
+    monkeypatch.setattr(
+        "open_notebook.tools.opencode.opencode_enabled", lambda: False
+    )
     # no provider env → tool absent → with no MCP tools either, bind never runs
     model = _RecordingModel([_FakeAIMessage([])])
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=2)
@@ -518,6 +521,9 @@ async def test_loop_omits_web_search_without_key(monkeypatch):
 async def test_loop_omits_web_search_when_disabled_by_picker(monkeypatch):
     monkeypatch.setattr(
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "open_notebook.tools.opencode.opencode_enabled", lambda: False
     )
     monkeypatch.setenv("SERPER_API_KEY", "k")  # key set...
     model = _RecordingModel([_FakeAIMessage([])])

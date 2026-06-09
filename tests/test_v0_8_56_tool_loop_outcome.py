@@ -104,6 +104,9 @@ async def test_no_outcome_recorded_when_no_tools_bound(monkeypatch):
     monkeypatch.setattr(
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
     )
+    monkeypatch.setattr(
+        "open_notebook.tools.opencode.opencode_enabled", lambda: False
+    )
     model = _ScriptedModel([_FakeAIMessage([])])
 
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=4)

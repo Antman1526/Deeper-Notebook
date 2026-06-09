@@ -441,6 +441,7 @@ async def bind_mcp_and_run_tool_loop(
     max_iterations: int | None = None,
     exclude_server_names: list[str] | None = None,
     agent_state_out: dict | None = None,
+    notebook_id: str | None = None,
 ):
     """v0.8.16 — Shared MCP tool-loop helper for both chat graphs.
 
@@ -522,6 +523,35 @@ async def bind_mcp_and_run_tool_loop(
             mcp_tools = list(mcp_tools) + [build_web_search_tool(mcp_captures)]
     except Exception as ws_exc:
         _logger.debug("web_search tool build failed (skipping): {}", ws_exc)
+
+    # 2b. Native opencode_run tool — local code computer execution.
+    try:
+        from open_notebook.tools.opencode import (
+            OPENCODE_TOOL_NAME,
+            build_opencode_tool,
+            opencode_enabled,
+        )
+        _excluded_names = {
+            (n or "").strip().lower() for n in (exclude_server_names or []) if n
+        }
+        if opencode_enabled() and OPENCODE_TOOL_NAME not in _excluded_names:
+            mcp_tools = list(mcp_tools) + [build_opencode_tool(mcp_captures)]
+    except Exception as oe_exc:
+        _logger.debug("opencode tool build failed (skipping): {}", oe_exc)
+
+    # 2c. Native add_web_source_to_notebook tool — autonomous URL ingestion.
+    if notebook_id:
+        try:
+            from open_notebook.tools.add_web_source import (
+                build_add_web_source_tool,
+            )
+            _excluded_names = {
+                (n or "").strip().lower() for n in (exclude_server_names or []) if n
+            }
+            if "add_web_source_to_notebook" not in _excluded_names:
+                mcp_tools = list(mcp_tools) + [build_add_web_source_tool(notebook_id, mcp_captures)]
+        except Exception as aws_exc:
+            _logger.debug("add_web_source tool build failed (skipping): {}", aws_exc)
 
     # 3. Bind tools to the model — fail-soft for local providers that don't
     # implement tool calling (v0.8.0 / v0.8.35f). If bind fails the model can't
@@ -766,6 +796,21 @@ async def call_model_with_messages(
                 privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
             )
 
+        # Resolve notebook_id from refers_to table if thread_id is available
+        notebook_id = None
+        thread_id = config.get("configurable", {}).get("thread_id")
+        if thread_id:
+            from open_notebook.database.repository import repo_query, ensure_record_id
+            try:
+                notebook_query = await repo_query(
+                    "SELECT out FROM refers_to WHERE in = $session_id",
+                    {"session_id": ensure_record_id(thread_id)},
+                )
+                if notebook_query:
+                    notebook_id = str(notebook_query[0]["out"])
+            except Exception as e:
+                _logger.warning(f"Failed to resolve notebook_id from thread {thread_id}: {e}")
+
         # v0.8.16 — Tool-binding + execution loop moved to
         # `bind_mcp_and_run_tool_loop` so source_chat.py can reuse it.
         # See the helper's docstring for the full semantics
@@ -781,6 +826,7 @@ async def call_model_with_messages(
             model, payload,
             exclude_server_names=state.get("disabled_mcp_servers") or None,
             agent_state_out=agent_state_out,
+            notebook_id=notebook_id,
         )
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
