@@ -252,7 +252,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
       git commit -m "ralph: iteration $i progress auto-commit" || true
     fi
   else
-    ((NO_CHANGE_COUNT++))
+    NO_CHANGE_COUNT=$((NO_CHANGE_COUNT + 1))
     warn "No workspace changes (commits or edits) detected in iteration $i."
     if [ "$NO_CHANGE_COUNT" -ge 3 ]; then
       err "🚨 Circuit Breaker Triggered: No changes made for 3 consecutive iterations. Stopping loop to prevent runaway token costs."
