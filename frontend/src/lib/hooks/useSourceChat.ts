@@ -22,6 +22,7 @@ export function useSourceChat(sourceId: string) {
   const [messages, setMessages] = useState<SourceChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [contextIndicators, setContextIndicators] = useState<SourceChatContextIndicator | null>(null)
+  const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
   // v0.8.44 — per-request MCP server disable picks for source chat
   // (parity with the notebook-chat v0.8.42 picker).
   // v0.8.44b — now session-persistent: hydrated from the session row
@@ -193,6 +194,18 @@ export function useSourceChat(sourceId: string) {
     }
   })
 
+  // Set model override - handles both existing sessions and pending state
+  const setModelOverride = useCallback((model: string | null) => {
+    if (currentSessionId) {
+      updateSessionMutation.mutate({
+        sessionId: currentSessionId,
+        data: { model_override: model }
+      })
+    } else {
+      setPendingModelOverride(model)
+    }
+  }, [currentSessionId, updateSessionMutation])
+
   // Send message with streaming
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
     let sessionId = currentSessionId
@@ -201,9 +214,13 @@ export function useSourceChat(sourceId: string) {
     if (!sessionId) {
       try {
         const defaultTitle = message.length > 30 ? `${message.substring(0, 30)}...` : message
-        const newSession = await sourceChatApi.createSession(sourceId, { title: defaultTitle })
+        const newSession = await sourceChatApi.createSession(sourceId, {
+          title: defaultTitle,
+          model_override: modelOverride ?? pendingModelOverride ?? undefined
+        })
         sessionId = newSession.id
         setCurrentSessionId(sessionId)
+        setPendingModelOverride(null)
         queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
       } catch (err: unknown) {
         const error = err as { response?: { data?: { detail?: string } }, message?: string };
@@ -430,7 +447,19 @@ export function useSourceChat(sourceId: string) {
       // the refetch settles, reopening the race for the very query
       // whose return we're trying to filter out.
       try {
-        await refetchCurrentSession()
+        const { data: newSession } = await refetchCurrentSession()
+        if (newSession?.messages) {
+          const lastAiMsg = [...newSession.messages].reverse().find(m => m.type === 'ai')
+          if (lastAiMsg) {
+            const cachedCalls = queryClient.getQueryData(['mcp', 'tool-calls', streamingAiId])
+            if (cachedCalls) {
+              queryClient.setQueryData(
+                ['mcp', 'tool-calls', lastAiMsg.id],
+                cachedCalls,
+              )
+            }
+          }
+        }
       } finally {
         inFlightSendsRef.current = Math.max(
           0, inFlightSendsRef.current - 1,
@@ -444,9 +473,8 @@ export function useSourceChat(sourceId: string) {
     // per-turn MCP disable list, so it must be a dependency or a
     // toggle-then-send captures a stale list.
     disabledMcpServers,
-  ])
-
-  // v0.6.32 — abort the in-flight controller on unmount.
+    pendingModelOverride,
+  ]) // v0.6.32 — abort the in-flight controller on unmount.
   useEffect(() => () => {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
@@ -464,6 +492,7 @@ export function useSourceChat(sourceId: string) {
   const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId)
     setContextIndicators(null)
+    pruneMessageScopedQueries()
   }, [])
 
   // Create session
@@ -490,6 +519,7 @@ export function useSourceChat(sourceId: string) {
     isStreaming,
     contextIndicators,
     loadingSessions,
+    pendingModelOverride,
     
     // Actions
     createSession,
@@ -499,6 +529,7 @@ export function useSourceChat(sourceId: string) {
     sendMessage,
     cancelStreaming,
     refetchSessions,
+    setModelOverride,
     // v0.8.44 — per-request MCP server disable picks for source chat.
     // Mirror of the notebook-chat v0.8.42 exposure. UI passes
     // `disabledMcpServers` as the `disabled` prop and

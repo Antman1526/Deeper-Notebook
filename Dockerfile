@@ -94,6 +94,10 @@ ENV VIRTUAL_ENV=/app/.venv
 # Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 
+# v0.8.67u — Set Playwright browsers path and pre-install Chromium + OS dependencies for crawl4ai.
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/playwright-browsers
+RUN .venv/bin/playwright install chromium --with-deps
+
 # Bind Next.js to all interfaces (required for Docker networking and reverse proxies)
 ENV HOSTNAME=0.0.0.0
 

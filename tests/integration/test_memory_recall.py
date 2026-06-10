@@ -33,8 +33,11 @@ from open_notebook.database.repository import repo_query
 pytestmark = pytest.mark.integration_surreal
 
 
-@pytest.mark.asyncio
-async def test_recall_recent_memory_against_real_surrealdb(surreal_db):
+# v0.8.67s — Removed @pytest.mark.asyncio and changed fixture from surreal_db
+# to clean_namespace to avoid event-loop mismatch (Future attached to a
+# different loop). Relying on pyproject.toml asyncio_mode = "auto" ensures
+# the test runs in the session event loop where the pool was initialized.
+async def test_recall_recent_memory_against_real_surrealdb(clean_namespace):
     """Insert two memory_fact + two memory_preference rows and assert
     `recall_recent_memory()` returns them ordered DESC by created_at.
 
@@ -52,23 +55,26 @@ async def test_recall_recent_memory_against_real_surrealdb(surreal_db):
     """
     # Insert two facts and two preferences with explicit created_at
     # so we can assert the ORDER BY behaviour deterministically.
+    # v0.8.67s — Added dummy embedding of 768 floats to meet schema requirements
+    # for SCHEMAFULL memory tables and prevent "Found NONE for field embedding" errors.
     now = datetime.now(timezone.utc)
+    dummy_embedding = [0.0] * 768
     facts_payload = [
-        {"text": "fact-OLDER",  "created_at": now.replace(microsecond=0)},
-        {"text": "fact-NEWER",  "created_at": now},
+        {"text": "fact-OLDER",  "created_at": now.replace(microsecond=0), "embedding": dummy_embedding},
+        {"text": "fact-NEWER",  "created_at": now, "embedding": dummy_embedding},
     ]
     prefs_payload = [
-        {"text": "pref-OLDER", "created_at": now.replace(microsecond=0)},
-        {"text": "pref-NEWER", "created_at": now},
+        {"text": "pref-OLDER", "created_at": now.replace(microsecond=0), "embedding": dummy_embedding},
+        {"text": "pref-NEWER", "created_at": now, "embedding": dummy_embedding},
     ]
     for row in facts_payload:
         await repo_query(
-            "CREATE memory_fact CONTENT {text: $text, created_at: $created_at}",
+            "CREATE memory_fact CONTENT {text: $text, created_at: $created_at, embedding: $embedding}",
             row,
         )
     for row in prefs_payload:
         await repo_query(
-            "CREATE memory_preference CONTENT {text: $text, created_at: $created_at}",
+            "CREATE memory_preference CONTENT {text: $text, created_at: $created_at, embedding: $embedding}",
             row,
         )
 
@@ -111,8 +117,9 @@ async def test_recall_recent_memory_against_real_surrealdb(surreal_db):
     await repo_query("DELETE memory_preference;")
 
 
-@pytest.mark.asyncio
-async def test_safe_select_query_shape_does_not_raise(surreal_db):
+# v0.8.67s — Removed @pytest.mark.asyncio and changed fixture from surreal_db
+# to clean_namespace to avoid event-loop mismatch.
+async def test_safe_select_query_shape_does_not_raise(clean_namespace):
     """Even with an empty table, the query must parse cleanly. This
     is the SMALLEST possible test — it doesn't assert content, just
     that SurrealDB accepts the query. Most useful as a regression

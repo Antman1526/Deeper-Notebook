@@ -40,7 +40,24 @@ def build_add_web_source_tool(notebook_id: str, captures: list | None = None) ->
                 "output_format": "markdown",
             }
 
-            processed_state = await extract_content(content_state)
+            # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
+            from open_notebook.utils.crawler import extract_url_with_crawl4ai
+            from content_core.common.state import ProcessSourceOutput
+
+            processed_state = None
+            if url_engine == "crawl4ai":
+                content = await extract_url_with_crawl4ai(url)
+                if content:
+                    processed_state = ProcessSourceOutput(
+                        title=title or "Imported Web Source (crawl4ai)",
+                        content=content,
+                        url=url,
+                        source_type="url",
+                        identified_type="text",
+                    )
+
+            if processed_state is None:
+                processed_state = await extract_content(content_state)
             
             if not processed_state.content or not processed_state.content.strip():
                 raise ValueError("Could not extract any text content from the URL.")

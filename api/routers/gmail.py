@@ -487,7 +487,13 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
     concurrent sends (scheduler + /send-test, or overlapping ticks) serialize
     and can't produce duplicate emails. Returns (ok, message, item_count)."""
     async with _get_send_lock():
-        return await _send_digest_now_inner(g, label)
+        g_latest = await GmailIntegration.get()
+        if label != "Test":
+            from open_notebook.digest.scheduler import _should_send
+            if not await _should_send(g_latest):
+                log.info("digest-scheduler: already sent or no longer due after acquiring send lock")
+                return (True, "Already sent recently", 0)
+        return await _send_digest_now_inner(g_latest, label)
 
 
 async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> tuple[bool, str, int]:
