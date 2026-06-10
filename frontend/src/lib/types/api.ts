@@ -189,7 +189,7 @@ export interface CreateSourceChatSessionRequest {
 
 export interface UpdateSourceChatSessionRequest {
   title?: string
-  model_override?: string
+  model_override?: string | null
   // v0.8.44b — persistent source-chat MCP picks (parity with notebook
   // chat's v0.8.43 UpdateNotebookChatSessionRequest). null clears;
   // omitting the field leaves the persisted value untouched (the API
