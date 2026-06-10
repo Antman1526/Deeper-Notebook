@@ -240,24 +240,27 @@ async def recall_relevant_memory(
     # is enforced (preferences are more authoritative than facts —
     # don't let one dominate the other).
     facts = await _safe_select(
-        "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
-        "FROM memory_fact "
-        "ORDER BY score DESC LIMIT $limit",
+        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+        f"FROM memory_fact "
+        f"WHERE embedding <|{_MAX_FACTS}|> $q "
+        f"ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_FACTS},
     )
     preferences = await _safe_select(
-        "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
-        "FROM memory_preference "
-        "ORDER BY score DESC LIMIT $limit",
+        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+        f"FROM memory_preference "
+        f"WHERE embedding <|{_MAX_PREFERENCES}|> $q "
+        f"ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_PREFERENCES},
     )
     # v0.8.49 — semantic recall of session summaries (parity with the
     # recency path). Same cosine idiom against the memory_episode table.
     episodes = (
         await _safe_select(
-            "SELECT text, vector::similarity::cosine(embedding, $q) AS score "
-            "FROM memory_episode "
-            "ORDER BY score DESC LIMIT $limit",
+            f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "
+            f"FROM memory_episode "
+            f"WHERE embedding <|{_MAX_EPISODES}|> $q "
+            f"ORDER BY score DESC LIMIT $limit",
             {"q": q_vec, "limit": _MAX_EPISODES},
         )
         if _episode_recall_enabled()

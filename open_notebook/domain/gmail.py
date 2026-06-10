@@ -274,7 +274,7 @@ class GmailIntegration(BaseModel):
                 instance = cls()
                 _CACHE["value"] = instance
                 _CACHE["ts"] = now
-                return instance
+                return instance.model_copy()
             # v0.8.35d — row parsing + decryption + cache write must
             # remain INSIDE the single-flight lock so the leader's
             # cache write happens before followers re-check the cache.

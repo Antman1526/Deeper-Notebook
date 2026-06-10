@@ -90,7 +90,25 @@ async def content_process(state: SourceState) -> dict:
         logger.warning(f"Failed to retrieve speech-to-text model configuration: {e}")
         # Continue without custom audio model (content-core will use its default)
 
-    processed_state = await extract_content(content_state)
+    processed_state = None
+    url = content_state.get("url")
+    if content_state.get("url_engine") == "crawl4ai" and url:
+        # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
+        from open_notebook.utils.crawler import extract_url_with_crawl4ai
+        from content_core.common.state import ProcessSourceOutput
+
+        content = await extract_url_with_crawl4ai(url)
+        if content:
+            processed_state = ProcessSourceOutput(
+                title=content_state.get("title") or "Imported Web Source (crawl4ai)",
+                content=content,
+                url=url,
+                source_type="url",
+                identified_type="text",
+            )
+
+    if processed_state is None:
+        processed_state = await extract_content(content_state)
 
     if not processed_state.content or not processed_state.content.strip():
         url = processed_state.url or ""

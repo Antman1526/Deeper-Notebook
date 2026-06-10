@@ -20,8 +20,24 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
-- **✨ v0.8.67s — Add enhanced Ralph Loop script**
+- **⚡ v0.8.67w — Database HNSW Vector Indexing, Citation Mapping, and Email Single-Flighting**
+  - **⚡ HNSW Vector Search:** Defined SurrealDB HNSW indexes on `source_embedding`, `source_insight`, and `note` tables to optimize vector search from brute-force scans to indexed searches. Refactored `memory_recall.py` to use f-string interpolated `<|K|>` HNSW operators.
+  - **🎨 Source-Chat Citation Mapping:** Mapped ephemeral streaming message IDs to canonical database IDs upon stream completion in `useSourceChat.ts` to fix placeholder citation pill rendering.
+  - **🎨 Pending Model Overrides:** Implemented pending model override state for new source-chat sessions in `useSourceChat.ts` (matching the notebook-chat pattern) so the selected model isn't discarded before a session exists.
+  - **⚡ Cache Pruning:** Cleared stashed message-scoped query caches on session switch in both chat hooks to bound memory usage.
+  - **🐛 Gmail Copy Isolation:** Modified `GmailIntegration.get()` to return copies (`.model_copy()`) of the cached singleton, preventing mutations from poisoning the global cache.
+  - **🐛 Email Send Single-Flighting:** Refactored `_send_digest_now` to reload config and re-verify send conditions under `_SEND_LOCK` to serialize concurrent scheduled and manual sends.
+
+
+- **✨ v0.8.67u — Integrate local crawl4ai web scraping engine for URL Ingestion**
+  - **✨ URL Ingestion:** Added support for `crawl4ai` as an optional local URL processing engine, enabling dynamic JavaScript execution and anti-bot evasion using Playwright locally.
+  - **🛡 Graceful Fallback:** Integrated fallback mechanism so that if `crawl4ai` or its browser binaries are not installed, the tool and graphs fall back to standard `content_core` scrapers automatically without failing the ingest process.
+  - **🐳 Docker Support:** Updated `Dockerfile` and `Dockerfile.single` runtime stages to automatically install the Playwright Chromium browser binary and all required OS dependencies, providing out-of-the-box local scraping capabilities in containerized deployments.
+  - **⚡ Tiktoken Backtracking Fix:** Resolved a catastrophic regex backtracking issue in the tiktoken tokenizer when given long repeating character streams without spaces (e.g. `"x" * 500_000`), which was causing smart routing tests to hang or run extremely slowly. Sped up the unit test suite by over 16x (from 7m 14s to 26s).
+
+- **✨ v0.8.67s — Add enhanced Ralph Loop script and fix integration test loop mismatch**
   - **🛠 Ralph Loop:** Added `scripts/ralph.sh` implementing an autonomous development loop supporting Claude Code (`claude`), cursor, and `opencode` with git persistence, circuit breakers, and automatic task tracking via `prd.json`.
+  - **🐛 Integration Test:** Fixed a loop mismatch error in `test_recall_recent_memory_against_real_surrealdb` by removing the explicit `@pytest.mark.asyncio` decorator and using the function-scoped `clean_namespace` fixture. Also resolved a schema validation error by providing dummy embeddings for test records.
 
 - **🐛 v0.8.67r — Add agentic capabilities and fix python runtime suffix in verification**
   - **H7 Bug Fix:** Fix python runtime verification in `desktop/build/fetch_runtimes.py` on Windows by checking for `.tar.gz` unconditionally (since it was updated to be downloaded as a tarball).

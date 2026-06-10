@@ -312,8 +312,9 @@ class TestProvisionLangchainChatModelEnabled:
 
         monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
-        # ~500k characters → vastly exceeds any local n_ctx → must pick cloud
-        huge_content = "x" * 500_000
+        # v0.8.67u — Use space-separated repeating pattern to prevent catastrophic
+        # regex backtracking in tiktoken while keeping total character length at 500k.
+        huge_content = "x " * 250_000
         self._run(provision_mod.provision_langchain_chat_model(huge_content))
 
         assert len(captured) == 1
@@ -377,8 +378,8 @@ class TestCloudModelIdResolution:
 
         monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
-        # Oversized content to force cloud branch.
-        self._run(provision_mod.provision_langchain_chat_model("x" * 500_000))
+        # v0.8.67u — Use space-separated repeating pattern to prevent tiktoken regex backtracking.
+        self._run(provision_mod.provision_langchain_chat_model("x " * 250_000))
 
         assert len(captured) == 1
         assert captured[0]["model_id"] == "model:cloud_x", (
@@ -419,7 +420,8 @@ class TestCloudModelIdResolution:
 
         monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
-        self._run(provision_mod.provision_langchain_chat_model("x" * 500_000))
+        # v0.8.67u — Use space-separated repeating pattern to prevent tiktoken regex backtracking.
+        self._run(provision_mod.provision_langchain_chat_model("x " * 250_000))
 
         assert len(captured) == 1
         assert captured[0]["model_id"] == "model:env_z", (

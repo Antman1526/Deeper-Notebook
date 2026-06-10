@@ -10,8 +10,9 @@ class ContentSettings(RecordModel):
     default_content_processing_engine_doc: Optional[
         Literal["auto", "docling", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for Documents")
+    # v0.8.67u — Added "crawl4ai" as a supported local URL processing engine option.
     default_content_processing_engine_url: Optional[
-        Literal["auto", "firecrawl", "jina", "simple"]
+        Literal["auto", "crawl4ai", "firecrawl", "jina", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for URLs")
     default_embedding_option: Optional[Literal["ask", "always", "never"]] = Field(
         "ask", description="Default Embedding Option for Vector Search"
