@@ -605,6 +605,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   // Switch session
   const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId)
+    pruneMessageScopedQueries()
   }, [])
 
   // Create session

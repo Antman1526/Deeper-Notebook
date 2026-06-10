@@ -166,7 +166,8 @@ class TestProviderPrefField:
         )
         captured = _stub_provision_inner(monkeypatch)
 
-        _run(provision_mod.provision_langchain_chat_model("x" * 500_000))
+        # v0.8.67u — Use space-separated repeating pattern to prevent tiktoken regex backtracking.
+        _run(provision_mod.provision_langchain_chat_model("x " * 250_000))
         # 500k chars would normally overflow local → cloud. Pref=local
         # overrides that decision.
         assert captured[0]["model_id"] == "model:hermes"

@@ -137,9 +137,10 @@ class TestProvisionChatModelExposesSelection:
         )
 
         selection_out: dict = {}
+        # v0.8.67u — Use space-separated repeating pattern to prevent tiktoken regex backtracking.
         self._run(
             provision_mod.provision_langchain_chat_model(
-                "x" * 500_000, selection_out=selection_out
+                "x " * 250_000, selection_out=selection_out
             )
         )
 
