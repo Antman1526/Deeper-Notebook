@@ -7,6 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from loguru import logger
 
 from open_notebook.ai.models import model_manager
+from open_notebook.ai.offline_gate import gate_language_model_id
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import token_count
 
@@ -349,16 +350,22 @@ async def provision_langchain_chat_model(
 
 
 async def provision_langchain_model(
-    content, model_id, default_type, **kwargs
+    content, model_id, default_type, fallback_out: "dict | None" = None, **kwargs
 ) -> BaseChatModel:
     """
     Returns the best model to use based on the context size and on whether there is a specific model being requested in Config.
     If context > 105_000, returns the large_context_model
     If model_id is specified in Config, returns that model
     Otherwise, returns the default model for the given type
+
+    v0.8.68 — resolution now happens in two phases (id, then instance) so
+    the offline gate can substitute a LOCAL model id when the machine is
+    offline (probe or Offline-mode toggle) and the candidate is a cloud
+    provider. `fallback_out` (optional dict, NOT forwarded to the model
+    constructor) is populated by the gate when a substitution happens —
+    chat callers thread it into the response for the UI pill.
     """
     tokens = token_count(content)
-    model = None
     selection_reason = ""
 
     if tokens > 105_000:
@@ -366,13 +373,44 @@ async def provision_langchain_model(
         logger.debug(
             f"Using large context model because the content has {tokens} tokens"
         )
-        model = await model_manager.get_default_model("large_context", **kwargs)
+        candidate_id = await model_manager.get_default_model_id("large_context")
     elif model_id:
         selection_reason = f"explicit model_id={model_id}"
-        model = await model_manager.get_model(model_id, **kwargs)
+        candidate_id = model_id
     else:
         selection_reason = f"default for type={default_type}"
-        model = await model_manager.get_default_model(default_type, **kwargs)
+        candidate_id = await model_manager.get_default_model_id(default_type)
+
+    # v0.8.68 — offline gate. No-op when online / candidate is local /
+    # candidate is None. Raises ConfigurationError fast (instead of a
+    # provider-timeout hang) when offline with no local model.
+    candidate_id = await gate_language_model_id(candidate_id, fallback_out=fallback_out)
+
+    model = None
+    if candidate_id:
+        if model_id and candidate_id == model_id:
+            # Explicit-id path: keep get_model's typed errors verbatim
+            # (pre-v0.8.68 behavior for explicit ids).
+            model = await model_manager.get_model(candidate_id, **kwargs)
+        else:
+            # Default-resolution path (or a gate-substituted id): keep
+            # get_default_model's historical log-and-return-None on a
+            # load failure so the "no model configured" error below fires.
+            try:
+                model = await model_manager.get_model(candidate_id, **kwargs)
+            except (ValueError, ConfigurationError) as e:
+                logger.error(
+                    f"Failed to load model for {selection_reason}: {e}. "
+                    f"The configured model_id '{candidate_id}' may have been "
+                    f"deleted or misconfigured. Please go to Settings → Models "
+                    f"and reconfigure the default model."
+                )
+                model = None
+    elif not candidate_id and default_type and not model_id and tokens <= 105_000:
+        logger.warning(
+            f"No default model configured for type '{default_type}'. "
+            f"Please go to Settings → Models and set a default model."
+        )
 
     logger.debug(f"Using model: {model}")
 
