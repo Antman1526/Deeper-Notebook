@@ -24,6 +24,9 @@ class PodcastGenerationRequest(BaseModel):
     content: Optional[str] = None
     notebook_id: Optional[str] = None
     briefing_suffix: Optional[str] = None
+    # v0.8.68 — outline-review workflow: stop after the outline so the user
+    # can edit it before transcript + audio are generated.
+    review_outline: bool = False
 
 
 class PodcastGenerationResponse(BaseModel):
@@ -93,6 +96,7 @@ class PodcastService:
         notebook_id: Optional[str] = None,
         content: Optional[str] = None,
         briefing_suffix: Optional[str] = None,
+        review_outline: bool = False,
     ) -> str:
         """Submit a podcast generation job for background processing"""
         try:
@@ -200,6 +204,8 @@ class PodcastService:
                 "episode_name": episode_name,
                 "content": str(content),
                 "briefing_suffix": briefing_suffix,
+                # v0.8.68 — outline-review workflow flag.
+                "review_outline": bool(review_outline),
             }
 
             # Ensure command modules are imported before submitting
@@ -257,6 +263,89 @@ class PodcastService:
             # generic 500 "Server error", hiding exactly the guidance those
             # errors exist to deliver.
             raise
+        except ValueError as e:
+            logger.warning(f"Podcast submission rejected: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Failed to submit podcast generation job: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to submit podcast generation job",
+            )
+
+    @staticmethod
+    async def submit_outline_approval(episode_id: str) -> str:
+        """v0.8.68 — phase 2 of the outline-review workflow: submit the
+        resume_podcast command for an episode awaiting review. The offline
+        gate runs here (transcript LLM + TTS are about to be used)."""
+        try:
+            from open_notebook.podcasts.models import (
+                STAGE_AWAITING_REVIEW,
+                PodcastEpisode,
+            )
+
+            episode = await PodcastEpisode.get(episode_id)
+            if not episode:
+                raise ValueError(f"Episode '{episode_id}' not found")
+            if episode.generation_stage != STAGE_AWAITING_REVIEW:
+                raise ValueError(
+                    f"Episode is not awaiting outline review "
+                    f"(stage: {episode.generation_stage})"
+                )
+
+            ep_name = (episode.episode_profile or {}).get("name")
+            sp_name = (episode.speaker_profile or {}).get("name")
+            episode_profile = (
+                await EpisodeProfile.get_by_name(ep_name) if ep_name else None
+            )
+            speaker_profile = (
+                await SpeakerProfile.get_by_name(sp_name) if sp_name else None
+            )
+            if not episode_profile or not speaker_profile:
+                raise ValueError(
+                    "The episode/speaker profile used for this outline no "
+                    "longer exists — restore it and approve again."
+                )
+            await PodcastService._gate_offline_cloud_models(
+                episode_profile, speaker_profile
+            )
+
+            try:
+                import commands.podcast_commands  # noqa: F401
+            except ImportError as import_err:
+                logger.error(f"Failed to import podcast commands: {import_err}")
+                raise ValueError("Podcast commands not available")
+
+            import os as _os_for_timeout
+            _submit_timeout = float(
+                _os_for_timeout.environ.get(
+                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
+                ).strip()
+                or 10
+            )
+            try:
+                job_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command, "open_notebook",
+                        "resume_podcast", {"episode_id": str(episode.id)},
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Approval submission timed out after "
+                    f"{_submit_timeout:.0f}s. The SurrealDB pool may be "
+                    f"saturated."
+                ) from exc
+            if not job_id:
+                raise ValueError("Failed to get job_id from submit_command")
+            logger.info(
+                f"Submitted outline approval (resume) job {job_id} for "
+                f"episode {episode_id}"
+            )
+            return str(job_id)
+        except (InvalidInputError, ConfigurationError):
+            raise  # typed errors keep their status codes (offline gate etc.)
         except ValueError as e:
             # v0.7.58 — distinguish user-input errors (missing profile,
             # missing content, "commands not available") from genuine

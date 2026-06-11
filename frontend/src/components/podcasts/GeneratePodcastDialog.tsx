@@ -416,6 +416,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const [episodeProfileId, setEpisodeProfileId] = useState<string>('')
   const [episodeName, setEpisodeName] = useState('')
   const [instructions, setInstructions] = useState('')
+  // v0.8.68 — outline-review workflow opt-in.
+  const [reviewOutline, setReviewOutline] = useState(false)
 
   const [isBuildingContext, setIsBuildingContext] = useState(false)
   const [tokenCount, setTokenCount] = useState<number>(0)
@@ -570,6 +572,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     setEpisodeProfileId('')
     setEpisodeName('')
     setInstructions('')
+    setReviewOutline(false)
     setTokenCount(0)
     setCharCount(0)
   }, [])
@@ -916,6 +919,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         episode_name: episodeName.trim(),
         content,
         briefing_suffix: instructions.trim() ? instructions.trim() : undefined,
+        review_outline: reviewOutline || undefined,
       }
 
       await generatePodcast.mutateAsync(payload)
@@ -1086,6 +1090,28 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       className="min-h-[100px] text-xs"
                       autoComplete="off"
                     />
+                  </div>
+
+                  {/* v0.8.68 — outline-review workflow opt-in. */}
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="review-outline"
+                      checked={reviewOutline}
+                      onCheckedChange={(v) => setReviewOutline(v === true)}
+                    />
+                    <div className="grid gap-0.5 leading-tight">
+                      <Label htmlFor="review-outline" className="text-xs">
+                        {t('podcasts.reviewOutlineFirst', {
+                          defaultValue: 'Review outline before generating audio',
+                        })}
+                      </Label>
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('podcasts.reviewOutlineFirstDesc', {
+                          defaultValue:
+                            'Generation pauses after the outline so you can edit it; audio is created after you approve.',
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

@@ -199,6 +199,27 @@ class SpeakerProfile(ObjectModel):
         return None
 
 
+# v0.8.68 — generation stages, written by the worker as podcast-creator's
+# LangGraph nodes complete, read by the episodes UI for per-stage progress.
+# Plain strings (not an Enum) so the API layer can reference them without
+# importing podcast-creator.
+STAGE_OUTLINE = "generating_outline"
+STAGE_TRANSCRIPT = "generating_transcript"
+STAGE_AUDIO = "generating_audio"
+STAGE_COMBINE = "combining_audio"
+STAGE_AWAITING_REVIEW = "awaiting_review"
+STAGE_CANCELLED = "cancelled"
+
+GENERATION_STAGES = (
+    STAGE_OUTLINE,
+    STAGE_TRANSCRIPT,
+    STAGE_AUDIO,
+    STAGE_COMBINE,
+    STAGE_AWAITING_REVIEW,
+    STAGE_CANCELLED,
+)
+
+
 class PodcastEpisode(ObjectModel):
     """Enhanced PodcastEpisode with job tracking and metadata"""
 
@@ -230,6 +251,17 @@ class PodcastEpisode(ObjectModel):
     )
     command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands job"
+    )
+    # v0.8.68 — per-stage progress + cooperative cancellation + outline review.
+    generation_stage: Optional[str] = Field(
+        default=None,
+        description="Current generation stage (see GENERATION_STAGES); None "
+        "when idle/finished",
+    )
+    cancel_requested: Optional[bool] = Field(
+        default=False,
+        description="Set by POST /podcasts/episodes/{id}/cancel; the worker "
+        "polls it and aborts the in-flight generation",
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
