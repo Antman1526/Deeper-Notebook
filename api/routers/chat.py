@@ -322,6 +322,12 @@ class ExecuteChatResponse(BaseModel):
             "smart routing did not run)."
         ),
     )
+    # v0.8.68 — set when the offline gate answered this turn with a local
+    # model: {"offline_fallback": true, "from_model_id", "to_model_id",
+    # "to_model_name", "reason": "offline"|"forced-offline"}. None otherwise.
+    offline_fallback: Optional[Dict[str, Any]] = Field(
+        None, description="Offline local-model fallback info for this turn"
+    )
     mcp_tool_calls: Optional[List[Dict[str, Any]]] = Field(
         None,
         description=(
@@ -926,6 +932,11 @@ async def execute_chat(request: ExecuteChatRequest):
             result.get("selected_model_id") if isinstance(result, dict)
             else getattr(result, "selected_model_id", None)
         )
+        # v0.8.68 — offline-fallback info (None when the gate didn't act).
+        offline_fallback = (
+            result.get("offline_fallback") if isinstance(result, dict)
+            else getattr(result, "offline_fallback", None)
+        )
         # v0.8.1 Item 3 — MCP tool-call payloads captured this turn.
         mcp_tool_calls = (
             result.get("mcp_tool_calls") if isinstance(result, dict)
@@ -986,6 +997,7 @@ async def execute_chat(request: ExecuteChatRequest):
             messages=messages,
             selected_provider=selected_provider,
             selected_model_id=selected_model_id,
+            offline_fallback=offline_fallback,
             mcp_tool_calls=mcp_tool_calls,
             privacy_gated=privacy_gated,
             privacy_categories=privacy_categories,
@@ -1325,6 +1337,11 @@ async def _stream_chat_events(
                             output.get("agent_state") if isinstance(output, dict)
                             else getattr(output, "agent_state", None)
                         )
+                        # v0.8.68 — offline-fallback info (dual-path).
+                        offline_fallback_raw = (
+                            output.get("offline_fallback") if isinstance(output, dict)
+                            else getattr(output, "offline_fallback", None)
+                        )
                         final_result = (
                             output if isinstance(output, dict)
                             else {
@@ -1335,6 +1352,7 @@ async def _stream_chat_events(
                                 "privacy_gated": privacy_gated_raw,
                                 "privacy_categories": privacy_categories_raw,
                                 "agent_state": agent_state_raw,
+                                "offline_fallback": offline_fallback_raw,
                             }
                         )
         finally:
@@ -1434,6 +1452,12 @@ async def _stream_chat_events(
             final_result.get("agent_state") if isinstance(final_result, dict)
             else None
         )
+        # v0.8.68 — offline-fallback parity with /chat/execute so SSE
+        # clients can render the "Answered with <model> (offline)" pill.
+        offline_fallback_out = (
+            final_result.get("offline_fallback") if isinstance(final_result, dict)
+            else None
+        )
 
         yield json.dumps({
             "type": "done",
@@ -1443,6 +1467,7 @@ async def _stream_chat_events(
             "privacy_gated": privacy_gated_out,
             "privacy_categories": privacy_categories_out,
             "agent_state": agent_state_out_evt,
+            "offline_fallback": offline_fallback_out,
         }) + "\n"
 
     except NotFoundError:
