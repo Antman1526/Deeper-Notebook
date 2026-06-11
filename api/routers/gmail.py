@@ -39,6 +39,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from open_notebook.digest.scheduler import pending_digest_info
 from open_notebook.domain.gmail import GmailIntegration
 
 log = logging.getLogger(__name__)
@@ -90,6 +91,9 @@ class GmailStatusResponse(BaseModel):
     include_podcasts: bool
     include_memory: bool
     last_sent_at: Optional[str] = None
+    # v0.8.68 — True when a due digest was deferred because the machine is
+    # offline; it sends automatically once connectivity returns.
+    pending_digest: bool = False
 
 
 class SaveCredentialsRequest(BaseModel):
@@ -132,6 +136,8 @@ async def gmail_status() -> GmailStatusResponse:
         include_podcasts=g.include_podcasts,
         include_memory=g.include_memory,
         last_sent_at=g.last_sent_at.isoformat() if g.last_sent_at else None,
+        # v0.8.68 — deferred-digest indicator (offline deferral, spec §5).
+        pending_digest=pending_digest_info()["pending"],
     )
 
 
