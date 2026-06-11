@@ -1221,6 +1221,31 @@ class ChatSession(ObjectModel):
                 return existing[0]
         return await self.relate("refers_to", source_id)
 
+    async def delete(self) -> bool:
+        """v0.8.68 — sweep this session's `refers_to` edges before the row
+        delete. The base ObjectModel.delete only removes the record, so every
+        deleted chat session previously left a dangling graph edge
+        (session→notebook or session→source) that accumulated forever — only
+        deleting the whole NOTEBOOK swept them (notebook.py Notebook.delete),
+        and standalone session deletes (the common path: the session-list
+        trash button in both chat UIs) never did. Mirrors the hardened
+        cascade pattern on Source (v0.7.86) and Note (v0.7.76): best-effort,
+        never blocks the primary delete.
+        """
+        if self.id is None:
+            return False
+        try:
+            await repo_query(
+                "DELETE refers_to WHERE in = $sid",
+                {"sid": ensure_record_id(self.id)},
+            )
+        except Exception as exc:
+            logger.warning(
+                f"ChatSession.delete: could not sweep refers_to edges for "
+                f"{self.id} (non-fatal, edge rows orphaned): {exc}"
+            )
+        return await super().delete()
+
 
 # v0.8.67 (audit A1) — default semantic-search relevance floor. Raised from the
 # old 0.2 to 0.3 to match the memory layer's own _MIN_SCORE (memory_recall.py),
