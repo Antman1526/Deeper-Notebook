@@ -377,21 +377,35 @@ export function useSourceChat(sourceId: string) {
                     data.calls,
                   )
                 }
+              } else if (data.type === 'selected_provider') {
+                // v0.8.68 — smart-router decision for the local/cloud badge.
+                // MERGE into the cache entry (the offline_fallback event may
+                // land on the same key in the same stream).
+                queryClient.setQueryData(
+                  ['chat', 'selected-provider', streamingAiId],
+                  (old: Record<string, unknown> | undefined) => ({
+                    ...(old ?? {}),
+                    selected_provider: data.selected_provider ?? null,
+                    selected_model_id: data.selected_model_id ?? null,
+                  }),
+                )
               } else if (data.type === 'offline_fallback') {
                 // v0.8.68 — the offline gate answered this turn with a
                 // local model. Stash under the same cache key
                 // ChatMessageProviderBadge reads (keyed by the streamed
                 // message id, which is what ChatPanel renders) so the
                 // amber "Answered with <model> (offline)" pill shows in
-                // source chat exactly like notebook chat.
+                // source chat exactly like notebook chat. Merge so a
+                // selected_provider event on the same turn isn't lost.
                 if (data.data) {
                   queryClient.setQueryData(
                     ['chat', 'selected-provider', streamingAiId],
-                    {
+                    (old: Record<string, unknown> | undefined) => ({
                       selected_provider: null,
                       selected_model_id: null,
+                      ...(old ?? {}),
                       offline_fallback: data.data,
-                    },
+                    }),
                   )
                 }
               } else if (data.type === 'error') {
