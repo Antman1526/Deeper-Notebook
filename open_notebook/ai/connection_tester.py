@@ -93,14 +93,19 @@ def _connection_timeout_for(provider: str) -> float:
 # Test models for each provider - uses minimal/cheapest models for testing
 # Format: (model_name, model_type)
 TEST_MODELS = {
-    "openai": ("gpt-3.5-turbo", "language"),
-    "anthropic": ("claude-3-haiku-20240307", "language"),
+    # v0.8.68 — refreshed retired test models. gpt-3.5-turbo and
+    # claude-3-haiku-20240307 are retired/deprecated upstream, so "Test
+    # Connection" reported failure for perfectly valid keys (the worst
+    # moment to mislead someone — during setup). Swapped to each
+    # provider's current cheapest model.
+    "openai": ("gpt-4o-mini", "language"),
+    "anthropic": ("claude-haiku-4-5", "language"),
     "google": ("gemini-2.0-flash", "language"),
     "groq": ("llama-3.1-8b-instant", "language"),
     "mistral": ("mistral-small-latest", "language"),
     "deepseek": ("deepseek-chat", "language"),
-    "xai": ("grok-beta", "language"),
-    "openrouter": ("openai/gpt-3.5-turbo", "language"),
+    "xai": ("grok-3-mini", "language"),  # grok-beta retired 2025
+    "openrouter": ("openai/gpt-4o-mini", "language"),
     "voyage": ("voyage-3-lite", "embedding"),
     "elevenlabs": ("eleven_multilingual_v2", "text_to_speech"),
     "ollama": (None, "language"),  # Dynamic - will use first available model

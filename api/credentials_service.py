@@ -572,14 +572,20 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
 
     # Static model lists for providers without a listing API
     STATIC_MODELS: dict[str, list[str]] = {
+        # v0.8.68 — refreshed the Anthropic list: five of the previous seven
+        # entries were RETIRED upstream (404 on use), so discovery offered
+        # models that registered fine but failed on the first chat turn.
+        # Current actives per the Anthropic model catalog; aliases preferred
+        # so the list survives snapshot-date rotations.
         "anthropic": [
-            "claude-opus-4-20250514",
-            "claude-sonnet-4-20250514",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
+            "claude-fable-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
         ],
         "voyage": [
             "voyage-3", "voyage-3-lite", "voyage-code-3",
