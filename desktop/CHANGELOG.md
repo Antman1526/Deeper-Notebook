@@ -20,6 +20,16 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.68 — Offline/online smart switching + Offline-mode toggle**
+  - **✨ Network-state service (`open_notebook/health/network.py`):** 2s TCP probe + 20s TTL cache + passive flips from real cloud-call failures/successes; `ONP_NET_PROBE_HOSTS` / `ONP_NETWORK_STATE_TTL_SEC` tunable. "unknown" is treated as online — a flaky probe can never block cloud calls.
+  - **✨ Offline gate (`open_notebook/ai/offline_gate.py`):** when offline (real or forced) and the turn's model is a cloud provider, provisioning substitutes the best local model instantly (DefaultModels chat slot if local, else first registered local language model) — no more 300s hangs. Offline with no local model fails fast with an actionable message. Local-provider models are never gated and pay zero probe cost; a mid-turn cloud NetworkError retries once on the local model (captive-portal leg).
+  - **✨ Offline-mode toggle:** persisted `offline_mode` on ContentSettings + a Settings → Network control — forces the app fully local even when online (cloud chat, web search, Gmail digests all gated). The settings PUT busts the cache so it takes effect on the next turn.
+  - **🎨 UI:** `GET /api/system/network-status` + `use-network-status` drive an amber "Offline — answering with <model>" badge in the app shell; chat messages answered by the fallback get an "Answered with <model> (offline)" pill (extends ChatMessageProviderBadge; `offline_fallback` rides the same done-event/response plumbing as `selected_provider`). i18n'd across all 10 locales.
+  - **🐛 Gmail digests no longer silently drop offline:** a due digest on an offline machine previously burned a 20s send attempt and escalated the failure backoff up to 6h. Now the scheduler defers cheaply (no backoff escalation), retries every 5-minute tick, sends as soon as connectivity returns, and surfaces `pending_digest` in /gmail/status.
+  - **⚡ `web_search` short-circuits offline** instead of burning its 25s provider-failover budget per tool call.
+  - **🐛 BUG FIX — crawl4ai was un-selectable:** `SettingsUpdate` (PUT /settings) and the Settings form were never updated for the v0.8.67u `crawl4ai` URL-engine option, so picking it 422-rejected / wasn't offered. Both now list it.
+  - **🛠 Tests:** `test_network_state.py`, `test_offline_mode_setting.py`, `test_offline_gate.py`, `test_provisioning_fallback.py`, `test_chat_offline_fallback_plumbing.py`, `test_network_status_endpoint.py`, `test_web_search_offline.py`, `test_digest_offline_deferral.py`; frontend NetworkStatusBadge + offline-pill cases. conftest pins the network probe "online" so the suite is deterministic on airgapped machines.
+
 - **⚡ v0.8.67w — Database HNSW Vector Indexing, Citation Mapping, and Email Single-Flighting**
   - **⚡ HNSW Vector Search:** Defined SurrealDB HNSW indexes on `source_embedding`, `source_insight`, and `note` tables to optimize vector search from brute-force scans to indexed searches. Refactored `memory_recall.py` to use f-string interpolated `<|K|>` HNSW operators.
   - **🎨 Source-Chat Citation Mapping:** Mapped ephemeral streaming message IDs to canonical database IDs upon stream completion in `useSourceChat.ts` to fix placeholder citation pill rendering.

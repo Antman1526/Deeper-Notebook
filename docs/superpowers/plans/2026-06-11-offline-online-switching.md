@@ -20,7 +20,7 @@
 - Create: `open_notebook/health/network.py`
 - Test: `tests/test_network_state.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_network_state.py`:
 
@@ -125,12 +125,12 @@ def test_probe_host_env_malformed_falls_back(monkeypatch):
     assert network._probe_targets() == network._DEFAULT_PROBE_TARGETS
 ```
 
-- [ ] **Step 2: Run tests — expect import failure**
+- [x] **Step 2: Run tests — expect import failure**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_network_state.py -q`
 Expected: errors — `ModuleNotFoundError: No module named 'open_notebook.health.network'`
 
-- [ ] **Step 3: Implement `open_notebook/health/network.py`**
+- [x] **Step 3: Implement `open_notebook/health/network.py`**
 
 ```python
 """v0.8.68 — process-wide network-state service.
@@ -299,12 +299,12 @@ async def get_network_state(
     return _state
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_network_state.py -q`
 Expected: 9 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add open_notebook/health/network.py tests/test_network_state.py
@@ -322,7 +322,7 @@ git commit -m "feat: v0.8.68 network-state service (probe + TTL cache + passive 
 - Create helper in: `open_notebook/health/network.py` (cached settings accessor)
 - Test: `tests/test_offline_mode_setting.py`
 
-- [ ] **Step 1: Add the field to ContentSettings**
+- [x] **Step 1: Add the field to ContentSettings**
 
 In `open_notebook/domain/content_settings.py`, append to the class:
 
@@ -336,7 +336,7 @@ In `open_notebook/domain/content_settings.py`, append to the class:
     )
 ```
 
-- [ ] **Step 2: Add to API schemas**
+- [x] **Step 2: Add to API schemas**
 
 In `api/models.py`, add to BOTH `SettingsResponse` and `SettingsUpdate` (locate via `grep -n "class SettingsResponse\|class SettingsUpdate" api/models.py`):
 
@@ -345,7 +345,7 @@ In `api/models.py`, add to BOTH `SettingsResponse` and `SettingsUpdate` (locate 
     offline_mode: Optional[bool] = None
 ```
 
-- [ ] **Step 3: Wire GET/PUT in `api/routers/settings.py`**
+- [x] **Step 3: Wire GET/PUT in `api/routers/settings.py`**
 
 In `get_settings()` add to the `SettingsResponse(...)` kwargs:
 ```python
@@ -362,7 +362,7 @@ In `update_settings()` add with the other `if ... is not None` blocks (before `a
 ```
 and add `offline_mode=settings.offline_mode,` to the PUT's returned `SettingsResponse(...)`.
 
-- [ ] **Step 4: Add the cached accessor to `open_notebook/health/network.py`**
+- [x] **Step 4: Add the cached accessor to `open_notebook/health/network.py`**
 
 Append:
 
@@ -417,7 +417,7 @@ def reset_network_state_for_tests() -> None:
     _forced_cache = None
 ```
 
-- [ ] **Step 5: Write tests** — `tests/test_offline_mode_setting.py`
+- [x] **Step 5: Write tests** — `tests/test_offline_mode_setting.py`
 
 ```python
 """v0.8.68 — Offline-mode toggle: schema field, forced accessor caching."""
@@ -509,12 +509,12 @@ def test_state_with_settings_forced(monkeypatch):
     assert state.status == "offline" and state.forced_offline is True
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_offline_mode_setting.py tests/test_network_state.py -q`
 Expected: all pass. Also run `.venv-py312/bin/python -m pytest tests/ -q -k "settings"` to confirm no settings-router regression.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add open_notebook/domain/content_settings.py api/models.py api/routers/settings.py open_notebook/health/network.py tests/test_offline_mode_setting.py
@@ -529,7 +529,7 @@ git commit -m "feat: v0.8.68 persisted Offline-mode toggle (settings field + for
 - Create: `open_notebook/ai/offline_gate.py`
 - Test: `tests/test_offline_gate.py`
 
-- [ ] **Step 1: Write failing tests** — `tests/test_offline_gate.py`
+- [x] **Step 1: Write failing tests** — `tests/test_offline_gate.py`
 
 ```python
 """v0.8.68 — offline gate: cloud language models substitute local offline."""
@@ -674,11 +674,11 @@ def test_find_local_falls_back_to_query(monkeypatch):
     assert got.id == "model:alpha"  # local providers only, name-sorted
 ```
 
-- [ ] **Step 2: Run — expect `ModuleNotFoundError`**
+- [x] **Step 2: Run — expect `ModuleNotFoundError`**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_offline_gate.py -q`
 
-- [ ] **Step 3: Implement `open_notebook/ai/offline_gate.py`**
+- [x] **Step 3: Implement `open_notebook/ai/offline_gate.py`**
 
 ```python
 """v0.8.68 — offline gate for language-model provisioning.
@@ -818,13 +818,13 @@ async def gate_language_model_id(
     return fallback.id
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_offline_gate.py -q`
 Expected: 11 passed
 (Note: the substitution test asserts reason == "offline" because the patched state has forced_offline=False.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add open_notebook/ai/offline_gate.py tests/test_offline_gate.py
@@ -840,7 +840,7 @@ git commit -m "feat: v0.8.68 offline gate — substitute local model for cloud c
 - Modify: `open_notebook/ai/provision.py` (resolve-then-gate-then-instantiate)
 - Test: `tests/test_provisioning_fallback.py`
 
-- [ ] **Step 1: Extract `get_default_model_id` on ModelManager**
+- [x] **Step 1: Extract `get_default_model_id` on ModelManager**
 
 In `open_notebook/ai/models.py`, inside `ModelManager`, add ABOVE `get_default_model` and rewrite `get_default_model` to use it (behavior-preserving refactor):
 
@@ -903,12 +903,12 @@ Then replace the body of `get_default_model` so the mapping lives in ONE place:
             return None
 ```
 
-- [ ] **Step 2: Run the existing suite to prove the refactor is safe**
+- [x] **Step 2: Run the existing suite to prove the refactor is safe**
 
 Run: `.venv-py312/bin/python -m pytest tests/ -q -k "model or provision or routing or chat" --ignore=tests/integration`
 Expected: same pass count as before the edit (no regressions).
 
-- [ ] **Step 3: Write failing tests** — `tests/test_provisioning_fallback.py`
+- [x] **Step 3: Write failing tests** — `tests/test_provisioning_fallback.py`
 
 ```python
 """v0.8.68 — provision_langchain_model consults the offline gate."""
@@ -1010,7 +1010,7 @@ def test_no_candidate_still_raises_configuration_error(monkeypatch):
         _run(provision.provision_langchain_model("hello", None, "chat"))
 ```
 
-- [ ] **Step 4: Rewrite `provision_langchain_model` in `open_notebook/ai/provision.py`**
+- [x] **Step 4: Rewrite `provision_langchain_model` in `open_notebook/ai/provision.py`**
 
 Add import near the top of the file (module level, with the other open_notebook imports):
 
@@ -1106,14 +1106,14 @@ async def provision_langchain_model(
     return model.to_langchain()
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_provisioning_fallback.py tests/test_offline_gate.py -q`
 Expected: all pass.
 Then full backend regression: `.venv-py312/bin/python -m pytest tests/ -q --ignore=tests/integration`
 Expected: same pass count as the pre-change baseline (record it before starting).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add open_notebook/ai/models.py open_notebook/ai/provision.py tests/test_provisioning_fallback.py
@@ -1130,7 +1130,7 @@ git commit -m "feat: v0.8.68 wire offline gate into provision_langchain_model (r
 - Modify: `api/routers/chat.py` (execute path ~line 921-993; stream done payload ~line 1298-1340 and ~1415-1441)
 - Test: extend `tests/test_chat_stream.py` patterns in a new file `tests/test_chat_offline_fallback_plumbing.py`
 
-- [ ] **Step 1: Chat node — pass fallback_out and return it**
+- [x] **Step 1: Chat node — pass fallback_out and return it**
 
 In `open_notebook/graphs/chat.py` `call_model_with_messages`, replace the provisioning block (currently lines ~784-797):
 
@@ -1159,7 +1159,7 @@ In `open_notebook/graphs/chat.py` `call_model_with_messages`, replace the provis
 
 NOTE: `selection_out: dict = {}` already exists just above this block — do not duplicate it; move/merge so it is declared once.
 
-- [ ] **Step 2: Mid-turn NetworkError retry (captive-portal leg, spec §3)**
+- [x] **Step 2: Mid-turn NetworkError retry (captive-portal leg, spec §3)**
 
 Still in `call_model_with_messages`, wrap the tool-loop call (currently `ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(...)` at ~line 825):
 
@@ -1208,7 +1208,7 @@ Still in `call_model_with_messages`, wrap the tool-loop call (currently `ai_mess
 
 (`agent_state_out: dict = {}` is declared just above the original call — keep that declaration before this block.)
 
-- [ ] **Step 3: Return the new key from the node**
+- [x] **Step 3: Return the new key from the node**
 
 In the node's `return { ... }` dict (currently ~line 845), add after `"selected_model_id"`:
 
@@ -1217,7 +1217,7 @@ In the node's `return { ... }` dict (currently ~line 845), add after `"selected_
             "offline_fallback": offline_fallback_out or None,
 ```
 
-- [ ] **Step 4: API schema + router plumbing**
+- [x] **Step 4: API schema + router plumbing**
 
 In `api/models.py`, in `ExecuteChatResponse` next to `selected_provider` (~line 311), add:
 
@@ -1253,7 +1253,7 @@ In `_stream_chat_events`: at the done-payload build (~line 1298-1340, where `sel
 
 and `"offline_fallback": offline_fallback_raw,` in the emitted done-event dict next to `"selected_provider"`. Repeat for the second read site (~line 1415-1441, `final_result`): add `offline_fallback_out = final_result.get("offline_fallback") ...` with the dual guard and include it in that payload dict too. Mirror exactly how `selected_provider` flows in both places.
 
-- [ ] **Step 5: Plumbing test** — `tests/test_chat_offline_fallback_plumbing.py`
+- [x] **Step 5: Plumbing test** — `tests/test_chat_offline_fallback_plumbing.py`
 
 ```python
 """v0.8.68 — offline_fallback flows node-result → ExecuteChatResponse."""
@@ -1282,12 +1282,12 @@ def test_execute_chat_response_defaults_none():
     assert resp.offline_fallback is None
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_chat_offline_fallback_plumbing.py tests/test_chat_stream.py -q`
 Expected: all pass (existing stream tests confirm the done-event change didn't break the wire format).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add open_notebook/graphs/chat.py api/models.py api/routers/chat.py tests/test_chat_offline_fallback_plumbing.py
@@ -1302,7 +1302,7 @@ git commit -m "feat: v0.8.68 thread offline-fallback info through chat graph + r
 - Modify: `api/routers/system.py` (add endpoint below `db_repair_needed`, same style)
 - Test: `tests/test_network_status_endpoint.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 """v0.8.68 — /api/system/network-status: never 500s, reports gate state."""
@@ -1367,11 +1367,11 @@ def test_internal_error_returns_unknown_not_500(client, monkeypatch):
     assert r.json()["status"] == "unknown"
 ```
 
-- [ ] **Step 2: Run — expect 404/AttributeError failures**
+- [x] **Step 2: Run — expect 404/AttributeError failures**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_network_status_endpoint.py -q`
 
-- [ ] **Step 3: Implement the endpoint**
+- [x] **Step 3: Implement the endpoint**
 
 In `api/routers/system.py`, add module-level imports near the top:
 
@@ -1416,11 +1416,11 @@ async def network_status() -> dict:
         }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_network_status_endpoint.py -q` → 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/routers/system.py tests/test_network_status_endpoint.py
@@ -1435,7 +1435,7 @@ git commit -m "feat: v0.8.68 GET /api/system/network-status (never-500, fallback
 - Modify: `open_notebook/tools/web_search.py` (first lines of the tool body)
 - Test: append to existing `tests/test_v0_8_64_web_search.py` style in new file `tests/test_web_search_offline.py`
 
-- [ ] **Step 1: Write failing test** — `tests/test_web_search_offline.py`
+- [x] **Step 1: Write failing test** — `tests/test_web_search_offline.py`
 
 ```python
 """v0.8.68 — web_search returns empty immediately when offline (no 25s
@@ -1478,7 +1478,7 @@ def test_offline_short_circuits(monkeypatch):
     assert called == []
 ```
 
-- [ ] **Step 2: Implement the short-circuit**
+- [x] **Step 2: Implement the short-circuit**
 
 In `open_notebook/tools/web_search.py`, add the import at module level:
 
@@ -1509,12 +1509,12 @@ _search_impl_for_tests = <name-of-the-failover-async-function>
 
 (Replace `<name-of-the-failover-async-function>` with the actual function name found in Step 2 — it exists today; this alias line is the only permitted point of adaptation in this task.)
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_web_search_offline.py tests/test_v0_8_64_web_search.py -q`
 Expected: all pass (existing web-search tests prove online behavior unchanged — conftest strips provider keys so they exercise the no-provider path deterministically).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add open_notebook/tools/web_search.py tests/test_web_search_offline.py
@@ -1530,9 +1530,9 @@ git commit -m "feat: v0.8.68 web_search short-circuits offline instead of burnin
 - Modify: `api/routers/gmail.py` (status payload gains `pending_digest`)
 - Test: `tests/test_digest_offline_deferral.py`
 
-- [ ] **Step 1: Read `open_notebook/digest/scheduler.py` in full** (it is small) to locate the tick loop and the `_should_send` helper. The deferral state lives in this module.
+- [x] **Step 1: Read `open_notebook/digest/scheduler.py` in full** (it is small) to locate the tick loop and the `_should_send` helper. The deferral state lives in this module.
 
-- [ ] **Step 2: Write failing tests** — `tests/test_digest_offline_deferral.py`
+- [x] **Step 2: Write failing tests** — `tests/test_digest_offline_deferral.py`
 
 ```python
 """v0.8.68 — digest scheduler defers sends while offline, retries, and
@@ -1640,7 +1640,7 @@ def test_day_old_pending_dropped(monkeypatch):
     assert scheduler.pending_digest_info()["pending"] is False
 ```
 
-- [ ] **Step 3: Implement in `open_notebook/digest/scheduler.py`**
+- [x] **Step 3: Implement in `open_notebook/digest/scheduler.py`**
 
 Add near the top of the module:
 
@@ -1766,7 +1766,7 @@ And in the scheduler's periodic tick loop (the function that sleeps and re-check
 
 (Use the module's existing way of obtaining `GmailIntegration` in the loop — mirror the surrounding code.)
 
-- [ ] **Step 4: Surface in gmail status**
+- [x] **Step 4: Surface in gmail status**
 
 In `api/routers/gmail.py`, find the `/status` endpoint's response dict and add:
 
@@ -1777,12 +1777,12 @@ In `api/routers/gmail.py`, find the `/status` endpoint's response dict and add:
 
 with the import `from open_notebook.digest.scheduler import pending_digest_info` at module level.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `.venv-py312/bin/python -m pytest tests/test_digest_offline_deferral.py -q` → 4 passed
 Then: `.venv-py312/bin/python -m pytest tests/ -q -k "gmail or digest" --ignore=tests/integration` — no regressions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add open_notebook/digest/scheduler.py api/routers/gmail.py tests/test_digest_offline_deferral.py
@@ -1803,7 +1803,7 @@ git commit -m "feat: v0.8.68 Gmail digest defers offline and retries instead of 
 - Modify: all 7 locale files under `frontend/src/lib/locales/*/index.ts`
 - Test: `frontend/src/components/layout/NetworkStatusBadge.test.tsx`
 
-- [ ] **Step 1: Hook** — `frontend/src/lib/hooks/use-network-status.ts`
+- [x] **Step 1: Hook** — `frontend/src/lib/hooks/use-network-status.ts`
 
 ```typescript
 // v0.8.68 — poll the backend's network state (offline probe + the user's
@@ -1841,7 +1841,7 @@ export function useNetworkStatus() {
 }
 ```
 
-- [ ] **Step 2: Badge** — `frontend/src/components/layout/NetworkStatusBadge.tsx`
+- [x] **Step 2: Badge** — `frontend/src/components/layout/NetworkStatusBadge.tsx`
 
 ```typescript
 'use client'
@@ -1880,7 +1880,7 @@ export function NetworkStatusBadge() {
 }
 ```
 
-- [ ] **Step 3: AppShell** — render the badge under the existing banners:
+- [x] **Step 3: AppShell** — render the badge under the existing banners:
 
 ```typescript
 import { NetworkStatusBadge } from './NetworkStatusBadge'
@@ -1888,7 +1888,7 @@ import { NetworkStatusBadge } from './NetworkStatusBadge'
         <NetworkStatusBadge />
 ```
 
-- [ ] **Step 4: Chat pill — extend `ChatMessageProviderBadge`**
+- [x] **Step 4: Chat pill — extend `ChatMessageProviderBadge`**
 
 Read `frontend/src/components/chat/ChatMessageProviderBadge.tsx` fully first. Extend its cache-entry type with `offline_fallback?: { to_model_name?: string | null; reason?: string } | null` (mirroring where `selected_provider` is written into the cache from the execute/stream responses — update those write sites in `useNotebookChat.ts`/`useSourceChat.ts`, found via `grep -n "selected_provider" frontend/src/lib/hooks/*.ts`). Render rule: when `offline_fallback` is set, show an amber pill BEFORE the provider badge:
 
@@ -1908,7 +1908,7 @@ Read `frontend/src/components/chat/ChatMessageProviderBadge.tsx` fully first. Ex
 
 Add a matching case to `ChatMessageProviderBadge.test.tsx` following its existing test fixtures (copy the `selected_provider: 'local'` test, set `offline_fallback: { to_model_name: 'gemma-4-E4B', reason: 'offline' }`, assert the rendered text contains "gemma-4-E4B").
 
-- [ ] **Step 5: Settings toggle**
+- [x] **Step 5: Settings toggle**
 
 In `frontend/src/app/(dashboard)/settings/components/SettingsForm.tsx`, mirror an existing boolean-ish control (`auto_delete_files` uses yes/no select; use the project's `Switch` component from `@/components/ui/switch` if present, else a two-option select like `auto_delete_files`). Bind to the settings object's new `offline_mode` field (extend the settings type in `frontend/src/lib/types/api.ts` with `offline_mode?: boolean | null`). Labels:
 
@@ -1918,7 +1918,7 @@ help:  t('settings.offlineModeHelp', { defaultValue:
   'Never use the internet. Cloud models, web search, and email digests are disabled; local models keep working.' })
 ```
 
-- [ ] **Step 6: i18n keys (all 7 locales)**
+- [x] **Step 6: i18n keys (all 7 locales)**
 
 Add a `network` section + the two settings keys to every locale file (`en-US`, `pt-BR`, `zh-CN`, `zh-TW`, `ja-JP`, `ru-RU`, `bn-IN` under `frontend/src/lib/locales/*/index.ts`). en-US:
 
@@ -1933,16 +1933,16 @@ Add a `network` section + the two settings keys to every locale file (`en-US`, `
 
 and in the settings section: `offlineMode: "Offline mode"`, `offlineModeHelp: "Never use the internet. Cloud models, web search, and email digests are disabled; local models keep working."` Translate per-locale (pt-BR: "Modo offline" / "Offline — respondendo com {{model}}" etc.; zh-CN: "离线模式" / "离线 — 使用 {{model}} 回答"; ja-JP: "オフラインモード" / "オフライン — {{model}} で回答中"; ru-RU: "Офлайн-режим"; zh-TW: "離線模式"; bn-IN: "অফলাইন মোড" — complete each section consistently with the file's existing translation style).
 
-- [ ] **Step 7: Badge test** — `frontend/src/components/layout/NetworkStatusBadge.test.tsx`
+- [x] **Step 7: Badge test** — `frontend/src/components/layout/NetworkStatusBadge.test.tsx`
 
 Mirror `ChatMessageProviderBadge.test.tsx`'s harness (same render/query-client setup). Cases: (1) renders nothing when `status: 'online'`; (2) renders offline text with the fallback model name; (3) renders the forced-offline copy when `forced_offline: true`. Mock `useNetworkStatus` via `vi.mock('@/lib/hooks/use-network-status', ...)`.
 
-- [ ] **Step 8: Run frontend checks**
+- [x] **Step 8: Run frontend checks**
 
 Run: `cd frontend && pnpm test --run && pnpm exec tsc --noEmit`
 Expected: all tests pass, typecheck clean.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add frontend/src
@@ -1956,7 +1956,7 @@ git commit -m "feat: v0.8.68 frontend — offline badge, chat fallback pill, Off
 **Files:**
 - Modify: `desktop/CHANGELOG.md` (Unreleased section)
 
-- [ ] **Step 1: Changelog entry** (top of `## Unreleased`):
+- [x] **Step 1: Changelog entry** (top of `## Unreleased`):
 
 ```markdown
 - **✨ v0.8.68 — Offline/online smart switching + Offline-mode toggle**
@@ -1968,7 +1968,7 @@ git commit -m "feat: v0.8.68 frontend — offline badge, chat fallback pill, Off
   - **⚡ web_search short-circuits offline** instead of burning its 25s provider-failover budget.
 ```
 
-- [ ] **Step 2: Full verification**
+- [x] **Step 2: Full verification**
 
 ```bash
 .venv-py312/bin/python -m pytest tests/ -q --ignore=tests/integration
@@ -1977,7 +1977,7 @@ cd frontend && pnpm test --run && pnpm exec tsc --noEmit
 ```
 Expected: everything passes; backend count = baseline + new tests.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add desktop/CHANGELOG.md
