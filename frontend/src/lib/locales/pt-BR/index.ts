@@ -1,4 +1,11 @@
 export const ptBR = {
+  network: {
+    offline: "Offline — apenas recursos locais",
+    offlineWithFallback: "Offline — respondendo com {{model}}",
+    forcedOffline: "Modo offline ativado",
+    answeredWithLocal: "Respondido com {{model}} (offline)",
+    localModelFallbackName: "modelo local",
+  },
   common: {
     search: "Buscar...",
     create: "Novo",
@@ -836,6 +843,12 @@ export const ptBR = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl é um serviço pago (com tier gratuito), e muito poderoso. · Jina também é uma boa opção e também tem um tier gratuito. · Simples usará extração HTTP básica e perderá conteúdo em sites baseados em javascript. · Auto (recomendado) tentará usar firecrawl, depois Jina, e finalmente fallback para simples.",
+    crawl4ai: "Crawl4AI (local)",
+    network: "Rede",
+    networkDesc: "Controle se o aplicativo pode usar a internet.",
+    offlineMode: "Modo offline",
+    offlineModePlaceholder: "Desligado",
+    offlineModeHelp: "Nunca usar a internet. Modelos em nuvem, busca na web e resumos por e-mail ficam desativados; os modelos locais continuam funcionando.",
     embeddingAndSearch: "Embedding e Busca",
     embeddingAndSearchDesc: "Configure opções de busca e embedding",
     defaultEmbeddingOption: "Opção Padrão de Embedding",

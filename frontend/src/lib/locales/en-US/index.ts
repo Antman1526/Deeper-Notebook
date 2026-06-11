@@ -1,4 +1,11 @@
 export const enUS = {
+  network: {
+    offline: "Offline — local features only",
+    offlineWithFallback: "Offline — answering with {{model}}",
+    forcedOffline: "Offline mode on",
+    answeredWithLocal: "Answered with {{model}} (offline)",
+    localModelFallbackName: "local model",
+  },
   common: {
     search: "Search...",
     create: "New",
@@ -852,6 +859,12 @@ export const enUS = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl is a paid service (with a free tier), and very powerful. · Jina is a good option as well and also has a free tier. · Simple will use basic HTTP extraction and will miss content on javascript-based websites. · Auto (recommended) will try to use firecrawl then Jina, finally fallback to simple.",
+    crawl4ai: "Crawl4AI (local)",
+    network: "Network",
+    networkDesc: "Control whether the app may use the internet.",
+    offlineMode: "Offline mode",
+    offlineModePlaceholder: "Off",
+    offlineModeHelp: "Never use the internet. Cloud models, web search, and email digests are disabled; local models keep working.",
     embeddingAndSearch: "Embedding and Search",
     embeddingAndSearchDesc: "Configure search and embedding options",
     defaultEmbeddingOption: "Default Embedding Option",

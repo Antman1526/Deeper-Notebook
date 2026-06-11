@@ -1,4 +1,11 @@
 export const itIT = {
+  network: {
+    offline: "Offline — solo funzioni locali",
+    offlineWithFallback: "Offline — risposta con {{model}}",
+    forcedOffline: "Modalità offline attiva",
+    answeredWithLocal: "Risposta con {{model}} (offline)",
+    localModelFallbackName: "modello locale",
+  },
   common: {
     search: "Cerca...",
     create: "Nuovo",
@@ -836,6 +843,12 @@ export const itIT = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl è un servizio a pagamento (con piano gratuito), molto potente. · Jina è una buona alternativa con piano gratuito. · Semplice usa estrazione HTTP base e perderà contenuto su siti basati su javascript. · Auto (consigliato) proverà firecrawl poi Jina, infine semplice come fallback.",
+    crawl4ai: "Crawl4AI (locale)",
+    network: "Rete",
+    networkDesc: "Controlla se l'app può usare internet.",
+    offlineMode: "Modalità offline",
+    offlineModePlaceholder: "Disattivata",
+    offlineModeHelp: "Non usare mai internet. Modelli cloud, ricerca web e riepiloghi e-mail disattivati; i modelli locali continuano a funzionare.",
     embeddingAndSearch: "Indicizzazione e ricerca",
     embeddingAndSearchDesc: "Configura opzioni di ricerca e indicizzazione",
     defaultEmbeddingOption: "Opzione indicizzazione predefinita",
