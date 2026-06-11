@@ -390,17 +390,12 @@ class ModelManager:
         )
         return model
 
-    async def get_default_model(self, model_type: str, **kwargs) -> Optional[ModelType]:
-        """
-        Get the default model for a specific type.
-
-        Args:
-            model_type: The type of model to retrieve (e.g., 'chat', 'embedding', etc.)
-            **kwargs: Additional arguments to pass to the model constructor
-        """
+    async def get_default_model_id(self, model_type: str) -> Optional[str]:
+        """v0.8.68 — id-only resolution extracted from get_default_model so
+        the offline gate (open_notebook/ai/offline_gate.py) can inspect the
+        candidate's provider BEFORE instantiation. Mapping unchanged."""
         defaults = await self.get_defaults()
         model_id = None
-
         if model_type == "chat":
             model_id = defaults.default_chat_model
         elif model_type == "transformation":
@@ -417,6 +412,19 @@ class ModelManager:
             model_id = defaults.default_speech_to_text_model
         elif model_type == "large_context":
             model_id = defaults.large_context_model
+        return model_id
+
+    async def get_default_model(self, model_type: str, **kwargs) -> Optional[ModelType]:
+        """
+        Get the default model for a specific type.
+
+        Args:
+            model_type: The type of model to retrieve (e.g., 'chat', 'embedding', etc.)
+            **kwargs: Additional arguments to pass to the model constructor
+        """
+        # v0.8.68 — id resolution extracted to get_default_model_id (one
+        # mapping, shared with the offline gate). Behavior unchanged.
+        model_id = await self.get_default_model_id(model_type)
 
         if not model_id:
             logger.warning(
