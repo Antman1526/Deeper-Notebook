@@ -212,6 +212,12 @@ class PodcastEpisode(ObjectModel):
         ..., description="Speaker profile used (stored as object)"
     )
     briefing: str = Field(..., description="Full briefing used for generation")
+    # v0.8.68 — the user's per-episode customization, stored SEPARATELY from
+    # the combined `briefing` so retry can replay it verbatim. Pre-v0.8.68
+    # retries silently regenerated with the base briefing only.
+    briefing_suffix: Optional[str] = Field(
+        default=None, description="User-provided extra instructions, if any"
+    )
     content: str = Field(..., description="Source content")
     audio_file: Optional[str] = Field(
         default=None, description="Path to generated audio file"
@@ -256,7 +262,15 @@ class PodcastEpisode(ObjectModel):
                 "status": status.status,
                 "error_message": getattr(status, "error_message", None),
             }
-        except Exception:
+        except Exception as exc:
+            # v0.8.68 — was a bare swallow: a broken job-queue backend or a
+            # corrupt command id showed "unknown" status forever with zero
+            # diagnostic trail. Still degrade to "unknown" (the UI contract),
+            # but leave the operator a breadcrumb.
+            logger.warning(
+                f"get_job_detail({self.command}): status lookup failed, "
+                f"reporting 'unknown' ({type(exc).__name__}: {exc})"
+            )
             return {"status": "unknown", "error_message": None}
 
     @field_validator("command", mode="before")

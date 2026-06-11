@@ -329,6 +329,9 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   }
 
   const isFailed = FAILED_EPISODE_STATUSES.includes(episode.job_status as EpisodeStatus)
+  // v0.8.68 — completed episodes can be regenerated (the backend retry
+  // endpoint now accepts terminal states, not just failures).
+  const isCompleted = episode.job_status === 'completed'
 
   return (
     <Card className="shadow-sm">
@@ -530,6 +533,41 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 <RefreshCcw className={cn('mr-2 h-4 w-4', retrying && 'animate-spin')} />
                 {retrying ? t('podcasts.retrying') : t('podcasts.retry')}
               </Button>
+            ) : null}
+            {/* v0.8.68 — regenerate a completed episode (NotebookLM-style
+                "make it again"). Confirm-gated: the existing audio is
+                replaced, so this is destructive in a way plain retry of a
+                failed episode is not. */}
+            {isCompleted && onRetry ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={retrying}>
+                    <RefreshCcw className={cn('mr-2 h-4 w-4', retrying && 'animate-spin')} />
+                    {retrying
+                      ? t('podcasts.regenerating', { defaultValue: 'Regenerating…' })
+                      : t('podcasts.regenerate', { defaultValue: 'Regenerate' })}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t('podcasts.regenerateTitle', { defaultValue: 'Regenerate episode?' })}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('podcasts.regenerateDesc', {
+                        defaultValue:
+                          'This replaces the current audio with a freshly generated version using the same content, profiles, and instructions. The existing audio will be deleted.',
+                      })}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleRetry}>
+                      {t('podcasts.regenerate', { defaultValue: 'Regenerate' })}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
             <AlertDialog>
               <AlertDialogTrigger asChild>

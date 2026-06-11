@@ -8,7 +8,10 @@ from surreal_commands import get_command_status, submit_command
 
 from open_notebook.domain.notebook import Notebook
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
-from open_notebook.exceptions import ConfigurationError  # v0.8.68 — offline gate
+from open_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
+    ConfigurationError,
+    InvalidInputError,
+)
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
 
 
@@ -158,6 +161,38 @@ class PodcastService:
                     "Content is required - provide either content or notebook_id"
                 )
 
+            # v0.8.68 — content token budget. The full content goes to the
+            # outline LLM untruncated, so a huge notebook selection blew the
+            # model's context window MID-JOB with a generic provider error
+            # after minutes of waiting. Check at submit instead, while the
+            # user is still looking at the dialog. Env-tunable
+            # (ONP_PODCAST_MAX_CONTENT_TOKENS, 0 disables); the default is
+            # generous for cloud models but catches the pathological cases.
+            try:
+                import os as _os
+
+                from open_notebook.utils import token_count
+
+                _max_tokens = int(
+                    _os.environ.get("ONP_PODCAST_MAX_CONTENT_TOKENS", "100000")
+                    or 100000
+                )
+            except Exception:
+                _max_tokens = 100000
+            if _max_tokens > 0:
+                try:
+                    _content_tokens = token_count(str(content))
+                except Exception:
+                    _content_tokens = None  # tokenizer hiccup → don't block
+                if _content_tokens is not None and _content_tokens > _max_tokens:
+                    raise InvalidInputError(
+                        f"The selected content is too large for podcast "
+                        f"generation (~{_content_tokens:,} tokens, limit "
+                        f"{_max_tokens:,}). Select fewer sources, or raise "
+                        f"ONP_PODCAST_MAX_CONTENT_TOKENS if your models can "
+                        f"handle it."
+                    )
+
             # Prepare command arguments
             command_args = {
                 "episode_profile": episode_profile_name,
@@ -214,6 +249,14 @@ class PodcastService:
             )
             return job_id_str
 
+        except (InvalidInputError, ConfigurationError):
+            # v0.8.68 — let the typed exceptions raised by the offline gate
+            # and the content-budget check bubble to the global handlers in
+            # api/main.py (400 / 422 with their actionable messages). The
+            # broad `except Exception` below otherwise converted them into a
+            # generic 500 "Server error", hiding exactly the guidance those
+            # errors exist to deliver.
+            raise
         except ValueError as e:
             # v0.7.58 — distinguish user-input errors (missing profile,
             # missing content, "commands not available") from genuine

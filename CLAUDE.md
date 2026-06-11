@@ -180,7 +180,7 @@ User documentation is at @docs/
 ### Podcast Generation
 - **Async job queue**: `podcast_service.py` submits jobs but doesn't wait
 - **Track status**: Use `/commands/{command_id}` endpoint to poll status
-- **TTS failures**: Fall back to silent audio if speech synthesis fails
+- **TTS failures**: The episode is marked as failed with the provider error; retry via `POST /podcasts/episodes/{id}/retry` (there is no silent-audio fallback)
 
 ### Content Processing
 - **File extraction**: Uses content-core library; supports 50+ file types
