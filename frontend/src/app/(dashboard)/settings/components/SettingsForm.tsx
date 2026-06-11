@@ -21,9 +21,14 @@ import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 const settingsSchema = z.object({
   default_content_processing_engine_doc: z.enum(['auto', 'docling', 'simple']).optional(),
-  default_content_processing_engine_url: z.enum(['auto', 'firecrawl', 'jina', 'simple']).optional(),
+  // v0.8.68 — added 'crawl4ai' (the v0.8.67u local JS-rendering engine was
+  // never selectable here, mirroring the API schema gap fixed this release).
+  default_content_processing_engine_url: z.enum(['auto', 'crawl4ai', 'firecrawl', 'jina', 'simple']).optional(),
   default_embedding_option: z.enum(['ask', 'always', 'never']).optional(),
   auto_delete_files: z.enum(['yes', 'no']).optional(),
+  // v0.8.68 — forced offline mode (boolean in the API; yes/no in the form
+  // to match the existing Select idiom).
+  offline_mode: z.enum(['yes', 'no']).optional(),
 })
 
 type SettingsFormData = z.infer<typeof settingsSchema>
@@ -36,7 +41,8 @@ export function SettingsForm() {
     doc: false,
     url: false,
     embedding: false,
-    files: false
+    files: false,
+    network: false
   })
   const [hasResetForm, setHasResetForm] = useState(false)
   
@@ -53,6 +59,7 @@ export function SettingsForm() {
       default_content_processing_engine_url: undefined,
       default_embedding_option: undefined,
       auto_delete_files: undefined,
+      offline_mode: undefined,
     }
   })
 
@@ -65,9 +72,11 @@ export function SettingsForm() {
     if (settings && settings.default_content_processing_engine_doc && !hasResetForm) {
       const formData = {
         default_content_processing_engine_doc: settings.default_content_processing_engine_doc as 'auto' | 'docling' | 'simple',
-        default_content_processing_engine_url: settings.default_content_processing_engine_url as 'auto' | 'firecrawl' | 'jina' | 'simple',
+        default_content_processing_engine_url: settings.default_content_processing_engine_url as 'auto' | 'crawl4ai' | 'firecrawl' | 'jina' | 'simple',
         default_embedding_option: settings.default_embedding_option as 'ask' | 'always' | 'never',
         auto_delete_files: settings.auto_delete_files as 'yes' | 'no',
+        // v0.8.68 — boolean from the API mapped to the form's yes/no idiom.
+        offline_mode: (settings.offline_mode ? 'yes' : 'no') as 'yes' | 'no',
       }
       reset(formData)
       setHasResetForm(true)
@@ -75,7 +84,15 @@ export function SettingsForm() {
   }, [hasResetForm, reset, settings])
 
   const onSubmit = async (data: SettingsFormData) => {
-    await updateSettings.mutateAsync(data)
+    // v0.8.68 — offline_mode is a boolean on the wire; the form keeps the
+    // Select-friendly 'yes'/'no' representation.
+    const { offline_mode, ...rest } = data
+    await updateSettings.mutateAsync({
+      ...rest,
+      ...(offline_mode !== undefined
+        ? { offline_mode: offline_mode === 'yes' }
+        : {}),
+    })
   }
 
   if (isLoading) {
@@ -165,6 +182,7 @@ export function SettingsForm() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">{t('settings.autoRecommended')}</SelectItem>
+                    <SelectItem value="crawl4ai">{t('settings.crawl4ai', { defaultValue: 'Crawl4AI (local)' })}</SelectItem>
                     <SelectItem value="firecrawl">{t('settings.firecrawl')}</SelectItem>
                     <SelectItem value="jina">{t('settings.jina')}</SelectItem>
                     <SelectItem value="simple">{t('settings.simple')}</SelectItem>
@@ -274,9 +292,53 @@ export function SettingsForm() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.network', { defaultValue: 'Network' })}</CardTitle>
+          <CardDescription>
+            {t('settings.networkDesc', { defaultValue: 'Control whether the app may use the internet.' })}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <Label htmlFor="offline_mode">{t('settings.offlineMode', { defaultValue: 'Offline mode' })}</Label>
+            <Controller
+              name="offline_mode"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  key={field.value}
+                  name={field.name}
+                  value={field.value || ''}
+                  onValueChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                >
+                  <SelectTrigger id="offline_mode" className="w-full">
+                    <SelectValue placeholder={t('settings.offlineModePlaceholder', { defaultValue: 'Off' })} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">{t('common.yes')}</SelectItem>
+                    <SelectItem value="no">{t('common.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <Collapsible open={expandedSections.network} onOpenChange={() => toggleSection('network')}>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${expandedSections.network ? 'rotate-180' : ''}`} />
+                {t('settings.helpMeChoose')}
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 text-sm text-muted-foreground space-y-2">
+                <p>{t('settings.offlineModeHelp', { defaultValue: 'Never use the internet. Cloud models, web search, and email digests are disabled; local models keep working.' })}</p>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end">
-         <Button 
-          type="submit" 
+         <Button
+          type="submit"
           disabled={!isDirty || updateSettings.isPending}
         >
           {updateSettings.isPending ? t('common.saving') : t('navigation.settings')}

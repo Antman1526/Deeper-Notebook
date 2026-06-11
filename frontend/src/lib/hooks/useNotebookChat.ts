@@ -504,6 +504,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
                   privacy_gated: event.privacy_gated ?? null,
                   privacy_categories: event.privacy_categories ?? null,
                   agent_state: event.agent_state ?? null,
+                  // v0.8.68 — offline local-model fallback info, read by
+                  // ChatMessageProviderBadge for the amber offline pill.
+                  offline_fallback: event.offline_fallback ?? null,
                 },
               )
             }

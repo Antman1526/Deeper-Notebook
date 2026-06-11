@@ -1,4 +1,11 @@
 export const zhCN = {
+  network: {
+    offline: "离线 — 仅限本地功能",
+    offlineWithFallback: "离线 — 使用 {{model}} 回答",
+    forcedOffline: "离线模式已开启",
+    answeredWithLocal: "使用 {{model}} 回答（离线）",
+    localModelFallbackName: "本地模型",
+  },
   common: {
     search: "搜索...",
     create: "新建",
@@ -836,6 +843,12 @@ export const zhCN = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl: 强大的付费服务（有免费额度）。 · Jina: 优秀的备选方案，同样提供免费额度。 · Simple: 基础 HTTP 提取，在 JS 渲染的网站上可能会丢失内容。 · 自动 (推荐): 优先尝试 Firecrawl，其次 Jina，最后回退至 Simple。",
+    crawl4ai: "Crawl4AI（本地）",
+    network: "网络",
+    networkDesc: "控制应用是否可以使用互联网。",
+    offlineMode: "离线模式",
+    offlineModePlaceholder: "关闭",
+    offlineModeHelp: "从不使用互联网。云端模型、网页搜索和邮件摘要将被禁用；本地模型继续工作。",
     embeddingAndSearch: "嵌入与搜索",
     embeddingAndSearchDesc: "配置搜索和向量嵌入选项",
     defaultEmbeddingOption: "默认嵌入选项",

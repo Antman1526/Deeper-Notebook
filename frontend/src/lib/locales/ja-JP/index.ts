@@ -1,4 +1,11 @@
 export const jaJP = {
+  network: {
+    offline: "オフライン — ローカル機能のみ",
+    offlineWithFallback: "オフライン — {{model}} で回答中",
+    forcedOffline: "オフラインモード有効",
+    answeredWithLocal: "{{model}} で回答（オフライン）",
+    localModelFallbackName: "ローカルモデル",
+  },
   common: {
     search: "検索...",
     create: "新規",
@@ -836,6 +843,12 @@ export const jaJP = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "・Firecrawlは有料サービス（無料枠あり）で非常に強力です。・Jinaも良いオプションで無料枠があります。・シンプルは基本的なHTTP抽出を使用し、JavaScriptベースのウェブサイトのコンテンツを取得できない場合があります。・自動（推奨）はFirecrawl、Jina、最後にシンプルの順で試みます。",
+    crawl4ai: "Crawl4AI（ローカル）",
+    network: "ネットワーク",
+    networkDesc: "アプリのインターネット使用を制御します。",
+    offlineMode: "オフラインモード",
+    offlineModePlaceholder: "オフ",
+    offlineModeHelp: "インターネットを使用しません。クラウドモデル、ウェブ検索、メールダイジェストは無効になり、ローカルモデルは引き続き動作します。",
     embeddingAndSearch: "Embeddingと検索",
     embeddingAndSearchDesc: "検索とEmbeddingオプションを設定",
     defaultEmbeddingOption: "デフォルトEmbeddingオプション",

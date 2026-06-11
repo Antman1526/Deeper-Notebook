@@ -119,3 +119,56 @@ describe('ChatMessageProviderBadge', () => {
     expect(screen.getByTestId('tooltip-content').textContent).not.toContain('{{')
   })
 })
+
+// v0.8.68 — offline-fallback pill cases.
+describe('ChatMessageProviderBadge offline fallback', () => {
+  it('renders the offline pill with the fallback model name', () => {
+    renderWithClient(
+      <ChatMessageProviderBadge messageId="msg:off" />,
+      qc => {
+        qc.setQueryData(['chat', 'selected-provider', 'msg:off'], {
+          selected_provider: null,
+          selected_model_id: null,
+          offline_fallback: {
+            to_model_name: 'gemma-4-E4B',
+            reason: 'offline',
+          },
+        })
+      },
+    )
+    const pill = screen.getByTestId('provider-badge-offline-fallback')
+    expect(pill).toBeInTheDocument()
+    expect(pill.textContent).toContain('gemma-4-E4B')
+    expect(pill.textContent).toContain('offline')
+  })
+
+  it('offline pill takes precedence over the provider badge', () => {
+    renderWithClient(
+      <ChatMessageProviderBadge messageId="msg:both" />,
+      qc => {
+        qc.setQueryData(['chat', 'selected-provider', 'msg:both'], {
+          selected_provider: 'local',
+          selected_model_id: 'model:gemma',
+          offline_fallback: { to_model_name: 'gemma-4-E4B', reason: 'offline' },
+        })
+      },
+    )
+    expect(screen.getByTestId('provider-badge-offline-fallback')).toBeInTheDocument()
+    expect(screen.queryByTestId('provider-badge-local')).not.toBeInTheDocument()
+  })
+
+  it('renders the plain provider badge when offline_fallback is null', () => {
+    renderWithClient(
+      <ChatMessageProviderBadge messageId="msg:on" />,
+      qc => {
+        qc.setQueryData(['chat', 'selected-provider', 'msg:on'], {
+          selected_provider: 'cloud',
+          selected_model_id: 'model:gpt',
+          offline_fallback: null,
+        })
+      },
+    )
+    expect(screen.getByTestId('provider-badge-cloud')).toBeInTheDocument()
+    expect(screen.queryByTestId('provider-badge-offline-fallback')).not.toBeInTheDocument()
+  })
+})
