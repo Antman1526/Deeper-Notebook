@@ -37,6 +37,9 @@ interface GmailStatus {
   include_podcasts: boolean
   include_memory: boolean
   last_sent_at: string | null
+  // v0.8.68 — a due digest was deferred because the machine is offline;
+  // it sends automatically when connectivity returns.
+  pending_digest?: boolean
 }
 
 export function GmailIntegration() {
@@ -353,6 +356,15 @@ export function GmailIntegration() {
         ) : (
           /* State 3 — connected */
           <div className="space-y-4">
+            {status.pending_digest && (
+              /* v0.8.68 — offline-deferred digest indicator. The scheduler
+                 deferred a due digest because the machine is offline; it
+                 retries every few minutes and sends once back online. */
+              <p className="text-xs p-2 rounded border border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                A digest is queued — it will send automatically when you&apos;re
+                back online.
+              </p>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="gmail-frequency" className="text-xs">Frequency</Label>
               <Select value={status.frequency} onValueChange={(v) => updateSetting('frequency' as keyof GmailStatus, v as never)}>
