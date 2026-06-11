@@ -236,6 +236,11 @@ async def _call_model_with_source_context_inner(
     # with chat.py). Empty dict when no substitution happened; returned in
     # the node result so the SSE stream can drive the offline pill.
     offline_fallback_out: dict = {}
+    # v0.8.68 — smart-router decision (parity with chat.py / v0.8.1).
+    # Source chat routed through provision_langchain_chat_model since
+    # v0.8.66 but never captured selection_out, so the local/cloud badge
+    # ChatPanel already renders stayed permanently blank on this surface.
+    selection_out: dict = {}
     if _explicit_model:
         model = await provision_langchain_model(
             content_for_sizing, _explicit_model, "chat",
@@ -244,6 +249,7 @@ async def _call_model_with_source_context_inner(
     else:
         model = await provision_langchain_chat_model(
             content_for_sizing,
+            selection_out=selection_out,
             max_tokens=8192,
             fallback_out=offline_fallback_out,
             privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
@@ -310,6 +316,10 @@ async def _call_model_with_source_context_inner(
         "mcp_tool_calls": mcp_captures if mcp_captures else None,
         # v0.8.68 — offline-fallback info (None when no substitution).
         "offline_fallback": offline_fallback_out or None,
+        # v0.8.68 — smart-router decision for the local/cloud badge
+        # (None when smart routing didn't run / explicit model pick).
+        "selected_provider": selection_out.get("selected_provider"),
+        "selected_model_id": selection_out.get("selected_model_id"),
     }
 
 

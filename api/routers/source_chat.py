@@ -712,6 +712,13 @@ async def stream_source_chat_response(
                             "offline_fallback": getattr(
                                 output, "offline_fallback", None
                             ),
+                            # v0.8.68 — smart-router decision (dual-path).
+                            "selected_provider": getattr(
+                                output, "selected_provider", None
+                            ),
+                            "selected_model_id": getattr(
+                                output, "selected_model_id", None
+                            ),
                         }
 
             # Emit the terminal ai_message event so clients that ignore
@@ -755,6 +762,20 @@ async def stream_source_chat_response(
                     + json.dumps({
                         "type": "mcp_tool_calls",
                         "calls": final_state["mcp_tool_calls"],
+                    })
+                    + "\n\n"
+                )
+
+            # v0.8.68 — emit the smart-router decision so the source-chat
+            # local/cloud badge (already rendered by ChatPanel) finally gets
+            # data. Only emitted when smart routing actually ran this turn.
+            if final_state and final_state.get("selected_provider") is not None:
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "selected_provider",
+                        "selected_provider": final_state["selected_provider"],
+                        "selected_model_id": final_state.get("selected_model_id"),
                     })
                     + "\n\n"
                 )
