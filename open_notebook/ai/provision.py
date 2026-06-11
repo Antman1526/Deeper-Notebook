@@ -123,6 +123,7 @@ async def provision_langchain_chat_model(
     *,
     selection_out: "dict | None" = None,
     privacy_gate_bypass: bool = False,
+    fallback_out: "dict | None" = None,
     **kwargs,
 ) -> BaseChatModel:
     """v0.8.0 — Smart-routed chat provisioning.
@@ -177,6 +178,9 @@ async def provision_langchain_chat_model(
             content=content,
             model_id=None,
             default_type="chat",
+            # v0.8.68 — thread the offline-fallback channel through so the
+            # default (non-smart-routed) path reports substitutions too.
+            fallback_out=fallback_out,
             **kwargs,
         )
 
@@ -345,6 +349,10 @@ async def provision_langchain_chat_model(
         content=content,
         model_id=choice.model_id,
         default_type="chat",
+        # v0.8.68 — the smart router may pick cloud while the machine is
+        # offline (e.g. stale health cache); the gate inside
+        # provision_langchain_model corrects that and reports here.
+        fallback_out=fallback_out,
         **kwargs,
     )
 
