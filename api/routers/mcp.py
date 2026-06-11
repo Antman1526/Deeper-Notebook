@@ -9,6 +9,20 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+# v0.8.68 — surrealdb 2.0 raises its own SurrealError subclass
+# (InvalidRecordIdError) from RecordID.parse instead of ValueError, so the
+# v0.8.66 H2/H3 `except (ValueError, TypeError)` guards stopped catching a
+# malformed id — the client got an opaque 500 instead of the intended clean
+# 400. Catch the library's error class alongside the stdlib ones; the
+# fallback keeps imports working if a future client drops the module path.
+try:
+    from surrealdb.errors import SurrealError as _SurrealIdError
+except ImportError:  # pragma: no cover — older surrealdb clients
+    class _SurrealIdError(Exception):
+        pass
+
+_BAD_RECORD_ID_ERRORS = (ValueError, TypeError, _SurrealIdError)
+
 router = APIRouter()
 
 
@@ -166,7 +180,7 @@ async def update_mcp_server(server_id: str, body: MCPServerUpdate):
     # it as $rid (defense in depth). A malformed id yields a clean 400.
     try:
         rid = ensure_record_id(server_id)
-    except (ValueError, TypeError):
+    except _BAD_RECORD_ID_ERRORS:
         raise HTTPException(400, "Invalid server_id")
     # v0.8.1 — repo_update(table, id, data) auto-bumps `updated`; we only
     # set the fields the caller actually sent so enabled and priority can
@@ -190,7 +204,7 @@ async def delete_mcp_server(server_id: str):
     # toast and the server reappeared on refetch). Bind a real RecordID to fix.
     try:
         rid = ensure_record_id(server_id)
-    except (ValueError, TypeError):
+    except _BAD_RECORD_ID_ERRORS:
         raise HTTPException(400, "Invalid server_id")
     await repo_query("DELETE mcp_server WHERE id = $id", {"id": rid})
     return {"ok": True}
@@ -215,7 +229,7 @@ async def test_mcp_server(server_id: str):
     # 0 rows and Test 404s on a server that genuinely exists.
     try:
         rid = ensure_record_id(server_id)
-    except (ValueError, TypeError):
+    except _BAD_RECORD_ID_ERRORS:
         raise HTTPException(400, "Invalid server_id")
     rows = await repo_query(
         "SELECT url FROM mcp_server WHERE id = $id LIMIT 1",
