@@ -43,6 +43,7 @@ async def get_settings():
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
+            offline_mode=settings.offline_mode,
         )
     except HTTPException:
         # v0.7.135 — re-raise typed HTTPExceptions so the generic
@@ -88,6 +89,12 @@ async def update_settings(settings_update: SettingsUpdate):
             settings.youtube_preferred_languages = (
                 settings_update.youtube_preferred_languages
             )
+        if settings_update.offline_mode is not None:
+            settings.offline_mode = settings_update.offline_mode
+            # v0.8.68 — bust the network-state cache so the toggle takes
+            # effect on the next chat turn, not after the 30s accessor TTL.
+            from open_notebook.health.network import invalidate_forced_offline_cache
+            invalidate_forced_offline_cache()
 
         await settings.update()
 
@@ -97,6 +104,7 @@ async def update_settings(settings_update: SettingsUpdate):
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
+            offline_mode=settings.offline_mode,
         )
     except HTTPException:
         raise

@@ -308,6 +308,8 @@ class SettingsResponse(BaseModel):
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
     youtube_preferred_languages: Optional[list[str]] = None
+    # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
+    offline_mode: Optional[bool] = None
 
 
 # v0.7.130 — tightened the literal fields from Optional[str] to
@@ -322,12 +324,18 @@ class SettingsUpdate(BaseModel):
     default_content_processing_engine_doc: Optional[
         Literal["auto", "docling", "simple"]
     ] = None
+    # v0.8.68 — BUG FIX: "crawl4ai" was added to ContentSettings in
+    # v0.8.67u but never to this request schema, so PUT /settings
+    # 422-rejected the value and the UI couldn't actually select the
+    # crawl4ai engine. Allowed values lifted from ContentSettings.
     default_content_processing_engine_url: Optional[
-        Literal["auto", "firecrawl", "jina", "simple"]
+        Literal["auto", "crawl4ai", "firecrawl", "jina", "simple"]
     ] = None
     default_embedding_option: Optional[Literal["ask", "always", "never"]] = None
     auto_delete_files: Optional[Literal["yes", "no"]] = None
     youtube_preferred_languages: Optional[list[str]] = None
+    # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
+    offline_mode: Optional[bool] = None
 
 
 # Sources API models
