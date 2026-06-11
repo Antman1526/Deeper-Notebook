@@ -377,6 +377,23 @@ export function useSourceChat(sourceId: string) {
                     data.calls,
                   )
                 }
+              } else if (data.type === 'offline_fallback') {
+                // v0.8.68 — the offline gate answered this turn with a
+                // local model. Stash under the same cache key
+                // ChatMessageProviderBadge reads (keyed by the streamed
+                // message id, which is what ChatPanel renders) so the
+                // amber "Answered with <model> (offline)" pill shows in
+                // source chat exactly like notebook chat.
+                if (data.data) {
+                  queryClient.setQueryData(
+                    ['chat', 'selected-provider', streamingAiId],
+                    {
+                      selected_provider: null,
+                      selected_model_id: null,
+                      offline_fallback: data.data,
+                    },
+                  )
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.message || 'Stream error')
               }
