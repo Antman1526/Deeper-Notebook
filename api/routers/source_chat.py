@@ -707,6 +707,11 @@ async def stream_source_chat_response(
                             "mcp_tool_calls": getattr(
                                 output, "mcp_tool_calls", None
                             ),
+                            # v0.8.68 — offline-fallback info (dual-path,
+                            # same Pydantic-state guard as the fields above).
+                            "offline_fallback": getattr(
+                                output, "offline_fallback", None
+                            ),
                         }
 
             # Emit the terminal ai_message event so clients that ignore
@@ -750,6 +755,20 @@ async def stream_source_chat_response(
                     + json.dumps({
                         "type": "mcp_tool_calls",
                         "calls": final_state["mcp_tool_calls"],
+                    })
+                    + "\n\n"
+                )
+
+            # v0.8.68 — emit the offline-fallback info so useSourceChat can
+            # stash it for ChatMessageProviderBadge's amber pill (same
+            # pipeline notebook chat uses via its done event). Only emitted
+            # when the gate actually substituted a model this turn.
+            if final_state and final_state.get("offline_fallback"):
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "offline_fallback",
+                        "data": final_state["offline_fallback"],
                     })
                     + "\n\n"
                 )
