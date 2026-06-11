@@ -83,6 +83,29 @@ def _resolve_audio_path(audio_file: str) -> Optional[Path]:
     return resolved
 
 
+def _cleanup_episode_dir(audio_path: Path) -> None:
+    """v0.8.68 — best-effort removal of the episode's UUID directory after
+    its audio file is unlinked. Unlinking alone left an empty (or
+    transcript-only) directory under data/podcasts/episodes/ behind for
+    every deleted/retried episode — slow disk fill with zero user value.
+    Only removes the dir when it is (a) strictly inside _AUDIO_ROOT, (b) not
+    the root itself, and (c) empty — partial artifacts (transcripts,
+    intermediate WAVs) are kept for diagnostics, matching the worker's
+    failure-cleanup policy in commands/podcast_commands.py."""
+    try:
+        episode_dir = audio_path.parent
+        if (
+            episode_dir.is_relative_to(_AUDIO_ROOT)
+            and episode_dir != _AUDIO_ROOT
+            and episode_dir.exists()
+            and not any(episode_dir.iterdir())
+        ):
+            episode_dir.rmdir()
+            logger.info(f"Removed empty episode directory: {episode_dir}")
+    except Exception as exc:
+        logger.warning(f"Could not remove episode dir {audio_path.parent}: {exc}")
+
+
 @router.post("/podcasts/generate", response_model=PodcastGenerationResponse)
 async def generate_podcast(request: PodcastGenerationRequest):
     """
@@ -330,25 +353,49 @@ async def stream_podcast_episode_audio(episode_id: str):
     if audio_path is None or not audio_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found on disk")
 
+    # v0.8.68 — media type by extension. Was hardcoded audio/mpeg, which
+    # mislabels .wav/.m4a/.ogg output if podcast-creator's output format
+    # ever differs from MP3 (and breaks strict clients). Unknown extensions
+    # keep the historical audio/mpeg default.
+    _MEDIA_TYPES = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".flac": "audio/flac",
+    }
     return FileResponse(
         audio_path,
-        media_type="audio/mpeg",
+        media_type=_MEDIA_TYPES.get(audio_path.suffix.lower(), "audio/mpeg"),
         filename=audio_path.name,
     )
 
 
 @router.post("/podcasts/episodes/{episode_id}/retry")
 async def retry_podcast_episode(episode_id: str):
-    """Retry a failed podcast episode by deleting it and submitting a new job"""
+    """Retry or regenerate a podcast episode by deleting it and submitting a
+    new job with the same parameters.
+
+    v0.8.68 — also allowed from "completed": regenerating an episode you're
+    not happy with is a first-class workflow (NotebookLM parity), not an
+    error. Still blocked while queued/running — retrying an in-flight job
+    would orphan the running generation and race it for the episode record.
+    """
     try:
         episode = await PodcastService.get_episode(episode_id)
 
-        # Validate episode is in a failed state
+        # Validate episode is in a terminal state (failed OR completed).
         detail = await episode.get_job_detail()
-        if detail["status"] not in ("failed", "error"):
+        if detail["status"] not in ("failed", "error", "completed"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Episode is not in a failed state (current: {detail['status']})",
+                detail=(
+                    f"Episode is still in progress (current: "
+                    f"{detail['status']}). Wait for it to finish or fail "
+                    f"before retrying."
+                ),
             )
 
         # Extract params for re-submission
@@ -415,6 +462,8 @@ async def retry_podcast_episode(episode_id: str):
             elif audio_path.exists():
                 try:
                     audio_path.unlink()
+                    # v0.8.68 — also sweep the now-empty UUID directory.
+                    _cleanup_episode_dir(audio_path)
                 except HTTPException:
                     # v0.7.108 — re-raise typed HTTPExceptions so the next
                     # `except Exception` doesn't clobber them to 500.
@@ -425,12 +474,16 @@ async def retry_podcast_episode(episode_id: str):
         # Delete the failed episode
         await episode.delete()
 
-        # Submit a new job
+        # Submit a new job.
+        # v0.8.68 — replay the user's per-episode customization. The suffix
+        # was previously dropped on retry, silently regenerating with the
+        # base briefing only (different output than the user asked for).
         job_id = await PodcastService.submit_generation_job(
             episode_profile_name=ep_profile_name,
             speaker_profile_name=sp_profile_name,
             episode_name=episode_name,
             content=content,
+            briefing_suffix=getattr(episode, "briefing_suffix", None),
         )
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}
@@ -473,6 +526,8 @@ async def delete_podcast_episode(episode_id: str):
                 try:
                     audio_path.unlink()
                     logger.info(f"Deleted audio file: {audio_path}")
+                    # v0.8.68 — also sweep the now-empty UUID directory.
+                    _cleanup_episode_dir(audio_path)
                 except HTTPException:
                     # v0.7.108 — re-raise typed HTTPExceptions so the next
                     # `except Exception` doesn't clobber them to 500.
