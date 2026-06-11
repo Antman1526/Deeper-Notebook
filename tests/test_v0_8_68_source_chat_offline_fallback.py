@@ -73,3 +73,27 @@ def test_source_chat_panel_renders_provider_badge():
     assert "ChatMessageProviderBadge" in panel_src, (
         "source ChatPanel must render the badge that shows the offline pill"
     )
+
+
+def test_source_chat_node_threads_selection_out():
+    """v0.8.68 item 4 — the smart-router decision reaches the node result
+    so the local/cloud badge gets data on the source-chat surface."""
+    from open_notebook.graphs import source_chat
+
+    src = inspect.getsource(source_chat)
+    assert "selection_out=selection_out" in src
+    assert '"selected_provider": selection_out.get("selected_provider")' in src
+
+
+def test_source_chat_router_emits_selected_provider_event():
+    router_src = (_REPO / "api" / "routers" / "source_chat.py").read_text()
+    assert '"type": "selected_provider"' in router_src
+
+
+def test_use_source_chat_merges_selection_into_badge_cache():
+    hook_src = (
+        _REPO / "frontend" / "src" / "lib" / "hooks" / "useSourceChat.ts"
+    ).read_text()
+    assert "data.type === 'selected_provider'" in hook_src
+    # Both handlers must MERGE (updater function), not overwrite.
+    assert hook_src.count("...(old ?? {})") >= 2
