@@ -2,6 +2,9 @@
 """
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +12,26 @@ from open_notebook.utils.crawler import extract_url_with_crawl4ai
 from open_notebook.tools.add_web_source import build_add_web_source_tool
 from open_notebook.graphs import source as source_graph
 from open_notebook.domain.content_settings import ContentSettings
+
+
+# v0.8.68 — crawl4ai is an OPTIONAL heavy dependency (pulls Playwright);
+# most dev environments don't have it installed, and `patch("crawl4ai.
+# AsyncWebCrawler", ...)` imports the module first — so these tests failed
+# with ModuleNotFoundError on any machine without the extra. Register a
+# stub module when the real one is absent: the production code's dynamic
+# `from crawl4ai import AsyncWebCrawler` resolves against sys.modules, and
+# the patch() targets work identically. monkeypatch.setitem auto-restores.
+@pytest.fixture(autouse=True)
+def _stub_crawl4ai_module(monkeypatch):
+    if "crawl4ai" not in sys.modules:
+        try:
+            import crawl4ai  # noqa: F401 — real package present, use it
+        except ImportError:
+            stub = types.ModuleType("crawl4ai")
+            stub.AsyncWebCrawler = MagicMock(name="AsyncWebCrawler-stub")
+            monkeypatch.setitem(sys.modules, "crawl4ai", stub)
+    yield
+
 
 # ------------------------------------------------------------- crawl4ai wrapper tests
 
