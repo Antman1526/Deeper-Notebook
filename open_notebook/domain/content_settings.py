@@ -24,3 +24,10 @@ class ContentSettings(RecordModel):
         ["en", "pt", "es", "de", "nl", "en-GB", "fr", "de", "hi", "ja"],
         description="Preferred languages for YouTube transcripts",
     )
+    # v0.8.68 — user-forced offline mode. When true the app behaves as if
+    # disconnected even when online: cloud chat falls back to the local
+    # model, web search short-circuits, Gmail digests defer. Local-provider
+    # models are never affected. Read via the network-state service.
+    offline_mode: Optional[bool] = Field(
+        False, description="Force offline: never use the internet"
+    )
