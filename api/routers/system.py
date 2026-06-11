@@ -37,6 +37,9 @@ import secrets
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from open_notebook.ai.offline_gate import find_local_language_model
+from open_notebook.health.network import get_network_state_with_settings
+
 router = APIRouter()
 
 
@@ -145,3 +148,36 @@ async def db_repair_needed() -> dict:
     except OSError:
         needs = False
     return {"needs_repair": needs}
+
+
+@router.get("/api/system/network-status")
+async def network_status() -> dict:
+    """v0.8.68 — current network state for the frontend offline badge.
+
+    Drives use-network-status / NetworkStatusBadge (same polling-banner
+    pattern as db_repair_needed above). Never 500s: any internal error
+    degrades to {"status": "unknown"} so a probe bug can't paint the UI
+    red or break the shell render."""
+    import time as _time
+    try:
+        state = await get_network_state_with_settings()
+        fallback_name = None
+        if state.status == "offline":
+            try:
+                rec = await find_local_language_model()
+                fallback_name = getattr(rec, "name", None) if rec else None
+            except Exception:
+                fallback_name = None
+        return {
+            "status": state.status,
+            "forced_offline": state.forced_offline,
+            "local_fallback_model": fallback_name,
+            "checked_epoch_ms": int(_time.time() * 1000),
+        }
+    except Exception:
+        return {
+            "status": "unknown",
+            "forced_offline": False,
+            "local_fallback_model": None,
+            "checked_epoch_ms": int(_time.time() * 1000),
+        }
