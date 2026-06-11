@@ -1,4 +1,11 @@
 export const esES = {
+  network: {
+    offline: "Sin conexión — solo funciones locales",
+    offlineWithFallback: "Sin conexión — respondiendo con {{model}}",
+    forcedOffline: "Modo sin conexión activado",
+    answeredWithLocal: "Respondido con {{model}} (sin conexión)",
+    localModelFallbackName: "modelo local",
+  },
   common: {
     search: "Buscar...",
     create: "Nuevo",
@@ -837,6 +844,12 @@ export const esES = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl es un servicio de pago (con un nivel gratuito), y muy potente. · Jina es una buena opción también y tiene un nivel gratuito. · Simple usará extracción HTTP básica y perderá contenido en sitios web basados en JavaScript. · Auto (recomendado) intentará usar Firecrawl, luego Jina, y finalmente Simple.",
+    crawl4ai: "Crawl4AI (local)",
+    network: "Red",
+    networkDesc: "Controla si la aplicación puede usar internet.",
+    offlineMode: "Modo sin conexión",
+    offlineModePlaceholder: "Desactivado",
+    offlineModeHelp: "No usar nunca internet. Los modelos en la nube, la búsqueda web y los resúmenes por correo se desactivan; los modelos locales siguen funcionando.",
     embeddingAndSearch: "Embedding y búsqueda",
     embeddingAndSearchDesc: "Configura las opciones de búsqueda y embedding",
     defaultEmbeddingOption: "Opción de embedding predeterminada",

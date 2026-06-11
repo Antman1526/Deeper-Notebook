@@ -33,7 +33,7 @@
 
 import React from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Cloud, MonitorCog } from 'lucide-react'
+import { Cloud, MonitorCog, WifiOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -46,6 +46,11 @@ export interface ChatMessageProviderBadgeProps {
 type CachedSelection = {
   selected_provider: string | null
   selected_model_id: string | null
+  // v0.8.68 — offline gate substitution info (null when the gate didn't act).
+  offline_fallback?: {
+    to_model_name?: string | null
+    reason?: string
+  } | null
 }
 
 export function ChatMessageProviderBadge({
@@ -64,6 +69,30 @@ export function ChatMessageProviderBadge({
     'selected-provider',
     messageId,
   ])
+
+  // v0.8.68 — the offline pill takes precedence over the routing badge:
+  // when the offline gate substituted a local model, "answered offline
+  // with X" is strictly more informative than the plain "local" chip.
+  if (cached?.offline_fallback) {
+    const model =
+      cached.offline_fallback.to_model_name ??
+      t('network.localModelFallbackName', {
+        defaultValue: 'local model',
+      })
+    return (
+      <Badge
+        variant="outline"
+        className="text-xs gap-1 font-normal border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        data-testid="provider-badge-offline-fallback"
+      >
+        <WifiOff className="h-3 w-3" />
+        {t('network.answeredWithLocal', {
+          defaultValue: 'Answered with {{model}} (offline)',
+          model,
+        })}
+      </Badge>
+    )
+  }
 
   if (!cached || !cached.selected_provider) {
     return null

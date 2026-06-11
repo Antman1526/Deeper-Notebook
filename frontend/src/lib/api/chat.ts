@@ -33,6 +33,14 @@ export type ChatStreamEvent =
       privacy_gated?: boolean | null
       privacy_categories?: string[] | null
       agent_state?: string | null
+      // v0.8.68 — offline gate substitution info (null when it didn't act).
+      offline_fallback?: {
+        offline_fallback: boolean
+        from_model_id?: string | null
+        to_model_id?: string | null
+        to_model_name?: string | null
+        reason?: string
+      } | null
     }
   | { type: 'error'; detail: string }
 

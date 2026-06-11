@@ -1,4 +1,11 @@
 export const frFR = {
+  network: {
+    offline: "Hors ligne — fonctions locales uniquement",
+    offlineWithFallback: "Hors ligne — réponse avec {{model}}",
+    forcedOffline: "Mode hors ligne activé",
+    answeredWithLocal: "Répondu avec {{model}} (hors ligne)",
+    localModelFallbackName: "modèle local",
+  },
   common: {
     search: "Recherche...",
     create: "Créer",
@@ -836,6 +843,12 @@ export const frFR = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl est un service payant (avec un niveau gratuit), et très puissant. · Jina est également une bonne option et dispose aussi d'un niveau gratuit. · Simple utilisera une extraction HTTP basique et manquera du contenu sur les sites basés sur Javascript. · Auto (recommandé) essaiera d'utiliser Firecrawl puis Jina, et enfin se rabattra sur Simple.",
+    crawl4ai: "Crawl4AI (local)",
+    network: "Réseau",
+    networkDesc: "Contrôler si l'application peut utiliser Internet.",
+    offlineMode: "Mode hors ligne",
+    offlineModePlaceholder: "Désactivé",
+    offlineModeHelp: "Ne jamais utiliser Internet. Les modèles cloud, la recherche web et les résumés par e-mail sont désactivés ; les modèles locaux continuent de fonctionner.",
     embeddingAndSearch: "Indexation (Embedding) et Recherche",
     embeddingAndSearchDesc: "Configurez les options de recherche et d'indexation",
     defaultEmbeddingOption: "Option d'indexation par défaut",

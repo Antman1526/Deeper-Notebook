@@ -58,6 +58,8 @@ export interface SettingsResponse {
   default_embedding_option?: string
   auto_delete_files?: string
   youtube_preferred_languages?: string[]
+  // v0.8.68 — forced offline mode toggle.
+  offline_mode?: boolean
 }
 
 // v0.7.136 — Read-only observability config from GET /settings/observability

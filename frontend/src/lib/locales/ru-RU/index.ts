@@ -1,4 +1,11 @@
 export const ruRU = {
+  network: {
+    offline: "Офлайн — только локальные функции",
+    offlineWithFallback: "Офлайн — отвечает {{model}}",
+    forcedOffline: "Офлайн-режим включён",
+    answeredWithLocal: "Ответ от {{model}} (офлайн)",
+    localModelFallbackName: "локальная модель",
+  },
   common: {
     search: "Поиск...",
     create: "Создать",
@@ -836,6 +843,12 @@ export const ruRU = {
     firecrawl: "Firecrawl",
     jina: "Jina",
     urlHelp: "· Firecrawl — платный сервис (есть бесплатный уровень), очень мощный. · Jina тоже хороший вариант с бесплатным уровнем. · Simple использует базовое HTTP-извлечение и пропустит контент на JavaScript-сайтах. · Авто (рекомендуется) попробует Firecrawl, затем Jina, затем Simple.",
+    crawl4ai: "Crawl4AI (локальный)",
+    network: "Сеть",
+    networkDesc: "Управляет доступом приложения к интернету.",
+    offlineMode: "Офлайн-режим",
+    offlineModePlaceholder: "Выкл",
+    offlineModeHelp: "Никогда не использовать интернет. Облачные модели, веб-поиск и почтовые дайджесты отключаются; локальные модели продолжают работать.",
     embeddingAndSearch: "Эмбеддинг и поиск",
     embeddingAndSearchDesc: "Настройте параметры поиска и эмбеддинга",
     defaultEmbeddingOption: "Опция эмбеддинга по умолчанию",
