@@ -229,10 +229,34 @@ async def generate_podcast_command(
                             f"Failed to resolve per-speaker TTS for '{speaker.get('name')}': {e}"
                         )
 
+        # v0.8.68 — defensive guard: the SELECTED profiles must have survived
+        # the removal loops above. Step 3 already raises when the selected
+        # profile's own models fail to resolve, so this should be unreachable
+        # — but if a future refactor reorders the loops, the failure mode
+        # without this guard is a cryptic podcast-creator validation error
+        # that never names the real cause.
+        if episode_profile.name not in episode_profiles_dict:
+            raise ValueError(
+                f"Episode profile '{episode_profile.name}' references models "
+                f"that could not be resolved (deleted model or missing "
+                f"credential). Fix the profile in Settings → Podcasts and retry."
+            )
+        if speaker_profile.name not in speaker_profiles_dict:
+            raise ValueError(
+                f"Speaker profile '{speaker_profile.name}' references a voice "
+                f"model that could not be resolved (deleted model or missing "
+                f"credential). Fix the profile in Settings → Podcasts and retry."
+            )
+
         # 6. Generate briefing
         briefing = episode_profile.default_briefing
         if input_data.briefing_suffix:
             briefing += f"\n\nAdditional instructions: {input_data.briefing_suffix}"
+        # v0.8.68 — pass the profile's language through to generation. The
+        # EpisodeProfile.language field (BCP 47) existed since the model
+        # registry rework and create_podcast() accepts language=, but the two
+        # were never connected — episodes always came out in English.
+        _episode_language = (episode_profile.language or "").strip() or None
 
         # Create the record for the episode and associate with the ongoing command
         episode = PodcastEpisode(
@@ -243,6 +267,8 @@ async def generate_podcast_command(
             if input_data.execution_context
             else None,
             briefing=briefing,
+            # v0.8.68 — stored separately so retry can replay it verbatim.
+            briefing_suffix=input_data.briefing_suffix,
             content=input_data.content,
             audio_file=None,
             transcript=None,
@@ -299,6 +325,8 @@ async def generate_podcast_command(
                     output_dir=str(output_dir),
                     speaker_config=speaker_profile.name,
                     episode_profile=episode_profile.name,
+                    # v0.8.68 — was never passed; see _episode_language above.
+                    language=_episode_language,
                 ),
                 timeout=_podcast_timeout,
             )
