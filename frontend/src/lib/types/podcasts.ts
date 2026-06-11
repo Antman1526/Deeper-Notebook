@@ -62,6 +62,15 @@ export interface PodcastEpisode {
   created?: string | null
   job_status?: EpisodeStatus | null
   error_message?: string | null
+  // v0.8.68 — per-stage progress / outline-review state.
+  generation_stage?: string | null
+}
+
+// v0.8.68 — outline shape for the review editor (mirrors podcast-creator).
+export interface OutlineSegment {
+  name: string
+  description: string
+  size: 'short' | 'medium' | 'long'
 }
 
 export interface PodcastGenerationRequest {
@@ -71,6 +80,8 @@ export interface PodcastGenerationRequest {
   content?: string
   notebook_id?: string
   briefing_suffix?: string | null
+  // v0.8.68 — stop after the outline for user review before audio.
+  review_outline?: boolean
 }
 
 export interface PodcastGenerationResponse {
