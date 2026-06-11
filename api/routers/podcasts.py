@@ -45,6 +45,9 @@ class PodcastEpisodeResponse(BaseModel):
     created: Optional[str] = None
     job_status: Optional[str] = None
     error_message: Optional[str] = None
+    # v0.8.68 — per-stage progress / outline-review state (see
+    # GENERATION_STAGES in open_notebook/podcasts/models.py).
+    generation_stage: Optional[str] = None
 
 
 def _resolve_audio_path(audio_file: str) -> Optional[Path]:
@@ -120,6 +123,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
             notebook_id=request.notebook_id,
             content=request.content,
             briefing_suffix=request.briefing_suffix,
+            review_outline=request.review_outline,
         )
 
         return PodcastGenerationResponse(
@@ -236,6 +240,7 @@ async def list_podcast_episodes(
                     created=iso(episode.created) if episode.created else None,
                     job_status=job_status,
                     error_message=error_message,
+                    generation_stage=getattr(episode, "generation_stage", None),
                 )
             )
 
@@ -310,6 +315,7 @@ async def get_podcast_episode(episode_id: str):
             created=iso(episode.created) if episode.created else None,
             job_status=job_status,
             error_message=error_message,
+            generation_stage=getattr(episode, "generation_stage", None),
         )
 
     except HTTPException:
@@ -501,6 +507,99 @@ async def retry_podcast_episode(episode_id: str):
         raise HTTPException(
             status_code=500, detail="Failed to retry episode"
         )
+
+
+class OutlineSegmentUpdate(BaseModel):
+    """v0.8.68 — one outline segment, mirroring podcast-creator's Segment."""
+
+    name: str = Field(..., min_length=1, max_length=500)
+    description: str = Field(..., min_length=1, max_length=5000)
+    size: str = Field("medium", pattern="^(short|medium|long)$")
+
+
+class OutlineUpdateRequest(BaseModel):
+    segments: List[OutlineSegmentUpdate] = Field(..., min_length=1, max_length=20)
+
+
+@router.post("/podcasts/episodes/{episode_id}/cancel")
+async def cancel_podcast_episode(episode_id: str):
+    """v0.8.68 — request cancellation of an in-flight generation. The worker
+    polls the flag every ~5s and aborts the graph task; the episode ends up
+    failed with a 'cancelled by user' message. No-op (400) for episodes that
+    aren't queued/running."""
+    try:
+        episode = await PodcastService.get_episode(episode_id)
+        detail = await episode.get_job_detail()
+        if detail["status"] not in ("queued", "running", "submitted", "new"):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Episode is not in progress (current: "
+                    f"{detail['status']}) — nothing to cancel."
+                ),
+            )
+        episode.cancel_requested = True
+        await episode.save()
+        return {"message": "Cancellation requested", "episode_id": episode_id}
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling podcast episode: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel episode")
+
+
+@router.put("/podcasts/episodes/{episode_id}/outline")
+async def update_episode_outline(episode_id: str, request: OutlineUpdateRequest):
+    """v0.8.68 — outline-review workflow: save the user's edited outline.
+    Only allowed while the episode is awaiting review (the outline is about
+    to drive transcript + TTS; editing it after audio exists would lie)."""
+    from open_notebook.podcasts.models import STAGE_AWAITING_REVIEW
+
+    try:
+        episode = await PodcastService.get_episode(episode_id)
+        if episode.generation_stage != STAGE_AWAITING_REVIEW:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Outline can only be edited while the episode is "
+                    "awaiting review."
+                ),
+            )
+        episode.outline = {
+            "segments": [s.model_dump() for s in request.segments]
+        }
+        await episode.save()
+        return {"message": "Outline updated", "outline": episode.outline}
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"Error updating episode outline: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update outline")
+
+
+@router.post("/podcasts/episodes/{episode_id}/approve-outline")
+async def approve_episode_outline(episode_id: str):
+    """v0.8.68 — outline-review workflow: approve the (possibly edited)
+    outline and generate transcript + audio from it."""
+    try:
+        job_id = await PodcastService.submit_outline_approval(episode_id)
+        return {
+            "job_id": job_id,
+            "message": "Outline approved — generating transcript and audio",
+        }
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error approving episode outline: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to approve outline")
 
 
 @router.delete("/podcasts/episodes/{episode_id}")

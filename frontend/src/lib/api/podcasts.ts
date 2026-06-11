@@ -47,6 +47,33 @@ export const podcastsApi = {
     return response.data
   },
 
+  // v0.8.68 — cancel an in-flight generation (worker polls the flag).
+  cancelEpisode: async (episodeId: string) => {
+    const response = await apiClient.post<{ message: string }>(
+      `/podcasts/episodes/${episodeId}/cancel`
+    )
+    return response.data
+  },
+
+  // v0.8.68 — outline-review workflow.
+  updateEpisodeOutline: async (
+    episodeId: string,
+    segments: import('@/lib/types/podcasts').OutlineSegment[],
+  ) => {
+    const response = await apiClient.put<{ message: string; outline: unknown }>(
+      `/podcasts/episodes/${episodeId}/outline`,
+      { segments }
+    )
+    return response.data
+  },
+
+  approveEpisodeOutline: async (episodeId: string) => {
+    const response = await apiClient.post<{ job_id: string; message: string }>(
+      `/podcasts/episodes/${episodeId}/approve-outline`
+    )
+    return response.data
+  },
+
   listEpisodeProfiles: async () => {
     const response = await apiClient.get<EpisodeProfile[]>('/episode-profiles')
     return response.data

@@ -3,10 +3,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
-import { InfoIcon, RefreshCcw, Trash2 } from 'lucide-react'
+import { InfoIcon, ListChecks, RefreshCcw, Square, Trash2 } from 'lucide-react'
 
 import { resolvePodcastAssetUrl } from '@/lib/api/podcasts'
-import { EpisodeStatus, FAILED_EPISODE_STATUSES, PodcastEpisode } from '@/lib/types/podcasts'
+import {
+  EpisodeStatus,
+  FAILED_EPISODE_STATUSES,
+  OutlineSegment as EditableOutlineSegment,
+  PodcastEpisode,
+} from '@/lib/types/podcasts'
+import {
+  useApproveEpisodeOutline,
+  useCancelPodcastEpisode,
+  useUpdateEpisodeOutline,
+} from '@/lib/hooks/use-podcasts'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import {
   AlertDialog,
@@ -148,6 +161,20 @@ function extractTranscriptEntries(transcript: unknown): TranscriptEntry[] {
 type GenerationStage = 'outline' | 'transcript' | 'tts' | 'done' | 'idle'
 
 function deriveStage(episode: PodcastEpisode): GenerationStage {
+  // v0.8.68 — prefer the authoritative stage the worker writes as the
+  // generation graph's nodes complete. The field-presence heuristic below
+  // only moves when intermediates are persisted (i.e. at the very end),
+  // so without this the indicator sat on "Generating outline…" for the
+  // whole run.
+  switch (episode.generation_stage) {
+    case 'generating_outline':
+      return 'outline'
+    case 'generating_transcript':
+      return 'transcript'
+    case 'generating_audio':
+    case 'combining_audio':
+      return 'tts'
+  }
   if (episode.audio_file) return 'done'
   const t = extractTranscriptEntries(episode.transcript)
   if (t.length > 0) return 'tts'
@@ -193,8 +220,143 @@ function estimateLengthMinutes(episode: PodcastEpisode): number | undefined {
   return undefined
 }
 
+// v0.8.68 — outline-review editor: edit segment names/descriptions/sizes,
+// then approve to generate transcript + audio from the edited outline.
+function OutlineReviewDialog({ episode }: { episode: PodcastEpisode }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const updateOutline = useUpdateEpisodeOutline()
+  const approveOutline = useApproveEpisodeOutline()
+
+  const initialSegments = useMemo<EditableOutlineSegment[]>(() => {
+    const raw = (episode.outline as { segments?: unknown[] } | null)?.segments
+    if (!Array.isArray(raw)) return []
+    return raw.map((s) => {
+      const seg = s as Partial<EditableOutlineSegment>
+      return {
+        name: seg.name ?? '',
+        description: seg.description ?? '',
+        size: (['short', 'medium', 'long'] as const).includes(
+          seg.size as 'short' | 'medium' | 'long',
+        )
+          ? (seg.size as EditableOutlineSegment['size'])
+          : 'medium',
+      }
+    })
+  }, [episode.outline])
+
+  const [segments, setSegments] = useState<EditableOutlineSegment[]>(initialSegments)
+  useEffect(() => setSegments(initialSegments), [initialSegments])
+
+  const dirty = useMemo(
+    () => JSON.stringify(segments) !== JSON.stringify(initialSegments),
+    [segments, initialSegments],
+  )
+  const valid = segments.length > 0 && segments.every(
+    (s) => s.name.trim().length > 0 && s.description.trim().length > 0,
+  )
+  const busy = updateOutline.isPending || approveOutline.isPending
+
+  const setSegment = (index: number, patch: Partial<EditableOutlineSegment>) =>
+    setSegments((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+    )
+
+  const handleApprove = async () => {
+    if (dirty) {
+      await updateOutline.mutateAsync({ episodeId: episode.id, segments })
+    }
+    await approveOutline.mutateAsync(episode.id)
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="default" size="sm">
+          <ListChecks className="mr-2 h-4 w-4" />
+          {t('podcasts.reviewOutline', { defaultValue: 'Review outline' })}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-[min(90vw,720px)] max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {t('podcasts.reviewOutlineTitle', { defaultValue: 'Review the outline' })}
+          </DialogTitle>
+          <DialogDescription>
+            {t('podcasts.reviewOutlineDesc', {
+              defaultValue:
+                'Edit the segments below; the transcript and audio will follow your edits.',
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="flex-1 pr-3">
+          <div className="space-y-4">
+            {segments.map((segment, index) => (
+              <div key={index} className="rounded border p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={segment.name}
+                    onChange={(e) => setSegment(index, { name: e.target.value })}
+                    placeholder={t('podcasts.segmentName', { defaultValue: 'Segment title' })}
+                    className="h-8 text-xs"
+                  />
+                  <select
+                    value={segment.size}
+                    onChange={(e) =>
+                      setSegment(index, { size: e.target.value as EditableOutlineSegment['size'] })
+                    }
+                    className="h-8 rounded border bg-background px-2 text-xs"
+                    aria-label={t('podcasts.segmentSize', { defaultValue: 'Segment length' })}
+                  >
+                    <option value="short">{t('podcasts.sizeShort', { defaultValue: 'Short' })}</option>
+                    <option value="medium">{t('podcasts.sizeMedium', { defaultValue: 'Medium' })}</option>
+                    <option value="long">{t('podcasts.sizeLong', { defaultValue: 'Long' })}</option>
+                  </select>
+                </div>
+                <Textarea
+                  value={segment.description}
+                  onChange={(e) => setSegment(index, { description: e.target.value })}
+                  placeholder={t('podcasts.segmentDescription', {
+                    defaultValue: 'What should this segment cover?',
+                  })}
+                  className="min-h-[70px] text-xs"
+                />
+              </div>
+            ))}
+            {segments.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t('podcasts.noOutline', { defaultValue: 'No outline available.' })}
+              </p>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!dirty || !valid || busy}
+            onClick={() => updateOutline.mutate({ episodeId: episode.id, segments })}
+          >
+            {t('podcasts.saveOutline', { defaultValue: 'Save outline' })}
+          </Button>
+          <Button size="sm" disabled={!valid || busy} onClick={handleApprove}>
+            {busy
+              ? t('podcasts.approving', { defaultValue: 'Submitting…' })
+              : t('podcasts.approveGenerate', {
+                  defaultValue: 'Approve & generate audio',
+                })}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: EpisodeCardProps) {
   const { t, language } = useTranslation()
+  // v0.8.68 — cancel an in-flight generation.
+  const cancelEpisode = useCancelPodcastEpisode()
   const [audioSrc, setAudioSrc] = useState<string | undefined>()
   const [audioError, setAudioError] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -329,9 +491,13 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   }
 
   const isFailed = FAILED_EPISODE_STATUSES.includes(episode.job_status as EpisodeStatus)
+  // v0.8.68 — outline-review workflow: the phase-1 job completed and the
+  // episode is parked until the user approves (or edits) the outline.
+  const isAwaitingReview = episode.generation_stage === 'awaiting_review'
   // v0.8.68 — completed episodes can be regenerated (the backend retry
-  // endpoint now accepts terminal states, not just failures).
-  const isCompleted = episode.job_status === 'completed'
+  // endpoint now accepts terminal states, not just failures). Episodes
+  // awaiting review have no audio yet — review UI takes over instead.
+  const isCompleted = episode.job_status === 'completed' && !isAwaitingReview
 
   return (
     <Card className="shadow-sm">
@@ -359,14 +525,25 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
             </p>
             {/* v0.7.33 — stage indicator. Surfaces what the worker is
                 actually doing right now (outline/transcript/TTS) so a
-                long-running podcast generation doesn't look hung. */}
-            {isProcessing && (
+                long-running podcast generation doesn't look hung.
+                v0.8.68 — now driven by the worker's authoritative
+                generation_stage; suppressed while awaiting outline review
+                (the review banner below takes over). */}
+            {isProcessing && !isAwaitingReview && (
               <p className="text-xs text-amber-700 dark:text-amber-300">
                 {stageLabel(
                   stage,
                   episode.episode_profile?.num_segments,
                   outlineSegments.length,
                 )}
+              </p>
+            )}
+            {isAwaitingReview && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {t('podcasts.awaitingReview', {
+                  defaultValue:
+                    'Outline ready — review it to generate the audio.',
+                })}
               </p>
             )}
           </div>
@@ -523,6 +700,24 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 </div>
               </DialogContent>
             </Dialog>
+            {/* v0.8.68 — cancel an in-flight generation. */}
+            {isProcessing && !isAwaitingReview ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => cancelEpisode.mutate(episode.id)}
+                disabled={cancelEpisode.isPending}
+              >
+                <Square className="mr-2 h-4 w-4" />
+                {cancelEpisode.isPending
+                  ? t('podcasts.cancelling', { defaultValue: 'Cancelling…' })
+                  : t('common.cancel')}
+              </Button>
+            ) : null}
+            {/* v0.8.68 — outline-review workflow entry point. */}
+            {isAwaitingReview ? (
+              <OutlineReviewDialog episode={episode} />
+            ) : null}
             {isFailed && onRetry ? (
               <Button
                 variant="outline"

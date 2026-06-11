@@ -244,9 +244,18 @@ class TestAllModelFlowsHaveTimeouts:
         assert "asyncio.wait_for" in src
 
     def test_podcast_generation_worker_has_timeout(self):
+        # v0.8.68 — the timeout moved from asyncio.wait_for around
+        # create_podcast() to a deadline enforced inside the staged runner
+        # (run_graph_with_stages raises asyncio.TimeoutError past the
+        # deadline). Accept either mechanism; the env knob must remain.
         src = self._read("commands/podcast_commands.py")
         assert "ONP_PODCAST_GENERATION_TIMEOUT_SEC" in src
-        assert "asyncio.wait_for" in src
+        assert (
+            "asyncio.wait_for" in src
+            or "deadline=time.monotonic() + _podcast_timeout" in src
+        )
+        staged = self._read("commands/podcast_staged.py")
+        assert "raise asyncio.TimeoutError()" in staged
 
     def test_chat_router_has_outer_timeout_wrap(self):
         """The chat path's timeout lives at the router level (the v0.7.99

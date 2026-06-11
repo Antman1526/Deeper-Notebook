@@ -115,6 +115,89 @@ export function useRetryPodcastEpisode() {
   })
 }
 
+// v0.8.68 — cancel an in-flight generation.
+export function useCancelPodcastEpisode() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (episodeId: string) => podcastsApi.cancelEpisode(episodeId),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.cancelRequested', { defaultValue: 'Cancellation requested' }),
+        description: t('podcasts.cancelRequestedDesc', {
+          defaultValue: 'The generation will stop within a few seconds.',
+        }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToCancel', { defaultValue: 'Could not cancel' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+// v0.8.68 — outline-review workflow: save edits + approve.
+export function useUpdateEpisodeOutline() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({
+      episodeId,
+      segments,
+    }: {
+      episodeId: string
+      segments: import('@/lib/types/podcasts').OutlineSegment[]
+    }) => podcastsApi.updateEpisodeOutline(episodeId, segments),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.outlineSaved', { defaultValue: 'Outline saved' }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToSaveOutline', { defaultValue: 'Could not save outline' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useApproveEpisodeOutline() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (episodeId: string) => podcastsApi.approveEpisodeOutline(episodeId),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.outlineApproved', { defaultValue: 'Outline approved' }),
+        description: t('podcasts.outlineApprovedDesc', {
+          defaultValue: 'Generating transcript and audio…',
+        }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToApprove', { defaultValue: 'Could not approve outline' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
 export function useDeletePodcastEpisode() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
