@@ -782,14 +782,21 @@ async def call_model_with_messages(
         # the router entirely (the user picked a specific model), so
         # selection_out stays empty there — `selected_provider` is None.
         selection_out: dict = {}
+        # v0.8.68 — offline-fallback info from the provisioning gate. Empty
+        # dict when no substitution happened; threaded into the node result
+        # (same pattern as selection_out / v0.8.1) so the router can show
+        # "Answered with <local model> (offline)" in the UI.
+        offline_fallback_out: dict = {}
         if model_id:
             model = await provision_langchain_model(
-                content_for_sizing, model_id, "chat", max_tokens=8192
+                content_for_sizing, model_id, "chat",
+                fallback_out=offline_fallback_out, max_tokens=8192,
             )
         else:
             model = await provision_langchain_chat_model(
                 content_for_sizing,
                 selection_out=selection_out,
+                fallback_out=offline_fallback_out,
                 max_tokens=8192,
                 # v0.8.63 — honor the user's explicit "send to cloud anyway"
                 # consent for this turn (skips the privacy gate).
@@ -822,12 +829,47 @@ async def call_model_with_messages(
         # v0.8.60 — capture the agent-FSM terminal state (clarify/complete/
         # truncated) when ONP_AGENT_FSM is on. Empty dict when off.
         agent_state_out: dict = {}
-        ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-            model, payload,
-            exclude_server_names=state.get("disabled_mcp_servers") or None,
-            agent_state_out=agent_state_out,
-            notebook_id=notebook_id,
-        )
+        # v0.8.68 — mid-turn offline retry (spec §3 "mid-turn failure leg").
+        # A captive portal / mid-session drop passes the TCP probe or the
+        # TTL cache but fails the real provider call. When that failure is
+        # network-classified AND this turn wasn't already on a local model,
+        # flip the network state and retry ONCE with the gated (now local)
+        # model. Any other error — or a second failure — propagates to the
+        # existing classify_error leg below.
+        try:
+            ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+                model, payload,
+                exclude_server_names=state.get("disabled_mcp_servers") or None,
+                agent_state_out=agent_state_out,
+                notebook_id=notebook_id,
+            )
+        except Exception as e:
+            from open_notebook.exceptions import NetworkError
+            from open_notebook.health.network import report_network_failure
+
+            error_class, _ = classify_error(e)
+            already_local = bool(offline_fallback_out.get("offline_fallback"))
+            if error_class is not NetworkError or already_local:
+                raise
+            report_network_failure()
+            _logger.warning(
+                "v0.8.68 — cloud call failed mid-turn with a network error; "
+                "retrying once on the local fallback model"
+            )
+            retry_fallback: dict = {}
+            model = await provision_langchain_model(
+                content_for_sizing, model_id, "chat",
+                fallback_out=retry_fallback, max_tokens=8192,
+            )
+            if not retry_fallback.get("offline_fallback"):
+                raise  # gate didn't substitute (no local model) — original error stands
+            offline_fallback_out.update(retry_fallback)
+            ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+                model, payload,
+                exclude_server_names=state.get("disabled_mcp_servers") or None,
+                agent_state_out=agent_state_out,
+                notebook_id=notebook_id,
+            )
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
@@ -846,6 +888,8 @@ async def call_model_with_messages(
             "messages": cleaned_message,
             "selected_provider": selection_out.get("selected_provider"),
             "selected_model_id": selection_out.get("selected_model_id"),
+            # v0.8.68 — offline-fallback info (None when no substitution).
+            "offline_fallback": offline_fallback_out or None,
             # v0.8.58 — privacy-gate decision (None when the gate didn't act).
             "privacy_gated": selection_out.get("privacy_gated"),
             "privacy_categories": selection_out.get("privacy_categories"),
