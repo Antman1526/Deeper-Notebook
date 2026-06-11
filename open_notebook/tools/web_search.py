@@ -298,6 +298,19 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     query = (query or "").strip()
     if not chain or not query:
         return []
+
+    # v0.8.68 — offline short-circuit (spec §6). Without this, an offline
+    # machine burned the full 25s provider-failover budget per tool call
+    # before returning empty. The model still gets the standard empty-result
+    # shape; the log line tells the operator why. SearXNG note: a self-hosted
+    # instance on localhost would also be skipped here, but a localhost
+    # SearXNG can't search the web without internet anyway.
+    from open_notebook.health.network import get_network_state_with_settings
+    _net = await get_network_state_with_settings()
+    if _net.status == "offline":
+        logger.info("v0.8.68 web_search skipped: device offline")
+        return []
+
     n = max_results if (max_results and max_results > 0) else _max_results()
 
     # Lazy import so importing this module at startup never drags in httpx,
