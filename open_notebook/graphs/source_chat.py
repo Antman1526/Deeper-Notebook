@@ -232,14 +232,20 @@ async def _call_model_with_source_context_inner(
         config.get("configurable", {}).get("model_id")
         or state.get("model_override")
     )
+    # v0.8.68 — offline-fallback info from the provisioning gate (parity
+    # with chat.py). Empty dict when no substitution happened; returned in
+    # the node result so the SSE stream can drive the offline pill.
+    offline_fallback_out: dict = {}
     if _explicit_model:
         model = await provision_langchain_model(
-            content_for_sizing, _explicit_model, "chat", max_tokens=8192
+            content_for_sizing, _explicit_model, "chat",
+            fallback_out=offline_fallback_out, max_tokens=8192,
         )
     else:
         model = await provision_langchain_chat_model(
             content_for_sizing,
             max_tokens=8192,
+            fallback_out=offline_fallback_out,
             privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
         )
 
@@ -252,10 +258,39 @@ async def _call_model_with_source_context_inner(
     from open_notebook.graphs.chat import bind_mcp_and_run_tool_loop
     # v0.8.44 — thread the per-request MCP disable list into the
     # source-chat tool loop (parity with notebook chat's v0.8.42).
-    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-        model, payload,
-        exclude_server_names=state.get("disabled_mcp_servers") or None,
-    )
+    # v0.8.68 — mid-turn offline retry, same semantics as chat.py: a
+    # network-classified failure on a non-fallback turn flips the shared
+    # network state and retries ONCE with the gated (now local) model.
+    try:
+        ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+            model, payload,
+            exclude_server_names=state.get("disabled_mcp_servers") or None,
+        )
+    except Exception as e:
+        from open_notebook.exceptions import NetworkError
+        from open_notebook.health.network import report_network_failure
+
+        error_class, _ = classify_error(e)
+        already_local = bool(offline_fallback_out.get("offline_fallback"))
+        if error_class is not NetworkError or already_local:
+            raise
+        report_network_failure()
+        logger.warning(
+            "v0.8.68 — source-chat cloud call failed mid-turn with a network "
+            "error; retrying once on the local fallback model"
+        )
+        retry_fallback: dict = {}
+        model = await provision_langchain_model(
+            content_for_sizing, _explicit_model, "chat",
+            fallback_out=retry_fallback, max_tokens=8192,
+        )
+        if not retry_fallback.get("offline_fallback"):
+            raise  # gate didn't substitute (no local model) — original error stands
+        offline_fallback_out.update(retry_fallback)
+        ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+            model, payload,
+            exclude_server_names=state.get("disabled_mcp_servers") or None,
+        )
 
     # Clean thinking content from AI response (e.g., <think>...</think> tags)
     content = extract_text_content(ai_message.content)
@@ -273,6 +308,8 @@ async def _call_model_with_source_context_inner(
         # include them in the SSE stream (same pipeline as v0.8.1 #3
         # for notebook chat). None when no MCP calls fired this turn.
         "mcp_tool_calls": mcp_captures if mcp_captures else None,
+        # v0.8.68 — offline-fallback info (None when no substitution).
+        "offline_fallback": offline_fallback_out or None,
     }
 
 
