@@ -8,6 +8,7 @@ from surreal_commands import get_command_status, submit_command
 
 from open_notebook.domain.notebook import Notebook
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from open_notebook.exceptions import ConfigurationError  # v0.8.68 — offline gate
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
 
 
@@ -36,6 +37,52 @@ class PodcastService:
     """Service layer for podcast operations"""
 
     @staticmethod
+    async def _gate_offline_cloud_models(episode_profile, speaker_profile) -> None:
+        """v0.8.68 — raise a clear, typed error when the machine is offline
+        (real or Offline-mode toggle) and the podcast's profiles reference
+        cloud-provider models. Local providers (llama.cpp / ollama / piper via
+        openai_compatible) are never blocked. Best-effort: any failure inside
+        the gate itself is swallowed so it can't break a submit that would
+        have worked before."""
+        try:
+            from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
+            from open_notebook.health.network import (
+                get_network_state_with_settings,
+            )
+
+            state = await get_network_state_with_settings()
+            if state.status != "offline":
+                return
+
+            cloud_models: list[str] = []
+            for label, resolver in (
+                ("voice (text-to-speech)", speaker_profile.resolve_tts_config),
+                ("outline LLM", episode_profile.resolve_outline_config),
+                ("transcript LLM", episode_profile.resolve_transcript_config),
+            ):
+                try:
+                    provider, model_name, _cfg = await resolver()
+                except Exception:
+                    continue  # unresolvable profile keeps its existing error path
+                if (provider or "").strip().lower().replace("-", "_") not in LOCAL_PROVIDERS:
+                    cloud_models.append(f"{label}: {model_name} ({provider})")
+        except ConfigurationError:
+            raise
+        except Exception as exc:
+            logger.debug(f"podcast offline gate skipped (non-fatal): {exc}")
+            return
+
+        if cloud_models:
+            reason = (
+                "Offline mode is on" if state.forced_offline else "You're offline"
+            )
+            raise ConfigurationError(
+                f"{reason}, and this podcast profile uses cloud models that "
+                f"can't be reached: {'; '.join(cloud_models)}. Reconnect, or "
+                f"switch the profile to local models (Settings → Podcasts)."
+            )
+
+    @staticmethod
     async def submit_generation_job(
         episode_profile_name: str,
         speaker_profile_name: str,
@@ -55,6 +102,19 @@ class PodcastService:
             speaker_profile = await SpeakerProfile.get_by_name(speaker_profile_name)
             if not speaker_profile:
                 raise ValueError(f"Speaker profile '{speaker_profile_name}' not found")
+
+            # v0.8.68 — offline gate at SUBMIT time (spec §6 follow-up). The
+            # podcast worker calls TTS/LLM providers directly (not through
+            # provision_langchain_model), so the chat offline gate never sees
+            # it: offline + a cloud voice/LLM previously meant a job that hung
+            # against an unreachable provider for up to the 1800s timeout
+            # before failing. Fail fast HERE with the offending models named,
+            # while the user is looking at the submit button. Fail-open on
+            # resolution errors: an unresolvable profile keeps its existing
+            # downstream error path.
+            await PodcastService._gate_offline_cloud_models(
+                episode_profile, speaker_profile
+            )
 
             # Get content from notebook if not provided directly
             if not content and notebook_id:
