@@ -57,3 +57,20 @@ def _isolate_web_search_env(monkeypatch):
     for name in _WEB_SEARCH_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
     yield
+
+
+# v0.8.68 — pin the network-state service to "online" for every test so the
+# suite is deterministic regardless of the machine's actual connectivity
+# (the offline gate / web_search short-circuit would otherwise change
+# behavior on an airgapped CI box, and the real TCP probe is a network
+# call the suite must never make). Tests that exercise offline behavior
+# opt in by monkeypatching get_network_state_with_settings / _probe_once
+# themselves (see tests/test_offline_gate.py, tests/test_web_search_offline.py).
+@pytest.fixture(autouse=True)
+def _pin_network_state_online(monkeypatch):
+    from open_notebook.health import network
+
+    network.reset_network_state_for_tests()
+    monkeypatch.setattr(network, "_probe_once", lambda: True)
+    yield
+    network.reset_network_state_for_tests()
