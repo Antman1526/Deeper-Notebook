@@ -19,6 +19,48 @@ from typing import Optional
 from loguru import logger
 
 _BASE_YAML = Path(__file__).parent / "skillopt_base.yaml"
+_VENDORED_PROMPTS = Path(__file__).parent / "skillopt_prompts"
+
+
+def ensure_skillopt_prompts(dest_dir: Optional[Path] = None) -> int:
+    """v0.8.68 — backfill skillopt's missing prompt templates (caught live).
+
+    The skillopt 0.1.0 wheel ships the ``skillopt/prompts`` package but NOT
+    its ``.md`` template files, so ``load_prompt("analyst_success")`` (and
+    the merge_* prompts in the aggregate stage) raise FileNotFoundError
+    mid-training. Copy the vendored upstream files (MIT) into the installed
+    package for any name that's missing; never overwrite an existing file,
+    so a fixed upstream wheel automatically takes precedence. Returns the
+    number of files copied.
+    """
+    if dest_dir is None:
+        import skillopt.prompts as _sp
+
+        dest_dir = Path(_sp.__file__).parent
+    copied = 0
+    for src in sorted(_VENDORED_PROMPTS.glob("*.md")):
+        if src.name == "README.md":
+            continue
+        dest = dest_dir / src.name
+        if dest.exists():
+            continue
+        try:
+            dest.write_text(src.read_text())
+            copied += 1
+        except OSError as exc:
+            # Read-only site-packages (system installs): surface clearly —
+            # training WILL fail later at load_prompt with a worse message.
+            raise PromptOptimizerError(
+                f"skillopt is missing its prompt templates and "
+                f"{dest_dir} is not writable ({exc}). Reinstall skillopt "
+                f"from a wheel that includes its prompts/*.md files."
+            ) from exc
+    if copied:
+        logger.info(
+            f"prompt-optimizer: backfilled {copied} missing skillopt "
+            f"prompt template(s) into {dest_dir}"
+        )
+    return copied
 
 # Providers whose esperanto config carries an OpenAI-compatible base_url we
 # can hand straight to SkillOpt's openai_chat backend.
@@ -172,6 +214,8 @@ async def run_prompt_optimization(
         ) from exc
 
     from open_notebook.prompt_optimizer.adapter import TransformationAdapter
+
+    ensure_skillopt_prompts()
 
     if not items:
         raise PromptOptimizerError("No example items provided")
