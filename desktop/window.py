@@ -366,6 +366,16 @@ def _preferred_window_size(min_w: int, min_h: int) -> tuple[int, int]:
         return _fit_window_size(0, 0, min_w, min_h)
 
 
+def _is_frontend_page(current_url: "str | None", frontend_url: str) -> bool:
+    """v0.8.68 — True when the webview is showing the actual app (not the
+    inline welcome splash, whose URL is about:blank/null). Used to decide
+    when the load-retry watchdog can stand down and when theme injection
+    should run."""
+    if not current_url:
+        return False
+    return current_url.startswith(frontend_url.rstrip("/"))
+
+
 def _start_load_retry_watchdog(
     window,
     url: str,
@@ -448,7 +458,16 @@ def open_window(url: str, on_close: Callable[[], None],
         # 1280x800 (which looked cramped on large monitors).
         win_w, win_h = _preferred_window_size(width, height)
 
-    window = webview.create_window(title, url, width=win_w, height=win_h)
+    # v0.8.68 — open on the inline welcome splash instead of navigating
+    # straight to the Next.js URL. The splash paints instantly (no network),
+    # probes the frontend, and replaces itself with the app when the server
+    # answers — so a raced or hiccuping first request can never strand the
+    # user on WKWebView's dead "This page couldn't load" screen.
+    from desktop.splash import build_splash_html
+
+    window = webview.create_window(
+        title, html=build_splash_html(url), width=win_w, height=win_h
+    )
 
     # Track live size via the resize event when available (defensive: the event
     # name has varied across pywebview versions, so never let its absence break
@@ -480,7 +499,17 @@ def open_window(url: str, on_close: Callable[[], None],
     _page_loaded = threading.Event()
 
     def _on_loaded():
-        _page_loaded.set()  # v0.8.68 — stops the load-retry watchdog
+        # v0.8.68 — the splash fires `loaded` too; only a real frontend page
+        # stands the watchdog down (and warrants theme injection). If the
+        # URL can't be determined, fail open — treat it as loaded rather
+        # than fight the page with spurious re-navigations.
+        try:
+            current = window.get_current_url()
+        except Exception:
+            current = None
+        if current is not None and not _is_frontend_page(current, url):
+            return  # still on the splash
+        _page_loaded.set()  # stops the load-retry watchdog
         # v0.5.7 — re-read config.toml on every page load so live theme
         # switches via /api/onp/theme persist across navigations. Falls back
         # to the `theme` argument if the config can't be read.
@@ -498,5 +527,11 @@ def open_window(url: str, on_close: Callable[[], None],
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
-    _start_load_retry_watchdog(window, url, _page_loaded)
+    # v0.8.68 — last-resort recovery only: the splash page normally handles
+    # waiting + navigation itself, so give it a long leash before forcing
+    # a direct load of the frontend.
+    _start_load_retry_watchdog(
+        window, url, _page_loaded,
+        grace_sec=45.0, retry_interval_sec=15.0, max_retries=20,
+    )
     webview.start()  # noqa: F821 — already imported above
