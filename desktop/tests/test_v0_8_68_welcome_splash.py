@@ -12,8 +12,6 @@ import json
 import re
 
 from desktop.splash import build_splash_html
-from desktop.window import _is_frontend_page
-
 URL = "http://127.0.0.1:54321/"
 
 
@@ -33,15 +31,16 @@ def test_splash_is_self_contained():
     assert "@import" not in html and "url(" not in html
 
 
-def test_probe_and_handoff_logic_present():
+def test_splash_is_presentation_only():
+    """The python handoff controller owns navigation (an in-page no-cors
+    probe cannot see HTTP status, so Next's warm-up 404 read as "ready"
+    and the splash navigated onto an error page — seen live). The splash
+    must NOT navigate or probe on its own."""
     html = build_splash_html(URL)
-    # no-cors probe (CORS-free reachability signal) + consecutive-success
-    # gate + replace() so the splash doesn't pollute history.
-    assert 'mode: "no-cors"' in html
-    assert "okStreak" in html
-    assert "window.location.replace(TARGET)" in html
-    # Failure path retries forever — no terminal error branch exists.
-    assert "setTimeout(probe" in html
+    assert "location.replace" not in html
+    assert "fetch(" not in html
+    # Status rotation still present (the user watches this while booting).
+    assert "setStatus" in html
 
 
 def test_quote_safe_url_embedding():
@@ -49,10 +48,10 @@ def test_quote_safe_url_embedding():
     assert "<script>alert(1)" not in html  # json.dumps escaped the breakout
 
 
-def test_is_frontend_page_gating():
-    assert _is_frontend_page("http://127.0.0.1:54321/setup-wizard", URL)
-    assert _is_frontend_page("http://127.0.0.1:54321/", URL)
-    assert not _is_frontend_page("about:blank", URL)  # splash
-    assert not _is_frontend_page(None, URL)
-    assert not _is_frontend_page("", URL)
-    assert not _is_frontend_page("http://127.0.0.1:9999/", URL)
+def test_loaded_gating_uses_in_page_sentinel_not_urls():
+    """URL checks were proven unable to distinguish the splash (URL None),
+    WebKit's error page (reports the target URL), and Next's warm-up 404 —
+    the loaded handler must interrogate the page itself."""
+    from desktop.window import _FRONTEND_SENTINEL_JS
+
+    assert "__next_f" in _FRONTEND_SENTINEL_JS
