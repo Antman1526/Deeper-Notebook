@@ -246,3 +246,19 @@ def test_all_command_input_schemas_resolve():
         runnable = getattr(cmd, "runnable", cmd)  # dict stores RunnableLambda
         schema = runnable.get_input_schema()
         schema.model_json_schema()  # raises if forward refs are unresolved
+
+
+def test_dataloader_reports_train_size_to_trainer():
+    """v0.8.68 — BaseDataLoader.get_train_size() returns None and, because
+    it exists, the trainer's `train_items` fallback never runs; without an
+    override the run dies with "Unable to determine train_size
+    automatically" (caught live). Pin both our override and the trainer's
+    resolution path."""
+    from skillopt.engine.trainer import _resolve_train_size
+
+    from open_notebook.prompt_optimizer.adapter import ExamplesDataLoader
+
+    items = [{"id": f"s{i}", "input_text": f"text {i}"} for i in range(5)]
+    dl = ExamplesDataLoader(items, seed=1)
+    assert dl.get_train_size() == len(dl.train_items) > 0
+    assert _resolve_train_size({}, dl) == len(dl.train_items)
