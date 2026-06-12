@@ -73,3 +73,4 @@ httpx==0.28.1
 tomli==2.2.1; python_version < "3.11"
 pytest==8.3.4
 pytest-asyncio==0.24.0
+skillopt>=0.1.0,<0.2  # v0.8.68 — prompt optimizer (microsoft/SkillOpt, MIT)

@@ -2,6 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
+from pydantic import BaseModel, Field
 
 from api.models import (
     DefaultPromptResponse,
@@ -75,6 +76,84 @@ async def get_transformations(
         raise HTTPException(
             status_code=500, detail="Error fetching transformations"
         )
+
+
+class OptimizePromptRequest(BaseModel):
+    """v0.8.68 — SkillOpt prompt optimization (microsoft/SkillOpt, MIT)."""
+
+    source_ids: List[str] = Field(..., min_length=2, max_length=10)
+    criteria: str = Field(..., min_length=10, max_length=4000)
+    epochs: int = Field(2, ge=1, le=4)
+    edit_budget: int = Field(4, ge=1, le=8)
+
+
+@router.post("/transformations/{transformation_id}/optimize")
+async def optimize_transformation_prompt(
+    transformation_id: str, request: OptimizePromptRequest
+):
+    """v0.8.68 — submit an async SkillOpt run that optimizes this
+    transformation's prompt against example sources, judged by the given
+    criteria. Returns a job id; poll /commands/{job_id}; the completed
+    job's result carries original/optimized prompts for review — applying
+    the result is an explicit PUT /transformations/{id} by the client."""
+    import asyncio as _asyncio
+    import os as _os
+
+    from surreal_commands import submit_command
+
+    from open_notebook.prompt_optimizer import skillopt_available
+
+    try:
+        if not skillopt_available():
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    "Prompt optimization requires the 'skillopt' package, "
+                    "which is not installed in this environment."
+                ),
+            )
+        transformation = await Transformation.get(transformation_id)
+        if not transformation:
+            raise HTTPException(status_code=404, detail="Transformation not found")
+
+        try:
+            import commands.prompt_optimizer_commands  # noqa: F401
+        except ImportError as exc:
+            logger.error(f"prompt optimizer command unavailable: {exc}")
+            raise HTTPException(status_code=501, detail="Optimizer unavailable")
+
+        _timeout = float(
+            _os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
+        )
+        job_id = await _asyncio.wait_for(
+            _asyncio.to_thread(
+                submit_command, "open_notebook", "optimize_prompt",
+                {
+                    "transformation_id": transformation_id,
+                    "source_ids": request.source_ids,
+                    "criteria": request.criteria,
+                    "epochs": request.epochs,
+                    "edit_budget": request.edit_budget,
+                },
+            ),
+            timeout=_timeout,
+        )
+        if not job_id:
+            raise HTTPException(status_code=500, detail="Failed to submit job")
+        return {
+            "job_id": str(job_id),
+            "message": "Prompt optimization started — this runs many model "
+                       "calls and can take several minutes.",
+        }
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except _asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Job queue is saturated")
+    except Exception as e:
+        logger.error(f"Error submitting prompt optimization: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start optimization")
 
 
 @router.post("/transformations", response_model=TransformationResponse)
