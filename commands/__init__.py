@@ -38,6 +38,7 @@ from .embedding_commands import (
 )
 from .example_commands import analyze_data_command, process_text_command
 from .podcast_commands import generate_podcast_command
+from .prompt_optimizer_commands import optimize_prompt_command  # v0.8.68
 from .source_commands import process_source_command
 
 # v0.7.47 — memory_commands.py is RUNTIME-COPIED into this package by
