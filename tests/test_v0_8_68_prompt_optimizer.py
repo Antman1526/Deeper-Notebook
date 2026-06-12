@@ -262,3 +262,41 @@ def test_dataloader_reports_train_size_to_trainer():
     dl = ExamplesDataLoader(items, seed=1)
     assert dl.get_train_size() == len(dl.train_items) > 0
     assert _resolve_train_size({}, dl) == len(dl.train_items)
+
+
+def test_vendored_prompts_cover_patch_mode_pipeline():
+    """The names the reflection + aggregate stages load in our (patch-mode)
+    config must all be vendored — each was a live mid-training crash."""
+    vendored = {
+        p.name for p in
+        (_REPO / "open_notebook" / "prompt_optimizer" / "skillopt_prompts").glob("*.md")
+    }
+    for name in ("analyst_error", "analyst_success",
+                 "merge_failure", "merge_success", "merge_final"):
+        assert f"{name}.md" in vendored, f"vendored prompt {name}.md missing"
+
+
+def test_ensure_skillopt_prompts_backfills_missing_only(tmp_path):
+    from open_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
+
+    (tmp_path / "analyst_error.md").write_text("EXISTING — do not clobber")
+    copied = ensure_skillopt_prompts(dest_dir=tmp_path)
+    assert copied > 0
+    assert (tmp_path / "analyst_success.md").exists()
+    assert (tmp_path / "merge_final.md").exists()
+    assert not (tmp_path / "README.md").exists()  # attribution stays vendored
+    assert (tmp_path / "analyst_error.md").read_text() == "EXISTING — do not clobber"
+    assert ensure_skillopt_prompts(dest_dir=tmp_path) == 0  # idempotent
+
+
+def test_ensure_skillopt_prompts_fixes_real_package():
+    """After backfill, skillopt's own loader must resolve the names that
+    crashed live ('Prompt analyst_success not found', merge_* in aggregate)."""
+    from skillopt.prompts import load_prompt
+
+    from open_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
+
+    ensure_skillopt_prompts()
+    for name in ("analyst_error", "analyst_success",
+                 "merge_failure", "merge_success", "merge_final"):
+        assert load_prompt(name).strip(), f"load_prompt({name!r}) empty"
