@@ -227,3 +227,22 @@ def test_offline_gate_blocks_cloud_models(monkeypatch):
 def test_requirements_carry_skillopt():
     req = (_REPO / "desktop" / "requirements.txt").read_text()
     assert "skillopt" in req
+
+
+def test_all_command_input_schemas_resolve():
+    """v0.8.68 — `from __future__ import annotations` in a @command module
+    turns the handler's type hints into strings that LangChain's
+    RunnableLambda-generated input schema cannot resolve at submit time
+    ("<name>_command_input is not fully defined" → 500 on the API route,
+    caught live). Force-resolve every registered command's input schema so
+    the next module added with the future import fails here, not in prod."""
+    import commands  # noqa: F401 — triggers registration
+    from surreal_commands.core.registry import CommandRegistry
+
+    registry = CommandRegistry()
+    cmds = registry._commands  # no public enumeration API in 1.x
+    assert "open_notebook.optimize_prompt" in cmds
+    for key, cmd in cmds.items():
+        runnable = getattr(cmd, "runnable", cmd)  # dict stores RunnableLambda
+        schema = runnable.get_input_schema()
+        schema.model_json_schema()  # raises if forward refs are unresolved
