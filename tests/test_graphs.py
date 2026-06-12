@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from open_notebook.domain.notebook import Source
-
 from open_notebook.graphs.prompt import PatternChainState, graph
 from open_notebook.graphs.tools import get_current_timestamp
 from open_notebook.graphs.transformation import (
@@ -31,24 +30,37 @@ class TestGraphTools:
     """Test suite for graph tool definitions."""
 
     def test_get_current_timestamp_format(self):
-        """Test timestamp tool returns correct format."""
+        """Test timestamp tool returns correct format.
+
+        v0.7.190 — Format changed from `YYYYMMDDHHmmss` to ISO 8601
+        basic `YYYYMMDDTHHmmssZ` with explicit UTC marker. Cross-
+        machine prompt caching previously left ambiguous local-time
+        stamps in LLM context windows.
+        """
         timestamp = get_current_timestamp.func()
 
         assert isinstance(timestamp, str)
-        assert len(timestamp) == 14  # YYYYMMDDHHmmss format
-        assert timestamp.isdigit()
+        assert len(timestamp) == 16  # YYYYMMDDTHHmmssZ format
+        assert "T" in timestamp
+        assert timestamp.endswith("Z")
 
     def test_get_current_timestamp_validity(self):
-        """Test timestamp represents valid datetime."""
+        """Test timestamp represents valid datetime.
+
+        v0.7.190 — parsing format updated for the new ISO 8601 basic
+        shape with UTC marker."""
         timestamp = get_current_timestamp.func()
 
-        # Parse it back to datetime to verify validity
-        year = int(timestamp[0:4])
-        month = int(timestamp[4:6])
-        day = int(timestamp[6:8])
-        hour = int(timestamp[8:10])
-        minute = int(timestamp[10:12])
-        second = int(timestamp[12:14])
+        # New shape: YYYYMMDDTHHmmssZ — strip the trailing Z and
+        # split on T to extract components.
+        assert timestamp.endswith("Z")
+        date_part, time_part = timestamp[:-1].split("T")
+        year = int(date_part[0:4])
+        month = int(date_part[4:6])
+        day = int(date_part[6:8])
+        hour = int(time_part[0:2])
+        minute = int(time_part[2:4])
+        second = int(time_part[4:6])
 
         # Should be valid date components
         assert 2020 <= year <= 2100
@@ -58,8 +70,8 @@ class TestGraphTools:
         assert 0 <= minute <= 59
         assert 0 <= second <= 59
 
-        # Should parse as datetime
-        dt = datetime.strptime(timestamp, "%Y%m%d%H%M%S")
+        # Should parse as a datetime via the new format.
+        dt = datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ")
         assert isinstance(dt, datetime)
 
     def test_get_current_timestamp_is_tool(self):

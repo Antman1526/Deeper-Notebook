@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+// ONP shadow-layer design tokens — layered on top of shadcn variables. See
+// components/onp/README.md for the pattern.
+import "@/components/onp/tokens.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
@@ -12,7 +15,7 @@ import { I18nProvider } from "@/components/providers/I18nProvider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Open Notebook",
+  title: "Open notebook+",
   description: "Privacy-focused research and knowledge management",
 };
 

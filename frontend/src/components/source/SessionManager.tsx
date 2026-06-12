@@ -129,7 +129,8 @@ export function SessionManager({
                   placeholder={t('chat.sessionTitlePlaceholder')}
                   className="mb-2"
                   autoFocus
-                  onKeyPress={(e) => {
+                  // v0.7.200 — React 19 deprecates onKeyPress.
+                  onKeyDown={(e) => {
                     if (e.key === 'Enter') handleCreateSession()
                   }}
                 />
@@ -178,7 +179,8 @@ export function SessionManager({
                         <Input
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
-                          onKeyPress={(e) => {
+                          // v0.7.200 — React 19 deprecates onKeyPress.
+                          onKeyDown={(e) => {
                             if (e.key === 'Enter') handleSaveEdit()
                             if (e.key === 'Escape') handleCancelEdit()
                           }}

@@ -1,4 +1,15 @@
 import type { NextConfig } from "next";
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+// v0.7.127 — opt-in bundle-size visualization. Run `npm run build:analyze`
+// to get HTML reports of every chunk + which modules contributed to it.
+// Output: .next/analyze/{client.html, server.html, edge.html}. Useful
+// for identifying lazy-load candidates and accidentally-bundled deps
+// (e.g. a server-only library leaking into the client bundle).
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "true",
+  openAnalyzer: false,
+});
 
 const nextConfig: NextConfig = {
   // Enable standalone output for optimized Docker deployment
@@ -32,4 +43,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

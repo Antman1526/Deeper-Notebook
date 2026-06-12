@@ -1,0 +1,28 @@
+-- 16.surrealql
+-- Open Notebook Plus v0.6 — Gmail digest integration.
+-- Stores OAuth tokens (encrypted) + per-user digest preferences. Single
+-- record per installation since ONP is single-user.
+--
+-- v0.7.176 — Added `IF NOT EXISTS` to every DEFINE so this migration
+-- is re-run-safe (parity with migration 12). Without these guards,
+-- re-running (after a manual `_sbl_migrations` rollback, a restored
+-- backup, or a disaster-recovery procedure) would fail on the second
+-- `DEFINE TABLE` and leave the schema half-applied.
+
+DEFINE TABLE IF NOT EXISTS gmail_integration SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS client_id_enc    ON gmail_integration TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS client_secret_enc ON gmail_integration TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS access_token_enc  ON gmail_integration TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS refresh_token_enc ON gmail_integration TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS token_expires_at  ON gmail_integration TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS email_address     ON gmail_integration TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS enabled           ON gmail_integration TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS frequency         ON gmail_integration TYPE string DEFAULT "daily";  -- daily | weekly | manual
+DEFINE FIELD IF NOT EXISTS include_notebooks ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS include_sources   ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS include_notes     ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS include_podcasts  ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS include_memory    ON gmail_integration TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS last_sent_at      ON gmail_integration TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created_at        ON gmail_integration TYPE datetime DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated_at        ON gmail_integration TYPE datetime DEFAULT time::now();

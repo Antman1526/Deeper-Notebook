@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -86,7 +86,7 @@ const getStatusConfig = (t: TFunction) => ({
   },
   failed: {
     icon: AlertTriangle,
-    color: 'text-red-600',
+    color: 'text-destructive',
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',
     label: t('sources.statusFailed'),
@@ -147,7 +147,13 @@ export function SourceCard({
     : (sourceWithStatus.command_id ? 'new' : 'completed')
 
 
-  // Track processing state and detect completion
+  // v0.7.56 — track the post-completion refresh timeout in a ref so
+  // unmount + rapid status flips don't leak a setTimeout that fires
+  // after the parent stopped caring. The previous bare `setTimeout`
+  // had no cleanup: filter changes, page nav, or back-to-back status
+  // flips queued multiple refreshes on a possibly-unmounted parent.
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const currentStatusFromData = statusData?.status || sourceWithStatus.status
 
@@ -162,10 +168,30 @@ export function SourceCard({
       setWasProcessing(false) // Stop polling
 
       if (onRefresh) {
-        setTimeout(() => onRefresh(), 500) // Small delay to ensure API is updated
+        // Clear any previously queued refresh so rapid flips don't
+        // pile up.
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current)
+        }
+        refreshTimeoutRef.current = setTimeout(() => {
+          refreshTimeoutRef.current = null
+          onRefresh()
+        }, 500) // Small delay to ensure API is updated
       }
     }
   }, [statusData, sourceWithStatus.status, wasProcessing, onRefresh, source.id])
+
+  // Cancel the pending refresh on unmount to avoid calling onRefresh
+  // against a stale parent (and avoid React's "state update on
+  // unmounted component" warnings on slow consumers).
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current)
+        refreshTimeoutRef.current = null
+      }
+    }
+  }, [])
   
   const statusConfig = statusConfigMap[currentStatus] || statusConfigMap.completed
   const StatusIcon = statusConfig.icon
@@ -230,7 +256,12 @@ export function SourceCard({
                 </div>
 
                 {/* Source type indicator */}
-                <div className="flex items-center gap-1 text-gray-500">
+                {/* v0.7.180 — text-gray-500 → text-muted-foreground so this
+                    secondary metadata absorbs the active theme's muted hue
+                    instead of pinning a literal gray that's wrong in the
+                    Solarized/Nord/Dracula themes. Same pattern v0.7.165 used
+                    for ErrorBoundary's red palette. */}
+                <div className="flex items-center gap-1 text-muted-foreground">
                   <SourceTypeIcon className="h-3 w-3" />
                   <span className="text-xs capitalize">{t('common.source')}</span>
                 </div>
@@ -249,7 +280,7 @@ export function SourceCard({
 
             {/* Processing message for active statuses */}
             {statusData?.message && (isProcessing || isFailed) && (
-              <p className="text-xs text-gray-600 mb-2 italic">
+              <p className="text-xs text-muted-foreground mb-2 italic">
                 {statusData.message}
               </p>
             )}
@@ -301,7 +332,7 @@ export function SourceCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="h-4 w-4" />
@@ -346,7 +377,7 @@ export function SourceCard({
                   handleDelete()
                 }}
                 disabled={!onDelete}
-                className="text-red-600 focus:text-red-600"
+                className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 {t('sources.deleteSource')}
@@ -375,8 +406,8 @@ export function SourceCard({
         {isProcessing && statusData?.processing_info?.progress && (
           <div className="mt-3 pt-2 border-t">
             <div className="flex justify-between items-center mb-1">
-            <span className="text-xs text-gray-600">{t('common.progress')}</span>
-              <span className="text-xs text-gray-600">
+            <span className="text-xs text-muted-foreground">{t('common.progress')}</span>
+              <span className="text-xs text-muted-foreground">
                 {Math.round(statusData.processing_info.progress as number)}%
               </span>
             </div>

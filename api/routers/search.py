@@ -1,14 +1,14 @@
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
 from open_notebook.ai.models import Model, model_manager
 from open_notebook.domain.notebook import text_search, vector_search
-from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from open_notebook.exceptions import DatabaseOperationError, InvalidInputError, NotFoundError
 from open_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
@@ -17,6 +17,18 @@ router = APIRouter()
 @router.post("/search", response_model=SearchResponse)
 async def search_knowledge_base(search_request: SearchRequest):
     """Search the knowledge base using text or vector search."""
+    # v0.7.102 — Per-call timeout. The underlying SurrealDB queries are
+    # async but unbounded — a hung pool or a pathological vector index
+    # state can pin the request indefinitely. Vector search ALSO calls
+    # the embedding model on the query string, so it inherits the
+    # provider-latency risk that v0.7.100 wrapped for connection tests.
+    # 60s default is generous for any healthy DB + small embedding;
+    # raise via env if you've intentionally over-loaded the box.
+    import asyncio
+    import os
+    _search_timeout = float(
+        os.environ.get("ONP_SEARCH_TIMEOUT_SEC", "60").strip() or 60
+    )
     try:
         if search_request.type == "vector":
             # Check if embedding model is available for vector search
@@ -26,21 +38,47 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail="Vector search requires an embedding model. Please configure one in the Models section.",
                 )
 
-            results = await vector_search(
-                keyword=search_request.query,
-                results=search_request.limit,
-                source=search_request.search_sources,
-                note=search_request.search_notes,
-                minimum_score=search_request.minimum_score,
-            )
+            try:
+                results = await asyncio.wait_for(
+                    vector_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                        minimum_score=search_request.minimum_score,
+                    ),
+                    timeout=_search_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        f"Vector search timed out after {_search_timeout:.0f}s. "
+                        "The embedding model may be slow, or the database "
+                        "pool is overloaded. Raise ONP_SEARCH_TIMEOUT_SEC."
+                    ),
+                )
         else:
             # Text search
-            results = await text_search(
-                keyword=search_request.query,
-                results=search_request.limit,
-                source=search_request.search_sources,
-                note=search_request.search_notes,
-            )
+            try:
+                results = await asyncio.wait_for(
+                    text_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                    ),
+                    timeout=_search_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        f"Text search timed out after {_search_timeout:.0f}s. "
+                        "The database pool may be overloaded. Raise "
+                        "ONP_SEARCH_TIMEOUT_SEC."
+                    ),
+                )
 
         return SearchResponse(
             results=results or [],
@@ -48,24 +86,86 @@ async def search_knowledge_base(search_request: SearchRequest):
             search_type=search_request.type,
         )
 
-    except InvalidInputError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except DatabaseOperationError as e:
-        logger.error(f"Database error during search: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError, DatabaseOperationError):
+        # v0.7.200 — bubble ALL typed open-notebook exceptions to the
+        # global classifier middleware. Before, this function caught
+        # `InvalidInputError` and `DatabaseOperationError` here and
+        # collapsed them into HTTPException(400/500, "Search failed") —
+        # defeating the v0.7.179-183 typed-exception sweep that taught
+        # `main.py` to render user-friendly messages from
+        # NotFoundError/InvalidInputError/AuthenticationError/etc.
+        # The global handler (api/main.py) classifies
+        # DatabaseOperationError into a 500 with a descriptive message,
+        # so users see "Database query failed" instead of the
+        # opaque "Search failed" placeholder.
+        raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Search failed")
 
 
 async def stream_ask_response(
-    question: str, strategy_model: Model, answer_model: Model, final_answer_model: Model
+    question: str,
+    strategy_model: Model,
+    answer_model: Model,
+    final_answer_model: Model,
+    fastapi_request: Optional[Request] = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream the ask response as Server-Sent Events."""
+    """Stream the ask response as Server-Sent Events.
+
+    v0.7.43 — final-answer phase now streams token-by-token. Previously
+    `stream_mode="updates"` emitted exactly one event per node
+    completion, so `write_final_answer` was a 20-60s wait followed by
+    one giant payload. The final synthesis is the longest single LLM
+    call in the whole app (consolidates multiple sub-answers) — the
+    slowest UX path on the local-deploy build.
+
+    Now using `astream_events(version="v2")`, which yields:
+      - on_chain_end events when a node completes (used to emit
+        the strategy and per-query answer events as before)
+      - on_chat_model_stream events for each token the LLM emits
+        (used to emit per-token deltas during the final-answer phase)
+
+    We filter on_chat_model_stream events to ONLY the write_final_answer
+    node — the per-query LLM calls inside provide_answer also emit
+    token events, but those would clutter the wire (we already deliver
+    them in batch as `answer` events on node completion). Filter
+    matches on the `metadata.langgraph_node` field LangGraph attaches.
+
+    Event types:
+      - `strategy`          — search strategy decided
+      - `answer`            — one sub-query's answer (batched per node)
+      - `final_answer_delta`— one token of the final synthesis (NEW)
+      - `final_answer`      — terminal canonical final-answer text
+      - `complete`          — done
+      - `error`             — failure
+    """
+    # v0.7.200 — Proper cancellation propagation to the upstream graph.
+    #
+    # Before: the function was a simple `async for event in
+    # ask_graph.astream_events(...)`. On disconnect we did `return`,
+    # which the async-generator translated into the iterator getting
+    # GeneratorExit at its NEXT `await` boundary. That boundary
+    # happens AFTER the current node finishes — and for the
+    # `write_final_answer` node, the "current await" is the full
+    # synthesis LLM call. Result: user navigates away, local LLM
+    # still spends the next 30-60s tokenising tokens nobody reads.
+    # On the desktop build this is real wasted GPU + battery.
+    #
+    # Fix: drive the iterator manually with `__anext__()` inside an
+    # `asyncio.Task`, and cancel that task when we detect disconnect.
+    # The cancel propagates into the in-flight LLM call (most modern
+    # async LLM clients honour cancellation), stopping mid-token.
+    # Mirrors the pattern v0.7.184 applied in chat.py.
+    import asyncio
     try:
         final_answer = None
-
-        async for chunk in ask_graph.astream(
+        final_answer_buffer = ""
+        event_iter = ask_graph.astream_events(
             input=dict(question=question),  # type: ignore[arg-type]
             config=dict(
                 configurable=dict(
@@ -74,33 +174,141 @@ async def stream_ask_response(
                     final_answer_model=final_answer_model.id,
                 )
             ),
-            stream_mode="updates",
-        ):
-            if "agent" in chunk:
-                strategy_data = {
-                    "type": "strategy",
-                    "reasoning": chunk["agent"]["strategy"].reasoning,
-                    "searches": [
-                        {"term": search.term, "instructions": search.instructions}
-                        for search in chunk["agent"]["strategy"].searches
-                    ],
-                }
-                yield f"data: {json.dumps(strategy_data)}\n\n"
+            version="v2",
+        ).__aiter__()
 
-            elif "provide_answer" in chunk:
-                for answer in chunk["provide_answer"]["answers"]:
-                    answer_data = {"type": "answer", "content": answer}
-                    yield f"data: {json.dumps(answer_data)}\n\n"
+        while True:
+            next_task = asyncio.ensure_future(event_iter.__anext__())
+            try:
+                # v0.7.200 — race the iterator against an async sleep
+                # that periodically polls is_disconnected(). 200ms poll
+                # is generous compared to typical LLM token latency
+                # (50-200ms per token) so we don't burn CPU.
+                while not next_task.done():
+                    if (
+                        fastapi_request is not None
+                        and await fastapi_request.is_disconnected()
+                    ):
+                        logger.info(
+                            "ask stream: client disconnected mid-stream; "
+                            "cancelling in-flight graph + LLM call"
+                        )
+                        next_task.cancel()
+                        try:
+                            await next_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        # Best-effort close on the underlying iterator.
+                        try:
+                            await event_iter.aclose()  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        return
+                    await asyncio.sleep(0.2)
+                event = next_task.result()
+            except StopAsyncIteration:
+                break
 
-            elif "write_final_answer" in chunk:
-                final_answer = chunk["write_final_answer"]["final_answer"]
-                final_data = {"type": "final_answer", "content": final_answer}
-                yield f"data: {json.dumps(final_data)}\n\n"
+            etype = event.get("event")
+            metadata = event.get("metadata", {})
+            node_name = metadata.get("langgraph_node")
+
+            # Per-token streaming for write_final_answer ONLY.
+            if (
+                etype == "on_chat_model_stream"
+                and node_name == "write_final_answer"
+            ):
+                chunk = event.get("data", {}).get("chunk")
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str) and content:
+                    final_answer_buffer += content
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "final_answer_delta",
+                            "content": content,
+                        })
+                        + "\n\n"
+                    )
+
+            # Node-completion events drive the existing strategy/answer
+            # events. `on_chain_end` fires with the node's output state.
+            elif etype == "on_chain_end":
+                output = event.get("data", {}).get("output")
+                # v0.7.199 — LangGraph state-shape variance: a node
+                # may return either a plain dict OR a Pydantic model
+                # (depending on whether the node typed its return).
+                # Bare `isinstance(output, dict)` previously dropped
+                # all subsequent strategy/answer/final-answer SSE
+                # events when a Pydantic model came through — the
+                # user saw a blank streaming response. Mirror the
+                # pattern v0.7.55 introduced in /search/ask/simple:
+                # try dict access first, fall back to getattr.
+                if output is None:
+                    continue
+
+                def _get(key: str):
+                    if isinstance(output, dict):
+                        return output.get(key)
+                    return getattr(output, key, None)
+
+                if node_name == "agent":
+                    strategy = _get("strategy")
+                    if strategy is None:
+                        continue
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "strategy",
+                            "reasoning": strategy.reasoning,
+                            "searches": [
+                                {"term": s.term, "instructions": s.instructions}
+                                for s in strategy.searches
+                            ],
+                        })
+                        + "\n\n"
+                    )
+                elif node_name == "provide_answer":
+                    answers = _get("answers")
+                    if not answers:
+                        continue
+                    for answer in answers:
+                        yield (
+                            "data: "
+                            + json.dumps({"type": "answer", "content": answer})
+                            + "\n\n"
+                        )
+                elif node_name == "write_final_answer":
+                    final_answer = _get("final_answer")
+                    if final_answer is None:
+                        continue
+                    # Terminal canonical event — fallback for clients
+                    # that ignore deltas, and the final text after any
+                    # post-processing (e.g. clean_thinking_content stripped
+                    # tokens the streaming consumer saw).
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "final_answer",
+                            "content": final_answer,
+                        })
+                        + "\n\n"
+                    )
 
         # Send completion signal
-        completion_data = {"type": "complete", "final_answer": final_answer}
-        yield f"data: {json.dumps(completion_data)}\n\n"
+        yield (
+            "data: "
+            + json.dumps({"type": "complete", "final_answer": final_answer})
+            + "\n\n"
+        )
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         from open_notebook.utils.error_classifier import classify_error
 
@@ -111,7 +319,7 @@ async def stream_ask_response(
 
 
 @router.post("/search/ask")
-async def ask_knowledge_base(ask_request: AskRequest):
+async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
     """Ask the knowledge base a question using AI models."""
     try:
         # Validate models exist
@@ -143,22 +351,39 @@ async def ask_knowledge_base(ask_request: AskRequest):
             )
 
         # For streaming response
+        # v0.7.43 — proxy-flush headers so each NDJSON line lands
+        # client-side immediately (same hint pair as /chat/stream).
         return StreamingResponse(
             stream_ask_response(
-                ask_request.question, strategy_model, answer_model, final_answer_model
+                ask_request.question,
+                strategy_model,
+                answer_model,
+                final_answer_model,
+                fastapi_request=fastapi_request,
             ),
             media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
+        raise
     except Exception as e:
         logger.error(f"Error in ask endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ask operation failed")
 
 
 @router.post("/search/ask/simple", response_model=AskResponse)
-async def ask_knowledge_base_simple(ask_request: AskRequest):
+async def ask_knowledge_base_simple(
+    ask_request: AskRequest, fastapi_request: Request
+):
     """Ask the knowledge base a question and return a simple response (non-streaming)."""
     try:
         # Validate models exist
@@ -190,6 +415,11 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
             )
 
         # Run the ask graph and get final result
+        # v0.7.55 — bail out if the client navigated away. The ask graph
+        # fans out to multiple LLM calls; without this the local LLM
+        # keeps generating answers nobody will see. Also guard the chunk
+        # subscript against future Pydantic-shaped states (same root
+        # cause as v0.7.52 chat.py fix).
         final_answer = None
         async for chunk in ask_graph.astream(
             input=dict(question=ask_request.question),  # type: ignore[arg-type]
@@ -202,8 +432,26 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
             ),
             stream_mode="updates",
         ):
-            if "write_final_answer" in chunk:
-                final_answer = chunk["write_final_answer"]["final_answer"]
+            if await fastapi_request.is_disconnected():
+                logger.info(
+                    "/search/ask/simple: client disconnected mid-stream; halting"
+                )
+                # v0.7.200 — was 499 (nginx-only) which renders as
+                # "Unknown status" in FastAPI logs / Sentry / OpenTelemetry
+                # exporters. 503 is the standard "service unavailable —
+                # try again" code, which is what a client that already
+                # gave up effectively asked for. Detail string is the
+                # operative signal.
+                raise HTTPException(
+                    status_code=503,
+                    detail="Client disconnected before answer ready",
+                )
+            node_output = chunk.get("write_final_answer") if isinstance(chunk, dict) else None
+            if node_output is not None:
+                if isinstance(node_output, dict):
+                    final_answer = node_output.get("final_answer")
+                else:
+                    final_answer = getattr(node_output, "final_answer", None)
 
         if not final_answer:
             raise HTTPException(status_code=500, detail="No answer generated")
@@ -212,6 +460,11 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.183 — bubble typed exceptions to the global handlers
+        # (NotFoundError → 404, InvalidInputError → 400). Continuation
+        # of the v0.7.179/181/182 sweep to the final routers.
+        raise
     except Exception as e:
         logger.error(f"Error in ask simple endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ask operation failed")

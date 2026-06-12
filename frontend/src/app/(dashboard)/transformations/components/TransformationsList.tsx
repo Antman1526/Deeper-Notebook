@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { TransformationCard } from './TransformationCard'
+import { OptimizePromptDialog } from './OptimizePromptDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Wand2 } from 'lucide-react'
@@ -21,6 +22,8 @@ export function TransformationsList({ transformations, isLoading, onPlayground }
   const { t } = useTranslation()
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingTransformation, setEditingTransformation] = useState<Transformation | undefined>()
+  // v0.8.68 — SkillOpt prompt optimizer.
+  const [optimizing, setOptimizing] = useState<Transformation | null>(null)
 
   const handleOpenEditor = (trans?: Transformation) => {
     setEditingTransformation(trans)
@@ -68,6 +71,7 @@ export function TransformationsList({ transformations, isLoading, onPlayground }
               key={transformation.id}
               transformation={transformation}
               onPlayground={onPlayground ? () => onPlayground(transformation) : undefined}
+              onOptimize={() => setOptimizing(transformation)}
               onEdit={() => handleOpenEditor(transformation)}
             />
           ))}
@@ -83,6 +87,11 @@ export function TransformationsList({ transformations, isLoading, onPlayground }
           }
         }}
         transformation={editingTransformation}
+      />
+      <OptimizePromptDialog
+        transformation={optimizing}
+        open={optimizing !== null}
+        onOpenChange={(o) => !o && setOptimizing(null)}
       />
     </>
   )

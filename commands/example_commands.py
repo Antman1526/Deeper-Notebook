@@ -23,7 +23,7 @@ class TextProcessingOutput(BaseModel):
 
 
 class DataAnalysisInput(BaseModel):
-    numbers: List[float]
+    numbers: list[float]
     analysis_type: str = "basic"  # basic, detailed
     delay_seconds: Optional[int] = None
 

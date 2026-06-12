@@ -16,7 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Set build optimization environment variables
-ENV MAKEFLAGS="-j$(nproc)"
+# v0.8.66 (audit I-1) — `ENV` does NOT run command substitution, so
+# `MAKEFLAGS="-j$(nproc)"` set the LITERAL string `-j$(nproc)` (parallel build
+# was a no-op / invalid jobs arg). Use a fixed sensible parallelism; override at
+# build time with `--build-arg` + a RUN `export MAKEFLAGS="-j$(nproc)"` if you
+# need host-core-count scaling.
+ENV MAKEFLAGS="-j4"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
@@ -88,6 +93,10 @@ ENV UV_NO_SYNC=1
 ENV VIRTUAL_ENV=/app/.venv
 # Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
+
+# v0.8.67u — Set Playwright browsers path and pre-install Chromium + OS dependencies for crawl4ai.
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/playwright-browsers
+RUN .venv/bin/playwright install chromium --with-deps
 
 # Bind Next.js to all interfaces (required for Docker networking and reverse proxies)
 ENV HOSTNAME=0.0.0.0

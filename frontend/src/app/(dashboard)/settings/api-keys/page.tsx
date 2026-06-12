@@ -8,6 +8,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import {
@@ -32,14 +33,11 @@ import {
   X,
   AlertCircle,
   Wand2,
-  MessageSquare,
-  Code,
-  Mic,
-  Volume2,
   Bot,
+  Search,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useTestModel } from '@/lib/hooks/use-models'
+import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useAutoAssignCapability, useTestModel } from '@/lib/hooks/use-models'
 import {
   useCredentials,
   useCredential,
@@ -55,99 +53,26 @@ import {
 } from '@/lib/hooks/use-credentials'
 import { Credential, CreateCredentialRequest, UpdateCredentialRequest, DiscoveredModel } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
-import { MigrationBanner, ModelTestResultDialog } from '@/components/settings'
+import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog, OsaurusDetectionBanner, SmartRoutingPanel } from '@/components/settings'
+// ONP shadow-layer components (see frontend/src/components/onp/README.md)
+import { ReasoningSlotCard, GmailIntegration } from '@/components/onp'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
 
-type ModelType = 'language' | 'embedding' | 'text_to_speech' | 'speech_to_text'
-
-// Provider display names
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  google: 'Google AI',
-  groq: 'Groq',
-  mistral: 'Mistral AI',
-  deepseek: 'DeepSeek',
-  xai: 'xAI (Grok)',
-  openrouter: 'OpenRouter',
-  voyage: 'Voyage AI',
-  elevenlabs: 'ElevenLabs',
-  ollama: 'Ollama',
-  azure: 'Azure OpenAI',
-  vertex: 'Google Vertex AI',
-  openai_compatible: 'OpenAI Compatible',
-  dashscope: 'DashScope (Qwen)',
-  minimax: 'MiniMax',
-}
-
-// All providers in display order
-const ALL_PROVIDERS = [
-  'openai', 'anthropic', 'google', 'groq', 'mistral', 'deepseek',
-  'xai', 'openrouter', 'dashscope', 'minimax', 'voyage', 'elevenlabs', 'ollama',
-  'azure', 'vertex', 'openai_compatible',
-]
-
-// Default modalities per provider
-const PROVIDER_MODALITIES: Record<string, ModelType[]> = {
-  openai: ['language', 'embedding', 'text_to_speech', 'speech_to_text'],
-  anthropic: ['language'],
-  google: ['language', 'embedding', 'text_to_speech', 'speech_to_text'],
-  groq: ['language', 'speech_to_text'],
-  mistral: ['language', 'embedding'],
-  deepseek: ['language'],
-  xai: ['language'],
-  openrouter: ['language', 'embedding'],
-  voyage: ['embedding'],
-  elevenlabs: ['text_to_speech', 'speech_to_text'],
-  ollama: ['language', 'embedding'],
-  azure: ['language', 'embedding', 'text_to_speech', 'speech_to_text'],
-  vertex: ['language', 'embedding', 'text_to_speech'],
-  openai_compatible: ['language', 'embedding', 'text_to_speech', 'speech_to_text'],
-  dashscope: ['language'],
-  minimax: ['language'],
-}
-
-// Documentation links
-const PROVIDER_DOCS: Record<string, string> = {
-  openai: 'https://platform.openai.com/api-keys',
-  anthropic: 'https://console.anthropic.com/settings/keys',
-  google: 'https://aistudio.google.com/app/apikey',
-  groq: 'https://console.groq.com/keys',
-  mistral: 'https://console.mistral.ai/api-keys/',
-  deepseek: 'https://platform.deepseek.com/api_keys',
-  xai: 'https://console.x.ai/',
-  openrouter: 'https://openrouter.ai/keys',
-  voyage: 'https://dash.voyageai.com/api-keys',
-  elevenlabs: 'https://elevenlabs.io/app/settings/api-keys',
-  azure: 'https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI',
-  vertex: 'https://cloud.google.com/vertex-ai/docs/start/cloud-environment',
-  openai_compatible: 'https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/openai-compatible.md',
-  dashscope: 'https://help.aliyun.com/zh/model-studio/getting-started/',
-  minimax: 'https://platform.minimaxi.com/document/Guides',
-}
-
-const TYPE_ICONS: Record<ModelType, React.ReactNode> = {
-  language: <MessageSquare className="h-3 w-3" />,
-  embedding: <Code className="h-3 w-3" />,
-  text_to_speech: <Volume2 className="h-3 w-3" />,
-  speech_to_text: <Mic className="h-3 w-3" />,
-}
-
-const TYPE_COLORS: Record<ModelType, string> = {
-  language: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  embedding: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  text_to_speech: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  speech_to_text: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
-}
-
-const TYPE_COLOR_INACTIVE = 'bg-muted text-muted-foreground opacity-50'
-
-const TYPE_LABELS: Record<ModelType, string> = {
-  language: 'Language',
-  embedding: 'Embedding',
-  text_to_speech: 'TTS',
-  speech_to_text: 'STT',
-}
+// v0.7.46 — type + constants moved to ./constants.tsx so the page and
+// the extracted subcomponents (DiscoverModelsDialog, future ones)
+// share one source of truth without re-declaring.
+import {
+  ModelType,
+  PROVIDER_DISPLAY_NAMES,
+  ALL_PROVIDERS,
+  PROVIDER_MODALITIES,
+  PROVIDER_DOCS,
+  TYPE_ICONS,
+  TYPE_COLORS,
+  TYPE_COLOR_INACTIVE,
+  TYPE_LABELS,
+} from './constants'
+import { DiscoverModelsDialog } from './components/DiscoverModelsDialog'
 
 // =============================================================================
 // Credential Form Dialog
@@ -383,361 +308,13 @@ function CredentialFormDialog({
   )
 }
 
-// =============================================================================
-// Model Discovery Dialog
-// =============================================================================
-
-function DiscoverModelsDialog({
-  open,
-  onOpenChange,
-  credential,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  credential: Credential
-}) {
-  const { t } = useTranslation()
-  const discoverModels = useDiscoverModels()
-  const registerModels = useRegisterModels()
-  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([])
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
-  const [hasDiscovered, setHasDiscovered] = useState(false)
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [customModelSelected, setCustomModelSelected] = useState(false)
-  // Model type selector - default to credential's first modality
-  const [selectedType, setSelectedType] = useState<ModelType>(
-    (credential.modalities[0] as ModelType) || 'language'
-  )
-
-  useEffect(() => {
-    if (open && !hasDiscovered) {
-      setDiscoveryError(null)
-      discoverModels.mutate(credential.id, {
-        onSuccess: (result) => {
-          const seen = new Set<string>()
-          const unique = result.discovered.filter(m => {
-            if (seen.has(m.name)) return false
-            seen.add(m.name)
-            return true
-          })
-          setDiscoveredModels(unique)
-          setSelectedModels(new Set())
-          setHasDiscovered(true)
-        },
-        onError: (error: unknown) => {
-          setHasDiscovered(true)
-          const msg = error instanceof Error ? error.message : String(error)
-          setDiscoveryError(msg)
-        },
-      })
-    }
-    if (!open) {
-      setHasDiscovered(false)
-      setDiscoveredModels([])
-      setSelectedModels(new Set())
-      setDiscoveryError(null)
-      setSearchQuery('')
-      setCustomModelSelected(false)
-      setSelectedType((credential.modalities[0] as ModelType) || 'language')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only fires on open/close
-  }, [open])
-
-  // Reset custom selection when search changes
-  useEffect(() => {
-    setCustomModelSelected(false)
-  }, [searchQuery])
-
-  // Filter discovered models by search query
-  const filteredModels = useMemo(() => {
-    if (!searchQuery.trim()) return discoveredModels
-    const q = searchQuery.toLowerCase()
-    return discoveredModels.filter(m => m.name.toLowerCase().includes(q))
-  }, [discoveredModels, searchQuery])
-
-  // Show custom model option when search doesn't exactly match any discovered model
-  const showCustomOption = useMemo(() => {
-    if (!searchQuery.trim()) return false
-    const q = searchQuery.trim().toLowerCase()
-    return !discoveredModels.some(m => m.name.toLowerCase() === q)
-  }, [discoveredModels, searchQuery])
-
-  const handleRegister = () => {
-    const selected = discoveredModels
-      .filter(m => selectedModels.has(m.name))
-      .map(m => ({
-        name: m.name,
-        provider: m.provider,
-        model_type: selectedType,
-      }))
-    if (customModelSelected && showCustomOption) {
-      selected.push({
-        name: searchQuery.trim(),
-        provider: credential.provider,
-        model_type: selectedType,
-      })
-    }
-    registerModels.mutate(
-      { credentialId: credential.id, models: selected },
-      { onSuccess: () => onOpenChange(false) }
-    )
-  }
-
-  const totalSelected = selectedModels.size + (customModelSelected && showCustomOption ? 1 : 0)
-
-  const toggleModel = (name: string) => {
-    setSelectedModels(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
-  }
-
-  const toggleAll = () => {
-    const filteredNames = filteredModels.map(m => m.name)
-    const allFilteredSelected = filteredNames.every(n => selectedModels.has(n))
-    if (allFilteredSelected) {
-      setSelectedModels(prev => {
-        const next = new Set(prev)
-        filteredNames.forEach(n => next.delete(n))
-        return next
-      })
-    } else {
-      setSelectedModels(prev => {
-        const next = new Set(prev)
-        filteredNames.forEach(n => next.add(n))
-        return next
-      })
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {t('models.discoverModels')} - {PROVIDER_DISPLAY_NAMES[credential.provider] || credential.provider}
-          </DialogTitle>
-          <DialogDescription>
-            {credential.name}
-          </DialogDescription>
-        </DialogHeader>
-
-        {discoverModels.isPending ? (
-          <div className="flex items-center justify-center py-12">
-            <LoadingSpinner size="lg" />
-          </div>
-        ) : discoveryError ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{discoveryError}</AlertDescription>
-          </Alert>
-        ) : (
-          <div className="space-y-4">
-            {/* Model type selector */}
-            <div className="space-y-2">
-              <Label>{t('models.modelType')}</Label>
-              <Select value={selectedType} onValueChange={(v) => setSelectedType(v as ModelType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(PROVIDER_MODALITIES[credential.provider] || credential.modalities as ModelType[]).map(type => (
-                    <SelectItem key={type} value={type}>
-                      <div className="flex items-center gap-2">
-                        {TYPE_ICONS[type]}
-                        {TYPE_LABELS[type]}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{t('models.modelTypeHint')}</p>
-            </div>
-
-            {/* Search input */}
-            <input
-              type="text"
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm placeholder:text-muted-foreground"
-              placeholder={t('models.searchOrAddModel')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-
-            {/* Select all / count (only when there are discovered models to select) */}
-            {filteredModels.length > 0 && (
-              <div className="flex items-center justify-between">
-                <Button variant="outline" size="sm" onClick={toggleAll}>
-                  {filteredModels.every(m => selectedModels.has(m.name)) ? t('common.remove') : t('common.addSelected')}
-                  {' '}({selectedModels.size}/{filteredModels.length})
-                </Button>
-              </div>
-            )}
-
-            {/* Model list */}
-            <div className="space-y-1 max-h-60 overflow-y-auto">
-              {filteredModels.map((model) => (
-                <label
-                  key={model.name}
-                  className="flex items-center gap-2 p-1.5 rounded hover:bg-muted cursor-pointer text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedModels.has(model.name)}
-                    onChange={() => toggleModel(model.name)}
-                    className="rounded"
-                  />
-                  <span className="truncate">{model.name}</span>
-                  {model.description && model.description !== model.name && (
-                    <span className="text-xs text-muted-foreground truncate">({model.description})</span>
-                  )}
-                </label>
-              ))}
-
-              {/* Custom model option */}
-              {showCustomOption && (
-                <label className={`flex items-center gap-2 p-1.5 rounded hover:bg-muted cursor-pointer text-sm${filteredModels.length > 0 ? ' border-t mt-1 pt-2' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={customModelSelected}
-                    onChange={() => setCustomModelSelected(prev => !prev)}
-                    className="rounded"
-                  />
-                  <Plus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="truncate">
-                    {t('models.addCustomModel').replace('{name}', searchQuery.trim())}
-                  </span>
-                </label>
-              )}
-
-              {filteredModels.length === 0 && !showCustomOption && (
-                <p className="text-center py-4 text-muted-foreground text-sm">{t('models.noModelsFound')}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            onClick={handleRegister}
-            disabled={totalSelected === 0 || registerModels.isPending}
-          >
-            {registerModels.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {t('common.add')} ({totalSelected})
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // =============================================================================
 // Delete Credential Dialog
 // =============================================================================
 
-function DeleteCredentialDialog({
-  open,
-  onOpenChange,
-  credential,
-  allCredentials,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  credential: Credential
-  allCredentials: Credential[]
-}) {
-  const { t } = useTranslation()
-  const deleteCredential = useDeleteCredential()
-  const [migrateToId, setMigrateToId] = useState<string>('')
-
-  const otherCredentials = allCredentials.filter(
-    c => c.id !== credential.id && c.provider === credential.provider
-  )
-
-  const handleDeleteWithModels = () => {
-    deleteCredential.mutate(
-      { credentialId: credential.id, options: { delete_models: true } },
-      { onSuccess: () => onOpenChange(false) }
-    )
-  }
-
-  const handleMigrate = () => {
-    if (!migrateToId) return
-    deleteCredential.mutate(
-      { credentialId: credential.id, options: { migrate_to: migrateToId } },
-      { onSuccess: () => onOpenChange(false) }
-    )
-  }
-
-  const handleDeleteOnly = () => {
-    deleteCredential.mutate(
-      { credentialId: credential.id },
-      { onSuccess: () => onOpenChange(false) }
-    )
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('apiKeys.deleteConfig')}</DialogTitle>
-          <DialogDescription>
-            {t('apiKeys.deleteConfigConfirm').replace('{name}', credential.name)}
-          </DialogDescription>
-        </DialogHeader>
-
-        {credential.model_count > 0 && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              This credential has {credential.model_count} linked model(s).
-              {otherCredentials.length > 0 && (
-                <div className="mt-2">
-                  <Label>Migrate models to:</Label>
-                  <Select value={migrateToId} onValueChange={setMigrateToId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select credential" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {otherCredentials.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          {credential.model_count > 0 && migrateToId && (
-            <Button onClick={handleMigrate} disabled={deleteCredential.isPending}>
-              {deleteCredential.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Migrate & Delete
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            onClick={credential.model_count > 0 ? handleDeleteWithModels : handleDeleteOnly}
-            disabled={deleteCredential.isPending}
-          >
-            {deleteCredential.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {credential.model_count > 0 ? 'Delete with Models' : t('common.delete')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
+// v0.7.40 — DeleteCredentialDialog extracted to
+// @/components/settings/DeleteCredentialDialog. See that file for impl.
 
 // =============================================================================
 // Credential Card (shows credential + its models)
@@ -841,11 +418,15 @@ function CredentialItem({
             <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} disabled={!!credential.decryption_error} title={t('common.edit')}>
               <Edit className="h-4 w-4" />
             </Button>
+            {/* v0.7.198 — `title` is shown as a desktop tooltip but
+                ignored by most screen readers; add `aria-label` so SR
+                users hear "Delete" rather than just "button". */}
             <Button
               variant="ghost" size="sm"
               onClick={() => setDeleteOpen(true)}
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
               title={t('common.delete')}
+              aria-label={t('common.delete')}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -1072,6 +653,7 @@ function DefaultModelSelectors({
   const { t } = useTranslation()
   const updateDefaults = useUpdateModelDefaults()
   const autoAssign = useAutoAssignDefaults()
+  const autoAssignCapability = useAutoAssignCapability()
   const { setValue, watch } = useForm<ModelDefaults>({ defaultValues: defaults })
   const generatedId = useId()
 
@@ -1088,8 +670,27 @@ function DefaultModelSelectors({
     }
   }, [defaults, setValue])
 
+  // v0.8.37 — narrowed from `keyof ModelDefaults` to the string-typed
+  // model-slot keys only. Pre-v0.8.37 every ModelDefaults field was
+  // `string | null`, so `keyof` worked. The new v0.8.37 fields
+  // (`auto_route_enabled: boolean`, `auto_route_provider_pref: string`)
+  // belong to <SmartRoutingPanel>, not the slot dropdowns, but they
+  // widened `keyof ModelDefaults` enough that `defaults[config.key]`
+  // started yielding `string | true | undefined` and tripped tsc.
+  // Narrowing here keeps the selector logic safely typed without
+  // touching the SmartRoutingPanel.
+  type ModelSlotKey =
+    | 'default_chat_model'
+    | 'default_transformation_model'
+    | 'large_context_model'
+    | 'default_text_to_speech_model'
+    | 'default_speech_to_text_model'
+    | 'default_embedding_model'
+    | 'default_tools_model'
+    | 'default_reasoning_model'
+    | 'auto_route_cloud'
   interface DefaultConfig {
-    key: keyof ModelDefaults
+    key: ModelSlotKey
     label: string
     description: string
     modelType: ModelType
@@ -1108,6 +709,12 @@ function DefaultModelSelectors({
     { key: 'default_transformation_model', label: t('models.transformationModelLabel'), description: t('models.transformationModelDesc'), modelType: 'language', required: true, id: `${generatedId}-transform` },
     { key: 'default_tools_model', label: t('models.toolsModelLabel'), description: t('models.toolsModelDesc'), modelType: 'language', id: `${generatedId}-tools` },
     { key: 'large_context_model', label: t('models.largeContextModelLabel'), description: t('models.largeContextModelDesc'), modelType: 'language', id: `${generatedId}-large` },
+    // ONP v0.5 — 8th slot for slow-but-deep reasoning models (R1, gpt-oss, etc.)
+    { key: 'default_reasoning_model', label: t('models.reasoningModelLabel'), description: t('models.reasoningModelDesc'), modelType: 'language', id: `${generatedId}-reasoning` },
+    // v0.8.1 — dedicated cloud slot for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing.
+    // Distinct from default_chat_model so the router doesn't silently route
+    // oversized prompts to a locally-configured chat model (migration 18).
+    { key: 'auto_route_cloud', label: t('models.autoRouteCloudLabel'), description: t('models.autoRouteCloudDesc'), modelType: 'language', id: `${generatedId}-auto-route-cloud` },
   ]
 
   const defaultConfigs = [...primaryConfigs, ...advancedConfigs]
@@ -1166,6 +773,34 @@ function DefaultModelSelectors({
             </AlertDescription>
           </Alert>
         )}
+
+        {/* ONP v0.5.2 — Re-evaluate model assignments using our local-model
+            capability engine. Two buttons: a non-destructive variant that
+            only fills empty slots, and a destructive "Reset & Re-evaluate"
+            that wipes existing picks first. Useful after downloading a new
+            model or bumping ONP_CHAT_RAM_GB_CEILING. */}
+        <div className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
+          <span>Local-model auto-assignment:</span>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => autoAssignCapability.mutate({ force: false })}
+            disabled={autoAssignCapability.isPending}
+            className="h-7 gap-1.5"
+            title="Fill empty slots with the best matching local model. Keeps your existing picks."
+          >
+            {autoAssignCapability.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+            Fill empty slots
+          </Button>
+          <Button
+            variant="ghost" size="sm"
+            onClick={() => autoAssignCapability.mutate({ force: true })}
+            disabled={autoAssignCapability.isPending}
+            className="h-7 gap-1.5"
+            title="Overwrite all slots with the best matching local model. Use after downloading a new model."
+          >
+            Reset & re-evaluate
+          </Button>
+        </div>
 
         {/* Primary models: Chat, Embedding, TTS, STT */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1335,6 +970,29 @@ export default function ApiKeysPage() {
     })
   }, [credentialsByProvider])
 
+  // v0.7.35 — provider filter (search + status). With 16 providers
+  // stacked, scrolling to find one is tedious. A 12-LOC filter
+  // input + status-chip narrows the list.
+  const [providerQuery, setProviderQuery] = useState('')
+  const [providerStatusFilter, setProviderStatusFilter] = useState<
+    'all' | 'configured' | 'env' | 'none'
+  >('all')
+
+  const filteredProviders = useMemo(() => {
+    const q = providerQuery.trim().toLowerCase()
+    return sortedProviders.filter((provider) => {
+      // Name match (case-insensitive substring)
+      if (q && !provider.toLowerCase().includes(q)) return false
+      if (providerStatusFilter === 'all') return true
+      const hasCred = (credentialsByProvider[provider]?.length || 0) > 0
+      const hasEnv = envStatus?.[provider] === true
+      if (providerStatusFilter === 'configured') return hasCred
+      if (providerStatusFilter === 'env') return hasEnv && !hasCred
+      if (providerStatusFilter === 'none') return !hasCred && !hasEnv
+      return true
+    })
+  }, [sortedProviders, providerQuery, providerStatusFilter, credentialsByProvider, envStatus])
+
   const isLoading = credentialsLoading || modelsLoading || defaultsLoading
 
   if (isLoading) {
@@ -1347,23 +1005,38 @@ export default function ApiKeysPage() {
     )
   }
 
+  // v0.7.153 — Visual rhythm refresh (Models = edge-to-edge wide).
+  // Pain points addressed (per user 2026-05-21):
+  //   - Inputs/labels stacked too tightly  → page padding p-6 → px-6 py-10
+  //     sm:px-8; outer space-y-6 → space-y-12 between major sections
+  //   - Section headings don't separate cleanly → each major block is
+  //     now in a <section> with a hairline border-t separator + an h2
+  //     header (Defaults, Email Digests, Providers). The page reads
+  //     as a series of clearly-delineated cards.
+  //   - Buttons buried → the "Providers" section gets its own h2 plus
+  //     a sticky-style row with filter input on the left and chip
+  //     filters on the right with more breathing room
+  //   - Title gets text-2xl font-bold → text-3xl font-semibold (lighter
+  //     visual weight, more elegant per NotebookLM comparison)
+  //   - Provider grid gap-4 → gap-5 so adjacent cards have visible
+  //     separation instead of running into each other
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+        <div className="px-6 py-10 sm:px-8 space-y-12">
           {/* Header */}
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Key className="h-6 w-6" />
+          <header className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3">
+              <Key className="h-7 w-7" />
               {t('apiKeys.title')}
             </h1>
-            <p className="text-muted-foreground mt-1">{t('apiKeys.description')}</p>
-          </div>
+            <p className="text-muted-foreground">{t('apiKeys.description')}</p>
+          </header>
 
           {/* Encryption warning */}
           {!encryptionReady && (
             <Alert className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
-              <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
+              <ShieldAlert className="h-4 w-4 text-destructive" />
               <AlertTitle className="text-red-800 dark:text-red-200">{t('apiKeys.encryptionRequired')}</AlertTitle>
               <AlertDescription className="text-red-700 dark:text-red-300">
                 <code className="text-xs bg-red-100 dark:bg-red-900/30 px-1 py-0.5 rounded">
@@ -1376,28 +1049,119 @@ export default function ApiKeysPage() {
           {/* Migration banner */}
           {encryptionReady && <MigrationBanner providersToMigrate={providersToMigrate} />}
 
-          {/* Default Model Selectors */}
-          {models && defaults && (
-            <DefaultModelSelectors models={models} defaults={defaults} />
-          )}
+          {/* v0.8.36 — Osaurus auto-detect banner (Phase 1).
+              Renders only when (a) no Osaurus credential exists yet AND
+              (b) the backend probe finds Osaurus running on :1337. Mac
+              users with Osaurus installed get a one-click connect. */}
+          {encryptionReady && <OsaurusDetectionBanner credentials={credentials} />}
 
-          {/* Provider Cards */}
-          <div className="grid gap-4">
-            {sortedProviders.map(provider => (
-              <ProviderSection
-                key={provider}
-                provider={provider}
-                credentials={credentialsByProvider[provider] || []}
-                models={models || []}
-                defaults={defaults || null}
-                allCredentials={credentials || []}
-                encryptionReady={encryptionReady}
+          {/* v0.7.153 — Defaults section: groups Default-Model selectors +
+              the Reasoning-slot primer under one visual section. */}
+          <section className="space-y-6">
+            {/* v0.8.37 — Smart routing toggle (Phase 2). Lives above
+                the default-model selectors so users see the routing
+                story BEFORE the slot picker, not as an afterthought. */}
+            {defaults && <SmartRoutingPanel defaults={defaults} />}
+
+            {models && defaults && (
+              <DefaultModelSelectors models={models} defaults={defaults} />
+            )}
+
+            {/* ONP v0.5 — Reasoning slot primer (shadow-layer component).
+                Renders regardless of whether a model is assigned; it's an
+                explainer + a status indicator combined. */}
+            {defaults && (
+              <ReasoningSlotCard
+                assignedModel={
+                  defaults.default_reasoning_model
+                    ? models?.find(m => m.id === defaults.default_reasoning_model)?.name
+                      ?? defaults.default_reasoning_model
+                    : null
+                }
               />
-            ))}
-          </div>
+            )}
+          </section>
+
+          {/* v0.7.153 — Email Digests section gets a visible top divider so
+              the user sees it as a discrete integration block rather than
+              another cramped card stacked on the defaults above.
+              Anchored ID matches the sidebar button's deep-link target. */}
+          <section id="email-digests" className="border-t pt-12">
+            <GmailIntegration />
+          </section>
+
+          {/* v0.7.153 — Providers section. The previous flat layout buried
+              "16 providers in a list" under three different banners and a
+              tight filter row. Now it's a labeled <section> with an h2
+              and a roomier filter bar above the credential cards. */}
+          <section className="border-t pt-12 space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold tracking-tight">Providers</h2>
+              <p className="text-sm text-muted-foreground">
+                Configure API credentials and registered models for each AI provider.
+              </p>
+            </div>
+
+            {/* v0.7.35 — Provider filter row. 16 providers stacked
+                vertically was hard to navigate; this gives both a
+                substring search and a status-chip filter. */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative max-w-md flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={providerQuery}
+                  onChange={(e) => setProviderQuery(e.target.value)}
+                  placeholder="Filter providers…"
+                  className="pl-9"
+                  aria-label="Filter providers"
+                />
+              </div>
+              <div className="flex gap-2 text-xs">
+                {(['all', 'configured', 'env', 'none'] as const).map((status) => (
+                  <Button
+                    key={status}
+                    size="sm"
+                    variant={providerStatusFilter === status ? 'default' : 'outline'}
+                    onClick={() => setProviderStatusFilter(status)}
+                    className="h-8"
+                  >
+                    {status === 'all'
+                      ? 'All'
+                      : status === 'configured'
+                        ? 'Has credential'
+                        : status === 'env'
+                          ? 'From env'
+                          : 'Unconfigured'}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {filteredProviders.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4">
+                No providers match the filter.
+              </p>
+            )}
+
+            {/* Provider Cards — bumped gap-4 → gap-5 (v0.7.153) so adjacent
+                provider cards have visible breathing room instead of
+                visually merging. */}
+            <div className="grid gap-5">
+              {filteredProviders.map(provider => (
+                <ProviderSection
+                  key={provider}
+                  provider={provider}
+                  credentials={credentialsByProvider[provider] || []}
+                  models={models || []}
+                  defaults={defaults || null}
+                  allCredentials={credentials || []}
+                  encryptionReady={encryptionReady}
+                />
+              ))}
+            </div>
+          </section>
 
           {/* Help link */}
-          <div className="border-t pt-4">
+          <div className="border-t pt-6">
             <a
               href="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md"
               target="_blank"

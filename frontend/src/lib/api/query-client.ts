@@ -23,6 +23,11 @@ export const QUERY_KEYS = {
   sourcesInfinite: (notebookId: string) => ['sources', 'infinite', notebookId] as const,
   source: (id: string) => ['sources', id] as const,
   settings: ['settings'] as const,
+  // v0.7.136 — Read-only observability config from /settings/observability.
+  // Separate key from `settings` because the underlying endpoint is
+  // env-derived and shouldn't be invalidated when the writable
+  // settings change.
+  observabilitySettings: ['settings', 'observability'] as const,
   sourceChatSessions: (sourceId: string) => ['source-chat', sourceId, 'sessions'] as const,
   sourceChatSession: (sourceId: string, sessionId: string) => ['source-chat', sourceId, 'sessions', sessionId] as const,
   notebookChatSessions: (notebookId: string) => ['notebook-chat', notebookId, 'sessions'] as const,
@@ -32,4 +37,32 @@ export const QUERY_KEYS = {
   episodeProfiles: ['podcasts', 'episode-profiles'] as const,
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
+}
+
+// v0.8.66 (audit F-2) — the chat hooks stash per-message badge data ad-hoc via
+// queryClient.setQueryData([prefix, <messageId>], …), read by the per-message
+// pill/badge components. There are exactly two such families (verified against
+// the writers in useNotebookChat/useSourceChat + the readers in CitationPill /
+// ChatMessageProviderBadge|PrivacyBadge|AgentStateBadge):
+//   ['mcp', 'tool-calls', <id>]          — CitationPill MCP popover payloads
+//   ['chat', 'selected-provider', <id>]  — provider + privacy + agent-state badge
+// Each chat turn adds entries keyed by a fresh message id; over a long-lived tab
+// or many navigations they accumulate (they only ever hold data streamed live in
+// THIS tab and are never refetched). Prune them when the chat view unmounts.
+// Both are 3-element prefixes, so prefix-matched removal can't collide with the
+// non-ephemeral ['mcp','web-search'] status query or the session-list keys.
+const MESSAGE_SCOPED_QUERY_PREFIXES = [
+  ['mcp', 'tool-calls'],
+  ['chat', 'selected-provider'],
+] as const
+
+/**
+ * Remove the ad-hoc per-message chat cache entries (F-2). Call on chat-view
+ * unmount to bound cache growth. Prefix-matched, so it clears every
+ * `[prefix, <messageId>]` entry without touching other queries.
+ */
+export function pruneMessageScopedQueries(): void {
+  for (const prefix of MESSAGE_SCOPED_QUERY_PREFIXES) {
+    queryClient.removeQueries({ queryKey: [...prefix] })
+  }
 }

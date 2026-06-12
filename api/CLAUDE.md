@@ -4,47 +4,50 @@ FastAPI-based REST backend exposing services for notebooks, sources, notes, chat
 
 ## Purpose
 
-FastAPI application serving three architectural layers: routes (HTTP endpoints), services (business logic), and models (request/response schemas). Integrates LangGraph workflows (chat, ask, source_chat), SurrealDB persistence, and AI providers via Esperanto.
+FastAPI application with TWO real architectural layers: routes (HTTP
+endpoints, where most business logic actually lives) and models
+(request/response schemas). Integrates LangGraph workflows (chat, ask,
+source_chat), SurrealDB persistence, and AI providers via Esperanto.
+
+> **History note (v0.7.21):** an earlier design layered per-resource
+> `*_service.py` modules between routers and domain models, delegating
+> to a shared `api/client.py`. Those modules existed but were never
+> actually imported by anything — routers always bypassed them. They
+> were deleted in v0.7.21 along with `api/client.py`. The four
+> surviving service files (`chat_service.py`, `podcast_service.py`,
+> `command_service.py`, `credentials_service.py`) are the ones that
+> DO get imported and do real orchestration work.
 
 ## Architecture Overview
 
-**Three layers**:
-1. **Routes** (`routers/*`): HTTP endpoints mapping to services
-2. **Services** (`*_service.py`): Business logic orchestrating domain models, database, graphs, AI providers
-3. **Models** (`models.py`): Pydantic request/response schemas with validation
+**Two layers**:
+1. **Routes** (`routers/*`): HTTP endpoints. Most routers work directly
+   with domain models (`open_notebook.domain.*`) and LangGraph workflows
+   (`open_notebook.graphs.*`). The four service files below are the
+   exceptions — used where the orchestration is too heavy to inline.
+2. **Models** (`models.py`): Pydantic request/response schemas with validation.
 
 **Startup flow**:
 - Load .env environment variables
 - Initialize CORS middleware + password auth middleware
+- v0.7.14 — configure_logging("api") so startup errors land in a file
 - Run database migrations via AsyncMigrationManager on lifespan startup
 - Run podcast profile data migration (legacy string to model registry conversion)
+- v0.7.18 — DB pool lazy-initializes on first repo_query call
 - Register all routers
 
-**Key services**:
+**Real services (the only `*_service.py` files that exist)**:
 - `chat_service.py`: Invokes chat graph with messages, context
 - `podcast_service.py`: Orchestrates outline + transcript generation
-- `sources_service.py`: Content ingestion, vectorization, metadata
-- `notes_service.py`: Note creation, linking to sources/insights
-- `transformations_service.py`: Applies transformations to content
-- `models_service.py`: Manages AI provider/model configuration
-- `episode_profiles_service.py`: Manages podcast speaker/episode profiles
+- `command_service.py`: Wraps surreal_commands job submission and status
+- `credentials_service.py`: Encrypted credential CRUD + connection testing
 
 ## Component Catalog
 
 ### Main Application
-- **main.py**: FastAPI app initialization, CORS setup, auth middleware, lifespan event, router registration
-- **Lifespan handler**: Runs AsyncMigrationManager on startup (database schema migration)
-- **Auth middleware**: PasswordAuthMiddleware protects endpoints (password-based access control)
-
-### Services (Business Logic)
-- **chat_service.py**: Invokes chat.py graph; handles message history via SqliteSaver
-- **podcast_service.py**: Generates outline (outline.jinja), then transcript (transcript.jinja) for episodes
-- **sources_service.py**: Ingests files/URLs (content_core), extracts text, vectorizes, saves to SurrealDB
-- **transformations_service.py**: Applies transformations via transformation.py graph
-- **models_service.py**: Manages ModelManager config (AI provider overrides)
-- **episode_profiles_service.py**: CRUD for EpisodeProfile and SpeakerProfile models
-- **insights_service.py**: Generates and retrieves source insights
-- **notes_service.py**: Creates notes linked to sources/insights
+- **main.py**: FastAPI app initialization, CORS setup, auth middleware, lifespan event, router registration. Exposes `/health` (back-compat), `/livez`, `/readyz`.
+- **Lifespan handler**: Configures loguru file sink → runs AsyncMigrationManager → starts digest scheduler. On shutdown, drains DB pool.
+- **Auth middleware**: PasswordAuthMiddleware protects endpoints (password-based access control).
 
 ### Models (Schemas)
 - **models.py**: Pydantic schemas for request/response validation

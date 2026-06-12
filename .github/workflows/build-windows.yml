@@ -1,0 +1,37 @@
+name: build-windows
+
+# v0.8.68 — On-demand Windows-only build. Trigger manually from the Actions
+# tab ("Run workflow") to get a Windows .exe/.zip in ~15 min WITHOUT waiting on
+# the slow/expensive macOS jobs in build-desktop.yml. The artifact is attached
+# to the run (Actions tab -> the run -> Artifacts -> Open-Notebook-Plus-windows-x64).
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"  # avoid cp1252 UnicodeEncodeError on non-ASCII console output
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+      - name: Install Python deps
+        run: |
+          pip install -r desktop/requirements.txt
+          pip install -e .
+      - name: Build frontend
+        run: cd frontend; npm ci; npm run build
+      - name: Fetch native runtimes (SurrealDB / Node / uv / python-standalone)
+        run: python desktop/build/fetch_runtimes.py
+      - name: PyInstaller
+        run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - name: Package zip
+        run: pwsh desktop/build/post_build_windows.ps1
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Open-Notebook-Plus-windows-x64
+          path: dist/Open-Notebook-Plus-windows-x64.zip
+          if-no-files-found: error

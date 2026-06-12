@@ -96,5 +96,129 @@ class TestCredentialCascadeDelete:
         mock_cred.delete.assert_awaited_once()
 
 
+class TestV0822MigrationSanitization:
+    """v0.8.22 — migration endpoints must NOT echo raw exception strings
+    into the response payload. Same family as the v0.7.177 podcast
+    sanitization sweep, which missed credentials_service.py.
+    """
+
+    @pytest.mark.asyncio
+    @patch("api.credentials_service.create_credential_from_env")
+    @patch("api.credentials_service.check_env_configured")
+    @patch("api.credentials_service.Credential.get_by_provider")
+    @patch("api.credentials_service.require_encryption_key")
+    async def test_migrate_from_env_sanitizes_exception_in_response(
+        self, mock_require, mock_get_by_provider,
+        mock_check_env, mock_create_cred, client,
+    ):
+        """Force migrate_from_env into the except branch and assert the
+        response's `errors[]` carries only the exception TYPE NAME — not
+        the raw message. Real exception messages here can carry SurrealDB
+        WS frames, Fernet base64 fragments, or api_key prefixes."""
+        # All providers report no existing credential — proceed to create.
+        mock_get_by_provider.return_value = []
+        # All providers detected as configured — forces the migration path.
+        mock_check_env.return_value = True
+        # The "sensitive" exception message we will assert does NOT leak.
+        secret_in_exception = (
+            "INTERNAL: api_key=sk-VERYSECRET345; "
+            "SurrealDB pool WS frame=0x4F2C; "
+            "encrypted=gAAAAABnoEOFw"
+        )
+        mock_create_cred.side_effect = RuntimeError(secret_in_exception)
+
+        response = client.post("/api/credentials/migrate-from-env")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        # At least one provider's migration hit the except branch.
+        assert len(body["errors"]) > 0, (
+            "Expected at least one error entry; "
+            "got migrated/skipped only — the mock injection didn't fire."
+        )
+        # The CRITICAL assertion: no error entry contains the raw message.
+        for err in body["errors"]:
+            assert "sk-VERYSECRET345" not in err, (
+                f"api_key leaked into response error string: {err!r}. "
+                f"v0.8.22 fix: emit type(e).__name__, not str(e)."
+            )
+            assert "WS frame" not in err, (
+                f"SurrealDB internal leaked into response: {err!r}."
+            )
+            assert "gAAAAABnoEOFw" not in err, (
+                f"Fernet ciphertext fragment leaked: {err!r}."
+            )
+            # And the type name MUST be present so operators can triage.
+            assert "RuntimeError" in err, (
+                f"Expected the exception type name in {err!r} so the "
+                f"operator can correlate the response with the log line."
+            )
+
+    @pytest.mark.asyncio
+    @patch("api.credentials_service.Credential.get_by_provider")
+    # NOTE: ProviderConfig is imported lazily INSIDE the migration
+    # function (`from open_notebook.domain.provider_config import
+    # ProviderConfig`). Patching `api.credentials_service.ProviderConfig`
+    # does not intercept that local import — we must patch the source
+    # module path instead. This is the same shape as v0.7.96's lazy-
+    # import patch fix in test_provider_config.py.
+    @patch("open_notebook.domain.provider_config.ProviderConfig")
+    @patch("api.credentials_service.require_encryption_key")
+    async def test_migrate_from_provider_config_sanitizes_exception(
+        self, mock_require, mock_provider_config, mock_get_by_provider, client,
+    ):
+        """Same contract as the env migration: exception messages from
+        the inner Credential() constructor / save() must not leak into
+        the response. Tests the OTHER except branch."""
+        # Construct a fake ProviderConfig with one credentials entry whose
+        # api_key attribute access raises with sensitive content. We
+        # intercept at the get_by_provider call (executes inside the for
+        # loop's try block) so the except handler fires.
+        from unittest.mock import MagicMock
+
+        old_cred = MagicMock()
+        old_cred.name = "test-cred"
+        old_cred.api_key = "sk-LEAKME-123"
+        old_cred.base_url = None
+        old_cred.endpoint = None
+        old_cred.api_version = None
+        old_cred.endpoint_llm = None
+        old_cred.endpoint_embedding = None
+        old_cred.endpoint_stt = None
+        old_cred.endpoint_tts = None
+        old_cred.project = None
+        old_cred.location = None
+        old_cred.credentials_path = None
+
+        fake_config = MagicMock()
+        fake_config.credentials = {"openai": [old_cred]}
+        mock_provider_config.get_instance = AsyncMock(return_value=fake_config)
+
+        # Force the except branch via Credential.get_by_provider raising.
+        mock_get_by_provider.side_effect = RuntimeError(
+            "SurrealDB query failed: SELECT * FROM credential api_key=sk-LEAKME-123"
+        )
+
+        response = client.post("/api/credentials/migrate-from-provider-config")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert len(body["errors"]) > 0, (
+            "Expected the mocked exception to land in errors[]."
+        )
+        for err in body["errors"]:
+            assert "sk-LEAKME-123" not in err, (
+                f"api_key prefix leaked into migration response: {err!r}. "
+                f"v0.8.22 fix: emit type(e).__name__, not str(e)."
+            )
+            assert "SELECT * FROM credential" not in err, (
+                f"SurrealQL query fragment leaked: {err!r}."
+            )
+            assert "RuntimeError" in err, (
+                f"Type name missing from {err!r} — operators can't "
+                f"correlate response with log line without it."
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

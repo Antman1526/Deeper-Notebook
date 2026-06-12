@@ -24,27 +24,53 @@ class ContextItem:
 
     id: str
     type: Literal["source", "note", "insight"]
-    content: Dict[str, Any]
+    content: dict[str, Any]
     priority: int = 0
     token_count: Optional[int] = None
 
     def __post_init__(self):
         """Calculate token count for the content if not provided."""
         if self.token_count is None:
-            content_str = str(self.content)
-            self.token_count = token_count(content_str)
+            self.token_count = token_count(_content_text(self.content))
+
+
+def _content_text(content: Any) -> str:
+    """v0.8.67 (audit A4) — extract only the human-readable text a ContextItem
+    contributes to the prompt, for token counting. Previously this was
+    `str(self.content)` over the whole dict, which counted Python dict syntax
+    ({}, quotes, keys like 'full_text', list brackets) that never reaches the
+    LLM — over-counting the budget and UNDER-including real content. We now sum
+    the actual text fields (title / content / full_text / insight contents),
+    recursing into the insights list. Non-dict content falls back to str()."""
+    if not isinstance(content, dict):
+        return str(content) if content is not None else ""
+    parts: list[str] = []
+    for key in ("title", "content", "full_text"):
+        val = content.get(key)
+        if isinstance(val, str) and val:
+            parts.append(val)
+    insights = content.get("insights")
+    if isinstance(insights, list):
+        for ins in insights:
+            if isinstance(ins, dict):
+                c = ins.get("content")
+                if isinstance(c, str) and c:
+                    parts.append(c)
+            elif isinstance(ins, str) and ins:
+                parts.append(ins)
+    return "\n".join(parts)
 
 
 @dataclass
 class ContextConfig:
     """Configuration for context building."""
 
-    sources: Optional[Dict[str, str]] = None  # {source_id: inclusion_level}
-    notes: Optional[Dict[str, str]] = None  # {note_id: inclusion_level}
+    sources: Optional[dict[str, str]] = None  # {source_id: inclusion_level}
+    notes: Optional[dict[str, str]] = None  # {note_id: inclusion_level}
     include_insights: bool = True
     include_notes: bool = True
     max_tokens: Optional[int] = None
-    priority_weights: Optional[Dict[str, int]] = None  # {type: weight}
+    priority_weights: Optional[dict[str, int]] = None  # {type: weight}
 
     def __post_init__(self):
         """Initialize default values."""
@@ -98,11 +124,11 @@ class ContextBuilder:
             self.context_config = context_config_arg
 
         # Items storage
-        self.items: List[ContextItem] = []
+        self.items: list[ContextItem] = []
 
         logger.debug(f"ContextBuilder initialized with params: {list(kwargs.keys())}")
 
-    async def build(self) -> Dict[str, Any]:
+    async def build(self) -> dict[str, Any]:
         """
         Build context based on provided parameters.
 
@@ -364,7 +390,7 @@ class ContextBuilder:
         if removed_count > 0:
             logger.debug(f"Removed {removed_count} duplicate items")
 
-    def _format_response(self) -> Dict[str, Any]:
+    def _format_response(self) -> dict[str, Any]:
         """
         Format the final response.
 
@@ -423,7 +449,7 @@ async def build_notebook_context(
     notebook_id: str,
     context_config: Optional[ContextConfig] = None,
     max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Build context for a notebook.
 
@@ -443,7 +469,7 @@ async def build_notebook_context(
 
 async def build_source_context(
     source_id: str, include_insights: bool = True, max_tokens: Optional[int] = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Build context for a single source.
 
@@ -462,11 +488,11 @@ async def build_source_context(
 
 
 async def build_mixed_context(
-    source_ids: Optional[List[str]] = None,
-    note_ids: Optional[List[str]] = None,
+    source_ids: Optional[list[str]] = None,
+    note_ids: Optional[list[str]] = None,
     notebook_id: Optional[str] = None,
     max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Build context from mixed sources.
 

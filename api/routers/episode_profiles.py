@@ -5,6 +5,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from open_notebook.podcasts.models import EpisodeProfile
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -44,12 +45,17 @@ def _profile_to_response(profile: EpisodeProfile) -> EpisodeProfileResponse:
     )
 
 
-@router.get("/episode-profiles", response_model=List[EpisodeProfileResponse])
+@router.get("/episode-profiles", response_model=list[EpisodeProfileResponse])
 async def list_episode_profiles():
     """List all available episode profiles"""
     try:
         profiles = await EpisodeProfile.get_all(order_by="name asc")
         return [_profile_to_response(p) for p in profiles]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch episode profiles: {e}")
         raise HTTPException(
@@ -71,6 +77,9 @@ async def get_episode_profile(profile_name: str):
         return _profile_to_response(profile)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to fetch episode profile '{profile_name}': {e}")
@@ -119,6 +128,11 @@ async def create_episode_profile(profile_data: EpisodeProfileCreate):
         await profile.save()
         return _profile_to_response(profile)
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to create episode profile: {e}")
         raise HTTPException(
@@ -155,6 +169,9 @@ async def update_episode_profile(profile_id: str, profile_data: EpisodeProfileCr
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Failed to update episode profile: {e}")
         raise HTTPException(
@@ -178,6 +195,9 @@ async def delete_episode_profile(profile_id: str):
         return {"message": "Episode profile deleted successfully"}
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to delete episode profile: {e}")
@@ -218,6 +238,9 @@ async def duplicate_episode_profile(profile_id: str):
         return _profile_to_response(duplicate)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to duplicate episode profile: {e}")

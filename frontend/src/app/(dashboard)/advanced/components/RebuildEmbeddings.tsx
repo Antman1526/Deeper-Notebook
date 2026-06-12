@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { Loader2, AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Loader2, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import {
   Accordion,
   AccordionContent,
@@ -19,16 +19,28 @@ import {
 import { embeddingApi } from '@/lib/api/embedding'
 import type { RebuildEmbeddingsRequest, RebuildStatusResponse } from '@/lib/api/embedding'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'  // v0.7.189 — locale-aware date format
 
 export function RebuildEmbeddings() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [mode, setMode] = useState<'existing' | 'all'>('existing')
   const [includeSources, setIncludeSources] = useState(true)
   const [includeNotes, setIncludeNotes] = useState(true)
   const [includeInsights, setIncludeInsights] = useState(true)
   const [commandId, setCommandId] = useState<string | null>(null)
   const [status, setStatus] = useState<RebuildStatusResponse | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  // v0.7.158 — `pollingInterval` was previously a `useState` value that
+  // `stopPolling` closed over. Because `stopPolling` was wrapped in
+  // useCallback(..., [pollingInterval]), the unmount cleanup
+  // useEffect(() => () => stopPolling(), [stopPolling]) re-ran on
+  // EVERY setPollingInterval(...) — and the prior unmount callback
+  // closed over a STALE pollingInterval (often null because the state
+  // hadn't propagated yet). Result: an orphaned setInterval kept
+  // hitting /embedding/rebuild/status forever after the user
+  // navigated away from /advanced. Refactored to useRef so the
+  // current interval is always readable from cleanup without
+  // triggering re-renders or stale closures.
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Rebuild mutation
   const rebuildMutation = useMutation({
@@ -43,9 +55,11 @@ export function RebuildEmbeddings() {
   })
 
   // Start polling for rebuild status
+  // v0.7.158 — reads/writes pollingIntervalRef.current instead of
+  // state, so a re-render doesn't drop the live interval id.
   const startPolling = (cmdId: string) => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
     }
 
     const interval = setInterval(async () => {
@@ -62,23 +76,34 @@ export function RebuildEmbeddings() {
       }
     }, 5000) // Poll every 5 seconds
 
-    setPollingInterval(interval)
+    pollingIntervalRef.current = interval
   }
 
   // Stop polling
-  const stopPolling = useCallback(() => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+  // v0.7.158 — no longer wrapped in useCallback (ref is stable, no
+  // dependency to track), eliminating the stale-closure cleanup bug
+  // where the unmount callback closed over an outdated interval id.
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
-  }, [pollingInterval])
+  }
 
   // Cleanup on unmount
+  // v0.7.158 — empty dep array. Reads ref at unmount time, so we
+  // ALWAYS see the current interval (whatever it was set to last).
+  // The previous [stopPolling] dep caused the cleanup to re-arm on
+  // every state change, with each re-armed callback closing over a
+  // stale pollingInterval — orphaning the interval after unmount.
   useEffect(() => {
     return () => {
-      stopPolling()
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
     }
-  }, [stopPolling])
+  }, [])
 
   const handleStartRebuild = () => {
     const request: RebuildEmbeddingsRequest = {
@@ -229,7 +254,13 @@ export function RebuildEmbeddings() {
                 {status.status === 'queued' && <Clock className="h-5 w-5 text-yellow-500" />}
                 {status.status === 'running' && <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />}
                 {status.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                {status.status === 'failed' && <XCircle className="h-5 w-5 text-red-500" />}
+                {/* v0.7.180 — Only the failed-status icon swaps to the
+                    theme token (text-red-500 → text-destructive). The
+                    queued/running/completed icons keep their semantic
+                    palette per user constraint "no theme color changes" —
+                    only the destructive case has a canonical theme token
+                    that lights up correctly in dark + alt themes. */}
+                {status.status === 'failed' && <XCircle className="h-5 w-5 text-destructive" />}
                 <div className="flex flex-col">
                   <span className="font-medium">
                     {status.status === 'queued' && t('advanced.rebuild.queued')}
@@ -264,30 +295,44 @@ export function RebuildEmbeddings() {
                 </div>
                 <Progress value={progressPercent} className="h-2" />
                 {failedItems > 0 && (
-                  <p className="text-sm text-yellow-600">
-                    ⚠️ {t('advanced.rebuild.failedItems').replace('{count}', failedItems.toString())}
+                  // v0.7.167 — raw `⚠️` emoji replaced with the lucide
+                  // AlertTriangle icon used everywhere else in the app.
+                  // The previous emoji was the only icon-via-Unicode in
+                  // an otherwise lucide-driven UI; jarring next to the
+                  // sibling AlertCircle just below at line 323.
+                  <p className="text-sm text-yellow-600 inline-flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4" />
+                    {t('advanced.rebuild.failedItems').replace('{count}', failedItems.toString())}
                   </p>
                 )}
               </div>
             )}
 
-             {stats && (
-              <div className="grid grid-cols-4 gap-4">
+            {/* v0.7.167 — Stats grid: number weights toned down from
+                `text-2xl font-bold` (read as "marketing dashboard") to
+                `text-xl font-semibold` (reads as "settings"). The
+                surrounding Advanced page is a settings screen; the
+                stats shouldn't out-weigh the page H1. Also bumped the
+                `grid-cols-4` to be responsive — `sm:grid-cols-2
+                lg:grid-cols-4` so 4 cramped tiles don't collide on
+                narrow viewports. */}
+            {stats && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('navigation.sources')}</p>
-                  <p className="text-2xl font-bold">{sourcesProcessed}</p>
+                  <p className="text-xl font-semibold">{sourcesProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('common.notes')}</p>
-                  <p className="text-2xl font-bold">{notesProcessed}</p>
+                  <p className="text-xl font-semibold">{notesProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('common.insights')}</p>
-                  <p className="text-2xl font-bold">{insightsProcessed}</p>
+                  <p className="text-xl font-semibold">{insightsProcessed}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('advanced.rebuild.time')}</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-xl font-semibold">
                     {processingTimeSeconds !== undefined ? `${processingTimeSeconds.toFixed(1)}s` : '—'}
                   </p>
                 </div>
@@ -303,9 +348,12 @@ export function RebuildEmbeddings() {
 
             {status.started_at && (
               <div className="text-sm text-muted-foreground space-y-1">
-                <p>{t('common.created').replace('{time}', new Date(status.started_at).toLocaleString())}</p>
+                {/* v0.7.189 — formatDateTime(...) instead of toLocaleString()
+                    so the date format honours the user's app-language
+                    choice rather than the OS locale. */}
+                <p>{t('common.created').replace('{time}', formatDateTime(status.started_at, language))}</p>
                 {status.completed_at && (
-                  <p>{t('notebooks.updated')}: {new Date(status.completed_at).toLocaleString()}</p>
+                  <p>{t('notebooks.updated')}: {formatDateTime(status.completed_at, language)}</p>
                 )}
               </div>
             )}

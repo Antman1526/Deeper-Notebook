@@ -5,6 +5,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from open_notebook.podcasts.models import SpeakerProfile
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -14,7 +15,7 @@ class SpeakerProfileResponse(BaseModel):
     name: str
     description: str
     voice_model: Optional[str] = None
-    speakers: List[Dict[str, Any]]
+    speakers: list[dict[str, Any]]
     # Legacy fields (for display/migration awareness)
     tts_provider: Optional[str] = None
     tts_model: Optional[str] = None
@@ -32,12 +33,17 @@ def _profile_to_response(profile: SpeakerProfile) -> SpeakerProfileResponse:
     )
 
 
-@router.get("/speaker-profiles", response_model=List[SpeakerProfileResponse])
+@router.get("/speaker-profiles", response_model=list[SpeakerProfileResponse])
 async def list_speaker_profiles():
     """List all available speaker profiles"""
     try:
         profiles = await SpeakerProfile.get_all(order_by="name asc")
         return [_profile_to_response(p) for p in profiles]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profiles: {e}")
         raise HTTPException(
@@ -60,6 +66,9 @@ async def get_speaker_profile(profile_name: str):
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profile '{profile_name}': {e}")
         raise HTTPException(
@@ -71,7 +80,7 @@ class SpeakerProfileCreate(BaseModel):
     name: str = Field(..., description="Unique profile name")
     description: str = Field("", description="Profile description")
     voice_model: Optional[str] = Field(None, description="Model record ID for TTS")
-    speakers: List[Dict[str, Any]] = Field(
+    speakers: list[dict[str, Any]] = Field(
         ..., description="Array of speaker configurations"
     )
     # Legacy fields (accepted but not required)
@@ -95,6 +104,11 @@ async def create_speaker_profile(profile_data: SpeakerProfileCreate):
         await profile.save()
         return _profile_to_response(profile)
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to create speaker profile: {e}")
         raise HTTPException(
@@ -125,6 +139,9 @@ async def update_speaker_profile(profile_id: str, profile_data: SpeakerProfileCr
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
+        raise
     except Exception as e:
         logger.error(f"Failed to update speaker profile: {e}")
         raise HTTPException(
@@ -148,6 +165,9 @@ async def delete_speaker_profile(profile_id: str):
         return {"message": "Speaker profile deleted successfully"}
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to delete speaker profile: {e}")
@@ -182,6 +202,9 @@ async def duplicate_speaker_profile(profile_id: str):
         return _profile_to_response(duplicate)
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.182 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
         logger.error(f"Failed to duplicate speaker profile: {e}")

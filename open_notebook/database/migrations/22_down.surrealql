@@ -1,0 +1,4 @@
+-- v0.8.68 rollback — staged podcast generation fields.
+REMOVE FIELD IF EXISTS briefing_suffix ON TABLE episode;
+REMOVE FIELD IF EXISTS generation_stage ON TABLE episode;
+REMOVE FIELD IF EXISTS cancel_requested ON TABLE episode;

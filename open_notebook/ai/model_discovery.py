@@ -14,8 +14,8 @@ import httpx
 from loguru import logger
 
 from open_notebook.ai.models import Model
-from open_notebook.domain.credential import Credential
 from open_notebook.database.repository import repo_query
+from open_notebook.domain.credential import Credential
 
 
 @dataclass
@@ -180,7 +180,7 @@ def classify_model_type(model_name: str, provider: str) -> str:
 # =============================================================================
 
 
-async def discover_openai_models() -> List[DiscoveredModel]:
+async def discover_openai_models() -> list[DiscoveredModel]:
     """Fetch available models from OpenAI API."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -214,7 +214,7 @@ async def discover_openai_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_anthropic_models() -> List[DiscoveredModel]:
+async def discover_anthropic_models() -> list[DiscoveredModel]:
     """Return static list of Anthropic models (no discovery API available)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -233,7 +233,7 @@ async def discover_anthropic_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_google_models() -> List[DiscoveredModel]:
+async def discover_google_models() -> list[DiscoveredModel]:
     """Fetch available models from Google Gemini API."""
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -276,7 +276,7 @@ async def discover_google_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_ollama_models() -> List[DiscoveredModel]:
+async def discover_ollama_models() -> list[DiscoveredModel]:
     """Fetch available models from local Ollama instance."""
     base_url = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
     if not base_url:
@@ -309,7 +309,7 @@ async def discover_ollama_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_groq_models() -> List[DiscoveredModel]:
+async def discover_groq_models() -> list[DiscoveredModel]:
     """Fetch available models from Groq API."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -343,7 +343,7 @@ async def discover_groq_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_mistral_models() -> List[DiscoveredModel]:
+async def discover_mistral_models() -> list[DiscoveredModel]:
     """Fetch available models from Mistral API."""
     api_key = os.environ.get("MISTRAL_API_KEY")
     if not api_key:
@@ -382,7 +382,7 @@ async def discover_mistral_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_deepseek_models() -> List[DiscoveredModel]:
+async def discover_deepseek_models() -> list[DiscoveredModel]:
     """Fetch available models from DeepSeek API."""
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -416,7 +416,7 @@ async def discover_deepseek_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_xai_models() -> List[DiscoveredModel]:
+async def discover_xai_models() -> list[DiscoveredModel]:
     """Fetch available models from xAI API."""
     api_key = os.environ.get("XAI_API_KEY")
     if not api_key:
@@ -450,7 +450,7 @@ async def discover_xai_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_openrouter_models() -> List[DiscoveredModel]:
+async def discover_openrouter_models() -> list[DiscoveredModel]:
     """Fetch available models from OpenRouter API."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -485,7 +485,7 @@ async def discover_openrouter_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_voyage_models() -> List[DiscoveredModel]:
+async def discover_voyage_models() -> list[DiscoveredModel]:
     """Return static list of Voyage AI models (embedding only)."""
     api_key = os.environ.get("VOYAGE_API_KEY")
     if not api_key:
@@ -507,7 +507,7 @@ async def discover_voyage_models() -> List[DiscoveredModel]:
     ]
 
 
-async def discover_elevenlabs_models() -> List[DiscoveredModel]:
+async def discover_elevenlabs_models() -> list[DiscoveredModel]:
     """Return static list of ElevenLabs TTS models."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
@@ -528,7 +528,7 @@ async def discover_elevenlabs_models() -> List[DiscoveredModel]:
     ]
 
 
-async def discover_dashscope_models() -> List[DiscoveredModel]:
+async def discover_dashscope_models() -> list[DiscoveredModel]:
     """Fetch available models from DashScope (Qwen) API."""
     api_key = os.environ.get("DASHSCOPE_API_KEY")
     if not api_key:
@@ -562,7 +562,7 @@ async def discover_dashscope_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_minimax_models() -> List[DiscoveredModel]:
+async def discover_minimax_models() -> list[DiscoveredModel]:
     """Fetch available models from MiniMax API."""
     api_key = os.environ.get("MINIMAX_API_KEY")
     if not api_key:
@@ -596,7 +596,7 @@ async def discover_minimax_models() -> List[DiscoveredModel]:
     return models
 
 
-async def discover_openai_compatible_models() -> List[DiscoveredModel]:
+async def discover_openai_compatible_models() -> list[DiscoveredModel]:
     """
     Fetch available models from an OpenAI-compatible API endpoint.
     Uses the configured base_url from the database or environment variable.
@@ -685,7 +685,7 @@ PROVIDER_DISCOVERY_FUNCTIONS = {
 }
 
 
-async def discover_provider_models(provider: str) -> List[DiscoveredModel]:
+async def discover_provider_models(provider: str) -> list[DiscoveredModel]:
     """
     Discover available models for a specific provider.
 
@@ -711,7 +711,7 @@ async def discover_provider_models(provider: str) -> List[DiscoveredModel]:
 
 async def sync_provider_models(
     provider: str, auto_register: bool = True
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Sync models for a provider: discover and optionally register in database.
 
@@ -776,7 +776,7 @@ async def sync_provider_models(
     return discovered_count, new_count, existing_count
 
 
-async def sync_all_providers() -> Dict[str, Tuple[int, int, int]]:
+async def sync_all_providers() -> dict[str, tuple[int, int, int]]:
     """
     Sync models for all configured providers.
 
@@ -804,7 +804,7 @@ async def sync_all_providers() -> Dict[str, Tuple[int, int, int]]:
     return results
 
 
-async def get_provider_model_count(provider: str) -> Dict[str, int]:
+async def get_provider_model_count(provider: str) -> dict[str, int]:
     """
     Get count of registered models for a provider, grouped by type.
 

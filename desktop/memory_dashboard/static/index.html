@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-theme="light-blue">
+<head>
+  <meta charset="utf-8">
+  <title>Open Notebook Plus — Memory</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <h1>Memory</h1>
+      <p id="memory-subtitle" class="subtitle">Loading…</p>
+      <!-- ONP v0.5.5 — Search bar. Wraps the existing /api/memory/search
+           endpoint that was never UI-surfaced before. Empty query shows all,
+           non-empty filters across facts/preferences/episodes in one shot. -->
+      <div class="search-bar">
+        <input
+          id="memory-search"
+          type="search"
+          placeholder="Search memory… (e.g. 'paper about RAG')"
+          aria-label="Search memory"
+          autocomplete="off"
+        >
+        <button id="memory-search-clear" hidden aria-label="Clear search">×</button>
+      </div>
+    </header>
+
+    <!-- ONP v0.5.4 — Active models: shows which model fills each role slot. -->
+    <section id="active-models-section" class="active-models" hidden>
+      <h2>Active models</h2>
+      <dl id="active-models-list"></dl>
+    </section>
+
+    <!-- ONP v0.5.5 — Search results section (hidden unless a query is active) -->
+    <section id="search-results-section" hidden>
+      <h2>Search results <span class="count" id="search-count">0</span></h2>
+      <ul id="search-list"></ul>
+    </section>
+
+    <!-- ONP v0.5 — Capture Inbox: events from OpenChronicle awaiting curation -->
+    <section id="inbox-section">
+      <div class="inbox-header">
+        <h2>Recent capture <span class="count" id="inbox-count">0</span></h2>
+        <p class="hint">
+          Approve to save to memory. Dismiss to hide for this session.
+          <button id="inbox-mark-all" class="link-btn" hidden>Mark all as seen</button>
+        </p>
+      </div>
+      <p id="inbox-empty" class="empty-state" hidden>
+        OpenChronicle not detected. Nothing being captured.
+      </p>
+      <ul id="inbox-list"></ul>
+      <!-- v0.5.9 — Muted apps chips. Shown only when muted_apps is non-empty -->
+      <div id="muted-apps-container" class="muted-apps" hidden>
+        <span class="muted-label">Muted:</span>
+        <span id="muted-apps-chips"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Preferences <span class="count" id="pref-count">0</span></h2>
+      <ul id="pref-list"></ul>
+    </section>
+    <section>
+      <h2>Facts <span class="count" id="fact-count">0</span></h2>
+      <ul id="fact-list"></ul>
+    </section>
+    <section>
+      <h2>Episodes <span class="count" id="ep-count">0</span></h2>
+      <ul id="ep-list"></ul>
+    </section>
+
+    <!-- ONP v0.5.5/.6 — system info footer with live health badge -->
+    <footer class="system-info" id="system-info">
+      <span>Open Notebook Plus 0.5.6</span>
+      <span class="dot">·</span>
+      <span id="health-status">Checking services…</span>
+    </footer>
+  </main>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

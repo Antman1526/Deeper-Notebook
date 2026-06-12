@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, Union, cast
 
 from loguru import logger
@@ -36,7 +36,55 @@ class ObjectModel(BaseModel):
     updated: Optional[datetime] = None
 
     @classmethod
-    async def get_all(cls: Type[T], order_by=None) -> List[T]:
+    async def get_all(
+        cls: type[T],
+        order_by=None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[T]:
+        """Fetch all rows of this model's table.
+
+        v0.7.159 — Optional `limit` and `offset` (SurrealQL `LIMIT … START …`)
+        let callers paginate. Previously this returned the entire table
+        unconditionally; `GET /notes` without a notebook filter, for example,
+        loaded every note (with content) into memory and serialized it to
+        JSON on a single request — multi-MB responses with hundreds of
+        notes, blocking the API for seconds. New callers should pass
+        `limit=` from the router; older callers that pass nothing keep
+        the previous unbounded semantics for backward compatibility.
+
+        Args:
+            order_by: optional `"field"`, `"field direction"`, or
+                comma-separated multi-clause string. Validated against
+                `[a-z_][a-z0-9_]*` field names and `{asc, desc}` directions.
+            limit: optional positive int for SurrealQL `LIMIT`.
+            offset: optional non-negative int for SurrealQL `START`.
+
+        Raises:
+            InvalidInputError: if `limit` or `offset` are not valid ints
+                in the allowed range. Raised BEFORE the database call so
+                the FastAPI exception handler maps it to HTTP 400 instead
+                of the generic 500 the outer `except` would produce.
+        """
+        # v0.7.159 — Validate pagination args before entering the try
+        # block so the InvalidInputError propagates cleanly to the
+        # FastAPI exception handler (mapped to HTTP 400). If it were
+        # raised inside the try, the catch-all below would re-wrap it
+        # as DatabaseOperationError → HTTP 500 — wrong status for what
+        # is plainly a client-side input error.
+        # `bool` is a subclass of int in Python; reject it explicitly so
+        # `limit=True` doesn't silently become `LIMIT 1`.
+        if limit is not None:
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+                raise InvalidInputError(
+                    f"limit must be a positive int, got {limit!r}"
+                )
+        if offset is not None:
+            if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                raise InvalidInputError(
+                    f"offset must be a non-negative int, got {offset!r}"
+                )
+
         try:
             # If called from a specific subclass, use its table_name
             if cls.table_name:
@@ -85,6 +133,17 @@ class ObjectModel(BaseModel):
             else:
                 query = f"SELECT * FROM {table_name}"
 
+            # v0.7.159 — Append LIMIT … START … only when the caller asked.
+            # Inputs were already validated at the top of the method (must
+            # be positive int / non-negative int respectively), so we can
+            # interpolate without re-checking. SurrealQL is more permissive
+            # than SQL about literals; the up-front type+range check is the
+            # injection guard.
+            if limit is not None:
+                query = f"{query} LIMIT {limit}"
+            if offset is not None:
+                query = f"{query} START {offset}"
+
             result = await repo_query(query)
             objects = []
             for obj in result:
@@ -100,7 +159,7 @@ class ObjectModel(BaseModel):
             raise DatabaseOperationError(e)
 
     @classmethod
-    async def get(cls: Type[T], id: str) -> T:
+    async def get(cls: type[T], id: str) -> T:
         if not id:
             raise InvalidInputError("ID cannot be empty")
         try:
@@ -109,13 +168,13 @@ class ObjectModel(BaseModel):
 
             # If we're calling from a specific subclass and IDs match, use that class
             if cls.table_name and cls.table_name == table_name:
-                target_class: Type[T] = cls
+                target_class: type[T] = cls
             else:
                 # Otherwise, find the appropriate subclass based on table_name
                 found_class = cls._get_class_by_table_name(table_name)
                 if not found_class:
                     raise InvalidInputError(f"No class found for table {table_name}")
-                target_class = cast(Type[T], found_class)
+                target_class = cast(type[T], found_class)
 
             result = await repo_query("SELECT * FROM $id", {"id": ensure_record_id(id)})
             if result:
@@ -128,11 +187,11 @@ class ObjectModel(BaseModel):
             raise NotFoundError(f"Object with id {id} not found - {str(e)}")
 
     @classmethod
-    def _get_class_by_table_name(cls, table_name: str) -> Optional[Type["ObjectModel"]]:
+    def _get_class_by_table_name(cls, table_name: str) -> Optional[type["ObjectModel"]]:
         """Find the appropriate subclass based on table_name."""
 
-        def get_all_subclasses(c: Type["ObjectModel"]) -> List[Type["ObjectModel"]]:
-            all_subclasses: List[Type["ObjectModel"]] = []
+        def get_all_subclasses(c: type["ObjectModel"]) -> list[type["ObjectModel"]]:
+            all_subclasses: list[type["ObjectModel"]] = []
             for subclass in c.__subclasses__():
                 all_subclasses.append(subclass)
                 all_subclasses.extend(get_all_subclasses(subclass))
@@ -154,15 +213,29 @@ class ObjectModel(BaseModel):
         try:
             self.model_validate(self.model_dump(), strict=True)
             data = self._prepare_save_data()
-            data["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # v0.7.187 — was `datetime.now().strftime("%Y-%m-%d %H:%M:%S")`,
+            # which produces a naive local-time stamp (no TZ marker). Cross-
+            # machine sync between the primary install and the 2-3 test
+            # users would produce off-by-N-hour ordering, and DST
+            # transitions silently broke "latest first" sort. ISO 8601
+            # with explicit UTC tzinfo is what SurrealDB expects natively
+            # and what the v0.7.181 iso() helper round-trips cleanly.
+            # Backend audit finding #6.
+            data["updated"] = datetime.now(timezone.utc).isoformat()
 
-            repo_result: Union[List[Dict[str, Any]], Dict[str, Any]]
+            repo_result: list[dict[str, Any]] | dict[str, Any]
             if self.id is None:
-                data["created"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                data["created"] = datetime.now(timezone.utc).isoformat()
                 repo_result = await repo_create(self.__class__.table_name, data)
             else:
+                # v0.7.187 — was `.strftime("%Y-%m-%d %H:%M:%S")` (naive
+                # local-time, lossy). On update, we round-trip `created`
+                # via aware-UTC isoformat to preserve TZ. If `created`
+                # is somehow already a string (older cache, manual
+                # serialisation), leave it alone — the v0.7.181 iso()
+                # helper passes strings through unchanged on read.
                 data["created"] = (
-                    self.created.strftime("%Y-%m-%d %H:%M:%S")
+                    self.created.isoformat()
                     if isinstance(self.created, datetime)
                     else self.created
                 )
@@ -172,7 +245,7 @@ class ObjectModel(BaseModel):
                 )
             # Update the current instance with the result
             # repo_result is a list of dictionaries
-            result_list: List[Dict[str, Any]] = (
+            result_list: list[dict[str, Any]] = (
                 repo_result if isinstance(repo_result, list) else [repo_result]
             )
             for key, value in result_list[0].items():
@@ -192,7 +265,7 @@ class ObjectModel(BaseModel):
             logger.error(f"Error saving record: {e}")
             raise DatabaseOperationError(e)
 
-    def _prepare_save_data(self) -> Dict[str, Any]:
+    def _prepare_save_data(self) -> dict[str, Any]:
         data = self.model_dump()
         return {
             key: value
@@ -215,7 +288,7 @@ class ObjectModel(BaseModel):
             )
 
     async def relate(
-        self, relationship: str, target_id: str, data: Optional[Dict] = {}
+        self, relationship: str, target_id: str, data: Optional[dict] = {}
     ) -> Any:
         if not relationship or not target_id or not self.id:
             raise InvalidInputError("Relationship and target ID must be provided")
@@ -235,6 +308,19 @@ class ObjectModel(BaseModel):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         return value
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def _coerce_id_to_str(cls, value):
+        """v0.8.66 (audit D-6) — coerce a RecordID (or any non-str id) to a
+        string for EVERY ObjectModel subclass, so a DB-sourced id round-trips
+        uniformly into the `id: Optional[str]` contract. Previously only Source
+        defended this; the other 7 models relied on the caller having run
+        `parse_record_ids` first — a latent foot-gun that raised a Pydantic
+        validation error the moment a raw RecordID reached a model constructor."""
+        if value is None or value == "":
+            return None
+        return str(value)
+
 
 class RecordModel(BaseModel):
     model_config = ConfigDict(
@@ -249,7 +335,7 @@ class RecordModel(BaseModel):
     auto_save: ClassVar[bool] = (
         False  # Default to False, can be overridden in subclasses
     )
-    _instances: ClassVar[Dict[str, "RecordModel"]] = {}  # Store instances by record_id
+    _instances: ClassVar[dict[str, "RecordModel"]] = {}  # Store instances by record_id
 
     def __new__(cls, **kwargs):
         # If an instance already exists for this record_id, return it

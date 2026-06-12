@@ -1,0 +1,2 @@
+-- v0.8.43 rollback — remove disabled_mcp_servers field.
+REMOVE FIELD IF EXISTS disabled_mcp_servers ON chat_session;

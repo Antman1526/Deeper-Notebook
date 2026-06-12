@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -49,13 +50,41 @@ export const useThemeStore = create<ThemeState>()(
 )
 
 // Hook for components to use theme
+//
+// v0.7.59 — compute effectiveTheme client-side only.
+//
+// The previous version called `getEffectiveTheme()` during render. On
+// the server `typeof window === 'undefined'` so it returned 'light';
+// on the client, after Zustand's persist middleware rehydrated, it
+// could return 'dark' from localStorage. Any component that used
+// `isDark` for class names hydration-mismatched on the first paint,
+// flickering between the SSR default and the persisted choice.
+//
+// We now seed effectiveTheme as 'light' (matches SSR) and update it
+// inside useEffect — that effect only runs client-side, AFTER React
+// has committed the first render, so the SSR ↔ first-render output
+// is identical. Subsequent renders pick up the real value.
+//
+// We also listen for the system-theme media query so `theme === 'system'`
+// follows the OS dynamically without requiring a manual setTheme().
 export function useTheme() {
-  const { theme, setTheme, getEffectiveTheme } = useThemeStore()
-  
+  const { theme, setTheme, getEffectiveTheme, getSystemTheme } = useThemeStore()
+  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light')
+
+  useEffect(() => {
+    setEffectiveTheme(getEffectiveTheme())
+    if (theme === 'system' && typeof window !== 'undefined') {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)')
+      const onChange = () => setEffectiveTheme(getSystemTheme())
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    }
+  }, [theme, getEffectiveTheme, getSystemTheme])
+
   return {
     theme,
     setTheme,
-    effectiveTheme: getEffectiveTheme(),
-    isDark: getEffectiveTheme() === 'dark'
+    effectiveTheme,
+    isDark: effectiveTheme === 'dark',
   }
 }

@@ -1,0 +1,2 @@
+-- v0.8.1 Item 5 rollback — remove priority field from mcp_server.
+REMOVE FIELD IF EXISTS priority ON mcp_server;

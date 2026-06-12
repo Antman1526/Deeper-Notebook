@@ -5,15 +5,19 @@ import { useMemo, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
 import { Button } from '@/components/ui/button'
-import { Plus, RefreshCw } from 'lucide-react'
+import { Download, Plus, RefreshCw } from 'lucide-react'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
+import { ImportNotebookDialog } from './components/ImportNotebookDialog'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function NotebooksPage() {
   const { t } = useTranslation()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  // v0.7.119 — Import dialog opens from the page header next to the
+  // "New Notebook" button.
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const { data: notebooks, isLoading, refetch } = useNotebooks(false)
   const { data: archivedNotebooks } = useNotebooks(true)
@@ -53,7 +57,15 @@ export default function NotebooksPage() {
         <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">{t('notebooks.title')}</h1>
+            {/* v0.7.164 — H1 hierarchy sweep. Page titles across the
+                dashboard previously shipped two competing styles:
+                `text-2xl font-bold` (notebooks/transformations/studio/
+                search) vs `text-3xl font-semibold tracking-tight`
+                (settings/podcasts/advanced/setup-wizard added in
+                v0.7.153). Unifying on the lighter v0.7.153 variant
+                — slightly larger, less heavy — for a cleaner read
+                that competes better with NotebookLM's typography. */}
+            <h1 className="text-3xl font-semibold tracking-tight">{t('notebooks.title')}</h1>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -69,6 +81,10 @@ export default function NotebooksPage() {
               aria-label={t('common.accessibility.searchNotebooks') || "Search notebooks"}
               className="w-full sm:w-64"
             />
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              {t('notebooks.import.button')}
+            </Button>
             <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               {t('notebooks.newNotebook')}
@@ -104,6 +120,10 @@ export default function NotebooksPage() {
       <CreateNotebookDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+      />
+      <ImportNotebookDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
       />
     </AppShell>
   )

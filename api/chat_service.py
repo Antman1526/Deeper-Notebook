@@ -21,10 +21,20 @@ class ChatService:
         if password:
             self.headers["Authorization"] = f"Bearer {password}"
 
-    async def get_sessions(self, notebook_id: str) -> List[Dict[str, Any]]:
+    # v0.7.158 — Default per-client httpx timeout. Previously each
+    # AsyncClient() was instantiated without any timeout argument, which
+    # httpx interprets as "no timeout at all" — a hung downstream
+    # SurrealDB / LangGraph / repo_query path would hold the calling
+    # request slot indefinitely (only 4 slots in the default pool).
+    # `execute_chat` already sets its own 10-minute read budget for
+    # local LLMs (Ollama, llama.cpp); these defaults apply to the
+    # CRUD endpoints that should NEVER take more than a few seconds.
+    _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+
+    async def get_sessions(self, notebook_id: str) -> list[dict[str, Any]]:
         """Get all chat sessions for a notebook"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.get(
                     f"{self.base_url}/api/chat/sessions",
                     params={"notebook_id": notebook_id},
@@ -41,16 +51,16 @@ class ChatService:
         notebook_id: str,
         title: Optional[str] = None,
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new chat session"""
         try:
-            data: Dict[str, Any] = {"notebook_id": notebook_id}
+            data: dict[str, Any] = {"notebook_id": notebook_id}
             if title is not None:
                 data["title"] = title
             if model_override is not None:
                 data["model_override"] = model_override
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.post(
                     f"{self.base_url}/api/chat/sessions",
                     json=data,
@@ -62,10 +72,10 @@ class ChatService:
             logger.error(f"Error creating chat session: {str(e)}")
             raise
 
-    async def get_session(self, session_id: str) -> Dict[str, Any]:
+    async def get_session(self, session_id: str) -> dict[str, Any]:
         """Get a specific session with messages"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.get(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     headers=self.headers,
@@ -81,10 +91,10 @@ class ChatService:
         session_id: str,
         title: Optional[str] = None,
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update session properties"""
         try:
-            data: Dict[str, Any] = {}
+            data: dict[str, Any] = {}
             if title is not None:
                 data["title"] = title
             if model_override is not None:
@@ -95,7 +105,7 @@ class ChatService:
                     "At least one field must be provided to update a session"
                 )
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.put(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     json=data,
@@ -107,10 +117,10 @@ class ChatService:
             logger.error(f"Error updating session: {str(e)}")
             raise
 
-    async def delete_session(self, session_id: str) -> Dict[str, Any]:
+    async def delete_session(self, session_id: str) -> dict[str, Any]:
         """Delete a chat session"""
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.delete(
                     f"{self.base_url}/api/chat/sessions/{session_id}",
                     headers=self.headers,
@@ -125,9 +135,9 @@ class ChatService:
         self,
         session_id: str,
         message: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         model_override: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a chat request"""
         try:
             data = {"session_id": session_id, "message": message, "context": context}
@@ -147,13 +157,13 @@ class ChatService:
             raise
 
     async def build_context(
-        self, notebook_id: str, context_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, notebook_id: str, context_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Build context for a notebook"""
         try:
             data = {"notebook_id": notebook_id, "context_config": context_config}
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._DEFAULT_TIMEOUT) as client:
                 response = await client.post(
                     f"{self.base_url}/api/chat/context", json=data, headers=self.headers
                 )

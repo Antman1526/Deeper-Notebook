@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Dict, List, Literal, Optional
 
@@ -7,10 +8,26 @@ from surreal_commands import CommandInput, CommandOutput, command, submit_comman
 
 from open_notebook.ai.models import model_manager
 from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
-from open_notebook.exceptions import ConfigurationError
 from open_notebook.domain.notebook import Note, Source, SourceInsight
+from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
+
+
+# v0.7.178 — Sanity cap on per-source chunk count. With default 1500-char
+# chunks this represents ~15MB of text in one source — generous for any
+# legitimate document but stops a pathological input (say a 500MB plain-
+# text dump uploaded by accident) from OOMing the worker. The simultaneous
+# in-memory footprint per chunk is roughly:
+#   - the chunk text itself           (~1500 bytes)
+#   - the 768-dim float32 embedding   (~3072 bytes)
+#   - the source_embedding record overhead (~500 bytes)
+# i.e. ~5KB per chunk × 10000 = ~50MB peak before the bulk insert flushes.
+# At 50000 chunks (the prior implicit ceiling, set only by str length)
+# this same path peaks around 250MB and reliably OOMs a desktop worker.
+# Raised as ValueError so the command does NOT retry — pathological input
+# would just blow up the next attempt the same way.
+MAX_CHUNKS_PER_SOURCE = 10000
 
 
 def full_model_dump(model):
@@ -377,6 +394,24 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         if total_chunks == 0:
             raise ValueError("No chunks created after splitting text")
 
+        # v0.7.178 — Fail fast on pathological inputs before allocating
+        # the embeddings + records lists. Without this guard, a 500MB
+        # text upload chunks to ~333k entries; each one balloons into
+        # a chunk + 768-dim float32 + record dict held simultaneously
+        # in memory, which OOMs the worker. ValueError is the right
+        # exception class because surreal_commands' retry config has
+        # `stop_on: [ValueError]` — pathological inputs should not
+        # spin in a retry loop blowing up the worker repeatedly.
+        if total_chunks > MAX_CHUNKS_PER_SOURCE:
+            raise ValueError(
+                f"Source produces {total_chunks} chunks, which exceeds "
+                f"the per-source cap of {MAX_CHUNKS_PER_SOURCE}. The "
+                f"source is likely too large to embed in one pass — "
+                f"split the document or raise MAX_CHUNKS_PER_SOURCE in "
+                f"commands/embedding_commands.py if you've vetted the "
+                f"memory headroom."
+            )
+
         # 5. Generate embeddings for all chunks in batches
         cmd_id = get_command_id(input_data)
         logger.debug(f"Generating embeddings for {total_chunks} chunks")
@@ -503,8 +538,14 @@ async def create_insight_command(
         if not insight_id:
             raise ValueError("Failed to create insight - no ID in result")
 
-        # 2. Submit embedding command (fire-and-forget)
-        submit_command(
+        # 2. Submit embedding command (fire-and-forget).
+        # v0.7.77 — to_thread the sync submit_command, same root cause as
+        # v0.7.55/57/62/68/70/76. This handler runs in the surreal_commands
+        # worker process which DOES use an asyncio loop; blocking it
+        # synchronously here for every insight create slows other queued
+        # commands waiting on the same loop.
+        await asyncio.to_thread(
+            submit_command,
             "open_notebook",
             "embed_insight",
             {"insight_id": insight_id},
@@ -551,14 +592,14 @@ async def collect_items_for_rebuild(
     include_sources: bool,
     include_notes: bool,
     include_insights: bool,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """
     Collect items to rebuild based on mode and include flags.
 
     Returns:
         Dict with keys: 'sources', 'notes', 'insights' containing lists of item IDs
     """
-    items: Dict[str, List[str]] = {"sources": [], "notes": [], "insights": []}
+    items: dict[str, list[str]] = {"sources": [], "notes": [], "insights": []}
 
     if include_sources:
         if mode == "existing":
@@ -688,10 +729,14 @@ async def rebuild_embeddings_command(
         failed_submissions = 0
 
         # Submit embed_source commands for sources
+        # v0.7.77 — to_thread each submit so the worker's event loop
+        # stays responsive across hundreds of sequential submits during
+        # a full rebuild (each submit opens a fresh sync SurrealDB WS).
         logger.info(f"\nSubmitting {len(items['sources'])} source embedding jobs...")
         for idx, source_id in enumerate(items["sources"], 1):
             try:
-                submit_command(
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_source",
                     {"source_id": source_id},
@@ -711,7 +756,9 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['notes'])} note embedding jobs...")
         for idx, note_id in enumerate(items["notes"], 1):
             try:
-                submit_command(
+                # v0.7.77 — to_thread (see source-loop comment above).
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_note",
                     {"note_id": note_id},
@@ -731,7 +778,9 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['insights'])} insight embedding jobs...")
         for idx, insight_id in enumerate(items["insights"], 1):
             try:
-                submit_command(
+                # v0.7.77 — to_thread (see source-loop comment above).
+                await asyncio.to_thread(
+                    submit_command,
                     "open_notebook",
                     "embed_insight",
                     {"insight_id": insight_id},

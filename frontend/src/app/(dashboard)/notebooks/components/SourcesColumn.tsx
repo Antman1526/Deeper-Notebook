@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, type UIEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,16 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
 import { SourceCard } from '@/components/sources/SourceCard'
+import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
+
+// v0.7.45 — virtualize the sources list only when it gets large
+// enough to feel the cost of full rendering. Below the threshold the
+// plain map keeps SSR-friendly behavior + zero virtualization overhead.
+const VIRTUALIZE_THRESHOLD = 50
+// Each SourceCard is variable-height (depends on title length, status
+// badges, etc.). 96px is the median in practice — close-to-real means
+// fewer scroll jumps as the virtualizer measures real heights.
+const SOURCE_CARD_ESTIMATE_PX = 96
 import { useDeleteSource, useRetrySource, useRemoveSourceFromNotebook } from '@/lib/hooks/use-sources'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
@@ -23,6 +33,9 @@ import { ContextMode } from '../[id]/page'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.119 — Bulk-vectorize button surfaces the per-notebook
+// vectorize_sources endpoint next to the existing "+" trigger.
+import { BulkVectorizeButton } from './BulkVectorizeButton'
 
 interface SourcesColumnProps {
   sources?: SourceListResponse[]
@@ -70,30 +83,28 @@ export function SourcesColumn({
     [toggleSources, t('navigation.sources')]
   )
 
-  // Scroll container ref for infinite scroll
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // Handle scroll for infinite loading
-  const handleScroll = useCallback(() => {
-    const container = scrollContainerRef.current
-    if (!container || !hasNextPage || isFetchingNextPage || !fetchNextPage) return
-
-    const { scrollTop, scrollHeight, clientHeight } = container
-    // Load more when user scrolls within 200px of the bottom
+  // v0.7.51 — read scroll metrics from `event.currentTarget`, NOT from a
+  // pinned ref. We render two different scroll surfaces depending on list
+  // size:
+  //   - small list: CardContent itself scrolls
+  //   - virtualized: the VirtualizedListAuto's inner `<div overflow-auto>`
+  //     scrolls; CardContent never sees the wheel events because the inner
+  //     element consumes them first.
+  // The old `scrollContainerRef` pinned to CardContent was correct for the
+  // small-list branch but stuck at scrollTop=0 forever in the virtualized
+  // branch — infinite scroll silently died past `VIRTUALIZE_THRESHOLD`.
+  // Using `e.currentTarget` lets the same handler work on whichever
+  // element fired the scroll event.
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage || !fetchNextPage) return
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    // Load more when user scrolls within 200px of the bottom.
     if (scrollHeight - scrollTop - clientHeight < 200) {
       fetchNextPage()
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  // Attach scroll listener
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
 
-    container.addEventListener('scroll', handleScroll)
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [handleScroll])
-  
   const handleDeleteClick = (sourceId: string) => {
     setSourceToDelete(sourceId)
     setDeleteDialogOpen(true)
@@ -158,6 +169,7 @@ export function SourcesColumn({
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
               <div className="flex items-center gap-2">
+                <BulkVectorizeButton notebookId={notebookId} />
                 <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm">
@@ -182,7 +194,16 @@ export function SourcesColumn({
             </div>
           </CardHeader>
 
-          <CardContent ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
+          {/* v0.7.45 — body splits into three render paths:
+              1. Loading: spinner (unchanged)
+              2. Empty: EmptyState (unchanged)
+              3a. Small list (<50 sources): standard `.map()` rendering
+                  (SSR-friendly, zero virtualization overhead)
+              3b. Large list (>=50): VirtualizedListAuto — only viewport
+                  rows + overscan are kept in the DOM. Infinite-scroll
+                  hook fires via the virtualizer's onScroll instead of
+                  the old addEventListener pattern. */}
+          <CardContent onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
@@ -192,6 +213,37 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
+              />
+            ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
+              <VirtualizedListAuto
+                items={sources}
+                estimateSize={SOURCE_CARD_ESTIMATE_PX}
+                className="h-full"
+                getItemKey={(source) => source.id}
+                onScroll={handleScroll}
+                renderItem={(source) => (
+                  <div className="pb-3">
+                    <SourceCard
+                      source={source}
+                      onClick={handleSourceClick}
+                      onDelete={handleDeleteClick}
+                      onRetry={handleRetry}
+                      onRemoveFromNotebook={handleRemoveFromNotebook}
+                      onRefresh={onRefresh}
+                      showRemoveFromNotebook={true}
+                      contextMode={contextSelections?.[source.id]}
+                      onContextModeChange={onContextModeChange
+                        ? (mode) => onContextModeChange(source.id, mode)
+                        : undefined
+                      }
+                    />
+                  </div>
+                )}
+                footer={isFetchingNextPage ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : undefined}
               />
             ) : (
               <div className="space-y-3">

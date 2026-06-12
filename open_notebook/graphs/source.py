@@ -1,5 +1,5 @@
 import operator
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from content_core import extract_content
 from content_core.common import ProcessSourceState
@@ -18,9 +18,9 @@ from open_notebook.graphs.transformation import graph as transform_graph
 
 class SourceState(TypedDict):
     content_state: ProcessSourceState
-    apply_transformations: List[Transformation]
+    apply_transformations: list[Transformation]
     source_id: str
-    notebook_ids: List[str]
+    notebook_ids: list[str]
     source: Source
     transformation: Annotated[list, operator.add]
     embed: bool
@@ -32,24 +32,39 @@ class TransformationState(TypedDict):
 
 
 async def content_process(state: SourceState) -> dict:
-    content_settings = ContentSettings(
-        default_content_processing_engine_doc="auto",
-        default_content_processing_engine_url="auto",
-        default_embedding_option="ask",
-        auto_delete_files="yes",
-        youtube_preferred_languages=[
-            "en",
-            "pt",
-            "es",
-            "de",
-            "nl",
-            "en-GB",
-            "fr",
-            "hi",
-            "ja",
-        ],
-    )
-    content_state: Dict[str, Any] = state["content_state"]  # type: ignore[assignment]
+    # v0.7.209 — HIGH: previously this node constructed a FRESH
+    # `ContentSettings(...)` with hardcoded literals every time,
+    # silently overriding the user's persisted preferences. The
+    # Settings page in the UI writes to the singleton record
+    # `open_notebook:content_settings` (see
+    # `api/routers/settings.py`); toggling
+    # `default_content_processing_engine_doc` / `_url`,
+    # `auto_delete_files`, or `youtube_preferred_languages` then
+    # had ZERO effect on the actual ingest pipeline because this
+    # node ignored the DB record. Now load the singleton via the
+    # RecordModel base class.
+    #
+    # Defensive: if the DB load fails for any reason (cold cache,
+    # transient pool error, fresh install with no record yet),
+    # fall back to the same hardcoded defaults so a startup hiccup
+    # doesn't block source ingestion.
+    try:
+        content_settings = await ContentSettings.get_instance()
+    except Exception as exc:
+        logger.warning(
+            "content_process: failed to load ContentSettings "
+            "singleton (%s); using safe defaults", exc,
+        )
+        content_settings = ContentSettings(
+            default_content_processing_engine_doc="auto",
+            default_content_processing_engine_url="auto",
+            default_embedding_option="ask",
+            auto_delete_files="yes",
+            youtube_preferred_languages=[
+                "en", "pt", "es", "de", "nl", "en-GB", "fr", "hi", "ja",
+            ],
+        )
+    content_state: dict[str, Any] = state["content_state"]  # type: ignore[assignment]
 
     content_state["url_engine"] = (
         content_settings.default_content_processing_engine_url or "auto"
@@ -75,7 +90,25 @@ async def content_process(state: SourceState) -> dict:
         logger.warning(f"Failed to retrieve speech-to-text model configuration: {e}")
         # Continue without custom audio model (content-core will use its default)
 
-    processed_state = await extract_content(content_state)
+    processed_state = None
+    url = content_state.get("url")
+    if content_state.get("url_engine") == "crawl4ai" and url:
+        # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
+        from open_notebook.utils.crawler import extract_url_with_crawl4ai
+        from content_core.common.state import ProcessSourceOutput
+
+        content = await extract_url_with_crawl4ai(url)
+        if content:
+            processed_state = ProcessSourceOutput(
+                title=content_state.get("title") or "Imported Web Source (crawl4ai)",
+                content=content,
+                url=url,
+                source_type="url",
+                identified_type="text",
+            )
+
+    if processed_state is None:
+        processed_state = await extract_content(content_state)
 
     if not processed_state.content or not processed_state.content.strip():
         url = processed_state.url or ""
@@ -127,7 +160,7 @@ async def save_source(state: SourceState) -> dict:
     return {"source": source}
 
 
-def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[Send]:
+def trigger_transformations(state: SourceState, config: RunnableConfig) -> list[Send]:
     if len(state["apply_transformations"]) == 0:
         return []
 
@@ -146,22 +179,42 @@ def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[
     ]
 
 
-async def transform_content(state: TransformationState) -> Optional[dict]:
+async def transform_content(state: TransformationState) -> dict:
     source = state["source"]
     content = source.full_text
     if not content:
-        return None
+        # v0.7.61 — must return a state-shaped dict, not None. SourceState
+        # declares `transformation: Annotated[list, operator.add]` so
+        # LangGraph applies `current + returned` at merge time. With
+        # None, that became `[] + None` → TypeError, which killed the
+        # whole graph run mid-fan-out and left the source half-saved
+        # (asset + full_text persisted, transformations never applied,
+        # only a generic 500 surfaced to the user). Returning an empty
+        # transformations list cleanly no-ops this branch.
+        return {"transformation": []}
     transformation: Transformation = state["transformation"]
 
     logger.debug(f"Applying transformation {transformation.name}")
     result = await transform_graph.ainvoke(
         dict(input_text=content, transformation=transformation)  # type: ignore[arg-type]
     )
-    await source.add_insight(transformation.title, result["output"])
+    # v0.7.165 — LangGraph state-shape dual-path guard.
+    # `transform_graph` happens to return a TypedDict today, so
+    # `result["output"]` works — but CLAUDE.md's standing audit rule
+    # flags subscript / `.get()` against ainvoke output as a state-
+    # shape blind spot (the same pattern that produced the v0.7.52,
+    # 55, 56, 75, 81, 95 series of fixes). Normalize once so a future
+    # LangGraph release that returns a Pydantic state can't crash
+    # source ingestion with KeyError / AttributeError mid-transform.
+    output_text = (
+        result["output"] if isinstance(result, dict)
+        else (getattr(result, "output", "") or "")
+    )
+    await source.add_insight(transformation.title, output_text)
     return {
         "transformation": [
             {
-                "output": result["output"],
+                "output": output_text,
                 "transformation_name": transformation.name,
             }
         ]

@@ -27,22 +27,32 @@ export default function TransformationsPage() {
     <AppShell>
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold">{t('transformations.title')}</h1>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="h-4 w-4" />
+          {/* v0.7.164 — Header reorganized. The previous JSX opened
+              a `flex items-center justify-between` shell that had
+              only a left-half (the right slot was empty, so
+              justify-between did no work) and the description sat
+              in a separate `max-w-5xl` block below with no top
+              margin — read as orphaned. Replaced with a single
+              `<header>` stack: title + refresh on top row,
+              description below with `space-y-2` rhythm. H1
+              promoted from `text-2xl font-bold` to the v0.7.153
+              standard `text-3xl font-semibold tracking-tight` so
+              all dashboard page titles weigh the same. */}
+          <header className="flex items-start justify-between gap-4">
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {t('transformations.title')}
+              </h1>
+              <p className="text-muted-foreground max-w-3xl">
+                {t('transformations.desc')}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          </div>
-        </div>
+          </header>
 
-        <div className="max-w-5xl">
-          <p className="text-muted-foreground">
-            {t('transformations.desc')}
-          </p>
-        </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transformations.workspace')}</p>
             <TabsList aria-label={t('common.accessibility.transformationViews')} className="w-full max-w-xl">
