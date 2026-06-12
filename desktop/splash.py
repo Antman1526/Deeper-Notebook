@@ -124,7 +124,12 @@ _SPLASH_TEMPLATE = """<!DOCTYPE html>
 <script>
 (function () {
   "use strict";
-  var TARGET = __FRONTEND_URL__;
+  // v0.8.68 — presentation only. The python handoff controller in
+  // desktop/window.py decides when the frontend is genuinely ready and
+  // drives the navigation; an in-page no-cors probe cannot see HTTP
+  // status, so Next's warm-up 404 (a 200) read as "ready" and the splash
+  // navigated onto an error page. TARGET is kept for display/debugging.
+  var TARGET = __FRONTEND_URL__;  // eslint-disable-line no-unused-vars
   var statusEl = document.getElementById("status");
   var phrases = [
     "Waking up your workspace\\u2026",
@@ -136,8 +141,6 @@ _SPLASH_TEMPLATE = """<!DOCTYPE html>
   var slowPhrase = "Taking a little longer than usual \\u2014 still on it\\u2026";
   var started = Date.now();
   var phraseIdx = 0;
-  var okStreak = 0;
-  var leaving = false;
 
   function setStatus(text) {
     statusEl.style.opacity = 0;
@@ -148,33 +151,10 @@ _SPLASH_TEMPLATE = """<!DOCTYPE html>
   }
 
   setInterval(function () {
-    if (leaving) return;
-    var slow = Date.now() - started > 90000;
-    if (slow) { setStatus(slowPhrase); return; }
+    if (Date.now() - started > 90000) { setStatus(slowPhrase); return; }
     phraseIdx = (phraseIdx + 1) % phrases.length;
     setStatus(phrases[phraseIdx]);
   }, 3200);
-
-  function go() {
-    if (leaving) return;
-    leaving = true;
-    document.body.classList.add("leaving");
-    setTimeout(function () { window.location.replace(TARGET); }, 420);
-  }
-
-  function probe() {
-    // no-cors: resolves (opaque) when the server answers, rejects on a
-    // network error — exactly the "is it up" signal we need without CORS.
-    fetch(TARGET, { mode: "no-cors", cache: "no-store" }).then(function () {
-      okStreak += 1;
-      if (okStreak >= 2) { go(); return; }
-      setTimeout(probe, 250);
-    }).catch(function () {
-      okStreak = 0;
-      setTimeout(probe, 600);
-    });
-  }
-  probe();
 })();
 </script>
 </body>
