@@ -9,6 +9,31 @@ import {
 } from '@/lib/types/transformations'
 
 export const transformationsApi = {
+  // v0.8.68 — SkillOpt prompt optimization (microsoft/SkillOpt, MIT).
+  optimizePrompt: async (
+    transformationId: string,
+    payload: { source_ids: string[]; criteria: string; epochs?: number },
+  ) => {
+    const response = await apiClient.post<{ job_id: string; message: string }>(
+      `/transformations/${transformationId}/optimize`,
+      payload,
+    )
+    return response.data
+  },
+
+  getOptimizeJob: async (jobId: string) => {
+    const response = await apiClient.get<{
+      status?: string
+      result?: {
+        original_prompt?: string
+        optimized_prompt?: string
+        changed?: boolean
+      } | null
+      error_message?: string | null
+    }>(`/commands/jobs/${jobId}`)
+    return response.data
+  },
+
   list: async () => {
     const response = await apiClient.get<Transformation[]>('/transformations')
     return response.data
