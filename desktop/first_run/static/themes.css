@@ -1,0 +1,121 @@
+/* themes.css — 9 named themes as CSS variables. */
+
+/* Light Blue (default) */
+[data-theme="light-blue"] {
+  --bg: #FFFFFF;
+  --surface: #F4F8FE;
+  --text: #1A2B3C;
+  --muted: #5A7088;
+  --border: #D8E5F5;
+  --primary: #2D7FF9;
+  --accent: #5AB1FF;
+  --on-primary: #FFFFFF;
+}
+
+/* System — defaults to light-blue, overridden via prefers-color-scheme below */
+[data-theme="system"] {
+  --bg: #FFFFFF;
+  --surface: #F4F8FE;
+  --text: #1A2B3C;
+  --muted: #5A7088;
+  --border: #D8E5F5;
+  --primary: #2D7FF9;
+  --accent: #5AB1FF;
+  --on-primary: #FFFFFF;
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --bg: #0F1419;
+    --surface: #1A222C;
+    --text: #E5EBF2;
+    --muted: #8A99AB;
+    --border: #2A3540;
+    --primary: #5AB1FF;
+    --accent: #2D7FF9;
+    --on-primary: #0F1419;
+  }
+}
+
+/* Solarized Light */
+[data-theme="solarized-light"] {
+  --bg: #FDF6E3;
+  --surface: #EEE8D5;
+  --text: #586E75;
+  --muted: #93A1A1;
+  --border: #D8D2BF;
+  --primary: #268BD2;
+  --accent: #2AA198;
+  --on-primary: #FDF6E3;
+}
+
+/* GitHub Light */
+[data-theme="github-light"] {
+  --bg: #FFFFFF;
+  --surface: #F6F8FA;
+  --text: #24292F;
+  --muted: #57606A;
+  --border: #D0D7DE;
+  --primary: #0969DA;
+  --accent: #1F883D;
+  --on-primary: #FFFFFF;
+}
+
+/* Paper (warm cream) */
+[data-theme="paper"] {
+  --bg: #FBF8F1;
+  --surface: #F1ECDF;
+  --text: #2A2520;
+  --muted: #6E6657;
+  --border: #DDD3BF;
+  --primary: #8B5A2B;
+  --accent: #C0853D;
+  --on-primary: #FBF8F1;
+}
+
+/* Dark (default dark — light blue accent) */
+[data-theme="dark"] {
+  --bg: #0F1419;
+  --surface: #1A222C;
+  --text: #E5EBF2;
+  --muted: #8A99AB;
+  --border: #2A3540;
+  --primary: #5AB1FF;
+  --accent: #2D7FF9;
+  --on-primary: #0F1419;
+}
+
+/* Solarized Dark */
+[data-theme="solarized-dark"] {
+  --bg: #002B36;
+  --surface: #073642;
+  --text: #93A1A1;
+  --muted: #586E75;
+  --border: #14424F;
+  --primary: #268BD2;
+  --accent: #2AA198;
+  --on-primary: #FDF6E3;
+}
+
+/* Dracula */
+[data-theme="dracula"] {
+  --bg: #282A36;
+  --surface: #343746;
+  --text: #F8F8F2;
+  --muted: #6272A4;
+  --border: #44475A;
+  --primary: #BD93F9;
+  --accent: #FF79C6;
+  --on-primary: #282A36;
+}
+
+/* Nord */
+[data-theme="nord"] {
+  --bg: #2E3440;
+  --surface: #3B4252;
+  --text: #ECEFF4;
+  --muted: #81A1C1;
+  --border: #4C566A;
+  --primary: #88C0D0;
+  --accent: #5E81AC;
+  --on-primary: #2E3440;
+}

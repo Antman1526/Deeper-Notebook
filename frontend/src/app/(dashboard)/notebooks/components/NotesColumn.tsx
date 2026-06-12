@@ -10,11 +10,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2 } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { NoteEditorDialog } from './NoteEditorDialog'
+import { ExportNoteDialog } from './ExportNoteDialog'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { formatDistanceToNow } from 'date-fns'
 import { ContextToggle } from '@/components/common/ContextToggle'
@@ -45,6 +46,7 @@ export function NotesColumn({
   const [editingNote, setEditingNote] = useState<NoteResponse | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
+  const [exportNote, setExportNote] = useState<NoteResponse | null>(null)
 
   const deleteNote = useDeleteNote()
 
@@ -156,7 +158,7 @@ export function NotesColumn({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
@@ -166,9 +168,18 @@ export function NotesColumn({
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
+                                setExportNote(note)
+                              }}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              {t('notes.export')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 handleDeleteClick(note.id)
                               }}
-                              className="text-red-600 focus:text-red-600"
+                              className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               {t('notebooks.deleteNote')}
@@ -218,6 +229,15 @@ export function NotesColumn({
         onConfirm={handleDeleteConfirm}
         isLoading={deleteNote.isPending}
         confirmVariant="destructive"
+      />
+
+      <ExportNoteDialog
+        open={exportNote !== null}
+        onOpenChange={(open) => {
+          if (!open) setExportNote(null)
+        }}
+        noteId={exportNote?.id ?? ''}
+        noteTitle={exportNote?.title ?? null}
       />
     </>
   )

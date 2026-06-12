@@ -1,7 +1,10 @@
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from surreal_commands import get_command_status, submit_command
+
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
 
 
 class CommandService:
@@ -11,8 +14,8 @@ class CommandService:
     async def submit_command_job(
         module_name: str,  # Actually app_name for surreal-commands
         command_name: str,
-        command_args: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        command_args: dict[str, Any],
+        context: Optional[dict[str, Any]] = None,
     ) -> str:
         """Submit a generic command job for background processing"""
         try:
@@ -24,12 +27,36 @@ class CommandService:
                 logger.error(f"Failed to import command modules: {import_err}")
                 raise ValueError("Command modules not available")
 
-            # surreal-commands expects: submit_command(app_name, command_name, args)
-            cmd_id = submit_command(
-                module_name,  # This is actually the app name (e.g., "open_notebook")
-                command_name,  # Command name (e.g., "process_text")
-                command_args,  # Input data
+            # v0.7.55 — wrap blocking submit_command (sync SurrealDB WS
+            # call) in asyncio.to_thread so it doesn't stall the event
+            # loop. Same root cause as podcast_service.py.
+            # v0.7.115 — add a wait_for around the to_thread call.
+            # The blocking submit_command is normally <500ms, but if
+            # the SurrealDB pool is saturated or the WS handshake
+            # hangs, the request would otherwise wait indefinitely.
+            # 10s default is generous for a row-insert; tunable via
+            # ONP_SUBMIT_COMMAND_TIMEOUT_SEC.
+            import os
+            _submit_timeout = float(
+                os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                or 10
             )
+            try:
+                cmd_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command,
+                        module_name,  # actually the app name
+                        command_name,
+                        command_args,
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Command submission timed out after {_submit_timeout:.0f}s. "
+                    "The SurrealDB connection pool may be saturated. "
+                    "Raise ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                ) from exc
             # Convert RecordID to string if needed
             if not cmd_id:
                 raise ValueError("Failed to get cmd_id from submit_command")
@@ -40,28 +67,53 @@ class CommandService:
             return cmd_id_str
 
         except Exception as e:
+            # v0.7.204 — re-raise as typed OpenNotebookError so the
+            # global FastAPI classifier in api/main.py emits a 500
+            # with a structured payload instead of bubbling an
+            # untyped Exception that the framework renders as
+            # "Internal Server Error" with no detail. ValueError /
+            # asyncio.TimeoutError (the explicit raises above) are
+            # already typed and pass through unchanged because they
+            # subclass Exception too — only untyped Exceptions get
+            # wrapped. Logging stays at error level so ops have the
+            # full stack.
+            from open_notebook.exceptions import OpenNotebookError
             logger.error(f"Failed to submit command job: {e}")
-            raise
+            if isinstance(e, (OpenNotebookError, ValueError, asyncio.TimeoutError)):
+                raise
+            raise OpenNotebookError(
+                "Failed to submit command job. Check the API logs "
+                "for the underlying error."
+            ) from e
 
     @staticmethod
-    async def get_command_status(job_id: str) -> Dict[str, Any]:
-        """Get status of any command job"""
+    async def get_command_status(job_id: str) -> Optional[dict[str, Any]]:
+        """Get status of any command job.
+
+        v0.7.87 — returns `None` for missing jobs instead of a synthetic
+        `{"status": "unknown"}` payload, so the HTTP layer can return a
+        real 404 instead of a 200 with a fake-OK shape. The previous
+        behavior made the frontend special-case "unknown" everywhere
+        instead of using standard error handling.
+        """
         try:
             status = await get_command_status(job_id)
+            if status is None:
+                return None
             return {
                 "job_id": job_id,
-                "status": status.status if status else "unknown",
-                "result": status.result if status else None,
-                "error_message": getattr(status, "error_message", None)
-                if status
+                "status": status.status,
+                "result": status.result,
+                "error_message": getattr(status, "error_message", None),
+                # v0.7.183 — iso() for Safari new Date() compat. Same
+                # pattern as podcast_service.py:171-176.
+                "created": iso(status.created)
+                if hasattr(status, "created") and status.created
                 else None,
-                "created": str(status.created)
-                if status and hasattr(status, "created") and status.created
+                "updated": iso(status.updated)
+                if hasattr(status, "updated") and status.updated
                 else None,
-                "updated": str(status.updated)
-                if status and hasattr(status, "updated") and status.updated
-                else None,
-                "progress": getattr(status, "progress", None) if status else None,
+                "progress": getattr(status, "progress", None),
             }
         except Exception as e:
             logger.error(f"Failed to get command status: {e}")
@@ -73,19 +125,153 @@ class CommandService:
         command_filter: Optional[str] = None,
         status_filter: Optional[str] = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
-        """List command jobs with optional filtering"""
-        # This will be implemented with proper SurrealDB queries
-        # For now, return empty list as this is foundation phase
-        return []
+    ) -> list[dict[str, Any]]:
+        """List command jobs with optional filtering.
+
+        v0.7.87 — was a stub returning []. Now reads from the
+        `command` table populated by surreal_commands (every submitted
+        job lands there with status/result/error_message/timestamps).
+        Filters are applied in SurrealQL so we never load the whole
+        table into Python.
+        """
+        from open_notebook.database.repository import repo_query
+
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
+        if module_filter:
+            clauses.append("app = $app")
+            params["app"] = module_filter
+        if command_filter:
+            clauses.append("name = $name")
+            params["name"] = command_filter
+        if status_filter:
+            clauses.append("status = $status")
+            params["status"] = status_filter
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        try:
+            rows = await repo_query(
+                f"SELECT id, app, name, status, error_message, created, updated "
+                f"FROM command{where} "
+                f"ORDER BY created DESC LIMIT $limit",
+                params,
+            )
+        except Exception as exc:
+            logger.warning(f"list_command_jobs query failed (returning []): {exc}")
+            return []
+        if not rows:
+            return []
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            out.append(
+                {
+                    "job_id": str(row.get("id", "")),
+                    "app": row.get("app"),
+                    "command": row.get("name"),
+                    "status": row.get("status"),
+                    "error_message": row.get("error_message"),
+                    # v0.7.202 — was `str(row.get("created"))` which,
+                    # depending on the surrealdb driver version,
+                    # could render the column as `surrealdb.DateTime(...)`
+                    # repr — breaks `new Date(...)` on Safari and
+                    # any client that expects an ISO 8601 string.
+                    # Use the iso() helper the rest of the codebase
+                    # standardised on in v0.7.181-183.
+                    "created": iso(row.get("created")),
+                    "updated": iso(row.get("updated")),
+                }
+            )
+        return out
 
     @staticmethod
     async def cancel_command_job(job_id: str) -> bool:
-        """Cancel a running command job"""
+        """Cancel a running command job.
+
+        v0.7.87 — was a no-op stub that returned True without doing
+        anything; the frontend trusted the response, removed the job
+        from the UI, and the underlying command kept running. Now
+        marks the surreal_commands row as `canceled` via the same
+        pattern used in `Source.delete` (v0.7.32). Only nudges jobs
+        whose current status is in {new, queued, running} — completed
+        and already-canceled jobs need no action. Returns False if
+        the job wasn't found or wasn't in a cancellable state.
+
+        Note: surreal_commands' worker poll loop is what actually halts
+        execution — setting the row to `canceled` is the signal. For
+        jobs that are mid-execution the worker may finish the current
+        operation before noticing the cancel; that's the same
+        cooperative-cancellation contract as Source.delete.
+        """
         try:
-            # Implementation depends on surreal-commands cancellation support
-            # For now, just log the attempt
-            logger.info(f"Attempting to cancel job: {job_id}")
+            from surreal_commands import get_command_status as _gcs
+
+            # v0.7.177 — `surreal_commands.core.service.get_command_service`
+            # is a private API surface. Importing it directly couples us to
+            # the upstream package's internal module layout, so an upstream
+            # refactor that renames `core.service` → `service` (or moves
+            # `get_command_service` elsewhere) would silently break all
+            # job cancellation with an ImportError caught only by the
+            # broad `except Exception` below. Wrap the private import in
+            # try/ImportError and fall back to a direct repo_query UPDATE
+            # on the `command` table — same pattern the lifespan stale-
+            # command reaper at api/main.py:272-287 uses.
+            try:
+                from surreal_commands.core.service import (
+                    get_command_service as _gcsvc,
+                )
+                _have_private_api = True
+            except ImportError:
+                _have_private_api = False
+                logger.debug(
+                    "cancel_command_job: surreal_commands.core.service "
+                    "not importable, falling back to direct UPDATE on "
+                    "the `command` table."
+                )
+
+            status = await _gcs(job_id)
+            if status is None:
+                logger.info(f"cancel_command_job: {job_id} not found")
+                return False
+            status_str = getattr(status, "status", "")
+            if isinstance(status_str, str):
+                status_str = status_str.lower()
+            if status_str not in {"new", "queued", "running"}:
+                logger.info(
+                    f"cancel_command_job: {job_id} status={status_str!r} — "
+                    "not in a cancellable state, skipping"
+                )
+                return False
+
+            cancel_msg = (
+                "Cancelled by user via DELETE /commands/jobs/{job_id}"
+            )
+            if _have_private_api:
+                svc = _gcsvc()
+                await svc.update_command_result(
+                    job_id,
+                    status="canceled",
+                    result={},
+                    error_message=cancel_msg,
+                )
+            else:
+                # Direct SurrealDB fallback. Mirrors the structure of the
+                # lifespan stale-command reaper. The `command:` prefix
+                # handling matches what surreal_commands itself stores.
+                from open_notebook.database.repository import repo_query
+
+                record_id = (
+                    job_id if job_id.startswith("command:") else f"command:{job_id}"
+                )
+                await repo_query(
+                    f"UPDATE {record_id} "
+                    "SET status = 'canceled', "
+                    "    result = {}, "
+                    "    error_message = $msg, "
+                    "    updated = time::now()",
+                    {"msg": cancel_msg},
+                )
+            logger.info(f"cancel_command_job: marked {job_id} as canceled")
             return True
         except Exception as e:
             logger.error(f"Failed to cancel command job: {e}")

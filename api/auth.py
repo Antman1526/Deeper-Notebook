@@ -1,3 +1,4 @@
+import secrets as _secrets
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -7,6 +8,33 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from open_notebook.utils.encryption import get_secret_from_env
+
+
+def _password_matches(provided: str, expected: str) -> bool:
+    """Constant-time password comparison.
+
+    v0.6.7 — previously `credentials != self.password`, which short-circuits
+    on the first mismatched byte and leaks byte-by-byte timing info to a
+    remote attacker. `secrets.compare_digest` runs in time proportional to
+    the *longer* of the two strings, regardless of where the mismatch is.
+
+    Important: `compare_digest` only accepts ASCII strings or bytes — it
+    raises TypeError on any non-ASCII codepoint. We encode both sides to
+    UTF-8 bytes so Unicode passwords (`pässwörd`, etc.) work correctly
+    AND remain timing-safe. Without this guard the auth middleware would
+    raise an uncaught TypeError on every request for such a password,
+    which is both a crash bug and a more dramatic timing oracle.
+
+    Empty inputs always return False — the "no password configured" bypass
+    is filtered upstream by `if not self.password`, so reaching here with
+    an empty arg means a malformed request.
+    """
+    if not provided or not expected:
+        return False
+    return _secrets.compare_digest(
+        provided.encode("utf-8"),
+        expected.encode("utf-8"),
+    )
 
 
 class PasswordAuthMiddleware(BaseHTTPMiddleware):
@@ -19,9 +47,24 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
         self.password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+        # v0.7.209 — defaults expanded to match what main.py passes
+        # in production. Previously the class default omitted the
+        # K8s/Docker probes (/livez, /readyz, /healthz/deep) and
+        # the Prometheus endpoint (/metrics). main.py:608-630
+        # constructs PasswordAuthMiddleware with the full list
+        # explicitly, so production was fine — but any test fixture
+        # or future re-wiring that instantiated
+        # `PasswordAuthMiddleware(app)` (without excluded_paths=)
+        # would get 401 on every probe and silently break health
+        # monitoring. Make the class default match the production
+        # call-site so the failure mode is impossible.
         self.excluded_paths = excluded_paths or [
             "/",
             "/health",
+            "/livez",
+            "/readyz",
+            "/healthz/deep",
+            "/metrics",
             "/docs",
             "/openapi.json",
             "/redoc",
@@ -62,8 +105,8 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Check password
-        if credentials != self.password:
+        # Check password — constant-time comparison (see _password_matches)
+        if not _password_matches(credentials, self.password):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid password"},
@@ -103,8 +146,8 @@ def check_api_password(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check password
-    if credentials.credentials != password:
+    # Check password — constant-time comparison (see _password_matches)
+    if not _password_matches(credentials.credentials, password):
         raise HTTPException(
             status_code=401,
             detail="Invalid password",

@@ -1,3 +1,5 @@
+import asyncio
+import os
 import time
 import uuid
 from pathlib import Path
@@ -10,6 +12,10 @@ from surreal_commands import CommandInput, CommandOutput, command
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.podcasts.models import (
+    STAGE_AWAITING_REVIEW,
+    STAGE_CANCELLED,
+    STAGE_OUTLINE,
+    STAGE_TRANSCRIPT,
     EpisodeProfile,
     PodcastEpisode,
     SpeakerProfile,
@@ -17,10 +23,21 @@ from open_notebook.podcasts.models import (
 )
 
 try:
-    from podcast_creator import configure, create_podcast
+    from podcast_creator import configure
 except ImportError as e:
     logger.error(f"Failed to import podcast_creator: {e}")
     raise ValueError("podcast_creator library not available")
+
+# v0.8.68 — staged runner (streams podcast-creator's exported graph for
+# per-stage progress, cancellation, and the outline-review workflow).
+from commands.podcast_staged import (
+    CancelledByUser,
+    build_state_and_config,
+    generate_outline_only,
+    get_full_graph,
+    get_resume_graph,
+    run_graph_with_stages,
+)
 
 
 def build_episode_output_dir(data_folder: str) -> tuple[str, Path]:
@@ -54,6 +71,119 @@ class PodcastGenerationInput(CommandInput):
     episode_name: str
     content: str
     briefing_suffix: Optional[str] = None
+    # v0.8.68 — outline-review workflow: when True, generation stops after
+    # the outline stage; the user reviews/edits it in the UI and approval
+    # submits a resume_podcast command for the remaining stages.
+    review_outline: bool = False
+
+
+class PodcastResumeInput(CommandInput):
+    """v0.8.68 — phase 2 of the outline-review workflow."""
+
+    episode_id: str
+
+
+async def _load_and_configure_all_profiles(
+    episode_profile, speaker_profile
+) -> None:
+    """v0.8.68 — extracted from generate_podcast_command so the resume
+    command shares it. Loads every profile, resolves model-registry
+    references to provider/model/config triples, drops UNRELATED profiles
+    that fail resolution (podcast-creator validates the whole config), and
+    fail-fasts if the SELECTED profiles didn't survive. Calls
+    podcast_creator.configure() — the precondition for
+    load_episode_config/load_speaker_config."""
+    # v0.7.169 — bounded LIMIT 1000 (see CHANGELOG for rationale).
+    episode_profiles = await repo_query("SELECT * FROM episode_profile LIMIT 1000")
+    speaker_profiles = await repo_query("SELECT * FROM speaker_profile LIMIT 1000")
+    if len(episode_profiles) >= 1000 or len(speaker_profiles) >= 1000:
+        logger.warning(
+            "Hit LIMIT 1000 on podcast profile load — extending the "
+            "cap is safe but suggests the profile tables grew "
+            "unexpectedly large (episode={}, speaker={}).",
+            len(episode_profiles), len(speaker_profiles),
+        )
+
+    episode_profiles_dict = {p["name"]: p for p in episode_profiles}
+    speaker_profiles_dict = {p["name"]: p for p in speaker_profiles}
+
+    # Resolve ALL episode profiles (podcast-creator validates all).
+    # Remove profiles that fail resolution to prevent validation errors.
+    for ep_name in list(episode_profiles_dict.keys()):
+        ep_dict = episode_profiles_dict[ep_name]
+        try:
+            if ep_dict.get("outline_llm"):
+                prov, model, conf = await _resolve_model_config(
+                    str(ep_dict["outline_llm"])
+                )
+                ep_dict["outline_provider"] = prov
+                ep_dict["outline_model"] = model
+                ep_dict["outline_config"] = conf
+            if ep_dict.get("transcript_llm"):
+                prov, model, conf = await _resolve_model_config(
+                    str(ep_dict["transcript_llm"])
+                )
+                ep_dict["transcript_provider"] = prov
+                ep_dict["transcript_model"] = model
+                ep_dict["transcript_config"] = conf
+        except Exception as e:
+            logger.warning(
+                f"Failed to resolve models for episode profile '{ep_name}', "
+                f"removing from config to prevent validation errors: {e}"
+            )
+            del episode_profiles_dict[ep_name]
+
+    # Resolve TTS for ALL speaker profiles; same removal policy.
+    for sp_name in list(speaker_profiles_dict.keys()):
+        sp_dict = speaker_profiles_dict[sp_name]
+        if sp_dict.get("voice_model"):
+            try:
+                prov, model, conf = await _resolve_model_config(
+                    str(sp_dict["voice_model"])
+                )
+                sp_dict["tts_provider"] = prov
+                sp_dict["tts_model"] = model
+                sp_dict["tts_config"] = conf
+            except Exception as e:
+                logger.warning(
+                    f"Failed to resolve TTS for speaker profile '{sp_name}', "
+                    f"removing from config to prevent validation errors: {e}"
+                )
+                del speaker_profiles_dict[sp_name]
+                continue
+
+        # Per-speaker TTS overrides
+        for speaker in sp_dict.get("speakers", []):
+            if speaker.get("voice_model"):
+                try:
+                    prov, model, conf = await _resolve_model_config(
+                        str(speaker["voice_model"])
+                    )
+                    speaker["tts_provider"] = prov
+                    speaker["tts_model"] = model
+                    speaker["tts_config"] = conf
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to resolve per-speaker TTS for '{speaker.get('name')}': {e}"
+                    )
+
+    # v0.8.68 — defensive guard: the SELECTED profiles must have survived.
+    if episode_profile.name not in episode_profiles_dict:
+        raise ValueError(
+            f"Episode profile '{episode_profile.name}' references models "
+            f"that could not be resolved (deleted model or missing "
+            f"credential). Fix the profile in Settings → Podcasts and retry."
+        )
+    if speaker_profile.name not in speaker_profiles_dict:
+        raise ValueError(
+            f"Speaker profile '{speaker_profile.name}' references a voice "
+            f"model that could not be resolved (deleted model or missing "
+            f"credential). Fix the profile in Settings → Podcasts and retry."
+        )
+
+    configure("speakers_config", {"profiles": speaker_profiles_dict})
+    configure("episode_config", {"profiles": episode_profiles_dict})
+    logger.info("Configured podcast-creator with episode and speaker profiles")
 
 
 class PodcastGenerationOutput(CommandOutput):
@@ -133,84 +263,20 @@ async def generate_podcast_command(
             f"tts: {tts_provider}/{tts_model_name}"
         )
 
-        # 4. Load all profiles and configure podcast-creator
-        episode_profiles = await repo_query("SELECT * FROM episode_profile")
-        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
-
-        # Transform the surrealdb array into a dictionary for podcast-creator
-        episode_profiles_dict = {
-            profile["name"]: profile for profile in episode_profiles
-        }
-        speaker_profiles_dict = {
-            profile["name"]: profile for profile in speaker_profiles
-        }
-
-        # 5. Inject resolved model configs into profile dicts
-        # Resolve ALL episode profiles (podcast-creator validates all).
-        # Remove profiles that fail resolution to prevent validation errors.
-        for ep_name in list(episode_profiles_dict.keys()):
-            ep_dict = episode_profiles_dict[ep_name]
-            try:
-                if ep_dict.get("outline_llm"):
-                    prov, model, conf = await _resolve_model_config(
-                        str(ep_dict["outline_llm"])
-                    )
-                    ep_dict["outline_provider"] = prov
-                    ep_dict["outline_model"] = model
-                    ep_dict["outline_config"] = conf
-                if ep_dict.get("transcript_llm"):
-                    prov, model, conf = await _resolve_model_config(
-                        str(ep_dict["transcript_llm"])
-                    )
-                    ep_dict["transcript_provider"] = prov
-                    ep_dict["transcript_model"] = model
-                    ep_dict["transcript_config"] = conf
-            except Exception as e:
-                logger.warning(
-                    f"Failed to resolve models for episode profile '{ep_name}', "
-                    f"removing from config to prevent validation errors: {e}"
-                )
-                del episode_profiles_dict[ep_name]
-
-        # Resolve TTS for ALL speaker profiles (podcast-creator validates all).
-        # Remove profiles that fail resolution to prevent validation errors.
-        for sp_name in list(speaker_profiles_dict.keys()):
-            sp_dict = speaker_profiles_dict[sp_name]
-            if sp_dict.get("voice_model"):
-                try:
-                    prov, model, conf = await _resolve_model_config(
-                        str(sp_dict["voice_model"])
-                    )
-                    sp_dict["tts_provider"] = prov
-                    sp_dict["tts_model"] = model
-                    sp_dict["tts_config"] = conf
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to resolve TTS for speaker profile '{sp_name}', "
-                        f"removing from config to prevent validation errors: {e}"
-                    )
-                    del speaker_profiles_dict[sp_name]
-                    continue
-
-            # Per-speaker TTS overrides
-            for speaker in sp_dict.get("speakers", []):
-                if speaker.get("voice_model"):
-                    try:
-                        prov, model, conf = await _resolve_model_config(
-                            str(speaker["voice_model"])
-                        )
-                        speaker["tts_provider"] = prov
-                        speaker["tts_model"] = model
-                        speaker["tts_config"] = conf
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to resolve per-speaker TTS for '{speaker.get('name')}': {e}"
-                        )
+        # 4+5. Load all profiles, resolve model registry references, and
+        # configure podcast-creator (extracted v0.8.68 — shared with
+        # resume_podcast_command; includes the selected-profile guard).
+        await _load_and_configure_all_profiles(episode_profile, speaker_profile)
 
         # 6. Generate briefing
         briefing = episode_profile.default_briefing
         if input_data.briefing_suffix:
             briefing += f"\n\nAdditional instructions: {input_data.briefing_suffix}"
+        # v0.8.68 — pass the profile's language through to generation. The
+        # EpisodeProfile.language field (BCP 47) existed since the model
+        # registry rework and create_podcast() accepts language=, but the two
+        # were never connected — episodes always came out in English.
+        _episode_language = (episode_profile.language or "").strip() or None
 
         # Create the record for the episode and associate with the ongoing command
         episode = PodcastEpisode(
@@ -221,17 +287,14 @@ async def generate_podcast_command(
             if input_data.execution_context
             else None,
             briefing=briefing,
+            # v0.8.68 — stored separately so retry can replay it verbatim.
+            briefing_suffix=input_data.briefing_suffix,
             content=input_data.content,
             audio_file=None,
             transcript=None,
             outline=None,
         )
         await episode.save()
-
-        configure("speakers_config", {"profiles": speaker_profiles_dict})
-        configure("episode_config", {"profiles": episode_profiles_dict})
-
-        logger.info("Configured podcast-creator with episode and speaker profiles")
 
         logger.info(f"Generated briefing (length: {len(briefing)} chars)")
 
@@ -241,25 +304,171 @@ async def generate_podcast_command(
 
         logger.info(f"Created output directory: {output_dir}")
 
-        # 8. Generate podcast using podcast-creator
-        logger.info("Starting podcast generation with podcast-creator...")
-
-        result = await create_podcast(
+        # v0.8.68 — build the graph state ourselves (mirrors create_podcast's
+        # setup; see commands/podcast_staged.py) so we can stream stages,
+        # honor the cancel flag, and support the outline-review workflow.
+        state, graph_config = build_state_and_config(
             content=input_data.content,
             briefing=briefing,
-            episode_name=episode_dir_name,
+            episode_profile_name=episode_profile.name,
+            speaker_profile_name=speaker_profile.name,
+            language=_episode_language,
             output_dir=str(output_dir),
-            speaker_config=speaker_profile.name,
-            episode_profile=episode_profile.name,
+            episode_name=episode_dir_name,
         )
 
+        # Outline-review phase 1: outline only, then stop for user review.
+        if input_data.review_outline:
+            episode.generation_stage = STAGE_OUTLINE
+            await episode.save()
+            outline_out = await generate_outline_only(state, graph_config)
+            episode.outline = (
+                full_model_dump(outline_out.get("outline"))
+                if outline_out and outline_out.get("outline") is not None
+                else None
+            )
+            if not episode.outline:
+                raise RuntimeError(
+                    "Outline generation returned no outline — check the "
+                    "outline model in the episode profile."
+                )
+            episode.generation_stage = STAGE_AWAITING_REVIEW
+            await episode.save()
+            # The empty output dir is left behind intentionally? No — the
+            # resume command creates its own dir; sweep this one.
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+            except Exception:
+                pass
+            processing_time = time.time() - start_time
+            logger.info(
+                f"Outline ready for review on episode {episode.id} "
+                f"({processing_time:.2f}s)"
+            )
+            return PodcastGenerationOutput(
+                success=True,
+                episode_id=str(episode.id),
+                outline=episode.outline,
+                processing_time=processing_time,
+            )
+
+        # 8. Generate podcast using podcast-creator.
+        # v0.7.3 — wrap in try/except so we can clean up empty output_dir
+        # if generation fails. Without this, every failed generation
+        # leaves an empty UUID directory under data/podcasts/episodes/
+        # that accumulates over time (disk-fill). We only remove the dir
+        # if it's empty post-failure — never delete partial output that
+        # might still be useful for diagnostics.
+        logger.info("Starting podcast generation with podcast-creator...")
+
+        # v0.7.138 — Bound the whole podcast-creator call with a
+        # generous timeout. Real podcast generation has many phases
+        # (outline LLM → transcript LLM × N segments → TTS × N speakers)
+        # and can legitimately take 5-30 minutes on a local-deploy
+        # install. Default 1800s (30 minutes) is large but bounded;
+        # without this, a hung TTS provider or wedged local model
+        # could pin a worker slot indefinitely (the @command
+        # `max_attempts: 1` means there's no retry — a hang is forever
+        # unless we cap it).
+        #
+        # Tunable via ONP_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
+        # propagates as a regular exception → @command framework
+        # marks the episode as failed → episode.delete() cleanup
+        # path below fires, including the empty-output-dir sweep.
+        _podcast_timeout = float(
+            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
+            or 1800
+        )
+        episode.generation_stage = STAGE_OUTLINE
+        await episode.save()
+        try:
+            # v0.8.68 — stream the library's own graph instead of the
+            # create_podcast() black box: per-stage progress lands on the
+            # episode record, the cancel flag is honored within ~5s, and a
+            # timeout names the stage that hung.
+            result = await run_graph_with_stages(
+                get_full_graph(),
+                state,
+                graph_config,
+                episode=episode,
+                deadline=time.monotonic() + _podcast_timeout,
+            )
+        except CancelledByUser:
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+            except Exception:
+                pass
+            episode.generation_stage = STAGE_CANCELLED
+            await episode.save()
+            raise RuntimeError(
+                f"Generation cancelled by user during stage "
+                f"{episode.generation_stage or 'startup'} for episode "
+                f"{input_data.episode_name!r}."
+            )
+        except asyncio.TimeoutError as exc:
+            # Treat the timeout as a generation failure for output-dir
+            # cleanup purposes: fall through to the existing
+            # empty-dir-cleanup logic and re-raise as a clear
+            # message. Don't raise as ValueError (which surreal_commands
+            # treats as permanent) — a timeout is operationally
+            # transient even if @command retries are disabled.
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+                    logger.info(
+                        "Cleaned up empty output dir after timeout: {}",
+                        output_dir,
+                    )
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Podcast generation timed out after {_podcast_timeout}s for "
+                f"episode {input_data.episode_name!r} while in stage "
+                f"'{episode.generation_stage or 'startup'}'. The provider "
+                f"for that stage may be hung or significantly slower than "
+                f"expected. Raise ONP_PODCAST_GENERATION_TIMEOUT_SEC if it "
+                f"legitimately needs more time, or check provider health."
+            ) from exc
+        except Exception:
+            # Leave non-empty dirs alone — those have partial output
+            # (transcript file, intermediate WAVs) that the user can
+            # inspect to understand the failure.
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+                    logger.info(
+                        "Cleaned up empty output dir after failure: {}",
+                        output_dir,
+                    )
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Could not clean up output dir {} after failure: {}",
+                    output_dir, cleanup_exc,
+                )
+            raise
+        episode.generation_stage = None
+
+        # v0.7.3 — defensive: result may be None (early-return) or a
+        # partial dict missing keys (future podcast-creator versions, edge
+        # cases where audio succeeded but transcript/outline failed). The
+        # PodcastGenerationOutput block below already uses .get() for the
+        # same fields — this block was inconsistent and would KeyError on
+        # the indexed access, masking a partial success as a worker crash.
         episode.audio_file = (
             str(result.get("final_output_file_path")) if result else None
         )
         episode.transcript = {
-            "transcript": full_model_dump(result["transcript"]) if result else None
+            "transcript": full_model_dump(result.get("transcript"))
+            if result and result.get("transcript") is not None
+            else None
         }
-        episode.outline = full_model_dump(result["outline"]) if result else None
+        episode.outline = (
+            full_model_dump(result.get("outline"))
+            if result and result.get("outline") is not None
+            else None
+        )
         await episode.save()
 
         processing_time = time.time() - start_time
@@ -267,18 +476,37 @@ async def generate_podcast_command(
             f"Successfully generated podcast episode: {episode.id} in {processing_time:.2f}s"
         )
 
+        # v0.7.69 — harden against `result is None` and partial-result
+        # shapes. The earlier `episode.audio_file = ...` block (lines
+        # 286-298) was fixed in v0.7.3 to handle this, but THIS return
+        # block was missed — `result["transcript"]` / `result["outline"]`
+        # subscript access would AttributeError on a None result, masking
+        # what is otherwise a successful (but transcript/outline-less)
+        # generation as a worker crash that the user can't retry from
+        # (max_attempts=1). The earlier block uses the same `.get()`
+        # pattern below, applied uniformly.
+        transcript_payload = None
+        outline_payload = None
+        audio_path = None
+        if result:
+            audio_path = (
+                str(result.get("final_output_file_path"))
+                if result.get("final_output_file_path") is not None
+                else None
+            )
+            t = result.get("transcript")
+            if t is not None:
+                transcript_payload = {"transcript": full_model_dump(t)}
+            o = result.get("outline")
+            if o is not None:
+                outline_payload = full_model_dump(o)
+
         return PodcastGenerationOutput(
             success=True,
             episode_id=str(episode.id),
-            audio_file_path=str(result.get("final_output_file_path"))
-            if result
-            else None,
-            transcript={"transcript": full_model_dump(result["transcript"])}
-            if result.get("transcript")
-            else None,
-            outline=full_model_dump(result["outline"])
-            if result.get("outline")
-            else None,
+            audio_file_path=audio_path,
+            transcript=transcript_payload,
+            outline=outline_payload,
             processing_time=processing_time,
         )
 
@@ -298,3 +526,150 @@ async def generate_podcast_command(
             )
 
         raise RuntimeError(error_msg) from e
+
+
+@command("resume_podcast", app="open_notebook", retry={"max_attempts": 1})
+async def resume_podcast_command(
+    input_data: PodcastResumeInput,
+) -> PodcastGenerationOutput:
+    """v0.8.68 — phase 2 of the outline-review workflow: the user approved
+    (and possibly edited) the outline; generate transcript + audio from it.
+    Runs podcast-creator's own node functions via the resume graph (starts
+    at the transcript node), with the same staged progress, cancellation,
+    and timeout semantics as the full generation command."""
+    start_time = time.time()
+
+    try:
+        episode = await PodcastEpisode.get(input_data.episode_id)
+        if not episode:
+            raise ValueError(f"Episode '{input_data.episode_id}' not found")
+        if episode.generation_stage != STAGE_AWAITING_REVIEW:
+            raise ValueError(
+                f"Episode '{episode.name}' is not awaiting outline review "
+                f"(stage: {episode.generation_stage})"
+            )
+        if not episode.outline or not episode.outline.get("segments"):
+            raise ValueError(
+                f"Episode '{episode.name}' has no outline to resume from"
+            )
+
+        ep_name = (episode.episode_profile or {}).get("name")
+        sp_name = (episode.speaker_profile or {}).get("name")
+        episode_profile = await EpisodeProfile.get_by_name(ep_name) if ep_name else None
+        if not episode_profile:
+            raise ValueError(
+                f"Episode profile '{ep_name}' no longer exists — restore it "
+                f"(or recreate it with the same name) and approve again."
+            )
+        speaker_profile = (
+            await SpeakerProfile.get_by_name(sp_name) if sp_name else None
+        )
+        if not speaker_profile:
+            raise ValueError(
+                f"Speaker profile '{sp_name}' no longer exists — restore it "
+                f"(or recreate it with the same name) and approve again."
+            )
+
+        await _load_and_configure_all_profiles(episode_profile, speaker_profile)
+
+        # Link this episode to the resume command and reset the cancel flag.
+        episode.command = (
+            ensure_record_id(input_data.execution_context.command_id)
+            if input_data.execution_context
+            else episode.command
+        )
+        episode.cancel_requested = False
+        episode.generation_stage = STAGE_TRANSCRIPT
+        await episode.save()
+
+        episode_dir_name, output_dir = build_episode_output_dir(DATA_FOLDER)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        _language = (
+            (episode_profile.language or "").strip() or None
+        )
+        state, graph_config = build_state_and_config(
+            content=episode.content,
+            briefing=episode.briefing,
+            episode_profile_name=episode_profile.name,
+            speaker_profile_name=speaker_profile.name,
+            language=_language,
+            output_dir=str(output_dir),
+            episode_name=episode_dir_name,
+            outline=episode.outline,  # the user-reviewed outline drives TTS
+        )
+
+        _podcast_timeout = float(
+            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
+            or 1800
+        )
+        try:
+            result = await run_graph_with_stages(
+                get_resume_graph(),
+                state,
+                graph_config,
+                episode=episode,
+                deadline=time.monotonic() + _podcast_timeout,
+            )
+        except CancelledByUser:
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+            except Exception:
+                pass
+            episode.generation_stage = STAGE_CANCELLED
+            await episode.save()
+            raise RuntimeError(
+                f"Generation cancelled by user for episode {episode.name!r}."
+            )
+        except asyncio.TimeoutError as exc:
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Podcast generation timed out after {_podcast_timeout}s for "
+                f"episode {episode.name!r} while in stage "
+                f"'{episode.generation_stage or 'startup'}'."
+            ) from exc
+        except Exception:
+            try:
+                if output_dir.exists() and not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+            except Exception:
+                pass
+            raise
+
+        episode.generation_stage = None
+        episode.audio_file = (
+            str(result.get("final_output_file_path"))
+            if result.get("final_output_file_path") is not None
+            else None
+        )
+        t = result.get("transcript")
+        episode.transcript = (
+            {"transcript": full_model_dump(t)} if t is not None else None
+        )
+        await episode.save()
+
+        processing_time = time.time() - start_time
+        logger.info(
+            f"Resumed podcast episode {episode.id} completed in "
+            f"{processing_time:.2f}s"
+        )
+        return PodcastGenerationOutput(
+            success=True,
+            episode_id=str(episode.id),
+            audio_file_path=episode.audio_file,
+            transcript=episode.transcript,
+            outline=episode.outline,
+            processing_time=processing_time,
+        )
+
+    except ValueError:
+        raise
+    except Exception as e:
+        logger.error(f"Podcast resume failed: {e}")
+        logger.exception(e)
+        raise RuntimeError(str(e)) from e

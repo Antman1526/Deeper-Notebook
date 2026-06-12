@@ -221,6 +221,13 @@ OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret-key
 - Docker networking
 - Troubleshooting
 
+### [Web Search — Private SearXNG](private-searxng-web-search.md)
+- Native chat `web_search` (Serper / Tavily / SearXNG)
+- Why public SearXNG mirrors block JSON (403/418/429)
+- Run a private, localhost-only SearXNG (`deploy/searxng-private/`)
+- Point `SEARXNG_BASE_URL` at it
+- Reuse from Claude Code, Cursor, Antigravity via Kindly Web Search MCP
+
 ### [Complete Reference](environment-reference.md)
 - All environment variables
 - Grouped by category

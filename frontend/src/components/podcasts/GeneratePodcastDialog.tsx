@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
 
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
@@ -9,12 +9,22 @@ import { useEpisodeProfiles, useGeneratePodcast } from '@/lib/hooks/use-podcasts
 import { chatApi } from '@/lib/api/chat'
 import { sourcesApi } from '@/lib/api/sources'
 import { notesApi } from '@/lib/api/notes'
+import { podcastsApi } from '@/lib/api/podcasts'
 import { BuildContextRequest, NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
 import type { QueryClient } from '@tanstack/react-query'
 import { PodcastGenerationRequest } from '@/lib/types/podcasts'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.7.196 —
+//  - getApiErrorMessage: sanitize the raw `error.message` previously
+//    shown as the toast description on podcast-generation failure.
+//  - formatDateTime: replace the
+//    `toLocaleString(lang.startsWith('zh') ? lang : 'en-US')` pattern
+//    that silently fell back to en-US date format for every non-Chinese
+//    locale (pt-BR, ja-JP, fr-FR, ru-RU, bn-IN, es-ES, it-IT).
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { formatDateTime } from '@/lib/utils/date-locale'
 import {
   Dialog,
   DialogContent,
@@ -369,10 +379,13 @@ function ContentSelectionPanel({
                                         {note.title || tr.untitledNote}
                                       </span>
                                       <span className="text-xs text-muted-foreground">
+                                        {/* v0.7.196 — was
+                                            `toLocaleString(lang.startsWith('zh') ? lang : 'en-US')`,
+                                            which forced en-US date
+                                            format for 7 of our 10
+                                            supported locales. */}
                                         {tr.commonUpdated}{' '}
-                                        {new Date(note.updated).toLocaleString(
-                                          language.startsWith('zh') ? language : 'en-US'
-                                        )}
+                                        {formatDateTime(note.updated, language)}
                                       </span>
                                     </Label>
                                   </div>
@@ -403,10 +416,26 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const [episodeProfileId, setEpisodeProfileId] = useState<string>('')
   const [episodeName, setEpisodeName] = useState('')
   const [instructions, setInstructions] = useState('')
+  // v0.8.68 — outline-review workflow opt-in.
+  const [reviewOutline, setReviewOutline] = useState(false)
 
   const [isBuildingContext, setIsBuildingContext] = useState(false)
   const [tokenCount, setTokenCount] = useState<number>(0)
   const [charCount, setCharCount] = useState<number>(0)
+  // v0.7.79 — track the post-submit "close after refetch" timer so it
+  // can be cancelled on unmount. Bare setTimeout used to fire
+  // onOpenChange(false) + resetState() on an already-unmounted dialog
+  // when the user dismissed within the 500 ms window.
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
+    }
+  }, [])
 
   const notebooksQuery = useNotebooks()
   const episodeProfilesQuery = useEpisodeProfiles()
@@ -543,6 +572,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     setEpisodeProfileId('')
     setEpisodeName('')
     setInstructions('')
+    setReviewOutline(false)
     setTokenCount(0)
     setCharCount(0)
   }, [])
@@ -627,6 +657,79 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     }
     return episodeProfiles.find((profile) => profile.id === episodeProfileId)
   }, [episodeProfileId, episodeProfiles])
+
+  // v0.7.31 — auto-fill from sources. Walks current selections, sends
+  // the source IDs to /podcasts/suggest, and populates the episode-
+  // profile picker + title + instructions with the recommendation.
+  // Pure UX affordance — the user can immediately override any field.
+  const [autoFilling, setAutoFilling] = useState(false)
+  const handleAutoFill = useCallback(async () => {
+    // Collect every selected source ID across notebooks.
+    const sourceIds: string[] = []
+    for (const sel of Object.values(selections)) {
+      for (const [sid, mode] of Object.entries(sel.sources)) {
+        if (mode !== 'off') sourceIds.push(sid)
+      }
+    }
+    // Prefer notebook context when only one notebook has selections.
+    const activeNbIds = Object.entries(selections)
+      .filter(([, sel]) => hasSelections(sel))
+      .map(([nbId]) => nbId)
+
+    if (sourceIds.length === 0 && activeNbIds.length === 0) {
+      toast({
+        title: 'Nothing selected',
+        description:
+          'Pick at least one source or notebook before auto-filling.',
+      })
+      return
+    }
+
+    setAutoFilling(true)
+    try {
+      const suggestion = await podcastsApi.suggestEpisode({
+        notebook_id: activeNbIds.length === 1 ? activeNbIds[0] : undefined,
+        source_ids: sourceIds,
+      })
+
+      // Match the suggestion to a real episode-profile id (the
+      // endpoint returns names; the form binds by id).
+      const matched = episodeProfiles.find(
+        (p) => p.name === suggestion.episode_profile_name,
+      )
+      if (matched) {
+        setEpisodeProfileId(matched.id)
+      }
+      if (suggestion.title) {
+        setEpisodeName(suggestion.title)
+      }
+      if (suggestion.briefing_addition) {
+        // Prepend, don't clobber — preserve any in-progress user text.
+        setInstructions((prev) =>
+          prev
+            ? `${suggestion.briefing_addition}\n\n${prev}`
+            : suggestion.briefing_addition,
+        )
+      }
+      toast({
+        title: 'Auto-fill applied',
+        description: suggestion.reasoning,
+      })
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } }; message?: string })
+          ?.response?.data?.detail ||
+        (err as Error)?.message ||
+        'Auto-fill failed.'
+      toast({
+        title: 'Auto-fill failed',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setAutoFilling(false)
+    }
+  }, [selections, episodeProfiles, toast])
 
   const selectedNotebookSummaries = useMemo(() => {
     return notebooks.map((notebook) => {
@@ -816,6 +919,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         episode_name: episodeName.trim(),
         content,
         briefing_suffix: instructions.trim() ? instructions.trim() : undefined,
+        review_outline: reviewOutline || undefined,
       }
 
       await generatePodcast.mutateAsync(payload)
@@ -825,16 +929,23 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         description: t('podcasts.podcastTaskStarted'),
       })
 
-      // Delay closing dialog slightly to ensure refetch completes
-      setTimeout(() => {
+      // Delay closing dialog slightly to ensure refetch completes.
+      // v0.7.79 — tracked via closeTimerRef so unmount cancels cleanly.
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null
         onOpenChange(false)
         resetState()
       }, 500)
     } catch (error) {
       console.error('Failed to generate podcast', error)
+      // v0.7.196 — was `error.message` raw, leaked axios + FastAPI
+      // stack-text. Route through ERROR_MAP first, fall back to
+      // `common.refreshPage` for unknown errors. Same sibling-pattern
+      // cleaned up in v0.7.184.
       toast({
         title: t('podcasts.generationFailed'),
-        description: error instanceof Error ? error.message : t('common.refreshPage'),
+        description: getApiErrorMessage(error, t, 'common.refreshPage'),
         variant: 'destructive',
       })
     } finally {
@@ -861,15 +972,21 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         resetState()
       }
     }}>
-      <DialogContent className="w-[80vw] max-w-[1080px] max-h-[90vh] overflow-hidden">
-        <DialogHeader>
+      {/* v0.7.25 — was `overflow-hidden` which clipped the bottom on
+          short viewports (≤900px tall): the ContentSelectionPanel +
+          buttons stayed in flow but couldn't scroll, so Cancel/Generate
+          fell below the fold on laptops. Switched to a flex-column
+          layout where the body scrolls and the header/footer stay
+          pinned. */}
+      <DialogContent className="w-[80vw] max-w-[1080px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{t('podcasts.generateEpisode')}</DialogTitle>
           <DialogDescription>
             {t('podcasts.generateEpisodeDesc')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr]">
+        <div className="grid gap-6 md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr] flex-1 overflow-y-auto min-h-0">
           <ContentSelectionPanel
             notebooks={notebooks}
             isLoading={notebooksQuery.isLoading}
@@ -890,9 +1007,30 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
 
           <div className="space-y-6">
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('podcasts.episodeSettings')}
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('podcasts.episodeSettings')}
+                </h3>
+                {/* v0.7.31 — heuristic auto-fill button. Calls
+                    /podcasts/suggest and populates profile + title +
+                    instructions with the recommendation. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutoFill}
+                  disabled={autoFilling || episodeProfiles.length === 0}
+                  className="h-8"
+                  title="Suggest profile, title, and briefing based on selected sources"
+                >
+                  {autoFilling ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Auto-fill from sources
+                </Button>
+              </div>
               {episodeProfilesQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> {t('podcasts.loadingProfiles')}
@@ -952,6 +1090,28 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       className="min-h-[100px] text-xs"
                       autoComplete="off"
                     />
+                  </div>
+
+                  {/* v0.8.68 — outline-review workflow opt-in. */}
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="review-outline"
+                      checked={reviewOutline}
+                      onCheckedChange={(v) => setReviewOutline(v === true)}
+                    />
+                    <div className="grid gap-0.5 leading-tight">
+                      <Label htmlFor="review-outline" className="text-xs">
+                        {t('podcasts.reviewOutlineFirst', {
+                          defaultValue: 'Review outline before generating audio',
+                        })}
+                      </Label>
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('podcasts.reviewOutlineFirstDesc', {
+                          defaultValue:
+                            'Generation pauses after the outline so you can edit it; audio is created after you approve.',
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

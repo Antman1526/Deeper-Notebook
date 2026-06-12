@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, Optional, Union
+from typing import Any, ClassVar, Optional
 
 from esperanto import (
     AIFactory,
@@ -13,7 +13,9 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel, RecordModel
 from open_notebook.exceptions import ConfigurationError
 
-ModelType = Union[LanguageModel, EmbeddingModel, SpeechToTextModel, TextToSpeechModel]
+# v0.7.116 — PEP 604 union syntax (Python 3.10+). Was `Union[...]`
+# (PEP 484); equivalent semantics, less import noise.
+ModelType = LanguageModel | EmbeddingModel | SpeechToTextModel | TextToSpeechModel
 
 
 class Model(ObjectModel):
@@ -40,7 +42,7 @@ class Model(ObjectModel):
         )
         return [Model(**model) for model in models]
 
-    def _prepare_save_data(self) -> Dict[str, Any]:
+    def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()
         if data.get("credential"):
             data["credential"] = ensure_record_id(data["credential"])
@@ -58,6 +60,99 @@ class Model(ObjectModel):
             logger.warning(f"Could not load credential {self.credential} for model {self.id}")
             return None
 
+    async def delete(self) -> bool:
+        """Delete the model and clear any DefaultModels fields that
+        pointed at it.
+
+        v0.7.86 — base ObjectModel.delete leaves dangling references on
+        the singleton `default_models` record and on every
+        `episode_profile` / `speaker_profile` that used this model.
+        Default-model lookups (provision_langchain_model resolving
+        "chat", "transformation", etc.) then fail with a generic
+        ConfigurationError until the user manually reassigns. We clear
+        the default-fields proactively here so the failure mode after
+        a delete becomes the "no model configured" path that the UI
+        explicitly handles, instead of the dangling-reference path.
+        Podcast profile fields are NOT auto-cleared because reassigning
+        a profile's model is a deliberate UX choice — but we log a
+        warning naming each affected profile so the user can act on it.
+        """
+        if self.id is None:
+            return False
+        model_id = ensure_record_id(self.id)
+
+        # Clear any DefaultModels field pointing at this model. The
+        # `default_models` row is a singleton with seven optional
+        # `model` reference fields; null out only the ones matching
+        # this id.
+        try:
+            await repo_query(
+                """
+                UPDATE open_notebook:default_models
+                MERGE {
+                    default_chat_model:
+                        IF default_chat_model = $mid THEN NONE ELSE default_chat_model END,
+                    default_transformation_model:
+                        IF default_transformation_model = $mid THEN NONE ELSE default_transformation_model END,
+                    large_context_model:
+                        IF large_context_model = $mid THEN NONE ELSE large_context_model END,
+                    default_text_to_speech_model:
+                        IF default_text_to_speech_model = $mid THEN NONE ELSE default_text_to_speech_model END,
+                    default_speech_to_text_model:
+                        IF default_speech_to_text_model = $mid THEN NONE ELSE default_speech_to_text_model END,
+                    default_embedding_model:
+                        IF default_embedding_model = $mid THEN NONE ELSE default_embedding_model END,
+                    default_tools_model:
+                        IF default_tools_model = $mid THEN NONE ELSE default_tools_model END,
+                    auto_route_cloud:
+                        IF auto_route_cloud = $mid THEN NONE ELSE auto_route_cloud END
+                };
+                """,
+                {"mid": model_id},
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not clear DefaultModels references to {self.id} "
+                f"(non-fatal, will fall through to ConfigurationError on "
+                f"next resolution): {exc}"
+            )
+
+        # Warn-log any podcast profiles that still reference this
+        # model so the user knows to fix them. Don't auto-clear —
+        # reassigning a profile's model is a UX choice.
+        try:
+            referencing_eps = await repo_query(
+                "SELECT VALUE name FROM episode_profile "
+                "WHERE outline_llm = $mid OR transcript_llm = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_eps or []:
+                logger.warning(
+                    "Model {} deleted while still referenced by episode "
+                    "profile {!r} — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id, name,
+                )
+            referencing_sps = await repo_query(
+                "SELECT VALUE name FROM speaker_profile "
+                "WHERE voice_model = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_sps or []:
+                logger.warning(
+                    "Model {} deleted while still referenced by speaker "
+                    "profile {!r} — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id, name,
+                )
+        except Exception as exc:
+            logger.debug(
+                "Could not scan podcast profile references for {} "
+                "(non-fatal): {}", self.id, exc,
+            )
+
+        return await super().delete()
+
 
 class DefaultModels(RecordModel):
     record_id: ClassVar[str] = "open_notebook:default_models"
@@ -69,6 +164,28 @@ class DefaultModels(RecordModel):
     # default_vision_model: Optional[str]
     default_embedding_model: Optional[str] = None
     default_tools_model: Optional[str] = None
+    # ONP v0.5 — dedicated slot for slow-but-deep reasoning models (R1, gpt-oss,
+    # Nemotron etc.). Kept separate from chat so the casual chat model can stay
+    # fast. Read by provision_langchain_model() when "reasoning" type requested.
+    default_reasoning_model: Optional[str] = None
+    # v0.8.1 — dedicated cloud slot for the smart router. Distinct
+    # from default_chat_model so the router doesn't silently route
+    # cloud fallbacks to a locally-configured chat model. Migration 18.
+    auto_route_cloud: Optional[str] = None
+    # v0.8.37 — UI-controllable smart-router toggle. Pre-v0.8.37 the
+    # only way to enable smart routing was the OPEN_NOTEBOOK_AUTO_ROUTE_CHAT
+    # env var, which meant power-users could enable it but the UI was
+    # invisible. These two fields make the toggle settable from
+    # Settings → API Keys → Smart Routing. The env var still wins (for
+    # back-compat + ops overrides) — see provision.py.
+    #
+    # auto_route_enabled — master switch; False keeps the pre-v0.8.1
+    #   behavior (single default_chat_model, no routing).
+    # auto_route_provider_pref — when smart routing is on, this is the
+    #   user preference passed to pick_provider()'s default_provider
+    #   arg: "auto" | "local" | "cloud". Defaults to "auto".
+    auto_route_enabled: Optional[bool] = False
+    auto_route_provider_pref: Optional[str] = "auto"
 
     @classmethod
     async def get_instance(cls) -> "DefaultModels":
@@ -100,14 +217,64 @@ class ModelManager:
         pass  # No caching needed
 
     async def get_model(self, model_id: str, **kwargs) -> Optional[ModelType]:
-        """Get a model by ID. Esperanto will cache the actual model instance."""
+        """Get a model by ID. Esperanto will cache the actual model instance.
+
+        v0.7.139 — Distinguish 'model record not in DB' (a real
+        ConfigurationError — user needs to reconfigure) from 'DB call
+        failed transiently' (operational failure that misleadingly
+        manifested as 'Model not found'). Previously both produced the
+        same misleading message and users would re-create models that
+        were perfectly valid but momentarily unreachable.
+        """
         if not model_id:
             return None
 
         try:
             model: Model = await Model.get(model_id)
-        except Exception:
-            raise ConfigurationError(f"Model with ID {model_id} not found")
+        except Exception as exc:
+            # Re-raise typed exceptions with appropriate remapping.
+            # Order matters: NotFoundError extends OpenNotebookError,
+            # so we must check the more-specific class FIRST before
+            # the broader passthrough catch — otherwise NotFoundError
+            # passes through unchanged instead of becoming a user-
+            # actionable ConfigurationError.
+            from open_notebook.exceptions import (
+                NotFoundError,
+                OpenNotebookError,
+            )
+            # NotFoundError from Model.get means the ID really doesn't
+            # exist in the DB — actionable for the user.
+            if isinstance(exc, NotFoundError):
+                raise ConfigurationError(
+                    f"Model with ID {model_id} not found. Re-check that "
+                    f"the model is configured in Settings → Models."
+                ) from exc
+            # Other typed OpenNotebookError subclasses (RateLimitError,
+            # AuthenticationError, etc.) propagate verbatim — they
+            # already have actionable messages and the right HTTP code.
+            if isinstance(exc, OpenNotebookError):
+                raise
+            # Anything else: log + surface as a generic operational
+            # error so the user sees "something broke" rather than
+            # being told to fix a configuration that's already correct.
+            logger.error(
+                f"get_model({model_id}): unexpected exception from "
+                f"Model.get(): {type(exc).__name__}: {exc}"
+            )
+            raise OpenNotebookError(
+                f"Could not load model {model_id}: {exc}. The DB or "
+                f"connection pool may be transiently unavailable; "
+                f"retry shortly."
+            ) from exc
+
+        if model is None:
+            # v0.7.139 — Model.get(...) returning None (not raising)
+            # has the same user-facing meaning as NotFoundError above:
+            # the model ID isn't in the DB.
+            raise ConfigurationError(
+                f"Model with ID {model_id} not found. Re-check that "
+                f"the model is configured in Settings → Models."
+            )
 
         if not model.type or model.type not in [
             "language",
@@ -115,7 +282,12 @@ class ModelManager:
             "speech_to_text",
             "text_to_speech",
         ]:
-            raise ConfigurationError(f"Invalid model type: {model.type}")
+            raise ConfigurationError(
+                f"Model {model.name or model_id} has invalid type "
+                f"{model.type!r}. Re-create the model in Settings → "
+                f"Models and select a valid type (language, embedding, "
+                f"speech_to_text, or text_to_speech)."
+            )
 
         # Build config from credential if linked, otherwise fall back to env vars
         config: dict = {}
@@ -218,17 +390,12 @@ class ModelManager:
         )
         return model
 
-    async def get_default_model(self, model_type: str, **kwargs) -> Optional[ModelType]:
-        """
-        Get the default model for a specific type.
-
-        Args:
-            model_type: The type of model to retrieve (e.g., 'chat', 'embedding', etc.)
-            **kwargs: Additional arguments to pass to the model constructor
-        """
+    async def get_default_model_id(self, model_type: str) -> Optional[str]:
+        """v0.8.68 — id-only resolution extracted from get_default_model so
+        the offline gate (open_notebook/ai/offline_gate.py) can inspect the
+        candidate's provider BEFORE instantiation. Mapping unchanged."""
         defaults = await self.get_defaults()
         model_id = None
-
         if model_type == "chat":
             model_id = defaults.default_chat_model
         elif model_type == "transformation":
@@ -245,6 +412,19 @@ class ModelManager:
             model_id = defaults.default_speech_to_text_model
         elif model_type == "large_context":
             model_id = defaults.large_context_model
+        return model_id
+
+    async def get_default_model(self, model_type: str, **kwargs) -> Optional[ModelType]:
+        """
+        Get the default model for a specific type.
+
+        Args:
+            model_type: The type of model to retrieve (e.g., 'chat', 'embedding', etc.)
+            **kwargs: Additional arguments to pass to the model constructor
+        """
+        # v0.8.68 — id resolution extracted to get_default_model_id (one
+        # mapping, shared with the offline gate). Behavior unchanged.
+        model_id = await self.get_default_model_id(model_type)
 
         if not model_id:
             logger.warning(

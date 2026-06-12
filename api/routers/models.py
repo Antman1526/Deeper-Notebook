@@ -13,7 +13,7 @@ from api.models import (
     ModelResponse,
     ProviderAvailabilityResponse,
 )
-from open_notebook.domain.credential import Credential
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.ai.connection_tester import test_individual_model
 from open_notebook.ai.key_provider import provision_provider_keys
 from open_notebook.ai.model_discovery import (
@@ -23,7 +23,8 @@ from open_notebook.ai.model_discovery import (
     sync_provider_models,
 )
 from open_notebook.ai.models import DefaultModels, Model
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.domain.credential import Credential
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -54,7 +55,7 @@ class ProviderSyncResponse(BaseModel):
 class AllProvidersSyncResponse(BaseModel):
     """Response model for syncing all providers."""
 
-    results: Dict[str, ProviderSyncResponse]
+    results: dict[str, ProviderSyncResponse]
     total_discovered: int
     total_new: int
 
@@ -63,16 +64,16 @@ class ProviderModelCountResponse(BaseModel):
     """Response model for provider model counts."""
 
     provider: str
-    counts: Dict[str, int]
+    counts: dict[str, int]
     total: int
 
 
 class AutoAssignResult(BaseModel):
     """Response model for auto-assign operation."""
 
-    assigned: Dict[str, str]  # slot_name -> model_id
-    skipped: List[str]  # slots already assigned
-    missing: List[str]  # slots with no available models
+    assigned: dict[str, str]  # slot_name -> model_id
+    skipped: list[str]  # slots already assigned
+    missing: list[str]  # slots with no available models
 
 
 class ModelTestResponse(BaseModel):
@@ -117,8 +118,26 @@ async def _check_provider_has_credential(provider: str) -> bool:
     try:
         credentials = await Credential.get_by_provider(provider)
         return len(credentials) > 0
-    except Exception:
-        pass
+    except Exception as exc:
+        # v0.8.29 — log the failure. Pre-v0.8.29 this was silent —
+        # any DB error (connection drop, schema mismatch, auth
+        # failure) returned False, causing the /providers status
+        # endpoint to silently report "provider not configured" for
+        # an actually-configured-via-DB provider. The downstream
+        # `has_env` fallback in /providers covers the env-var path
+        # so impact is limited, but a credential-only install
+        # would briefly show all providers as unconfigured during
+        # a DB blip with no signal in launcher.log. DEBUG because
+        # the endpoint is read-heavy (polled by the Settings UI)
+        # and a WARNING would spam launcher.log on every poll
+        # during a sustained DB outage.
+        logger.debug(
+            "_check_provider_has_credential({!r}) failed; "
+            "treating as 'no DB credential' — env-var fallback "
+            "in /providers will still surface env-configured "
+            "providers correctly. error={}",
+            provider, exc,
+        )
     return False
 
 
@@ -166,7 +185,7 @@ def _check_openai_compatible_support(mode: str) -> bool:
     return generic or specific or generic_key or specific_key
 
 
-@router.get("/models", response_model=List[ModelResponse])
+@router.get("/models", response_model=list[ModelResponse])
 async def get_models(
     type: Optional[str] = Query(None, description="Filter by model type"),
 ):
@@ -184,14 +203,19 @@ async def get_models(
                 provider=model.provider,
                 type=model.type,
                 credential=model.credential,
-                created=str(model.created),
-                updated=str(model.updated),
+                created=iso(model.created),
+                updated=iso(model.updated),
             )
             for model in models
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching models: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching models")
 
 
 @router.post("/models", response_model=ModelResponse)
@@ -237,8 +261,8 @@ async def create_model(model_data: ModelCreate):
             provider=new_model.provider,
             type=new_model.type,
             credential=new_model.credential,
-            created=str(new_model.created),
-            updated=str(new_model.updated),
+            created=iso(new_model.created),
+            updated=iso(new_model.updated),
         )
     except HTTPException:
         raise
@@ -246,7 +270,7 @@ async def create_model(model_data: ModelCreate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating model: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating model: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error creating model")
 
 
 @router.delete("/models/{model_id}")
@@ -262,9 +286,13 @@ async def delete_model(model_id: str):
         return {"message": "Model deleted successfully"}
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error deleting model {model_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting model")
 
 
 @router.post("/models/{model_id}/test", response_model=ModelTestResponse)
@@ -304,11 +332,22 @@ async def get_default_models():
             default_speech_to_text_model=defaults.default_speech_to_text_model,  # type: ignore[attr-defined]
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
+            default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
+            # v0.8.1 / v0.8.37 — surface the smart-router config so
+            # Settings can render the toggle + provider-pref dropdown.
+            auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
+            auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
+            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching default models: {str(e)}"
+            status_code=500, detail="Error fetching default models"
         )
 
 
@@ -339,6 +378,25 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             defaults.default_embedding_model = defaults_data.default_embedding_model  # type: ignore[attr-defined]
         if defaults_data.default_tools_model is not None:
             defaults.default_tools_model = defaults_data.default_tools_model  # type: ignore[attr-defined]
+        if defaults_data.default_reasoning_model is not None:
+            defaults.default_reasoning_model = defaults_data.default_reasoning_model  # type: ignore[attr-defined]
+        # v0.8.1 — auto_route_cloud is the dedicated cloud slot for the
+        # smart router. Empty string sent from the UI dropdown means
+        # "unset" — translate to None so it actually unlinks the field.
+        if defaults_data.auto_route_cloud is not None:
+            defaults.auto_route_cloud = defaults_data.auto_route_cloud or None  # type: ignore[attr-defined]
+        # v0.8.37 — UI smart-routing toggle + provider-pref dropdown.
+        # Booleans always overwrite (False is a meaningful value, unlike
+        # "unset"), so we check for explicit None rather than truthiness.
+        if defaults_data.auto_route_enabled is not None:
+            defaults.auto_route_enabled = bool(defaults_data.auto_route_enabled)  # type: ignore[attr-defined]
+        if defaults_data.auto_route_provider_pref is not None:
+            # Defensive — clamp to the allowed set so a future schema
+            # drift can't write garbage to the DB.
+            pref = defaults_data.auto_route_provider_pref
+            if pref not in ("auto", "local", "cloud"):
+                pref = "auto"
+            defaults.auto_route_provider_pref = pref  # type: ignore[attr-defined]
 
         await defaults.update()
 
@@ -352,13 +410,21 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             default_speech_to_text_model=defaults.default_speech_to_text_model,  # type: ignore[attr-defined]
             default_embedding_model=defaults.default_embedding_model,  # type: ignore[attr-defined]
             default_tools_model=defaults.default_tools_model,  # type: ignore[attr-defined]
+            default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
+            auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
+            auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
+            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
         )
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — bubble typed exceptions to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error updating default models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating default models: {str(e)}"
+            status_code=500, detail="Error updating default models"
         )
 
 
@@ -472,10 +538,15 @@ async def get_provider_availability():
             unavailable=unavailable_providers,
             supported_types=supported_types,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error checking provider availability: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error checking provider availability: {str(e)}"
+            status_code=500, detail="Error checking provider availability"
         )
 
 
@@ -485,7 +556,7 @@ async def get_provider_availability():
 
 
 @router.get(
-    "/models/discover/{provider}", response_model=List[DiscoveredModelResponse]
+    "/models/discover/{provider}", response_model=list[DiscoveredModelResponse]
 )
 async def discover_models(provider: str):
     """
@@ -508,6 +579,11 @@ async def discover_models(provider: str):
             )
             for m in discovered
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error discovering models for {provider}: {str(e)}")
         raise HTTPException(
@@ -537,6 +613,11 @@ async def sync_models(provider: str):
             new=new,
             existing=existing,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error syncing models for {provider}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error syncing models. Check server logs for details.")
@@ -573,10 +654,15 @@ async def sync_all_models():
             total_discovered=total_discovered,
             total_new=total_new,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error syncing all models: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error syncing all models: {str(e)}"
+            status_code=500, detail="Error syncing all models"
         )
 
 
@@ -596,14 +682,19 @@ async def get_model_count(provider: str):
             counts=counts,
             total=total,
         )
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error getting model count for {provider}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error getting model count: {str(e)}"
+            status_code=500, detail="Error getting model count"
         )
 
 
-@router.get("/models/by-provider/{provider}", response_model=List[ModelResponse])
+@router.get("/models/by-provider/{provider}", response_model=list[ModelResponse])
 async def get_models_by_provider(provider: str):
     """
     Get all registered models for a specific provider.
@@ -630,16 +721,21 @@ async def get_models_by_provider(provider: str):
             )
             for model in models
         ]
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error fetching models for {provider}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching models: {str(e)}"
+            status_code=500, detail="Error fetching models"
         )
 
 
 def _get_preferred_model(
-    models: List[Dict], provider_priority: List[str], model_preferences: Dict
-) -> Optional[Dict]:
+    models: list[dict], provider_priority: list[str], model_preferences: dict
+) -> Optional[dict]:
     """
     Select the best model from a list based on provider priority and model preferences.
 
@@ -655,7 +751,7 @@ def _get_preferred_model(
         return None
 
     # Group models by provider
-    by_provider: Dict[str, List[Dict]] = {}
+    by_provider: dict[str, list[dict]] = {}
     for model in models:
         provider = model.get("provider", "")
         if provider not in by_provider:
@@ -709,7 +805,7 @@ async def auto_assign_defaults():
         )
 
         # Group models by type
-        models_by_type: Dict[str, List[Dict]] = {
+        models_by_type: dict[str, list[dict]] = {
             "language": [],
             "embedding": [],
             "text_to_speech": [],
@@ -727,14 +823,16 @@ async def auto_assign_defaults():
             ("default_transformation_model", "language", defaults.default_transformation_model),  # type: ignore[attr-defined]
             ("default_tools_model", "language", defaults.default_tools_model),  # type: ignore[attr-defined]
             ("large_context_model", "language", defaults.large_context_model),  # type: ignore[attr-defined]
+            # ONP v0.5 — 8th slot for slow-but-deep reasoning models.
+            ("default_reasoning_model", "language", getattr(defaults, "default_reasoning_model", None)),
             ("default_embedding_model", "embedding", defaults.default_embedding_model),  # type: ignore[attr-defined]
             ("default_text_to_speech_model", "text_to_speech", defaults.default_text_to_speech_model),  # type: ignore[attr-defined]
             ("default_speech_to_text_model", "speech_to_text", defaults.default_speech_to_text_model),  # type: ignore[attr-defined]
         ]
 
-        assigned: Dict[str, str] = {}
-        skipped: List[str] = []
-        missing: List[str] = []
+        assigned: dict[str, str] = {}
+        skipped: list[str] = []
+        missing: list[str] = []
 
         for slot_name, model_type, current_value in slot_configs:
             if current_value:
@@ -769,8 +867,114 @@ async def auto_assign_defaults():
             missing=missing,
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error auto-assigning defaults: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error auto-assigning defaults: {str(e)}"
+            status_code=500, detail="Error auto-assigning defaults"
+        )
+
+
+@router.post("/models/auto-assign-capability", response_model=AutoAssignResult)
+async def auto_assign_capability(force: bool = False):
+    """ONP v0.5.2 — capability-aware re-evaluation.
+
+    Replaces upstream's PROVIDER_PRIORITY logic with our local-model-aware
+    scorer (desktop/auto_register/capability + assigner). Designed for the
+    "Re-evaluate model assignments" button in the Settings UI: lets users
+    refresh picks after downloading a new model, raising/lowering the chat
+    RAM ceiling, or changing the registry.
+
+    force=true wipes existing assignments before scoring — without this the
+    "never overwrite a manual override" guarantee makes the button a no-op.
+    """
+    try:
+        from open_notebook.database.repository import repo_query
+        try:
+            from desktop.auto_register.assigner import SLOTS, assign_all
+            from desktop.auto_register.capability import score_model
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "desktop.auto_register not importable from upstream API "
+                    "process. Rebuild required (PyInstaller spec must bundle "
+                    "desktop/auto_register/ into upstream/desktop/). "
+                    f"Underlying: {type(exc).__name__}: {exc}"
+                ),
+            )
+
+        # Get all models
+        all_models = await repo_query(
+            "SELECT * FROM model ORDER BY provider, name",
+            {},
+        )
+
+        # Score each model + run the assigner
+        pool = [score_model(m.get("name", "")) for m in all_models if m.get("name")]
+        picks = assign_all(pool)
+
+        # Map slot → upstream DefaultModels field
+        slot_to_field = {
+            "chat": "default_chat_model",
+            "tools": "default_tools_model",
+            "transformation": "default_transformation_model",
+            "large_context": "large_context_model",
+            "reasoning": "default_reasoning_model",
+            "embedding": "default_embedding_model",
+            "tts": "default_text_to_speech_model",
+            "stt": "default_speech_to_text_model",
+        }
+
+        # Build a model-name → id lookup so we can write the upstream ID
+        name_to_model = {m.get("name", ""): m for m in all_models}
+
+        defaults = await DefaultModels.get_instance()
+        assigned: dict[str, str] = {}
+        skipped: list[str] = []
+        missing: list[str] = []
+
+        for slot in SLOTS:
+            field = slot_to_field.get(slot)
+            if not field:
+                continue
+            pick = picks.get(slot)
+            if pick is None or pick.model is None:
+                missing.append(field)
+                continue
+            current = getattr(defaults, field, None)
+            if current and not force:
+                skipped.append(field)
+                continue
+            m = name_to_model.get(pick.model.name)
+            if not m:
+                missing.append(field)
+                continue
+            model_id = m.get("id", "")
+            assigned[field] = model_id
+            setattr(defaults, field, model_id)
+
+        if assigned:
+            await defaults.update()
+
+        return AutoAssignResult(
+            assigned=assigned,
+            skipped=skipped,
+            missing=missing,
+        )
+
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
+    except Exception as e:
+        logger.error(f"Error in capability-aware auto-assign: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error in capability-aware auto-assign",
         )

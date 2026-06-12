@@ -1,0 +1,7 @@
+-- v0.8.1 Item 2 — dedicated cloud model slot for the smart router.
+-- Separate from default_chat_model so the router doesn't silently
+-- fall back to a local model when the operator's chat default is
+-- itself local (the v0.8.0 bug surfaced in the CHANGELOG).
+DEFINE FIELD IF NOT EXISTS auto_route_cloud ON open_notebook
+    TYPE option<string>
+    DEFAULT NONE;

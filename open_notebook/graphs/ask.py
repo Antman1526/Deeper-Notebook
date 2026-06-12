@@ -1,4 +1,6 @@
+import asyncio
 import operator
+import os
 from typing import Annotated, List
 
 from ai_prompter import Prompter
@@ -6,15 +8,182 @@ from langchain_core.output_parsers.pydantic import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
+from loguru import logger
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.graphs.agent_fsm import AgentState  # v0.8.53 — Phase 5.3b
 from open_notebook.domain.notebook import vector_search
-from open_notebook.exceptions import OpenNotebookError
+from open_notebook.exceptions import (
+    ExternalServiceError,
+    OpenNotebookError,
+)
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+# v0.7.138 — Per-node LLM-call timeout for the ask graph (final-sweep
+# audit finding #1). Each of the three nodes (strategy, provide_answer,
+# write_final_answer) calls `model.ainvoke()` once. Before this
+# release, NONE of them had a timeout — a hung provider (e.g., local
+# llama-cpp-python that wedges mid-generation, cloud provider with a
+# brief outage) would pin the whole /search/ask stream indefinitely.
+# The outer SSE handler has `is_disconnected()` checks but no total-
+# time wall.
+#
+# Default 120s per node — generous because the final-answer node
+# synthesizes across multiple sub-answers and can legitimately need
+# 60-90s on a 16k-context local model. Tunable per-deployment.
+_DEFAULT_ASK_NODE_TIMEOUT_SEC = 120.0
+
+
+def _ask_node_timeout_sec() -> float:
+    raw = (os.environ.get("ONP_ASK_NODE_TIMEOUT_SEC") or "").strip()
+    if not raw:
+        return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+    try:
+        val = float(raw)
+        if val <= 0:
+            logger.warning(
+                "ONP_ASK_NODE_TIMEOUT_SEC={} must be positive; using "
+                "default {}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+            )
+            return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+        return val
+    except ValueError:
+        logger.warning(
+            "ONP_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default "
+            "{}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+        )
+        return _DEFAULT_ASK_NODE_TIMEOUT_SEC
+
+
+async def _ask_invoke(model, payload, *, node: str):
+    """v0.7.138 — Wrap a single ask-node LLM invocation with the
+    per-node timeout. A TimeoutError becomes ExternalServiceError
+    (HTTP 502 at the global handler) with a message naming the
+    failing node, so users see actionable info rather than a generic
+    500 + stack trace.
+
+    Why ExternalServiceError specifically: the failure mode is
+    upstream (the LLM provider hung), and 502 Bad Gateway is the
+    canonical status for "I tried to talk to an upstream service
+    and it didn't respond properly".
+    """
+    timeout = _ask_node_timeout_sec()
+    try:
+        return await asyncio.wait_for(model.ainvoke(payload), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        raise ExternalServiceError(
+            f"Ask graph: {node!r} node LLM call timed out after "
+            f"{timeout:.0f}s. Try a smaller/faster model, raise "
+            f"ONP_ASK_NODE_TIMEOUT_SEC, or check that the provider "
+            f"is responsive."
+        ) from exc
+
+# v0.8.53 — Phase 5.3b: optional agent-FSM completion gate for the ask graph.
+# The graph fans out the strategy's searches and then synthesizes a final
+# answer. When NONE of the searches returned grounded content, asking the LLM
+# to "synthesize" means writing from an empty context — precisely the case
+# where weak local models confidently hallucinate. When ONP_AGENT_FSM is on we
+# instead declare CLARIFY (per the agent_fsm state vocabulary) and ask the user
+# to refine, rather than emit an ungrounded answer. Default OFF → unchanged.
+_AGENT_FSM_CLARIFY_MESSAGE = (
+    "I couldn't find anything relevant to that question in your sources. "
+    "Try rephrasing it, using different keywords, or adding sources that "
+    "cover the topic — then ask again."
+)
+
+
+def _agent_fsm_enabled() -> bool:
+    raw = (os.environ.get("ONP_AGENT_FSM") or "").strip().lower()
+    return raw in ("on", "1", "true", "yes")
+
+
+# v0.7.9 — Per-result content cap for the Ask graph.
+#
+# `vector_search` returns up to N results where each result's `matches`
+# field is `array::flatten(content)` across all chunks that grouped under
+# one source/note/insight. A single hot source can easily contribute
+# 10-20 chunks of 500-1500 chars each, so one result can be 10-30 KB and
+# 10 results 100-300 KB — which is rendered verbatim into the prompt
+# `{{results}}` and shipped to the LLM.
+#
+# For local-model deployments this is catastrophic. A 16k-context server
+# (the v0.7.8 default) is overwhelmed: the input alone consumes most of
+# the window, leaving no room for the system prompt + 2000-token answer
+# reservation. The failure mode is server-side context overflow, often
+# surfaced as opaque 500s mid-stream.
+#
+# Defaults (per-result 1500 chars, max 10 results) keep the worst case
+# at ~15 KB ≈ 3.75k tokens — comfortable headroom in a 16k context with
+# room for output + template overhead. Users on bigger context windows
+# can raise the cap via env vars without code edits.
+_ASK_PER_RESULT_CHAR_CAP_DEFAULT = 1500
+_ASK_MAX_RESULTS_DEFAULT = 10
+_TRUNCATION_MARKER = "\n[...truncated for context budget...]"
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    """Parse a positive integer from env; fall back to default on garbage."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+        if val < minimum:
+            logger.warning(
+                f"{name}={raw} is below minimum {minimum}; using default {default}"
+            )
+            return default
+        return val
+    except ValueError:
+        logger.warning(f"{name}={raw!r} is not an int; using default {default}")
+        return default
+
+
+def _truncate_ask_results(results: list) -> list:
+    """Cap result count and per-result content size for local-model safety.
+
+    Mutates a *copy* — leaves the original list (which other code might
+    still reference) untouched. Each result's `matches` field, if
+    present, is joined and truncated to the char cap with a marker so
+    the LLM sees that content was elided rather than silently lost.
+    Non-`matches` fields (id, parent_id, title, similarity) are
+    untouched — they're tiny and the prompt needs them for citation.
+    """
+    max_results = _env_int(
+        "ONP_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1
+    )
+    char_cap = _env_int(
+        "ONP_ASK_PER_RESULT_CHAR_CAP",
+        _ASK_PER_RESULT_CHAR_CAP_DEFAULT,
+        minimum=200,
+    )
+    capped = list(results)[:max_results]
+    out = []
+    for r in capped:
+        if not isinstance(r, dict):
+            out.append(r)
+            continue
+        new_r = dict(r)
+        matches = new_r.get("matches")
+        # `matches` is array::flatten(content) — usually a list of strings,
+        # but defensively also handle a single string.
+        if isinstance(matches, list):
+            joined = "\n".join(m for m in matches if isinstance(m, str))
+        elif isinstance(matches, str):
+            joined = matches
+        else:
+            out.append(new_r)
+            continue
+        if len(joined) > char_cap:
+            joined = joined[:char_cap] + _TRUNCATION_MARKER
+        new_r["matches"] = joined
+        out.append(new_r)
+    return out
 
 
 class SubGraphState(TypedDict):
@@ -35,17 +204,18 @@ class Search(BaseModel):
 
 class Strategy(BaseModel):
     reasoning: str
-    searches: List[Search] = Field(
+    searches: list[Search] = Field(
         default_factory=list,
         description="You can add up to five searches to this strategy",
     )
 
 
-class ThreadState(TypedDict):
+class ThreadState(TypedDict, total=False):
     question: str
     strategy: Strategy
     answers: Annotated[list, operator.add]
     final_answer: str
+    agent_state: str  # v0.8.53 — Phase 5.3b: "complete" | "clarify" (FSM-gated)
 
 
 async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
@@ -62,8 +232,9 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             structured=dict(type="json"),
         )
         # model = model.bind_tools(tools)
-        # First get the raw response from the model
-        ai_message = await model.ainvoke(system_prompt)
+        # First get the raw response from the model.
+        # v0.7.138 — bounded by _ask_invoke instead of bare ainvoke.
+        ai_message = await _ask_invoke(model, system_prompt, node="strategy")
 
         # Clean the thinking content from the response
         message_content = extract_text_content(ai_message.content)
@@ -104,6 +275,11 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         results = await vector_search(state["term"], 10, True, True)
         if len(results) == 0:
             return {"answers": []}
+        # v0.7.9 — cap result count and per-result content size before
+        # passing into the prompt; protects local 16k-context LLMs from
+        # context overflow on hot sources with many chunks. See
+        # _truncate_ask_results docstring for rationale.
+        results = _truncate_ask_results(results)
         payload["results"] = results
         ids = [r["id"] for r in results]
         payload["ids"] = ids
@@ -114,7 +290,8 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
             "tools",
             max_tokens=2000,
         )
-        ai_message = await model.ainvoke(system_prompt)
+        # v0.7.138 — bounded by _ask_invoke instead of bare ainvoke.
+        ai_message = await _ask_invoke(model, system_prompt, node="provide_answer")
         ai_content = extract_text_content(ai_message.content)
         return {"answers": [clean_thinking_content(ai_content)]}
     except OpenNotebookError:
@@ -126,6 +303,23 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
 
 async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict:
     try:
+        # v0.8.53 — Phase 5.3b agent-FSM completion gate (default off). If no
+        # search produced grounded content, don't ask the LLM to synthesize
+        # from an empty context (where weak local models hallucinate) — declare
+        # CLARIFY and prompt the user to refine. Streaming-safe: search.py
+        # captures `final_answer` from this node's on_chain_end terminal event,
+        # so the message is delivered even without streamed token deltas.
+        if _agent_fsm_enabled():
+            answers = state.get("answers") or []
+            if not any(isinstance(a, str) and a.strip() for a in answers):
+                logger.info(
+                    "ask agent-FSM: no grounded answers from the strategy's "
+                    "searches → declaring CLARIFY instead of ungrounded synthesis"
+                )
+                return {
+                    "final_answer": _AGENT_FSM_CLARIFY_MESSAGE,
+                    "agent_state": AgentState.CLARIFY.value,
+                }
         system_prompt = Prompter(prompt_template="ask/final_answer").render(data=state)  # type: ignore[arg-type]
         model = await provision_langchain_model(
             system_prompt,
@@ -133,9 +327,17 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
             "tools",
             max_tokens=2000,
         )
-        ai_message = await model.ainvoke(system_prompt)
+        # v0.7.138 — bounded by _ask_invoke. The final-answer node
+        # synthesizes across multiple sub-answers and is typically the
+        # slowest node in the graph; the default 120s budget should
+        # cover it, but operators with bigger contexts can raise
+        # ONP_ASK_NODE_TIMEOUT_SEC.
+        ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
         final_content = extract_text_content(ai_message.content)
-        return {"final_answer": clean_thinking_content(final_content)}
+        result: dict = {"final_answer": clean_thinking_content(final_content)}
+        if _agent_fsm_enabled():
+            result["agent_state"] = AgentState.COMPLETE.value
+        return result
     except OpenNotebookError:
         raise
     except Exception as e:

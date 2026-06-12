@@ -1,0 +1,46 @@
+# Pre-commit hooks for Open Notebook Plus (v0.7.120).
+#
+# Install: `uv run pre-commit install` (one-time; wires .git/hooks/pre-commit)
+# Run on all files: `uv run pre-commit run --all-files`
+# Update hook versions: `uv run pre-commit autoupdate`
+#
+# What runs:
+#  - ruff check --fix (auto-fix what's mechanical, fail otherwise)
+#  - ruff format
+#  - check-yaml + check-json (catch syntax errors before commit)
+#  - end-of-file-fixer + trailing-whitespace (file hygiene)
+#  - check-merge-conflict (catches accidental merge markers)
+#  - check-added-large-files (>1 MB by default — keeps the repo lean)
+#
+# Hooks are scoped to the file types they apply to. Python files only
+# go through ruff; YAML/JSON only go through their respective syntax
+# checkers. Pytest is NOT in the pre-commit gate (too slow); CI runs
+# it instead.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types: [python]
+      - id: ruff-format
+        types: [python]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+        # Exclude generated locale files (they have trailing semicolons
+        # that the formatter normalizes differently than EOL fixer).
+        exclude: '^frontend/src/lib/locales/.*/index\.ts$'
+      - id: trailing-whitespace
+        exclude: '\.md$'   # markdown intentionally uses trailing-space line breaks
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+        exclude: '^\.gguf$'   # local model weights aren't committed anyway

@@ -20,12 +20,16 @@ import { Label } from '@/components/ui/label'
 import { useCreateNotebook } from '@/lib/hooks/use-notebooks'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
-const createNotebookSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().optional(),
-})
+// v0.7.199 — factory pattern so the validation message is
+// translated. Was hardcoded English "Name is required" — non-
+// English users saw English text in the field-error.
+const makeCreateNotebookSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().min(1, t('common.nameRequired')),
+    description: z.string().optional(),
+  })
 
-type CreateNotebookFormData = z.infer<typeof createNotebookSchema>
+type CreateNotebookFormData = z.infer<ReturnType<typeof makeCreateNotebookSchema>>
 
 interface CreateNotebookDialogProps {
   open: boolean
@@ -41,7 +45,7 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
     formState: { errors, isValid },
     reset,
   } = useForm<CreateNotebookFormData>({
-    resolver: zodResolver(createNotebookSchema),
+    resolver: zodResolver(makeCreateNotebookSchema(t)),
     mode: 'onChange',
     defaultValues: {
       name: '',

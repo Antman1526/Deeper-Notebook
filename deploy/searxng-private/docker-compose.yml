@@ -1,0 +1,42 @@
+# Private, localhost-only SearXNG for Open Notebook Plus native web_search.
+#
+# Why: public SearXNG mirrors block the JSON API (HTTP 403/418/429), so the chat
+# `web_search` tool can't use them. This private instance ENABLES format=json and
+# binds ONLY to 127.0.0.1 — a stable, keyless search endpoint for local LLMs.
+#
+# Quick start:
+#   1. Generate a secret:   openssl rand -hex 32
+#      paste it into  searxng/settings.yml -> server.secret_key
+#   2. docker compose up -d
+#   3. In Open Notebook Plus .env:   SEARXNG_BASE_URL=http://127.0.0.1:8889/
+#      (restart the app so .env is reloaded)
+#   4. Test:  curl "http://127.0.0.1:8889/search?q=test&format=json"
+#
+# See docs/5-CONFIGURATION/private-searxng-web-search.md for the full guide.
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: onp-searxng-private
+    restart: unless-stopped
+    # Bind to localhost ONLY — never expose a keyless search engine publicly.
+    # host 127.0.0.1:8889 -> container 8080
+    ports:
+      - "127.0.0.1:8889:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      # SearXNG composes its own base URL from this; keep it in sync with the port.
+      - SEARXNG_BASE_URL=http://127.0.0.1:8889/
+      - UWSGI_WORKERS=2
+      - UWSGI_THREADS=4
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

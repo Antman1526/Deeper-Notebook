@@ -124,12 +124,21 @@ class TestSourceDomain:
         assert "command" in save_data
 
     @pytest.mark.asyncio
-    async def test_source_delete_cleans_up_file(self):
-        """Test that deleting a source removes the associated file."""
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
-            tmp_file.write(b"Test content")
-            tmp_path = Path(tmp_file.name)
+    async def test_source_delete_cleans_up_file(self, monkeypatch):
+        """Test that deleting a source removes the associated file.
+
+        v0.6.34 — must use a file INSIDE UPLOADS_FOLDER (the new
+        containment check refuses to unlink outside-uploads paths).
+        Monkeypatches UPLOADS_FOLDER to tempdir so the test stays
+        hermetic.
+        """
+        # Create a "uploads" dir + a file inside it
+        uploads_dir = Path(tempfile.mkdtemp())
+        monkeypatch.setattr(
+            "open_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
+        )
+        tmp_path = uploads_dir / "test.txt"
+        tmp_path.write_bytes(b"Test content")
 
         try:
             # Create source with file asset
@@ -429,6 +438,110 @@ class TestEpisodeProfile:
             num_segments=5,
         )
         assert profile.num_segments == 5
+
+
+# ============================================================================
+# TEST SUITE: Note.save() resilience to surreal-commands registry misses
+# (v0.7.129 regression — found by the SurrealDB integration suite)
+# ============================================================================
+
+
+class TestNoteSaveResilience:
+    """v0.7.129 — Note.save() previously raised
+    `ValueError: Command not found: open_notebook.embed_note` whenever
+    the surreal-commands worker hadn't registered the embed_note
+    command (CI without a worker, fresh installs, restart windows).
+    Embedding is fire-and-forget by design, so a missing worker
+    must not fail the save itself.
+
+    v0.7.133 — Updated to reflect the registry-introspection refactor.
+    The behaviors these tests pin (save-survives-no-worker,
+    save-survives-generic-failures, save-propagates-real-ValueErrors)
+    are unchanged; only the implementation path is cleaner. Each test
+    now patches `_is_command_registered` to control whether the
+    pre-check skips or proceeds to submit_command.
+    """
+
+    @pytest.mark.asyncio
+    async def test_save_survives_command_not_found(self):
+        """When the registry doesn't have embed_note (worker not
+        running), `_is_command_registered` returns False and we skip
+        submit entirely. The note row is durable."""
+        note = Note(title="N", content="some content", note_type="human")
+
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake123"
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=False,
+            ),
+            patch("open_notebook.domain.notebook.submit_command") as submit_mock,
+        ):
+            result = await note.save()
+            assert result is None
+            assert note.id == "note:fake123"
+            # The whole point of the pre-check: submit_command never
+            # got called, so no roundtrip and no exception to swallow.
+            submit_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_save_survives_generic_submission_exception(self):
+        """When the registry HAS embed_note but submit_command itself
+        raises a non-ValueError (worker DB down, network blip), the
+        save must still complete and return None."""
+        note = Note(title="N", content="some content", note_type="human")
+
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake456"
+
+        def _raise_runtime(*args, **kwargs):
+            raise RuntimeError("worker DB unreachable")
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=True,
+            ),
+            patch("open_notebook.domain.notebook.submit_command", _raise_runtime),
+        ):
+            result = await note.save()
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_save_propagates_unrelated_value_errors(self):
+        """v0.7.133 — Real ValueErrors (e.g. bad argument validation
+        inside surreal_commands itself, future library changes) MUST
+        propagate so they don't get silently masked. The pre-check
+        already filtered the registry-miss case, so a ValueError at
+        submit time is a real bug — surface it.
+
+        Python except-clause matching: once the `except ValueError`
+        branch matches and `raise`s, the exception leaves the try
+        block. The broader `except Exception` below it does NOT get
+        a second chance.
+        """
+        note = Note(title="N", content="some content", note_type="human")
+
+        async def _fake_super_save(self):  # noqa: ARG001
+            self.id = "note:fake789"
+
+        def _raise_bad_args(*args, **kwargs):
+            raise ValueError("Invalid note_id format")
+
+        with (
+            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "open_notebook.domain.notebook._is_command_registered",
+                return_value=True,
+            ),
+            patch("open_notebook.domain.notebook.submit_command", _raise_bad_args),
+        ):
+            with pytest.raises(ValueError, match="Invalid note_id format"):
+                await note.save()
 
 
 if __name__ == "__main__":

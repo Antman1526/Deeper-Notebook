@@ -1,0 +1,4 @@
+-- 15_down.surrealql — rollback for v0.4 memory layer tables.
+REMOVE TABLE IF EXISTS memory_fact;
+REMOVE TABLE IF EXISTS memory_preference;
+REMOVE TABLE IF EXISTS memory_episode;

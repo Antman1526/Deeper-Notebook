@@ -158,11 +158,23 @@ def detect_content_type_from_extension(
     try:
         extension = Path(file_path).suffix.lower()
         return _EXTENSION_TO_CONTENT_TYPE.get(extension)
-    except Exception:
+    except Exception as exc:
+        # v0.8.28 — log the exception. Pre-v0.8.28 this swallowed
+        # silently. The Path/.suffix path is normally infallible on
+        # str input, but exotic inputs (path with embedded null,
+        # unusually long path on some filesystems) could raise. DEBUG
+        # because chunking falls back gracefully to heuristic detection
+        # and PLAIN content type — not a critical failure — but if
+        # this ever fires regularly the operator should know that
+        # extension-based detection isn't contributing.
+        logger.debug(
+            "detect_content_type_from_extension({!r}) raised: {}",
+            file_path, exc,
+        )
         return None
 
 
-def detect_content_type_from_heuristics(text: str) -> Tuple[ContentType, float]:
+def detect_content_type_from_heuristics(text: str) -> tuple[ContentType, float]:
     """
     Detect content type using content heuristics.
 
@@ -365,7 +377,7 @@ def _get_plain_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
-def _apply_secondary_chunking(chunks: List[str]) -> List[str]:
+def _apply_secondary_chunking(chunks: list[str]) -> list[str]:
     """
     Apply secondary chunking to ensure no chunk exceeds CHUNK_SIZE tokens.
 
@@ -389,7 +401,7 @@ def chunk_text(
     text: str,
     content_type: Optional[ContentType] = None,
     file_path: Optional[str] = None,
-) -> List[str]:
+) -> list[str]:
     """
     Split text into chunks using appropriate splitter for content type.
 

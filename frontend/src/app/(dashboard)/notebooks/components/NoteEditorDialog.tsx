@@ -1,7 +1,7 @@
 'use client'
 
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -13,13 +13,18 @@ import { MarkdownEditor } from '@/components/ui/markdown-editor'
 import { InlineEdit } from '@/components/common/InlineEdit'
 import { cn } from "@/lib/utils";
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 
-const createNoteSchema = z.object({
-  title: z.string().optional(),
-  content: z.string().min(1, 'Content is required'),
-})
+// v0.7.199 — factory pattern so the validation message is
+// translated. Was hardcoded English "Content is required" — non-
+// English users saw English text in the field-error.
+const makeCreateNoteSchema = (t: (key: string) => string) =>
+  z.object({
+    title: z.string().optional(),
+    content: z.string().min(1, t('common.contentRequired')),
+  })
 
-type CreateNoteFormData = z.infer<typeof createNoteSchema>
+type CreateNoteFormData = z.infer<ReturnType<typeof makeCreateNoteSchema>>
 
 interface NoteEditorDialogProps {
   open: boolean
@@ -30,6 +35,7 @@ interface NoteEditorDialogProps {
 
 export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteEditorDialogProps) {
   const { t } = useTranslation()
+  const { toast } = useToast()
   const createNote = useCreateNote()
   const updateNote = useUpdateNote()
   const queryClient = useQueryClient()
@@ -49,7 +55,7 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     reset,
     setValue,
   } = useForm<CreateNoteFormData>({
-    resolver: zodResolver(createNoteSchema),
+    resolver: zodResolver(makeCreateNoteSchema(t)),
     defaultValues: {
       title: '',
       content: '',
@@ -71,15 +77,32 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     reset({ title, content })
   }, [open, note, fetchedNote, reset])
 
+  // v0.7.59 — scope the fullscreen-class observer to the editor wrapper
+  // instead of `document.body`. The previous version fired on every
+  // class mutation anywhere in the document: Radix tooltips opening,
+  // dropdown menus toggling, Sonner toasts appearing/dismissing — all
+  // of those mutate class lists deep in the tree and woke up the
+  // observer just so we could re-query for `.w-md-editor-fullscreen`.
+  // While the dialog was open that was a continuous low-grade CPU
+  // burn. Observing the editor wrapper alone gives us the same
+  // signal — `.w-md-editor-fullscreen` lives inside the editor's own
+  // DOM — without the noise.
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!open) return
+    // Editor renders behind `noteLoading` for the edit-existing case,
+    // so re-check after loading completes — include `noteLoading` in
+    // deps so the effect re-runs once the wrapper actually mounts.
+    const target = editorContainerRef.current
+    if (!target) return
 
     const observer = new MutationObserver(() => {
-      setIsEditorFullscreen(!!document.querySelector('.w-md-editor-fullscreen'))
+      setIsEditorFullscreen(!!target.querySelector('.w-md-editor-fullscreen'))
     })
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] })
+    observer.observe(target, { subtree: true, attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
-  }, [open])
+  }, [open, noteLoading])
 
   const onSubmit = async (data: CreateNoteFormData) => {
     if (note) {
@@ -97,7 +120,19 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     } else {
       // Creating a note requires a notebookId
       if (!notebookId) {
+        // v0.7.202 — was silent `console.error + return`. The
+        // user clicked Save, watched the dialog do nothing, and
+        // had no feedback at all. Surface a toast so the failure
+        // is visible. (In normal flows this branch is unreachable
+        // because the dialog opens with a parent-provided
+        // notebookId; the toast is a safety net for a
+        // misconfigured caller.)
         console.error('Cannot create note without notebook_id')
+        toast({
+          title: t('common.error'),
+          description: t('notebooks.failedToCreateNote'),
+          variant: 'destructive',
+        })
         return
       }
       await createNote.mutateAsync({
@@ -154,22 +189,24 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
                   control={control}
                   name="content"
                   render={({ field }) => (
-                    <MarkdownEditor
-                      key={note?.id ?? 'new'}
-                      textareaId="note-content"
-                      value={field.value}
-                      onChange={field.onChange}
-                      height={420}
-                      placeholder={t('sources.writeNotePlaceholder')}
-                      className={cn(
-                          "w-full h-full min-h-[420px] max-h-[500px] overflow-hidden [&_.w-md-editor]:!static [&_.w-md-editor]:!w-full [&_.w-md-editor]:!h-full [&_.w-md-editor-content]:overflow-y-auto",
-                          !isEditorFullscreen && "rounded-md border"
-                      )}
-                    />
+                    <div ref={editorContainerRef} className="w-full h-full">
+                      <MarkdownEditor
+                        key={note?.id ?? 'new'}
+                        textareaId="note-content"
+                        value={field.value}
+                        onChange={field.onChange}
+                        height={420}
+                        placeholder={t('sources.writeNotePlaceholder')}
+                        className={cn(
+                            "w-full h-full min-h-[420px] max-h-[500px] overflow-hidden [&_.w-md-editor]:!static [&_.w-md-editor]:!w-full [&_.w-md-editor]:!h-full [&_.w-md-editor-content]:overflow-y-auto",
+                            !isEditorFullscreen && "rounded-md border"
+                        )}
+                      />
+                    </div>
                   )}
                 />
                 {errors.content && (
-                  <p className="text-sm text-red-600 mt-1">{errors.content.message}</p>
+                  <p className="text-sm text-destructive mt-1">{errors.content.message}</p>
                 )}
               </div>
             </>

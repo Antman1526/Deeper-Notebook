@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
@@ -36,6 +36,21 @@ export function useAsk() {
     error: null
   })
 
+  // v0.6.23 — track in-flight controller + mount state so we can cancel
+  // the stream on unmount (or on a second sendAsk before the first
+  // finishes). Without this, the reader leaks AND every setState fired
+  // by the streaming loop hits the unmounted component → React warning.
+  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
+
   const sendAsk = useCallback(async (question: string, models: AskModels) => {
     // Validate inputs
     if (!question.trim()) {
@@ -48,6 +63,11 @@ export function useAsk() {
       return
     }
 
+    // Cancel any prior in-flight stream before starting a new one.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     // Reset state
     setState({
       isStreaming: true,
@@ -57,23 +77,33 @@ export function useAsk() {
       error: null
     })
 
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
       const response = await searchApi.askKnowledgeBase({
         question,
         strategy_model: models.strategy,
         answer_model: models.answer,
         final_answer_model: models.finalAnswer
-      })
+      }, controller.signal)
 
       if (!response) {
         throw new Error('No response body received from server')
       }
 
-      const reader = response.getReader()
+      reader = response.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      // v0.8.34 — defense-in-depth cap. Matches the v0.7.49 buffer
+      // cap in useSourceChat; a stream that never emits a newline
+      // (server bug, transport corruption) would otherwise grow
+      // `buffer` unbounded and exhaust browser memory. 4 MiB is
+      // generous for SSE event lines (longest realistic event is
+      // the final_answer payload, < 100 KB).
+      const BUFFER_MAX = 4 * 1024 * 1024
 
       while (true) {
+        // Bail if unmounted between chunks — don't bother reading further.
+        if (!mountedRef.current) break
         const { done, value } = await reader.read()
 
         if (done) {
@@ -81,6 +111,9 @@ export function useAsk() {
         }
 
         buffer += decoder.decode(value, { stream: true })
+        if (buffer.length > BUFFER_MAX) {
+          throw new Error('ask stream buffer exceeded 4 MiB')
+        }
         const lines = buffer.split('\n')
 
         // Keep the last incomplete line in buffer
@@ -93,6 +126,9 @@ export function useAsk() {
               if (!jsonStr) continue
 
               const data: AskStreamEvent = JSON.parse(jsonStr)
+              // v0.6.23 — bail if unmounted between the read and the setState
+              // (the chunk may straddle the unmount). Errors still re-raise.
+              if (!mountedRef.current && data.type !== 'error') continue
 
               if (data.type === 'strategy') {
                 setState(prev => ({
@@ -107,10 +143,21 @@ export function useAsk() {
                   ...prev,
                   answers: [...prev.answers, data.content || '']
                 }))
-              } else if (data.type === 'final_answer') {
+              } else if (data.type === 'final_answer_delta') {
+                // v0.7.43 — per-token chunk for the final synthesis.
+                // Append to the running buffer; isStreaming stays true
+                // until the terminal `final_answer` event lands.
                 setState(prev => ({
                   ...prev,
-                  finalAnswer: data.content || '',
+                  finalAnswer: (prev.finalAnswer || '') + (data.content || ''),
+                }))
+              } else if (data.type === 'final_answer') {
+                // v0.7.43 — canonical terminal event. Replaces the
+                // streamed buffer with the server's final string
+                // (after any post-processing like clean_thinking_content).
+                setState(prev => ({
+                  ...prev,
+                  finalAnswer: data.content || prev.finalAnswer || '',
                   isStreaming: false
                 }))
               } else if (data.type === 'complete') {
@@ -134,22 +181,54 @@ export function useAsk() {
       }
 
       // Ensure streaming is stopped
-      setState(prev => ({ ...prev, isStreaming: false }))
+      if (mountedRef.current) {
+        setState(prev => ({ ...prev, isStreaming: false }))
+      }
 
     } catch (error) {
+      // AbortError from controller.abort() is expected — silent.
+      if ((error as { name?: string }).name === 'AbortError') {
+        return
+      }
       const err = error as { message?: string }
       const errorMessage = err.message || 'An unexpected error occurred'
       console.error('Ask error:', error)
 
-      setState(prev => ({
-        ...prev,
-        isStreaming: false,
-        error: errorMessage
-      }))
+      if (mountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isStreaming: false,
+          error: errorMessage
+        }))
 
-      toast.error(t('apiErrors.askFailed'), {
-        description: getApiErrorMessage(errorMessage, (key) => t(key))
-      })
+        toast.error(t('apiErrors.askFailed'), {
+          description: getApiErrorMessage(errorMessage, (key) => t(key))
+        })
+      }
+    } finally {
+      // v0.7.54 — cancel the reader BEFORE releasing the lock so the
+      // underlying HTTP response body is actually torn down. Just
+      // releaseLock() leaves the connection open until GC and the
+      // backend's `is_disconnected()` doesn't fire — the ask graph
+      // (multiple LLM calls) keeps generating answers nobody will see.
+      // Mirrors v0.7.50 chat.ts.
+      if (reader) {
+        try {
+          await reader.cancel()
+        } catch {
+          // cancel can throw if the stream is already errored; ignore.
+        }
+        try {
+          reader.releaseLock()
+        } catch {
+          // Reader may already be released (cancellation path); ignore.
+        }
+      }
+      // Clear the controller ref if it's still ours (i.e. nobody started
+      // a newer ask in the meantime).
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
     }
   }, [t])
 

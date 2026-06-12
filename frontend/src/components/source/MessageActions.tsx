@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Save, Copy, Loader2, Check } from 'lucide-react'
@@ -16,6 +16,28 @@ interface MessageActionsProps {
 export function MessageActions({ content, notebookId }: MessageActionsProps) {
   const { t } = useTranslation()
   const [copySuccess, setCopySuccess] = useState(false)
+  // v0.7.82 — track the 2-second copy-success-indicator timer in a ref
+  // so it cancels cleanly on unmount. Short window, low risk, but the
+  // standing CLAUDE.md audit pattern flags every uncleared setTimeout
+  // as something to address — closing it now finishes the sweep.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current)
+        copyTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const resetCopySuccessAfter = (ms: number) => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => {
+      copyTimerRef.current = null
+      setCopySuccess(false)
+    }, ms)
+  }
   const createNote = useCreateNote()
 
   const handleSaveToNote = () => {
@@ -39,7 +61,7 @@ export function MessageActions({ content, notebookId }: MessageActionsProps) {
         await navigator.clipboard.writeText(content)
         toast.success(t('common.copyToClipboard'))
         setCopySuccess(true)
-        setTimeout(() => setCopySuccess(false), 2000)
+        resetCopySuccessAfter(2000)
       } else {
         // Fallback for older browsers
         const textArea = document.createElement('textarea')
@@ -55,7 +77,7 @@ export function MessageActions({ content, notebookId }: MessageActionsProps) {
           document.execCommand('copy')
           toast.success(t('common.copyToClipboard'))
           setCopySuccess(true)
-          setTimeout(() => setCopySuccess(false), 2000)
+          resetCopySuccessAfter(2000)
         } catch {
           toast.error(t('common.error'))
         }

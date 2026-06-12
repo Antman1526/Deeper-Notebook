@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, Trash2 } from 'lucide-react'
 import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
+import { ExportNotebookDialog } from './ExportNotebookDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
@@ -20,6 +21,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
   const { t, language } = useTranslation()
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showExportDialog, setShowExportDialog] = useState(false)
   
   const updateNotebook = useUpdateNotebook()
 
@@ -59,8 +61,11 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 name="notebook-name"
                 value={notebook.name}
                 onSave={handleUpdateName}
-                className="text-2xl font-bold"
-                inputClassName="text-2xl font-bold"
+                // v0.7.180 — font-bold → font-semibold so the editable
+                // notebook title matches the v0.7.153 H1 weight standard
+                // and doesn't outweigh the dashboard H1s above it.
+                className="text-2xl font-semibold"
+                inputClassName="text-2xl font-semibold"
                 placeholder={t('notebooks.namePlaceholder')}
               />
               {notebook.archived && (
@@ -88,8 +93,16 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setShowExportDialog(true)}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {t('notebooks.export.button')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowDeleteDialog(true)}
-                className="text-red-600 hover:text-red-700"
+                className="text-destructive hover:text-destructive/90"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 {t('common.delete')}
@@ -122,6 +135,13 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
         notebookId={notebook.id}
         notebookName={notebook.name}
         redirectAfterDelete
+      />
+
+      <ExportNotebookDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        notebookId={notebook.id}
+        notebookName={notebook.name}
       />
     </>
   )

@@ -17,6 +17,7 @@ from loguru import logger
 from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
@@ -33,9 +34,51 @@ from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
+
+
+# v0.7.16 — upload byte cap for /api/sources. Without this, the only
+# protection was the Next.js reverse-proxy limit (proxyClientMaxBodySize
+# in next.config.ts). Authenticated users hitting the API directly
+# (Docker / scripted clients / pywebview shell) had no ceiling and
+# could fill the local disk on a runaway upload. Studio router got
+# its cap in v0.7.1; this is the same pattern applied to the main
+# source endpoint.
+#
+# Default 500 MB. Local-deploy disks vary widely; a power user with a
+# terabyte volume can raise the cap. The minimum (1 MB) guards typo'd
+# values like "100" that would reject every legitimate upload.
+_SOURCE_UPLOAD_MAX_BYTES_DEFAULT = 500 * 1024 * 1024
+_SOURCE_UPLOAD_MIN_BYTES = 1024 * 1024
+
+
+def _source_upload_max_bytes() -> int:
+    """Resolve the upload cap from ONP_SOURCE_UPLOAD_MAX_BYTES.
+
+    Defensive parsing: garbage or below-minimum values fall back to the
+    default with a logged warning. Returns the active cap in bytes.
+    """
+    raw = os.environ.get("ONP_SOURCE_UPLOAD_MAX_BYTES")
+    if raw is None:
+        return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+    try:
+        val = int(raw)
+        if val < _SOURCE_UPLOAD_MIN_BYTES:
+            logger.warning(
+                f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw} is below minimum "
+                f"{_SOURCE_UPLOAD_MIN_BYTES}; using default "
+                f"{_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
+            )
+            return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+        return val
+    except ValueError:
+        logger.warning(
+            f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw!r} is not an int; using "
+            f"default {_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
+        )
+        return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
 
 
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
@@ -70,22 +113,67 @@ def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
         counter += 1
 
 
-async def save_uploaded_file(upload_file: UploadFile) -> str:
-    """Save uploaded file to uploads folder and return file path."""
+async def save_uploaded_file(
+    upload_file: UploadFile,
+    max_bytes: Optional[int] = None,
+) -> str:
+    """Save uploaded file to uploads folder and return file path.
+
+    v0.6.16 — streamed in 1 MiB chunks instead of `await upload_file.read()`
+    which buffered the ENTIRE upload into Python memory before writing. With
+    Next.js's 100 MB proxy limit (frontend/next.config.ts), that meant up to
+    100 MB of RAM per concurrent upload through the proxy, plus an
+    additional spike for the `f.write(content)` syscall. Direct API hits
+    (Docker / scripted) had no FastAPI body-size limit at all and could OOM
+    the worker on a multi-GB file.
+
+    Chunked streaming keeps memory bounded to the chunk size regardless of
+    upload total — same memory footprint for 1 MB or 10 GB.
+
+    v0.7.1 — `max_bytes` closes a DoS vector. The Studio router's per-file
+    size check used `getattr(f, "size", None)` which is None for HTTP
+    requests sent with chunked transfer encoding (no Content-Length).
+    A malicious authenticated client could bypass that pre-check and
+    stream arbitrarily large files to disk. Now we count bytes as we
+    stream and abort mid-write when the cap is exceeded; the existing
+    except branch cleans up the partial file.
+    """
     if not upload_file.filename:
         raise ValueError("No filename provided")
 
     # Generate unique filename
     file_path = generate_unique_filename(upload_file.filename, UPLOADS_FOLDER)
 
+    _CHUNK = 1024 * 1024  # 1 MiB
+
     try:
-        # Save file
+        # Stream chunks straight to disk. The sync open()/write() is fine
+        # inside the async handler — each chunk write is microseconds and the
+        # await on upload_file.read() yields control back to the loop
+        # between chunks.
+        written = 0
         with open(file_path, "wb") as f:
-            content = await upload_file.read()
-            f.write(content)
+            while True:
+                chunk = await upload_file.read(_CHUNK)
+                if not chunk:
+                    break
+                # v0.7.1 — enforce the cap BEFORE writing the chunk so
+                # even one chunk past the threshold is rejected.
+                if max_bytes is not None and written + len(chunk) > max_bytes:
+                    raise ValueError(
+                        f"Upload exceeds size limit "
+                        f"({max_bytes} bytes); aborted after "
+                        f"writing {written} bytes"
+                    )
+                f.write(chunk)
+                written += len(chunk)
 
         logger.info(f"Saved uploaded file to: {file_path}")
         return file_path
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Failed to save uploaded file: {e}")
         # Clean up partial file if it exists
@@ -102,7 +190,20 @@ def parse_source_form_data(
     content: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     transformations: Optional[str] = Form(None),  # JSON string of transformation IDs
-    embed: str = Form("false"),  # Accept as string, convert to bool
+    # v0.7.208 — was Form("false"). A user-visible asymmetry:
+    # the frontend's AddSourceDialog defaults `embed=true` (when
+    # `default_embedding_option` is "always" or "ask", which is
+    # the user-facing default), but the backend Form default was
+    # "false". API consumers using curl / direct scripts therefore
+    # got an UPLOAD-BUT-DON'T-EMBED behaviour even though every
+    # part of the UI assumed sources are searchable after upload.
+    # Symptom: a curl upload completed with `embedded=false`,
+    # `embedded_chunks=0`, and `status=completed` — looked
+    # successful but the source was invisible to vector search.
+    # Flip the default to "true" so the API matches user
+    # expectation; explicit `-F embed=false` still works for the
+    # rare ingest-only flow.
+    embed: str = Form("true"),  # Accept as string, convert to bool
     delete_source: str = Form("false"),  # Accept as string, convert to bool
     async_processing: str = Form("false"),  # Accept as string, convert to bool
     file: Optional[UploadFile] = File(None),
@@ -151,6 +252,10 @@ def parse_source_form_data(
             async_processing=async_processing_bool,
         )
         pass  # SourceCreate instance created successfully
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Failed to create SourceCreate instance: {e}")
         raise
@@ -158,7 +263,7 @@ def parse_source_form_data(
     return source_data, file
 
 
-@router.get("/sources", response_model=List[SourceListResponse])
+@router.get("/sources", response_model=list[SourceListResponse])
 async def get_sources(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
     limit: int = Query(
@@ -283,7 +388,7 @@ async def get_sources(
         raise
     except Exception as e:
         logger.error(f"Error fetching sources: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching sources: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching sources")
 
 
 @router.post("/sources", response_model=SourceResponse)
@@ -309,12 +414,34 @@ async def create_source(
 
         # Handle file upload if provided
         if upload_file and source_data.type == "upload":
+            # v0.7.16 — apply the same byte-cap the Studio router has had
+            # since v0.7.1. Without this, an authenticated user can fill
+            # the local disk via multi-GB uploads. Default 500 MB matches
+            # the typical "very large PDF / dataset / book" ceiling
+            # while leaving room for local-deploy disk constraints.
+            # Env override: ONP_SOURCE_UPLOAD_MAX_BYTES.
+            max_bytes = _source_upload_max_bytes()
             try:
-                file_path = await save_uploaded_file(upload_file)
+                file_path = await save_uploaded_file(
+                    upload_file, max_bytes=max_bytes
+                )
+            except ValueError as exc:
+                # ValueError from save_uploaded_file is the upload-cap
+                # path — surface as 413 (Payload Too Large), not 400.
+                msg = str(exc)
+                if "exceeds size limit" in msg:
+                    logger.warning("Source upload rejected (oversize): {}", msg)
+                    raise HTTPException(status_code=413, detail=msg)
+                logger.error(f"File upload failed: {exc}")
+                raise HTTPException(status_code=400, detail=f"File upload failed: {msg}")
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"File upload failed: {e}")
                 raise HTTPException(
-                    status_code=400, detail=f"File upload failed: {str(e)}"
+                    status_code=400, detail="File upload failed"
                 )
 
         # Prepare content_state for processing
@@ -426,28 +553,40 @@ async def create_source(
                     full_text=None,  # Will be populated after processing
                     embedded=False,  # Will be updated after processing
                     embedded_chunks=0,
-                    created=str(source.created),
-                    updated=str(source.updated),
+                    created=iso(source.created),
+                    updated=iso(source.updated),
                     command_id=command_id,
                     status="new",
                     processing_info={"async": True, "queued": True},
                 )
 
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"Failed to submit async processing command: {e}")
                 # Clean up source record on command submission failure
                 try:
                     await source.delete()
+                except HTTPException:
+                    # v0.7.108 — re-raise typed HTTPExceptions so the next
+                    # `except Exception` doesn't clobber them to 500.
+                    raise
                 except Exception:
                     pass
                 # Clean up uploaded file if we created it
                 if file_path and upload_file:
                     try:
                         os.unlink(file_path)
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                 raise HTTPException(
-                    status_code=500, detail=f"Failed to queue processing: {str(e)}"
+                    status_code=500, detail="Failed to queue processing"
                 )
 
         else:
@@ -495,17 +634,35 @@ async def create_source(
                     # Clean up source record
                     try:
                         await source.delete()
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                     # Clean up uploaded file if we created it
                     if file_path and upload_file:
                         try:
                             os.unlink(file_path)
+                        except HTTPException:
+                            # v0.7.108 — re-raise typed HTTPExceptions so the next
+                            # `except Exception` doesn't clobber them to 500.
+                            raise
                         except Exception:
                             pass
+                    # v0.7.184 — Don't echo result.error_message to the
+                    # client. Worker error messages can carry SurrealDB
+                    # driver frames, file paths, partial RecordIDs —
+                    # same info-leak class the v0.7.168/177 podcast_service
+                    # sweep closed. logger captures the full picture; the
+                    # client gets a generic message. Backend audit #3.
+                    logger.error(
+                        "Sync source processing failed for source {}: {}",
+                        source.id, result.error_message,
+                    )
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
+                        detail="Source processing failed",
                     )
 
                 # Get the processed source
@@ -535,17 +692,25 @@ async def create_source(
                     full_text=processed_source.full_text,
                     embedded=embedded_chunks > 0,
                     embedded_chunks=embedded_chunks,
-                    created=str(processed_source.created),
-                    updated=str(processed_source.updated),
+                    created=iso(processed_source.created),
+                    updated=iso(processed_source.updated),
                     # No command_id or status for sync processing (legacy behavior)
                 )
 
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.error(f"Sync processing failed: {e}")
                 # Clean up uploaded file if we created it
                 if file_path and upload_file:
                     try:
                         os.unlink(file_path)
+                    except HTTPException:
+                        # v0.7.108 — re-raise typed HTTPExceptions so the next
+                        # `except Exception` doesn't clobber them to 500.
+                        raise
                     except Exception:
                         pass
                 raise
@@ -555,6 +720,10 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
         raise
@@ -563,6 +732,10 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
         raise HTTPException(status_code=400, detail=str(e))
@@ -572,9 +745,13 @@ async def create_source(
         if file_path and upload_file:
             try:
                 os.unlink(file_path)
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception:
                 pass
-        raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error creating source")
 
 
 @router.post("/sources/json", response_model=SourceResponse)
@@ -594,34 +771,57 @@ async def _resolve_source_file(source_id: str) -> tuple[str, str]:
     if not file_path:
         raise HTTPException(status_code=404, detail="Source has no file to download")
 
-    safe_root = os.path.realpath(UPLOADS_FOLDER)
-    resolved_path = os.path.realpath(file_path)
+    # v0.8.23 SECURITY — use Path.is_relative_to() so a sibling-prefix
+    # attack (UPLOADS_FOLDER=/var/uploads vs file_path=/var/uploadsx/...)
+    # is correctly rejected. Pre-v0.8.23 this did
+    # `resolved_path.startswith(safe_root)` with no trailing separator,
+    # which is the v0.6.31 / v0.6.34 / v0.7.2 sibling-prefix bug — the
+    # exact pattern that was already fixed in podcasts.py
+    # `_resolve_audio_path` (uses is_relative_to). The sources.py
+    # helpers were missed in that pass. Vector: a tampered DB row that
+    # sets source.asset.file_path to `/var/uploadsbypass/etc-passwd`
+    # would pass the old check and be served by FileResponse on
+    # GET /sources/{id}/download.
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    try:
+        resolved_path = Path(file_path).resolve()
+    except (OSError, ValueError):
+        # Malformed path. Treat as "not found" rather than 500.
+        raise HTTPException(status_code=404, detail="File not found on server")
 
-    if not resolved_path.startswith(safe_root):
+    if not resolved_path.is_relative_to(safe_root):
         logger.warning(
-            f"Blocked download outside uploads directory for source {source_id}: {resolved_path}"
+            f"Blocked download outside uploads directory for source "
+            f"{source_id}: {resolved_path}"
         )
         raise HTTPException(status_code=403, detail="Access to file denied")
 
-    if not os.path.exists(resolved_path):
+    if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="File not found on server")
 
-    filename = os.path.basename(resolved_path)
-    return resolved_path, filename
+    return str(resolved_path), resolved_path.name
 
 
 def _is_source_file_available(source: Source) -> Optional[bool]:
     if not source or not source.asset or not source.asset.file_path:
         return None
 
-    file_path = source.asset.file_path
-    safe_root = os.path.realpath(UPLOADS_FOLDER)
-    resolved_path = os.path.realpath(file_path)
-
-    if not resolved_path.startswith(safe_root):
+    # v0.8.23 SECURITY — same is_relative_to() fix as _resolve_source_file
+    # above. This helper feeds /sources/{id} response's `file_available`
+    # field. Pre-v0.8.23 returned True for a sibling-prefix path
+    # (/var/uploadsbypass/foo when UPLOADS_FOLDER=/var/uploads), telling
+    # the UI the file exists — and the download endpoint would then
+    # actually serve it. Same bug, two sites; this is the parallel fix.
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    try:
+        resolved_path = Path(source.asset.file_path).resolve()
+    except (OSError, ValueError):
         return False
 
-    return os.path.exists(resolved_path)
+    if not resolved_path.is_relative_to(safe_root):
+        return False
+
+    return resolved_path.exists()
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)
@@ -639,6 +839,10 @@ async def get_source(source_id: str):
             try:
                 status = await source.get_status()
                 processing_info = await source.get_processing_progress()
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.warning(f"Failed to get status for source {source_id}: {e}")
                 status = "unknown"
@@ -654,6 +858,21 @@ async def get_source(source_id: str):
             [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
         )
 
+        # v0.7.181 — Fast insights_count via aggregate query. Same
+        # SurrealQL shape the /sources list endpoint uses (sources.py:289)
+        # so the detail and list responses report consistent numbers.
+        # Cheap — single aggregate on the source_insight table by source.
+        insights_count_rows = await repo_query(
+            "SELECT VALUE count() FROM source_insight "
+            "WHERE source = $source_id GROUP ALL",
+            {"source_id": ensure_record_id(source.id or source_id)},
+        )
+        insights_count = (
+            int(insights_count_rows[0])
+            if insights_count_rows and insights_count_rows[0] is not None
+            else 0
+        )
+
         return SourceResponse(
             id=source.id or "",
             title=source.title,
@@ -667,9 +886,11 @@ async def get_source(source_id: str):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
+            insights_count=insights_count,  # v0.7.181 — parity with list endpoint
             file_available=_is_source_file_available(source),
-            created=str(source.created),
-            updated=str(source.updated),
+            # v0.7.181 — iso() instead of str() for Safari new Date() compat.
+            created=iso(source.created),
+            updated=iso(source.updated),
             # Status fields
             command_id=str(source.command) if source.command else None,
             status=status,
@@ -681,7 +902,7 @@ async def get_source(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching source")
 
 
 @router.head("/sources/{source_id}/download")
@@ -758,6 +979,10 @@ async def get_source_status(source_id: str):
                 command_id=str(source.command) if source.command else None,
             )
 
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as e:
             logger.warning(f"Failed to get status for source {source_id}: {e}")
             return SourceStatusResponse(
@@ -772,7 +997,7 @@ async def get_source_status(source_id: str):
     except Exception as e:
         logger.error(f"Error fetching status for source {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source status: {str(e)}"
+            status_code=500, detail="Error fetching source status"
         )
 
 
@@ -806,8 +1031,9 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
-            created=str(source.created),
-            updated=str(source.updated),
+            # v0.7.181 — iso() instead of str() for Safari new Date() compat.
+            created=iso(source.created),
+            updated=iso(source.updated),
         )
     except HTTPException:
         raise
@@ -815,7 +1041,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error updating source")
 
 
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
@@ -836,16 +1062,28 @@ async def retry_source_processing(source_id: str):
                         status_code=400,
                         detail="Source is already processing. Cannot retry while processing is active.",
                     )
+            except HTTPException:
+                # v0.7.108 — re-raise typed HTTPExceptions so the next
+                # `except Exception` doesn't clobber them to 500.
+                raise
             except Exception as e:
                 logger.warning(
                     f"Failed to check current status for source {source_id}: {e}"
                 )
                 # Continue with retry if we can't check status
 
-        # Get notebooks that this source belongs to
-        query = "SELECT notebook FROM reference WHERE source = $source_id"
-        references = await repo_query(query, {"source_id": source_id})
-        notebook_ids = [str(ref["notebook"]) for ref in references]
+        # Get notebooks that this source belongs to.
+        # v0.7.60 — fixed the query columns. The `reference` table is a
+        # SurrealDB edge with only `in`/`out` (and `id`), NOT `source` /
+        # `notebook` columns. The previous query always returned [], so
+        # every retry hit "Source is not associated with any notebooks"
+        # 400 and the retry endpoint was effectively dead. Also pass a
+        # RecordID, not the raw string.
+        query = "SELECT VALUE out FROM reference WHERE in = $source_id"
+        references = await repo_query(
+            query, {"source_id": ensure_record_id(source_id)}
+        )
+        notebook_ids = [str(r) for r in references]
 
         if not notebook_ids:
             raise HTTPException(
@@ -899,7 +1137,17 @@ async def retry_source_processing(source_id: str):
             )
 
             # Update source with new command ID
-            source.command = ensure_record_id(f"command:{command_id}")
+            # v0.7.24 — drop the `command:` prefix. command_id from
+            # submit_command_job already includes the `command:`
+            # prefix (see line 518 in the create path: `# command_id
+            # already includes 'command:' prefix`). Concatenating it
+            # produced `command:command:<uuid>`, which either failed
+            # to parse or parsed as a nested RecordID — making
+            # subsequent get_status() lookups return None forever.
+            # The 409 retry-conflict check at line ~932 was defeated
+            # on a second retry because the corrupted RecordID
+            # resolved to no row.
+            source.command = ensure_record_id(command_id)
             await source.save()
 
             # Get current embedded chunks count
@@ -919,19 +1167,23 @@ async def retry_source_processing(source_id: str):
                 full_text=source.full_text,
                 embedded=embedded_chunks > 0,
                 embedded_chunks=embedded_chunks,
-                created=str(source.created),
-                updated=str(source.updated),
+                created=iso(source.created),
+                updated=iso(source.updated),
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
             )
 
+        except HTTPException:
+            # v0.7.108 — re-raise typed HTTPExceptions so the next
+            # `except Exception` doesn't clobber them to 500.
+            raise
         except Exception as e:
             logger.error(
                 f"Failed to submit retry processing command for source {source_id}: {e}"
             )
             raise HTTPException(
-                status_code=500, detail=f"Failed to queue retry processing: {str(e)}"
+                status_code=500, detail="Failed to queue retry processing"
             )
 
     except HTTPException:
@@ -939,7 +1191,7 @@ async def retry_source_processing(source_id: str):
     except Exception as e:
         logger.error(f"Error retrying source processing for {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error retrying source processing: {str(e)}"
+            status_code=500, detail="Error retrying source processing"
         )
 
 
@@ -958,10 +1210,10 @@ async def delete_source(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting source")
 
 
-@router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])
+@router.get("/sources/{source_id}/insights", response_model=list[SourceInsightResponse])
 async def get_source_insights(source_id: str):
     """Get all insights for a specific source."""
     try:
@@ -976,8 +1228,8 @@ async def get_source_insights(source_id: str):
                 source_id=source_id,
                 insight_type=insight.insight_type,
                 content=insight.content,
-                created=str(insight.created),
-                updated=str(insight.updated),
+                created=iso(insight.created),
+                updated=iso(insight.updated),
             )
             for insight in insights
         ]
@@ -986,7 +1238,7 @@ async def get_source_insights(source_id: str):
     except Exception as e:
         logger.error(f"Error fetching insights for source {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching insights: {str(e)}"
+            status_code=500, detail="Error fetching insights"
         )
 
 
@@ -1014,15 +1266,50 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         if not transformation:
             raise HTTPException(status_code=404, detail="Transformation not found")
 
-        # Submit transformation as background job (fire-and-forget)
-        command_id = submit_command(
-            "open_notebook",
-            "run_transformation",
-            {
-                "source_id": source_id,
-                "transformation_id": request.transformation_id,
-            },
-        )
+        # Submit transformation as background job (fire-and-forget).
+        # v0.7.62 — wrap in asyncio.to_thread for the same reason as
+        # v0.7.55 in podcast_service / command_service: surreal_commands'
+        # submit_command opens a SYNC SurrealDB WebSocket (sign-in +
+        # use + create) and blocks the event loop for the duration of
+        # the handshake. Concurrent insight creations otherwise stall
+        # every other in-flight request.
+        #
+        # v0.7.175 — Route through CommandService.submit_command_job
+        # instead of bare `asyncio.to_thread(submit_command, ...)`.
+        # The bare call had no timeout cap, so a saturated SurrealDB
+        # pool / hung WS handshake would block this endpoint
+        # indefinitely — pinning a worker pool slot per stuck call.
+        # CommandService.submit_command_job already wraps with
+        # asyncio.wait_for(timeout=10) at command_service.py:43-51
+        # and raises ValueError on timeout, which we surface to the
+        # client as HTTP 503 below (rather than 500). Same pattern as
+        # the existing call sites at sources.py:520 and :1064 that
+        # ALREADY route through CommandService.
+        try:
+            command_id = await CommandService.submit_command_job(
+                "open_notebook",
+                "run_transformation",
+                {
+                    "source_id": source_id,
+                    "transformation_id": request.transformation_id,
+                },
+            )
+        except ValueError as exc:
+            # CommandService.submit_command_job raises ValueError on
+            # timeout (saturated pool). Surface as 503 rather than the
+            # generic 500 below — distinguishes "service overloaded,
+            # retry shortly" from "unexpected server error".
+            logger.warning(
+                "Insight submission timed out / failed for source {}: {}",
+                source_id, exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Insight generation service is overloaded "
+                    "— please retry in a moment."
+                ),
+            ) from exc
         logger.info(
             f"Submitted run_transformation command {command_id} for source {source_id}"
         )
@@ -1038,8 +1325,19 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.178 — Let typed exceptions bubble to the global FastAPI
+        # handlers in api/main.py (NotFoundError → 404, InvalidInputError
+        # → 400). Without this re-raise, the broad `except Exception`
+        # below intercepts them and returns a generic 500 — so a missing
+        # source / transformation that legitimately should be 404 was
+        # showing up to the client as 500. The local `if not source:
+        # raise HTTPException(404)` guards above never trigger because
+        # `Source.get()` raises NotFoundError instead of returning None
+        # (see open_notebook/domain/base.py:183).
+        raise
     except Exception as e:
         logger.error(f"Error starting insight generation for source {source_id}: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Error starting insight generation: {str(e)}"
+            status_code=500, detail="Error starting insight generation"
         )

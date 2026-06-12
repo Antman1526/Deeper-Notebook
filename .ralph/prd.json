@@ -1,0 +1,12 @@
+{
+  "title": "Ralph Tasks",
+  "branchName": "ralph/feature-name",
+  "stories": [
+    {
+      "id": "task-1",
+      "description": "Implement task or fix bug",
+      "status": "todo",
+      "passes": false
+    }
+  ]
+}

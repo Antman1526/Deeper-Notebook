@@ -389,3 +389,56 @@ class TestModelsProviderAvailability:
         # Should support only text_to_speech
         supported = data["supported_types"]["openai-compatible"]
         assert supported == ["text_to_speech"]
+
+
+def test_v0829_check_provider_has_credential_logs_debug_on_db_error(monkeypatch):
+    """v0.8.29 — `_check_provider_has_credential` had `except Exception:
+    pass; return False` with no logging. A DB connection drop, schema
+    mismatch, or auth failure would silently report "provider not
+    configured" without any trace in launcher.log. Must now log at
+    DEBUG so the operator can correlate the UI misreport with the
+    cause.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from loguru import logger
+
+    from api.routers import models as models_router
+
+    # Force the DB lookup to raise.
+    monkeypatch.setattr(
+        models_router.Credential,
+        "get_by_provider",
+        AsyncMock(side_effect=RuntimeError("simulated DB drop")),
+    )
+
+    captured: list[dict] = []
+    sink_id = logger.add(
+        lambda msg: captured.append({
+            "level": msg.record["level"].name,
+            "message": msg.record["message"],
+        }),
+        level="DEBUG",
+    )
+    try:
+        result = asyncio.new_event_loop().run_until_complete(
+            models_router._check_provider_has_credential("openai")
+        )
+    finally:
+        logger.remove(sink_id)
+
+    # Function still returns False (correct fallback behaviour) ...
+    assert result is False
+    # ... but emits a DEBUG line so the operator can see why.
+    debug_lines = [c for c in captured if c["level"] == "DEBUG"]
+    assert debug_lines, (
+        "v0.8.29: a DB error in _check_provider_has_credential must "
+        "log at DEBUG. Pre-v0.8.29 was silent; the UI would briefly "
+        "show DB-configured providers as unconfigured with no signal."
+    )
+    # And the log message names the provider so the operator can
+    # correlate.
+    assert any("openai" in c["message"] for c in debug_lines), (
+        f"Expected provider name in DEBUG message; got: {debug_lines}"
+    )

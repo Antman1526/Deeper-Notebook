@@ -10,14 +10,71 @@ from api.models import (
     NotebookResponse,
     NotebookUpdate,
 )
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
 
-@router.get("/notebooks", response_model=List[NotebookResponse])
+async def _cleanup_checkpoint_threads(
+    session_ids: list[str], *, context: str
+) -> int:
+    """v0.8.48 — best-effort LangGraph checkpoint cleanup for chat
+    sessions cascade-deleted by a notebook delete.
+
+    The domain `Notebook.delete()` removes the `chat_session` ROWS but
+    deliberately can't touch the LangGraph checkpointer (layering — the
+    domain layer must not import the chat graph). The single-session
+    delete path already cleans checkpoints (api/routers/chat.py
+    v0.7.171); without this, a notebook delete leaked every cascade-
+    deleted session's checkpoint thread forever, because
+    `prune_old_checkpoints` only trims the oldest snapshots WITHIN a
+    thread that exceeds the per-thread retention (50) — an orphaned
+    <50-checkpoint thread is never reached.
+
+    Best-effort by design: the SurrealDB rows are already gone, so a
+    checkpoint-cleanup failure must NOT fail the delete. Each thread is
+    isolated in its own try/except so one failure doesn't abort the
+    rest. Returns the count successfully cleaned. Never raises.
+    """
+    if not session_ids:
+        return 0
+    try:
+        import asyncio
+
+        from open_notebook.graphs.chat import chat_graph
+
+        checkpointer = getattr(chat_graph, "checkpointer", None)
+        delete_thread = getattr(checkpointer, "delete_thread", None)
+    except Exception as exc:  # import / attribute access failure
+        logger.warning(
+            "Checkpoint cleanup unavailable for {} (non-fatal): {}",
+            context, exc,
+        )
+        return 0
+    if delete_thread is None:
+        return 0
+    cleaned = 0
+    for sid in session_ids:
+        try:
+            await asyncio.to_thread(delete_thread, sid)
+            cleaned += 1
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Checkpoint cleanup failed for session {} ({}) — "
+                "non-fatal, row already deleted: {}",
+                sid, context, cleanup_exc,
+            )
+    logger.debug(
+        "Cleaned up {}/{} checkpoint thread(s) for {}",
+        cleaned, len(session_ids), context,
+    )
+    return cleaned
+
+
+@router.get("/notebooks", response_model=list[NotebookResponse])
 async def get_notebooks(
     archived: Optional[bool] = Query(None, description="Filter by archived status"),
     order_by: str = Query("updated desc", description="Order by field and direction"),
@@ -49,20 +106,33 @@ async def get_notebooks(
                 detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
             )
 
-        # Build the query with counts
+        # v0.7.166 — `archived` filter moved into the WHERE clause.
+        # Previously this fetched ALL notebook rows (including the
+        # source_count + note_count subqueries fired per row) and
+        # then filtered in Python. With many archived notebooks a
+        # caller asking for `?archived=false` paid for the full
+        # archive scan + post-filtering — wasted DB work + payload.
+        # Now SurrealDB skips archived rows server-side. Note: f-string
+        # interpolation of `validated_order_by` is safe — it's been
+        # checked against the `allowed_fields` allowlist + `allowed_directions`
+        # whitelist above; raw user input never reaches the query.
+        # `archived` flows in via the `$archived` binding, not f-string.
+        where_clause = ""
+        params: dict = {}
+        if archived is not None:
+            where_clause = "WHERE archived = $archived"
+            params["archived"] = archived
+
         query = f"""
             SELECT *,
             count(<-reference.in) as source_count,
             count(<-artifact.in) as note_count
             FROM notebook
+            {where_clause}
             ORDER BY {validated_order_by}
         """
 
-        result = await repo_query(query)
-
-        # Filter by archived status if specified
-        if archived is not None:
-            result = [nb for nb in result if nb.get("archived") == archived]
+        result = await repo_query(query, params if params else None)
 
         return [
             NotebookResponse(
@@ -79,10 +149,16 @@ async def get_notebooks(
         ]
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching notebooks: {str(e)}"
+            status_code=500, detail="Error fetching notebooks"
         )
 
 
@@ -101,17 +177,22 @@ async def create_notebook(notebook: NotebookCreate):
             name=new_notebook.name,
             description=new_notebook.description,
             archived=new_notebook.archived or False,
-            created=str(new_notebook.created),
-            updated=str(new_notebook.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(new_notebook.created),
+            updated=iso(new_notebook.updated),
             source_count=0,  # New notebook has no sources
             note_count=0,  # New notebook has no notes
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating notebook: {str(e)}"
+            status_code=500, detail="Error creating notebook"
         )
 
 
@@ -136,11 +217,17 @@ async def get_notebook_delete_preview(notebook_id: str):
         )
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching notebook deletion preview: {str(e)}",
+            detail="Error fetching notebook deletion preview",
         )
 
 
@@ -173,10 +260,16 @@ async def get_notebook(notebook_id: str):
         )
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching notebook: {str(e)}"
+            status_code=500, detail="Error fetching notebook"
         )
 
 
@@ -226,19 +319,25 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             name=notebook.name,
             description=notebook.description,
             archived=notebook.archived or False,
-            created=str(notebook.created),
-            updated=str(notebook.updated),
+            # v0.7.181 — iso() for Safari new Date() compat.
+            created=iso(notebook.created),
+            updated=iso(notebook.updated),
             source_count=0,
             note_count=0,
         )
     except HTTPException:
+        raise
+    except NotFoundError:
+        # v0.7.179 — bubble to global handler → 404 (Notebook.get raises
+        # NotFoundError instead of returning None; the local `if not
+        # notebook: raise HTTPException(404)` guard above is dead code).
         raise
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating notebook: {str(e)}"
+            status_code=500, detail="Error updating notebook"
         )
 
 
@@ -256,9 +355,19 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        # Check if reference already exists (idempotency)
+        # Check if reference already exists (idempotency).
+        # v0.7.60 — query columns were swapped: the `RELATE
+        # $source_id->reference->$notebook_id` below produces an edge
+        # with `in=source, out=notebook`, so the idempotency check has
+        # to match that direction. The previous version checked
+        # `out=source, in=notebook` (always empty), so EVERY call
+        # created a fresh edge. `source_count` then inflated without
+        # bound and the symmetric DELETE on line 301 (which uses the
+        # correct direction) only removed a single edge per call,
+        # leaving the rest as junk. Matches the delete-query orientation
+        # now.
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE out = $notebook_id AND in = $source_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
@@ -278,12 +387,18 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         return {"message": "Source linked to notebook successfully"}
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
         )
         raise HTTPException(
-            status_code=500, detail=f"Error linking source to notebook: {str(e)}"
+            status_code=500, detail="Error linking source to notebook"
         )
 
 
@@ -308,12 +423,18 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         return {"message": "Source removed from notebook successfully"}
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(
             f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
         )
         raise HTTPException(
-            status_code=500, detail=f"Error removing source from notebook: {str(e)}"
+            status_code=500, detail="Error removing source from notebook"
         )
 
 
@@ -339,6 +460,13 @@ async def delete_notebook(
 
         result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
 
+        # v0.8.48 — clean up the LangGraph checkpoint threads for the chat
+        # sessions this delete cascaded away (see _cleanup_checkpoint_threads).
+        await _cleanup_checkpoint_threads(
+            result.get("deleted_chat_session_ids") or [],
+            context=f"notebook {notebook_id}",
+        )
+
         return NotebookDeleteResponse(
             message="Notebook deleted successfully",
             deleted_notes=result["deleted_notes"],
@@ -347,8 +475,14 @@ async def delete_notebook(
         )
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.179 — Let typed exceptions bubble to the global handlers
+        # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        # Without this re-raise, the broad `except Exception` below
+        # masks legitimate 404/400 cases as generic 500s.
+        raise
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error deleting notebook: {str(e)}"
+            status_code=500, detail="Error deleting notebook"
         )

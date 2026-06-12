@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import {
@@ -22,16 +23,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ThemeToggle } from '@/components/common/ThemeToggle'
+// ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
+// shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
+// import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
+import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { Separator } from '@/components/ui/separator'
+// v0.7.167 — Separator import no longer needed; section gaps use
+// margin instead of visible dividers. Kept as a comment so a future
+// "what happened to it?" grep finds the rationale.
 import {
   Book,
   Search,
   Mic,
   Bot,
+  Plug,
   Shuffle,
   Settings,
   LogOut,
@@ -41,6 +49,8 @@ import {
   Plus,
   Wrench,
   Command,
+  Sparkles,
+  Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
 const getNavigation = (t: TFunction) => [
@@ -60,6 +70,10 @@ const getNavigation = (t: TFunction) => [
   {
     title: t('navigation.create'),
     items: [
+      // ONP v0.7.0 — Studio: one-shot upload + mode → output. Lives in
+      // the Create group because that's its conceptual home (it produces
+      // a new notebook or podcast from uploaded docs).
+      { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
     ],
   },
@@ -69,6 +83,10 @@ const getNavigation = (t: TFunction) => [
       { name: t('navigation.models'), href: '/settings/api-keys', icon: Bot },
       { name: t('navigation.transformations'), href: '/transformations', icon: Shuffle },
       { name: t('navigation.settings'), href: '/settings', icon: Settings },
+      // v0.8.0 Phase 2 Task 10 — MCP Servers settings page
+      { name: t('settings.mcp.navTitle'), href: '/settings/mcp', icon: Plug },
+      // v0.8.6 Item D — Launch preferences (env-var knobs for local LLM)
+      { name: t('settings.launcherPrefs.navTitle'), href: '/settings/launcher-prefs', icon: Sliders },
       { name: t('navigation.advanced'), href: '/advanced', icon: Wrench },
     ],
   },
@@ -81,11 +99,23 @@ export function AppSidebar() {
   const navigation = getNavigation(t)
   const pathname = usePathname()
   const { logout } = useAuth()
-  const { isCollapsed, toggleCollapse } = useSidebarStore()
+  const { isCollapsed: storeCollapsed, toggleCollapse } = useSidebarStore()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
 
+  // v0.7.41 — responsive collapse. On `<lg` viewports the sidebar is
+  // forced into mini-rail mode regardless of the persisted store state.
+  // The full 256px sidebar dominates phone screens (320-414px wide) and
+  // pushes the content area off-screen. At lg (1024px+), the user's
+  // saved preference (expanded or collapsed) applies normally.
+  const isDesktop = useIsDesktop()
+  const isCollapsed = isDesktop ? storeCollapsed : true
+
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
-  const [isMac, setIsMac] = useState(true) // Default to Mac for SSR
+  // v0.7.28 — `null` until the effect resolves. The previous `true`
+  // default caused every Windows/Linux user to see "⌘K" on first paint
+  // then flicker to "Ctrl+K" after hydration. With null we render the
+  // kbd hint only after the effect runs, eliminating the flash.
+  const [isMac, setIsMac] = useState<boolean | null>(null)
 
   // Detect platform for keyboard shortcut display
   useEffect(() => {
@@ -122,16 +152,24 @@ export function AppSidebar() {
             <div className="relative flex items-center justify-center w-full">
               <Image
                 src="/logo.svg"
-                alt="Open Notebook"
+                alt="Open notebook+"
                 width={32}
                 height={32}
                 className="transition-opacity group-hover:opacity-0"
               />
+              {/* v0.7.197 — `[@media(hover:none)]:opacity-100` makes
+                  the collapsed-sidebar expand button visible on touch
+                  devices (iPad, touch laptops). The `opacity-0 group-
+                  hover:opacity-100` pair only works on devices that
+                  fire a real `hover` — on a touch screen the button
+                  was permanently invisible, so users had no way to
+                  expand the sidebar. Repeated across NotebookCard,
+                  NotesColumn, SourceCard (same hover-only trap). */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={toggleCollapse}
-                className="absolute text-sidebar-foreground hover:bg-sidebar-accent opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute text-sidebar-foreground hover:bg-sidebar-accent opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
               >
                 <Menu className="h-4 w-4" />
               </Button>
@@ -241,10 +279,15 @@ export function AppSidebar() {
           </div>
 
           {navigation.map((section, index) => (
-            <div key={section.title}>
-              {index > 0 && (
-                <Separator className="my-3" />
-              )}
+            // v0.7.167 — Sidebar section separators downgraded from
+            // visible `<Separator />` lines to plain vertical rhythm.
+            // 4 sections × 1 separator each = 4 horizontal lines in the
+            // sidebar — visually noisy on what should be a quiet rail.
+            // The uppercase section labels (COLLECT, PROCESS, CREATE,
+            // MANAGE) already provide enough delineation; just give
+            // them breathing room via `mt-6` and the labels do the
+            // work. Saves ~3px of visual chrome per gap.
+            <div key={section.title} className={index > 0 ? "mt-6" : ""}>
               <div className="space-y-1">
                 {!isCollapsed && (
                   <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
@@ -253,17 +296,39 @@ export function AppSidebar() {
                 )}
 
                 {section.items.map((item) => {
-                  const isActive = pathname?.startsWith(item.href) || false
+                  // v0.7.28 — exact-or-child match. The previous
+                  // `startsWith` made /sources highlight when on
+                  // /sources/{id}, which is correct, BUT also caused
+                  // false matches for unrelated routes that shared a
+                  // common prefix. Keep startsWith but force a path-
+                  // boundary check.
+                  const isActive = !!pathname && (
+                    pathname === item.href ||
+                    pathname.startsWith(item.href + '/')
+                  )
                   const button = (
                     <Button
                       variant={isActive ? 'secondary' : 'ghost'}
                       className={cn(
-                        'w-full gap-3 text-sidebar-foreground sidebar-menu-item',
-                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground',
+                        // v0.7.28 — refined active-state treatment:
+                        // - relative + before pseudo for a left-edge
+                        //   accent bar that doesn't affect layout
+                        //   (the old scale-[1.02] in globals.css was
+                        //   removed in v0.7.25 for overflow reasons;
+                        //   this fills that need without the bug).
+                        // - subtle font-weight bump on active.
+                        // - smoother transition via the new motion
+                        //   token (still falls back to duration-200
+                        //   for any reduced-motion edge).
+                        'relative w-full gap-3 text-sidebar-foreground sidebar-menu-item',
+                        'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
+                        'before:h-0 before:w-[3px] before:rounded-r before:bg-primary',
+                        'before:transition-[height] before:duration-200 before:ease-out',
+                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium before:h-6',
                         isCollapsed ? 'justify-center px-2' : 'justify-start'
                       )}
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className={cn('h-4 w-4', isActive && 'text-primary')} />
                       {!isCollapsed && <span>{item.name}</span>}
                     </Button>
                   )
@@ -306,9 +371,14 @@ export function AppSidebar() {
                   <Command className="h-3 w-3" />
                   {t('common.quickActions')}
                 </span>
-                <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                  {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
-                </kbd>
+                {/* v0.7.28 — only render after platform detection
+                    completes (isMac !== null). Avoids a flash of the
+                    wrong key on SSR/hydration. */}
+                {isMac !== null && (
+                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                    {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
+                  </kbd>
+                )}
               </div>
                <p className="mt-1 text-[10px] text-sidebar-foreground/40">
                 {t('common.quickActionsDesc')}
@@ -340,11 +410,22 @@ export function AppSidebar() {
                   </TooltipTrigger>
                   <TooltipContent side="right">{t('common.language')}</TooltipContent>
                 </Tooltip>
+                {/* ONP v0.6 — Gmail sign-in / status (icon-only when collapsed) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <GmailSidebarButton iconOnly />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Email Digests</TooltipContent>
+                </Tooltip>
               </>
             ) : (
               <>
                 <ThemeToggle />
                 <LanguageToggle />
+                {/* ONP v0.6 — Gmail sign-in / status */}
+                <GmailSidebarButton />
               </>
             )}
           </div>
@@ -373,6 +454,37 @@ export function AppSidebar() {
               <LogOut className="h-4 w-4" />
               {t('common.signOut')}
             </Button>
+          )}
+
+          {/* v0.8.0 Phase 1 — local-model health badges; hidden when
+              sidebar is collapsed and during the initial fetch. */}
+          {!isCollapsed && (
+            <div className="mt-2">
+              <LocalModelHealthBadges />
+            </div>
+          )}
+
+          {/* v0.7.210 — Version badge. Source: `window.ONP_VERSION`
+              injected by desktop/window.py at page load (read from
+              desktop/__init__.py:__version__). Falls back to the
+              /api/version endpoint when running in dev mode outside
+              the bundled .app. Read-only display — helps users tell
+              support which build they're running, and confirms a
+              fresh rebuild actually picked up new code.
+              `[suppressHydrationWarning]` because the value is set
+              client-side via window injection and may differ from
+              the SSR fallback. */}
+          {!isCollapsed && (
+            <div
+              className="mt-1 text-center text-[10px] text-sidebar-foreground/40 font-mono"
+              suppressHydrationWarning
+            >
+              v{
+                typeof window !== 'undefined'
+                  ? ((window as { ONP_VERSION?: string }).ONP_VERSION || '—')
+                  : '—'
+              }
+            </div>
           )}
         </div>
       </div>

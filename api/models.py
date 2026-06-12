@@ -22,8 +22,16 @@ class NotebookResponse(BaseModel):
     name: str
     description: str
     archived: bool
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     source_count: int
     note_count: int
 
@@ -36,12 +44,14 @@ class SearchRequest(BaseModel):
     search_sources: bool = Field(True, description="Include sources in search")
     search_notes: bool = Field(True, description="Include notes in search")
     minimum_score: float = Field(
-        0.2, description="Minimum score for vector search", ge=0, le=1
+        # v0.8.67 (A1) — was 0.2; 0.0-0.3 is "unrelated" (matches the memory
+        # layer's _MIN_SCORE). Aligns the /search/ask default with vector_search.
+        0.3, description="Minimum score for vector search", ge=0, le=1
     )
 
 
 class SearchResponse(BaseModel):
-    results: List[Dict[str, Any]] = Field(..., description="Search results")
+    results: list[dict[str, Any]] = Field(..., description="Search results")
     total_count: int = Field(..., description="Total number of results")
     search_type: str = Field(..., description="Type of search performed")
 
@@ -79,8 +89,16 @@ class ModelResponse(BaseModel):
     provider: str
     type: str
     credential: Optional[str] = None
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class DefaultModelsResponse(BaseModel):
@@ -91,12 +109,24 @@ class DefaultModelsResponse(BaseModel):
     default_speech_to_text_model: Optional[str] = None
     default_embedding_model: Optional[str] = None
     default_tools_model: Optional[str] = None
+    # ONP v0.5 — slow-but-deep reasoning model slot (R1, gpt-oss, Nemotron etc.)
+    default_reasoning_model: Optional[str] = None
+    # v0.8.1 — dedicated cloud slot for the smart router. Was added on
+    # the domain side in v0.8.1 (Migration 18) but the API schema was
+    # missed — the frontend wrote it through PUT but the field never
+    # round-tripped through the router. Adding it here closes that gap.
+    auto_route_cloud: Optional[str] = None
+    # v0.8.37 — UI-controllable smart-routing toggle + provider pref.
+    # Env var (OPEN_NOTEBOOK_AUTO_ROUTE_CHAT) still wins for back-compat;
+    # otherwise these fields drive `provision_langchain_chat_model`.
+    auto_route_enabled: Optional[bool] = None
+    auto_route_provider_pref: Optional[str] = None
 
 
 class ProviderAvailabilityResponse(BaseModel):
-    available: List[str] = Field(..., description="List of available providers")
-    unavailable: List[str] = Field(..., description="List of unavailable providers")
-    supported_types: Dict[str, List[str]] = Field(
+    available: list[str] = Field(..., description="List of available providers")
+    unavailable: list[str] = Field(..., description="List of unavailable providers")
+    supported_types: dict[str, list[str]] = Field(
         ..., description="Provider to supported model types mapping"
     )
 
@@ -135,8 +165,16 @@ class TransformationResponse(BaseModel):
     description: str
     prompt: str
     apply_default: bool
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class TransformationExecuteRequest(BaseModel):
@@ -191,8 +229,16 @@ class NoteResponse(BaseModel):
     title: Optional[str]
     content: Optional[str]
     note_type: Optional[str]
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     command_id: Optional[str] = None
 
 
@@ -261,15 +307,35 @@ class SettingsResponse(BaseModel):
     default_content_processing_engine_url: Optional[str] = None
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
-    youtube_preferred_languages: Optional[List[str]] = None
+    youtube_preferred_languages: Optional[list[str]] = None
+    # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
+    offline_mode: Optional[bool] = None
 
 
+# v0.7.130 — tightened the literal fields from Optional[str] to
+# Optional[Literal[...]]. Previously SettingsUpdate accepted any string
+# (the handler's cast(Literal,...) was a static-only assertion that did
+# nothing at runtime — see settings.py for the cleanup). With this
+# change, FastAPI/Pydantic rejects invalid values at the request
+# boundary with a 422, surfacing the bad input immediately instead of
+# silently storing it then breaking ContentSettings.update() with a
+# less helpful error. Allowed values lifted directly from ContentSettings.
 class SettingsUpdate(BaseModel):
-    default_content_processing_engine_doc: Optional[str] = None
-    default_content_processing_engine_url: Optional[str] = None
-    default_embedding_option: Optional[str] = None
-    auto_delete_files: Optional[str] = None
-    youtube_preferred_languages: Optional[List[str]] = None
+    default_content_processing_engine_doc: Optional[
+        Literal["auto", "docling", "simple"]
+    ] = None
+    # v0.8.68 — BUG FIX: "crawl4ai" was added to ContentSettings in
+    # v0.8.67u but never to this request schema, so PUT /settings
+    # 422-rejected the value and the UI couldn't actually select the
+    # crawl4ai engine. Allowed values lifted from ContentSettings.
+    default_content_processing_engine_url: Optional[
+        Literal["auto", "crawl4ai", "firecrawl", "jina", "simple"]
+    ] = None
+    default_embedding_option: Optional[Literal["ask", "always", "never"]] = None
+    auto_delete_files: Optional[Literal["yes", "no"]] = None
+    youtube_preferred_languages: Optional[list[str]] = None
+    # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
+    offline_mode: Optional[bool] = None
 
 
 # Sources API models
@@ -284,7 +350,7 @@ class SourceCreate(BaseModel):
         None, description="Notebook ID to add the source to (deprecated, use notebooks)"
     )
     # New multi-notebook support
-    notebooks: Optional[List[str]] = Field(
+    notebooks: Optional[list[str]] = Field(
         None, description="List of notebook IDs to add the source to"
     )
     # Required fields
@@ -293,7 +359,7 @@ class SourceCreate(BaseModel):
     file_path: Optional[str] = Field(None, description="File path for upload type")
     content: Optional[str] = Field(None, description="Text content for text type")
     title: Optional[str] = Field(None, description="Source title")
-    transformations: Optional[List[str]] = Field(
+    transformations: Optional[list[str]] = Field(
         default_factory=list, description="Transformation IDs to apply"
     )
     embed: bool = Field(False, description="Whether to embed content for vector search")
@@ -327,51 +393,89 @@ class SourceCreate(BaseModel):
 
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
-    topics: Optional[List[str]] = Field(None, description="Source topics")
+    topics: Optional[list[str]] = Field(None, description="Source topics")
 
 
+# v0.7.181 — SourceResponse / SourceListResponse shape reconciliation.
+#
+# Intentional asymmetries (kept):
+#   - `full_text`        ONLY on SourceResponse. The list endpoint
+#                        deliberately omits this — bulk source-list
+#                        responses would otherwise carry every source's
+#                        full body (potentially MB per row).
+#   - `notebooks`        ONLY on SourceResponse. Requires a per-row
+#                        reference JOIN; cheap once but quadratic at
+#                        list scale. List callers that need notebook
+#                        membership use a separate endpoint.
+#
+# Reconciled (was a gap before v0.7.181):
+#   - `insights_count`   Now present on BOTH. Was list-only — the
+#                        detail view had no way to surface "this
+#                        source has N transformations" without a
+#                        separate API call. Default 0 so creation-
+#                        time SourceResponse constructions stay
+#                        backward-compatible.
+#   - `processing_info`  Both now type-annotated `dict[str, Any]`
+#                        (was bare `dict` on SourceResponse — the
+#                        type annotation was looser than the list
+#                        endpoint's already-tight type).
 class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
-    topics: Optional[List[str]]
+    topics: Optional[list[str]]
     asset: Optional[AssetModel]
     full_text: Optional[str]
     embedded: bool
     embedded_chunks: int
+    insights_count: int = 0  # v0.7.181 — parity with SourceListResponse
     file_available: Optional[bool] = None
-    created: str
-    updated: str
+    # v0.7.181 — created/updated are now Optional[str]. Previously they
+    # were required `str`, which combined with the natural `str(model.created)`
+    # serialisation pattern silently returned the literal string `"None"`
+    # when the model hadn't been saved yet (e.g. async-create paths
+    # where SourceResponse is constructed mid-flight before the row is
+    # persisted). The new iso() helper correctly returns None for None
+    # input — making this Optional is the matching change so the
+    # response can legitimately carry null timestamps during the
+    # pre-persist window without Pydantic rejecting them.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     # New fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[Dict] = None
+    processing_info: Optional[dict[str, Any]] = None  # v0.7.181 — tightened from bare `dict`
     # Notebook associations
-    notebooks: Optional[List[str]] = None
+    notebooks: Optional[list[str]] = None
 
 
 class SourceListResponse(BaseModel):
     id: str
     title: Optional[str]
-    topics: Optional[List[str]]
+    topics: Optional[list[str]]
     asset: Optional[AssetModel]
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
     insights_count: int
-    created: str
-    updated: str
+    # v0.7.181 — same Optional[str] treatment as SourceResponse for
+    # consistency. List rows always come from persisted records so in
+    # practice these are never None, but the type widening keeps the
+    # two response shapes aligned and is forward-compatible if the
+    # list query ever surfaces partially-materialised rows.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     file_available: Optional[bool] = None
     # Status fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[Dict[str, Any]] = None
+    processing_info: Optional[dict[str, Any]] = None
 
 
 # Context API models
 class ContextConfig(BaseModel):
-    sources: Dict[str, str] = Field(
+    sources: dict[str, str] = Field(
         default_factory=dict, description="Source inclusion config {source_id: level}"
     )
-    notes: Dict[str, str] = Field(
+    notes: dict[str, str] = Field(
         default_factory=dict, description="Note inclusion config {note_id: level}"
     )
 
@@ -385,8 +489,8 @@ class ContextRequest(BaseModel):
 
 class ContextResponse(BaseModel):
     notebook_id: str
-    sources: List[Dict[str, Any]] = Field(..., description="Source context data")
-    notes: List[Dict[str, Any]] = Field(..., description="Note context data")
+    sources: list[dict[str, Any]] = Field(..., description="Source context data")
+    notes: list[dict[str, Any]] = Field(..., description="Note context data")
     total_tokens: Optional[int] = Field(None, description="Estimated token count")
 
 
@@ -396,8 +500,16 @@ class SourceInsightResponse(BaseModel):
     source_id: str
     insight_type: str
     content: str
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
 
 
 class InsightCreationResponse(BaseModel):
@@ -427,7 +539,7 @@ class CreateSourceInsightRequest(BaseModel):
 class SourceStatusResponse(BaseModel):
     status: Optional[str] = Field(None, description="Processing status")
     message: str = Field(..., description="Descriptive message about the status")
-    processing_info: Optional[Dict[str, Any]] = Field(
+    processing_info: Optional[dict[str, Any]] = Field(
         None, description="Detailed processing information"
     )
     command_id: Optional[str] = Field(None, description="Command ID if available")
@@ -508,10 +620,10 @@ class SetApiKeyRequest(BaseModel):
 class ApiKeyStatusResponse(BaseModel):
     """Response showing which providers are configured and their source."""
 
-    configured: Dict[str, bool] = Field(
+    configured: dict[str, bool] = Field(
         ..., description="Map of provider name to whether it is configured"
     )
-    source: Dict[str, Literal["database", "environment", "none"]] = Field(
+    source: dict[str, Literal["database", "environment", "none"]] = Field(
         ...,
         description="Map of provider name to configuration source (database, environment, or none)",
     )
@@ -541,13 +653,13 @@ class MigrationResult(BaseModel):
     """Response from migrating API keys from environment to database."""
 
     message: str = Field(..., description="Summary message")
-    migrated: List[str] = Field(
+    migrated: list[str] = Field(
         default_factory=list, description="Providers successfully migrated"
     )
-    skipped: List[str] = Field(
+    skipped: list[str] = Field(
         default_factory=list, description="Providers skipped (already in DB)"
     )
-    errors: List[str] = Field(
+    errors: list[str] = Field(
         default_factory=list, description="Migration errors by provider"
     )
 
@@ -559,7 +671,7 @@ class CreateCredentialRequest(BaseModel):
 
     name: str = Field(..., description="Credential name")
     provider: str = Field(..., description="Provider name (openai, anthropic, etc.)")
-    modalities: List[str] = Field(
+    modalities: list[str] = Field(
         default_factory=list,
         description="Supported modalities (language, embedding, text_to_speech, speech_to_text)",
     )
@@ -582,7 +694,7 @@ class UpdateCredentialRequest(BaseModel):
     """Request to update an existing credential."""
 
     name: Optional[str] = Field(None, description="Credential name")
-    modalities: Optional[List[str]] = Field(None, description="Supported modalities")
+    modalities: Optional[list[str]] = Field(None, description="Supported modalities")
     api_key: Optional[str] = Field(None, description="API key (stored encrypted)")
     base_url: Optional[str] = Field(None, description="Base URL")
     endpoint: Optional[str] = Field(None, description="Endpoint URL")
@@ -602,7 +714,7 @@ class CredentialResponse(BaseModel):
     id: str
     name: str
     provider: str
-    modalities: List[str]
+    modalities: list[str]
     base_url: Optional[str] = None
     endpoint: Optional[str] = None
     api_version: Optional[str] = None
@@ -614,8 +726,16 @@ class CredentialResponse(BaseModel):
     location: Optional[str] = None
     credentials_path: Optional[str] = None
     has_api_key: bool = False
-    created: str
-    updated: str
+    # v0.7.182 — Optional[str] (was required `str`). Combined with
+    # the new iso() helper that returns None for None input, this
+    # lets response constructions in async-create paths legitimately
+    # carry null timestamps during the pre-persist window without
+    # Pydantic rejecting them. Same widening v0.7.181 applied to
+    # SourceResponse / SourceListResponse — propagated here to
+    # NotebookResponse, ModelResponse, TransformationResponse,
+    # NoteResponse, SourceInsightResponse, and CredentialResponse.
+    created: Optional[str] = None
+    updated: Optional[str] = None
     model_count: int = 0
     decryption_error: Optional[str] = None
 
@@ -641,7 +761,7 @@ class DiscoverModelsResponse(BaseModel):
 
     credential_id: str
     provider: str
-    discovered: List[DiscoveredModelResponse]
+    discovered: list[DiscoveredModelResponse]
 
 
 class RegisterModelData(BaseModel):
@@ -655,7 +775,7 @@ class RegisterModelData(BaseModel):
 class RegisterModelsRequest(BaseModel):
     """Request to register discovered models."""
 
-    models: List[RegisterModelData]
+    models: list[RegisterModelData]
 
 
 class RegisterModelsResponse(BaseModel):

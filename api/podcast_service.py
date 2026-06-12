@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -6,6 +7,11 @@ from pydantic import BaseModel
 from surreal_commands import get_command_status, submit_command
 
 from open_notebook.domain.notebook import Notebook
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from open_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
+    ConfigurationError,
+    InvalidInputError,
+)
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
 
 
@@ -18,6 +24,9 @@ class PodcastGenerationRequest(BaseModel):
     content: Optional[str] = None
     notebook_id: Optional[str] = None
     briefing_suffix: Optional[str] = None
+    # v0.8.68 — outline-review workflow: stop after the outline so the user
+    # can edit it before transcript + audio are generated.
+    review_outline: bool = False
 
 
 class PodcastGenerationResponse(BaseModel):
@@ -34,6 +43,52 @@ class PodcastService:
     """Service layer for podcast operations"""
 
     @staticmethod
+    async def _gate_offline_cloud_models(episode_profile, speaker_profile) -> None:
+        """v0.8.68 — raise a clear, typed error when the machine is offline
+        (real or Offline-mode toggle) and the podcast's profiles reference
+        cloud-provider models. Local providers (llama.cpp / ollama / piper via
+        openai_compatible) are never blocked. Best-effort: any failure inside
+        the gate itself is swallowed so it can't break a submit that would
+        have worked before."""
+        try:
+            from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
+            from open_notebook.health.network import (
+                get_network_state_with_settings,
+            )
+
+            state = await get_network_state_with_settings()
+            if state.status != "offline":
+                return
+
+            cloud_models: list[str] = []
+            for label, resolver in (
+                ("voice (text-to-speech)", speaker_profile.resolve_tts_config),
+                ("outline LLM", episode_profile.resolve_outline_config),
+                ("transcript LLM", episode_profile.resolve_transcript_config),
+            ):
+                try:
+                    provider, model_name, _cfg = await resolver()
+                except Exception:
+                    continue  # unresolvable profile keeps its existing error path
+                if (provider or "").strip().lower().replace("-", "_") not in LOCAL_PROVIDERS:
+                    cloud_models.append(f"{label}: {model_name} ({provider})")
+        except ConfigurationError:
+            raise
+        except Exception as exc:
+            logger.debug(f"podcast offline gate skipped (non-fatal): {exc}")
+            return
+
+        if cloud_models:
+            reason = (
+                "Offline mode is on" if state.forced_offline else "You're offline"
+            )
+            raise ConfigurationError(
+                f"{reason}, and this podcast profile uses cloud models that "
+                f"can't be reached: {'; '.join(cloud_models)}. Reconnect, or "
+                f"switch the profile to local models (Settings → Podcasts)."
+            )
+
+    @staticmethod
     async def submit_generation_job(
         episode_profile_name: str,
         speaker_profile_name: str,
@@ -41,6 +96,7 @@ class PodcastService:
         notebook_id: Optional[str] = None,
         content: Optional[str] = None,
         briefing_suffix: Optional[str] = None,
+        review_outline: bool = False,
     ) -> str:
         """Submit a podcast generation job for background processing"""
         try:
@@ -54,17 +110,51 @@ class PodcastService:
             if not speaker_profile:
                 raise ValueError(f"Speaker profile '{speaker_profile_name}' not found")
 
+            # v0.8.68 — offline gate at SUBMIT time (spec §6 follow-up). The
+            # podcast worker calls TTS/LLM providers directly (not through
+            # provision_langchain_model), so the chat offline gate never sees
+            # it: offline + a cloud voice/LLM previously meant a job that hung
+            # against an unreachable provider for up to the 1800s timeout
+            # before failing. Fail fast HERE with the offending models named,
+            # while the user is looking at the submit button. Fail-open on
+            # resolution errors: an unresolvable profile keeps its existing
+            # downstream error path.
+            await PodcastService._gate_offline_cloud_models(
+                episode_profile, speaker_profile
+            )
+
             # Get content from notebook if not provided directly
             if not content and notebook_id:
                 try:
                     notebook = await Notebook.get(notebook_id)
-                    # Get notebook context (this may need to be adjusted based on actual Notebook implementation)
+                    # v0.7.201 — was `str(notebook) if no get_context`
+                    # which, on a stale ID (Notebook.get returned None),
+                    # silently wrote the literal string "None" as the
+                    # podcast's content. Generation then went through
+                    # with empty source material and produced a
+                    # nonsensical episode. Raise NotFoundError before
+                    # touching `notebook` so the user gets a clear
+                    # error at submission time.
+                    if notebook is None:
+                        from open_notebook.exceptions import NotFoundError
+                        raise NotFoundError(
+                            f"Notebook {notebook_id} not found"
+                        )
                     content = (
                         await notebook.get_context()
                         if hasattr(notebook, "get_context")
                         else str(notebook)
                     )
                 except Exception as e:
+                    # v0.7.201 — let typed NotFoundError pass through
+                    # so the global classifier emits a clean 404 with
+                    # the user-facing message above. Other failures
+                    # still fall back to the notebook-id-only content
+                    # path (kept for backward compat with non-fatal
+                    # transient DB hiccups).
+                    from open_notebook.exceptions import NotFoundError
+                    if isinstance(e, NotFoundError):
+                        raise
                     logger.warning(
                         f"Failed to get notebook content, using notebook_id as content: {e}"
                     )
@@ -75,6 +165,38 @@ class PodcastService:
                     "Content is required - provide either content or notebook_id"
                 )
 
+            # v0.8.68 — content token budget. The full content goes to the
+            # outline LLM untruncated, so a huge notebook selection blew the
+            # model's context window MID-JOB with a generic provider error
+            # after minutes of waiting. Check at submit instead, while the
+            # user is still looking at the dialog. Env-tunable
+            # (ONP_PODCAST_MAX_CONTENT_TOKENS, 0 disables); the default is
+            # generous for cloud models but catches the pathological cases.
+            try:
+                import os as _os
+
+                from open_notebook.utils import token_count
+
+                _max_tokens = int(
+                    _os.environ.get("ONP_PODCAST_MAX_CONTENT_TOKENS", "100000")
+                    or 100000
+                )
+            except Exception:
+                _max_tokens = 100000
+            if _max_tokens > 0:
+                try:
+                    _content_tokens = token_count(str(content))
+                except Exception:
+                    _content_tokens = None  # tokenizer hiccup → don't block
+                if _content_tokens is not None and _content_tokens > _max_tokens:
+                    raise InvalidInputError(
+                        f"The selected content is too large for podcast "
+                        f"generation (~{_content_tokens:,} tokens, limit "
+                        f"{_max_tokens:,}). Select fewer sources, or raise "
+                        f"ONP_PODCAST_MAX_CONTENT_TOKENS if your models can "
+                        f"handle it."
+                    )
+
             # Prepare command arguments
             command_args = {
                 "episode_profile": episode_profile_name,
@@ -82,6 +204,8 @@ class PodcastService:
                 "episode_name": episode_name,
                 "content": str(content),
                 "briefing_suffix": briefing_suffix,
+                # v0.8.68 — outline-review workflow flag.
+                "review_outline": bool(review_outline),
             }
 
             # Ensure command modules are imported before submitting
@@ -92,8 +216,35 @@ class PodcastService:
                 logger.error(f"Failed to import podcast commands: {import_err}")
                 raise ValueError("Podcast commands not available")
 
-            # Submit command to surreal-commands
-            job_id = submit_command("open_notebook", "generate_podcast", command_args)
+            # v0.7.55 — surreal_commands.submit_command opens a SYNCHRONOUS
+            # SurrealDB WS connection (sign-in + use + create), which
+            # blocks the FastAPI event loop for the duration of the
+            # handshake. Under concurrent podcast submissions or general
+            # load this stalls every other in-flight request (chat
+            # streams, SSE polls, etc.). Move the blocking call onto a
+            # worker thread so the event loop stays responsive.
+            # v0.7.115 — also wrap in wait_for so a hung pool can't
+            # pin the podcast-generation endpoint. Same env knob as
+            # CommandService.submit_command_job for consistency.
+            import os as _os_for_timeout
+            _submit_timeout = float(
+                _os_for_timeout.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                or 10
+            )
+            try:
+                job_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command, "open_notebook",
+                        "generate_podcast", command_args,
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Podcast submission timed out after {_submit_timeout:.0f}s. "
+                    "The SurrealDB pool may be saturated. Raise "
+                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                ) from exc
 
             # Convert RecordID to string if needed
             if not job_id:
@@ -104,15 +255,122 @@ class PodcastService:
             )
             return job_id_str
 
+        except (InvalidInputError, ConfigurationError):
+            # v0.8.68 — let the typed exceptions raised by the offline gate
+            # and the content-budget check bubble to the global handlers in
+            # api/main.py (400 / 422 with their actionable messages). The
+            # broad `except Exception` below otherwise converted them into a
+            # generic 500 "Server error", hiding exactly the guidance those
+            # errors exist to deliver.
+            raise
+        except ValueError as e:
+            logger.warning(f"Podcast submission rejected: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to submit podcast generation job: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to submit podcast generation job: {str(e)}",
+                detail="Failed to submit podcast generation job",
             )
 
     @staticmethod
-    async def get_job_status(job_id: str) -> Dict[str, Any]:
+    async def submit_outline_approval(episode_id: str) -> str:
+        """v0.8.68 — phase 2 of the outline-review workflow: submit the
+        resume_podcast command for an episode awaiting review. The offline
+        gate runs here (transcript LLM + TTS are about to be used)."""
+        try:
+            from open_notebook.podcasts.models import (
+                STAGE_AWAITING_REVIEW,
+                PodcastEpisode,
+            )
+
+            episode = await PodcastEpisode.get(episode_id)
+            if not episode:
+                raise ValueError(f"Episode '{episode_id}' not found")
+            if episode.generation_stage != STAGE_AWAITING_REVIEW:
+                raise ValueError(
+                    f"Episode is not awaiting outline review "
+                    f"(stage: {episode.generation_stage})"
+                )
+
+            ep_name = (episode.episode_profile or {}).get("name")
+            sp_name = (episode.speaker_profile or {}).get("name")
+            episode_profile = (
+                await EpisodeProfile.get_by_name(ep_name) if ep_name else None
+            )
+            speaker_profile = (
+                await SpeakerProfile.get_by_name(sp_name) if sp_name else None
+            )
+            if not episode_profile or not speaker_profile:
+                raise ValueError(
+                    "The episode/speaker profile used for this outline no "
+                    "longer exists — restore it and approve again."
+                )
+            await PodcastService._gate_offline_cloud_models(
+                episode_profile, speaker_profile
+            )
+
+            try:
+                import commands.podcast_commands  # noqa: F401
+            except ImportError as import_err:
+                logger.error(f"Failed to import podcast commands: {import_err}")
+                raise ValueError("Podcast commands not available")
+
+            import os as _os_for_timeout
+            _submit_timeout = float(
+                _os_for_timeout.environ.get(
+                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
+                ).strip()
+                or 10
+            )
+            try:
+                job_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        submit_command, "open_notebook",
+                        "resume_podcast", {"episode_id": str(episode.id)},
+                    ),
+                    timeout=_submit_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise ValueError(
+                    f"Approval submission timed out after "
+                    f"{_submit_timeout:.0f}s. The SurrealDB pool may be "
+                    f"saturated."
+                ) from exc
+            if not job_id:
+                raise ValueError("Failed to get job_id from submit_command")
+            logger.info(
+                f"Submitted outline approval (resume) job {job_id} for "
+                f"episode {episode_id}"
+            )
+            return str(job_id)
+        except (InvalidInputError, ConfigurationError):
+            raise  # typed errors keep their status codes (offline gate etc.)
+        except ValueError as e:
+            # v0.7.58 — distinguish user-input errors (missing profile,
+            # missing content, "commands not available") from genuine
+            # 500s. Previously the broad `except Exception` mapped every
+            # one of these to HTTP 500 "Server error", which is wrong:
+            # they're caller mistakes, the user should see a 400 with
+            # the actual reason ("Episode profile 'X' not found").
+            logger.warning(f"Podcast submission rejected: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            # v0.7.177 — Don't echo str(e) back to the client. The
+            # underlying exception can carry driver internals (SurrealDB
+            # WS frames, connection-pool diagnostics, partial RecordIDs)
+            # which are sensitive operationally and useless to the
+            # caller. logger.error captures the full picture for ops;
+            # the client gets a generic message. Same pattern as the
+            # v0.7.168 router sweep that this service file missed.
+            logger.error(f"Failed to submit podcast generation job: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to submit podcast generation job",
+            )
+
+    @staticmethod
+    async def get_job_status(job_id: str) -> dict[str, Any]:
         """Get status of a podcast generation job"""
         try:
             status = await get_command_status(job_id)
@@ -123,18 +381,20 @@ class PodcastService:
                 "error_message": getattr(status, "error_message", None)
                 if status
                 else None,
-                "created": str(status.created)
+                "created": iso(status.created)
                 if status and hasattr(status, "created") and status.created
                 else None,
-                "updated": str(status.updated)
+                "updated": iso(status.updated)
                 if status and hasattr(status, "updated") and status.updated
                 else None,
                 "progress": getattr(status, "progress", None) if status else None,
             }
         except Exception as e:
+            # v0.7.177 — Sanitize 500 detail; logger.error keeps the
+            # full exception for ops, the client gets a generic message.
             logger.error(f"Failed to get podcast job status: {e}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to get job status: {str(e)}"
+                status_code=500, detail="Failed to get job status"
             )
 
     @staticmethod
@@ -144,20 +404,32 @@ class PodcastService:
             episodes = await PodcastEpisode.get_all(order_by="created desc")
             return episodes
         except Exception as e:
+            # v0.7.177 — Sanitize 500 detail (see above).
             logger.error(f"Failed to list podcast episodes: {e}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to list episodes: {str(e)}"
+                status_code=500, detail="Failed to list episodes"
             )
 
     @staticmethod
     async def get_episode(episode_id: str) -> PodcastEpisode:
         """Get a specific podcast episode"""
-        try:
-            episode = await PodcastEpisode.get(episode_id)
-            return episode
-        except Exception as e:
-            logger.error(f"Failed to get podcast episode {episode_id}: {e}")
-            raise HTTPException(status_code=404, detail=f"Episode not found: {str(e)}")
+        # v0.7.204 — was a bare `try/except Exception` that turned
+        # EVERY failure (DB connection drop, mid-query timeout,
+        # decryption error, etc.) into 404 "Episode not found". An
+        # operator looking at logs saw a real backend issue but
+        # the API client got the same 404 it would for a stale ID
+        # — debugging took 10× longer because the symptom was
+        # misclassified. Now: a None return from
+        # `PodcastEpisode.get` (the actual "not found" path) raises
+        # NotFoundError; everything else propagates as its real
+        # type and hits the global classifier with the right
+        # HTTP code (500 for DB, 502 for upstream, etc.).
+        from open_notebook.exceptions import NotFoundError
+
+        episode = await PodcastEpisode.get(episode_id)
+        if episode is None:
+            raise NotFoundError(f"Episode {episode_id} not found")
+        return episode
 
 
 class DefaultProfiles:

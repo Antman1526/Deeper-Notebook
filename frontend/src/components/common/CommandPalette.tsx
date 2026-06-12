@@ -9,6 +9,7 @@ import {
   CommandDialog,
   CommandInput,
   CommandList,
+  CommandEmpty,
   CommandGroup,
   CommandItem,
   CommandSeparator,
@@ -86,13 +87,42 @@ export function CommandPalette() {
         e.preventDefault()
         e.stopPropagation()
         setOpen((open) => !open)
+        return
+      }
+      // v0.7.35 — additional shortcuts. All gated on Cmd/Ctrl to avoid
+      // hijacking single-letter typing outside form fields (the early
+      // return above already excludes inputs/textareas/contentEditable).
+      //
+      //   Cmd+N → open New Notebook dialog
+      //   Cmd+U → open Upload Source dialog (U for Upload — N is taken)
+      //   Cmd+/ → jump to /search (Ask + global search)
+      if (e.key === 'n' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        openNotebookDialog()
+        return
+      }
+      if (e.key === 'u' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        openSourceDialog()
+        return
+      }
+      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        router.push('/search')
+        return
       }
     }
 
     // Use capture phase to intercept before other handlers
     document.addEventListener('keydown', down, true)
     return () => document.removeEventListener('keydown', down, true)
-  }, [])
+    // v0.7.35 — depends on closures captured by the new shortcuts.
+    // The handlers themselves are stable across re-renders (from
+    // useCreateDialogs + router), so this just keeps the linter happy.
+  }, [openNotebookDialog, openSourceDialog, router])
 
   // Reset query when dialog closes
   useEffect(() => {
@@ -178,6 +208,11 @@ export function CommandPalette() {
         autoComplete="off"
       />
       <CommandList>
+        {/* v0.7.25 — show empty state when the user's query matches
+            nothing. Without this, a zero-match query rendered a
+            completely blank list with no signal that the search ran. */}
+        <CommandEmpty>{t('common.noResults', 'No results found.')}</CommandEmpty>
+
         {/* Search/Ask - show FIRST when there's a query with no command match */}
         {showSearchFirst && (
           <CommandGroup heading={t('searchPage.searchAndAsk')} forceMount>
@@ -214,26 +249,32 @@ export function CommandPalette() {
           ))}
         </CommandGroup>
 
-        {/* Notebooks */}
-        <CommandGroup heading={t('notebooks.title')}>
-          {notebooksLoading ? (
-            <CommandItem disabled>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{t('common.loading')}</span>
-            </CommandItem>
-          ) : notebooks && notebooks.length > 0 ? (
-            notebooks.map((notebook) => (
-              <CommandItem
-                key={notebook.id}
-                value={`notebook ${notebook.name} ${notebook.description || ''}`}
-                onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}
-              >
-                <Book className="h-4 w-4" />
-                <span>{notebook.name}</span>
+        {/* Notebooks
+            v0.7.25 — conditionally render the whole group only when
+            there are notebooks (or we're loading). Previously, with
+            zero notebooks, the heading "Notebooks" still rendered
+            above nothing — an orphan label in the palette. */}
+        {(notebooksLoading || (notebooks && notebooks.length > 0)) && (
+          <CommandGroup heading={t('notebooks.title')}>
+            {notebooksLoading ? (
+              <CommandItem disabled>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{t('common.loading')}</span>
               </CommandItem>
-            ))
-          ) : null}
-        </CommandGroup>
+            ) : (
+              notebooks!.map((notebook) => (
+                <CommandItem
+                  key={notebook.id}
+                  value={`notebook ${notebook.name} ${notebook.description || ''}`}
+                  onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}
+                >
+                  <Book className="h-4 w-4" />
+                  <span>{notebook.name}</span>
+                </CommandItem>
+              ))
+            )}
+          </CommandGroup>
+        )}
 
         {/* Create */}
         <CommandGroup heading={t('navigation.create')}>

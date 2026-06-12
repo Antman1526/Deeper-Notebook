@@ -1,0 +1,11 @@
+-- v0.8.68 — staged podcast generation fields.
+-- The episode table is SCHEMAFULL (migration 7), so SurrealDB silently
+-- drops any field not defined here. The v0.8.68 staged-generation work
+-- added briefing_suffix / generation_stage / cancel_requested to the
+-- PodcastEpisode domain model but no migration — saves appeared to
+-- succeed while the values vanished, leaving stage tracking, the Cancel
+-- button, and retry-with-instructions dead against a real database
+-- (caught by the live smoke test; unit tests mock the DB).
+DEFINE FIELD IF NOT EXISTS briefing_suffix ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS generation_stage ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS cancel_requested ON TABLE episode TYPE option<bool>;

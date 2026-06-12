@@ -1,0 +1,12 @@
+-- Phase 2 Task 7 (v0.8.0) — DB-backed MCP server registry.
+-- Each row is one MCP endpoint the chat graph can call.
+-- v0.8.0 — IF NOT EXISTS on every DEFINE so this migration is
+-- safe to re-run after a partial failure (matches the pattern
+-- established by migration 12 and all subsequent migrations).
+DEFINE TABLE IF NOT EXISTS mcp_server SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON mcp_server TYPE string;
+DEFINE FIELD IF NOT EXISTS url ON mcp_server TYPE string;
+DEFINE FIELD IF NOT EXISTS enabled ON mcp_server TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS created ON mcp_server TYPE datetime DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON mcp_server TYPE datetime DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS mcp_server_name_unique ON mcp_server FIELDS name UNIQUE;

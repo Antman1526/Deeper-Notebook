@@ -15,7 +15,7 @@ class CommandExecutionRequest(BaseModel):
         ..., description="Command function name (e.g., 'process_text')"
     )
     app: str = Field(..., description="Application name (e.g., 'open_notebook')")
-    input: Dict[str, Any] = Field(..., description="Arguments to pass to the command")
+    input: dict[str, Any] = Field(..., description="Arguments to pass to the command")
 
 
 class CommandJobResponse(BaseModel):
@@ -27,11 +27,11 @@ class CommandJobResponse(BaseModel):
 class CommandJobStatusResponse(BaseModel):
     job_id: str
     status: str
-    result: Optional[Dict[str, Any]] = None
+    result: Optional[dict[str, Any]] = None
     error_message: Optional[str] = None
     created: Optional[str] = None
     updated: Optional[str] = None
-    progress: Optional[Dict[str, Any]] = None
+    progress: Optional[dict[str, Any]] = None
 
 
 @router.post("/commands/jobs", response_model=CommandJobResponse)
@@ -64,6 +64,11 @@ async def execute_command(request: CommandExecutionRequest):
             message=f"Command '{request.command}' submitted successfully",
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error submitting command: {str(e)}")
         raise HTTPException(
@@ -73,11 +78,17 @@ async def execute_command(request: CommandExecutionRequest):
 
 @router.get("/commands/jobs/{job_id}", response_model=CommandJobStatusResponse)
 async def get_command_job_status(job_id: str):
-    """Get the status of a specific command job"""
+    """Get the status of a specific command job."""
     try:
         status_data = await CommandService.get_command_status(job_id)
+        # v0.7.87 — service now returns None for missing jobs; map that
+        # to a real 404 instead of returning 200 with a fake
+        # `status="unknown"` payload that callers had to special-case.
+        if status_data is None:
+            raise HTTPException(status_code=404, detail="Command job not found")
         return CommandJobStatusResponse(**status_data)
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching job status: {str(e)}")
         raise HTTPException(
@@ -85,7 +96,7 @@ async def get_command_job_status(job_id: str):
         )
 
 
-@router.get("/commands/jobs", response_model=List[Dict[str, Any]])
+@router.get("/commands/jobs", response_model=list[dict[str, Any]])
 async def list_command_jobs(
     command_filter: Optional[str] = Query(None, description="Filter by command name"),
     status_filter: Optional[str] = Query(None, description="Filter by status"),
@@ -98,6 +109,11 @@ async def list_command_jobs(
         )
         return jobs
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Error listing command jobs: {str(e)}")
         raise HTTPException(
@@ -107,11 +123,32 @@ async def list_command_jobs(
 
 @router.delete("/commands/jobs/{job_id}")
 async def cancel_command_job(job_id: str):
-    """Cancel a running command job"""
+    """Cancel a running command job.
+
+    v0.7.87 — the service implementation now actually writes the
+    `canceled` signal back to surreal_commands instead of returning
+    True without doing anything. Returns 404 when the job doesn't
+    exist; 409 Conflict when the job exists but isn't in a
+    cancellable state (already completed, failed, or canceled).
+    """
     try:
+        # First peek at the job's status so we can return precise codes.
+        status_data = await CommandService.get_command_status(job_id)
+        if status_data is None:
+            raise HTTPException(status_code=404, detail="Command job not found")
+        current_status = (status_data.get("status") or "").lower()
+        if current_status not in {"new", "queued", "running"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Command job is not in a cancellable state "
+                    f"(current: {current_status or 'unknown'})"
+                ),
+            )
         success = await CommandService.cancel_command_job(job_id)
         return {"job_id": job_id, "cancelled": success}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error cancelling command job: {str(e)}")
         raise HTTPException(

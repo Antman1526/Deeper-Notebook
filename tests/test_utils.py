@@ -126,6 +126,30 @@ class TestTextUtilities:
         assert "Public response" in result
         assert "Internal thoughts" not in result
 
+    def test_clean_thinking_only_response_falls_back_to_reasoning(self):
+        """v0.8.65g — a thinking-ONLY response (no answer after </think>) must
+        NOT render blank; surface the reasoning so the chatbot always shows
+        something. Reproduces the Qwen3 'empty answer' case."""
+        content = "<think>The capital of France is Paris.</think>"
+        result = clean_thinking_content(content)
+        assert result.strip() != ""
+        assert "Paris" in result
+        assert "<think>" not in result
+
+    def test_clean_unclosed_think_tag_surfaces_text(self):
+        """v0.8.65g — an UNCLOSED <think> (model cut off mid-thought) must not
+        leave a raw '<think>' tag in the reply."""
+        # No text before the (unclosed) tag → show the reasoning tail.
+        assert clean_thinking_content("<think>still reasoning about it") == "still reasoning about it"
+        # Text BEFORE an unclosed tag → that's the answer.
+        assert clean_thinking_content("Paris.<think>but wait") == "Paris."
+        assert "<think>" not in clean_thinking_content("<think>x")
+
+    def test_clean_thinking_content_normal_answer_unchanged(self):
+        """Regression: a normal answer (with or without thinking) is untouched."""
+        assert clean_thinking_content("Just a plain answer.") == "Just a plain answer."
+        assert clean_thinking_content("<think>hmm</think>The answer is 4.") == "The answer is 4."
+
 
 # ============================================================================
 # TEST SUITE 2: Token Utilities
@@ -282,3 +306,66 @@ class TestContextBuilder:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestExtractTextContent:
+    """ONP v0.6.19 — coverage for extract_text_content's structured-content
+    handling. The function is invoked on every LLM response to flatten
+    provider envelope formats (Gemini, Claude, etc.) into a plain string."""
+
+    def test_extract_text_content_plain_string_passes_through(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        assert extract_text_content("hello") == "hello"
+
+    def test_extract_text_content_gemini_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "text", "text": "hi there", "extras": {}}]
+        assert extract_text_content(content) == "hi there"
+
+    def test_extract_text_content_multi_part_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [
+            {"type": "text", "text": "Part 1. "},
+            {"type": "text", "text": "Part 2."},
+        ]
+        assert extract_text_content(content) == "Part 1. Part 2."
+
+    def test_extract_text_content_mixed_string_and_envelope(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        content = ["raw string ", {"type": "text", "text": "envelope"}]
+        assert extract_text_content(content) == "raw string envelope"
+
+    def test_extract_text_content_coerces_non_string_text_field(self):
+        """v0.6.19 regression: some providers put a list/dict at "text"
+        instead of a string. The old code appended that as-is and then
+        crashed at "".join with TypeError. Now we coerce to str first."""
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "text", "text": ["nested", "list"]}]
+        # Should NOT raise; coerced via str(...)
+        result = extract_text_content(content)
+        assert isinstance(result, str)
+        assert "nested" in result and "list" in result
+
+    def test_extract_text_content_unrecognized_list_falls_back_to_str(self):
+        """v0.6.19 regression: a future provider may ship a list with shapes
+        we don't recognize (e.g. all image_url parts). The old code returned
+        "" silently → 'blank chat reply' bug with no log trail. Now we
+        fall back to str(content) so SOMETHING gets through."""
+        from open_notebook.utils.text_utils import extract_text_content
+        content = [{"type": "image_url", "image_url": "https://x.png"}]
+        result = extract_text_content(content)
+        # Original empty string was the bug; now we get the repr.
+        assert result != ""
+        assert "image_url" in result
+
+    def test_extract_text_content_unknown_type_falls_back_to_str(self):
+        from open_notebook.utils.text_utils import extract_text_content
+        # Not a string, not a list — falls through to str(content)
+        result = extract_text_content({"single": "dict"})
+        assert "single" in result and "dict" in result
+
+    def test_extract_text_content_empty_list_falls_back_to_str(self):
+        """Empty list → no text parts → fallback. Old behavior returned ""."""
+        from open_notebook.utils.text_utils import extract_text_content
+        # str([]) is "[]" — at least not blank, signals weird shape to caller.
+        assert extract_text_content([]) == "[]"
