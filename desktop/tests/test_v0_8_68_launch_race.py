@@ -1,48 +1,99 @@
 """v0.8.68 — launch-race fixes for "This page couldn't load" at startup.
 
-Two halves, both observed live: pywebview navigates exactly once, so if
-that single request races the Next.js server the user gets a static error
-page with no recovery; and the launcher's frontend gate returned on one
-lucky probe of the bare "/" (a 307), not the page the webview actually
-loads.
+Final architecture (two earlier cuts failed live): the window opens on an
+inline splash, and a PYTHON handoff controller decides when to navigate —
+it can see real HTTP status/bodies (an in-page no-cors probe cannot, so
+Next's warm-up 404, served with status 200, read as "ready"), and a failed
+handoff puts the splash back and retries, so the error page is never the
+resting state. The loaded handler confirms a genuine app page via an
+in-page sentinel because get_current_url() is None for html= pages and
+reports the target URL even for failed loads.
 """
 from __future__ import annotations
 
 import threading
-import time
 
 import pytest
 
 
-# ---------------------------------------------------------- load watchdog
-
 class _FakeWindow:
-    def __init__(self, fail_first_n: int = 0):
-        self.load_calls = 0
-        self._fail_first_n = fail_first_n
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+        self.fail_load_url_times = 0
 
     def load_url(self, url: str) -> None:
-        self.load_calls += 1
-        if self.load_calls <= self._fail_first_n:
+        if self.fail_load_url_times > 0:
+            self.fail_load_url_times -= 1
+            self.calls.append(("load_url_raised", url))
             raise RuntimeError("window not ready")
+        self.calls.append(("load_url", url))
+
+    def load_html(self, html: str) -> None:
+        self.calls.append(("load_html", html[:20]))
 
 
-def test_watchdog_noop_when_page_loads_within_grace():
-    from desktop.window import _start_load_retry_watchdog
+def _run_controller(win, loaded, **kw):
+    from desktop.window import _start_handoff_controller
 
-    loaded = threading.Event()
-    loaded.set()  # page loaded immediately
-    win = _FakeWindow()
-    t = _start_load_retry_watchdog(
-        win, "http://x/", loaded, grace_sec=0.05, retry_interval_sec=0.05
+    defaults = dict(
+        min_splash_sec=0.0, poll_sec=0.0, attempt_timeout_sec=0.2,
+        max_attempts=3, sleep=lambda s: None,
     )
-    t.join(timeout=2)
+    defaults.update(kw)
+    t = _start_handoff_controller(win, "http://x/", loaded, "<SPLASH/>", **defaults)
+    t.join(timeout=10)
     assert not t.is_alive()
-    assert win.load_calls == 0
+    return win.calls
 
 
-def test_watchdog_retries_until_loaded():
-    from desktop.window import _start_load_retry_watchdog
+# ------------------------------------------------------- handoff controller
+
+def test_happy_path_waits_for_consecutive_ready_then_navigates():
+    seq = iter([False, True, True])
+    loaded = threading.Event()
+    win = _FakeWindow()
+    orig = win.load_url
+
+    def _load(url):
+        orig(url)
+        loaded.set()  # navigation succeeds
+
+    win.load_url = _load
+    calls = _run_controller(win, loaded, server_ready=lambda: next(seq, True))
+    assert calls == [("load_url", "http://x/")]
+
+
+def test_failed_handoff_restores_splash_and_retries():
+    loaded = threading.Event()
+    win = _FakeWindow()
+    attempts = {"n": 0}
+    orig = win.load_url
+
+    def _load(url):
+        orig(url)
+        attempts["n"] += 1
+        if attempts["n"] >= 2:  # second navigation succeeds
+            loaded.set()
+
+    win.load_url = _load
+    calls = _run_controller(win, loaded, server_ready=lambda: True)
+    # nav fail → splash back → nav success
+    assert calls == [
+        ("load_url", "http://x/"),
+        ("load_html", "<SPLASH/>"),
+        ("load_url", "http://x/"),
+    ]
+
+
+def test_min_splash_time_is_respected():
+    """The user asked to actually SEE the welcome screen — the controller
+    sleeps out the remainder of min_splash_sec before the first handoff."""
+    slept: list[float] = []
+    clock = {"t": 0.0}
+
+    def _sleep(s):
+        slept.append(s)
+        clock["t"] += s
 
     loaded = threading.Event()
     win = _FakeWindow()
@@ -50,101 +101,101 @@ def test_watchdog_retries_until_loaded():
 
     def _load(url):
         orig(url)
-        if win.load_calls >= 2:  # second retry "succeeds"
-            loaded.set()
+        loaded.set()
 
     win.load_url = _load
-    t = _start_load_retry_watchdog(
-        win, "http://x/", loaded,
-        grace_sec=0.05, retry_interval_sec=0.05, max_retries=5,
+    _run_controller(
+        win, loaded, server_ready=lambda: True,
+        min_splash_sec=3.0, sleep=_sleep, clock=lambda: clock["t"],
     )
-    t.join(timeout=5)
-    assert not t.is_alive()
-    assert win.load_calls == 2
+    assert sum(slept) >= 3.0
 
 
-def test_watchdog_gives_up_after_max_retries():
-    from desktop.window import _start_load_retry_watchdog
-
+def test_gives_up_to_frontend_url_after_max_attempts():
+    """Exhausted retries leave the frontend URL up (manual Reload works)."""
     loaded = threading.Event()  # never set
     win = _FakeWindow()
-    t = _start_load_retry_watchdog(
-        win, "http://x/", loaded,
-        grace_sec=0.02, retry_interval_sec=0.02, max_retries=3,
-    )
-    t.join(timeout=5)
-    assert not t.is_alive()
-    assert win.load_calls == 3
+    calls = _run_controller(win, loaded, server_ready=lambda: True, max_attempts=2)
+    assert calls == [
+        ("load_url", "http://x/"), ("load_html", "<SPLASH/>"),
+        ("load_url", "http://x/"), ("load_html", "<SPLASH/>"),
+        ("load_url", "http://x/"),  # final resting navigation
+    ]
 
 
-def test_watchdog_survives_load_url_errors():
-    """load_url before webview.start() can raise — must keep retrying."""
-    from desktop.window import _start_load_retry_watchdog
-
+def test_load_url_exception_is_retried():
     loaded = threading.Event()
-    win = _FakeWindow(fail_first_n=99)
-    t = _start_load_retry_watchdog(
-        win, "http://x/", loaded,
-        grace_sec=0.02, retry_interval_sec=0.02, max_retries=2,
-    )
-    t.join(timeout=5)
-    assert not t.is_alive()
-    assert win.load_calls == 2  # errors swallowed, attempts continued
+    win = _FakeWindow()
+    win.fail_load_url_times = 1
+    orig = win.load_url
+
+    def _load(url):
+        orig(url)
+        loaded.set()
+
+    # patch AFTER fail counter so first call raises through orig
+    inner = win.load_url
+
+    calls = _run_controller(win, loaded, server_ready=lambda: True)
+    assert ("load_url_raised", "http://x/") in calls
+    assert calls[-1] == ("load_url", "http://x/")
 
 
-# ---------------------------------------------------------- hardened gate
+# ------------------------------------------------------- server readiness
 
 class _Resp:
-    def __init__(self, status_code: int):
+    def __init__(self, status_code: int, content: bytes = b"<html>ok</html>"):
         self.status_code = status_code
+        self.content = content
 
 
-def test_wait_http_consecutive_resets_streak(monkeypatch):
-    """ok, error, ok, ok, ok — with consecutive=3 the gate must not pass
-    until the THREE uninterrupted successes at the end."""
-    from desktop import launcher
+def test_server_ready_rejects_next_warmup_404(monkeypatch):
+    """Next 16 standalone briefly serves its not-found page (HTTP 200!) for
+    valid routes while route manifests lazy-load — seen live. Status alone
+    cannot catch it; the body check must."""
+    import desktop.window as w
 
-    seq = [_Resp(200), ConnectionError("blip"), _Resp(200), _Resp(200), _Resp(200)]
-    calls = {"n": 0}
+    class _Httpx:
+        @staticmethod
+        def get(url, timeout=None, follow_redirects=False):
+            return _Resp(200, b'<h1 class="next-error-h1">404</h1>')
 
-    def _fake_get(url, timeout=None, follow_redirects=False):
-        i = min(calls["n"], len(seq) - 1)
-        calls["n"] += 1
-        item = seq[i]
-        if isinstance(item, Exception):
-            raise launcher.httpx.RequestError("blip")
-        return item
-
-    monkeypatch.setattr(launcher.httpx, "get", _fake_get)
-    monkeypatch.setattr(launcher.time, "sleep", lambda s: None)
-    launcher._wait_http("http://x/", timeout=5.0, consecutive=3)
-    assert calls["n"] == 5  # streak reset by the failure, rebuilt after
+    monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
+    assert w._frontend_server_ready("http://x/") is False
 
 
-def test_wait_http_passes_follow_redirects(monkeypatch):
-    from desktop import launcher
+def test_server_ready_accepts_real_page(monkeypatch):
+    import desktop.window as w
 
-    seen = {}
+    class _Httpx:
+        @staticmethod
+        def get(url, timeout=None, follow_redirects=False):
+            assert follow_redirects is True  # must probe the FINAL page
+            return _Resp(200, b"<html>app</html>")
 
-    def _fake_get(url, timeout=None, follow_redirects=False):
-        seen["follow"] = follow_redirects
-        return _Resp(200)
-
-    monkeypatch.setattr(launcher.httpx, "get", _fake_get)
-    launcher._wait_http("http://x/", timeout=2.0, follow_redirects=True)
-    assert seen["follow"] is True
+    monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
+    assert w._frontend_server_ready("http://x/") is True
 
 
-def test_wait_http_default_single_probe_unchanged(monkeypatch):
-    """/readyz callers keep the original one-success semantics."""
-    from desktop import launcher
+def test_server_ready_rejects_connection_error(monkeypatch):
+    import desktop.window as w
 
-    calls = {"n": 0}
+    class _Httpx:
+        @staticmethod
+        def get(url, timeout=None, follow_redirects=False):
+            raise ConnectionError("refused")
 
-    def _fake_get(url, timeout=None, follow_redirects=False):
-        calls["n"] += 1
-        return _Resp(200)
+    monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
+    assert w._frontend_server_ready("http://x/") is False
 
-    monkeypatch.setattr(launcher.httpx, "get", _fake_get)
-    launcher._wait_http("http://x/", timeout=2.0)
-    assert calls["n"] == 1
+
+# ------------------------------------------------------- loaded sentinel
+
+def test_frontend_sentinel_js_shape():
+    """The sentinel must check the Next runtime AND exclude Next's 404
+    title — URL-based checks were proven unable to distinguish the error
+    page (reports target URL) and the splash (reports None)."""
+    from desktop.window import _FRONTEND_SENTINEL_JS
+
+    assert "__next_f" in _FRONTEND_SENTINEL_JS
+    assert "404" in _FRONTEND_SENTINEL_JS

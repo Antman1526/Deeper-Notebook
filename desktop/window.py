@@ -366,52 +366,106 @@ def _preferred_window_size(min_w: int, min_h: int) -> tuple[int, int]:
         return _fit_window_size(0, 0, min_w, min_h)
 
 
-def _is_frontend_page(current_url: "str | None", frontend_url: str) -> bool:
-    """v0.8.68 — True when the webview is showing the actual app (not the
-    inline welcome splash, whose URL is about:blank/null). Used to decide
-    when the load-retry watchdog can stand down and when theme injection
-    should run."""
-    if not current_url:
+# v0.8.68 — sentinel evaluated on every `loaded` event. True only on a real,
+# non-404 app page: `window.__next_f` exists on every Next.js page (the
+# splash and WebKit's error page have no Next runtime), and Next's own
+# not-found page titles itself "404: …" (seen live — Next 16 standalone
+# briefly serves its 404 for valid routes while route manifests lazy-load).
+_FRONTEND_SENTINEL_JS = (
+    "(!!window.__next_f) && !((document.title || '').indexOf('404') === 0)"
+)
+
+
+def _frontend_server_ready(url: str) -> bool:
+    """One python-side probe of the page the webview will load.
+
+    Unlike the splash's old in-page no-cors fetch, this sees the real
+    status AND body — so Next's warm-up window, where it serves its
+    not-found page (HTTP 200!) for valid routes, reads as not-ready.
+    """
+    import httpx
+
+    try:
+        r = httpx.get(url, timeout=2.0, follow_redirects=True)
+    except Exception:
         return False
-    return current_url.startswith(frontend_url.rstrip("/"))
+    return r.status_code < 400 and b"next-error-h1" not in r.content
 
 
-def _start_load_retry_watchdog(
+def _start_handoff_controller(
     window,
     url: str,
-    loaded: "threading.Event",
+    frontend_loaded: "threading.Event",
+    splash_html: str,
     *,
-    grace_sec: float = 8.0,
-    retry_interval_sec: float = 5.0,
-    max_retries: int = 5,
+    server_ready=None,
+    min_splash_sec: float = 3.0,
+    consecutive: int = 2,
+    poll_sec: float = 0.4,
+    attempt_timeout_sec: float = 12.0,
+    max_attempts: int = 10,
     sleep=None,
+    clock=None,
 ) -> "threading.Thread":
-    """v0.8.68 — retry the initial navigation if the page never loads.
+    """v0.8.68 — python-driven splash→app handoff with failure recovery.
 
-    pywebview navigates exactly once; if that single request races the
-    Next.js server's startup (or any transient hiccup), the user is left
-    staring at a static "This page couldn't load" error with no automatic
-    recovery. The `loaded` event only fires on a SUCCESSFUL page load, so:
-    wait a grace period, and while it hasn't fired, re-issue
-    `window.load_url(url)` a few times before giving up (the manual Reload
-    button still works after that).
+    The first cut had the splash navigate itself after in-page no-cors
+    probes; a probe can succeed and the subsequent real navigation still
+    fail (seen live: WebKit's "This page couldn't load" with the server
+    provably up), and an in-page probe cannot see HTTP status at all, so
+    Next's warm-up 404 (status 200) read as "ready". This controller owns
+    the whole handoff from python where everything is observable:
+
+      1. wait until `server_ready(url)` passes `consecutive` times in a
+         row AND the splash has been visible >= `min_splash_sec`;
+      2. window.load_url(url);
+      3. wait for the `loaded` handler to confirm a REAL app page (Next
+         runtime present, not Next's 404) via `frontend_loaded`;
+      4. on timeout — navigation failed or 404 rendered — put the splash
+         BACK (instant, inline HTML) and retry from 1.
+
+    The error page can therefore never be the resting state.
     """
     import threading
 
     _sleep = sleep or time.sleep
+    _clock = clock or time.monotonic
+    _ready = server_ready or (lambda: _frontend_server_ready(url))
 
-    def _watch() -> None:  # pragma: no cover - thread body exercised via run()
-        if loaded.wait(grace_sec):
-            return
-        for _ in range(max_retries):
+    def _drive() -> None:
+        shown_at = _clock()
+        for _attempt in range(max_attempts):
+            streak = 0
+            while streak < consecutive:
+                streak = streak + 1 if _ready() else 0
+                if streak >= consecutive:
+                    break
+                _sleep(poll_sec)
+            remaining = min_splash_sec - (_clock() - shown_at)
+            if remaining > 0:
+                _sleep(remaining)
             try:
                 window.load_url(url)
             except Exception:
-                pass  # window not ready yet / already destroyed — keep trying
-            if loaded.wait(retry_interval_sec):
+                _sleep(poll_sec)
+                continue  # window not ready yet — try again
+            if frontend_loaded.wait(attempt_timeout_sec):
                 return
+            # Failed handoff (network error page or warm-up 404): restore
+            # the splash so the user never rests on an error screen.
+            try:
+                window.load_html(splash_html)
+            except Exception:
+                pass
+            shown_at = _clock()
+        # Out of attempts: leave the frontend URL up so the manual Reload
+        # still points somewhere useful.
+        try:
+            window.load_url(url)
+        except Exception:
+            pass
 
-    t = threading.Thread(target=_watch, name="onp-load-retry", daemon=True)
+    t = threading.Thread(target=_drive, name="onp-handoff", daemon=True)
     t.start()
     return t
 
@@ -459,14 +513,16 @@ def open_window(url: str, on_close: Callable[[], None],
         win_w, win_h = _preferred_window_size(width, height)
 
     # v0.8.68 — open on the inline welcome splash instead of navigating
-    # straight to the Next.js URL. The splash paints instantly (no network),
-    # probes the frontend, and replaces itself with the app when the server
-    # answers — so a raced or hiccuping first request can never strand the
-    # user on WKWebView's dead "This page couldn't load" screen.
+    # straight to the Next.js URL. The splash paints instantly (no network)
+    # and the handoff controller below navigates to the app only once the
+    # server demonstrably serves a real page — so a raced or hiccuping
+    # first request can never strand the user on WKWebView's dead
+    # "This page couldn't load" screen.
     from desktop.splash import build_splash_html
 
+    splash_html = build_splash_html(url)
     window = webview.create_window(
-        title, html=build_splash_html(url), width=win_w, height=win_h
+        title, html=splash_html, width=win_w, height=win_h
     )
 
     # Track live size via the resize event when available (defensive: the event
@@ -499,17 +555,19 @@ def open_window(url: str, on_close: Callable[[], None],
     _page_loaded = threading.Event()
 
     def _on_loaded():
-        # v0.8.68 — the splash fires `loaded` too; only a real frontend page
-        # stands the watchdog down (and warrants theme injection). If the
-        # URL can't be determined, fail open — treat it as loaded rather
-        # than fight the page with spurious re-navigations.
+        # v0.8.68 — `loaded` fires for the splash, for WebKit's error page,
+        # and for Next's warm-up 404 too (get_current_url() is None for
+        # html= pages and reports the target URL even for failed loads, so
+        # URL checks can't tell them apart — seen live). Ask the page
+        # itself: only a document with the Next runtime that isn't titled
+        # 404 confirms the handoff and warrants theme injection.
         try:
-            current = window.get_current_url()
+            on_app = bool(window.evaluate_js(_FRONTEND_SENTINEL_JS))
         except Exception:
-            current = None
-        if current is not None and not _is_frontend_page(current, url):
-            return  # still on the splash
-        _page_loaded.set()  # stops the load-retry watchdog
+            on_app = False
+        if not on_app:
+            return  # splash / error page / warm-up 404 — controller retries
+        _page_loaded.set()  # confirms the handoff for the controller
         # v0.5.7 — re-read config.toml on every page load so live theme
         # switches via /api/onp/theme persist across navigations. Falls back
         # to the `theme` argument if the config can't be read.
@@ -527,11 +585,5 @@ def open_window(url: str, on_close: Callable[[], None],
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
-    # v0.8.68 — last-resort recovery only: the splash page normally handles
-    # waiting + navigation itself, so give it a long leash before forcing
-    # a direct load of the frontend.
-    _start_load_retry_watchdog(
-        window, url, _page_loaded,
-        grace_sec=45.0, retry_interval_sec=15.0, max_retries=20,
-    )
+    _start_handoff_controller(window, url, _page_loaded, splash_html)
     webview.start()  # noqa: F821 — already imported above
