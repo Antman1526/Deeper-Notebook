@@ -3,9 +3,12 @@ SkillOpt (microsoft/SkillOpt, MIT).
 
 Mirrors the podcast command patterns: surreal-commands job, env-tunable
 timeout, ValueError = permanent user error, offline gate for cloud models.
-"""
-from __future__ import annotations
 
+NOTE: no `from __future__ import annotations` here — it turns the handler's
+type hints into strings that LangChain's RunnableLambda-generated input
+schema cannot resolve at submit time ("optimize_prompt_command_input is not
+fully defined" → 500). @command modules must use runtime annotations.
+"""
 import asyncio
 import os
 import time
