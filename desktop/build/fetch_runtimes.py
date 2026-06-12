@@ -10,6 +10,16 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+# v0.8.68 — force UTF-8 stdout/stderr. On Windows the default console codec is
+# cp1252, which raised UnicodeEncodeError on the "->" status arrows below and
+# crashed the whole runtime fetch in CI even though every download succeeded.
+# Reconfiguring here fixes any non-ASCII output regardless of console codepage.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except (AttributeError, ValueError):
+        pass  # not a reconfigurable TextIOWrapper (e.g. already wrapped) — non-fatal
+
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "desktop" / "bin"
 RUNTIMES = ROOT / "desktop" / "build" / "runtimes.toml"
@@ -53,7 +63,7 @@ def fetch_surreal(version: str, url: str, arch: str) -> None:
         finally:
             if archive.exists():
                 archive.unlink()
-    print(f"  surreal v{version} → {BIN}/surreal-{arch}")
+    print(f"  surreal v{version} -> {BIN}/surreal-{arch}")
 
 
 def fetch_node(version: str, url: str, arch: str) -> None:
@@ -89,7 +99,7 @@ def fetch_node(version: str, url: str, arch: str) -> None:
         finally:
             if archive.exists():
                 archive.unlink()
-    print(f"  node v{version} → {out_dir}")
+    print(f"  node v{version} -> {out_dir}")
 
 
 def fetch_uv(version: str, url: str, arch: str) -> None:
@@ -130,7 +140,7 @@ def fetch_uv(version: str, url: str, arch: str) -> None:
             if archive.exists():
                 archive.unlink()
     target.chmod(0o755)
-    print(f"  uv v{version} → {target}")
+    print(f"  uv v{version} -> {target}")
 
 
 def fetch_python_standalone(version: str, python_version: str, url: str, arch: str) -> None:
@@ -165,7 +175,7 @@ def fetch_python_standalone(version: str, python_version: str, url: str, arch: s
     download(url, tarball)
 
     size_mb = tarball.stat().st_size // 1024 // 1024
-    print(f"  python-build-standalone {version} (Python {python_version}) → {tarball} ({size_mb} MB)")
+    print(f"  python-build-standalone {version} (Python {python_version}) -> {tarball} ({size_mb} MB)")
 
 
 def main() -> int:

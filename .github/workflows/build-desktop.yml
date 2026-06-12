@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, desktop-app]
     tags: ['v*']
+  workflow_dispatch:  # v0.8.68 — allow manual on-demand full builds from the Actions tab
 
 jobs:
   build-mac-arm64:
@@ -46,6 +47,8 @@ jobs:
 
   build-windows-x64:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"  # v0.8.68 — belt-and-suspenders for non-ASCII console output on cp1252
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
