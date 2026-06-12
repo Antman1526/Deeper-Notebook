@@ -224,6 +224,11 @@ class PodcastEpisode(ObjectModel):
     """Enhanced PodcastEpisode with job tracking and metadata"""
 
     table_name: ClassVar[str] = "episode"
+    # v0.8.68 — ObjectModel._prepare_save_data drops None values unless the
+    # field is listed here, so the workers' `generation_stage = None` on
+    # success never reached the DB and the last stage ("combining_audio")
+    # stuck on completed episodes forever (caught by the live smoke test).
+    nullable_fields: ClassVar[set[str]] = {"generation_stage"}
 
     name: str = Field(..., description="Episode name")
     episode_profile: dict[str, Any] = Field(
