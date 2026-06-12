@@ -15,9 +15,23 @@ from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
+
+# v0.7.187 — Shared timeout config for credentials-discovery probes.
+# Backend audit finding #7: AsyncClient() with no top-level timeout
+# means TLS handshake / pool-acquisition stages can hang past the
+# per-call `timeout=30.0` kwarg, since that kwarg only bounds the
+# request-response phase. Mirror the chat_service.py pattern: set
+# explicit connect/read/write/pool budgets at client construction.
+_DISCOVERY_HTTP_TIMEOUT = httpx.Timeout(
+    connect=5.0,   # TLS handshake + DNS — fail fast on dead endpoints
+    read=30.0,     # provider catalog GET can be slow on first request
+    write=10.0,
+    pool=5.0,      # connection pool acquire — bound the queue
+)
 from pydantic import SecretStr
 
 from api.models import CredentialResponse
+from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
 from open_notebook.domain.credential import Credential
 from open_notebook.utils.encryption import get_secret_from_env
 
@@ -29,7 +43,7 @@ from open_notebook.utils.encryption import get_secret_from_env
 # - "required": ALL listed env vars must be set for the provider to be considered configured.
 # - "required_any": at least ONE of the listed env vars must be set.
 # - "optional": additional env vars used during migration but not required.
-PROVIDER_ENV_CONFIG: Dict[str, dict] = {
+PROVIDER_ENV_CONFIG: dict[str, dict] = {
     "openai": {"required": ["OPENAI_API_KEY"]},
     "anthropic": {"required": ["ANTHROPIC_API_KEY"]},
     "google": {"required_any": ["GOOGLE_API_KEY", "GEMINI_API_KEY"]},
@@ -61,7 +75,7 @@ PROVIDER_ENV_CONFIG: Dict[str, dict] = {
     "minimax": {"required": ["MINIMAX_API_KEY"]},
 }
 
-PROVIDER_MODALITIES: Dict[str, List[str]] = {
+PROVIDER_MODALITIES: dict[str, list[str]] = {
     "openai": ["language", "embedding", "speech_to_text", "text_to_speech"],
     "anthropic": ["language"],
     "google": ["language", "embedding"],
@@ -194,11 +208,27 @@ def validate_url(url: str, provider: str) -> None:
 
 
 def require_encryption_key() -> None:
-    """Raise ValueError if encryption key is not configured."""
-    if not get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"):
+    """Raise ValueError if encryption key is not configured.
+
+    v0.7.63 — accept either OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) or
+    OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural — rotation list). The
+    encryption utility (`utils/encryption.get_fernet_keys`) and the
+    lifespan check in api/main.py both already accept both forms. The
+    previous check here only looked at the singular, so a user who had
+    completed a key rotation and now had ONLY the plural set would
+    boot the API fine but hit "Encryption key not configured" the
+    moment they tried to migrate credentials from env vars or from the
+    legacy ProviderConfig — even though encryption was working
+    perfectly. Same fix applied to `get_provider_status` below.
+    """
+    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
+    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    if not (has_singular or has_plural):
         raise ValueError(
             "Encryption key not configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY to enable storing API keys."
+            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret-string> for a single "
+            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for a "
+            "rotation list, to enable storing API keys."
         )
 
 
@@ -220,8 +250,8 @@ def credential_to_response(cred: Credential, model_count: int = 0) -> Credential
         location=cred.location,
         credentials_path=cred.credentials_path,
         has_api_key=cred.api_key is not None,
-        created=str(cred.created) if cred.created else "",
-        updated=str(cred.updated) if cred.updated else "",
+        created=iso(cred.created) or "",
+        updated=iso(cred.updated) or "",
         model_count=model_count,
         decryption_error=cred.decryption_error,
     )
@@ -240,7 +270,7 @@ def check_env_configured(provider: str) -> bool:
     return False
 
 
-def get_default_modalities(provider: str) -> List[str]:
+def get_default_modalities(provider: str) -> list[str]:
     """Get default modalities for a provider."""
     return PROVIDER_MODALITIES.get(provider.lower(), ["language"])
 
@@ -267,11 +297,25 @@ def create_credential_from_env(provider: str) -> Credential:
             credentials_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
         )
     elif provider == "azure":
+        # v0.7.115 — defensive .get() on AZURE_OPENAI_API_KEY. Safe-by-
+        # construction today because check_env_configured("azure")
+        # gates this branch on `required = [API_KEY, ENDPOINT,
+        # API_VERSION]`. But a future refactor of PROVIDER_ENV_CONFIG
+        # could remove API_KEY from the required list and silently
+        # turn this into a KeyError that 500s the migrate-from-env
+        # endpoint. Explicit .get() + early-fail keeps the bug
+        # impossible.
+        azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        if not azure_api_key:
+            raise ValueError(
+                "AZURE_OPENAI_API_KEY is required to migrate the Azure "
+                "credential from env vars but was not set in the environment."
+            )
         return Credential(
             name=name,
             provider=provider,
             modalities=modalities,
-            api_key=SecretStr(os.environ["AZURE_OPENAI_API_KEY"]),
+            api_key=SecretStr(azure_api_key),
             endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
             api_version=os.environ.get("AZURE_OPENAI_API_VERSION"),
             endpoint_llm=os.environ.get("AZURE_OPENAI_ENDPOINT_LLM"),
@@ -321,10 +365,18 @@ async def get_provider_status() -> dict:
     Get configuration status: encryption key status, and per-provider
     configured/source information.
     """
-    encryption_configured = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
+    # v0.7.63 — report `encryption_configured = True` if EITHER the
+    # singular or plural env var is set, matching the behavior of the
+    # encryption utility itself. The previous version reported False
+    # for rotation-only deployments, which surfaced as a misleading
+    # "encryption not configured" banner in the credentials UI.
+    encryption_configured = bool(
+        get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+        or get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
+    )
 
-    configured: Dict[str, bool] = {}
-    source: Dict[str, str] = {}
+    configured: dict[str, bool] = {}
+    source: dict[str, str] = {}
 
     for provider in PROVIDER_ENV_CONFIG:
         env_configured = check_env_configured(provider)
@@ -350,9 +402,9 @@ async def get_provider_status() -> dict:
     }
 
 
-async def get_env_status() -> Dict[str, bool]:
+async def get_env_status() -> dict[str, bool]:
     """Check what's configured via environment variables."""
-    env_status: Dict[str, bool] = {}
+    env_status: dict[str, bool] = {}
     for provider in PROVIDER_ENV_CONFIG:
         env_status[provider] = check_env_configured(provider)
     return env_status
@@ -456,21 +508,46 @@ async def test_credential(credential_id: str) -> dict:
 
     except Exception as e:
         error_msg = str(e)
-        if "401" in error_msg or "unauthorized" in error_msg.lower():
+        low = error_msg.lower()
+        # v0.8.66 (audit M-B4) — match status codes on word boundaries so a
+        # coincidental substring (e.g. "1401 tokens", a model id containing
+        # "403") can't misclassify the result. The auth keywords stay as
+        # reliable substrings.
+        import re as _re
+        if _re.search(r"\b401\b", error_msg) or "unauthorized" in low:
             return {"provider": provider, "success": False, "message": "Invalid API key"}
-        elif "403" in error_msg or "forbidden" in error_msg.lower():
+        elif _re.search(r"\b403\b", error_msg) or "forbidden" in low:
             return {"provider": provider, "success": False, "message": "API key lacks required permissions"}
-        elif "rate" in error_msg.lower() and "limit" in error_msg.lower():
+        elif "rate" in low and "limit" in low:
             return {"provider": provider, "success": True, "message": "Rate limited - but connection works"}
         elif "not found" in error_msg.lower() and "model" in error_msg.lower():
             return {"provider": provider, "success": True, "message": "API key valid (test model not available)"}
         else:
-            logger.debug(f"Test connection error for credential {credential_id}: {e}")
-            truncated = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-            return {"provider": provider, "success": False, "message": f"Error: {truncated}"}
+            # v0.7.201 — was `f"Error: {truncated}"` with str(e)[:100]
+            # returned to the API client. Same info-leak class as
+            # v0.7.177/184 for podcast_service / chat stream. Esperanto
+            # / SDK exceptions can embed endpoint URLs, partial keys,
+            # SurrealDB driver frames. Log the full exception; return
+            # a generic "test failed" string with the provider name so
+            # the user has actionable context without leaking internals.
+            logger.warning(
+                "test_credential: connection-test failed for credential "
+                "%s (provider=%s): %s",
+                credential_id,
+                provider,
+                e,
+            )
+            return {
+                "provider": provider,
+                "success": False,
+                "message": (
+                    f"Connection test failed. Check that the {provider} "
+                    "endpoint is reachable and the credentials are valid."
+                ),
+            }
 
 
-async def discover_with_config(provider: str, config: dict) -> List[dict]:
+async def discover_with_config(provider: str, config: dict) -> list[dict]:
     """
     Discover models using explicit config instead of env vars.
 
@@ -480,16 +557,35 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
     api_key = config.get("api_key")
     base_url = config.get("base_url")
 
+    # v0.8.66 (audit M-B3) — re-validate the base_url before any outbound
+    # discovery request (SSRF defense-in-depth). The create path validates URLs,
+    # but a credential whose URL predates validation or was written directly to
+    # the DB would otherwise be fetched here without a check. validate_url
+    # allows localhost/private IPs (self-hosted) and blocks link-local /
+    # cloud-metadata + bad schemes. Blocking getaddrinfo → run off the loop.
+    if base_url:
+        import asyncio as _asyncio
+        try:
+            await _asyncio.to_thread(validate_url, base_url, provider)
+        except ValueError as exc:
+            raise ValueError(f"Invalid {provider} base_url: {exc}")
+
     # Static model lists for providers without a listing API
-    STATIC_MODELS: Dict[str, List[str]] = {
+    STATIC_MODELS: dict[str, list[str]] = {
+        # v0.8.68 — refreshed the Anthropic list: five of the previous seven
+        # entries were RETIRED upstream (404 on use), so discovery offered
+        # models that registered fine but failed on the first chat turn.
+        # Current actives per the Anthropic model catalog; aliases preferred
+        # so the list survives snapshot-date rotations.
         "anthropic": [
-            "claude-opus-4-20250514",
-            "claude-sonnet-4-20250514",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
+            "claude-fable-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
         ],
         "voyage": [
             "voyage-3", "voyage-3-lite", "voyage-code-3",
@@ -524,8 +620,15 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
     if provider == "ollama":
         ollama_url = base_url or "http://localhost:11434"
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{ollama_url}/api/tags", timeout=10.0)
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — was `timeout=10.0` here, which httpx
+                # REPLACES the client-level structured Timeout with
+                # a single 10s budget for connect+read+write+pool
+                # combined. Partially undid the v0.7.187 structured-
+                # timeout fix. Drop the per-call kwarg so the client's
+                # connect=5/read=30/write=10/pool=5 budgets apply as
+                # designed.
+                response = await client.get(f"{ollama_url}/api/tags")
                 response.raise_for_status()
                 data = response.json()
                 return [
@@ -544,9 +647,12 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
             headers = {}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — same per-call-timeout drop as the Ollama
+                # branch above. Let the client's structured Timeout
+                # apply.
                 response = await client.get(
-                    f"{base_url.rstrip('/')}/models", headers=headers, timeout=30.0,
+                    f"{base_url.rstrip('/')}/models", headers=headers,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -567,8 +673,9 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
         try:
             url = f"{endpoint.rstrip('/')}/openai/models?api-version={api_version}"
             headers = {"api-key": api_key}
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers, timeout=30.0)
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — same per-call-timeout drop.
+                response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 return [
@@ -595,11 +702,11 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
     if provider == "google":
         try:
             headers = {"X-Goog-Api-Key": api_key} if api_key else {}
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+                # v0.7.202 — same per-call-timeout drop.
                 response = await client.get(
                     "https://generativelanguage.googleapis.com/v1/models",
                     headers=headers,
-                    timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -622,11 +729,13 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
         return []
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_DISCOVERY_HTTP_TIMEOUT) as client:
+            # v0.7.202 — same per-call-timeout drop as the other
+            # discovery branches (Ollama, openai_compatible, Azure,
+            # Google). Let the client-level structured Timeout apply.
             response = await client.get(
                 discovery_url,
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -777,7 +886,20 @@ async def migrate_from_provider_config() -> dict:
                     f"{type(e).__name__}: {e}",
                     exc_info=True,
                 )
-                errors.append(f"{provider}/{old_cred.name}: {e}")
+                # v0.8.22 — sanitize what we put in the response payload.
+                # Pre-v0.8.22 this was `f"{provider}/{name}: {e}"` which
+                # echoed the raw exception message — same family of leak
+                # that v0.7.177 swept in podcast_service.py. The exception
+                # can carry SurrealDB driver internals (WS frames, partial
+                # RecordIDs), Fernet base64 fragments (encryption errors
+                # mid-save), or Pydantic validation messages that include
+                # the offending value (an api_key prefix, for instance).
+                # The credentials_service was missed in the v0.7.177 sweep
+                # — fixing it now closes the gap. Full detail is preserved
+                # in logger.error above for ops triage.
+                errors.append(
+                    f"{provider}/{old_cred.name}: {type(e).__name__}"
+                )
 
     logger.info(
         f"=== ProviderConfig migration complete === "
@@ -867,7 +989,15 @@ async def migrate_from_env() -> dict:
                 f"[{provider}] Migration FAILED: {type(e).__name__}: {e}",
                 exc_info=True,
             )
-            errors.append(f"{provider}: {e}")
+            # v0.8.22 — sanitize: same rationale as the
+            # migrate_from_provider_config sibling above. The exception
+            # path here additionally covers `create_credential_from_env`
+            # (which raises ValueError with key-related messages on the
+            # Azure branch) and the `Model(**model_data).save()` link
+            # step (SurrealDB writes that can fail mid-transaction with
+            # driver internals). Type name is enough for the operator
+            # to triage; full detail is in logger.error.
+            errors.append(f"{provider}: {type(e).__name__}")
 
     logger.info(
         f"=== Environment variable migration complete === "

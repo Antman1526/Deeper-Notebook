@@ -52,7 +52,17 @@ export interface StrategyData {
 }
 
 export interface AskStreamEvent {
-  type: 'strategy' | 'answer' | 'final_answer' | 'complete' | 'error'
+  // v0.7.43 — `final_answer_delta` added for per-token streaming of
+  // the final-synthesis phase. Consumers append `content` chunks to
+  // a running buffer; `final_answer` arrives once at the end with the
+  // canonical full text.
+  type:
+    | 'strategy'
+    | 'answer'
+    | 'final_answer_delta'
+    | 'final_answer'
+    | 'complete'
+    | 'error'
   reasoning?: string
   searches?: Array<{ term: string; instructions: string }>
   content?: string

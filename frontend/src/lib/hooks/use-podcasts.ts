@@ -5,7 +5,10 @@ import { podcastsApi, EpisodeProfileInput, SpeakerProfileInput } from '@/lib/api
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { getApiErrorKey } from '@/lib/utils/error-handler'
+// v0.7.196 — see use-models.ts: getApiErrorKey returns a raw i18n key
+// string. Direct use as a toast description renders the key as text
+// to the user on mapped errors.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import {
   ACTIVE_EPISODE_STATUSES,
   EpisodeProfile,
@@ -105,7 +108,90 @@ export function useRetryPodcastEpisode() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToRetry'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+// v0.8.68 — cancel an in-flight generation.
+export function useCancelPodcastEpisode() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (episodeId: string) => podcastsApi.cancelEpisode(episodeId),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.cancelRequested', { defaultValue: 'Cancellation requested' }),
+        description: t('podcasts.cancelRequestedDesc', {
+          defaultValue: 'The generation will stop within a few seconds.',
+        }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToCancel', { defaultValue: 'Could not cancel' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+// v0.8.68 — outline-review workflow: save edits + approve.
+export function useUpdateEpisodeOutline() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({
+      episodeId,
+      segments,
+    }: {
+      episodeId: string
+      segments: import('@/lib/types/podcasts').OutlineSegment[]
+    }) => podcastsApi.updateEpisodeOutline(episodeId, segments),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.outlineSaved', { defaultValue: 'Outline saved' }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToSaveOutline', { defaultValue: 'Could not save outline' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useApproveEpisodeOutline() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (episodeId: string) => podcastsApi.approveEpisodeOutline(episodeId),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      toast({
+        title: t('podcasts.outlineApproved', { defaultValue: 'Outline approved' }),
+        description: t('podcasts.outlineApprovedDesc', {
+          defaultValue: 'Generating transcript and audio…',
+        }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('podcasts.failedToApprove', { defaultValue: 'Could not approve outline' }),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -129,7 +215,7 @@ export function useDeletePodcastEpisode() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToDeleteEpisode'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -167,7 +253,7 @@ export function useCreateEpisodeProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToCreateProfile'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -198,7 +284,7 @@ export function useUpdateEpisodeProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToUpdateProfile'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -223,7 +309,7 @@ export function useDeleteEpisodeProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToDeleteProfile'),
-        description: getApiErrorKey(error, t('podcasts.failedToDeleteProfileDesc')),
+        description: getApiErrorMessage(error, t, 'podcasts.failedToDeleteProfileDesc'),
         variant: 'destructive',
       })
     },
@@ -249,7 +335,7 @@ export function useDuplicateEpisodeProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToDuplicateProfile'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -296,7 +382,7 @@ export function useCreateSpeakerProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToCreateSpeaker'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -328,7 +414,7 @@ export function useUpdateSpeakerProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToUpdateSpeaker'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -354,7 +440,7 @@ export function useDeleteSpeakerProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToDeleteSpeaker'),
-        description: getApiErrorKey(error, t('podcasts.failedToDeleteSpeakerDesc')),
+        description: getApiErrorMessage(error, t, 'podcasts.failedToDeleteSpeakerDesc'),
         variant: 'destructive',
       })
     },
@@ -379,7 +465,7 @@ export function useDuplicateSpeakerProfile() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToDuplicateSpeaker'),
-        description: getApiErrorKey(error, t('common.error')),
+        description: getApiErrorMessage(error, t, 'common.error'),
         variant: 'destructive',
       })
     },
@@ -405,7 +491,7 @@ export function useGeneratePodcast() {
     onError: (error: unknown) => {
       toast({
         title: t('podcasts.failedToStartGeneration'),
-        description: getApiErrorKey(error, t('podcasts.tryAgainMoment')),
+        description: getApiErrorMessage(error, t, 'podcasts.tryAgainMoment'),
         variant: 'destructive',
       })
     },

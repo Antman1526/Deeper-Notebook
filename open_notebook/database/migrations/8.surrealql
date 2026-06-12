@@ -1,12 +1,21 @@
 
 -- Migration 8: Support chat sessions for both notebooks and sources
 -- This migration allows chat_session to refer to either a notebook or a source
+--
+-- v0.7.177 — Added `IF NOT EXISTS` to the two trailing DEFINE FIELD
+-- statements so this migration is re-run-safe (parity with the
+-- v0.7.176 fixes for migrations 12 and 16). The leading
+-- `DEFINE TABLE OVERWRITE refers_to ... TYPE RELATION ...` already
+-- uses OVERWRITE — that's the right operator for the table redefine
+-- here because the migration's intent is to broaden the relation
+-- target from `notebook` alone to `notebook|source`. The two field
+-- additions, however, must be idempotent.
 
 DEFINE TABLE OVERWRITE refers_to
-TYPE RELATION 
+TYPE RELATION
 FROM chat_session TO notebook|source;
 
 -- Add model_override field to chat_session for per-session model selection
-DEFINE FIELD model_override ON chat_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS model_override ON chat_session TYPE option<string>;
 
-DEFINE FIELD command ON source TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS command ON source TYPE option<record<command>>;

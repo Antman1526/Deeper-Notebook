@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown, ChevronRight, Trash2, Wand2, Edit } from 'lucide-react'
+import { ChevronDown, ChevronRight, Sparkles, Trash2, Wand2, Edit } from 'lucide-react'
 import { Transformation } from '@/lib/types/transformations'
 import { useDeleteTransformation } from '@/lib/hooks/use-transformations'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -15,10 +15,12 @@ import { cn } from '@/lib/utils'
 interface TransformationCardProps {
   transformation: Transformation
   onPlayground?: () => void
+  // v0.8.68 — SkillOpt prompt optimizer entry point.
+  onOptimize?: () => void
   onEdit?: () => void
 }
 
-export function TransformationCard({ transformation, onPlayground, onEdit }: TransformationCardProps) {
+export function TransformationCard({ transformation, onPlayground, onOptimize, onEdit }: TransformationCardProps) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -61,6 +63,12 @@ export function TransformationCard({ transformation, onPlayground, onEdit }: Tra
                     {t('transformations.playground')}
                   </Button>
                 )}
+                {onOptimize && (
+                  <Button variant="outline" size="sm" onClick={onOptimize}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {t('transformations.optimize', { defaultValue: 'Optimize' })}
+                  </Button>
+                )}
                 {onEdit && (
                   <Button variant="outline" size="sm" onClick={onEdit}>
                     <Edit className="h-4 w-4 mr-2" />
@@ -70,7 +78,7 @@ export function TransformationCard({ transformation, onPlayground, onEdit }: Tra
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-red-600 hover:text-red-700"
+                  className="text-destructive hover:text-destructive/90"
                   onClick={() => setShowDeleteDialog(true)}
                 >
                   <Trash2 className="h-4 w-4" />

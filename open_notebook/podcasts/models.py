@@ -8,7 +8,7 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 
 
-async def _resolve_model_config(model_id: str) -> Tuple[str, str, dict]:
+async def _resolve_model_config(model_id: str) -> tuple[str, str, dict]:
     """Load Model record, resolve credential -> (provider, model_name, config_dict).
 
     Used by resolve_outline_config, resolve_transcript_config, resolve_tts_config,
@@ -94,7 +94,7 @@ class EpisodeProfile(ObjectModel):
             data["transcript_llm"] = ensure_record_id(data["transcript_llm"])
         return data
 
-    async def resolve_outline_config(self) -> Tuple[str, str, dict]:
+    async def resolve_outline_config(self) -> tuple[str, str, dict]:
         """Resolve outline model -> (provider, model_name, config_dict)"""
         if not self.outline_llm:
             raise ValueError(
@@ -103,7 +103,7 @@ class EpisodeProfile(ObjectModel):
             )
         return await _resolve_model_config(self.outline_llm)
 
-    async def resolve_transcript_config(self) -> Tuple[str, str, dict]:
+    async def resolve_transcript_config(self) -> tuple[str, str, dict]:
         """Resolve transcript model -> (provider, model_name, config_dict)"""
         if not self.transcript_llm:
             raise ValueError(
@@ -151,7 +151,7 @@ class SpeakerProfile(ObjectModel):
         None, description="Model record ID for TTS"
     )
 
-    speakers: List[Dict[str, Any]] = Field(
+    speakers: list[dict[str, Any]] = Field(
         ..., description="Array of speaker configurations"
     )
 
@@ -179,7 +179,7 @@ class SpeakerProfile(ObjectModel):
                     speaker["voice_model"] = ensure_record_id(speaker["voice_model"])
         return data
 
-    async def resolve_tts_config(self) -> Tuple[str, str, dict]:
+    async def resolve_tts_config(self) -> tuple[str, str, dict]:
         """Resolve TTS model -> (provider, model_name, config_dict)"""
         if not self.voice_model:
             raise ValueError(
@@ -199,31 +199,74 @@ class SpeakerProfile(ObjectModel):
         return None
 
 
+# v0.8.68 — generation stages, written by the worker as podcast-creator's
+# LangGraph nodes complete, read by the episodes UI for per-stage progress.
+# Plain strings (not an Enum) so the API layer can reference them without
+# importing podcast-creator.
+STAGE_OUTLINE = "generating_outline"
+STAGE_TRANSCRIPT = "generating_transcript"
+STAGE_AUDIO = "generating_audio"
+STAGE_COMBINE = "combining_audio"
+STAGE_AWAITING_REVIEW = "awaiting_review"
+STAGE_CANCELLED = "cancelled"
+
+GENERATION_STAGES = (
+    STAGE_OUTLINE,
+    STAGE_TRANSCRIPT,
+    STAGE_AUDIO,
+    STAGE_COMBINE,
+    STAGE_AWAITING_REVIEW,
+    STAGE_CANCELLED,
+)
+
+
 class PodcastEpisode(ObjectModel):
     """Enhanced PodcastEpisode with job tracking and metadata"""
 
     table_name: ClassVar[str] = "episode"
+    # v0.8.68 — ObjectModel._prepare_save_data drops None values unless the
+    # field is listed here, so the workers' `generation_stage = None` on
+    # success never reached the DB and the last stage ("combining_audio")
+    # stuck on completed episodes forever (caught by the live smoke test).
+    nullable_fields: ClassVar[set[str]] = {"generation_stage"}
 
     name: str = Field(..., description="Episode name")
-    episode_profile: Dict[str, Any] = Field(
+    episode_profile: dict[str, Any] = Field(
         ..., description="Episode profile used (stored as object)"
     )
-    speaker_profile: Dict[str, Any] = Field(
+    speaker_profile: dict[str, Any] = Field(
         ..., description="Speaker profile used (stored as object)"
     )
     briefing: str = Field(..., description="Full briefing used for generation")
+    # v0.8.68 — the user's per-episode customization, stored SEPARATELY from
+    # the combined `briefing` so retry can replay it verbatim. Pre-v0.8.68
+    # retries silently regenerated with the base briefing only.
+    briefing_suffix: Optional[str] = Field(
+        default=None, description="User-provided extra instructions, if any"
+    )
     content: str = Field(..., description="Source content")
     audio_file: Optional[str] = Field(
         default=None, description="Path to generated audio file"
     )
-    transcript: Optional[Dict[str, Any]] = Field(
+    transcript: Optional[dict[str, Any]] = Field(
         default_factory=dict, description="Generated transcript"
     )
-    outline: Optional[Dict[str, Any]] = Field(
+    outline: Optional[dict[str, Any]] = Field(
         default_factory=dict, description="Generated outline"
     )
-    command: Optional[Union[str, RecordID]] = Field(
+    command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands job"
+    )
+    # v0.8.68 — per-stage progress + cooperative cancellation + outline review.
+    generation_stage: Optional[str] = Field(
+        default=None,
+        description="Current generation stage (see GENERATION_STAGES); None "
+        "when idle/finished",
+    )
+    cancel_requested: Optional[bool] = Field(
+        default=False,
+        description="Set by POST /podcasts/episodes/{id}/cancel; the worker "
+        "polls it and aborts the in-flight generation",
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -256,7 +299,15 @@ class PodcastEpisode(ObjectModel):
                 "status": status.status,
                 "error_message": getattr(status, "error_message", None),
             }
-        except Exception:
+        except Exception as exc:
+            # v0.8.68 — was a bare swallow: a broken job-queue backend or a
+            # corrupt command id showed "unknown" status forever with zero
+            # diagnostic trail. Still degrade to "unknown" (the UI contract),
+            # but leave the operator a breadcrumb.
+            logger.warning(
+                f"get_job_detail({self.command}): status lookup failed, "
+                f"reporting 'unknown' ({type(exc).__name__}: {exc})"
+            )
             return {"status": "unknown", "error_message": None}
 
     @field_validator("command", mode="before")

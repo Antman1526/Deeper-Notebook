@@ -10,8 +10,9 @@ class ContentSettings(RecordModel):
     default_content_processing_engine_doc: Optional[
         Literal["auto", "docling", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for Documents")
+    # v0.8.67u — Added "crawl4ai" as a supported local URL processing engine option.
     default_content_processing_engine_url: Optional[
-        Literal["auto", "firecrawl", "jina", "simple"]
+        Literal["auto", "crawl4ai", "firecrawl", "jina", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for URLs")
     default_embedding_option: Optional[Literal["ask", "always", "never"]] = Field(
         "ask", description="Default Embedding Option for Vector Search"
@@ -19,7 +20,14 @@ class ContentSettings(RecordModel):
     auto_delete_files: Optional[Literal["yes", "no"]] = Field(
         "yes", description="Auto Delete Uploaded Files"
     )
-    youtube_preferred_languages: Optional[List[str]] = Field(
+    youtube_preferred_languages: Optional[list[str]] = Field(
         ["en", "pt", "es", "de", "nl", "en-GB", "fr", "de", "hi", "ja"],
         description="Preferred languages for YouTube transcripts",
+    )
+    # v0.8.68 — user-forced offline mode. When true the app behaves as if
+    # disconnected even when online: cloud chat falls back to the local
+    # model, web search short-circuits, Gmail digests defer. Local-provider
+    # models are never affected. Read via the network-state service.
+    offline_mode: Optional[bool] = Field(
+        False, description="Force offline: never use the internet"
     )

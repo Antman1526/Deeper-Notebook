@@ -16,10 +16,22 @@ import {
   BaseChatSession
 } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
+import { McpToolPicker } from '@/components/chat/McpToolPicker'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
+import { MessageCopyEditActions } from '@/components/chat/MessageCopyEditActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import { splitCitations } from '@/lib/utils/citations'
+import { CitationPill } from '@/components/chat/CitationPill'
+// v0.8.35c — small "local"/"cloud" chip next to AI messages, lit when
+// the smart router (v0.8.0) actually ran for this notebook turn.
+// Reads from the TanStack Query cache populated by useNotebookChat on
+// the /chat/stream `done` event; renders null for source-chat (no
+// cache entry) and pre-v0.8.1 sessions.
+import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
+import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
+import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -30,6 +42,16 @@ interface NotebookContextStats {
   notesCount: number
   tokenCount?: number
   charCount?: number
+}
+
+// v0.8.67 (audit F5) — pure, testable predicate: is the scroll viewport within
+// `threshold` px of the bottom? Used to decide whether to keep auto-scrolling
+// during a streamed reply (don't yank a user who scrolled up to read).
+export function isNearBottom(
+  el: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  threshold = 120,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
 }
 
 interface ChatPanelProps {
@@ -54,6 +76,22 @@ interface ChatPanelProps {
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
   notebookId?: string
+  // v0.8.46 — MCP tool picker wiring. Optional so callers that don't
+  // care (or have no MCP servers) simply omit them — the picker
+  // self-hides when there are no enabled servers. `disabledMcpServers`
+  // is the current per-conversation disable list; `onToggleMcpServer`
+  // flips one server's state. Both come straight from
+  // useNotebookChat / useSourceChat (v0.8.42-v0.8.44b). Pre-v0.8.46
+  // the <McpToolPicker> existed + was tested but was never mounted,
+  // so the entire feature chain was unreachable from the UI.
+  disabledMcpServers?: string[]
+  onToggleMcpServer?: (name: string) => void
+  // v0.8.63 — "Re-ask allowing cloud" handler for the privacy review sheet.
+  // Given the original question text, re-sends it with the privacy gate
+  // bypassed (explicit user consent). Only notebook chat provides it; source
+  // chat omits it (no privacy badge there), so the review popover is
+  // review-only in that case.
+  onReaskAllowCloud?: (message: string) => void
 }
 
 export function ChatPanel({
@@ -73,7 +111,10 @@ export function ChatPanel({
   title,
   contextType = 'source',
   notebookContextStats,
-  notebookId
+  notebookId,
+  disabledMcpServers,
+  onToggleMcpServer,
+  onReaskAllowCloud,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -81,7 +122,26 @@ export function ChatPanel({
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // v0.8.67 (F5) — true while the user is at/near the bottom; gates auto-scroll
+  // so streamed tokens don't yank a user who scrolled up. Defaults true so the
+  // first render + the common "user just sent" case scroll to bottom.
+  const stickToBottomRef = useRef(true)
+  // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
+
+  // v0.8.65g — "Edit" a message: load its text into the chat input + focus so
+  // the user can tweak and resend it (reuse a prompt / refine an answer).
+  const handleEditMessage = (content: string) => {
+    setInput(content)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }
 
   const handleReferenceClick = (type: string, id: string) => {
     const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
@@ -96,9 +156,31 @@ export function ChatPanel({
     }
   }
 
-  // Auto-scroll to bottom when new messages arrive
+  // v0.8.67 (audit F5) — auto-scroll, fixed for streaming.
+  // Was: scrollIntoView({behavior:'smooth'}) on every `messages` change. During
+  // a streamed reply that fires on EVERY token (50+ stacked smooth animations →
+  // jank) AND yanked the view down even when the user had scrolled up to read.
+  // Now: (1) behavior:'auto' (no stacked animations), and (2) only stick to the
+  // bottom when the user is already near it. `stickToBottomRef` DEFAULTS true and
+  // is only ever set false by a real scroll event, so if the Radix viewport
+  // can't be found the behavior safely degrades to today's always-scroll.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const root = scrollAreaRef.current
+    const viewport = root?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (!viewport) return
+    const onScroll = () => {
+      stickToBottomRef.current = isNearBottom(viewport)
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (stickToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
   }, [messages])
 
   const handleSend = () => {
@@ -175,7 +257,7 @@ export function ChatPanel({
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
               </div>
             ) : (
-              messages.map((message) => (
+              messages.map((message, idx) => (
                 <div
                   key={message.id}
                   className={`flex gap-3 ${
@@ -201,16 +283,74 @@ export function ChatPanel({
                         <AIMessageContent
                           content={message.content}
                           onReferenceClick={handleReferenceClick}
+                          messageId={message.id}
                         />
                       ) : (
-                        <p className="text-sm break-all">{message.content}</p>
+                        // v0.7.25 — `break-all` breaks between any two
+                        // characters, so normal English wrapped mid-word
+                        // ("perfor-mance"). `break-words` only wraps
+                        // at word boundaries (with overflow-wrap for
+                        // unbreakable URLs/tokens).
+                        <p className="text-sm break-words">{message.content}</p>
                       )}
                     </div>
+                    {message.type === 'human' && (
+                      // v0.8.65g — Copy (reuse) + Edit for the user's own
+                      // messages, which previously had no actions row.
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <MessageCopyEditActions
+                          content={message.content}
+                          onEdit={handleEditMessage}
+                        />
+                      </div>
+                    )}
                     {message.type === 'ai' && (
-                      <MessageActions
-                        content={message.content}
-                        notebookId={notebookId}
-                      />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <MessageActions
+                          content={message.content}
+                          notebookId={notebookId}
+                        />
+                        {/* v0.8.65g — Edit (reuse the answer as a new prompt);
+                            AI messages already expose Copy via MessageActions. */}
+                        <MessageCopyEditActions
+                          content={message.content}
+                          onEdit={handleEditMessage}
+                          showCopy={false}
+                        />
+                        {/* v0.8.35c — only shows for notebook chat
+                            sessions where the smart router populated
+                            the cache via /chat/stream's done event.
+                            Source-chat and pre-v0.8.1 sessions render
+                            null naturally (no cache entry). */}
+                        <ChatMessageProviderBadge messageId={message.id} />
+                        {/* v0.8.61 — "On-device" chip when the privacy gate
+                            kept this turn local. Renders null unless
+                            privacy_gated === true in the cached done event. */}
+                        <ChatMessagePrivacyBadge
+                          messageId={message.id}
+                          // v0.8.63 — re-ask the PRECEDING user question with
+                          // the privacy gate bypassed (explicit consent). Only
+                          // when the host wired onReaskAllowCloud (notebook
+                          // chat) and a preceding human message exists.
+                          onReask={
+                            onReaskAllowCloud &&
+                            // v0.8.66 (audit F-5) — don't offer "re-ask allowing
+                            // cloud" while a stream is in flight; firing it
+                            // mid-stream started a second send that aborted the
+                            // in-flight one. The control reappears once idle.
+                            !isStreaming &&
+                            idx > 0 &&
+                            messages[idx - 1]?.type === 'human'
+                              ? () =>
+                                  onReaskAllowCloud(messages[idx - 1].content)
+                              : undefined
+                          }
+                        />
+                        {/* v0.8.62 — agent-FSM "needs input"/"truncated" chip;
+                            null unless ONP_AGENT_FSM surfaced a non-complete
+                            terminal state on the done event. */}
+                        <ChatMessageAgentStateBadge messageId={message.id} />
+                      </div>
                     )}
                   </div>
                   {message.type === 'human' && (
@@ -278,21 +418,35 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
-          {/* Model selector */}
-          {onModelChange && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
-              <ModelSelector
-                currentModel={modelOverride}
-                onModelChange={onModelChange}
-                disabled={isStreaming}
-              />
+          {/* Model selector + v0.8.46 MCP tool picker on one row.
+              The picker self-hides when there are no enabled MCP
+              servers, so the row collapses to just the model selector
+              for users without MCP configured. */}
+          {(onModelChange || onToggleMcpServer) && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
+                {onModelChange && (
+                  <ModelSelector
+                    currentModel={modelOverride}
+                    onModelChange={onModelChange}
+                    disabled={isStreaming}
+                  />
+                )}
+              </div>
+              {onToggleMcpServer && (
+                <McpToolPicker
+                  disabled={disabledMcpServers ?? []}
+                  onToggle={onToggleMcpServer}
+                />
+              )}
             </div>
           )}
 
           <div className="flex gap-2 items-end min-w-0">
             <Textarea
               id={chatInputId}
+              ref={textareaRef}
               name="chat-message"
               autoComplete="off"
               value={input}
@@ -325,50 +479,85 @@ export function ChatPanel({
 }
 
 // Helper component to render AI messages with clickable references
+// v0.8.0 Phase 4 Task 14 — split on citation markers before markdown rendering.
+// [mcp:N] markers are rendered as CitationPill components inline; [source/note/insight:ID]
+// markers within text segments are handled by the existing compact-reference system.
+// v0.8.1 Item 3 — messageId passed through to CitationPill so the MCP
+// popover can look up tool-call payloads from the TanStack Query cache.
 function AIMessageContent({
   content,
-  onReferenceClick
+  onReferenceClick,
+  messageId,
 }: {
   content: string
   onReferenceClick: (type: string, id: string) => void
+  messageId?: string
 }) {
   const { t } = useTranslation()
-  // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'))
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
 
+  // Shared ReactMarkdown component overrides — reused per text segment.
+  const mdComponents = {
+    a: LinkComponent,
+    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
+    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
+    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
+    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
+    h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
+    h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
+    h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
+    li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
+    ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
+    ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="my-4 overflow-x-auto">
+        <table className="min-w-full border-collapse border border-border">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
+    tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
+    tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
+    th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
+    td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
+  }
+
+  // Split the raw content on ALL citation markers ([mcp:N], [source:ID], etc.).
+  // Text segments are rendered via ReactMarkdown (with compact-reference conversion).
+  // Citation segments are rendered as CitationPill components inline.
+  const segments = splitCitations(content)
+
+  // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
+  // hardcoded blue-600 fails WCAG AA against the dark muted
+  // background in dark themes (~3.2:1), and break-all hyphenates
+  // URLs mid-character. Theme-aware token + break-words.
   return (
-    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-blue-600 prose-a:break-all prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: LinkComponent,
-          p: ({ children }) => <p className="mb-4">{children}</p>,
-          h1: ({ children }) => <h1 className="mb-4 mt-6">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-3 mt-5">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-3 mt-4">{children}</h3>,
-          h4: ({ children }) => <h4 className="mb-2 mt-4">{children}</h4>,
-          h5: ({ children }) => <h5 className="mb-2 mt-3">{children}</h5>,
-          h6: ({ children }) => <h6 className="mb-2 mt-3">{children}</h6>,
-          li: ({ children }) => <li className="mb-1">{children}</li>,
-          ul: ({ children }) => <ul className="mb-4 space-y-1">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-4 space-y-1">{children}</ol>,
-          table: ({ children }) => (
-            <div className="my-4 overflow-x-auto">
-              <table className="min-w-full border-collapse border border-border">{children}</table>
-            </div>
-          ),
-          thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
-          tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
-          th: ({ children }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
-          td: ({ children }) => <td className="border border-border px-3 py-2">{children}</td>,
-        }}
-      >
-        {markdownWithCompactRefs}
-      </ReactMarkdown>
+    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+      {segments.map((seg, idx) => {
+        if (seg.kind === 'text') {
+          // Pass text segments through the existing compact-reference pipeline.
+          const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
+            seg.value,
+            t('common.references')
+          )
+          return (
+            <ReactMarkdown
+              key={idx}
+              remarkPlugins={[remarkGfm]}
+              components={mdComponents}
+            >
+              {markdownWithCompactRefs}
+            </ReactMarkdown>
+          )
+        }
+        // Citation segment → render as an inline pill.
+        // v0.8.1 Item 3 — pass messageId so MCP pills can look up
+        // tool-call payloads from the TanStack Query cache.
+        return (
+          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} messageId={messageId} />
+        )
+      })}
     </div>
   )
 }

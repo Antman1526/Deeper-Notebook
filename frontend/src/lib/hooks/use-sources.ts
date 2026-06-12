@@ -13,6 +13,22 @@ import {
   SourceListResponse
 } from '@/lib/types/api'
 
+// v0.7.191 — Predicate for "all source LIST queries" that excludes
+// the per-source polling status keys `['sources', sourceId, 'status']`.
+// Broad `invalidateQueries({ queryKey: ['sources'] })` matched those
+// status polls too — every mutation triggered a status refetch for
+// every source the user had open, even completed ones. On a notebook
+// with 30+ sources this was a measurable hit.
+//
+// Any list-shape key (`['sources']`, `['sources', notebookId]`,
+// `['sources', 'infinite', notebookId]`) doesn't include 'status';
+// per-source status polls do. The substring check is robust to
+// future key extensions as long as they keep the convention.
+const _isSourcesListQuery = (queryKey: readonly unknown[]): boolean => {
+  if (queryKey[0] !== 'sources') return false
+  return !queryKey.includes('status')
+}
+
 const NOTEBOOK_SOURCES_PAGE_SIZE = 30
 
 export function useSources(notebookId?: string) {
@@ -20,8 +36,18 @@ export function useSources(notebookId?: string) {
     queryKey: QUERY_KEYS.sources(notebookId),
     queryFn: () => sourcesApi.list({ notebook_id: notebookId }),
     enabled: !!notebookId,
-    staleTime: 5 * 1000, // 5 seconds - more responsive for real-time source updates
-    refetchOnWindowFocus: true, // Refetch when user comes back to the tab
+    // v0.7.159 — Raised from 5s → 60s and disabled refetchOnWindowFocus.
+    // The sources list endpoint fans out to a per-row insights_count +
+    // embedded-LIMIT-1 subquery (api/routers/sources.py); on a 200-source
+    // notebook that's ~200 subqueries per refetch. Previous 5s + focus-
+    // refetch combination meant every Cmd-Tab back to the app re-ran the
+    // entire fan-out. Source mutations still trigger broad cache invalidation
+    // (useCreateSource, useDeleteSource, useUpdateSource), so the user
+    // doesn't lose accuracy — only the redundant on-focus refetch.
+    // useSourceStatus (the polling hook) keeps its own short interval
+    // for in-progress imports.
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -50,8 +76,11 @@ export function useNotebookSources(notebookId: string) {
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset,
     enabled: !!notebookId,
-    staleTime: 5 * 1000,
-    refetchOnWindowFocus: true,
+    // v0.7.159 — Same rationale as useSources: 5s+focus refetch
+    // triggered repeated heavy fan-outs on tab switches. Mutations
+    // explicitly invalidate this query key; that path stays accurate.
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Flatten all pages into a single array (memoized to prevent infinite re-renders)
@@ -123,6 +152,14 @@ export function useCreateSource() {
         refetchType: 'active'
       })
 
+      // v0.7.166 — Also invalidate the notebooks list query.
+      // `GET /notebooks` returns `source_count` and `note_count` per
+      // notebook (api/routers/notebooks.py:53-59) for the sidebar.
+      // Without this invalidation the sidebar showed stale counts
+      // until the next window-focus refetch — visible UX bug after
+      // every source-add.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
+
       // Show different messages based on processing mode
       if (variables.async_processing) {
         toast({
@@ -156,7 +193,7 @@ export function useUpdateSource() {
       sourcesApi.update(id, data),
     onSuccess: (_, { id }) => {
       // Invalidate ALL sources queries (both general and notebook-specific)
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
       toast({
         title: t('common.success'),
@@ -182,9 +219,12 @@ export function useDeleteSource() {
     mutationFn: (id: string) => sourcesApi.delete(id),
     onSuccess: (_, id) => {
       // Invalidate ALL sources queries (both general and notebook-specific)
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
+      // v0.7.166 — Invalidate the notebooks list so the sidebar's
+      // source_count refreshes. Same rationale as in useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('sources.sourceDeletedSuccess'),
@@ -216,6 +256,8 @@ export function useFileUpload() {
         queryKey: QUERY_KEYS.sourcesInfinite(variables.notebookId),
         refetchType: 'active'
       })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       toast({
         title: t('common.success'),
         description: t('sources.fileUploadedSuccess'),
@@ -241,6 +283,26 @@ export function useSourceStatus(sourceId: string, enabled = true) {
       // The query.state.data contains the SourceStatusResponse
       const data = query.state.data as SourceStatusResponse | undefined
       if (data?.status === 'running' || data?.status === 'queued' || data?.status === 'new') {
+        // v0.7.202 — cap aggressive 2 s polling. A worker that gets
+        // stuck in 'running' (common after the v0.7.172 reaper
+        // window, e.g. a job started <30 min ago that stalled
+        // before SIGTERM rescue) used to poll the API every 2 s
+        // forever — wasted requests + battery on the desktop app
+        // for sources the user has long abandoned. After 15 min
+        // of polling (450 ticks at 2 s) fall back to a 30 s
+        // background pulse so the UI still notices if the worker
+        // eventually wakes up, without burning network.
+        //
+        // query.state.dataUpdateCount is the number of completed
+        // fetches for this query since mount; not a perfect clock,
+        // but a fine proxy at a fixed 2 s interval and immune to
+        // wall-clock skew. The 450 threshold is intentionally
+        // generous — a real podcast/embed job legitimately takes
+        // 5-10 min on local-LLM builds.
+        const ticks = query.state.dataUpdateCount ?? 0
+        if (ticks > 450) {
+          return 30000
+        }
         return 2000
       }
       // No auto-refresh if completed, failed, or unknown
@@ -271,7 +333,7 @@ export function useRetrySource() {
         queryKey: ['sources', sourceId, 'status']
       })
       // Invalidate ALL sources queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
 
       toast({
@@ -311,13 +373,15 @@ export function useAddSourcesToNotebook() {
     },
     onSuccess: (result, { notebookId, sourceIds }) => {
       // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Specifically invalidate the notebook's sources
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
       // Invalidate each affected source
       sourceIds.forEach(sourceId => {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
       })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
 
       // Show appropriate toast based on results
       if (result.failures === 0) {
@@ -364,11 +428,13 @@ export function useRemoveSourceFromNotebook() {
     },
     onSuccess: (_, { notebookId, sourceId }) => {
       // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Specifically invalidate the notebook's sources
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
+      // v0.7.166 — sidebar source_count refresh; see useCreateSource.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
 
       toast({
         title: t('common.success'),

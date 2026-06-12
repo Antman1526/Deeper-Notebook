@@ -113,6 +113,22 @@ export default function SearchPage() {
     ask.sendAsk(askQuestion, models)
   }, [askQuestion, modelDefaults, customModels, ask])
 
+  // v0.7.204 — stash the latest handlers in refs so the auto-trigger
+  // effect doesn't need them in its deps. Previously the effect
+  // listed `handleSearch` / `handleAsk` (and via them: searchQuery,
+  // searchType, searchSources, searchNotes, askQuestion,
+  // modelDefaults, customModels) — each of those changing as the
+  // user typed re-ran the effect. The `hasAutoTriggeredRef` guard
+  // saved correctness but the effect was deeply tangled with
+  // half the page state. Narrow the deps to JUST the URL-driven
+  // trigger inputs.
+  const handleSearchRef = useRef(handleSearch)
+  const handleAskRef = useRef(handleAsk)
+  useEffect(() => {
+    handleSearchRef.current = handleSearch
+    handleAskRef.current = handleAsk
+  }, [handleSearch, handleAsk])
+
   // Auto-trigger search/ask when arriving with URL params
   useEffect(() => {
     // Skip if already triggered or no query
@@ -122,13 +138,17 @@ export default function SearchPage() {
     if (urlMode === 'ask' && modelsLoading) return
 
     if (urlMode === 'search') {
-      handleSearch()
+      handleSearchRef.current()
       hasAutoTriggeredRef.current = true
     } else if (urlMode === 'ask' && modelDefaults?.default_chat_model) {
-      handleAsk()
+      handleAskRef.current()
       hasAutoTriggeredRef.current = true
     }
-  }, [urlQuery, urlMode, modelsLoading, modelDefaults, handleSearch, handleAsk])
+    // v0.7.204 — intentionally narrow deps. handleSearch/handleAsk
+    // accessed via refs above so they're always current without
+    // re-running the trigger logic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuery, urlMode, modelsLoading, modelDefaults?.default_chat_model])
 
   // Handle URL param changes while on page (e.g., from command palette again)
   useEffect(() => {
@@ -158,23 +178,32 @@ export default function SearchPage() {
 
   return (
     <AppShell>
-      <div className="p-4 md:p-6">
-        <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">{t('searchPage.askAndSearch')}</h1>
+      {/* v0.7.164 — Visual sweep. Was `p-4 md:p-6` (smaller than every
+          other dashboard page) + `text-xl md:text-2xl font-bold`
+          (smaller H1). The Ask & Search page is a flagship feature
+          competing with NotebookLM — it shouldn't read as a junior
+          screen. Standardised to:
+            - `px-6 py-10 sm:px-8` (matches Podcasts/Settings/Models)
+            - `text-3xl font-semibold tracking-tight` H1
+            - Removed the noisy "CHOOSE A MODE" all-caps caption above
+              the tabs (same fix as Podcasts in v0.7.153 — two-tab
+              toggles are self-explanatory).
+          v0.7.180 — the orphaned `searchPage.chooseAMode` key has
+          since been removed from all 10 locale files. */}
+      <div className="px-6 py-10 sm:px-8 space-y-8">
+        <h1 className="text-3xl font-semibold tracking-tight">{t('searchPage.askAndSearch')}</h1>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-6">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('searchPage.chooseAMode')}</p>
-            <TabsList aria-label={t('common.accessibility.searchKB')} className="w-full max-w-xl">
-              <TabsTrigger value="ask">
-                <MessageCircleQuestion className="h-4 w-4" />
-                {t('searchPage.askBeta')}
-              </TabsTrigger>
-              <TabsTrigger value="search">
-                <Search className="h-4 w-4" />
-                {t('searchPage.search')}
-              </TabsTrigger>
-            </TabsList>
-          </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-8">
+          <TabsList aria-label={t('common.accessibility.searchKB')} className="w-full max-w-xl">
+            <TabsTrigger value="ask">
+              <MessageCircleQuestion className="h-4 w-4" />
+              {t('searchPage.askBeta')}
+            </TabsTrigger>
+            <TabsTrigger value="search">
+              <Search className="h-4 w-4" />
+              {t('searchPage.search')}
+            </TabsTrigger>
+          </TabsList>
 
           <TabsContent value="ask" className="mt-6">
             <Card>
@@ -329,7 +358,9 @@ export default function SearchPage() {
                       placeholder={t('searchPage.enterSearchPlaceholder')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyPress={handleKeyPress}
+                      // v0.7.200 — React 19 deprecates onKeyPress.
+                      // onKeyDown matches the Ask textarea below.
+                      onKeyDown={handleKeyPress}
                       disabled={searchMutation.isPending}
                       className="flex-1"
                       aria-label={t('common.accessibility.enterSearch')}

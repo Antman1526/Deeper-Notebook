@@ -12,6 +12,23 @@ let config: AppConfig | null = null
 let configPromise: Promise<AppConfig> | null = null
 
 /**
+ * v0.8.66 (audit F-3) — start a config fetch whose cached promise CLEARS itself
+ * on failure. Previously `configPromise = fetchConfig()` latched a rejected
+ * promise: a transient startup race (the UI mounting before the FastAPI sidecar
+ * is ready — the *expected* case on desktop launch) then pinned EVERY future
+ * getConfig()/getApiUrl() to that one rejection until ConnectionGuard manually
+ * called resetConfig(). Clearing the latch makes the next call re-fetch.
+ */
+function startConfigFetch(): Promise<AppConfig> {
+  const p = fetchConfig().catch((e) => {
+    if (configPromise === p) configPromise = null
+    throw e
+  })
+  configPromise = p
+  return p
+}
+
+/**
  * Get the API URL to use for requests.
  *
  * Priority:
@@ -31,9 +48,8 @@ export async function getApiUrl(): Promise<string> {
     return cfg.apiUrl
   }
 
-  // Start fetching config
-  configPromise = fetchConfig()
-  const cfg = await configPromise
+  // Start fetching config (self-clearing on failure — F-3)
+  const cfg = await startConfigFetch()
   return cfg.apiUrl
 }
 
@@ -49,8 +65,7 @@ export async function getConfig(): Promise<AppConfig> {
     return await configPromise
   }
 
-  configPromise = fetchConfig()
-  return await configPromise
+  return await startConfigFetch()
 }
 
 /**

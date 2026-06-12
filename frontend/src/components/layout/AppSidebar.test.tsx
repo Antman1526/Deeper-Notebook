@@ -4,12 +4,29 @@ import { describe, it, expect, vi } from 'vitest'
 import { AppSidebar } from './AppSidebar'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 
+// v0.8.0 — mock the LocalModelHealthBadges component so the
+// AppSidebar tests don't need a QueryClientProvider. The badge
+// component has its own dedicated test suite.
+vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
+  LocalModelHealthBadges: () => null,
+}))
+
 // Mock Tooltip components to avoid Radix UI async issues in tests
 vi.mock('@/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
+// v0.7.41 — force desktop viewport for these tests. The new
+// useIsDesktop() returns false under jsdom by default (SSR-safe), which
+// would force the sidebar into collapsed mode regardless of the store
+// state. These tests are about sidebar BEHAVIOR, not media-query
+// behavior — mock the hook to always say "yes, you're on desktop".
+vi.mock('@/lib/hooks/use-media-query', () => ({
+  useMediaQuery: () => true,
+  useIsDesktop: () => true,
 }))
 
 describe('AppSidebar', () => {

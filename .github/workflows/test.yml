@@ -2,9 +2,13 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, desktop-app]
+  # v0.7.129 — also fire on pushes to `desktop-app`. This is the
+  # working branch for the Plus fork; gating Tests to `main` only
+  # means changes sit untested for weeks until a sync PR. Triggering
+  # here gives every commit a green/red signal at the moment it lands.
   push:
-    branches: [main]
+    branches: [main, desktop-app]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -13,16 +17,24 @@ on:
 permissions:
   contents: read
 
+# v0.7.129f — force every JavaScript action to run on Node 24 even
+# if the action's own manifest still pins Node 20. As of this commit
+# astral-sh/setup-uv@v6 still ships Node 20 (the only remaining
+# warning). This env var is GitHub's documented escape hatch; can be
+# removed once every transitive action is rebuilt on Node 24.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 
@@ -33,7 +45,86 @@ jobs:
         run: uv sync
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --ignore=tests/integration
+
+  # v0.7.129 — opt-in real-SurrealDB integration suite.
+  # Runs in parallel with the hermetic backend job. Failure here
+  # signals a SurrealQL syntax regression, migration-ordering bug,
+  # edge-direction inversion, or delete-cascade gap — bugs the
+  # mocked unit tests structurally can't catch.
+  #
+  # v0.7.129b — Originally tried to use a `services:` block here, but
+  # GitHub Actions' service-container syntax can ONLY pass image +
+  # env + ports, NOT positional CLI args. The surrealdb/surrealdb
+  # image's entrypoint is `surreal`, which requires `start --user
+  # root --pass root memory` as its first args. With no subcommand
+  # the container printed help and exited before our workaround
+  # could run, so `services:` initialization failed and gated the
+  # whole job. Fix: drop `services:`, run SurrealDB via a plain
+  # `docker run -d` step where CLI args work normally.
+  integration-surreal:
+    name: Integration Tests (SurrealDB)
+    runs-on: ubuntu-latest
+    env:
+      # Toggle that flips the per-suite skip gate (tests/integration/conftest.py).
+      SURREAL_INTEGRATION: "1"
+      SURREAL_URL: ws://localhost:8000/rpc
+      SURREAL_USER: root
+      SURREAL_PASSWORD: root
+      # Namespace + database get overridden per-session by the fixture
+      # (onp_test_<uuid>). These exist so any code path that reads them
+      # at import time has a non-empty value.
+      SURREAL_NAMESPACE: open_notebook
+      SURREAL_DATABASE: open_notebook
+      # The encryption module fails closed without a key. The actual
+      # value doesn't matter for these tests (no credentials are stored)
+      # — but it must be present so module import succeeds.
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-integration-test-key-not-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Start SurrealDB
+        # v0.7.129b — direct `docker run` instead of `services:` so we
+        # can pass `start --user root --pass root --log info memory`
+        # as positional args to the image's `surreal` entrypoint.
+        # `memory` storage means every CI run gets a fresh DB and we
+        # don't need to manage volumes.
+        run: |
+          docker run -d --name surrealdb \
+            -p 8000:8000 \
+            surrealdb/surrealdb:v2 \
+            start --user root --pass root --log info memory
+
+      - name: Wait for SurrealDB to be ready
+        # v0.7.129b — Poll the /health endpoint (HTTP, port 8000) for
+        # up to 60 s. Fails the job loudly if SurrealDB never came
+        # up, with the container logs attached for diagnosis.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "SurrealDB ready after ${i} attempt(s) ($((i * 2)) s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::SurrealDB did not become ready within 60s"
+          docker logs surrealdb || true
+          exit 1
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration/ -v -m integration_surreal
 
   frontend:
     name: Frontend Tests
@@ -43,10 +134,10 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

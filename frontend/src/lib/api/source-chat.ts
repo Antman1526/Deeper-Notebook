@@ -46,7 +46,15 @@ export const sourceChatApi = {
   },
 
   // Messaging with streaming
-  sendMessage: (sourceId: string, sessionId: string, data: SendMessageRequest) => {
+  // v0.6.32 — accepts an optional AbortSignal so the caller (useSourceChat)
+  // can actually cancel an in-flight stream on unmount or the "Stop" button.
+  // Pre-fix the caller had an abortControllerRef.current that was NEVER
+  // assigned — so cancelStreaming was effectively dead code and unmount
+  // leaked the stream reader.
+  sendMessage: (
+    sourceId: string, sessionId: string, data: SendMessageRequest,
+    signal?: AbortSignal,
+  ) => {
     // Get auth token using the same logic as apiClient interceptor
     let token = null
     if (typeof window !== 'undefined') {
@@ -74,7 +82,8 @@ export const sourceChatApi = {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` })
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal,
     }).then(response => {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)

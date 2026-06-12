@@ -1,0 +1,76 @@
+# Pinned for reproducibility; CI installs these on top of the upstream pyproject.toml.
+#
+# v0.7.19 bumps:
+#   - aiohttp: 3.11.10 → 3.11.18+ (CVE-2025-37960 parser smuggling)
+#   - llama-cpp-python: 0.3.5 → 0.3.16+ (CVE-2024-42479 heap OOB read
+#     in GGUF parsing — direct local exploit risk on a malicious model
+#     file the user downloads/swaps in)
+#   - pyinstaller: 6.11.1 → 6.13.0+ (general security and platform
+#     fixes for macOS 14+ codesign bundle handling)
+#
+# Pinning style: use ">= <patched-version>" with a soft upper to allow
+# patch-level updates without re-pinning, while still preventing a
+# future major from silently breaking the bundle. Renovate (when
+# added) can manage the patch drift.
+pywebview==5.4
+pyinstaller>=6.13.0,<7
+aiohttp>=3.11.18,<4
+# v0.7.192 — `[server]` extra pulls in starlette-context + sse-starlette
+# + pydantic-settings + PyYAML, all required by `python -m
+# llama_cpp.server`. Without it the bundled venv installed
+# llama_cpp.server's __main__.py but crashed at first import with
+# `ModuleNotFoundError: No module named 'starlette_context'`,
+# leaving the embed + chat local-GGUF servers dead. Every source
+# upload then got stuck "Processing" because embed_source couldn't
+# reach the embedding port. Visible in
+# ~/.open-notebook-plus/logs/llamacpp_embed.log and llamacpp.log.
+llama-cpp-python[server]>=0.3.16,<0.4
+
+# v0.7.195 — Bundle the local-server shim dependencies. These have
+# been REQUIRED since the v0.4 local-server feature shipped, but
+# they were never pinned in desktop/requirements.txt. Every .app
+# install since v0.4 has silently shipped non-functional whisper /
+# piper / memory servers — the spawn looked successful (no log
+# entries to surface the failure) because launcher.py:689/700 returns
+# early before logging when the spawn binary path is missing. The
+# auto_register flow then registered credentials pointing at ports
+# that nothing was listening on; /credentials/{id}/test returned
+# "Cannot connect to server."
+#
+#   - faster-whisper: STT (Whisper.cpp Python bindings, ~5MB +
+#     models in ~/.cache/huggingface)
+#   - piper-tts: TTS voice synthesis (replaces the broken raw
+#     `piper` namespace; this is the maintained successor)
+#   - mem0ai: in-process memory layer for the chat session
+#     summarizer + fact extractor
+#
+# Loose upper bounds — these are stable APIs and Renovate can drift
+# the patch versions safely.
+faster-whisper>=1.1.0,<2
+piper-tts>=1.2.0,<2
+mem0ai>=0.1.0,<2
+
+# v0.7.197 — Pin the OpenChronicle MCP-bridge dependencies. Same
+# class of bug as v0.7.195 (faster-whisper / piper-tts / mem0ai
+# were never pinned, silently shipped non-functional servers).
+# `desktop_shims/openchronicle_shim.py` does:
+#
+#     from mcp.client.session import ClientSession
+#     from mcp.client.streamable_http import streamablehttp_client
+#
+# These currently arrive in the lockfile only as transitive deps
+# of `fastmcp` (which is itself transitively pulled in by another
+# upstream package, NOT declared in requirements.txt). The lock
+# comment "via -r desktop/requirements.txt" is stale — next time
+# someone regenerates the lockfile from this file as-is, both
+# `mcp` and `fastmcp` vanish and openchronicle_shim crashes
+# silently at startup (same DEVNULL trap as v0.7.195).
+#
+# Pin them explicitly so the dependency is declared, not implied.
+mcp>=1.0,<2
+fastmcp>=3.0,<4
+httpx==0.28.1
+tomli==2.2.1; python_version < "3.11"
+pytest==8.3.4
+pytest-asyncio==0.24.0
+skillopt>=0.1.0,<0.2  # v0.8.68 — prompt optimizer (microsoft/SkillOpt, MIT)

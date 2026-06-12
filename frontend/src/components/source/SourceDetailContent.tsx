@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import ReactMarkdown from 'react-markdown'
@@ -62,7 +62,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
@@ -92,6 +92,43 @@ export function SourceDetailContent({
   const [creatingInsight, setCreatingInsight] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // v0.7.79 — track the 5-second insight-fallback timer so it can be
+  // cancelled on unmount. The fallback path runs only when the API
+  // didn't return a command_id (older sources or non-async insight
+  // creates), but in that case a 5-second wait is plenty long for the
+  // user to navigate away from the source detail. Without cleanup the
+  // setTimeout would still fire `fetchInsights()` and
+  // `queryClient.invalidateQueries` on an unmounted component, leaving
+  // a React warning in the console and an unnecessary refetch.
+  const insightFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // v0.7.80 — AbortController shared by every in-flight insight-polling
+  // loop spawned by this component. When the component unmounts (user
+  // navigated away mid-polling) we abort the controller so the polling
+  // loop exits its abortable sleep within milliseconds instead of
+  // continuing to hit /commands/jobs/{id} for the remaining 4 minutes.
+  const insightPollAbortRef = useRef<AbortController | null>(null)
+  // v0.7.82 — track the 2-second URL-copy-indicator timer in a ref so
+  // it cancels cleanly on unmount. Short window, low risk, but
+  // finishes the standing setTimeout sweep.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (insightFallbackTimerRef.current) {
+        clearTimeout(insightFallbackTimerRef.current)
+        insightFallbackTimerRef.current = null
+      }
+      if (insightPollAbortRef.current) {
+        insightPollAbortRef.current.abort()
+        insightPollAbortRef.current = null
+      }
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current)
+        copiedTimerRef.current = null
+      }
+    }
+  }, [])
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
@@ -165,22 +202,48 @@ export function SourceDetailContent({
 
       // Poll for command completion if we have a command_id
       if (response.command_id) {
+        // v0.7.80 — share an AbortController with the unmount cleanup so
+        // navigating away mid-poll stops the 4-minute polling loop
+        // immediately. Replace any prior controller (concurrent insight
+        // creates are uncommon but we still don't want a stale one).
+        if (insightPollAbortRef.current) {
+          insightPollAbortRef.current.abort()
+        }
+        const controller = new AbortController()
+        insightPollAbortRef.current = controller
+
         // Poll in background (don't block UI)
         insightsApi.waitForCommand(response.command_id, {
           maxAttempts: 120, // Up to 4 minutes (120 * 2s)
-          intervalMs: 2000
+          intervalMs: 2000,
+          signal: controller.signal,
         }).then(success => {
+          // If aborted (component unmounted), `success` is false and we
+          // skip the cache invalidation that would no-op on a dead tree.
+          if (controller.signal.aborted) return
           if (success) {
             void fetchInsights()
             // Invalidate sources queries so notebook page refreshes with updated insights_count
             queryClient.invalidateQueries({ queryKey: ['sources'] })
           }
         }).catch(err => {
+          if (controller.signal.aborted) return
           console.error('Error waiting for insight command:', err)
+        }).finally(() => {
+          // Clear the ref only if it still points at OUR controller
+          // (a later poll may have replaced it).
+          if (insightPollAbortRef.current === controller) {
+            insightPollAbortRef.current = null
+          }
         })
       } else {
-        // Fallback: refresh after delay if no command_id
-        setTimeout(() => {
+        // Fallback: refresh after delay if no command_id.
+        // v0.7.79 — stash the handle in the ref so unmount can cancel it.
+        if (insightFallbackTimerRef.current) {
+          clearTimeout(insightFallbackTimerRef.current)
+        }
+        insightFallbackTimerRef.current = setTimeout(() => {
+          insightFallbackTimerRef.current = null
           void fetchInsights()
           // Also invalidate sources queries
           queryClient.invalidateQueries({ queryKey: ['sources'] })
@@ -321,7 +384,12 @@ export function SourceDetailContent({
       navigator.clipboard.writeText(source.asset.url)
       setCopied(true)
       toast.success(t('sources.urlCopied'))
-      setTimeout(() => setCopied(false), 2000)
+      // v0.7.82 — tracked via copiedTimerRef so unmount cancels cleanly.
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+      copiedTimerRef.current = setTimeout(() => {
+        copiedTimerRef.current = null
+        setCopied(false)
+      }, 2000)
     }
   }, [source, t])
 
@@ -380,7 +448,8 @@ export function SourceDetailContent({
   if (error || !source) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-        <p className="text-red-500">{error || t('sources.notFound')}</p>
+        {/* v0.7.180 — text-red-500 → text-destructive (theme-aware). */}
+        <p className="text-destructive">{error || t('sources.notFound')}</p>
       </div>
     )
   }
@@ -394,8 +463,11 @@ export function SourceDetailContent({
             <InlineEdit
               value={source.title || ''}
               onSave={handleUpdateTitle}
-              className="text-2xl font-bold"
-              inputClassName="text-2xl font-bold"
+              // v0.7.180 — font-bold → font-semibold so source title
+              // matches notebook title (NotebookHeader) and v0.7.153 H1
+              // standard.
+              className="text-2xl font-semibold"
+              inputClassName="text-2xl font-semibold"
               placeholder={t('sources.titlePlaceholder')}
               emptyText={t('sources.untitledSource')}
             />
@@ -419,7 +491,16 @@ export function SourceDetailContent({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                {/* v0.7.198 — icon-only Button needs `aria-label` so
+                    screen readers announce purpose, not just "button".
+                    v0.7.199 — `common.openMenu` key now exists in
+                    en-US; other locales fall back to English via
+                    i18next default-locale fallback chain. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('common.openMenu')}
+                >
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -525,8 +606,14 @@ export function SourceDetailContent({
                     remarkPlugins={[remarkGfm]}
                     components={{
                       p: ({ children }) => <p className="mb-4">{children}</p>,
-                      h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-4">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-xl font-bold mt-5 mb-3">{children}</h2>,
+                      // v0.7.183 — h1/h2 font-bold → font-semibold so
+                      // markdown-rendered headers match the v0.7.180 H1/H2
+                      // standard already applied to dashboard pages and the
+                      // inline-edit source title above (line 469). Prevents
+                      // a jarring weight-shift when scrolling from the
+                      // title into the body content.
+                      h1: ({ children }) => <h1 className="text-2xl font-semibold mt-6 mb-4">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-xl font-semibold mt-5 mb-3">{children}</h2>,
                       h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2">{children}</h3>,
                       ul: ({ children }) => <ul className="mb-4 list-disc pl-6">{children}</ul>,
                       ol: ({ children }) => <ol className="mb-4 list-decimal pl-6">{children}</ol>,
@@ -641,11 +728,15 @@ export function SourceDetailContent({
                           <Button size="sm" variant="outline" onClick={() => setSelectedInsight(insight)}>
                             {t('sources.viewInsight')}
                           </Button>
+                          {/* v0.7.198 — icon-only delete button needs
+                              an aria-label so SR announces "Delete
+                              insight" rather than just "button". */}
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => setInsightToDelete(insight.id)}
                             className="text-destructive hover:text-destructive"
+                            aria-label={t('common.delete')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -752,7 +843,10 @@ export function SourceDetailContent({
                       <h3 className="mb-2 text-sm font-semibold">{t('sources.topics')}</h3>
                       <div className="flex flex-wrap gap-2">
                         {source.topics.map((topic, idx) => (
-                          <Badge key={idx} variant="outline">
+                          // v0.8.67q — key by the topic value (stable) instead
+                          // of the array index, so React reconciles correctly
+                          // if the topic set changes.
+                          <Badge key={`${topic}-${idx}`} variant="outline">
                             {topic}
                           </Badge>
                         ))}
@@ -781,8 +875,14 @@ export function SourceDetailContent({
                           locale: getDateLocale(language)
                         })}
                       </p>
+                      {/* v0.7.189 — formatDateTime(value, language) instead
+                          of new Date(...).toLocaleString() so the absolute-
+                          time line uses the same locale as the relative-
+                          time line above (which uses getDateLocale). Pre-fix
+                          the absolute line honoured OS locale and produced
+                          two formats stacked on each other. */}
                       <p className="text-xs text-muted-foreground">
-                        {new Date(source.created).toLocaleString()}
+                        {formatDateTime(source.created, language)}
                       </p>
                     </div>
                     <div>
@@ -794,7 +894,7 @@ export function SourceDetailContent({
                         })}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(source.updated).toLocaleString()}
+                        {formatDateTime(source.updated, language)}
                       </p>
                     </div>
                   </div>

@@ -47,6 +47,33 @@ export const podcastsApi = {
     return response.data
   },
 
+  // v0.8.68 — cancel an in-flight generation (worker polls the flag).
+  cancelEpisode: async (episodeId: string) => {
+    const response = await apiClient.post<{ message: string }>(
+      `/podcasts/episodes/${episodeId}/cancel`
+    )
+    return response.data
+  },
+
+  // v0.8.68 — outline-review workflow.
+  updateEpisodeOutline: async (
+    episodeId: string,
+    segments: import('@/lib/types/podcasts').OutlineSegment[],
+  ) => {
+    const response = await apiClient.put<{ message: string; outline: unknown }>(
+      `/podcasts/episodes/${episodeId}/outline`,
+      { segments }
+    )
+    return response.data
+  },
+
+  approveEpisodeOutline: async (episodeId: string) => {
+    const response = await apiClient.post<{ job_id: string; message: string }>(
+      `/podcasts/episodes/${episodeId}/approve-outline`
+    )
+    return response.data
+  },
+
   listEpisodeProfiles: async () => {
     const response = await apiClient.get<EpisodeProfile[]>('/episode-profiles')
     return response.data
@@ -116,6 +143,24 @@ export const podcastsApi = {
       '/podcasts/generate',
       payload
     )
+    return response.data
+  },
+
+  // v0.7.31 — heuristic auto-suggester. Given a notebook or list of
+  // source IDs, returns recommended episode profile + length + title +
+  // briefing addition. No LLM call; instant + deterministic.
+  suggestEpisode: async (payload: {
+    notebook_id?: string
+    source_ids?: string[]
+  }) => {
+    const response = await apiClient.post<{
+      episode_profile_name: string
+      length_minutes: number
+      title: string
+      briefing_addition: string
+      reasoning: string
+      matched_signals: Record<string, number>
+    }>('/podcasts/suggest', payload)
     return response.data
   },
 

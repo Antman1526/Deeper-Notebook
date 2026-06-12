@@ -1,29 +1,36 @@
 -- Migration 12: Create credential table and add credential link to model table
 -- Individual credential records replace the ProviderConfig singleton
 -- Each credential stores API key and provider-specific configuration
+--
+-- v0.7.176 — Added `IF NOT EXISTS` to every DEFINE so this migration
+-- is re-run-safe. Without these guards, re-running (after a manual
+-- `_sbl_migrations` rollback, a restored backup, or a disaster-
+-- recovery procedure) would either drop existing indexes or partially
+-- fail and leave the schema half-applied. Compare with migration 14
+-- which already uses `OVERWRITE` for fields it intends to redefine.
 
 
-DEFINE TABLE credential SCHEMAFULL;
-DEFINE FIELD name ON credential TYPE string;
-DEFINE FIELD provider ON credential TYPE string;
-DEFINE FIELD modalities ON credential TYPE array DEFAULT [];
-DEFINE FIELD modalities.* ON credential TYPE string;
-DEFINE FIELD api_key ON credential TYPE option<string>;
-DEFINE FIELD base_url ON credential TYPE option<string>;
-DEFINE FIELD endpoint ON credential TYPE option<string>;
-DEFINE FIELD api_version ON credential TYPE option<string>;
-DEFINE FIELD endpoint_llm ON credential TYPE option<string>;
-DEFINE FIELD endpoint_embedding ON credential TYPE option<string>;
-DEFINE FIELD endpoint_stt ON credential TYPE option<string>;
-DEFINE FIELD endpoint_tts ON credential TYPE option<string>;
-DEFINE FIELD project ON credential TYPE option<string>;
-DEFINE FIELD location ON credential TYPE option<string>;
-DEFINE FIELD credentials_path ON credential TYPE option<string>;
-DEFINE FIELD created ON credential TYPE option<datetime> DEFAULT time::now();
-DEFINE FIELD updated ON credential TYPE option<datetime> DEFAULT time::now();
+DEFINE TABLE IF NOT EXISTS credential SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS provider ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS modalities ON credential TYPE array DEFAULT [];
+DEFINE FIELD IF NOT EXISTS modalities.* ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS api_key ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS base_url ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS api_version ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_llm ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_embedding ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_stt ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_tts ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS project ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS location ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS credentials_path ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON credential TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON credential TYPE option<datetime> DEFAULT time::now();
 
 -- Index for fast provider lookups
-DEFINE INDEX idx_credential_provider ON credential FIELDS provider;
+DEFINE INDEX IF NOT EXISTS idx_credential_provider ON credential FIELDS provider;
 
 -- Add optional credential link to model table
-DEFINE FIELD credential ON model TYPE option<record<credential>>;
+DEFINE FIELD IF NOT EXISTS credential ON model TYPE option<record<credential>>;

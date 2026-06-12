@@ -8,7 +8,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown } from 'lucide-react'
+import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Plus } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,9 +17,11 @@ import { getDateLocale } from '@/lib/utils/date-locale'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
+import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 
 export default function SourcesPage() {
   const { t, language } = useTranslation()
+  const { openSourceDialog } = useCreateDialogs()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -100,6 +102,22 @@ export default function SourcesPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (sources.length === 0) return
+
+      // v0.7.186 — Don't hijack arrows/Enter/Home/End when the user
+      // is typing in an input. Previously this listener captured
+      // every keystroke globally, so e.g. the AppShell search bar,
+      // the command palette, any dialog input, or a contenteditable
+      // anywhere in the tree all lost their arrow-key caret movement
+      // while the Sources page was the active route. CommandPalette
+      // already uses this guard pattern (CommandPalette.tsx:77-84).
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      ) {
+        return
+      }
 
       switch (e.key) {
         case 'ArrowDown':
@@ -265,7 +283,10 @@ export default function SourcesPage() {
     return (
       <AppShell>
         <div className="flex h-full items-center justify-center">
-          <p className="text-red-500">{error}</p>
+          {/* v0.7.180 — text-red-500 → text-destructive so the error
+              line absorbs the active theme's destructive hue (same as the
+              v0.7.165 ErrorBoundary fix). */}
+          <p className="text-destructive">{error}</p>
         </div>
       </AppShell>
     )
@@ -274,10 +295,20 @@ export default function SourcesPage() {
   if (sources.length === 0) {
     return (
       <AppShell>
+        {/* v0.7.34 — empty state now has a CTA. Previously a dead end:
+            users had to know to drill into a specific notebook to upload.
+            The "Add source" button opens the same SourceDialog the
+            sidebar Create button uses. */}
         <EmptyState
           icon={FileText}
           title={t('sources.noSourcesYet')}
           description={t('sources.allSourcesDescShort')}
+          action={
+            <Button onClick={openSourceDialog}>
+              <Upload className="mr-2 h-4 w-4" />
+              {t('sources.addNew')}
+            </Button>
+          }
         />
       </AppShell>
     )
@@ -286,11 +317,23 @@ export default function SourcesPage() {
   return (
     <AppShell>
       <div className="flex flex-col h-full w-full max-w-none px-6 py-6">
-        <div className="mb-6 flex-shrink-0">
-          <h1 className="text-3xl font-bold">{t('sources.allSources')}</h1>
-          <p className="mt-2 text-muted-foreground">
-            {t('sources.allSourcesDesc')}
-          </p>
+        <div className="mb-6 flex flex-shrink-0 items-start justify-between gap-4">
+          <div>
+            {/* v0.7.180 — H1 standardization (font-bold → font-semibold
+                tracking-tight). Last leftover dashboard H1 on the legacy
+                weight. See advanced/page.tsx:16 for context. */}
+            <h1 className="text-3xl font-semibold tracking-tight">{t('sources.allSources')}</h1>
+            <p className="mt-2 text-muted-foreground">
+              {t('sources.allSourcesDesc')}
+            </p>
+          </div>
+          {/* v0.7.34 — header-level Add Source button. Discoverability
+              fix: there was no in-page way to create a source from the
+              all-sources list; users had to drill into a notebook. */}
+          <Button onClick={openSourceDialog} className="shrink-0">
+            <Plus className="mr-2 h-4 w-4" />
+            {t('sources.addNew')}
+          </Button>
         </div>
 
         <div ref={scrollContainerRef} className="flex-1 rounded-md border overflow-auto">

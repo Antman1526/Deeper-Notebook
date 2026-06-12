@@ -18,6 +18,8 @@ Endpoints:
 NEVER returns actual API key values - only metadata.
 """
 
+import asyncio
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -56,6 +58,7 @@ from api.models import (
 )
 from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
 from open_notebook.domain.credential import Credential
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
@@ -78,6 +81,13 @@ async def get_status():
     """
     try:
         return await get_provider_status()
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching status: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch credential status")
@@ -88,6 +98,13 @@ async def get_env_status():
     """Check what's configured via environment variables."""
     try:
         return await svc_get_env_status()
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error checking env status: {e}")
         raise HTTPException(status_code=500, detail="Failed to check environment status")
@@ -98,7 +115,7 @@ async def get_env_status():
 # =============================================================================
 
 
-@router.get("", response_model=List[CredentialResponse])
+@router.get("", response_model=list[CredentialResponse])
 async def list_credentials(
     provider: Optional[str] = Query(None, description="Filter by provider"),
 ):
@@ -109,19 +126,42 @@ async def list_credentials(
         else:
             credentials = await Credential.get_all(order_by="provider, created")
 
-        result = []
-        for cred in credentials:
-            models = await cred.get_linked_models()
-            result.append(credential_to_response(cred, len(models)))
+        # v0.7.163 — N+1 fix: parallelize the per-credential linked-models
+        # lookup. Previously the loop sequentially awaited
+        # `cred.get_linked_models()` per row; each call hits SurrealDB
+        # with `SELECT * FROM model WHERE credential = $cred_id`. A user
+        # with 13 configured providers paid ~13 × ~30ms = ~400ms before
+        # the Models page list could render. asyncio.gather collapses
+        # this into a single wall-clock interval.
+        #
+        # Same pattern as v0.7.161 (chat-session checkpoint reads). The
+        # bigger fix (denormalize a `model_count` field onto the
+        # credential row at write time) needs a schema migration + a
+        # post-save hook on Model; deferred.
+        import asyncio as _asyncio
+        linked_models_lists = await _asyncio.gather(*[
+            cred.get_linked_models() for cred in credentials
+        ])
+        result = [
+            credential_to_response(cred, len(models))
+            for cred, models in zip(credentials, linked_models_lists)
+        ]
 
         return result
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error listing credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to list credentials")
 
 
-@router.get("/by-provider/{provider}", response_model=List[CredentialResponse])
+@router.get("/by-provider/{provider}", response_model=list[CredentialResponse])
 async def list_credentials_by_provider(provider: str):
     """List all credentials for a specific provider."""
     try:
@@ -131,6 +171,13 @@ async def list_credentials_by_provider(provider: str):
             models = await cred.get_linked_models()
             result.append(credential_to_response(cred, len(models)))
         return result
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error listing credentials for {provider}: {e}")
         raise HTTPException(status_code=500, detail="Failed to list credentials for provider")
@@ -145,13 +192,18 @@ async def create_credential(request: CreateCredentialRequest):
         raise _handle_value_error(e)
 
     # Validate all URL fields
+    # v0.6.18 — validate_url calls socket.getaddrinfo() for non-IP hostnames,
+    # which blocks the event loop for the DNS round-trip (typically 10-200ms,
+    # but up to 30s on a misconfigured/slow resolver). With 6 URL fields per
+    # credential, a worst-case create blocked the entire API for ~3 min.
+    # Run each validation off the event loop.
     for url_field in [
         request.base_url, request.endpoint, request.endpoint_llm,
         request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
     ]:
         if url_field:
             try:
-                validate_url(url_field, request.provider)
+                await asyncio.to_thread(validate_url, url_field, request.provider)
             except ValueError as e:
                 raise _handle_value_error(e)
 
@@ -175,6 +227,13 @@ async def create_credential(request: CreateCredentialRequest):
         await cred.save()
         return credential_to_response(cred, 0)
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error creating credential: {e}")
         raise HTTPException(status_code=500, detail="Failed to create credential")
@@ -187,6 +246,13 @@ async def get_credential(credential_id: str):
         cred = await Credential.get(credential_id)
         models = await cred.get_linked_models()
         return credential_to_response(cred, len(models))
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error fetching credential {credential_id}: {e}")
         raise HTTPException(status_code=404, detail="Credential not found")
@@ -201,13 +267,14 @@ async def update_credential(credential_id: str, request: UpdateCredentialRequest
         raise _handle_value_error(e)
 
     # Validate all URL fields being updated
+    # v0.6.18 — see create_credential above for the rationale on to_thread.
     for url_field in [
         request.base_url, request.endpoint, request.endpoint_llm,
         request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
     ]:
         if url_field:
             try:
-                validate_url(url_field, "update")
+                await asyncio.to_thread(validate_url, url_field, "update")
             except ValueError as e:
                 raise _handle_value_error(e)
 
@@ -246,6 +313,10 @@ async def update_credential(credential_id: str, request: UpdateCredentialRequest
         return credential_to_response(cred, len(models))
 
     except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers in
+        # api/main.py (NotFoundError → 404, InvalidInputError → 400).
         raise
     except Exception as e:
         logger.error(f"Error updating credential {credential_id}: {e}")
@@ -340,6 +411,10 @@ async def delete_credential(
 
     except HTTPException:
         raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers in
+        # api/main.py (NotFoundError → 404, InvalidInputError → 400).
+        raise
     except Exception as e:
         logger.error(f"Error deleting credential {credential_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete credential")
@@ -359,12 +434,35 @@ async def test_credential(credential_id: str):
 @router.post("/{credential_id}/discover", response_model=DiscoverModelsResponse)
 async def discover_models_for_credential(credential_id: str):
     """Discover available models using this credential's API key."""
+    # v0.7.110 — wrap discover_with_config in wait_for. Discovery calls
+    # the provider's list-models endpoint which can paginate slowly for
+    # OpenRouter (300+ models) or hang if the base_url is misconfigured.
+    # Default 30s aligns with the connection-test timeout (v0.7.100).
+    import asyncio
+    import os
+    _discover_timeout = float(
+        os.environ.get("ONP_DISCOVER_MODELS_TIMEOUT_SEC", "30").strip() or 30
+    )
     try:
         cred = await Credential.get(credential_id)
         config = cred.to_esperanto_config()
         provider = cred.provider.lower()
 
-        discovered = await discover_with_config(provider, config)
+        try:
+            discovered = await asyncio.wait_for(
+                discover_with_config(provider, config),
+                timeout=_discover_timeout,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Model discovery timed out after {_discover_timeout:.0f}s. "
+                    "The provider may be slow or the base_url is unreachable. "
+                    "Raise ONP_DISCOVER_MODELS_TIMEOUT_SEC if discovery "
+                    "legitimately takes longer."
+                ),
+            )
 
         return DiscoverModelsResponse(
             credential_id=cred.id or "",
@@ -379,6 +477,13 @@ async def discover_models_for_credential(credential_id: str):
             ],
         )
 
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error discovering models for credential {credential_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to discover models")
@@ -392,6 +497,13 @@ async def register_models_for_credential(
     try:
         result = await register_models(credential_id, request.models)
         return RegisterModelsResponse(**result)
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Error registering models for credential {credential_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to register models")
@@ -409,9 +521,124 @@ async def migrate_from_provider_config():
         return await svc_migrate_from_provider_config()
     except ValueError as e:
         raise _handle_value_error(e)
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"ProviderConfig migration FAILED: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Migration from provider config failed")
+
+
+@router.post("/detect-osaurus")
+async def detect_osaurus():
+    """v0.8.36 — On-demand probe + auto-register for a running Osaurus
+    instance (https://github.com/osaurus-ai/osaurus).
+
+    Mirrors the launcher's startup-time auto-register flow but exposed
+    as an API so users who installed Osaurus AFTER launching ONP can
+    one-click connect without restarting. Response shape:
+
+      { "running": bool, "port": int, "models_registered": int,
+        "credential_id": str | None, "detail": str }
+
+    Idempotent: if the Osaurus credential already exists, the call
+    refreshes its base_url (in case the port changed) and registers
+    any newly-discovered models that aren't already in the catalog.
+    """
+    from desktop.auto_register.osaurus import (
+        _osaurus_port,
+        _osaurus_running,
+        register_osaurus_models,
+    )
+    import httpx as _httpx
+
+    port = _osaurus_port()
+    running, discovered = _osaurus_running(port)
+    if not running:
+        return {
+            "running": False,
+            "port": port,
+            "models_registered": 0,
+            "credential_id": None,
+            "detail": (
+                f"No Osaurus instance reachable on http://127.0.0.1:{port}/v1/models. "
+                "Install via `brew install --cask osaurus` and launch it, "
+                "then retry."
+            ),
+        }
+
+    # Reuse the launcher's auto_register code path. It expects a sync
+    # httpx.Client + sets of existing credential names / model keys so
+    # it can be idempotent. We fetch those here on the API side.
+    base = "http://127.0.0.1:5055"  # self — same FastAPI process
+    headers = {}
+    pw = os.environ.get("OPEN_NOTEBOOK_PASSWORD")
+    if pw:
+        headers["Authorization"] = f"Bearer {pw}"
+
+    def _do_register() -> tuple[bool, int, str | None]:
+        # Sync httpx in a thread — auto_register helpers expect sync.
+        with _httpx.Client(base_url=base, headers=headers, timeout=10.0) as cli:
+            creds_resp = cli.get("/api/credentials")
+            creds_resp.raise_for_status()
+            existing_cred_names = {
+                c.get("name", "").lower() for c in creds_resp.json()
+            }
+            models_resp = cli.get("/api/models")
+            models_resp.raise_for_status()
+            existing_model_keys = {
+                (m.get("name", "").lower(), m.get("type", "").lower())
+                for m in models_resp.json()
+            }
+            before = len(existing_model_keys)
+            registered = register_osaurus_models(
+                client=cli,
+                existing_cred_names=existing_cred_names,
+                existing_model_keys=existing_model_keys,
+                port=port,
+            )
+            # Re-fetch to compute "how many new"; cheaper than tracking
+            # inside the helper (which returns a bool).
+            after_resp = cli.get("/api/credentials")
+            after_resp.raise_for_status()
+            cred_id = None
+            for c in after_resp.json():
+                if c.get("name", "").lower() == "osaurus (local mlx)":
+                    cred_id = c.get("id")
+                    break
+            new_models_resp = cli.get("/api/models")
+            new_models_resp.raise_for_status()
+            after = len(new_models_resp.json())
+            return registered, max(0, after - before), cred_id
+
+    # Run the sync auto-register in a worker thread so we don't block
+    # the FastAPI event loop on the network round-trips.
+    try:
+        registered, delta, cred_id = await asyncio.to_thread(_do_register)
+    except _httpx.HTTPError as exc:
+        logger.warning("Osaurus auto-register failed: {}", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Osaurus is reachable but the local model catalog could "
+                "not be synced. Try again or check API logs."
+            ),
+        )
+
+    return {
+        "running": True,
+        "port": port,
+        "models_registered": delta,
+        "credential_id": cred_id,
+        "detail": (
+            f"Connected to Osaurus on port {port}. "
+            f"{len(discovered)} model(s) discovered, {delta} newly registered."
+        ),
+    }
 
 
 @router.post("/migrate-from-env")
@@ -421,6 +648,13 @@ async def migrate_from_env():
         return await svc_migrate_from_env()
     except ValueError as e:
         raise _handle_value_error(e)
+    except HTTPException:
+        # v0.7.108 — re-raise typed HTTPExceptions so the next
+        # `except Exception` doesn't clobber them to 500.
+        raise
+    except (NotFoundError, InvalidInputError):
+        # v0.7.181 — bubble typed exceptions to global handlers.
+        raise
     except Exception as e:
         logger.error(f"Env migration FAILED: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Migration from environment variables failed")

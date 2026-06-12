@@ -3,6 +3,7 @@ from loguru import logger
 from surreal_commands import get_command_status
 
 from api.command_service import CommandService
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from api.models import (
     RebuildProgress,
     RebuildRequest,
@@ -13,6 +14,21 @@ from api.models import (
 from open_notebook.database.repository import repo_query
 
 router = APIRouter()
+
+
+# v0.7.160 — Shared helper that mirrors the dict/int dual-path the
+# inline code repeated 3× before consolidation. SurrealDB sometimes
+# returns `[{"count": N}]` and sometimes `[N]` depending on the
+# `SELECT VALUE` / `GROUP ALL` interaction; this preserves the
+# original tolerance without copy-paste drift.
+def _extract_count(result) -> int:
+    if not result:
+        return 0
+    if isinstance(result[0], dict):
+        return int(result[0].get("count", 0) or 0)
+    if isinstance(result[0], int):
+        return result[0]
+    return 0
 
 
 @router.post("/rebuild", response_model=RebuildResponse)
@@ -33,13 +49,15 @@ async def start_rebuild(request: RebuildRequest):
         # Import commands to ensure they're registered
         import commands.embedding_commands  # noqa: F401
 
-        # Estimate total items (quick count query)
-        # This is a rough estimate before the command runs
-        total_estimate = 0
-
-        if request.include_sources:
+        # v0.7.160 — Consolidated 6 round-trips (sources/notes/insights ×
+        # existing/all) into one parallel asyncio.gather. Previously each
+        # branch awaited its own repo_query sequentially, paying the
+        # SurrealDB roundtrip latency 6× on every rebuild submission.
+        # Now we issue all three counts in parallel and skip any branch
+        # the caller opted out of. The total stays the same and the
+        # per-row shape parsing is preserved verbatim.
+        async def _count_sources() -> int:
             if request.mode == "existing":
-                # Count sources with embeddings
                 result = await repo_query(
                     """
                     SELECT VALUE count(array::distinct(
@@ -50,45 +68,49 @@ async def start_rebuild(request: RebuildRequest):
                     """
                 )
             else:
-                # Count all sources with content
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM source WHERE full_text != none GROUP ALL"
+                    "SELECT VALUE count() as count FROM source "
+                    "WHERE full_text != none GROUP ALL"
                 )
+            return _extract_count(result)
 
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
-
-        if request.include_notes:
+        async def _count_notes() -> int:
             if request.mode == "existing":
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
+                    "SELECT VALUE count() as count FROM note "
+                    "WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
                 )
             else:
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE content != none GROUP ALL"
+                    "SELECT VALUE count() as count FROM note "
+                    "WHERE content != none GROUP ALL"
                 )
+            return _extract_count(result)
 
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
-
-        if request.include_insights:
+        async def _count_insights() -> int:
             if request.mode == "existing":
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM source_insight WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
+                    "SELECT VALUE count() as count FROM source_insight "
+                    "WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
                 )
             else:
                 result = await repo_query(
                     "SELECT VALUE count() as count FROM source_insight GROUP ALL"
                 )
+            return _extract_count(result)
 
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
+        # Run the selected counts concurrently. asyncio.gather preserves
+        # the input order, and skipped branches contribute 0 cleanly.
+        import asyncio as _asyncio
+        coros = []
+        if request.include_sources:
+            coros.append(_count_sources())
+        if request.include_notes:
+            coros.append(_count_notes())
+        if request.include_insights:
+            coros.append(_count_insights())
+        counts = await _asyncio.gather(*coros) if coros else []
+        total_estimate = sum(counts)
 
         logger.info(f"Estimated {total_estimate} items to process")
 
@@ -112,11 +134,16 @@ async def start_rebuild(request: RebuildRequest):
             message=f"Rebuild operation started. Estimated {total_estimate} items to process.",
         )
 
+    except HTTPException:
+        # v0.7.135 — re-raise typed HTTPExceptions so the generic
+        # `except Exception` below doesn't clobber 4xx/5xx to 500.
+        # Mechanically enforced by tests/test_v0_7_135_meta.py.
+        raise
     except Exception as e:
         logger.error(f"Failed to start rebuild: {e}")
         logger.exception(e)
         raise HTTPException(
-            status_code=500, detail=f"Failed to start rebuild operation: {str(e)}"
+            status_code=500, detail="Failed to start rebuild operation"
         )
 
 
@@ -167,10 +194,12 @@ async def get_rebuild_status(command_id: str):
             )
 
         # Add timestamps
+        # v0.7.182 — iso() for Safari new Date() compat on the
+        # rebuild-status timestamps the frontend renders.
         if hasattr(status, "created") and status.created:
-            response.started_at = str(status.created)
+            response.started_at = iso(status.created)
         if hasattr(status, "updated") and status.updated:
-            response.completed_at = str(status.updated)
+            response.completed_at = iso(status.updated)
 
         # Add error message if failed
         if (
@@ -188,5 +217,5 @@ async def get_rebuild_status(command_id: str):
         logger.error(f"Failed to get rebuild status: {e}")
         logger.exception(e)
         raise HTTPException(
-            status_code=500, detail=f"Failed to get rebuild status: {str(e)}"
+            status_code=500, detail="Failed to get rebuild status"
         )
