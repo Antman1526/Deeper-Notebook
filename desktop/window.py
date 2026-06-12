@@ -12,6 +12,7 @@ which still requires webview.
 from __future__ import annotations
 
 import json as _json
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -365,6 +366,46 @@ def _preferred_window_size(min_w: int, min_h: int) -> tuple[int, int]:
         return _fit_window_size(0, 0, min_w, min_h)
 
 
+def _start_load_retry_watchdog(
+    window,
+    url: str,
+    loaded: "threading.Event",
+    *,
+    grace_sec: float = 8.0,
+    retry_interval_sec: float = 5.0,
+    max_retries: int = 5,
+    sleep=None,
+) -> "threading.Thread":
+    """v0.8.68 — retry the initial navigation if the page never loads.
+
+    pywebview navigates exactly once; if that single request races the
+    Next.js server's startup (or any transient hiccup), the user is left
+    staring at a static "This page couldn't load" error with no automatic
+    recovery. The `loaded` event only fires on a SUCCESSFUL page load, so:
+    wait a grace period, and while it hasn't fired, re-issue
+    `window.load_url(url)` a few times before giving up (the manual Reload
+    button still works after that).
+    """
+    import threading
+
+    _sleep = sleep or time.sleep
+
+    def _watch() -> None:  # pragma: no cover - thread body exercised via run()
+        if loaded.wait(grace_sec):
+            return
+        for _ in range(max_retries):
+            try:
+                window.load_url(url)
+            except Exception:
+                pass  # window not ready yet / already destroyed — keep trying
+            if loaded.wait(retry_interval_sec):
+                return
+
+    t = threading.Thread(target=_watch, name="onp-load-retry", daemon=True)
+    t.start()
+    return t
+
+
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Open notebook+",
                 width: int = 1280, height: int = 800,
@@ -434,7 +475,12 @@ def open_window(url: str, on_close: Callable[[], None],
 
     window.events.closed += _on_closed
 
+    import threading
+
+    _page_loaded = threading.Event()
+
     def _on_loaded():
+        _page_loaded.set()  # v0.8.68 — stops the load-retry watchdog
         # v0.5.7 — re-read config.toml on every page load so live theme
         # switches via /api/onp/theme persist across navigations. Falls back
         # to the `theme` argument if the config can't be read.
@@ -452,4 +498,5 @@ def open_window(url: str, on_close: Callable[[], None],
         except Exception:
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
+    _start_load_retry_watchdog(window, url, _page_loaded)
     webview.start()  # noqa: F821 — already imported above

@@ -65,6 +65,14 @@ class ExamplesDataLoader(BaseDataLoader):
     def setup(self, cfg: dict) -> None:  # interface parity
         self._cfg = dict(cfg)
 
+    def get_train_size(self) -> int:
+        # v0.8.68 — REQUIRED override (caught by the live smoke test): the
+        # BaseDataLoader default returns None, and because it exists the
+        # trainer's `train_items` fallback never runs — train_size resolves
+        # to nothing and training aborts with "Unable to determine
+        # train_size automatically".
+        return len(self.train_items)
+
     def build_train_batch(self, batch_size: int, seed: int, **kwargs) -> BatchSpec:
         import random
 

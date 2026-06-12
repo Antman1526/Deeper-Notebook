@@ -99,11 +99,22 @@ def _wait_http(
     url: str,
     timeout: float = 60.0,
     proc: "subprocess.Popen | None" = None,
+    consecutive: int = 1,
+    follow_redirects: bool = False,
 ) -> None:
     """v0.7.188 — Same early-exit-on-dead-child treatment as _wait_tcp.
     Without it, `_wait_http("/readyz", timeout=180)` would wait 3
-    minutes on a uvicorn binary that crashed in 200ms."""
+    minutes on a uvicorn binary that crashed in 200ms.
+
+    v0.8.68 — `consecutive` + `follow_redirects` for the frontend gate:
+    a single lucky probe against a just-bound Next.js socket let the main
+    window open while the server could still drop the webview's one-shot
+    navigation ("This page couldn't load" at launch). Requiring N
+    successes in a row against the FINAL page (the bare "/" is a 307 to
+    the wizard/login) makes the gate match what the webview actually
+    requests."""
     deadline = time.monotonic() + timeout
+    streak = 0
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             raise RuntimeError(
@@ -112,11 +123,16 @@ def _wait_http(
                 f"log in the debug-mode logs dir"
             )
         try:
-            r = httpx.get(url, timeout=1.0)
+            r = httpx.get(url, timeout=2.0, follow_redirects=follow_redirects)
             if r.status_code < 500:
-                return
+                streak += 1
+                if streak >= max(1, consecutive):
+                    return
+                time.sleep(0.2)
+                continue
+            streak = 0
         except (httpx.RequestError, httpx.TimeoutException):
-            pass
+            streak = 0
         time.sleep(0.3)
     raise TimeoutError(f"http {url} never returned <500 within {timeout}s")
 
@@ -540,6 +556,11 @@ class Supervisor:
             f"http://127.0.0.1:{frontend_port}/",
             timeout=_startup_timeout("ONP_FRONTEND_READY_TIMEOUT", 180.0),
             proc=self._procs[-1] if self._procs else None,
+            # v0.8.68 — the webview navigates exactly once; gate on what it
+            # will actually request (final page after the / redirect) and
+            # demand back-to-back successes, not one lucky probe.
+            consecutive=3,
+            follow_redirects=True,
         )
         self.frontend_url = f"http://127.0.0.1:{frontend_port}/"
         self._progress("supervisor.next", "done")
