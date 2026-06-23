@@ -84,6 +84,13 @@ def _transformers_roots(model_dir: Path) -> list[Path]:
     return [transformers_dir] if transformers_dir.exists() and transformers_dir.is_dir() else []
 
 
+def _experimental_roots(model_dir: Path) -> list[Path]:
+    if model_dir.name == "Experimental":
+        return [model_dir]
+    experimental_dir = model_dir / "Experimental"
+    return [experimental_dir] if experimental_dir.exists() and experimental_dir.is_dir() else []
+
+
 def _is_mlx_repo_candidate(p: Path) -> bool:
     if not p.is_dir() or p.name.startswith("."):
         return False
@@ -183,6 +190,14 @@ def _parse_transformers_metadata(path: Path) -> GGUFMetadata:
     )
 
 
+def _parse_experimental_metadata(path: Path) -> GGUFMetadata:
+    return _parse_repo_config_metadata(
+        path,
+        quant=None,
+        weight_patterns=("*.safetensors", "*.bin", "*.gguf"),
+    )
+
+
 def _enumerate_mlx_models(model_dir: Path) -> list[LocalModelInfo]:
     rows: list[LocalModelInfo] = []
     for root in _mlx_roots(model_dir):
@@ -220,6 +235,27 @@ def _enumerate_transformers_models(model_dir: Path) -> list[LocalModelInfo]:
                     path=str(repo),
                     metadata=_parse_transformers_metadata(repo),
                     runtime="transformers",
+                )
+            )
+    return rows
+
+
+def _enumerate_experimental_models(model_dir: Path) -> list[LocalModelInfo]:
+    rows: list[LocalModelInfo] = []
+    for root in _experimental_roots(model_dir):
+        try:
+            candidates = list(root.iterdir())
+        except OSError:
+            continue
+        for repo in candidates:
+            if not _is_transformers_repo_candidate(repo):
+                continue
+            rows.append(
+                LocalModelInfo(
+                    name=_repo_display_name(repo),
+                    path=str(repo),
+                    metadata=_parse_experimental_metadata(repo),
+                    runtime="experimental",
                 )
             )
     return rows
@@ -266,6 +302,7 @@ def enumerate_models(model_dir: Path | str) -> list[LocalModelInfo]:
 
     results.extend(_enumerate_mlx_models(dir_path))
     results.extend(_enumerate_transformers_models(dir_path))
+    results.extend(_enumerate_experimental_models(dir_path))
 
     # Stable ordering for the UI — newest-first so a freshly downloaded
     # model lands at the top of the table.

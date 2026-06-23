@@ -12,6 +12,8 @@ SYNC_BRANCH="${SYNC_BRANCH:-integrate/${UPSTREAM_REMOTE}-${UPSTREAM_BRANCH}-${DA
 WORKTREE_DIR="${WORKTREE_DIR:-../open-notebook-plus-upstream-sync-${DATE_STAMP}}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-output/upstream-sync/${DATE_STAMP}}"
 
+PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|open_notebook/local_models/|frontend/src/components/onp/|frontend/src/app/\(dashboard\)/(studio|settings/local-models)/|frontend/src/lib/api/studio\.ts|frontend/src/lib/hooks/use-studio\.ts|frontend/src/components/sources/|open_notebook/domain/|migrations/|docs/7-DEVELOPMENT/upstream-sync\.md|scripts/upstream_sync_guard\.sh)'
+
 usage() {
   cat <<'USAGE'
 Safe upstream integration guard for Open Notebook Plus.
@@ -83,6 +85,13 @@ EOF
   echo "Safety snapshot written to $SNAPSHOT_DIR"
 }
 
+snapshot_abs_dir() {
+  case "$SNAPSHOT_DIR" in
+    /*) printf '%s\n' "$SNAPSHOT_DIR" ;;
+    *) printf '%s\n' "$ROOT/$SNAPSHOT_DIR" ;;
+  esac
+}
+
 require_clean_worktree() {
   if [[ -n "$(git status --porcelain)" ]]; then
     echo "Refusing upstream integration because the current worktree is dirty." >&2
@@ -103,10 +112,42 @@ prepare_worktree() {
   git worktree add -b "$SYNC_BRANCH" "$WORKTREE_DIR" "$BASE_BRANCH"
   (
     cd "$WORKTREE_DIR"
-    git merge --no-commit --no-ff "${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}" || true
+    set +e
+    git merge --no-commit --no-ff "${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}"
+    merge_status=$?
+    set -e
+
+    report_dir="$(snapshot_abs_dir)"
+    mkdir -p "$report_dir"
+    {
+      echo "merge_exit_code=$merge_status"
+      echo "integration_worktree=$WORKTREE_DIR"
+      echo "branch=$SYNC_BRANCH"
+      echo "upstream=${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}"
+      echo
+      git status --short
+    } > "$report_dir/merge-status.txt"
+    git diff --name-only --diff-filter=U > "$report_dir/conflicted-files.txt"
+    {
+      git diff --cached --name-status HEAD
+      git diff --name-status HEAD
+    } | awk 'NF' | sort -u > "$report_dir/changed-files.txt"
+    awk '{ for (i = 2; i <= NF; i++) print $i }' "$report_dir/changed-files.txt" \
+      | grep -E "$PROTECTED_PLUS_PATH_PATTERN" \
+      > "$report_dir/protected-plus-path-changes.txt" || true
+    {
+      git diff --cached --name-status --diff-filter=D HEAD
+      git diff --name-status --diff-filter=D HEAD
+    } | awk 'NF' | sort -u > "$report_dir/upstream-deletions.txt"
+
+    if [[ "$merge_status" -ne 0 && ! -s "$report_dir/conflicted-files.txt" ]]; then
+      echo "Upstream merge failed without normal git conflicts. See: $report_dir/merge-status.txt" >&2
+      exit "$merge_status"
+    fi
     echo
     echo "Integration worktree: $WORKTREE_DIR"
     echo "Branch: $SYNC_BRANCH"
+    echo "Merge review report: $report_dir"
     echo
     echo "Resolve conflicts there, then run:"
     echo "  uv run pytest tests/test_evidence_studio_artifact_api.py tests/test_sources_api.py tests/test_v0_8_39_local_models_inventory.py tests/test_local_model_role_routing.py"

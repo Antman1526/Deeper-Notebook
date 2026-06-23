@@ -31,9 +31,11 @@ scripts/upstream_sync_guard.sh prepare
 4. If the current worktree is dirty, the guard stops before any merge happens.
 5. When the worktree is clean, the guard creates an integration worktree and
    starts the upstream merge there.
-6. Resolve conflicts in the integration worktree only.
-7. Run the verification ladder.
-8. Merge the integration branch back into `desktop-app` only after the checks
+6. Review the report files in the snapshot directory before resolving or
+   accepting upstream changes.
+7. Resolve conflicts in the integration worktree only.
+8. Run the verification ladder.
+9. Merge the integration branch back into `desktop-app` only after the checks
    pass.
 
 ## Why A Separate Worktree
@@ -41,6 +43,22 @@ scripts/upstream_sync_guard.sh prepare
 The main `desktop-app` checkout often contains active Plus development. A
 separate worktree lets maintainers inspect upstream changes, resolve conflicts,
 and run tests without risking local work.
+
+## Merge Review Report
+
+`prepare` writes these files next to the recovery snapshot:
+
+- `merge-status.txt`: merge exit code, integration worktree path, branch, and
+  `git status --short`.
+- `changed-files.txt`: files changed by the upstream merge attempt.
+- `conflicted-files.txt`: files with unresolved git conflicts.
+- `protected-plus-path-changes.txt`: changes under Plus-critical areas that
+  need deliberate review before merge-back.
+- `upstream-deletions.txt`: deleted files surfaced by the merge attempt.
+
+Treat `protected-plus-path-changes.txt` and `upstream-deletions.txt` as required
+review artifacts. Empty files are good news; non-empty files are not automatic
+failures, but each row needs an intentional keep/modify/delete decision.
 
 ## Preserve These Plus Areas
 

@@ -753,7 +753,11 @@ export default function LocalModelsPage() {
       }
       const resp = await apiClient.post<StartDownloadResponse>(
         '/local-models/download',
-        { repo_id: task.repo_id, filename: task.filename },
+        {
+          repo_id: task.repo_id,
+          filename: task.filename,
+          target_path: task.target_path,
+        },
       )
       return resp.data
     },

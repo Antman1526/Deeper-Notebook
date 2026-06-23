@@ -21,6 +21,36 @@ describe('studioApi artifact endpoints', () => {
     vi.clearAllMocks()
   })
 
+  it('generates notebook and podcast together when mode is both', async () => {
+    apiPost.mockResolvedValue({
+      data: {
+        notebook_id: 'notebook:alpha',
+        mode: 'both',
+        note_id: 'note:study',
+        job_id: 'job:podcast',
+        source_ids: ['source:one'],
+        title: 'Training pack',
+        warnings: [],
+      },
+    })
+
+    const result = await studioApi.generate({
+      files: [new File(['hello'], 'training.mp4', { type: 'video/mp4' })],
+      mode: 'both',
+      title: 'Training pack',
+      episode_profile_name: 'Default episode',
+      speaker_profile_name: 'Default speakers',
+    })
+
+    expect(apiPost).toHaveBeenCalledWith('/studio/generate', expect.any(FormData))
+    const formData = apiPost.mock.calls[0][1] as FormData
+    expect(formData.get('mode')).toBe('both')
+    expect(formData.get('episode_profile_name')).toBe('Default episode')
+    expect(formData.get('speaker_profile_name')).toBe('Default speakers')
+    expect(result.mode).toBe('both')
+    expect(result.job_id).toBe('job:podcast')
+  })
+
   it('lists durable artifacts for a notebook', async () => {
     apiGet.mockResolvedValue({
       data: [

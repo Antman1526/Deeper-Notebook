@@ -709,8 +709,9 @@ def _local_model_runtime_capabilities(runtime: str | None):
         "activation_supported": False,
         "runtime_status": "inventory_only",
         "runtime_note": (
-            "Visible in inventory. Configure a runnable local provider before "
-            "using this asset for chat, role routing, or benchmarks."
+            "Visible in inventory only. Experimental and Transformers assets "
+            "are tracked for curation, but need a runnable local provider "
+            "before chat, role routing, or benchmarks."
         ),
         "setup_href": "/settings/launcher-prefs",
         "setup_label": "Open launcher preferences",
@@ -1061,9 +1062,9 @@ async def local_models_recommendations():
 async def local_models_download(body: dict):
     """v0.8.39b — Start a background HuggingFace GGUF download.
 
-    Body: `{repo_id: str, filename: str}` — typically lifted from a
-    recommendation card; the frontend can also pass a custom pair for
-    expert users.
+    Body: `{repo_id: str, filename: str, target_path?: str}` — typically
+    lifted from a recommendation card or manifest setup task. `target_path`
+    lets curated AI_Models rows land in their exact nested folder.
 
     Response: `{job_id: str, status: str, target_path: str, ...}` —
     poll `GET /local-models/downloads/{job_id}` for progress.
@@ -1082,6 +1083,7 @@ async def local_models_download(body: dict):
 
     repo_id = (body.get("repo_id") or "").strip()
     filename = (body.get("filename") or "").strip()
+    target_path = (body.get("target_path") or "").strip()
     if not repo_id or not filename:
         raise HTTPException(
             status_code=400,
@@ -1129,7 +1131,24 @@ async def local_models_download(body: dict):
             status_code=500,
             detail="No model directory configured. Set OPEN_NOTEBOOK_MODEL_DIR.",
         )
-    dest_dir = _Path(raw)
+    model_root = _Path(raw).expanduser().resolve()
+    dest_dir = model_root
+
+    if target_path:
+        resolved_target = _Path(target_path).expanduser().resolve()
+        if resolved_target.name != filename:
+            raise HTTPException(
+                status_code=400,
+                detail="`target_path` basename must match `filename`.",
+            )
+        try:
+            resolved_target.relative_to(model_root)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="`target_path` must stay inside the configured model directory.",
+            ) from None
+        dest_dir = resolved_target.parent
 
     job = await start_download(repo_id, filename, dest_dir)
     return {
