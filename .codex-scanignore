@@ -1,0 +1,51 @@
+# Generated application output
+desktop/build/
+desktop/dist/
+desktop/release/
+frontend/.next/
+frontend/coverage/
+frontend/dist/
+frontend/node_modules/
+build/
+dist/
+
+# Python and tool caches
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.venv-py312/
+.build-venv/
+open_notebook.egg-info/
+
+# Local databases and runtime state
+data/
+surreal_data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Packaged app and installer artifacts
+*.dmg
+*.pkg
+*.exe
+*.msi
+*.zip
+*.tar
+*.tar.gz
+
+# Local model folders must not be scanned as source
+AI_Models/
+models/
+ollama/models/
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+*.mlx
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
