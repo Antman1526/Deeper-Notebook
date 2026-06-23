@@ -47,6 +47,31 @@ interface CoursePackModule {
   hasFacilitatorNotes: boolean
 }
 
+export interface CoursePackProgress {
+  selected_index: number
+  completed_modules: Record<string, boolean>
+  mode: 'learner' | 'facilitator'
+}
+
+export interface FlashcardProgress {
+  index: number
+  revealed: boolean
+}
+
+export interface QuizProgress {
+  index: number
+  answers: Record<string, string>
+}
+
+export interface StudyProgress {
+  version: 1
+  content_fingerprint: string
+  course_pack?: CoursePackProgress
+  flashcards?: FlashcardProgress
+  quiz?: QuizProgress
+  updated_at: string
+}
+
 function stripMarkdown(value: string): string {
   return value
     .replace(/^#+\s*/, '')
@@ -322,17 +347,32 @@ function learnerMarkdown(markdown: string): string {
   return visible.join('\n').trim()
 }
 
-export function CoursePackViewer({ markdown }: { markdown: string }) {
+function clampIndex(value: unknown, maxExclusive: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || maxExclusive <= 0) {
+    return 0
+  }
+  return Math.min(Math.max(0, Math.trunc(value)), maxExclusive - 1)
+}
+
+export function CoursePackViewer({
+  markdown,
+  progress,
+  onProgressChange,
+}: {
+  markdown: string
+  progress?: CoursePackProgress
+  onProgressChange?: (progress: CoursePackProgress) => void
+}) {
   const modules = useMemo(() => parseCoursePackModules(markdown), [markdown])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<'learner' | 'facilitator'>('learner')
   const [checkedModules, setCheckedModules] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    setSelectedIndex(0)
-    setMode('learner')
-    setCheckedModules({})
-  }, [markdown])
+    setSelectedIndex(clampIndex(progress?.selected_index, modules.length))
+    setMode(progress?.mode === 'facilitator' ? 'facilitator' : 'learner')
+    setCheckedModules(progress?.completed_modules ?? {})
+  }, [markdown, modules.length, progress])
 
   if (modules.length === 0) {
     return (
@@ -349,10 +389,36 @@ export function CoursePackViewer({ markdown }: { markdown: string }) {
     : learnerMarkdown(selectedModule.markdown)
 
   function toggleModule(title: string, checked: boolean) {
-    setCheckedModules((current) => ({
+    setCheckedModules((current) => {
+      const next = {
       ...current,
       [title]: checked,
-    }))
+      }
+      onProgressChange?.({
+        selected_index: selectedIndex,
+        completed_modules: next,
+        mode,
+      })
+      return next
+    })
+  }
+
+  function selectModule(nextIndex: number) {
+    setSelectedIndex(nextIndex)
+    onProgressChange?.({
+      selected_index: nextIndex,
+      completed_modules: checkedModules,
+      mode,
+    })
+  }
+
+  function changeMode(nextMode: 'learner' | 'facilitator') {
+    setMode(nextMode)
+    onProgressChange?.({
+      selected_index: selectedIndex,
+      completed_modules: checkedModules,
+      mode: nextMode,
+    })
   }
 
   return (
@@ -379,7 +445,7 @@ export function CoursePackViewer({ markdown }: { markdown: string }) {
           type="button"
           size="sm"
           variant={mode === 'learner' ? 'default' : 'outline'}
-          onClick={() => setMode('learner')}
+          onClick={() => changeMode('learner')}
         >
           Learner view
         </Button>
@@ -387,7 +453,7 @@ export function CoursePackViewer({ markdown }: { markdown: string }) {
           type="button"
           size="sm"
           variant={mode === 'facilitator' ? 'default' : 'outline'}
-          onClick={() => setMode('facilitator')}
+          onClick={() => changeMode('facilitator')}
         >
           Facilitator notes
         </Button>
@@ -420,7 +486,7 @@ export function CoursePackViewer({ markdown }: { markdown: string }) {
                       type="button"
                       className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-current={index === selectedIndex ? 'true' : undefined}
-                      onClick={() => setSelectedIndex(index)}
+                      onClick={() => selectModule(index)}
                     >
                       <span className="block text-sm font-medium">{module.title}</span>
                       <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
@@ -587,15 +653,23 @@ export function MindMapViewer({ markdown }: { markdown: string }) {
   )
 }
 
-export function FlashcardDeck({ markdown }: { markdown: string }) {
+export function FlashcardDeck({
+  markdown,
+  progress,
+  onProgressChange,
+}: {
+  markdown: string
+  progress?: FlashcardProgress
+  onProgressChange?: (progress: FlashcardProgress) => void
+}) {
   const cards = useMemo(() => parseFlashcards(markdown), [markdown])
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
 
   useEffect(() => {
-    setIndex(0)
-    setRevealed(false)
-  }, [markdown])
+    setIndex(clampIndex(progress?.index, cards.length))
+    setRevealed(progress?.revealed === true)
+  }, [markdown, cards.length, progress])
 
   if (cards.length === 0) return null
 
@@ -606,6 +680,15 @@ export function FlashcardDeck({ markdown }: { markdown: string }) {
   function move(nextIndex: number) {
     setIndex(nextIndex)
     setRevealed(false)
+    onProgressChange?.({ index: nextIndex, revealed: false })
+  }
+
+  function toggleReveal() {
+    setRevealed((current) => {
+      const next = !current
+      onProgressChange?.({ index, revealed: next })
+      return next
+    })
   }
 
   return (
@@ -650,7 +733,7 @@ export function FlashcardDeck({ markdown }: { markdown: string }) {
         <Button
           type="button"
           size="sm"
-          onClick={() => setRevealed((current) => !current)}
+          onClick={toggleReveal}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
           {revealed ? 'Hide answer' : 'Reveal answer'}
@@ -734,15 +817,30 @@ export function ResearchRunViewer({
   )
 }
 
-export function QuizRunner({ markdown }: { markdown: string }) {
+export function QuizRunner({
+  markdown,
+  progress,
+  onProgressChange,
+}: {
+  markdown: string
+  progress?: QuizProgress
+  onProgressChange?: (progress: QuizProgress) => void
+}) {
   const questions = useMemo(() => parseQuizQuestions(markdown), [markdown])
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
 
   useEffect(() => {
-    setIndex(0)
-    setAnswers({})
-  }, [markdown])
+    setIndex(clampIndex(progress?.index, questions.length))
+    const nextAnswers: Record<number, string> = {}
+    for (const [questionIndex, answerKey] of Object.entries(progress?.answers ?? {})) {
+      const parsedIndex = Number(questionIndex)
+      if (Number.isInteger(parsedIndex) && typeof answerKey === 'string') {
+        nextAnswers[parsedIndex] = answerKey
+      }
+    }
+    setAnswers(nextAnswers)
+  }, [markdown, questions.length, progress])
 
   if (questions.length === 0) return null
 
@@ -754,7 +852,26 @@ export function QuizRunner({ markdown }: { markdown: string }) {
   }, 0)
 
   function chooseAnswer(answerKey: string) {
-    setAnswers((current) => ({ ...current, [index]: answerKey }))
+    setAnswers((current) => {
+      const next = { ...current, [index]: answerKey }
+      onProgressChange?.({
+        index,
+        answers: Object.fromEntries(
+          Object.entries(next).map(([questionIndex, value]) => [String(questionIndex), value]),
+        ),
+      })
+      return next
+    })
+  }
+
+  function moveQuestion(nextIndex: number) {
+    setIndex(nextIndex)
+    onProgressChange?.({
+      index: nextIndex,
+      answers: Object.fromEntries(
+        Object.entries(answers).map(([questionIndex, value]) => [String(questionIndex), value]),
+      ),
+    })
   }
 
   return (
@@ -819,7 +936,7 @@ export function QuizRunner({ markdown }: { markdown: string }) {
             variant="outline"
             size="sm"
             disabled={index === 0}
-            onClick={() => setIndex(index - 1)}
+            onClick={() => moveQuestion(index - 1)}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             Previous question
@@ -829,7 +946,7 @@ export function QuizRunner({ markdown }: { markdown: string }) {
             variant="outline"
             size="sm"
             disabled={index === questions.length - 1}
-            onClick={() => setIndex(index + 1)}
+            onClick={() => moveQuestion(index + 1)}
           >
             Next question
             <ChevronRight className="h-4 w-4" aria-hidden="true" />

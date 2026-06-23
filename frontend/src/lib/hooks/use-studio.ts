@@ -15,6 +15,7 @@ import {
   studioApi,
   StudioArtifact,
   StudioArtifactCreate,
+  StudioArtifactUpdate,
   StudioWorkflowRun,
   StudioWorkflowRunCreate,
   StudioGenerateOptions,
@@ -93,6 +94,21 @@ export function useCreateStudioArtifact(notebookId: string) {
     mutationFn: studioApi.createArtifact,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
+    },
+  })
+}
+
+export function useUpdateStudioArtifact(notebookId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<
+    StudioArtifact,
+    Error,
+    { artifactId: string; payload: StudioArtifactUpdate }
+  >({
+    mutationFn: ({ artifactId, payload }) => studioApi.updateArtifact(artifactId, payload),
+    onSuccess: (artifact) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifactRevisions(artifact.id) })
     },
   })
 }
