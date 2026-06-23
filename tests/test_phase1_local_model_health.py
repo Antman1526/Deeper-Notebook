@@ -1,7 +1,9 @@
 """Phase 1 — Local-model health module produces a structured
 report the API can serve to the frontend."""
 from __future__ import annotations
-from unittest.mock import patch, MagicMock
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,7 +26,6 @@ def test_probe_local_model_returns_unknown_for_zero_port():
 def test_probe_openai_compatible_healthy(monkeypatch):
     """A live llama-cpp server returns 200 on /models; probe
     must report status='healthy' with measured latency."""
-    from unittest.mock import MagicMock, patch
     from open_notebook.health.local_models import probe_local_model
 
     fake_resp = MagicMock()
@@ -64,6 +65,40 @@ def test_probe_openai_compatible_unhealthy_connect_refused():
     assert "connect" in (result["detail"] or "").lower()
 
 
+def test_probe_ollama_healthy(monkeypatch):
+    """Local Ollama credentials should appear in the Local Models
+    connection checks instead of being ignored by the openai-compatible-only
+    probe path."""
+    from open_notebook.health.local_models import probe_local_model
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = {
+        "models": [{"name": "qwen2.5:7b"}, {"name": "llama3.2:3b"}],
+    }
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    fake_client.get.return_value = fake_resp
+
+    with patch(
+        "open_notebook.health.local_models.httpx.Client",
+        return_value=fake_client,
+    ):
+        result = probe_local_model(
+            name="Ollama",
+            kind="ollama",
+            base_url="http://127.0.0.1:11434",
+        )
+
+    fake_client.get.assert_called_once_with("http://127.0.0.1:11434/api/tags")
+    assert result["status"] == "healthy"
+    assert result["runtime"] == "ollama"
+    assert result["endpoint"] == "http://127.0.0.1:11434"
+    assert result["probe_path"] == "/api/tags"
+    assert "qwen2.5:7b" in (result["detail"] or "")
+
+
 def test_probe_all_iterates_credentials():
     """Given a list of credential dicts, probe_all returns one
     HealthResult per cred in input order."""
@@ -81,9 +116,107 @@ def test_probe_all_iterates_credentials():
     assert all(r["status"] == "not_configured" for r in results)
 
 
+def test_probe_all_runs_bounded_concurrent_probes_in_input_order(monkeypatch):
+    """A slow/dead runtime should not delay every other connection check.
+
+    The result order still follows the credential order so the frontend can
+    render stable rows while the implementation is free to probe in parallel.
+    """
+    import threading
+    import time
+
+    from open_notebook.health import local_models as hm
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def _fake_probe(*, name: str, kind: str, base_url: str):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(0.1)
+            return {
+                "name": name,
+                "status": "healthy",
+                "detail": kind,
+                "latency_ms": 100.0,
+                "endpoint": base_url,
+            }
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(hm, "probe_local_model", _fake_probe)
+    creds = [
+        {"name": f"runtime-{idx}", "kind": "openai_compatible", "base_url": f"http://127.0.0.1:{8000 + idx}/v1"}
+        for idx in range(4)
+    ]
+
+    start = time.monotonic()
+    results = hm.probe_all_local_models(creds)
+    elapsed = time.monotonic() - start
+
+    assert [row["name"] for row in results] == [
+        "runtime-0",
+        "runtime-1",
+        "runtime-2",
+        "runtime-3",
+    ]
+    assert max_active > 1
+    assert elapsed < 0.35
+
+
+@pytest.mark.asyncio
+async def test_load_local_credentials_includes_local_ollama(monkeypatch):
+    """The API health endpoint should probe local Ollama credentials
+    alongside OpenAI-compatible sidecars."""
+    from api.routers import local_models as router_mod
+    from open_notebook.domain.credential import Credential
+
+    async def _fake_get_all():
+        return [
+            SimpleNamespace(
+                name="Ollama",
+                provider="ollama",
+                base_url="http://127.0.0.1:11434",
+            ),
+            SimpleNamespace(
+                name="Remote Ollama",
+                provider="ollama",
+                base_url="http://192.168.1.10:11434",
+            ),
+            SimpleNamespace(
+                name="Local GGUF",
+                provider="openai_compatible",
+                base_url="http://localhost:8080/v1",
+            ),
+        ]
+
+    monkeypatch.setattr(Credential, "get_all", _fake_get_all)
+
+    creds = await router_mod._load_local_credentials()
+
+    assert creds == [
+        {
+            "name": "Ollama",
+            "kind": "ollama",
+            "base_url": "http://127.0.0.1:11434",
+        },
+        {
+            "name": "Local GGUF",
+            "kind": "openai_compatible",
+            "base_url": "http://localhost:8080/v1",
+        },
+    ]
+
+
 def test_router_returns_health_payload(monkeypatch):
     """GET /api/local-models/health returns aggregated overall + per-model."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     # Stub the probe to avoid real HTTP.
@@ -197,9 +330,9 @@ def test_local_models_health_endpoint_yields_event_loop():
             "detail": "simulated slow probe", "latency_ms": sleep_seconds * 1000,
         }]
 
-    from open_notebook.health import local_models as hm
-    from api.routers import local_models as router_mod
     from api.main import app
+    from api.routers import local_models as router_mod
+    from open_notebook.health import local_models as hm
 
     async def _stub_creds():
         return [{

@@ -30,6 +30,7 @@ class WizardTestCase(AioHTTPTestCase):
         assert "text/html" in resp.headers["Content-Type"]
         body = await resp.text()
         assert "Open Notebook Plus" in body
+        assert 'value="mlx"' in body
 
     async def test_post_save_writes_config(self):
         payload = {"model_dir": str(self.cfg_path.parent / "AI"),
@@ -41,6 +42,22 @@ class WizardTestCase(AioHTTPTestCase):
         text = self.cfg_path.read_text()
         assert "provider = " in text and "llamacpp" in text
         assert "default_model = " in text and "x.gguf" in text
+
+    async def test_post_save_accepts_mlx_provider(self):
+        payload = {
+            "model_dir": str(self.cfg_path.parent / "AI"),
+            "provider": "mlx",
+            "default_model": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+        }
+        resp = await self.client.post(
+            "/api/save",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status == 200
+        text = self.cfg_path.read_text()
+        assert "provider = " in text and "mlx" in text
+        assert "MLX/mlx-community__North-Mini-Code-1.0-6bit" in text
 
     async def test_post_save_rejects_invalid_provider(self):
         payload = {"model_dir": "/tmp", "provider": "bogus", "default_model": ""}

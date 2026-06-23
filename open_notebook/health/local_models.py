@@ -6,8 +6,11 @@ shims to verify they actually respond, not just that their port
 is bound.
 """
 from __future__ import annotations
-from typing import Literal, TypedDict
+
 import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Literal, NotRequired, TypedDict
+
 import httpx
 
 
@@ -16,6 +19,9 @@ class HealthResult(TypedDict):
     status: Literal["healthy", "unhealthy", "not_configured", "unknown"]
     detail: str | None
     latency_ms: float | None
+    runtime: NotRequired[str]
+    endpoint: NotRequired[str]
+    probe_path: NotRequired[str]
 
 
 # Phase 1 Task 2 — bounded probe budgets so a wedged sidecar can't
@@ -24,6 +30,7 @@ class HealthResult(TypedDict):
 _PROBE_TIMEOUT = httpx.Timeout(
     connect=2.0, read=5.0, write=2.0, pool=2.0,
 )
+_MAX_CONCURRENT_PROBES = 4
 
 
 def probe_local_model(
@@ -39,14 +46,33 @@ def probe_local_model(
             "name": name, "status": "not_configured",
             "detail": "port not allocated this session",
             "latency_ms": None,
+            "runtime": _runtime_label(name=name, kind=kind),
+            "endpoint": base_url.rstrip("/"),
         }
     if kind == "openai_compatible":
         return _probe_openai_compatible(name=name, base_url=base_url)
+    if kind == "ollama":
+        return _probe_ollama(name=name, base_url=base_url)
     return {
         "name": name, "status": "unknown",
         "detail": f"no probe for kind={kind!r}",
         "latency_ms": None,
+        "runtime": _runtime_label(name=name, kind=kind),
+        "endpoint": base_url.rstrip("/"),
     }
+
+
+def _runtime_label(*, name: str, kind: str) -> str:
+    lower_name = name.lower()
+    if kind == "ollama":
+        return "ollama"
+    if "mlx" in lower_name or "osaurus" in lower_name:
+        return "MLX"
+    if "llama.cpp" in lower_name or "gguf" in lower_name:
+        return "llama.cpp"
+    if kind == "openai_compatible":
+        return "OpenAI-compatible"
+    return kind
 
 
 def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
@@ -67,36 +93,114 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
                 return {
                     "name": name, "status": "healthy",
                     "detail": detail, "latency_ms": latency_ms,
+                    "runtime": _runtime_label(
+                        name=name,
+                        kind="openai_compatible",
+                    ),
+                    "endpoint": base_url.rstrip("/"),
+                    "probe_path": "/models",
                 }
             return {
                 "name": name, "status": "unhealthy",
                 "detail": f"HTTP {resp.status_code}",
                 "latency_ms": latency_ms,
+                "runtime": _runtime_label(
+                    name=name,
+                    kind="openai_compatible",
+                ),
+                "endpoint": base_url.rstrip("/"),
+                "probe_path": "/models",
             }
     except httpx.ConnectError as exc:
         return {
             "name": name, "status": "unhealthy",
             "detail": f"connect refused: {exc}",
             "latency_ms": None,
+            "runtime": _runtime_label(name=name, kind="openai_compatible"),
+            "endpoint": base_url.rstrip("/"),
+            "probe_path": "/models",
         }
     except Exception as exc:
         return {
             "name": name, "status": "unhealthy",
             "detail": f"{type(exc).__name__}: {exc}",
             "latency_ms": None,
+            "runtime": _runtime_label(name=name, kind="openai_compatible"),
+            "endpoint": base_url.rstrip("/"),
+            "probe_path": "/models",
+        }
+
+
+def _probe_ollama(*, name: str, base_url: str) -> HealthResult:
+    """Hit Ollama's local `/api/tags` endpoint and summarize installed
+    models. Ollama is not OpenAI-compatible by default, so probing
+    `/models` would falsely report a healthy local runtime as down."""
+    clean_base = base_url.rstrip("/")
+    url = f"{clean_base}/api/tags"
+    start = time.monotonic()
+    try:
+        with httpx.Client(timeout=_PROBE_TIMEOUT) as client:
+            resp = client.get(url)
+            latency_ms = (time.monotonic() - start) * 1000
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m.get("name", "?") for m in data.get("models", [])]
+                detail = ", ".join(models[:3]) if models else "no models listed"
+                return {
+                    "name": name,
+                    "status": "healthy",
+                    "detail": detail,
+                    "latency_ms": latency_ms,
+                    "runtime": "ollama",
+                    "endpoint": clean_base,
+                    "probe_path": "/api/tags",
+                }
+            return {
+                "name": name,
+                "status": "unhealthy",
+                "detail": f"HTTP {resp.status_code}",
+                "latency_ms": latency_ms,
+                "runtime": "ollama",
+                "endpoint": clean_base,
+                "probe_path": "/api/tags",
+            }
+    except httpx.ConnectError as exc:
+        return {
+            "name": name,
+            "status": "unhealthy",
+            "detail": f"connect refused: {exc}",
+            "latency_ms": None,
+            "runtime": "ollama",
+            "endpoint": clean_base,
+            "probe_path": "/api/tags",
+        }
+    except Exception as exc:
+        return {
+            "name": name,
+            "status": "unhealthy",
+            "detail": f"{type(exc).__name__}: {exc}",
+            "latency_ms": None,
+            "runtime": "ollama",
+            "endpoint": clean_base,
+            "probe_path": "/api/tags",
         }
 
 
 def probe_all_local_models(credentials: list[dict]) -> list[HealthResult]:
-    """Probe every local-sidecar credential. Sequential probes
-    (each is ≤9s by structured timeout); for the typical 4-5
-    local sidecars this is 36-45s worst case. Concurrent probes
-    could be a follow-up optimization but Phase 1 prioritises
-    simplicity + deterministic ordering."""
-    out: list[HealthResult] = []
-    for cred in credentials:
-        out.append(probe_local_model(
+    """Probe every local-sidecar credential with bounded concurrency.
+
+    `ThreadPoolExecutor.map` preserves input order, so the frontend gets stable
+    rows while slow/dead runtimes no longer serialize the entire sweep.
+    """
+    if not credentials:
+        return []
+
+    def _probe(cred: dict) -> HealthResult:
+        return probe_local_model(
             name=cred["name"], kind=cred["kind"],
             base_url=cred["base_url"],
-        ))
-    return out
+        )
+
+    max_workers = min(len(credentials), _MAX_CONCURRENT_PROBES)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(_probe, credentials))

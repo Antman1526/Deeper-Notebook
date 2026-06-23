@@ -19,6 +19,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.routers import local_models as local_models_router
 from open_notebook.local_models.gguf_metadata import (
     parse_gguf_metadata,
     parse_param_count_b,
@@ -28,8 +29,6 @@ from open_notebook.local_models.inventory import (
     LocalModelInfo,
     enumerate_models,
 )
-from api.routers import local_models as local_models_router
-
 
 # ---------------------------------------------------------------------------
 # parse_quant_from_filename
@@ -299,6 +298,240 @@ def test_inventory_endpoint_lists_models(app, monkeypatch, tmp_path):
     hermes = by_name["hermes-3-8b-q5_k_m"]
     assert hermes["quant"] == "Q5_K_M"
     assert hermes["parameter_count_b"] == 8.0
+
+
+def test_inventory_endpoint_lists_mlx_models(app, monkeypatch, tmp_path):
+    repo = tmp_path / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text('{"model_type": "qwen2"}')
+    (repo / "model.safetensors").write_bytes(b"x" * 4096)
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+
+    with TestClient(app) as client:
+        resp = client.get("/api/local-models/inventory")
+    body = resp.json()
+
+    assert body["available"] is True
+    assert len(body["models"]) == 1
+    model = body["models"][0]
+    assert model["runtime"] == "mlx"
+    assert model["name"] == "mlx-community/North-Mini-Code-1.0-6bit"
+    assert model["path"] == str(repo)
+    assert model["launcher_model_ref"] == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
+    assert model["quant"] == "6bit"
+    assert model["file_size_bytes"] == 4096
+
+
+def test_inventory_endpoint_includes_safe_launcher_config_summary(
+    app, monkeypatch, tmp_path,
+):
+    model_dir = tmp_path / "AI_Models"
+    model_dir.mkdir()
+    (model_dir / "qwen-7b-q4.gguf").write_bytes(b"x" * 2048)
+    config_home = tmp_path / "home"
+    config_dir = config_home / ".open-notebook-plus"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "config.toml"
+    config_path.write_text(
+        "\n".join([
+            f"model_dir = '{model_dir}'",
+            "provider = 'mlx'",
+            "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
+            "surreal_user = 'root'",
+            "surreal_password = 'do-not-leak'",
+            "encryption_key = 'also-do-not-leak'",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+
+    with TestClient(app) as client:
+        resp = client.get("/api/local-models/inventory")
+    body = resp.json()
+
+    assert body["launcher_config"] == {
+        "available": True,
+        "path": str(config_path),
+        "provider": "mlx",
+        "default_model": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+        "model_dir": str(model_dir),
+        "model_dir_matches_inventory": True,
+    }
+    assert "do-not-leak" not in str(body)
+    assert "also-do-not-leak" not in str(body)
+
+
+def test_set_launch_default_updates_native_config_for_mlx_model(
+    app, monkeypatch, tmp_path,
+):
+    model_dir = tmp_path / "AI_Models"
+    repo = model_dir / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text('{"model_type": "qwen2"}')
+    (repo / "model.safetensors").write_bytes(b"x" * 4096)
+    config_home = tmp_path / "home"
+    config_dir = config_home / ".open-notebook-plus"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "config.toml"
+    config_path.write_text(
+        "\n".join([
+            f"model_dir = '{model_dir}'",
+            "provider = 'none'",
+            "default_model = ''",
+            "surreal_user = 'root'",
+            "surreal_password = 'keep-this-secret'",
+            "theme = 'dracula'",
+            "openchronicle_choice = 'prompt'",
+            "encryption_key = 'keep-this-key'",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/launch-default",
+            json={
+                "launcher_model_ref": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["launcher_config"]["provider"] == "mlx"
+    assert (
+        body["launcher_config"]["default_model"]
+        == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
+    )
+    updated = config_path.read_text()
+    assert "provider = 'mlx'" in updated
+    assert "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'" in updated
+    assert "surreal_password = 'keep-this-secret'" in updated
+    assert "encryption_key = 'keep-this-key'" in updated
+    assert "theme = 'dracula'" in updated
+    assert "openchronicle_choice = 'prompt'" in updated
+
+
+def test_set_launch_default_updates_native_config_for_gguf_model(
+    app, monkeypatch, tmp_path,
+):
+    model_dir = tmp_path / "AI_Models"
+    gguf = model_dir / "GGUF" / "Qwen3-8B-Q4_K_M.gguf"
+    gguf.parent.mkdir(parents=True)
+    gguf.write_bytes(b"x" * 2048)
+    config_home = tmp_path / "home"
+    config_dir = config_home / ".open-notebook-plus"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "config.toml"
+    config_path.write_text(
+        "\n".join([
+            f"model_dir = '{model_dir}'",
+            "provider = 'none'",
+            "default_model = ''",
+            "surreal_user = 'root'",
+            "surreal_password = 'keep-this-secret'",
+            "theme = 'dracula'",
+            "openchronicle_choice = 'prompt'",
+            "encryption_key = 'keep-this-key'",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/launch-default",
+            json={"launcher_model_ref": "GGUF/Qwen3-8B-Q4_K_M.gguf"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["launcher_config"]["provider"] == "llamacpp"
+    assert body["launcher_config"]["default_model"] == "GGUF/Qwen3-8B-Q4_K_M.gguf"
+    updated = config_path.read_text()
+    assert "provider = 'llamacpp'" in updated
+    assert "default_model = 'GGUF/Qwen3-8B-Q4_K_M.gguf'" in updated
+    assert "surreal_password = 'keep-this-secret'" in updated
+    assert "encryption_key = 'keep-this-key'" in updated
+    assert "theme = 'dracula'" in updated
+    assert "openchronicle_choice = 'prompt'" in updated
+
+
+def test_set_launch_default_rejects_inventory_only_model(
+    app, monkeypatch, tmp_path,
+):
+    model_dir = tmp_path / "AI_Models"
+    repo = model_dir / "Transformers" / "microsoft__FastContext-1.0-4B-SFT"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text('{"model_type": "fastcontext"}')
+    (repo / "model.safetensors").write_bytes(b"x" * 4096)
+    config_home = tmp_path / "home"
+    config_dir = config_home / ".open-notebook-plus"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        "\n".join([
+            f"model_dir = '{model_dir}'",
+            "provider = 'none'",
+            "default_model = ''",
+            "surreal_user = 'root'",
+            "surreal_password = 'keep-this-secret'",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/launch-default",
+            json={
+                "launcher_model_ref": "Transformers/microsoft__FastContext-1.0-4B-SFT",
+            },
+        )
+
+    assert resp.status_code == 400
+    assert "not supported" in resp.json()["detail"]
+
+
+def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_path):
+    gguf = tmp_path / "GGUF" / "qwen-7b-q4_k_m.gguf"
+    gguf.parent.mkdir()
+    gguf.write_bytes(b"x" * 2048)
+    transformers = tmp_path / "Transformers" / "microsoft__FastContext-1.0-4B-SFT"
+    transformers.mkdir(parents=True)
+    (transformers / "config.json").write_text(
+        '{"model_type": "fastcontext", "max_position_embeddings": 65536}'
+    )
+    (transformers / "model.safetensors").write_bytes(b"y" * 4096)
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+
+    with TestClient(app) as client:
+        resp = client.get("/api/local-models/inventory")
+    body = resp.json()
+    by_name = {model["name"]: model for model in body["models"]}
+
+    assert by_name["qwen-7b-q4_k_m"]["runtime"] == "gguf"
+    assert by_name["qwen-7b-q4_k_m"]["runnable"] is True
+    assert by_name["qwen-7b-q4_k_m"]["activation_supported"] is True
+    assert by_name["qwen-7b-q4_k_m"]["runtime_status"] == "runnable"
+    assert by_name["qwen-7b-q4_k_m"]["runtime_note"] is None
+    assert by_name["qwen-7b-q4_k_m"]["setup_href"] is None
+    assert by_name["qwen-7b-q4_k_m"]["setup_label"] is None
+
+    assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime"] == "transformers"
+    assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runnable"] is False
+    assert by_name["microsoft/FastContext-1.0-4B-SFT"]["activation_supported"] is False
+    assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime_status"] == "inventory_only"
+    assert "provider" in by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime_note"]
+    assert (
+        by_name["microsoft/FastContext-1.0-4B-SFT"]["setup_href"]
+        == "/settings/launcher-prefs"
+    )
+    assert (
+        by_name["microsoft/FastContext-1.0-4B-SFT"]["setup_label"]
+        == "Open launcher preferences"
+    )
 
 
 def test_inventory_endpoint_env_precedence(app, monkeypatch, tmp_path):
