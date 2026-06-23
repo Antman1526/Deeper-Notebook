@@ -134,6 +134,36 @@ describe('studioApi artifact endpoints', () => {
     })
   })
 
+  it('patches artifact study progress in the output payload', async () => {
+    const studyProgress = {
+      version: 1,
+      content_fingerprint: '10:abc',
+      quiz: { index: 0, answers: { '0': 'B' } },
+      updated_at: '2026-06-23T00:00:00.000Z',
+    }
+    apiPatch.mockResolvedValue({
+      data: {
+        id: 'studio_artifact:1',
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'quiz',
+        title: 'Quiz',
+        status: 'completed',
+        source_ids: [],
+        output_payload: { study_progress: studyProgress },
+        citations: [],
+        export_paths: {},
+      },
+    })
+
+    await studioApi.updateArtifact('studio_artifact:1', {
+      output_payload: { study_progress: studyProgress },
+    })
+
+    expect(apiPatch).toHaveBeenCalledWith('/studio/artifacts/studio_artifact%3A1', {
+      output_payload: { study_progress: studyProgress },
+    })
+  })
+
   it('deletes artifacts by id', async () => {
     apiDelete.mockResolvedValue({ data: { deleted: true, id: 'studio_artifact:1' } })
 

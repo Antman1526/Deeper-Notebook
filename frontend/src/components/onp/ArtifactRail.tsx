@@ -21,13 +21,17 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { getSourceReadiness, SourceHealthPill } from '@/components/onp/SourceHealthPill'
 import {
   CoursePackViewer,
+  CoursePackProgress,
   DataTableViewer,
   FlashcardDeck,
+  FlashcardProgress,
   MindMapViewer,
   parseFlashcards,
   parseQuizQuestions,
+  QuizProgress,
   QuizRunner,
   ResearchRunViewer,
+  StudyProgress,
 } from '@/components/onp/StudyArtifactViewers'
 import { isEvidenceStudioEnabled, isResearchRunsEnabled } from '@/lib/features'
 import {
@@ -39,6 +43,7 @@ import {
   useGenerateStudioArtifact,
   useStudioArtifacts,
   useStudioWorkflowRuns,
+  useUpdateStudioArtifact,
 } from '@/lib/hooks/use-studio'
 import { cn } from '@/lib/utils'
 import type { StudioArtifact, StudioArtifactType, StudioWorkflowRun } from '@/lib/api/studio'
@@ -126,6 +131,26 @@ function statusClassName(status: StudioArtifact['status']): string {
 function artifactMarkdown(artifact: StudioArtifact | null): string {
   const content = artifact?.output_payload?.content
   return typeof content === 'string' ? content : ''
+}
+
+function studyContentFingerprint(markdown: string): string {
+  let hash = 0
+  for (let index = 0; index < markdown.length; index += 1) {
+    hash = ((hash << 5) - hash + markdown.charCodeAt(index)) | 0
+  }
+  return `${markdown.length}:${(hash >>> 0).toString(36)}`
+}
+
+function readStudyProgress(
+  artifact: StudioArtifact | null,
+  markdown: string,
+): StudyProgress | null {
+  const progress = artifact?.output_payload.study_progress
+  if (!progress || typeof progress !== 'object' || Array.isArray(progress)) return null
+  const candidate = progress as Partial<StudyProgress>
+  if (candidate.version !== 1) return null
+  if (candidate.content_fingerprint !== studyContentFingerprint(markdown)) return null
+  return candidate as StudyProgress
 }
 
 function artifactFileName(artifact: StudioArtifact): string {
@@ -246,6 +271,7 @@ export function ArtifactRail({
   const approveWorkflowRun = useApproveStudioWorkflowRun(notebookId)
   const generateArtifact = useGenerateStudioArtifact(notebookId)
   const deleteArtifact = useDeleteStudioArtifact(notebookId)
+  const updateArtifact = useUpdateStudioArtifact(notebookId)
   const artifactIds = artifacts.map((artifact) => artifact.id)
   const { data: workflowRuns = [], isLoading: workflowRunsLoading } = useStudioWorkflowRuns(
     artifactIds,
@@ -262,6 +288,7 @@ export function ArtifactRail({
     || generateArtifact.isPending
   )
   const selectedMarkdown = artifactMarkdown(selectedArtifact)
+  const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
   const selectedExportEntries = artifactExportEntries(selectedArtifact)
   const flashcardCount = selectedArtifact?.artifact_type === 'flashcards'
     ? parseFlashcards(selectedMarkdown).length
@@ -334,6 +361,41 @@ export function ArtifactRail({
     await deleteArtifact.mutateAsync(artifact.id)
     setSelectedArtifact(null)
     setSelectedCitation(null)
+  }
+
+  async function saveStudyProgress(
+    patch: Partial<Pick<StudyProgress, 'course_pack' | 'flashcards' | 'quiz'>>,
+  ) {
+    if (!selectedArtifact || !selectedMarkdown) return
+
+    const nextProgress: StudyProgress = {
+      ...(selectedStudyProgress ?? {
+        version: 1,
+        content_fingerprint: studyContentFingerprint(selectedMarkdown),
+        updated_at: new Date().toISOString(),
+      }),
+      ...patch,
+      version: 1,
+      content_fingerprint: studyContentFingerprint(selectedMarkdown),
+      updated_at: new Date().toISOString(),
+    }
+    const outputPayload = {
+      ...selectedArtifact.output_payload,
+      study_progress: nextProgress,
+    }
+    setSelectedArtifact({
+      ...selectedArtifact,
+      output_payload: outputPayload,
+    })
+
+    try {
+      await updateArtifact.mutateAsync({
+        artifactId: selectedArtifact.id,
+        payload: { output_payload: outputPayload },
+      })
+    } catch (error) {
+      console.error('Failed to save study progress:', error)
+    }
   }
 
   if (!enabled) return null
@@ -636,9 +698,21 @@ export function ArtifactRail({
               <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
                 <ScrollArea className="max-h-[55vh] rounded-md border bg-background p-4">
                   {selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
-                    <FlashcardDeck markdown={selectedMarkdown} />
+                    <FlashcardDeck
+                      markdown={selectedMarkdown}
+                      progress={selectedStudyProgress?.flashcards}
+                      onProgressChange={(flashcards: FlashcardProgress) => {
+                        void saveStudyProgress({ flashcards })
+                      }}
+                    />
                   ) : selectedMarkdown && selectedArtifact.artifact_type === 'quiz' && quizQuestionCount > 0 ? (
-                    <QuizRunner markdown={selectedMarkdown} />
+                    <QuizRunner
+                      markdown={selectedMarkdown}
+                      progress={selectedStudyProgress?.quiz}
+                      onProgressChange={(quiz: QuizProgress) => {
+                        void saveStudyProgress({ quiz })
+                      }}
+                    />
                   ) : selectedMarkdown && selectedArtifact.artifact_type === 'research_run' ? (
                     <ResearchRunViewer
                       markdown={selectedMarkdown}
@@ -655,7 +729,13 @@ export function ArtifactRail({
                     selectedArtifact.artifact_type === 'course_pack'
                     || selectedArtifact.artifact_type === 'training_guide'
                   ) ? (
-                    <CoursePackViewer markdown={selectedMarkdown} />
+                    <CoursePackViewer
+                      markdown={selectedMarkdown}
+                      progress={selectedStudyProgress?.course_pack}
+                      onProgressChange={(coursePack: CoursePackProgress) => {
+                        void saveStudyProgress({ course_pack: coursePack })
+                      }}
+                    />
                   ) : selectedMarkdown ? (
                     <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
                       <ReactMarkdown>{selectedMarkdown}</ReactMarkdown>

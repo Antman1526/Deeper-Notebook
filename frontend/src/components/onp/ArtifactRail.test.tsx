@@ -11,6 +11,7 @@ const useDeleteStudioArtifact = vi.fn()
 const useStudioWorkflowRuns = vi.fn()
 const useCreateStudioWorkflowRun = vi.fn()
 const useApproveStudioWorkflowRun = vi.fn()
+const useUpdateStudioArtifact = vi.fn()
 const isEvidenceStudioEnabled = vi.fn()
 const isResearchRunsEnabled = vi.fn()
 
@@ -23,6 +24,7 @@ vi.mock('@/lib/hooks/use-studio', () => ({
   useStudioWorkflowRuns: (...args: unknown[]) => useStudioWorkflowRuns(...args),
   useCreateStudioWorkflowRun: (...args: unknown[]) => useCreateStudioWorkflowRun(...args),
   useApproveStudioWorkflowRun: (...args: unknown[]) => useApproveStudioWorkflowRun(...args),
+  useUpdateStudioArtifact: (...args: unknown[]) => useUpdateStudioArtifact(...args),
 }))
 
 vi.mock('@/lib/features', () => ({
@@ -40,6 +42,7 @@ describe('ArtifactRail', () => {
   const deleteArtifact = vi.fn()
   const createWorkflowRun = vi.fn()
   const approveWorkflowRun = vi.fn()
+  const updateArtifact = vi.fn()
 
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -69,6 +72,7 @@ describe('ArtifactRail', () => {
     })
     generateArtifact.mockResolvedValue({})
     deleteArtifact.mockResolvedValue({})
+    updateArtifact.mockResolvedValue({})
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     isResearchRunsEnabled.mockReturnValue(false)
     useCreateStudioArtifact.mockReturnValue({
@@ -97,6 +101,10 @@ describe('ArtifactRail', () => {
     })
     useApproveStudioWorkflowRun.mockReturnValue({
       mutateAsync: approveWorkflowRun,
+      isPending: false,
+    })
+    useUpdateStudioArtifact.mockReturnValue({
+      mutateAsync: updateArtifact,
       isPending: false,
     })
   })
@@ -1367,6 +1375,58 @@ describe('ArtifactRail', () => {
 
     await waitFor(() => {
       expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:failed')
+    })
+  })
+
+  it('saves quiz study progress when a learner answers a question', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:quiz',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'quiz',
+          title: 'Safety Quiz',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '# Safety Quiz',
+              '',
+              '## Question 1',
+              'What should the learner do first?',
+              'A. Guess',
+              'B. Read the procedure',
+              'Answer: B',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Safety Quiz' }))
+    fireEvent.click(screen.getByRole('button', { name: 'B. Read the procedure' }))
+
+    await waitFor(() => {
+      expect(updateArtifact).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:quiz',
+        payload: {
+          output_payload: expect.objectContaining({
+            content: expect.stringContaining('# Safety Quiz'),
+            study_progress: expect.objectContaining({
+              version: 1,
+              quiz: {
+                index: 0,
+                answers: { '0': 'B' },
+              },
+            }),
+          }),
+        },
+      })
     })
   })
 
