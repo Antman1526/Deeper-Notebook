@@ -1,0 +1,1305 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ArtifactRail } from './ArtifactRail'
+
+const useStudioArtifacts = vi.fn()
+const useStudioArtifactRevisions = vi.fn()
+const useCreateStudioArtifact = vi.fn()
+const useGenerateStudioArtifact = vi.fn()
+const useDeleteStudioArtifact = vi.fn()
+const useStudioWorkflowRuns = vi.fn()
+const useCreateStudioWorkflowRun = vi.fn()
+const useApproveStudioWorkflowRun = vi.fn()
+const isEvidenceStudioEnabled = vi.fn()
+const isResearchRunsEnabled = vi.fn()
+
+vi.mock('@/lib/hooks/use-studio', () => ({
+  useStudioArtifacts: (...args: unknown[]) => useStudioArtifacts(...args),
+  useStudioArtifactRevisions: (...args: unknown[]) => useStudioArtifactRevisions(...args),
+  useCreateStudioArtifact: (...args: unknown[]) => useCreateStudioArtifact(...args),
+  useGenerateStudioArtifact: (...args: unknown[]) => useGenerateStudioArtifact(...args),
+  useDeleteStudioArtifact: (...args: unknown[]) => useDeleteStudioArtifact(...args),
+  useStudioWorkflowRuns: (...args: unknown[]) => useStudioWorkflowRuns(...args),
+  useCreateStudioWorkflowRun: (...args: unknown[]) => useCreateStudioWorkflowRun(...args),
+  useApproveStudioWorkflowRun: (...args: unknown[]) => useApproveStudioWorkflowRun(...args),
+}))
+
+vi.mock('@/lib/features', () => ({
+  isEvidenceStudioEnabled: () => isEvidenceStudioEnabled(),
+  isResearchRunsEnabled: () => isResearchRunsEnabled(),
+}))
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+describe('ArtifactRail', () => {
+  const createArtifact = vi.fn()
+  const generateArtifact = vi.fn()
+  const deleteArtifact = vi.fn()
+  const createWorkflowRun = vi.fn()
+  const approveWorkflowRun = vi.fn()
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+    createArtifact.mockResolvedValue({ id: 'studio_artifact:new' })
+    createWorkflowRun.mockResolvedValue({
+      id: 'studio_workflow_run:new',
+      artifact_id: 'studio_artifact:new',
+      notebook_id: 'notebook:alpha',
+      title: 'Generate Report',
+      status: 'awaiting_approval',
+      source_ids: [],
+      approval_required: true,
+      steps: [],
+      command_id: null,
+    })
+    approveWorkflowRun.mockResolvedValue({
+      id: 'studio_workflow_run:new',
+      artifact_id: 'studio_artifact:new',
+      notebook_id: 'notebook:alpha',
+      title: 'Generate Report',
+      status: 'queued',
+      source_ids: [],
+      approval_required: false,
+      steps: [],
+      command_id: null,
+    })
+    generateArtifact.mockResolvedValue({})
+    deleteArtifact.mockResolvedValue({})
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    isResearchRunsEnabled.mockReturnValue(false)
+    useCreateStudioArtifact.mockReturnValue({
+      mutateAsync: createArtifact,
+      isPending: false,
+    })
+    useGenerateStudioArtifact.mockReturnValue({
+      mutateAsync: generateArtifact,
+      isPending: false,
+    })
+    useStudioArtifactRevisions.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    useDeleteStudioArtifact.mockReturnValue({
+      mutateAsync: deleteArtifact,
+      isPending: false,
+    })
+    useStudioWorkflowRuns.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    useCreateStudioWorkflowRun.mockReturnValue({
+      mutateAsync: createWorkflowRun,
+      isPending: false,
+    })
+    useApproveStudioWorkflowRun.mockReturnValue({
+      mutateAsync: approveWorkflowRun,
+      isPending: false,
+    })
+  })
+
+  it('renders nothing when Evidence Studio is disabled', () => {
+    isEvidenceStudioEnabled.mockReturnValue(false)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    const { container } = render(<ArtifactRail notebookId="notebook:alpha" />)
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('shows an empty state when no artifacts exist yet', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+
+    expect(screen.getByText('Evidence Studio')).toBeInTheDocument()
+    expect(screen.getByText('Awaiting first artifact')).toBeInTheDocument()
+    expect(screen.getByText('No saved research outputs in this notebook.')).toBeInTheDocument()
+  })
+
+  it('frames quick actions as App Mode templates', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('App Mode templates')).toBeInTheDocument()
+    expect(screen.getByText(/Source readiness/)).toBeInTheDocument()
+    expect(screen.getByText(/Artifact generation/)).toBeInTheDocument()
+    expect(screen.getByText(/Evidence export/)).toBeInTheDocument()
+  })
+
+  it('blocks artifact generation until the notebook has sources', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+
+    expect(screen.getByText('Add at least one ready source before generating artifacts.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Report' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }))
+
+    expect(createArtifact).not.toHaveBeenCalled()
+    expect(generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('summarizes stored artifacts by status', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'study_guide',
+          title: 'Study guide',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {},
+          citations: [
+            {
+              source_id: 'source:one',
+              title: 'Source One',
+              preview: 'A grounded note.',
+            },
+          ],
+          export_paths: {},
+        },
+        {
+          id: 'studio_artifact:2',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'quiz',
+          title: 'Quiz',
+          status: 'pending',
+          source_ids: [],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('2 artifacts')).toBeInTheDocument()
+    expect(screen.getAllByText('Study guide').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('button', { name: 'Open Quiz' })).toBeInTheDocument()
+    expect(screen.getByText('completed')).toBeInTheDocument()
+    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('1 completed')).toBeInTheDocument()
+    expect(screen.getByText('1 in progress')).toBeInTheDocument()
+    expect(screen.getAllByText('1 citation').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('No citations').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('uses distinct icons for saved infographic and podcast outline artifacts', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:infographic',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'infographic',
+          title: 'Infographic',
+          status: 'completed',
+          source_ids: [],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+        {
+          id: 'studio_artifact:podcast',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'podcast_outline',
+          title: 'Podcast outline',
+          status: 'completed',
+          source_ids: [],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+
+    expect(
+      screen.getByRole('button', { name: 'Open Infographic' }).querySelector('.lucide-layers'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Open Podcast outline' }).querySelector('.lucide-mic-vocal'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a loading state while artifact records load', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: undefined, isLoading: true })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Loading artifacts')).toBeInTheDocument()
+  })
+
+  it('queues a report artifact behind an approval checkpoint', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }))
+
+    await waitFor(() => {
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'report',
+        title: 'Report',
+        source_ids: [],
+      })
+    })
+    await waitFor(() => {
+      expect(createWorkflowRun).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:new',
+        payload: {
+          title: 'Generate Report',
+          source_ids: [],
+          approval_required: true,
+        },
+      })
+    })
+    expect(generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('keeps Research run hidden while the experimental flag is disabled', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    isResearchRunsEnabled.mockReturnValue(false)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Research run' })).not.toBeInTheDocument()
+  })
+
+  it('creates and generates a Research run when the experimental flag is enabled', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    isResearchRunsEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research run' }))
+
+    await waitFor(() => {
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'research_run',
+        title: 'Research run',
+        source_ids: [],
+      })
+    })
+    await waitFor(() => {
+      expect(createWorkflowRun).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:new',
+        payload: {
+          title: 'Generate Research run',
+          source_ids: [],
+          approval_required: true,
+        },
+      })
+    })
+    expect(generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('creates artifacts from selected sources when the source selector is used', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+          {
+            id: 'source:two',
+            title: 'Source Two',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 2,
+            insights_count: 0,
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Artifact sources: All sources' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Source One' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }))
+
+    await waitFor(() => {
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'report',
+        title: 'Report',
+        source_ids: ['source:one'],
+      })
+    })
+    await waitFor(() => {
+      expect(createWorkflowRun).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:new',
+        payload: {
+          title: 'Generate Report',
+          source_ids: ['source:one'],
+          approval_required: true,
+        },
+      })
+    })
+  })
+
+  it('shows source health and blocks generation when scoped sources are not ready', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:ready',
+            title: 'Ready Source',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+          {
+            id: 'source:failed',
+            title: 'Failed Source',
+            asset: null,
+            embedded: false,
+            embedded_chunks: 0,
+            insights_count: 0,
+            status: 'failed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Artifact sources: All sources' }))
+    expect(screen.getByText('Ready')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('1 source is not ready for artifact generation.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Report' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Ready Source' }))
+    expect(screen.getByRole('button', { name: 'Report' })).not.toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }))
+
+    await waitFor(() => {
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'report',
+        title: 'Report',
+        source_ids: ['source:ready'],
+      })
+    })
+  })
+
+  it('shows workflow run history with approval checkpoints', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Report',
+          status: 'pending',
+          source_ids: ['source:one'],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+    useStudioWorkflowRuns.mockReturnValue({
+      data: [
+        {
+          id: 'studio_workflow_run:1',
+          artifact_id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          title: 'Generate Report',
+          status: 'awaiting_approval',
+          source_ids: ['source:one'],
+          approval_required: true,
+          steps: [
+            { id: 'context', label: 'Context built', status: 'completed' },
+            { id: 'privacy_gate', label: 'Privacy gate', status: 'pending' },
+          ],
+          command_id: null,
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Workflow runs')).toBeInTheDocument()
+    expect(screen.getByText('Generate Report')).toBeInTheDocument()
+    expect(screen.getByText('awaiting approval')).toBeInTheDocument()
+    expect(screen.getByText('Context built')).toBeInTheDocument()
+    expect(screen.getByText('Privacy gate')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve Generate Report' })).toBeInTheDocument()
+  })
+
+  it('approves a queued workflow and starts artifact generation', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Report',
+          status: 'pending',
+          source_ids: ['source:one'],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+    useStudioWorkflowRuns.mockReturnValue({
+      data: [
+        {
+          id: 'studio_workflow_run:1',
+          artifact_id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          title: 'Generate Report',
+          status: 'awaiting_approval',
+          source_ids: ['source:one'],
+          approval_required: true,
+          steps: [],
+          command_id: null,
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve Generate Report' }))
+
+    await waitFor(() => {
+      expect(approveWorkflowRun).toHaveBeenCalledWith('studio_workflow_run:1')
+    })
+    await waitFor(() => {
+      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:1')
+    })
+  })
+
+  it('blocks artifact generation when a scoped source has no extracted text', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:empty',
+            title: 'Image-only PDF',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            extraction_quality: 'no_text',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Artifact sources: All sources' }))
+
+    expect(screen.getByText('No text')).toBeInTheDocument()
+    expect(screen.getByText('1 source is not ready for artifact generation.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Report' })).toBeDisabled()
+  })
+
+  it('creates and queues additional text artifact types from the notebook', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Briefing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'FAQ' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Course Pack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mind map' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Slide deck' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Infographic' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Podcast outline' }))
+
+    await waitFor(() => {
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'briefing',
+        title: 'Briefing',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'faq',
+        title: 'FAQ',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'timeline',
+        title: 'Timeline',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'course_pack',
+        title: 'Course Pack',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'flashcards',
+        title: 'Flashcards',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'quiz',
+        title: 'Quiz',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'mind_map',
+        title: 'Mind map',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'slide_deck',
+        title: 'Slide deck',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'infographic',
+        title: 'Infographic',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'podcast_outline',
+        title: 'Podcast outline',
+        source_ids: [],
+      })
+    })
+    expect(generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('opens a completed artifact with markdown, citations, and download link', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report',
+          status: 'completed',
+          source_ids: ['source:one'],
+          model_id: 'model:qwen-coder',
+          provider: 'openai_compatible',
+          output_payload: { content: '# Quarterly Report\n\nGrounded result.' },
+          citations: [
+            {
+              source_id: 'source:one',
+              title: 'Source One',
+              preview: 'Important excerpt from the source.',
+            },
+          ],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report' }))
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('heading', { name: 'Quarterly Report' }).length).toBeGreaterThanOrEqual(1)
+    })
+    expect(screen.getAllByText('1 citation').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('model:qwen-coder')).toBeInTheDocument()
+    expect(screen.getByText('openai_compatible')).toBeInTheDocument()
+    expect(screen.getByText('Grounded result.')).toBeInTheDocument()
+    const sourceLink = screen.getByRole('link', { name: 'Source One' })
+    expect(sourceLink).toHaveAttribute('href', '/sources/source%3Aone')
+    expect(screen.getByText('Important excerpt from the source.')).toBeInTheDocument()
+    const download = screen.getByRole('link', { name: 'Download Markdown' })
+    expect(download).toHaveAttribute('download', 'Quarterly-Report.md')
+    expect(download).toHaveAttribute('href', expect.stringContaining('data:text/markdown'))
+    const jsonDownload = screen.getByRole('link', { name: 'Download JSON' })
+    expect(jsonDownload).toHaveAttribute('download', 'Quarterly-Report.json')
+    expect(jsonDownload).toHaveAttribute('href', expect.stringContaining('data:application/json'))
+  })
+
+  it('shows durable export paths when an artifact has been saved to disk', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    const markdownPath = '/Users/Antman/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/quarterly-report.md'
+    const jsonPath = '/Users/Antman/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/quarterly-report.json'
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Quarterly Report\n\nGrounded result.' },
+          citations: [],
+          export_paths: {
+            markdown: markdownPath,
+            json: jsonPath,
+          },
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report' }))
+
+    expect(screen.getByText('Saved exports')).toBeInTheDocument()
+    expect(screen.getByText('Markdown')).toBeInTheDocument()
+    expect(screen.getByText('JSON')).toBeInTheDocument()
+    expect(screen.getByText(markdownPath)).toBeInTheDocument()
+    expect(screen.getByText(jsonPath)).toBeInTheDocument()
+  })
+
+  it('opens citation evidence in a focused drawer from the artifact viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Quarterly Report\n\nGrounded result.' },
+          citations: [
+            {
+              source_id: 'source:one',
+              title: 'Source One',
+              marker: '[S1]',
+              preview: 'Exact supporting sentence from the imported source.',
+            },
+          ],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect evidence for Source One' }))
+
+    expect(screen.getByText('Citation evidence')).toBeInTheDocument()
+    expect(screen.getAllByText('Exact supporting sentence from the imported source.').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('source:one').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('[S1]')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open source record' })).toHaveAttribute('href', '/sources/source%3Aone')
+  })
+
+  it('shows revision history and opens a saved revision', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Quarterly Report\n\nCurrent result.' },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+    useStudioArtifactRevisions.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:revision',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report revision',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Quarterly Report\n\nPrevious result.' },
+          citations: [],
+          export_paths: {},
+          revision_of_id: 'studio_artifact:1',
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report' }))
+
+    expect(screen.getByText('Revision history')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report revision' }))
+
+    expect(screen.getByText('Previous result.')).toBeInTheDocument()
+  })
+
+  it('opens flashcards in an interactive review deck', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:flashcards',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'flashcards',
+          title: 'Flashcards',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '## Flashcards',
+              '',
+              '### Card 1',
+              'Front: What does Evidence Studio preserve?',
+              'Back: Source-grounded artifacts and revisions.',
+              'Source: Product plan',
+              '',
+              '### Card 2',
+              'Front: What should users inspect?',
+              'Back: Citations and source previews.',
+              'Source: Product plan',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Flashcards' }))
+
+    expect(screen.getByText('Flashcard review')).toBeInTheDocument()
+    expect(screen.getByText('Card 1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('What does Evidence Studio preserve?')).toBeInTheDocument()
+    expect(screen.queryByText('Source-grounded artifacts and revisions.')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal answer' }))
+    expect(screen.getByText('Source-grounded artifacts and revisions.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next card' }))
+    expect(screen.getByText('Card 2 of 2')).toBeInTheDocument()
+    expect(screen.getByText('What should users inspect?')).toBeInTheDocument()
+  })
+
+  it('opens quizzes in an interactive answer runner', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:quiz',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'quiz',
+          title: 'Quiz',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '## Quiz',
+              '',
+              '### Question 1',
+              'What powers the local model fleet?',
+              'A. Cloud-only routing',
+              'B. Managed local model inventory',
+              'C. Manual copy paste',
+              'Answer: B',
+              'Explanation: The app scans the local AI_Models directory.',
+              'Source: Product plan',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quiz' }))
+
+    expect(screen.getByText('Quiz runner')).toBeInTheDocument()
+    expect(screen.getByText('Question 1 of 1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'B. Managed local model inventory' }))
+
+    expect(screen.getByText('Correct')).toBeInTheDocument()
+    expect(screen.getByText('Score: 1 / 1')).toBeInTheDocument()
+    expect(screen.getByText('The app scans the local AI_Models directory.')).toBeInTheDocument()
+  })
+
+  it('opens Course Packs in a module checklist viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:course-pack',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'course_pack',
+          title: 'Course Pack',
+          status: 'completed',
+          source_ids: ['source:video', 'source:pdf'],
+          output_payload: {
+            content: [
+              '# Course Pack',
+              '',
+              '## Audience',
+              'New workspace admins. [S1]',
+              '',
+              '## Module 1: Local Model Orientation',
+              'Duration: 20 minutes',
+              'Learners map the local model fleet to common research jobs. [S1]',
+              '',
+              '### Hands-on exercise',
+              'Compare source synthesis and study-fast model roles. [S1]',
+              '',
+              '### Facilitator notes',
+              'Open the admin console only during lab time.',
+              '',
+              '## Module 2: Source-Grounded Assessment',
+              'Duration: 15 minutes',
+              'Learners verify citations before export. [S2]',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Course Pack' }))
+
+    expect(screen.getByText('Course Pack workspace')).toBeInTheDocument()
+    expect(screen.getByText('Module checklist')).toBeInTheDocument()
+    expect(screen.getAllByText('Module 1: Local Model Orientation').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('Open the admin console only during lab time.')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Facilitator notes' }))
+    expect(screen.getByText('Open the admin console only during lab time.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Mark Module 1: Local Model Orientation complete'))
+    expect(screen.getByText('1 complete')).toBeInTheDocument()
+  })
+
+  it('opens Research runs in a staged investigation viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:research-run',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'research_run',
+          title: 'Research Run',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '# Research Run',
+              '',
+              '## Research objective',
+              'Compare Open Notebook Plus with NotebookLM. [S1]',
+              '',
+              '## Working hypotheses',
+              '- Local model routing is a differentiator. [S1]',
+              '',
+              '## Evidence-backed findings',
+              '- Evidence Studio can generate study artifacts. [S1]',
+              '',
+              '## Gaps and contradictions',
+              '- Runtime validation still needs browser coverage.',
+              '',
+              '## Follow-up questions',
+              '- Which local model handles source synthesis best?',
+              '',
+              '## Recommended next actions',
+              '- Run a local model benchmark.',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research Run' }))
+
+    expect(screen.getByText('Research run workspace')).toBeInTheDocument()
+    expect(screen.getByText('6 stages')).toBeInTheDocument()
+    expect(screen.getByText('Research objective')).toBeInTheDocument()
+    expect(screen.getByText('Working hypotheses')).toBeInTheDocument()
+    expect(screen.getByText('Evidence-backed findings')).toBeInTheDocument()
+    expect(screen.getByText('Runtime validation still needs browser coverage.')).toBeInTheDocument()
+  })
+
+  it('uses persisted Research run stage metadata before parsing markdown', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:research-run-structured',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'research_run',
+          title: 'Research Run',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: '# Research Run\n\nFlat markdown without stage headings.',
+            research_stages: [
+              {
+                title: 'Evidence-backed findings',
+                items: ['Structured finding from saved JSON metadata.'],
+              },
+              {
+                title: 'Recommended next actions',
+                items: ['Use the structured payload for BrainPulseKnowledge import.'],
+              },
+            ],
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research Run' }))
+
+    expect(screen.getByText('Research run workspace')).toBeInTheDocument()
+    expect(screen.getByText('2 stages')).toBeInTheDocument()
+    expect(screen.getByText('Structured metadata')).toBeInTheDocument()
+    expect(screen.getByText('Structured finding from saved JSON metadata.')).toBeInTheDocument()
+    expect(screen.queryByText('Flat markdown without stage headings.')).not.toBeInTheDocument()
+  })
+
+  it('falls back to markdown when a Research run has no stage metadata or section headings', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:research-run-flat',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'research_run',
+          title: 'Research Run',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: 'Flat research narrative without generated stage headings.',
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research Run' }))
+
+    expect(screen.getByText('Flat research narrative without generated stage headings.')).toBeInTheDocument()
+  })
+
+  it('regenerates a completed artifact from the viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:1',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Quarterly Report',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Quarterly Report\n\nGrounded result.' },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
+
+    await waitFor(() => {
+      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:1')
+    })
+  })
+
+  it('retries a failed artifact from the viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:failed',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'briefing',
+          title: 'Failed Briefing',
+          status: 'failed',
+          source_ids: ['source:one'],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Failed Briefing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:failed')
+    })
+  })
+
+  it('deletes an artifact from the viewer after confirmation', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:delete-me',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'quiz',
+          title: 'Old Quiz',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: { content: '# Old Quiz' },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Old Quiz' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete "Old Quiz"?')
+    await waitFor(() => {
+      expect(deleteArtifact).toHaveBeenCalledWith('studio_artifact:delete-me')
+    })
+  })
+})

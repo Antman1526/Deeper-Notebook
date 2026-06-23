@@ -132,14 +132,100 @@ def test_enumerate_models_filters_non_gguf(tmp_path):
     (tmp_path / ".hidden.gguf").write_bytes(b"x" * 50)
     (tmp_path / "download-in-progress.gguf.tmp").write_bytes(b"x" * 50)
     (tmp_path / "zero-byte.gguf").write_bytes(b"")
-    # A subdir — must NOT recurse
+    # HuggingFace-style subdirs should be scanned; junk inside them is
+    # still filtered the same way as top-level files.
     sub = tmp_path / "subdir"
     sub.mkdir()
-    (sub / "should-not-show.gguf").write_bytes(b"x" * 100)
+    (sub / "should-show.gguf").write_bytes(b"x" * 100)
+    (sub / "should-not-show.gguf.part").write_bytes(b"x" * 100)
 
     rows = enumerate_models(tmp_path)
     names = sorted(r.name for r in rows)
-    assert names == ["hermes-3-8b-q5", "qwen2.5-7b-q4_k_m"]
+    assert names == ["hermes-3-8b-q5", "qwen2.5-7b-q4_k_m", "should-show"]
+
+
+def test_enumerate_models_recurses_into_huggingface_style_subdirs(tmp_path):
+    """v0.8.69 — real AI_Models layouts store downloaded GGUFs inside
+    repo-named folders under GGUF/. Inventory must match the recursive
+    launcher auto-register scan so Settings shows usable installed models."""
+    nested = tmp_path / "GGUF" / "tvall43__Qwen3.6-14B-A3B-FableVibes-GGUF"
+    nested.mkdir(parents=True)
+    model = nested / "Qwen3.6-14B-A3B-FableVibes-Q4_K_M.gguf"
+    model.write_bytes(b"x" * 2048)
+
+    rows = enumerate_models(tmp_path)
+
+    assert [r.name for r in rows] == ["Qwen3.6-14B-A3B-FableVibes-Q4_K_M"]
+    assert rows[0].path == str(model)
+    assert rows[0].metadata.quant == "Q4_K_M"
+
+
+def test_enumerate_models_skips_mmproj_auxiliary_ggufs(tmp_path):
+    """v0.8.69 — multimodal projection GGUFs are companion files, not
+    standalone chat models. Do not show them as set-active candidates."""
+    repo = tmp_path / "GGUF" / "vision-model"
+    repo.mkdir(parents=True)
+    (repo / "Qwable-5-27B-Coder-Q6_K.gguf").write_bytes(b"x" * 2048)
+    (repo / "mmproj-Qwable-5-27B-Coder-f16.gguf").write_bytes(b"y" * 2048)
+    (repo / "Qwable-mmproj-F16.gguf").write_bytes(b"z" * 2048)
+
+    rows = enumerate_models(tmp_path)
+
+    assert [r.name for r in rows] == ["Qwable-5-27B-Coder-Q6_K"]
+
+
+def test_enumerate_models_includes_mlx_model_repos(tmp_path):
+    """Evidence Studio model fleet: MLX repos under AI_Models/MLX should
+    show up as runnable local models without mutating the model folder."""
+    repo = tmp_path / "MLX" / "mlx-community__Qwen3-Coder-30B-A3B-MLX-4bit"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text(
+        '{"model_type": "qwen3", "max_position_embeddings": 262144}'
+    )
+    (repo / "model.safetensors").write_bytes(b"x" * 2048)
+    (repo / "tokenizer.json").write_text("{}")
+    (tmp_path / "MLX" / ".cache").mkdir()
+    (tmp_path / "MLX" / "empty-repo").mkdir()
+
+    rows = enumerate_models(tmp_path)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.runtime == "mlx"
+    assert row.name == "mlx-community/Qwen3-Coder-30B-A3B-MLX-4bit"
+    assert row.path == str(repo)
+    assert row.metadata.architecture == "qwen3"
+    assert row.metadata.context_length == 262144
+    assert row.metadata.quant == "4bit"
+    assert row.metadata.parameter_count_b == 30.0
+    assert row.metadata.file_size_bytes == 2048
+
+
+def test_enumerate_models_includes_transformers_model_repos(tmp_path):
+    """Local fleet inventory should also surface complete HuggingFace-style
+    Transformers repos under AI_Models/Transformers so downloaded local
+    models are visible even before a runtime provider is configured."""
+    repo = tmp_path / "Transformers" / "microsoft__FastContext-1.0-4B-SFT"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text(
+        '{"model_type": "fastcontext", "max_position_embeddings": 65536}'
+    )
+    (repo / "model-00000-of-00002.safetensors").write_bytes(b"x" * 2048)
+    (repo / "model-00001-of-00002.safetensors").write_bytes(b"y" * 4096)
+    (tmp_path / "Transformers" / "partial-repo").mkdir()
+
+    rows = enumerate_models(tmp_path)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.runtime == "transformers"
+    assert row.name == "microsoft/FastContext-1.0-4B-SFT"
+    assert row.path == str(repo)
+    assert row.metadata.architecture == "fastcontext"
+    assert row.metadata.context_length == 65536
+    assert row.metadata.quant is None
+    assert row.metadata.parameter_count_b == 4.0
+    assert row.metadata.file_size_bytes == 6144
 
 
 def test_enumerate_models_returns_metadata(tmp_path):

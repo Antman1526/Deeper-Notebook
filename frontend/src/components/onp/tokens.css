@@ -8,6 +8,8 @@
    * states, subtle highlights. Works on both light and dark themes. */
   --onp-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
   --onp-accent-strong: color-mix(in oklab, var(--primary) 22%, transparent);
+  --onp-surface-raised: color-mix(in oklab, var(--card) 92%, var(--primary) 8%);
+  --onp-border-strong: color-mix(in oklab, var(--border) 72%, var(--primary) 28%);
 
   /* Status colors not present in shadcn defaults */
   --onp-success: oklch(0.65 0.18 145);
@@ -16,6 +18,9 @@
   --onp-warning-soft: color-mix(in oklab, var(--onp-warning) 18%, transparent);
   --onp-info: var(--primary);
   --onp-info-soft: var(--onp-accent-soft);
+  --onp-evidence: oklch(0.58 0.17 285);
+  --onp-model-gguf: oklch(0.57 0.18 245);
+  --onp-model-mlx: oklch(0.62 0.16 175);
 
   /* Elevation — subtle border + soft shadow that reads as a card without
    * fighting the body background. */
