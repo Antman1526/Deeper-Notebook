@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getApiUrl, resetConfig } from './config'
+import { getApiUrl, getConfig, resetConfig } from './config'
 
 describe('Config Priority', () => {
   const originalEnv = process.env
@@ -36,6 +36,26 @@ describe('Config Priority', () => {
 
     const url = await getApiUrl()
     expect(url).toBe('http://runtime-url.com')
+  })
+
+  it('maps backend source upload cap into app config', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'http://env-url.com'
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ apiUrl: '' }),
+    } as Response)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        version: '1.0.0',
+        sourceUploadMaxBytes: 524288000,
+      }),
+    } as Response)
+
+    const cfg = await getConfig()
+
+    expect(cfg.sourceUploadMaxBytes).toBe(524288000)
   })
 
   it('should fall back to env var if runtime config returns empty/null', async () => {

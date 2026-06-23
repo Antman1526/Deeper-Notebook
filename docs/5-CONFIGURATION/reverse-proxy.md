@@ -694,8 +694,8 @@ When uploading files, your reverse proxy may reject the request due to body size
 1. **Nginx - Increase body size limit**:
    ```nginx
    server {
-       # Allow larger file uploads (default is 1MB)
-       client_max_body_size 100M;
+       # Match or exceed ONP_SOURCE_UPLOAD_MAX_BYTES (default 500 MB)
+       client_max_body_size 500M;
 
        # Add CORS headers to error responses
        error_page 413 = @cors_error_413;

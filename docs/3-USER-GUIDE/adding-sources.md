@@ -75,7 +75,7 @@ Sources are the raw materials of your research. This guide covers how to add dif
 - Paywalled content (WSJ, FT, etc.) — Can't extract
 - Password-protected PDFs — Can't open
 - Pure image files (.jpg, .png) — Except scanned PDFs which have OCR
-- Very large files (>100MB) — Timeout
+- Very large files over the configured upload cap — Default cap is 500 MB; split very large books, archives, or media into chapters/sections for better search quality
 
 ---
 
