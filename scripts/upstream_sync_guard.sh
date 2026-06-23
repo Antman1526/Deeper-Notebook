@@ -124,9 +124,6 @@ main() {
       usage
       ;;
     snapshot)
-      ensure_remote
-      disable_upstream_push
-      fetch_upstream
       write_snapshot
       ;;
     compare)
@@ -136,10 +133,10 @@ main() {
       compare_upstream
       ;;
     prepare)
+      write_snapshot
       ensure_remote
       disable_upstream_push
       fetch_upstream
-      write_snapshot
       prepare_worktree
       ;;
     *)
