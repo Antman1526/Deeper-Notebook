@@ -12,7 +12,7 @@ import {
 // are mocked so JSDOM renders content unconditionally.
 
 vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children, open: _o, onOpenChange }: {
+  Popover: ({ children, onOpenChange }: {
     children: React.ReactNode; open?: boolean; onOpenChange?: (v: boolean) => void
   }) => {
     // Auto-open immediately so the content fetch fires in tests.
