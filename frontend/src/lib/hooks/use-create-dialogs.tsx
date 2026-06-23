@@ -5,8 +5,13 @@ import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
 
+interface SourceDialogOptions {
+  defaultNotebookId?: string
+  onSourceCreated?: () => void
+}
+
 interface CreateDialogsContextType {
-  openSourceDialog: () => void
+  openSourceDialog: (options?: SourceDialogOptions) => void
   openNotebookDialog: () => void
   openPodcastDialog: () => void
 }
@@ -15,12 +20,23 @@ const CreateDialogsContext = createContext<CreateDialogsContextType | null>(null
 
 export function CreateDialogsProvider({ children }: { children: ReactNode }) {
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
+  const [sourceDialogOptions, setSourceDialogOptions] = useState<SourceDialogOptions>({})
   const [notebookDialogOpen, setNotebookDialogOpen] = useState(false)
   const [podcastDialogOpen, setPodcastDialogOpen] = useState(false)
 
-  const openSourceDialog = useCallback(() => setSourceDialogOpen(true), [])
+  const openSourceDialog = useCallback((options: SourceDialogOptions = {}) => {
+    setSourceDialogOptions(options)
+    setSourceDialogOpen(true)
+  }, [])
   const openNotebookDialog = useCallback(() => setNotebookDialogOpen(true), [])
   const openPodcastDialog = useCallback(() => setPodcastDialogOpen(true), [])
+
+  const handleSourceDialogOpenChange = useCallback((nextOpen: boolean) => {
+    setSourceDialogOpen(nextOpen)
+    if (!nextOpen) {
+      setSourceDialogOptions({})
+    }
+  }, [])
 
   return (
     <CreateDialogsContext.Provider
@@ -31,7 +47,12 @@ export function CreateDialogsProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      <AddSourceDialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen} />
+      <AddSourceDialog
+        open={sourceDialogOpen}
+        onOpenChange={handleSourceDialogOpenChange}
+        defaultNotebookId={sourceDialogOptions.defaultNotebookId}
+        onSourceCreated={sourceDialogOptions.onSourceCreated}
+      />
       <CreateNotebookDialog open={notebookDialogOpen} onOpenChange={setNotebookDialogOpen} />
       <GeneratePodcastDialog open={podcastDialogOpen} onOpenChange={setPodcastDialogOpen} />
     </CreateDialogsContext.Provider>

@@ -5,6 +5,7 @@ import { SourceListResponse } from '@/lib/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -107,6 +108,42 @@ function getSourceType(source: SourceListResponse): 'link' | 'upload' | 'text' {
   return 'text'
 }
 
+function readNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function clampProgress(value: number): number {
+  return Math.min(100, Math.max(0, value))
+}
+
+function getProgressPercent(info: Record<string, unknown> | undefined): number | null {
+  if (!info) return null
+
+  const directProgress =
+    readNumber(info.progress) ??
+    readNumber(info.percentage) ??
+    readNumber(info.percent)
+  if (directProgress !== null) {
+    return clampProgress(directProgress)
+  }
+
+  const processed =
+    readNumber(info.processed) ??
+    readNumber(info.processed_items) ??
+    readNumber(info.completed)
+  const total =
+    readNumber(info.total) ??
+    readNumber(info.total_items)
+
+  if (processed === null || total === null || total <= 0) return null
+  return clampProgress((processed / total) * 100)
+}
+
 export function SourceCard({
   source,
   onClick,
@@ -200,8 +237,17 @@ export function SourceCard({
   
    const title = source.title || t('sources.untitledSource')
 
+  const isProcessing: boolean = currentStatus === 'new' || currentStatus === 'running' || currentStatus === 'queued'
+  const isFailed: boolean = currentStatus === 'failed'
+  const isCompleted: boolean = currentStatus === 'completed'
+  const isFileUnavailable = sourceType === 'upload' && source.file_available === false
+  const hasNoExtractedText = isCompleted && source.extraction_quality === 'no_text'
+  const hasLowExtractedText = isCompleted && source.extraction_quality === 'low_text'
+  const canRetry = !isFileUnavailable
+  const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
+
   const handleRetry = () => {
-    if (onRetry) {
+    if (onRetry && canRetry) {
       onRetry(source.id)
     }
   }
@@ -223,10 +269,6 @@ export function SourceCard({
       onClick(source.id)
     }
   }
-
-  const isProcessing: boolean = currentStatus === 'new' || currentStatus === 'running' || currentStatus === 'queued'
-  const isFailed: boolean = currentStatus === 'failed'
-  const isCompleted: boolean = currentStatus === 'completed'
 
   return (
     <Card
@@ -292,6 +334,36 @@ export function SourceCard({
                 <SourceTypeIcon className="h-3 w-3" />
                 {sourceType === 'link' ? t('sources.addUrl') : sourceType === 'upload' ? t('sources.uploadFile') : t('sources.enterText')}
               </Badge>
+
+              {isFileUnavailable && (
+                <Badge
+                  variant="outline"
+                  className="text-xs flex items-center gap-1 border-destructive/50 text-destructive"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('sources.fileUnavailable')}
+                </Badge>
+              )}
+
+              {hasNoExtractedText && (
+                <Badge
+                  variant="outline"
+                  className="text-xs flex items-center gap-1 border-destructive/50 text-destructive"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('sources.noExtractedText')}
+                </Badge>
+              )}
+
+              {hasLowExtractedText && (
+                <Badge
+                  variant="outline"
+                  className="text-xs flex items-center gap-1 border-amber-500/60 text-amber-700 dark:text-amber-300"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('sources.lowExtractedText')}
+                </Badge>
+              )}
 
               {isCompleted && source.insights_count > 0 && (
                 <Badge variant="outline" className="text-xs">
@@ -362,7 +434,7 @@ export function SourceCard({
                       e.stopPropagation()
                       handleRetry()
                     }}
-                    disabled={!onRetry}
+                    disabled={!onRetry || !canRetry}
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
                     {t('sources.retryProcessing')}
@@ -386,14 +458,16 @@ export function SourceCard({
           </DropdownMenu>
           </div>
         </div>
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {(isFailed as any) && (
+        {isFailed && (
           <div className="flex gap-2 pt-2 border-t">
             <Button
               variant="outline"
               size="sm"
-              onClick={handleRetry}
-              disabled={!onRetry}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleRetry()
+              }}
+              disabled={!onRetry || !canRetry}
               className="h-7 text-xs"
             >
               <RefreshCw className="h-3 w-3 mr-1" />
@@ -403,20 +477,15 @@ export function SourceCard({
         )}
 
         {/* Processing progress indicator */}
-        {isProcessing && statusData?.processing_info?.progress && (
+        {isProcessing && progressPercent !== null && (
           <div className="mt-3 pt-2 border-t">
             <div className="flex justify-between items-center mb-1">
-            <span className="text-xs text-muted-foreground">{t('common.progress')}</span>
+              <span className="text-xs text-muted-foreground">{t('common.progress')}</span>
               <span className="text-xs text-muted-foreground">
-                {Math.round(statusData.processing_info.progress as number)}%
+                {Math.round(progressPercent)}%
               </span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <div
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                style={{ width: `${statusData.processing_info.progress as number}%` }}
-              />
-            </div>
+            <Progress value={progressPercent} className="h-1.5" />
           </div>
         )}
       </CardContent>

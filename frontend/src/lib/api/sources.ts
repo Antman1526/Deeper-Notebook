@@ -58,9 +58,9 @@ export const sourcesApi = {
       formData.append('file', dataWithFile.file)
     }
     
-    formData.append('embed', String(data.embed ?? false))
+    formData.append('embed', String(data.embed ?? true))
     formData.append('delete_source', String(data.delete_source ?? false))
-    formData.append('async_processing', String(data.async_processing ?? false))
+    formData.append('async_processing', String(data.async_processing ?? true))
     
     const response = await apiClient.post<SourceResponse>('/sources', formData)
     return response.data
@@ -83,8 +83,11 @@ export const sourcesApi = {
   upload: async (file: File, notebook_id: string) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('notebooks', JSON.stringify([notebook_id]))
     formData.append('notebook_id', notebook_id)
     formData.append('type', 'upload')
+    formData.append('embed', 'true')
+    formData.append('delete_source', 'false')
     formData.append('async_processing', 'true')
     
     const response = await apiClient.post<SourceResponse>('/sources', formData, {
