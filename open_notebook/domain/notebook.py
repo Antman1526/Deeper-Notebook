@@ -576,6 +576,10 @@ class Source(ObjectModel):
     asset: Optional[Asset] = None
     title: Optional[str] = None
     topics: Optional[list[str]] = Field(default_factory=list)
+    provenance: Optional[dict[str, Any]] = Field(default_factory=dict)
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = None
     full_text: Optional[str] = None
     command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands processing job"

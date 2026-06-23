@@ -8,7 +8,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Plus } from 'lucide-react'
+import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Plus, Share2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -240,15 +240,29 @@ export default function SourcesPage() {
   }
 
   const getSourceIcon = (source: SourceListResponse) => {
+    if (source.source_type === 'web_import') return <LinkIcon className="h-4 w-4" />
+    if (source.source_type === 'deep_research_report') return <FileText className="h-4 w-4" />
     if (source.asset?.url) return <LinkIcon className="h-4 w-4" />
     if (source.asset?.file_path) return <Upload className="h-4 w-4" />
     return <AlignLeft className="h-4 w-4" />
   }
 
   const getSourceType = (source: SourceListResponse) => {
+    if (source.source_type === 'web_import') return 'Web import'
+    if (source.source_type === 'deep_research_report') return 'Deep research'
     if (source.asset?.url) return t('sources.type.link')
     if (source.asset?.file_path) return t('sources.type.file')
     return t('sources.type.text')
+  }
+
+  const getProvenanceLabel = (source: SourceListResponse) => {
+    const provenance = source.provenance ?? {}
+    const value =
+      provenance.domain ??
+      provenance.original_filename ??
+      provenance.file_name ??
+      provenance.origin
+    return typeof value === 'string' && value.trim() ? value.trim() : null
   }
 
   const handleRowClick = useCallback((index: number, sourceId: string) => {
@@ -427,6 +441,26 @@ export default function SourcesPage() {
                           {source.asset.url}
                         </span>
                       )}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {(source.is_shared || (source.notebook_count ?? 0) > 1) && (
+                          <Badge variant="outline" className="gap-1 text-[11px]">
+                            <Share2 className="h-3 w-3" />
+                            {(source.notebook_count ?? 0) > 1
+                              ? `Shared with ${source.notebook_count}`
+                              : 'Shared'}
+                          </Badge>
+                        )}
+                        {getProvenanceLabel(source) && (
+                          <Badge variant="outline" className="max-w-[180px] truncate text-[11px]">
+                            {getProvenanceLabel(source)}
+                          </Badge>
+                        )}
+                        {source.topics?.slice(0, 2).map((topic) => (
+                          <Badge key={topic} variant="outline" className="text-[11px]">
+                            {topic}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </td>
                   <td className="h-12 px-4 text-muted-foreground text-sm hidden sm:table-cell">

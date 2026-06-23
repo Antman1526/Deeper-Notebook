@@ -24,7 +24,8 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
-  Unlink
+  Unlink,
+  Share2
 } from 'lucide-react'
 import { useSourceStatus } from '@/lib/hooks/use-sources'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -50,6 +51,8 @@ const SOURCE_TYPE_ICONS = {
   link: ExternalLink,
   upload: Upload,
   text: FileText,
+  web_import: ExternalLink,
+  deep_research_report: FileText,
 } as const
 
 const getStatusConfig = (t: TFunction) => ({
@@ -101,11 +104,44 @@ function isSourceStatus(status: unknown): status is SourceStatus {
   return typeof status === 'string' && ['new', 'queued', 'running', 'completed', 'failed'].includes(status)
 }
 
-function getSourceType(source: SourceListResponse): 'link' | 'upload' | 'text' {
+type SourceType = keyof typeof SOURCE_TYPE_ICONS
+
+function getSourceType(source: SourceListResponse): SourceType {
+  if (source.source_type && source.source_type in SOURCE_TYPE_ICONS) {
+    return source.source_type as SourceType
+  }
   // Determine type based on asset information
   if (source.asset?.url) return 'link'
   if (source.asset?.file_path) return 'upload'
   return 'text'
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function fileNameFromPath(path: string | undefined): string | null {
+  if (!path) return null
+  return path.split('/').filter(Boolean).at(-1) ?? null
+}
+
+function getSourceTypeLabel(sourceType: SourceType, t: TFunction): string {
+  if (sourceType === 'link') return t('sources.addUrl')
+  if (sourceType === 'upload') return t('sources.uploadFile')
+  if (sourceType === 'web_import') return 'Web import'
+  if (sourceType === 'deep_research_report') return 'Deep research'
+  return t('sources.enterText')
+}
+
+function getProvenanceLabel(source: SourceListResponse): string | null {
+  const provenance = source.provenance ?? {}
+  return (
+    readString(provenance.domain) ??
+    readString(provenance.original_filename) ??
+    readString(provenance.file_name) ??
+    fileNameFromPath(source.asset?.file_path) ??
+    readString(provenance.origin)
+  )
 }
 
 function readNumber(value: unknown): number | null {
@@ -245,6 +281,9 @@ export function SourceCard({
   const hasLowExtractedText = isCompleted && source.extraction_quality === 'low_text'
   const canRetry = !isFileUnavailable
   const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
+  const notebookCount = source.notebook_count ?? 0
+  const isShared = source.is_shared || notebookCount > 1
+  const provenanceLabel = getProvenanceLabel(source)
 
   const handleRetry = () => {
     if (onRetry && canRetry) {
@@ -332,8 +371,21 @@ export function SourceCard({
               {/* Source type badge */}
               <Badge variant="secondary" className="text-xs flex items-center gap-1">
                 <SourceTypeIcon className="h-3 w-3" />
-                {sourceType === 'link' ? t('sources.addUrl') : sourceType === 'upload' ? t('sources.uploadFile') : t('sources.enterText')}
+                {getSourceTypeLabel(sourceType, t)}
               </Badge>
+
+              {isShared && (
+                <Badge variant="outline" className="text-xs flex items-center gap-1">
+                  <Share2 className="h-3 w-3" />
+                  {notebookCount > 1 ? `Shared with ${notebookCount}` : 'Shared'}
+                </Badge>
+              )}
+
+              {provenanceLabel && (
+                <Badge variant="outline" className="text-xs max-w-[180px] truncate">
+                  {provenanceLabel}
+                </Badge>
+              )}
 
               {isFileUnavailable && (
                 <Badge
