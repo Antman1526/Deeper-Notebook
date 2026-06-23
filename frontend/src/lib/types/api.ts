@@ -22,6 +22,10 @@ export interface SourceListResponse {
   id: string
   title: string | null
   topics?: string[]                  // Make optional to match Python API
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report' | string | null
+  notebook_count?: number
+  is_shared?: boolean
   asset: {
     file_path?: string
     url?: string
@@ -122,6 +126,9 @@ export interface CreateSourceRequest {
   file_path?: string
   content?: string
   title?: string
+  topics?: string[]
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report'
   transformations?: string[]
   embed?: boolean
   delete_source?: boolean
@@ -137,9 +144,9 @@ export interface UpdateNoteRequest {
 
 export interface UpdateSourceRequest {
   title?: string
-  type?: 'link' | 'upload' | 'text'
-  url?: string
-  content?: string
+  topics?: string[]
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report'
 }
 
 export interface APIError {

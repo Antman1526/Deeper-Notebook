@@ -184,6 +184,32 @@ describe('SourceCard', () => {
     expect(screen.getByText('sources.noExtractedText')).toBeInTheDocument()
   })
 
+  it('shows source labels, provenance, and shared notebook state', () => {
+    mockUseSourceStatus.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    })
+
+    render(
+      <SourceCard
+        source={source({
+          id: 'source:shared',
+          command_id: undefined,
+          status: 'completed',
+          topics: ['training', 'policy'],
+          provenance: { domain: 'academy.example.com' },
+          notebook_count: 3,
+          is_shared: true,
+        })}
+      />
+    )
+
+    expect(screen.getByText('Shared with 3')).toBeInTheDocument()
+    expect(screen.getByText('academy.example.com')).toBeInTheDocument()
+    expect(screen.getByText('training')).toBeInTheDocument()
+    expect(screen.getByText('policy')).toBeInTheDocument()
+  })
+
   it('does not retry a failed upload when the original file is unavailable', () => {
     mockUseSourceStatus.mockReturnValue({
       data: {

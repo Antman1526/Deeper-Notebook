@@ -73,6 +73,49 @@ class TestAsyncSourceAssetPersistence:
     @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_async_source_persists_labels_and_provenance(
+        self, mock_nb_get, mock_add_nb, mock_submit, client
+    ):
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        saved_sources = []
+
+        async def capture_save(self_source):
+            saved_sources.append(self_source)
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with patch.object(Source, "save", autospec=True, side_effect=capture_save):
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "link",
+                    "url": "https://academy.example.com/lesson",
+                    "notebooks": '["notebook:1", "notebook:2"]',
+                    "topics": '["training", "policy", "training"]',
+                    "provenance": '{"origin": "training_builder"}',
+                    "async_processing": "true",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["topics"] == ["training", "policy"]
+        assert body["provenance"]["origin"] == "training_builder"
+        assert body["provenance"]["domain"] == "academy.example.com"
+        assert body["notebook_count"] == 2
+        assert body["is_shared"] is True
+
+        source = saved_sources[0]
+        assert source.topics == ["training", "policy"]
+        assert source.provenance["origin"] == "training_builder"
+        assert source.source_type == "link"
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_legacy_notebook_id_links_and_queues_source(
         self, mock_nb_get, mock_add_nb, mock_submit, client
     ):

@@ -17,6 +17,9 @@ export const sourcesApi = {
     offset?: number
     sort_by?: 'created' | 'updated'
     sort_order?: 'asc' | 'desc'
+    label?: string
+    source_type?: string
+    origin?: string
   }) => {
     const response = await apiClient.get<SourceListResponse[]>('/sources', { params })
     return response.data
@@ -42,6 +45,15 @@ export const sourcesApi = {
     }
     if (data.title) {
       formData.append('title', data.title)
+    }
+    if (data.topics !== undefined) {
+      formData.append('topics', JSON.stringify(data.topics))
+    }
+    if (data.provenance !== undefined) {
+      formData.append('provenance', JSON.stringify(data.provenance))
+    }
+    if (data.source_type) {
+      formData.append('source_type', data.source_type)
     }
     if (data.url) {
       formData.append('url', data.url)

@@ -94,8 +94,9 @@ async def content_process(state: SourceState) -> dict:
     url = content_state.get("url")
     if content_state.get("url_engine") == "crawl4ai" and url:
         # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
-        from open_notebook.utils.crawler import extract_url_with_crawl4ai
         from content_core.common.state import ProcessSourceOutput
+
+        from open_notebook.utils.crawler import extract_url_with_crawl4ai
 
         content = await extract_url_with_crawl4ai(url)
         if content:
@@ -138,6 +139,24 @@ async def save_source(state: SourceState) -> dict:
     # Update the source with processed content
     source.asset = Asset(url=content_state.url, file_path=content_state.file_path)
     source.full_text = content_state.content
+    extraction_provenance = {
+        key: value
+        for key, value in {
+            "content_source_type": getattr(content_state, "source_type", None),
+            "identified_type": getattr(content_state, "identified_type", None),
+            "extractor": "content_core",
+            "url": getattr(content_state, "url", None),
+            "file_path": getattr(content_state, "file_path", None),
+        }.items()
+        if value is not None
+    }
+    content_metadata = getattr(content_state, "metadata", None)
+    if isinstance(content_metadata, dict):
+        extraction_provenance["content_metadata"] = content_metadata
+    source.provenance = {
+        **(source.provenance or {}),
+        "extraction": extraction_provenance,
+    }
 
     # Preserve user-set title; only overwrite placeholder or empty titles
     if content_state.title and (not source.title or source.title == "Processing..."):

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from typing import Optional
-from loguru import logger
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
 
 from content_core import extract_content
+from langchain_core.tools import StructuredTool
+from loguru import logger
+from pydantic import BaseModel, Field
+
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
+
 
 class AddWebSourceInput(BaseModel):
     url: str = Field(..., description="The URL of the web search result/page to import into the notebook.")
@@ -41,8 +43,9 @@ def build_add_web_source_tool(notebook_id: str, captures: list | None = None) ->
             }
 
             # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
-            from open_notebook.utils.crawler import extract_url_with_crawl4ai
             from content_core.common.state import ProcessSourceOutput
+
+            from open_notebook.utils.crawler import extract_url_with_crawl4ai
 
             processed_state = None
             if url_engine == "crawl4ai":
@@ -63,6 +66,15 @@ def build_add_web_source_tool(notebook_id: str, captures: list | None = None) ->
                 raise ValueError("Could not extract any text content from the URL.")
 
             final_title = title or processed_state.title or "Imported Web Source"
+            extraction_provenance = {
+                key: value
+                for key, value in {
+                    "content_source_type": getattr(processed_state, "source_type", None),
+                    "identified_type": getattr(processed_state, "identified_type", None),
+                    "extractor": "content_core",
+                }.items()
+                if value is not None
+            }
             
             # Create the source record
             source = Source(
@@ -70,6 +82,12 @@ def build_add_web_source_tool(notebook_id: str, captures: list | None = None) ->
                 topics=[],
                 asset=Asset(url=url),
                 full_text=processed_state.content,
+                provenance={
+                    "origin": "web_import",
+                    "url": url,
+                    "extraction": extraction_provenance,
+                },
+                source_type="web_import",
             )
             await source.save()
             

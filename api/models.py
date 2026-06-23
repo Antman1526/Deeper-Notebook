@@ -359,6 +359,15 @@ class SourceCreate(BaseModel):
     file_path: Optional[str] = Field(None, description="File path for upload type")
     content: Optional[str] = Field(None, description="Text content for text type")
     title: Optional[str] = Field(None, description="Source title")
+    topics: Optional[list[str]] = Field(
+        default_factory=list, description="User-visible labels for the source"
+    )
+    provenance: Optional[dict[str, Any]] = Field(
+        default_factory=dict, description="Source origin and ingest details"
+    )
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = Field(None, description="Normalized source type for filtering and display")
     transformations: Optional[list[str]] = Field(
         default_factory=list, description="Transformation IDs to apply"
     )
@@ -394,6 +403,10 @@ class SourceCreate(BaseModel):
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[list[str]] = Field(None, description="Source topics")
+    provenance: Optional[dict[str, Any]] = Field(None, description="Source provenance")
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = Field(None, description="Normalized source type")
 
 
 # v0.7.181 — SourceResponse / SourceListResponse shape reconciliation.
@@ -423,6 +436,10 @@ class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
     topics: Optional[list[str]]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    source_type: Optional[str] = None
+    notebook_count: int = 0
+    is_shared: bool = False
     asset: Optional[AssetModel]
     full_text: Optional[str]
     embedded: bool
@@ -454,6 +471,10 @@ class SourceListResponse(BaseModel):
     id: str
     title: Optional[str]
     topics: Optional[list[str]]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    source_type: Optional[str] = None
+    notebook_count: int = 0
+    is_shared: bool = False
     asset: Optional[AssetModel]
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
