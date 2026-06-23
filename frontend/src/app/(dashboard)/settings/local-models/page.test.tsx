@@ -1684,6 +1684,7 @@ describe('LocalModelsPage', () => {
       {
         repo_id: 'bartowski/Qwen2.5-7B-Instruct-GGUF',
         filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+        target_path: '/tmp/models/GGUF/bartowski__Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
       },
     ))
   })

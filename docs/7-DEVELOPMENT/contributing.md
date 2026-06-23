@@ -132,16 +132,14 @@ git push origin feature/amazing-new-feature
 ### Keeping Your Fork Updated
 
 ```bash
-# Fetch upstream changes
-git fetch upstream
-
-# Switch to main and merge
-git checkout main
-git merge upstream/main
-
-# Push to your fork
-git push origin main
+# Use the Plus upstream guard. It snapshots local work, creates a separate
+# integration worktree, and writes merge review reports.
+scripts/upstream_sync_guard.sh prepare
 ```
+
+Do not merge `upstream/main` directly into `main` or `desktop-app`. Follow
+[Safe Upstream Sync](./upstream-sync.md), review the generated report files,
+then merge the integration branch only after Plus checks pass.
 
 ## Pull Request Process
 

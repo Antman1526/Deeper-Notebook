@@ -289,15 +289,14 @@ git push origin feature/my-feature
 ### Updating from Upstream
 
 ```bash
-# Fetch latest changes
-git fetch upstream
-
-# Rebase your branch
-git rebase upstream/main
-
-# Push updated branch
-git push origin feature/my-feature -f
+# Open Notebook Plus keeps desktop, Studio, source-ingestion, and
+# local-model changes that must be reviewed before accepting upstream code.
+# Use the guarded workflow instead of rebasing directly:
+scripts/upstream_sync_guard.sh prepare
 ```
+
+See [Safe Upstream Sync](./upstream-sync.md) for the full review flow and
+required report files.
 
 ## Troubleshooting
 
