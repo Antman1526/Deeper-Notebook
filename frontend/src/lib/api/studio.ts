@@ -8,6 +8,29 @@
 import apiClient from './client'
 
 export type StudioMode = 'notebook' | 'podcast'
+export type StudioArtifactType =
+  | 'report'
+  | 'study_guide'
+  | 'course_pack'
+  | 'training_guide'
+  | 'briefing'
+  | 'faq'
+  | 'flashcards'
+  | 'quiz'
+  | 'mind_map'
+  | 'timeline'
+  | 'infographic'
+  | 'slide_deck'
+  | 'podcast_outline'
+  | 'podcast_audio'
+  | 'research_run'
+
+export type StudioArtifactStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
 
 export interface StudioGenerateOptions {
   /** One or more files to ingest. Must be at least 1. */
@@ -34,6 +57,90 @@ export interface StudioGenerateResponse {
   /** Non-fatal issues during ingestion (e.g. one of several files
    *  couldn't be parsed). Frontend surfaces these as warnings. */
   warnings: string[]
+}
+
+export interface StudioArtifact {
+  id: string
+  notebook_id: string
+  artifact_type: StudioArtifactType
+  title: string
+  status: StudioArtifactStatus
+  source_ids: string[]
+  prompt?: string | null
+  model_id?: string | null
+  provider?: string | null
+  output_format?: string | null
+  output_payload: Record<string, unknown>
+  citations: Array<Record<string, unknown>>
+  export_paths: Record<string, string>
+  revision_of_id?: string | null
+  created?: string | null
+  updated?: string | null
+}
+
+export interface StudioArtifactCreate {
+  notebook_id: string
+  artifact_type: StudioArtifactType
+  title: string
+  source_ids?: string[]
+  prompt?: string | null
+  model_id?: string | null
+  provider?: string | null
+  output_format?: string | null
+  revision_of_id?: string | null
+}
+
+export interface StudioArtifactUpdate {
+  title?: string
+  status?: StudioArtifactStatus
+  source_ids?: string[]
+  prompt?: string | null
+  model_id?: string | null
+  provider?: string | null
+  output_format?: string | null
+  output_payload?: Record<string, unknown>
+  citations?: Array<Record<string, unknown>>
+  export_paths?: Record<string, string>
+  revision_of_id?: string | null
+}
+
+export interface StudioArtifactDeleteResponse {
+  deleted: boolean
+  id: string
+}
+
+export type StudioWorkflowRunStatus =
+  | 'queued'
+  | 'running'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface StudioWorkflowStep {
+  id: string
+  label: string
+  status: string
+}
+
+export interface StudioWorkflowRun {
+  id: string
+  artifact_id: string
+  notebook_id: string
+  title: string
+  status: StudioWorkflowRunStatus
+  source_ids: string[]
+  approval_required: boolean
+  steps: StudioWorkflowStep[]
+  command_id?: string | null
+  created?: string | null
+  updated?: string | null
+}
+
+export interface StudioWorkflowRunCreate {
+  title: string
+  source_ids?: string[]
+  approval_required?: boolean
 }
 
 export const studioApi = {
@@ -78,6 +185,82 @@ export const studioApi = {
     const response = await apiClient.post<StudioGenerateResponse>(
       '/studio/generate',
       formData,
+    )
+    return response.data
+  },
+  listArtifacts: async (notebookId: string): Promise<StudioArtifact[]> => {
+    const response = await apiClient.get<StudioArtifact[]>(
+      `/studio/notebooks/${encodeURIComponent(notebookId)}/artifacts`,
+      { headers: { 'x-skip-error-toast': '1' } },
+    )
+    return response.data
+  },
+  listArtifactRevisions: async (artifactId: string): Promise<StudioArtifact[]> => {
+    const response = await apiClient.get<StudioArtifact[]>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}/revisions`,
+      { headers: { 'x-skip-error-toast': '1' } },
+    )
+    return response.data
+  },
+  createArtifact: async (
+    payload: StudioArtifactCreate,
+  ): Promise<StudioArtifact> => {
+    const response = await apiClient.post<StudioArtifact>(
+      '/studio/artifacts',
+      payload,
+    )
+    return response.data
+  },
+  updateArtifact: async (
+    artifactId: string,
+    payload: StudioArtifactUpdate,
+  ): Promise<StudioArtifact> => {
+    const response = await apiClient.patch<StudioArtifact>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}`,
+      payload,
+    )
+    return response.data
+  },
+  deleteArtifact: async (
+    artifactId: string,
+  ): Promise<StudioArtifactDeleteResponse> => {
+    const response = await apiClient.delete<StudioArtifactDeleteResponse>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}`,
+    )
+    return response.data
+  },
+  generateArtifact: async (
+    artifactId: string,
+  ): Promise<StudioArtifact> => {
+    const response = await apiClient.post<StudioArtifact>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}/generate`,
+    )
+    return response.data
+  },
+  createWorkflowRun: async (
+    artifactId: string,
+    payload: StudioWorkflowRunCreate,
+  ): Promise<StudioWorkflowRun> => {
+    const response = await apiClient.post<StudioWorkflowRun>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}/workflow-runs`,
+      payload,
+    )
+    return response.data
+  },
+  listWorkflowRuns: async (
+    artifactId: string,
+  ): Promise<StudioWorkflowRun[]> => {
+    const response = await apiClient.get<StudioWorkflowRun[]>(
+      `/studio/artifacts/${encodeURIComponent(artifactId)}/workflow-runs`,
+      { headers: { 'x-skip-error-toast': '1' } },
+    )
+    return response.data
+  },
+  approveWorkflowRun: async (
+    runId: string,
+  ): Promise<StudioWorkflowRun> => {
+    const response = await apiClient.post<StudioWorkflowRun>(
+      `/studio/workflow-runs/${encodeURIComponent(runId)}/approve`,
     )
     return response.data
   },

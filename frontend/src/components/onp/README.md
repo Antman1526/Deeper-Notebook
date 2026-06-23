@@ -66,6 +66,12 @@ switches themes.
 | File | What |
 |---|---|
 | `ReasoningSlotCard.tsx` | Polished card explaining what the v0.5 reasoning slot is — example of the pattern (small, self-contained, uses tokens). |
+| `SourceHealthPill.tsx` | Reusable source readiness badge for Evidence Studio and future source health surfaces. |
+| `ModelFleetBadge.tsx` | Reusable local model runtime badge for GGUF, MLX, and future local providers. |
+| `CitationCoverageBadge.tsx` | Reusable citation-count badge for artifact and trust surfaces. |
+| `CitationDrawer.tsx` | Focused evidence panel for inspecting citation previews, source IDs, locations, and source-record jumps. |
+| `StudyArtifactViewers.tsx` | Interactive flashcard and quiz viewers for Evidence Studio markdown artifacts. |
+| `RunTimeline.tsx` | Compact Claude Code-style run inspector for notebook chat context, routing, MCP, privacy, and agent state. |
 
 ## Adding a new shadow component
 

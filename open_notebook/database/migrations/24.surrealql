@@ -1,0 +1,18 @@
+-- v0.8.70 — Evidence Studio workflow run history.
+-- Keeps user-visible run state separate from generated artifact snapshots.
+DEFINE TABLE IF NOT EXISTS studio_workflow_run SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE studio_workflow_run TYPE record<studio_artifact>;
+DEFINE FIELD IF NOT EXISTS notebook_id ON TABLE studio_workflow_run TYPE record<notebook>;
+DEFINE FIELD IF NOT EXISTS title ON TABLE studio_workflow_run TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE studio_workflow_run TYPE string DEFAULT "queued";
+DEFINE FIELD IF NOT EXISTS source_ids ON TABLE studio_workflow_run TYPE array<record<source>> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS approval_required ON TABLE studio_workflow_run TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS steps ON TABLE studio_workflow_run FLEXIBLE TYPE array<object> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS command_id ON TABLE studio_workflow_run TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE studio_workflow_run DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE studio_workflow_run DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_studio_workflow_run_artifact ON TABLE studio_workflow_run COLUMNS artifact_id;
+DEFINE INDEX IF NOT EXISTS idx_studio_workflow_run_notebook ON TABLE studio_workflow_run COLUMNS notebook_id;
+DEFINE INDEX IF NOT EXISTS idx_studio_workflow_run_status ON TABLE studio_workflow_run COLUMNS status;

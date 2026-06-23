@@ -7,7 +7,6 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
 
-
 # v0.7.133 — Notebook delete bulk-SQL threshold (Area for Review #4).
 _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD = 25
 
@@ -630,6 +629,7 @@ class Source(ObjectModel):
                 "started_at": execution_metadata.get("started_at"),
                 "completed_at": execution_metadata.get("completed_at"),
                 "error": getattr(status_result, "error_message", None),
+                "progress": getattr(status_result, "progress", None),
                 "result": result,
             }
         except Exception as e:
@@ -1168,6 +1168,148 @@ class Note(ObjectModel):
             else:
                 trimmed = cut
         return trimmed.rstrip() + " […]"
+
+
+StudioArtifactType = Literal[
+    "report",
+    "study_guide",
+    "briefing",
+    "faq",
+    "flashcards",
+    "quiz",
+    "mind_map",
+    "timeline",
+    "infographic",
+    "slide_deck",
+    "podcast_outline",
+    "podcast_audio",
+    "research_run",
+]
+
+StudioArtifactStatus = Literal[
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+]
+
+StudioWorkflowRunStatus = Literal[
+    "queued",
+    "awaiting_approval",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+]
+
+
+class StudioArtifact(ObjectModel):
+    table_name: ClassVar[str] = "studio_artifact"
+    nullable_fields: ClassVar[set[str]] = {"revision_of_id"}
+
+    notebook_id: str
+    artifact_type: StudioArtifactType
+    title: str
+    status: StudioArtifactStatus = "pending"
+    source_ids: list[str] = Field(default_factory=list)
+    prompt: Optional[str] = None
+    model_id: Optional[str] = None
+    provider: Optional[str] = None
+    output_format: Optional[str] = None
+    output_payload: dict[str, Any] = Field(default_factory=dict)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    export_paths: dict[str, str] = Field(default_factory=dict)
+    revision_of_id: Optional[str] = None
+
+    def _prepare_save_data(self) -> dict[str, Any]:
+        data = super()._prepare_save_data()
+        data["notebook_id"] = ensure_record_id(self.notebook_id)
+        data["source_ids"] = [ensure_record_id(source_id) for source_id in self.source_ids]
+        if self.revision_of_id is not None:
+            data["revision_of_id"] = ensure_record_id(self.revision_of_id)
+        return data
+
+    @classmethod
+    async def get_for_notebook(cls, notebook_id: str) -> list["StudioArtifact"]:
+        if not notebook_id:
+            raise InvalidInputError("Notebook ID must be provided")
+        try:
+            rows = await repo_query(
+                """
+                SELECT * FROM studio_artifact
+                WHERE notebook_id = $notebook_id
+                AND revision_of_id = NONE
+                ORDER BY updated DESC
+                """,
+                {"notebook_id": ensure_record_id(notebook_id)},
+            )
+            return [cls(**row) for row in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching Studio artifacts for {notebook_id}: {e}")
+            logger.exception(e)
+            raise DatabaseOperationError(e)
+
+    @classmethod
+    async def get_revisions(cls, artifact_id: str) -> list["StudioArtifact"]:
+        if not artifact_id:
+            raise InvalidInputError("Artifact ID must be provided")
+        try:
+            rows = await repo_query(
+                """
+                SELECT * FROM studio_artifact
+                WHERE revision_of_id = $artifact_id
+                ORDER BY updated DESC
+                """,
+                {"artifact_id": ensure_record_id(artifact_id)},
+            )
+            return [cls(**row) for row in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching Studio artifact revisions for {artifact_id}: {e}")
+            logger.exception(e)
+            raise DatabaseOperationError(e)
+
+
+class StudioWorkflowRun(ObjectModel):
+    table_name: ClassVar[str] = "studio_workflow_run"
+    nullable_fields: ClassVar[set[str]] = {"command_id"}
+
+    artifact_id: str
+    notebook_id: str
+    title: str
+    status: StudioWorkflowRunStatus = "queued"
+    source_ids: list[str] = Field(default_factory=list)
+    approval_required: bool = False
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    command_id: Optional[str] = None
+
+    def _prepare_save_data(self) -> dict[str, Any]:
+        data = super()._prepare_save_data()
+        data["artifact_id"] = ensure_record_id(self.artifact_id)
+        data["notebook_id"] = ensure_record_id(self.notebook_id)
+        data["source_ids"] = [ensure_record_id(source_id) for source_id in self.source_ids]
+        if self.command_id is not None:
+            data["command_id"] = ensure_record_id(self.command_id)
+        return data
+
+    @classmethod
+    async def get_for_artifact(cls, artifact_id: str) -> list["StudioWorkflowRun"]:
+        if not artifact_id:
+            raise InvalidInputError("Artifact ID must be provided")
+        try:
+            rows = await repo_query(
+                """
+                SELECT * FROM studio_workflow_run
+                WHERE artifact_id = $artifact_id
+                ORDER BY updated DESC
+                """,
+                {"artifact_id": ensure_record_id(artifact_id)},
+            )
+            return [cls(**row) for row in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching Studio workflow runs for {artifact_id}: {e}")
+            logger.exception(e)
+            raise DatabaseOperationError(e)
 
 
 class ChatSession(ObjectModel):

@@ -11,6 +11,7 @@ import { useNotebook } from '@/lib/hooks/use-notebooks'
 import { useNotebookSources } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { ArtifactRail } from '@/components/onp'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -178,6 +179,12 @@ export default function NotebookPage() {
         </div>
 
         <div className="flex-1 px-6 pt-8 pb-6 overflow-x-auto flex flex-col">
+          <ArtifactRail
+            notebookId={notebookId}
+            sources={sources}
+            sourcesLoading={sourcesLoading}
+          />
+
           {/* Mobile: Tabbed interface - only render on mobile to avoid double-mounting */}
           {!isDesktop && (
             <>
