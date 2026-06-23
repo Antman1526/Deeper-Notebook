@@ -17,6 +17,7 @@ export type StudioArtifactType =
   | 'faq'
   | 'flashcards'
   | 'quiz'
+  | 'data_table'
   | 'mind_map'
   | 'timeline'
   | 'infographic'

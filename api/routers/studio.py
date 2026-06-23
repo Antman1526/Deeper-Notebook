@@ -38,11 +38,13 @@ Flow:
 from __future__ import annotations
 
 import asyncio  # v0.7.92 / v0.7.93 — wait_for + gather for parallel pages + timeouts
+import csv
 import html
 import json
 import os
 import re
 import zipfile
+from io import StringIO
 from pathlib import Path
 from typing import List, Optional
 
@@ -240,6 +242,13 @@ _ARTIFACT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "Create a source-grounded quiz in markdown with multiple-choice questions, "
         "an answer key, and short explanations tied to the cited sources."
     ),
+    "data_table": (
+        "Create a source-grounded Data Table in markdown. Return one concise "
+        "markdown table with columns for Topic, Evidence, Source, Confidence, "
+        "and Notes. Every evidence cell must include a source marker such as "
+        "[S1]. Prefer comparable facts, dates, claims, numbers, entities, or "
+        "decisions that help a reader scan the sources like a spreadsheet."
+    ),
     "mind_map": (
         "Create a source-grounded mind map as a nested markdown outline. Start "
         "with a central concept, group related branches beneath it, name the "
@@ -290,6 +299,7 @@ _ARTIFACT_TYPE_MODEL_ROLE: dict[str, str] = {
     "briefing": "source_synthesis",
     "faq": "source_synthesis",
     "timeline": "source_synthesis",
+    "data_table": "source_synthesis",
     "mind_map": "source_synthesis",
     "infographic": "source_synthesis",
     "slide_deck": "source_synthesis",
@@ -539,6 +549,63 @@ def _research_run_stages(content: str) -> list[dict[str, object]]:
     return stages
 
 
+def _split_markdown_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return []
+    cells = stripped.strip("|").split("|")
+    return [_strip_artifact_markdown_line(cell).strip() for cell in cells]
+
+
+def _is_markdown_table_separator(cells: list[str]) -> bool:
+    if not cells:
+        return False
+    return all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells)
+
+
+def _data_table_rows(content: str) -> list[dict[str, str]]:
+    header: list[str] = []
+    rows: list[dict[str, str]] = []
+
+    for raw_line in content.splitlines():
+        cells = _split_markdown_table_row(raw_line)
+        if not cells:
+            if rows:
+                break
+            continue
+        if _is_markdown_table_separator(cells):
+            continue
+        if not header:
+            header = [cell or f"Column {index + 1}" for index, cell in enumerate(cells)]
+            continue
+        normalized = {
+            header[index] if index < len(header) else f"Column {index + 1}": cell
+            for index, cell in enumerate(cells)
+        }
+        if any(value for value in normalized.values()):
+            rows.append(normalized)
+
+    return rows
+
+
+def _data_table_csv(content: str) -> str:
+    rows = _data_table_rows(content)
+    if not rows:
+        return ""
+
+    headers: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in headers:
+                headers.append(key)
+
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=headers)
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
+
+
 def _markdown_heading_level(line: str) -> int:
     match = re.match(r"^(#{1,6})\s+", line.strip())
     return len(match.group(1)) if match else 0
@@ -660,6 +727,10 @@ def _course_pack_assessment_markdown(content: str) -> str:
 
 def _artifact_output_payload(artifact: StudioArtifact, content: str) -> dict[str, object]:
     payload: dict[str, object] = {"content": content}
+    if artifact.artifact_type == "data_table":
+        rows = _data_table_rows(content)
+        if rows:
+            payload["data_table_rows"] = rows
     if artifact.artifact_type == "research_run":
         stages = _research_run_stages(content)
         if stages:
@@ -864,8 +935,14 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
             "scorm_package": str(scorm_path),
             "xapi_package": str(xapi_path),
         })
+    data_table_csv = _data_table_csv(content) if artifact.artifact_type == "data_table" else ""
+    if data_table_csv:
+        csv_path = _artifact_export_path(export_dir, f"{stem}-data-table", ".csv")
+        export_paths["csv"] = str(csv_path)
     artifact.export_paths = export_paths
     markdown_path.write_text(_artifact_markdown_export(artifact, content), encoding="utf-8")
+    if data_table_csv:
+        csv_path.write_text(data_table_csv, encoding="utf-8")
     if artifact.artifact_type in _COURSE_PACK_ARTIFACT_TYPES:
         instructor_path.write_text(
             _artifact_markdown_export(artifact, content),

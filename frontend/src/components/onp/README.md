@@ -70,7 +70,7 @@ switches themes.
 | `ModelFleetBadge.tsx` | Reusable local model runtime badge for GGUF, MLX, and future local providers. |
 | `CitationCoverageBadge.tsx` | Reusable citation-count badge for artifact and trust surfaces. |
 | `CitationDrawer.tsx` | Focused evidence panel for inspecting citation previews, source IDs, locations, and source-record jumps. |
-| `StudyArtifactViewers.tsx` | Interactive flashcard and quiz viewers for Evidence Studio markdown artifacts. |
+| `StudyArtifactViewers.tsx` | Interactive flashcard, quiz, Course Pack, Research Run, Mind Map, and Data Table viewers for Evidence Studio artifacts. |
 | `RunTimeline.tsx` | Compact Claude Code-style run inspector for notebook chat context, routing, MCP, privacy, and agent state. |
 
 ## Adding a new shadow component

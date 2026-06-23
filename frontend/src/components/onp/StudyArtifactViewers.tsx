@@ -32,6 +32,14 @@ interface ResearchRunSection {
   body: string[]
 }
 
+type DataTableRow = Record<string, string>
+
+interface MindMapNode {
+  id: string
+  label: string
+  children: MindMapNode[]
+}
+
 interface CoursePackModule {
   title: string
   markdown: string
@@ -176,6 +184,88 @@ export function normalizeResearchRunStages(stages: unknown): ResearchRunSection[
       return title && body.length > 0 ? { title, body } : null
     })
     .filter((stage): stage is ResearchRunSection => stage !== null)
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return []
+  return trimmed
+    .slice(1, -1)
+    .split('|')
+    .map(stripMarkdown)
+}
+
+function isMarkdownTableSeparator(cells: string[]): boolean {
+  return cells.length > 0
+    && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')))
+}
+
+export function parseDataTableRows(markdown: string): DataTableRow[] {
+  let header: string[] = []
+  const rows: DataTableRow[] = []
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const cells = splitMarkdownTableRow(line)
+    if (cells.length === 0) {
+      if (rows.length > 0) break
+      continue
+    }
+    if (isMarkdownTableSeparator(cells)) continue
+    if (header.length === 0) {
+      header = cells.map((cell, index) => cell || `Column ${index + 1}`)
+      continue
+    }
+    const row = Object.fromEntries(
+      cells.map((cell, index) => [header[index] || `Column ${index + 1}`, cell]),
+    )
+    if (Object.values(row).some(Boolean)) rows.push(row)
+  }
+
+  return rows
+}
+
+export function normalizeDataTableRows(rows: unknown): DataTableRow[] {
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null
+      const normalized = Object.fromEntries(
+        Object.entries(row as Record<string, unknown>)
+          .filter(([key]) => key.trim().length > 0)
+          .map(([key, value]) => [key, value == null ? '' : String(value)]),
+      )
+      return Object.keys(normalized).length > 0 ? normalized : null
+    })
+    .filter((row): row is DataTableRow => row !== null)
+}
+
+export function parseMindMap(markdown: string): MindMapNode[] {
+  const roots: MindMapNode[] = []
+  const stack: Array<{ level: number; node: MindMapNode }> = []
+  let nodeIndex = 0
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^(\s*)[-*]\s+(.+)$/)
+    if (!match?.[2]) continue
+
+    const level = Math.floor((match[1]?.replace(/\t/g, '  ').length ?? 0) / 2)
+    const node: MindMapNode = {
+      id: `mind-map-node-${nodeIndex++}`,
+      label: stripMarkdown(match[2]),
+      children: [],
+    }
+
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+      stack.pop()
+    }
+
+    const parent = stack[stack.length - 1]?.node
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+    stack.push({ level, node })
+  }
+
+  return roots
 }
 
 function moduleSummary(section: string[]): string {
@@ -367,6 +457,131 @@ export function CoursePackViewer({ markdown }: { markdown: string }) {
             <ReactMarkdown>{visibleMarkdown || selectedModule.markdown}</ReactMarkdown>
           </div>
         </article>
+      </div>
+    </section>
+  )
+}
+
+export function DataTableViewer({
+  markdown,
+  rows,
+}: {
+  markdown: string
+  rows?: unknown
+}) {
+  const normalizedRows = useMemo(() => normalizeDataTableRows(rows), [rows])
+  const parsedRows = useMemo(() => parseDataTableRows(markdown), [markdown])
+  const tableRows = normalizedRows.length > 0 ? normalizedRows : parsedRows
+  const headers = useMemo(() => {
+    const keys: string[] = []
+    for (const row of tableRows) {
+      for (const key of Object.keys(row)) {
+        if (!keys.includes(key)) keys.push(key)
+      }
+    }
+    return keys
+  }, [tableRows])
+
+  if (tableRows.length === 0 || headers.length === 0) {
+    return (
+      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
+        <ReactMarkdown>{markdown}</ReactMarkdown>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-semibold">Data table</div>
+        <div className="text-xs text-muted-foreground">
+          {tableRows.length} {tableRows.length === 1 ? 'row' : 'rows'} extracted from source-grounded output.
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
+          <thead className="bg-muted/60">
+            <tr>
+              {headers.map((header) => (
+                <th
+                  key={header}
+                  scope="col"
+                  className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground"
+                >
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableRows.map((row, rowIndex) => (
+              <tr key={`data-table-row-${rowIndex}`} className="odd:bg-background even:bg-muted/20">
+                {headers.map((header) => (
+                  <td key={`${rowIndex}-${header}`} className="align-top border-b px-3 py-2">
+                    {row[header] || '—'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function MindMapBranch({ node, depth = 0 }: { node: MindMapNode; depth?: number }) {
+  return (
+    <li className={cn('relative', depth > 0 && 'pl-4')}>
+      <div className="rounded-md border bg-background px-3 py-2 shadow-[var(--onp-elevation-low)]">
+        <div className="text-sm font-medium">{node.label}</div>
+      </div>
+      {node.children.length > 0 && (
+        <ul className="ml-3 mt-2 space-y-2 border-l pl-3">
+          {node.children.map((child) => (
+            <MindMapBranch key={child.id} node={child} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
+}
+
+export function MindMapViewer({ markdown }: { markdown: string }) {
+  const nodes = useMemo(() => parseMindMap(markdown), [markdown])
+  const nodeCount = useMemo(() => {
+    const countNodes = (items: MindMapNode[]): number =>
+      items.reduce((total, item) => total + 1 + countNodes(item.children), 0)
+    return countNodes(nodes)
+  }, [nodes])
+
+  if (nodes.length === 0) {
+    return (
+      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
+        <ReactMarkdown>{markdown}</ReactMarkdown>
+      </div>
+    )
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Mind map</div>
+          <div className="text-xs text-muted-foreground">
+            {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'} arranged from the source-grounded outline.
+          </div>
+        </div>
+        <Badge variant="outline" className="text-[0.68rem]">
+          {nodes.length} {nodes.length === 1 ? 'root' : 'roots'}
+        </Badge>
+      </div>
+      <div className="overflow-x-auto rounded-md border bg-muted/20 p-4">
+        <ul className="min-w-[36rem] space-y-3">
+          {nodes.map((node) => (
+            <MindMapBranch key={node.id} node={node} />
+          ))}
+        </ul>
       </div>
     </section>
   )
