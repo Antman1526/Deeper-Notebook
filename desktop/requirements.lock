@@ -225,6 +225,7 @@ huggingface-hub==1.14.0
     # via
     #   faster-whisper
     #   tokenizers
+    #   transformers
 humanize==4.15.0
     # via surreal-commands
 hyperframe==6.1.0
@@ -255,6 +256,7 @@ jinja2==3.1.6
     #   ai-prompter
     #   content-core
     #   llama-cpp-python
+    #   mlx-lm
 jiter==0.14.0
     # via
     #   anthropic
@@ -380,6 +382,12 @@ mdurl==0.1.2
     # via markdown-it-py
 mem0ai==1.0.11
     # via -r desktop/requirements.txt
+mlx==0.31.2
+    # via mlx-lm
+mlx-lm==0.26.4
+    # via -r desktop/requirements.txt
+mlx-metal==0.31.2
+    # via mlx
 more-itertools==11.0.2
     # via
     #   jaraco-classes
@@ -413,11 +421,13 @@ numpy==2.4.4
     #   imageio
     #   langchain-community
     #   llama-cpp-python
+    #   mlx-lm
     #   moviepy
     #   onnxruntime
     #   pandas
     #   qdrant-client
     #   skillopt
+    #   transformers
 ollama==0.6.2
     # via langchain-ollama
 onnxruntime==1.26.0
@@ -454,6 +464,7 @@ packaging==26.2
     #   pyinstaller
     #   pyinstaller-hooks-contrib
     #   pytest
+    #   transformers
 pandas==3.0.2
     # via content-core
 pathable==0.5.0
@@ -491,6 +502,7 @@ propcache==0.5.2
 protobuf==6.33.6
     # via
     #   mem0ai
+    #   mlx-lm
     #   onnxruntime
     #   qdrant-client
 proxy-tools==0.1.0
@@ -620,7 +632,9 @@ pyyaml==6.0.3
     #   langchain-community
     #   langchain-core
     #   llama-cpp-python
+    #   mlx-lm
     #   skillopt
+    #   transformers
 qdrant-client==1.18.0
     # via mem0ai
 readability-lxml==0.8.4.1
@@ -631,7 +645,9 @@ referencing==0.37.0
     #   jsonschema-path
     #   jsonschema-specifications
 regex==2026.5.9
-    # via tiktoken
+    # via
+    #   tiktoken
+    #   transformers
 requests==2.33.1
     # via
     #   azure-core
@@ -663,6 +679,8 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
+safetensors==0.8.0
+    # via transformers
 setuptools==82.0.1
     # via
     #   ctranslate2
@@ -725,10 +743,11 @@ tiktoken==0.12.0
     #   open-notebook (pyproject.toml)
     #   langchain-openai
     #   podcast-creator
-tokenizers==0.23.1
+tokenizers==0.22.2
     # via
     #   faster-whisper
     #   langchain-mistralai
+    #   transformers
 tomli==2.4.1
     # via open-notebook (pyproject.toml)
 tqdm==4.67.3
@@ -737,10 +756,14 @@ tqdm==4.67.3
     #   huggingface-hub
     #   openai
     #   proglog
+    #   transformers
+transformers==5.12.1
+    # via mlx-lm
 typer==0.25.1
     # via
     #   huggingface-hub
     #   surreal-commands
+    #   transformers
 typing-extensions==4.15.0
     # via
     #   aiosignal

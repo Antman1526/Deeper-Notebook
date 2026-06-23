@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from pathlib import Path
 
 from esperanto import LanguageModel
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -118,6 +119,35 @@ async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)")
     return _health_cache[1].get(model_name, False)
 
 
+def _configured_local_model_dir() -> Path | None:
+    raw = (
+        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
+        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        or ""
+    ).strip()
+    if not raw:
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        raw = str(Path(home) / "Desktop" / "AI_Models") if home else ""
+    if not raw:
+        return None
+    model_dir = Path(raw)
+    return model_dir if model_dir.exists() and model_dir.is_dir() else None
+
+
+async def _measured_local_chat_model_id() -> str | None:
+    """Best measured local chat model id, when benchmark history can prove one."""
+    model_dir = _configured_local_model_dir()
+    if model_dir is None:
+        return None
+    try:
+        from open_notebook.local_models.benchmarks import resolve_measured_model_id
+
+        return await resolve_measured_model_id(model_dir, "chat")
+    except Exception as exc:
+        logger.debug(f"Measured local chat model lookup skipped: {exc}")
+        return None
+
+
 async def provision_langchain_chat_model(
     content: str,
     *,
@@ -188,6 +218,8 @@ async def provision_langchain_chat_model(
 
     content_tokens = token_count(content)
     local_model_id = os.getenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID") or None
+    if not local_model_id:
+        local_model_id = await _measured_local_chat_model_id()
     cloud_model_id = os.getenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID") or None
     if not cloud_model_id:
         # v0.8.1 — use the dedicated auto_route_cloud field, NOT

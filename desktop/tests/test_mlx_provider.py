@@ -1,0 +1,103 @@
+import subprocess
+import time
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+from desktop.providers import ProviderEnv
+from desktop.providers.mlx import MlxProvider
+
+
+@pytest.fixture
+def mlx_model_root(tmp_path: Path) -> Path:
+    root = tmp_path / "AI_Models"
+    repo = root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text("{}")
+    (repo / "tokenizer.json").write_text("{}")
+    (repo / "model.safetensors").write_bytes(b"x" * (2 * 1024 * 1024))
+    (repo / ".download_complete").write_text("ok")
+    incomplete = root / "MLX" / "mlx-community__Incomplete"
+    incomplete.mkdir()
+    (incomplete / "config.json").write_text("{}")
+    return root
+
+
+def test_is_available_true_when_complete_mlx_repo_exists(mlx_model_root):
+    provider = MlxProvider(model_dir=mlx_model_root)
+    assert provider.is_available() is True
+
+
+def test_is_available_false_when_no_mlx_repo(tmp_path):
+    provider = MlxProvider(model_dir=tmp_path)
+    assert provider.is_available() is False
+
+
+def test_list_models_returns_complete_mlx_repos(mlx_model_root):
+    provider = MlxProvider(model_dir=mlx_model_root)
+    assert provider.list_models() == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
+
+
+def test_start_spawns_mlx_server_and_returns_openai_compatible_env(
+    mlx_model_root,
+    monkeypatch,
+):
+    captured: list[list[str]] = []
+    fake_proc = MagicMock(spec=subprocess.Popen)
+    fake_proc.poll.return_value = None
+
+    def fake_popen(args, **kwargs):
+        captured.append(list(args))
+        return fake_proc
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51231)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    provider = MlxProvider(
+        model_dir=mlx_model_root,
+        ready_probe=lambda port: True,
+        python_executable=Path("/tmp/venv/bin/python"),
+    )
+    env = provider.start("MLX/mlx-community__North-Mini-Code-1.0-6bit")
+
+    assert isinstance(env, ProviderEnv)
+    assert env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
+    assert env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
+    assert captured == [[
+        "/tmp/venv/bin/python",
+        "-m",
+        "mlx_lm.server",
+        "--model",
+        str(mlx_model_root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "51231",
+    ]]
+
+    provider.stop()
+    fake_proc.terminate.assert_called_once()
+
+
+def test_start_raises_for_incomplete_model(mlx_model_root):
+    provider = MlxProvider(model_dir=mlx_model_root)
+    with pytest.raises(FileNotFoundError, match="complete MLX model repo"):
+        provider.start("MLX/mlx-community__Incomplete")
+
+
+def test_start_raises_if_server_never_ready(mlx_model_root, monkeypatch):
+    fake_proc = MagicMock(spec=subprocess.Popen)
+    fake_proc.poll.return_value = None
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: fake_proc)
+    monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51232)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    provider = MlxProvider(
+        model_dir=mlx_model_root,
+        ready_probe=lambda port: False,
+        max_wait=0.01,
+    )
+    with pytest.raises(RuntimeError, match="never became ready"):
+        provider.start("MLX/mlx-community__North-Mini-Code-1.0-6bit")

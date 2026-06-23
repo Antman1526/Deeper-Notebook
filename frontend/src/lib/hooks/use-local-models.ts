@@ -6,6 +6,9 @@ export interface LocalModelHealth {
   status: 'healthy' | 'unhealthy' | 'not_configured' | 'unknown'
   detail: string | null
   latency_ms: number | null
+  runtime?: string | null
+  endpoint?: string | null
+  probe_path?: string | null
 }
 
 export interface LocalModelsHealthPayload {

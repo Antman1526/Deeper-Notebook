@@ -24,8 +24,8 @@ def _toml_string(v: str) -> str:
     return f'"{escaped}"'
 
 
-Provider = Literal["ollama", "llamacpp", "none"]
-_VALID_PROVIDERS: set[str] = {"ollama", "llamacpp", "none"}
+Provider = Literal["ollama", "llamacpp", "mlx", "none"]
+_VALID_PROVIDERS: set[str] = {"ollama", "llamacpp", "mlx", "none"}
 
 
 @dataclass(frozen=True)

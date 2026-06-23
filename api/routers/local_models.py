@@ -13,9 +13,19 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tomllib
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+
+from open_notebook.local_models import (
+    cancel_snapshot_install,
+    get_snapshot_install,
+    list_snapshot_installs,
+    reconcile_snapshot_installs,
+    start_snapshot_install,
+)
 
 router = APIRouter()
 
@@ -33,12 +43,11 @@ _KIND_TO_SUPERVISOR: dict[str, str] = {
 
 
 async def _load_local_credentials() -> list[dict]:
-    """Fetch credentials whose `provider == 'openai_compatible'`
-    AND whose `base_url` points to a local sidecar (127.0.0.1
-    OR localhost). The local-only filter is load-bearing — we
-    don't want this endpoint to probe a user-configured remote
-    LM Studio or Ollama on a LAN box. That's a different concern
-    and would belong on a different surface.
+    """Fetch local runtime credentials whose `base_url` points to a
+    local sidecar (127.0.0.1 OR localhost). The local-only filter is
+    load-bearing — we don't want this endpoint to probe a
+    user-configured remote LM Studio or Ollama on a LAN box. That's a
+    different concern and would belong on a different surface.
 
     v0.8.0 Task 3 refactor — was sync + `asyncio.run`; converted
     to async to eliminate the future-refactor footgun (the
@@ -57,7 +66,7 @@ async def _load_local_credentials() -> list[dict]:
             "base_url": c.base_url or "",
         }
         for c in creds
-        if c.provider == "openai_compatible"
+        if c.provider in {"openai_compatible", "ollama"}
         and _is_local_sidecar_url(c.base_url or "")
     ]
 
@@ -143,8 +152,9 @@ async def local_models_inventory():
     `POST /local-models/download` (v0.8.39b) + `POST /local-models/set-active`
     (v0.8.39c) extend this read-only foundation.
     """
-    from open_notebook.local_models import enumerate_models
     from pathlib import Path as _Path
+
+    from open_notebook.local_models import enumerate_models
 
     # Resolve model dir per docstring precedence.
     raw = (
@@ -172,19 +182,860 @@ async def local_models_inventory():
     return {
         "model_dir": str(model_dir),
         "available": True,
-        "models": [
+        "launcher_config": _launcher_config_summary(model_dir),
+        "models": [_local_model_to_dict(r, model_dir=model_dir) for r in rows],
+    }
+
+
+@router.get("/api/local-models/role-routing")
+async def local_models_role_routing():
+    """Recommend installed local models for each product role.
+
+    This is the first read-only layer of role routing: it does not change
+    defaults or hot-swap anything, but it gives the UI and future task router a
+    stable contract for chat, source synthesis, coding research, study tools,
+    and embedding/retrieval picks.
+    """
+    from pathlib import Path as _Path
+
+    from open_notebook.local_models import (
+        build_manifest_reconciliation,
+        enumerate_models,
+        find_manifest_matches,
+        find_unmatched_manifest_entries,
+        load_benchmark_history,
+        load_model_manifest,
+        model_manifest_path,
+        recommend_model_roles,
+    )
+
+    raw = (
+        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
+        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        or ""
+    ).strip()
+    if not raw:
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        raw = str(_Path(home) / "Desktop" / "AI_Models") if home else ""
+
+    if not raw:
+        return {"model_dir": "", "available": False, "routes": []}
+
+    model_dir = _Path(raw)
+    available = model_dir.exists() and model_dir.is_dir()
+    if not available:
+        return {"model_dir": str(model_dir), "available": False, "routes": []}
+
+    rows = await asyncio.to_thread(enumerate_models, model_dir)
+    benchmark_history = await asyncio.to_thread(load_benchmark_history, model_dir)
+    manifest_entries = await asyncio.to_thread(load_model_manifest, model_dir)
+    routes = await asyncio.to_thread(recommend_model_roles, rows, benchmark_history)
+    route_matches = [
+        find_manifest_matches(route.model, manifest_entries)
+        for route in routes
+    ]
+    route_alignments = [
+        _manifest_alignment_to_dict(route, matches, available=bool(manifest_entries))
+        for route, matches in zip(routes, route_matches)
+    ]
+    unmatched_manifest_entries = find_unmatched_manifest_entries(
+        manifest_entries,
+        rows,
+    )
+    manifest_reconciliation = build_manifest_reconciliation(
+        manifest_entries,
+        rows,
+    )
+    route_alternatives = [
+        _manifest_alternatives_for_route(
+            route,
+            alignment,
+            manifest_reconciliation,
+        )
+        for route, alignment in zip(routes, route_alignments)
+    ]
+    return {
+        "model_dir": str(model_dir),
+        "available": True,
+        "manifest": {
+            "path": str(model_manifest_path(model_dir)),
+            "available": bool(manifest_entries),
+            "entry_count": len(manifest_entries),
+            "matched_route_count": sum(1 for matches in route_matches if matches),
+            "alignment_counts": _manifest_alignment_counts(route_alignments),
+            "unmatched_entry_count": len(unmatched_manifest_entries),
+            "unmatched_entries": [
+                _manifest_entry_to_dict(entry)
+                for entry in unmatched_manifest_entries[:10]
+            ],
+            "reconciliation_counts": _manifest_reconciliation_counts(
+                manifest_reconciliation,
+            ),
+            "reconciliation_entries": [
+                _manifest_reconciliation_entry_to_dict(entry)
+                for entry in manifest_reconciliation[:100]
+            ],
+        },
+        "routes": [
             {
-                "name": r.name,
-                "path": r.path,
-                "architecture": r.metadata.architecture,
-                "context_length": r.metadata.context_length,
-                "quant": r.metadata.quant,
-                "parameter_count_b": r.metadata.parameter_count_b,
-                "file_size_bytes": r.metadata.file_size_bytes,
+                "role": route.role,
+                "label": route.label,
+                "confidence": route.confidence,
+                "reason": route.reason,
+                "model": _local_model_to_dict(route.model, model_dir=model_dir),
+                "manifest_matches": [
+                    _manifest_entry_to_dict(entry)
+                    for entry in matches
+                ],
+                "manifest_alignment": alignment,
+                "manifest_alternatives": [
+                    _manifest_alternative_to_dict(alternative, route.role)
+                    for alternative in alternatives
+                ],
+                "manifest_alternative_note": _manifest_alternative_note(
+                    route,
+                    alignment,
+                    alternatives,
+                    available=bool(manifest_entries),
+                ),
             }
-            for r in rows
+            for route, matches, alignment, alternatives in zip(
+                routes,
+                route_matches,
+                route_alignments,
+                route_alternatives,
+            )
         ],
     }
+
+
+def _launcher_model_ref(model, model_dir: Path | None):
+    if model_dir is None:
+        return model.path
+    try:
+        return str(Path(model.path).resolve().relative_to(model_dir.resolve()))
+    except (OSError, ValueError):
+        return model.path
+
+
+def _launcher_config_summary(model_dir: Path):
+    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    if not config_path.exists():
+        return {
+            "available": False,
+            "path": str(config_path),
+            "provider": "",
+            "default_model": "",
+            "model_dir": "",
+            "model_dir_matches_inventory": False,
+        }
+    try:
+        raw = tomllib.loads(config_path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return {
+            "available": False,
+            "path": str(config_path),
+            "provider": "",
+            "default_model": "",
+            "model_dir": "",
+            "model_dir_matches_inventory": False,
+        }
+
+    raw_model_dir = str(raw.get("model_dir") or "")
+    matches_inventory = False
+    if raw_model_dir:
+        try:
+            matches_inventory = Path(raw_model_dir).expanduser().resolve() == model_dir.resolve()
+        except OSError:
+            matches_inventory = False
+
+    return {
+        "available": True,
+        "path": str(config_path),
+        "provider": str(raw.get("provider") or ""),
+        "default_model": str(raw.get("default_model") or ""),
+        "model_dir": raw_model_dir,
+        "model_dir_matches_inventory": matches_inventory,
+    }
+
+
+def _local_model_to_dict(model, model_dir: Path | None = None):
+    if model is None:
+        return None
+    capabilities = _local_model_runtime_capabilities(model.runtime)
+    return {
+        "name": model.name,
+        "path": model.path,
+        "launcher_model_ref": _launcher_model_ref(model, model_dir),
+        "runtime": model.runtime,
+        "runnable": capabilities["runnable"],
+        "activation_supported": capabilities["activation_supported"],
+        "runtime_status": capabilities["runtime_status"],
+        "runtime_note": capabilities["runtime_note"],
+        "setup_href": capabilities["setup_href"],
+        "setup_label": capabilities["setup_label"],
+        "architecture": model.metadata.architecture,
+        "context_length": model.metadata.context_length,
+        "quant": model.metadata.quant,
+        "parameter_count_b": model.metadata.parameter_count_b,
+        "file_size_bytes": model.metadata.file_size_bytes,
+    }
+
+
+def _manifest_entry_to_dict(entry):
+    return {
+        "manifest_path": entry.manifest_path,
+        "category": entry.category,
+        "role": entry.role,
+        "repo": entry.repo,
+        "local_path": entry.local_path,
+        "runtime_type": entry.runtime_type,
+        "estimated_status": entry.estimated_status,
+        "notes": entry.notes,
+    }
+
+
+def _manifest_row_preview_to_dict(preview):
+    return {
+        "ok": True,
+        "manifest_path": preview.manifest_path,
+        "row": preview.row,
+        "entry": _manifest_entry_to_dict(preview.entry),
+        "duplicate": preview.duplicate,
+        "duplicate_entry": (
+            _manifest_entry_to_dict(getattr(preview, "duplicate_entry", None))
+            if getattr(preview, "duplicate_entry", None) else None
+        ),
+    }
+
+
+def _manifest_row_apply_to_dict(result):
+    data = _manifest_row_preview_to_dict(result)
+    data["backup_path"] = result.backup_path
+    data["detail"] = (
+        "Manifest row applied with backup."
+        if result.backup_path else "Manifest row applied."
+    )
+    return data
+
+
+def _manifest_alignment_to_dict(route, matches, *, available: bool):
+    if not available:
+        return {
+            "status": "no_manifest",
+            "label": "No manifest",
+            "reason": "No curated AI_Models manifest is available for comparison.",
+            "matched_count": 0,
+            "primary_count": 0,
+        }
+    if route.model is None:
+        return {
+            "status": "missing_model",
+            "label": "No local fit",
+            "reason": "No local recommendation is available to compare with the manifest.",
+            "matched_count": 0,
+            "primary_count": 0,
+        }
+
+    primary_count = sum(
+        1
+        for entry in matches
+        if str(entry.role).strip().lower().startswith("primary")
+    )
+    if primary_count:
+        return {
+            "status": "primary",
+            "label": "Manifest primary",
+            "reason": "The selected route model matches a curated primary manifest row.",
+            "matched_count": len(matches),
+            "primary_count": primary_count,
+        }
+    if matches:
+        roles = sorted({entry.role for entry in matches if entry.role})
+        role_text = ", ".join(roles) if roles else "curated"
+        return {
+            "status": "curated",
+            "label": "Manifest curated",
+            "reason": (
+                "The selected route model appears in the manifest as "
+                f"{role_text}."
+            ),
+            "matched_count": len(matches),
+            "primary_count": 0,
+        }
+
+    model_name = getattr(route.model, "name", "Selected model")
+    return {
+        "status": "untracked",
+        "label": "Not in manifest",
+        "reason": (
+            f"{model_name} is currently recommended, but it is not in the "
+            "curated AI_Models manifest."
+        ),
+        "matched_count": 0,
+        "primary_count": 0,
+    }
+
+
+def _manifest_alignment_counts(alignments):
+    statuses = {
+        "primary": 0,
+        "curated": 0,
+        "untracked": 0,
+        "missing_model": 0,
+        "no_manifest": 0,
+    }
+    for alignment in alignments:
+        status = alignment.get("status")
+        if status in statuses:
+            statuses[status] += 1
+    return statuses
+
+
+def _manifest_alternatives_for_route(route, alignment, reconciliation_entries):
+    status = alignment.get("status")
+    if status not in {"untracked", "missing_model"}:
+        return []
+
+    scored = []
+    current_path = str(getattr(route.model, "path", "") or "")
+    current_name = str(getattr(route.model, "name", "") or "")
+    for item in reconciliation_entries:
+        if item.status != "matched":
+            continue
+        if item.matched_model_path and item.matched_model_path == current_path:
+            continue
+        if item.matched_model_name and item.matched_model_name == current_name:
+            continue
+        score = _manifest_role_relevance_score(route.role, item.entry)
+        if score <= 0:
+            continue
+        scored.append((score, item))
+
+    scored.sort(key=lambda pair: (
+        -pair[0],
+        _manifest_role_priority(pair[1].entry.role),
+        pair[1].entry.category.lower(),
+        pair[1].entry.repo.lower(),
+    ))
+    return [item for _, item in scored[:3]]
+
+
+def _manifest_alternative_to_dict(item, route_role: str):
+    data = _manifest_entry_to_dict(item.entry)
+    data.update({
+        "matched_model_name": item.matched_model_name,
+        "matched_model_path": item.matched_model_path,
+        "matched_model_runtime": item.matched_model_runtime,
+        "reason": _manifest_alternative_reason(item, route_role),
+    })
+    return data
+
+
+def _manifest_alternative_reason(item, route_role: str):
+    role = item.entry.role or "curated"
+    label = _manifest_route_label(route_role)
+    return (
+        f"Curated {role} manifest row matched the local scan "
+        f"for {item.entry.category}; suggested for {label}."
+    )
+
+
+def _manifest_alternative_note(route, alignment, alternatives, *, available: bool):
+    if not available:
+        return None
+    if alternatives:
+        return None
+    status = alignment.get("status")
+    if status not in {"untracked", "missing_model"}:
+        return None
+    if route.role == "embedding":
+        return (
+            "No curated embedding/retrieval manifest row is available yet. "
+            "Add an embedding model to the AI_Models manifest to make this "
+            "role fully manifest-backed."
+        )
+    return "No installed curated manifest alternative is available for this role yet."
+
+
+def _manifest_role_relevance_score(role: str, entry) -> int:
+    category = f"{entry.category} {entry.notes}".lower()
+    runtime = entry.runtime_type.lower()
+    if role == "coding_research":
+        score = _keyword_score(category, ("coding", "debugging", "terminal", "agentic"), 60)
+    elif role == "source_synthesis":
+        score = _keyword_score(category, ("research", "reasoning", "general chat"), 60)
+    elif role == "chat":
+        score = _keyword_score(category, ("general chat", "creative", "research", "reasoning"), 60)
+    elif role == "study_fast":
+        score = _keyword_score(category, ("general chat", "research", "creative", "fable"), 60)
+    elif role == "embedding":
+        score = _keyword_score(category, ("embedding", "retrieval", "embed"), 80)
+    else:
+        score = 0
+
+    if score <= 0:
+        return 0
+
+    role_text = entry.role.lower()
+    if role_text.startswith("primary"):
+        score += 20
+    elif role_text.startswith("backup"):
+        score += 12
+    elif role_text.startswith("priority"):
+        score += 10
+    elif role_text.startswith("requested"):
+        score += 6
+
+    if runtime in {"mlx", "gguf"}:
+        score += 8
+    return score
+
+
+def _manifest_route_label(role: str) -> str:
+    labels = {
+        "chat": "default chat",
+        "source_synthesis": "source synthesis",
+        "coding_research": "coding research",
+        "study_fast": "fast study tools",
+        "embedding": "embedding/retrieval",
+    }
+    return labels.get(role, role.replace("_", " "))
+
+
+def _keyword_score(text: str, keywords: tuple[str, ...], amount: int) -> int:
+    return amount if any(keyword in text for keyword in keywords) else 0
+
+
+def _manifest_role_priority(role: str) -> int:
+    normalized = role.lower()
+    if normalized.startswith("primary"):
+        return 0
+    if normalized.startswith("backup"):
+        return 1
+    if normalized.startswith("priority"):
+        return 2
+    if normalized.startswith("requested"):
+        return 3
+    return 4
+
+
+def _manifest_reconciliation_counts(entries):
+    return {
+        "matched": sum(1 for entry in entries if entry.status == "matched"),
+        "missing": sum(1 for entry in entries if entry.status == "missing"),
+        "unsupported_runtime": sum(
+            1 for entry in entries if entry.status == "unsupported_runtime"
+        ),
+    }
+
+
+def _manifest_reconciliation_entry_to_dict(item):
+    data = _manifest_entry_to_dict(item.entry)
+    data.update({
+        "status": item.status,
+        "status_reason": item.status_reason,
+        "matched_model_name": item.matched_model_name,
+        "matched_model_path": item.matched_model_path,
+        "matched_model_runtime": item.matched_model_runtime,
+        "setup_task": (
+            _manifest_setup_task_to_dict(item.setup_task)
+            if item.setup_task else None
+        ),
+    })
+    return data
+
+
+def _manifest_setup_task_to_dict(task):
+    return {
+        "action_type": task.action_type,
+        "label": task.label,
+        "description": task.description,
+        "repo_id": task.repo_id,
+        "filename": task.filename,
+        "target_path": task.target_path,
+        "command": task.command,
+        "setup_href": task.setup_href,
+    }
+
+
+def _snapshot_install_job_to_dict(job):
+    return {
+        "job_id": job.job_id,
+        "repo_id": job.repo_id,
+        "target_path": job.target_path,
+        "status": job.status,
+        "error": job.error,
+        "log_tail": job.log_tail,
+    }
+
+
+def _validate_huggingface_repo_id(repo_id: str):
+    import re as _re
+
+    if not _re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*",
+        repo_id,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="`repo_id` must be of the form `namespace/name` "
+            "(letters, digits, dot, dash, underscore only).",
+        )
+
+
+def _local_model_runtime_capabilities(runtime: str | None):
+    normalized = (runtime or "gguf").lower()
+    if normalized == "gguf":
+        return {
+            "runnable": True,
+            "activation_supported": True,
+            "runtime_status": "runnable",
+            "runtime_note": None,
+            "setup_href": None,
+            "setup_label": None,
+        }
+    if normalized == "mlx":
+        return {
+            "runnable": True,
+            "activation_supported": False,
+            "runtime_status": "runnable",
+            "runtime_note": None,
+            "setup_href": None,
+            "setup_label": None,
+        }
+    return {
+        "runnable": False,
+        "activation_supported": False,
+        "runtime_status": "inventory_only",
+        "runtime_note": (
+            "Visible in inventory. Configure a runnable local provider before "
+            "using this asset for chat, role routing, or benchmarks."
+        ),
+        "setup_href": "/settings/launcher-prefs",
+        "setup_label": "Open launcher preferences",
+    }
+
+
+def _benchmark_result_to_dict(result):
+    return {
+        "role": result.role,
+        "label": result.label,
+        "status": result.status,
+        "model_name": result.model_name,
+        "model_path": result.model_path,
+        "model_runtime": result.model_runtime,
+        "model_id": result.model_id,
+        "provider": result.provider,
+        "latency_ms": result.latency_ms,
+        "tokens_per_second": result.tokens_per_second,
+        "score": result.score,
+        "error": result.error,
+    }
+
+
+def _benchmark_job_to_dict(job):
+    return {
+        "job_id": job.job_id,
+        "roles": job.roles,
+        "status": job.status,
+        "results": [_benchmark_result_to_dict(result) for result in job.results],
+        "error": job.error,
+        "created_at": job.created_at,
+        "completed_at": job.completed_at,
+    }
+
+
+def _configured_model_dir():
+    from pathlib import Path as _Path
+
+    raw = (
+        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
+        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        or ""
+    ).strip()
+    if not raw:
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        raw = str(_Path(home) / "Desktop" / "AI_Models") if home else ""
+    if not raw:
+        return None
+    model_dir = _Path(raw)
+    return model_dir if model_dir.exists() and model_dir.is_dir() else None
+
+
+def _open_path_in_file_manager(path: Path) -> None:
+    import subprocess
+    import sys
+
+    if sys.platform == "darwin":
+        command = ["open", "-R", str(path)]
+    elif sys.platform.startswith("win"):
+        if path.is_dir():
+            command = ["explorer", str(path)]
+        else:
+            command = ["explorer", "/select,", str(path)]
+    else:
+        command = ["xdg-open", str(path if path.is_dir() else path.parent)]
+
+    subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+@router.post("/api/local-models/manifest/rows/preview")
+async def local_models_manifest_row_preview(body: dict):
+    """Validate one draft AI_Models manifest row without mutating disk."""
+    from open_notebook.local_models import ManifestRowError, preview_manifest_row
+
+    row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
+    if not row:
+        raise HTTPException(status_code=400, detail="Body must include `row`.")
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    try:
+        preview = await asyncio.to_thread(preview_manifest_row, model_dir, row)
+    except ManifestRowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not read manifest: {exc}",
+        ) from exc
+
+    return _manifest_row_preview_to_dict(preview)
+
+
+@router.post("/api/local-models/manifest/rows/apply")
+async def local_models_manifest_row_apply(body: dict):
+    """Append one validated AI_Models manifest row with a backup."""
+    from open_notebook.local_models import ManifestRowError, append_manifest_row
+
+    row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
+    allow_duplicate = bool(body.get("allow_duplicate")) if isinstance(body, dict) else False
+    if not row:
+        raise HTTPException(status_code=400, detail="Body must include `row`.")
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            append_manifest_row,
+            model_dir,
+            row,
+            allow_duplicate=allow_duplicate,
+        )
+    except ManifestRowError as exc:
+        status_code = 409 if "already exists" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not update manifest: {exc}",
+        ) from exc
+
+    return _manifest_row_apply_to_dict(result)
+
+
+@router.post("/api/local-models/reveal")
+async def local_models_reveal(body: dict):
+    """Reveal a scanned local-model path in the host file manager.
+
+    This is intentionally bounded to the configured model directory so the
+    Local Models page can open matched AI_Models rows without becoming a
+    general-purpose host filesystem launcher.
+    """
+    raw_path = (body.get("path") or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="Body must include `path`.")
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    try:
+        resolved_model_dir = model_dir.resolve()
+        resolved_path = Path(raw_path).expanduser().resolve()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not resolve path: {exc}",
+        ) from exc
+
+    if not resolved_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path not found: {resolved_path}",
+        )
+    if (
+        resolved_path != resolved_model_dir
+        and resolved_model_dir not in resolved_path.parents
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Path must be inside the configured model directory "
+                f"({resolved_model_dir})."
+            ),
+        )
+
+    try:
+        await asyncio.to_thread(_open_path_in_file_manager, resolved_path)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not open file manager: {exc}",
+        ) from exc
+
+    return {
+        "ok": True,
+        "path": str(resolved_path),
+        "detail": "Opened in file manager.",
+    }
+
+
+@router.post("/api/local-models/launch-default")
+async def local_models_set_launch_default(body: dict):
+    """Persist a provider-backed local model as the native launch default.
+
+    This is intentionally narrower than hot-swap:
+    - MLX repos persist as `provider="mlx"` + a relative `default_model`.
+    - GGUF files persist as `provider="llamacpp"` + a relative `default_model`.
+      Live llama.cpp hot-swap still uses `/local-models/set-active`.
+    - inventory-only rows are rejected until their runtime has a launcher
+      provider.
+    """
+    from desktop.config import load_or_create
+    from open_notebook.local_models import enumerate_models
+
+    requested_ref = (body.get("launcher_model_ref") or "").strip()
+    if not requested_ref:
+        raise HTTPException(
+            status_code=400,
+            detail="Body must include `launcher_model_ref`.",
+        )
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    rows = await asyncio.to_thread(enumerate_models, model_dir)
+    match = next(
+        (
+            row for row in rows
+            if _launcher_model_ref(row, model_dir) == requested_ref
+        ),
+        None,
+    )
+    if match is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Local model not found in inventory: {requested_ref}",
+        )
+
+    runtime = (match.runtime or "gguf").lower()
+    provider_by_runtime = {
+        "gguf": "llamacpp",
+        "mlx": "mlx",
+    }
+    provider = provider_by_runtime.get(runtime)
+    if provider is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Launch default is not supported for runtime {runtime!r}.",
+        )
+
+    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    try:
+        cfg = load_or_create(config_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not load native launcher config: {exc}",
+        ) from exc
+
+    updated = replace(
+        cfg,
+        model_dir=model_dir,
+        provider=provider,
+        default_model=requested_ref,
+    )
+    await asyncio.to_thread(updated.save, config_path)
+    return {
+        "ok": True,
+        "detail": f"Native launcher default set to {requested_ref}. Restart Open Notebook Plus to apply it.",
+        "launcher_config": _launcher_config_summary(model_dir),
+    }
+
+
+@router.post("/api/local-models/benchmarks")
+async def local_models_benchmark_start(body: dict):
+    """Start a local model benchmark job for recommended roles.
+
+    Jobs benchmark only recommended local models that are also registered as
+    language models, so downloaded-but-unregistered files are reported as
+    skipped instead of causing confusing runtime errors.
+    """
+    from open_notebook.local_models import start_benchmark
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    roles = body.get("roles") if isinstance(body, dict) else None
+    run_inline = bool(body.get("run_inline")) if isinstance(body, dict) else False
+    job = await start_benchmark(
+        model_dir,
+        roles=roles if isinstance(roles, list) else None,
+        run_inline=run_inline,
+    )
+    return _benchmark_job_to_dict(job)
+
+
+@router.get("/api/local-models/benchmarks")
+async def local_models_benchmark_list():
+    from open_notebook.local_models import list_benchmark_jobs
+
+    return {
+        "benchmarks": [
+            _benchmark_job_to_dict(job)
+            for job in list_benchmark_jobs()
+        ]
+    }
+
+
+@router.get("/api/local-models/benchmarks/{job_id}")
+async def local_models_benchmark_status(job_id: str):
+    from open_notebook.local_models import get_benchmark_job
+
+    job = get_benchmark_job(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown benchmark job {job_id!r}.",
+        )
+    return _benchmark_job_to_dict(job)
 
 
 @router.get("/api/local-models/recommendations")
@@ -225,8 +1076,9 @@ async def local_models_download(body: dict):
     The target directory is resolved the same way as `inventory` above
     (OPEN_NOTEBOOK_MODEL_DIR > launcher default > POSIX default).
     """
-    from open_notebook.local_models import start_download
     from pathlib import Path as _Path
+
+    from open_notebook.local_models import start_download
 
     repo_id = (body.get("repo_id") or "").strip()
     filename = (body.get("filename") or "").strip()
@@ -289,6 +1141,93 @@ async def local_models_download(body: dict):
     }
 
 
+@router.post("/api/local-models/snapshot-installs")
+async def local_models_snapshot_install(body: dict):
+    """Start a managed Hugging Face snapshot install into AI_Models."""
+    repo_id = (body.get("repo_id") or "").strip()
+    target_path = (body.get("target_path") or "").strip()
+    if not repo_id or not target_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Both `repo_id` and `target_path` are required.",
+        )
+    _validate_huggingface_repo_id(repo_id)
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+        )
+
+    try:
+        resolved_model_dir = model_dir.resolve()
+        resolved_target = Path(target_path).expanduser().resolve()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not resolve target path: {exc}",
+        ) from exc
+
+    if (
+        resolved_target != resolved_model_dir
+        and resolved_model_dir not in resolved_target.parents
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Target path must be inside the configured model directory "
+                f"({resolved_model_dir})."
+            ),
+        )
+    if resolved_target.exists() and not resolved_target.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Target path exists but is not a directory: {resolved_target}",
+        )
+
+    job = await start_snapshot_install(repo_id, resolved_target)
+    return _snapshot_install_job_to_dict(job)
+
+
+@router.get("/api/local-models/snapshot-installs")
+async def local_models_snapshot_installs_list():
+    model_dir = _configured_model_dir()
+    if model_dir is not None:
+        await reconcile_snapshot_installs(model_dir)
+    return {
+        "snapshot_installs": [
+            _snapshot_install_job_to_dict(job)
+            for job in list_snapshot_installs()
+        ]
+    }
+
+
+@router.get("/api/local-models/snapshot-installs/{job_id}")
+async def local_models_snapshot_install_status(job_id: str):
+    job = get_snapshot_install(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown snapshot install job {job_id!r}.",
+        )
+    return _snapshot_install_job_to_dict(job)
+
+
+@router.post("/api/local-models/snapshot-installs/{job_id}/cancel")
+async def local_models_snapshot_install_cancel(job_id: str):
+    job = get_snapshot_install(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown snapshot install job {job_id!r}.",
+        )
+    ok, detail = cancel_snapshot_install(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail=detail)
+    return {"ok": True, "detail": detail}
+
+
 @router.post("/api/local-models/downloads/{job_id}/cancel")
 async def local_models_download_cancel(job_id: str):
     """v0.8.39e — Request cancellation of an in-flight GGUF download.
@@ -337,8 +1276,9 @@ async def local_models_downloads_list():
     Response: `{ "downloads": [ {job_id, status, repo_id, filename,
     target_path, bytes_downloaded, bytes_total, error}, ... ] }`.
     """
-    from open_notebook.local_models import list_jobs, reconcile_jobs
     from pathlib import Path as _Path
+
+    from open_notebook.local_models import list_jobs, reconcile_jobs
 
     raw = (
         os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
