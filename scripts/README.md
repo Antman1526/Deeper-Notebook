@@ -9,7 +9,7 @@ overwriting Open Notebook Plus work.
 
 - Disables accidental pushes to the `upstream` remote.
 - Fetches upstream updates read-only.
-- Writes a safety snapshot under `output/upstream-sync/`.
+- Writes a safety snapshot under `output/upstream-sync/` before any merge work.
 - Refuses to start an integration merge while the current worktree is dirty.
 - Creates a separate integration worktree when the checkout is clean.
 
@@ -19,7 +19,7 @@ overwriting Open Notebook Plus work.
 # Snapshot current state and prepare an integration worktree if clean
 scripts/upstream_sync_guard.sh prepare
 
-# Only create a safety snapshot
+# Only create a local safety snapshot, even when upstream/network is unavailable
 scripts/upstream_sync_guard.sh snapshot
 
 # Only compare branch divergence and upstream file churn

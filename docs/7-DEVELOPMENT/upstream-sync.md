@@ -25,13 +25,15 @@ The fetch URL stays active, so updates can still be pulled read-only.
 scripts/upstream_sync_guard.sh prepare
 ```
 
-3. If the current worktree is dirty, the guard writes a recovery snapshot and
-   stops before any merge happens.
-4. When the worktree is clean, the guard creates an integration worktree and
+3. The guard writes a recovery snapshot before it fetches or starts merge work.
+   `snapshot` mode is local-only, so it still works when upstream or the
+   network is unavailable.
+4. If the current worktree is dirty, the guard stops before any merge happens.
+5. When the worktree is clean, the guard creates an integration worktree and
    starts the upstream merge there.
-5. Resolve conflicts in the integration worktree only.
-6. Run the verification ladder.
-7. Merge the integration branch back into `desktop-app` only after the checks
+6. Resolve conflicts in the integration worktree only.
+7. Run the verification ladder.
+8. Merge the integration branch back into `desktop-app` only after the checks
    pass.
 
 ## Why A Separate Worktree
