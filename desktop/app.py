@@ -366,6 +366,7 @@ def _phase_select_provider(ctx: AppContext) -> None:
             model = cfg.default_model or provider.pick_default_model()
             if model:
                 extra_env = provider.start(model)
+                extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
                 ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
@@ -841,8 +842,15 @@ def _phase_auto_register(ctx: AppContext) -> None:
             if url:
                 llamacpp_port = urllib.parse.urlparse(url).port
 
+        mlx_base_url = None
+        mlx_model_ref = None
+        if cfg.provider == "mlx":
+            mlx_base_url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL")
+            mlx_model_ref = ctx.extra_env.get("OPEN_NOTEBOOK_ACTIVE_MLX_MODEL") or cfg.default_model
+
         auto_register(
             api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
+            mlx_base_url=mlx_base_url, mlx_model_ref=mlx_model_ref,
             whisper_port=getattr(sv, "whisper_port", None) or None,
             piper_port=getattr(sv, "piper_port", None) or None,
             embed_port=getattr(sv, "embed_port", None) or None,
