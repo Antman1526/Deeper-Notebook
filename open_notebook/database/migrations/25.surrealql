@@ -1,0 +1,3 @@
+-- v0.8.71 — Source library provenance and normalized source type.
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE source FLEXIBLE TYPE option<object> DEFAULT {};
+DEFINE FIELD IF NOT EXISTS source_type ON TABLE source TYPE option<string>;

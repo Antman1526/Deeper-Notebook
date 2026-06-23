@@ -76,6 +76,34 @@ interface SourceDetailContentProps {
   onClose?: () => void
 }
 
+function formatProvenanceEntries(provenance: Record<string, unknown> | undefined) {
+  if (!provenance) return []
+
+  const values: Array<[string, string]> = []
+  const push = (label: string, value: unknown) => {
+    if (typeof value === 'string' && value.trim()) {
+      values.push([label, value.trim()])
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      values.push([label, value.toLocaleString()])
+    }
+  }
+
+  push('Origin', provenance.origin)
+  push('Domain', provenance.domain)
+  push('Original file', provenance.original_filename)
+  push('File name', provenance.file_name)
+  push('Size', provenance.size_bytes)
+
+  const extraction = provenance.extraction
+  if (extraction && typeof extraction === 'object' && !Array.isArray(extraction)) {
+    const extractionMap = extraction as Record<string, unknown>
+    push('Extractor', extractionMap.extractor)
+    push('Detected type', extractionMap.identified_type)
+  }
+
+  return values
+}
+
 export function SourceDetailContent({
   sourceId,
   showChatButton = false,
@@ -133,6 +161,7 @@ export function SourceDetailContent({
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isRetryingSource, setIsRetryingSource] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
+  const provenanceEntries = formatProvenanceEntries(source?.provenance)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
@@ -959,6 +988,22 @@ export function SourceDetailContent({
                         {formatDateTime(source.updated, language)}
                       </p>
                     </div>
+                    {source.notebook_count !== undefined && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Notebook use</p>
+                        <p className="text-sm">
+                          {source.is_shared || source.notebook_count > 1
+                            ? `Shared with ${source.notebook_count} notebooks`
+                            : 'Used in one notebook'}
+                        </p>
+                      </div>
+                    )}
+                    {provenanceEntries.map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="break-all text-sm">{value}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </CardContent>
