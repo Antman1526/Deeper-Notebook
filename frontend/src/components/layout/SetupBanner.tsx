@@ -36,8 +36,9 @@ export function SetupBanner() {
   const providersToMigrate = useMemo(() => {
     if (!envStatus || !credentialStatus) return []
     const providers: string[] = []
+    const credentialSources = credentialStatus.source ?? {}
     for (const provider in envStatus) {
-      if (envStatus[provider] && credentialStatus.source[provider] === 'environment') {
+      if (envStatus[provider] && credentialSources[provider] === 'environment') {
         providers.push(provider)
       }
     }

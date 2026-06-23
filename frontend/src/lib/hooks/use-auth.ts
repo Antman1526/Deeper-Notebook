@@ -15,7 +15,8 @@ export function useAuth() {
     checkAuthRequired,
     error,
     hasHydrated,
-    authRequired
+    authRequired,
+    isCheckingAuth
   } = useAuthStore()
 
   useEffect(() => {
@@ -60,7 +61,11 @@ export function useAuth() {
 
   return {
     isAuthenticated,
-    isLoading: isLoading || !hasHydrated, // Treat lack of hydration as loading
+    // Treat lack of hydration and the initial auth-required probe as
+    // loading. Otherwise dashboard routes can redirect to /login before
+    // /api/auth/status has a chance to mark auth-disabled installs as
+    // authenticated.
+    isLoading: isLoading || !hasHydrated || authRequired === null || isCheckingAuth,
     error,
     login: handleLogin,
     logout: handleLogout
