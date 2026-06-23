@@ -181,12 +181,53 @@ async def test_start_snapshot_install_skips_existing_non_empty_directory(
     target = tmp_path / "MLX" / "ready"
     target.mkdir(parents=True)
     (target / "config.json").write_text("{}")
+    (target / "model.safetensors").write_bytes(b"weights")
 
     job = await snap_mod.start_snapshot_install("org/ready", target)
 
     assert job.status == "completed"
     assert job._task is None
-    assert "already contains files" in " ".join(job.log_tail)
+    assert "already contains model files" in " ".join(job.log_tail)
+
+
+@pytest.mark.asyncio
+async def test_start_snapshot_install_repairs_config_only_partial_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    target = tmp_path / "MLX" / "partial"
+    target.mkdir(parents=True)
+    (target / "config.json").write_text("{}")
+    (target / "README.md").write_text("# partial")
+    (target / ".cache").mkdir()
+
+    def fake_snapshot_download(repo_id: str, local_dir: str) -> None:
+        calls.append((repo_id, local_dir))
+        Path(local_dir, "model.safetensors").write_bytes(b"weights")
+
+    monkeypatch.setattr(snap_mod, "_snapshot_download", fake_snapshot_download)
+
+    job = await snap_mod.start_snapshot_install("org/partial", target)
+    await asyncio.wait_for(job._task, timeout=5)
+
+    assert job.status == "completed"
+    assert calls == [("org/partial", str(target))]
+    assert any("Downloading org/partial" in line for line in job.log_tail)
+
+
+@pytest.mark.asyncio
+async def test_start_snapshot_install_skips_existing_single_gguf_snapshot(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "GGUF" / "ready"
+    target.mkdir(parents=True)
+    (target / "model.gguf").write_bytes(b"weights")
+
+    job = await snap_mod.start_snapshot_install("org/gguf", target)
+
+    assert job.status == "completed"
+    assert job._task is None
 
 
 @pytest.mark.asyncio
