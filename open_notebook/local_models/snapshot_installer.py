@@ -31,6 +31,22 @@ _JOBS: dict[str, SnapshotInstallJob] = {}
 _REGISTRY_LOCK: "asyncio.Lock | None" = None
 _MAX_LOG_LINES = 20
 _SNAPSHOT_META_FILENAME = ".snapshot-install.meta"
+_MODEL_CONFIG_FILENAMES = {
+    "config.json",
+    "params.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+}
+_MODEL_WEIGHT_SUFFIXES = {
+    ".bin",
+    ".gguf",
+    ".mlmodel",
+    ".npz",
+    ".onnx",
+    ".pt",
+    ".pth",
+    ".safetensors",
+}
 
 
 def _get_registry_lock() -> asyncio.Lock:
@@ -81,11 +97,29 @@ def _remove_snapshot_meta(target_dir: Path) -> None:
 
 
 def _has_existing_model_files(target_dir: Path) -> bool:
+    """Return True only for a plausibly complete local model snapshot.
+
+    Hugging Face downloads can leave behind `.cache`, README files, or a lone
+    config after interruption. Those should not make the installer report
+    success, because users need the next click to repair the folder.
+    """
     try:
         if not target_dir.exists():
             return False
-        for child in target_dir.iterdir():
-            if child.name != _SNAPSHOT_META_FILENAME:
+        has_config = False
+        has_weight = False
+        for child in target_dir.rglob("*"):
+            if child.name == _SNAPSHOT_META_FILENAME or not child.is_file():
+                continue
+            relative_parts = child.relative_to(target_dir).parts
+            if any(part.startswith(".") for part in relative_parts):
+                continue
+            lower_name = child.name.lower()
+            if lower_name in _MODEL_CONFIG_FILENAMES:
+                has_config = True
+            if child.suffix.lower() in _MODEL_WEIGHT_SUFFIXES:
+                has_weight = True
+            if has_weight and (has_config or child.suffix.lower() == ".gguf"):
                 return True
     except OSError:
         return False
@@ -159,7 +193,7 @@ async def start_snapshot_install(
 
         if _has_existing_model_files(target_dir) and not _snapshot_meta_path(target_dir).exists():
             job.status = "completed"
-            _append_log(job, "Target directory already contains files; skipping download.")
+            _append_log(job, "Target directory already contains model files; skipping download.")
             return job
 
         _JOBS[job.job_id] = job
