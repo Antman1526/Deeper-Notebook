@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileJson, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileJson, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +21,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { getSourceReadiness, SourceHealthPill } from '@/components/onp/SourceHealthPill'
 import {
   CoursePackViewer,
+  DataTableViewer,
   FlashcardDeck,
+  MindMapViewer,
   parseFlashcards,
   parseQuizQuestions,
   QuizRunner,
@@ -52,6 +54,7 @@ const ICONS: Partial<Record<StudioArtifactType, typeof Newspaper>> = {
   timeline: ListChecks,
   quiz: FileQuestion,
   flashcards: ListChecks,
+  data_table: Table2,
   mind_map: MapIcon,
   slide_deck: Presentation,
   infographic: Layers3,
@@ -66,6 +69,7 @@ type QuickArtifactType =
   | 'briefing'
   | 'faq'
   | 'timeline'
+  | 'data_table'
   | 'mind_map'
   | 'slide_deck'
   | 'infographic'
@@ -86,6 +90,7 @@ const QUICK_ARTIFACTS: Array<{
   { type: 'briefing', title: 'Briefing', label: 'Briefing', Icon: Newspaper },
   { type: 'faq', title: 'FAQ', label: 'FAQ', Icon: FileQuestion },
   { type: 'timeline', title: 'Timeline', label: 'Timeline', Icon: ListChecks },
+  { type: 'data_table', title: 'Data Table', label: 'Data Table', Icon: Table2 },
   { type: 'mind_map', title: 'Mind map', label: 'Mind map', Icon: MapIcon },
   { type: 'slide_deck', title: 'Slide deck', label: 'Slide deck', Icon: Presentation },
   { type: 'infographic', title: 'Infographic', label: 'Infographic', Icon: Layers3 },
@@ -164,6 +169,7 @@ function artifactExportEntries(artifact: StudioArtifact | null): Array<[string, 
 
 function exportLabel(format: string): string {
   if (format.toLowerCase() === 'json') return 'JSON'
+  if (format.toLowerCase() === 'csv') return 'CSV'
   if (format.toLowerCase() === 'md') return 'Markdown'
   return format
     .replace(/[_-]+/g, ' ')
@@ -638,6 +644,13 @@ export function ArtifactRail({
                       markdown={selectedMarkdown}
                       stages={selectedArtifact.output_payload.research_stages}
                     />
+                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'data_table' ? (
+                    <DataTableViewer
+                      markdown={selectedMarkdown}
+                      rows={selectedArtifact.output_payload.data_table_rows}
+                    />
+                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'mind_map' ? (
+                    <MindMapViewer markdown={selectedMarkdown} />
                   ) : selectedMarkdown && (
                     selectedArtifact.artifact_type === 'course_pack'
                     || selectedArtifact.artifact_type === 'training_guide'

@@ -865,6 +865,7 @@ def test_generate_artifact_supports_first_text_artifact_types(monkeypatch):
         ("training_guide", "legacy alias for Course Pack"),
         ("flashcards", "flashcards"),
         ("quiz", "quiz"),
+        ("data_table", "Data Table"),
     ]:
         artifact = _FakeArtifact(
             id=f"studio_artifact:{artifact_type}",
@@ -1169,6 +1170,84 @@ def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, t
     json_export = tmp_path / body["export_paths"]["json"].split("/")[-1]
     exported_metadata = json.loads(json_export.read_text())
     assert exported_metadata["output_payload"]["research_stages"] == stages
+
+
+def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:data-table",
+        notebook_id="notebook:alpha",
+        artifact_type="data_table",
+        title="Data Table",
+        source_ids=["source:one"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, _source_id):
+            return SimpleNamespace(
+                id="source:one",
+                title="Source One",
+                full_text="Open Notebook Plus supports local models and Evidence Studio.",
+            )
+
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = AsyncMock(
+        return_value=SimpleNamespace(
+            content=(
+                "# Data Table\n\n"
+                "| Topic | Evidence | Source | Confidence | Notes |\n"
+                "|---|---|---|---|---|\n"
+                "| Local models | Scans AI_Models and routes roles [S1] | Source One | High | User-owned runtime |\n"
+                "| Evidence Studio | Generates citation-backed artifacts [S1] | Source One | High | Exportable |\n"
+            )
+        )
+    )
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    response = _client().post("/api/studio/artifacts/studio_artifact:data-table/generate")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["artifact_type"] == "data_table"
+    assert body["export_paths"]["csv"].endswith("-data-table.csv")
+    assert body["output_payload"]["data_table_rows"] == [
+        {
+            "Topic": "Local models",
+            "Evidence": "Scans AI_Models and routes roles [S1]",
+            "Source": "Source One",
+            "Confidence": "High",
+            "Notes": "User-owned runtime",
+        },
+        {
+            "Topic": "Evidence Studio",
+            "Evidence": "Generates citation-backed artifacts [S1]",
+            "Source": "Source One",
+            "Confidence": "High",
+            "Notes": "Exportable",
+        },
+    ]
+    csv_export = tmp_path / body["export_paths"]["csv"].split("/")[-1]
+    assert csv_export.exists()
+    assert "Topic,Evidence,Source,Confidence,Notes" in csv_export.read_text()
+    json_export = tmp_path / body["export_paths"]["json"].split("/")[-1]
+    exported_metadata = json.loads(json_export.read_text())
+    assert exported_metadata["output_payload"]["data_table_rows"] == (
+        body["output_payload"]["data_table_rows"]
+    )
+    messages = fake_chain.ainvoke.call_args.args[0]
+    lower_prompt = messages[0].content.lower()
+    assert "data table" in lower_prompt
+    assert "markdown table" in lower_prompt
+    assert "source marker" in lower_prompt
 
 
 def test_generate_artifact_uses_all_notebook_sources_when_none_selected(monkeypatch):

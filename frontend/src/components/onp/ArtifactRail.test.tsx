@@ -116,7 +116,7 @@ describe('ArtifactRail', () => {
 
     render(<ArtifactRail notebookId="notebook:alpha" />)
 
-    expect(screen.getByText('Evidence Studio')).toBeInTheDocument()
+    expect(screen.getAllByText('Evidence Studio').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Awaiting first artifact')).toBeInTheDocument()
     expect(screen.getByText('No saved research outputs in this notebook.')).toBeInTheDocument()
   })
@@ -716,6 +716,7 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Course Pack' }))
     fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }))
     fireEvent.click(screen.getByRole('button', { name: 'Quiz' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Data Table' }))
     fireEvent.click(screen.getByRole('button', { name: 'Mind map' }))
     fireEvent.click(screen.getByRole('button', { name: 'Slide deck' }))
     fireEvent.click(screen.getByRole('button', { name: 'Infographic' }))
@@ -756,6 +757,12 @@ describe('ArtifactRail', () => {
         notebook_id: 'notebook:alpha',
         artifact_type: 'quiz',
         title: 'Quiz',
+        source_ids: [],
+      })
+      expect(createArtifact).toHaveBeenCalledWith({
+        notebook_id: 'notebook:alpha',
+        artifact_type: 'data_table',
+        title: 'Data Table',
         source_ids: [],
       })
       expect(createArtifact).toHaveBeenCalledWith({
@@ -1041,6 +1048,95 @@ describe('ArtifactRail', () => {
     expect(screen.getByText('Correct')).toBeInTheDocument()
     expect(screen.getByText('Score: 1 / 1')).toBeInTheDocument()
     expect(screen.getByText('The app scans the local AI_Models directory.')).toBeInTheDocument()
+  })
+
+  it('opens Data Tables in a native table viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:data-table',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'data_table',
+          title: 'Data Table',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '# Data Table',
+              '',
+              '| Topic | Evidence | Source | Confidence | Notes |',
+              '|---|---|---|---|---|',
+              '| Local models | Scans AI_Models and routes roles [S1] | Source One | High | User-owned runtime |',
+            ].join('\n'),
+            data_table_rows: [
+              {
+                Topic: 'Evidence Studio',
+                Evidence: 'Generates citation-backed artifacts [S1]',
+                Source: 'Source One',
+                Confidence: 'High',
+                Notes: 'Exportable',
+              },
+            ],
+          },
+          citations: [],
+          export_paths: {
+            csv: '/tmp/data-table.csv',
+          },
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Data Table' }))
+
+    expect(screen.getByText('Data table')).toBeInTheDocument()
+    expect(screen.getByText('1 row extracted from source-grounded output.')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Topic' })).toBeInTheDocument()
+    expect(screen.getAllByText('Evidence Studio').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Generates citation-backed artifacts [S1]')).toBeInTheDocument()
+    expect(screen.getByText('CSV')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/data-table.csv')).toBeInTheDocument()
+  })
+
+  it('opens Mind Maps in a native tree viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:mind-map',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'mind_map',
+          title: 'Mind map',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            content: [
+              '# Mind Map',
+              '',
+              '- Open Notebook Plus [S1]',
+              '  - Source-grounded chat [S1]',
+              '    - Citation drawer [S1]',
+              '  - Local model control [S1]',
+              '  - Evidence Studio [S1]',
+            ].join('\n'),
+          },
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Mind map' }))
+
+    expect(screen.getAllByText('Mind map').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('5 nodes arranged from the source-grounded outline.')).toBeInTheDocument()
+    expect(screen.getByText('Open Notebook Plus [S1]')).toBeInTheDocument()
+    expect(screen.getByText('Citation drawer [S1]')).toBeInTheDocument()
+    expect(screen.getByText('Local model control [S1]')).toBeInTheDocument()
   })
 
   it('opens Course Packs in a module checklist viewer', async () => {
