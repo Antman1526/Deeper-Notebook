@@ -45,6 +45,16 @@ For deeper dives, check `/open_notebook/` CLAUDE.md for component-specific guida
 - Communication templates
 - Best practices
 
+**[Safe Upstream Sync](upstream-sync.md)** covers:
+- Importing updates from `lfnovo/open-notebook` without overwriting Plus work
+- Creating a separate integration worktree
+- Running the Plus verification ladder before merging upstream changes
+
+**[Source Scan Policy](scan-policy.md)** covers:
+- Keeping project scans inside the Open Notebook Plus source tree
+- Separating generated BrainPulseKnowledge packs from source code
+- Excluding generated builds, caches, installers, local state, and model weights
+
 ---
 
 ## 📚 Quick Links
@@ -61,6 +71,8 @@ For deeper dives, check `/open_notebook/` CLAUDE.md for component-specific guida
 | [API Reference](api-reference.md) | Building integrations | Complete REST API documentation |
 | [Security](security.md) | All developers | Security practices and vulnerability prevention |
 | [Maintainer Guide](maintainer-guide.md) | Maintainers | Managing issues, PRs, releases |
+| [Safe Upstream Sync](upstream-sync.md) | Maintainers | Bring in upstream updates without losing Plus features |
+| [Source Scan Policy](scan-policy.md) | Agents and maintainers | Keep source scans bounded and free of generated artifacts |
 
 ---
 
