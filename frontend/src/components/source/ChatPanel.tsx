@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -32,6 +32,7 @@ import { CitationPill } from '@/components/chat/CitationPill'
 import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
 import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
 import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
+import { RunTimeline } from '@/components/onp'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -92,6 +93,10 @@ interface ChatPanelProps {
   // chat omits it (no privacy badge there), so the review popover is
   // review-only in that case.
   onReaskAllowCloud?: (message: string) => void
+  // v0.8.69 — public stop control for notebook streaming. The hook
+  // already had AbortController plumbing; ChatPanel now exposes it as
+  // a visible action so long local generations are user-controllable.
+  onCancelStreaming?: () => void
 }
 
 export function ChatPanel({
@@ -115,6 +120,7 @@ export function ChatPanel({
   disabledMcpServers,
   onToggleMcpServer,
   onReaskAllowCloud,
+  onCancelStreaming,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -246,6 +252,13 @@ export function ChatPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
+        <RunTimeline
+          messages={messages}
+          isStreaming={isStreaming}
+          contextStats={notebookContextStats}
+          currentModel={modelOverride}
+          disabledMcpServers={disabledMcpServers}
+        />
         <ScrollArea className="flex-1 min-h-0 px-4" ref={scrollAreaRef}>
           <div className="space-y-4 py-4">
             {messages.length === 0 ? (
@@ -457,6 +470,19 @@ export function ChatPanel({
               className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
               rows={1}
             />
+            {isStreaming && onCancelStreaming && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Stop generating"
+                title="Stop generating"
+                onClick={onCancelStreaming}
+                className="h-[40px] w-[40px] flex-shrink-0"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               onClick={handleSend}
               disabled={!input.trim() || isStreaming}

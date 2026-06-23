@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect, useId } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
@@ -14,13 +14,10 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  RefreshCw,
   Key,
   ShieldAlert,
   AlertTriangle,
@@ -45,13 +42,9 @@ import {
   useEnvStatus,
   useCreateCredential,
   useUpdateCredential,
-  useDeleteCredential,
   useTestCredential,
-  useDiscoverModels,
-  useRegisterModels,
-  useMigrateFromEnv,
 } from '@/lib/hooks/use-credentials'
-import { Credential, CreateCredentialRequest, UpdateCredentialRequest, DiscoveredModel } from '@/lib/api/credentials'
+import { Credential, CreateCredentialRequest, UpdateCredentialRequest } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
 import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog, OsaurusDetectionBanner, SmartRoutingPanel } from '@/components/settings'
 // ONP shadow-layer components (see frontend/src/components/onp/README.md)
@@ -654,7 +647,7 @@ function DefaultModelSelectors({
   const updateDefaults = useUpdateModelDefaults()
   const autoAssign = useAutoAssignDefaults()
   const autoAssignCapability = useAutoAssignCapability()
-  const { setValue, watch } = useForm<ModelDefaults>({ defaultValues: defaults })
+  const { setValue, control } = useForm<ModelDefaults>({ defaultValues: defaults })
   const generatedId = useId()
 
   const [showEmbeddingDialog, setShowEmbeddingDialog] = useState(false)
@@ -718,6 +711,13 @@ function DefaultModelSelectors({
   ]
 
   const defaultConfigs = [...primaryConfigs, ...advancedConfigs]
+  const watchedDefaultValues = useWatch({
+    control,
+    name: defaultConfigs.map(config => config.key),
+  })
+  const currentDefaultByKey = Object.fromEntries(
+    defaultConfigs.map((config, index) => [config.key, watchedDefaultValues[index] || undefined])
+  ) as Partial<Record<ModelSlotKey, string>>
 
   const handleChange = (key: keyof ModelDefaults, value: string) => {
     if (key === 'default_embedding_model') {
@@ -806,7 +806,7 @@ function DefaultModelSelectors({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {primaryConfigs.map(config => {
             const available = getModelsForType(config.modelType)
-            const currentValue = watch(config.key) || undefined
+            const currentValue = currentDefaultByKey[config.key]
             const isValid = currentValue && available.some(m => m.id === currentValue)
 
             return (
@@ -858,7 +858,7 @@ function DefaultModelSelectors({
             <div className="grid gap-3 sm:grid-cols-3">
               {advancedConfigs.map(config => {
                 const available = getModelsForType(config.modelType)
-                const currentValue = watch(config.key) || undefined
+                const currentValue = currentDefaultByKey[config.key]
                 const isValid = currentValue && available.some(m => m.id === currentValue)
 
                 return (

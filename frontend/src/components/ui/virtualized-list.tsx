@@ -57,8 +57,11 @@ export function VirtualizedList<T>({
   getItemKey,
   containerAs = 'div',
 }: VirtualizedListProps<T>) {
+  'use no memo'
+
   const parentRef = useRef<HTMLDivElement>(null)
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual intentionally returns non-memoizable helpers; this wrapper is the isolated virtualization boundary.
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
@@ -140,8 +143,11 @@ export function VirtualizedListAuto<T>({
   onScroll,
   footer,
 }: VirtualizedListAutoProps<T>) {
+  'use no memo'
+
   const parentRef = useRef<HTMLDivElement>(null)
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual intentionally returns non-memoizable helpers; this wrapper is the isolated virtualization boundary.
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,

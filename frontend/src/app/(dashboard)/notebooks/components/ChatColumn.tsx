@@ -91,6 +91,7 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       isStreaming={chat.isSending}
       contextIndicators={null}
       onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
+      onCancelStreaming={chat.cancelStreaming}
       // v0.8.63 — privacy review sheet "Re-ask allowing cloud": re-send the
       // question with the fail-closed gate bypassed (explicit user consent).
       onReaskAllowCloud={(message) => chat.sendMessage(message, undefined, true)}
