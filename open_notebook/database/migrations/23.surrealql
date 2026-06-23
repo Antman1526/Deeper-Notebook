@@ -1,0 +1,24 @@
+-- v0.8.69 — Evidence Studio durable artifact records.
+-- Studio outputs need to survive browser sessions and app restarts instead
+-- of living only in the one-shot /studio/generate response.
+DEFINE TABLE IF NOT EXISTS studio_artifact SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS notebook_id ON TABLE studio_artifact TYPE record<notebook>;
+DEFINE FIELD IF NOT EXISTS artifact_type ON TABLE studio_artifact TYPE string;
+DEFINE FIELD IF NOT EXISTS title ON TABLE studio_artifact TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE studio_artifact TYPE string DEFAULT "pending";
+DEFINE FIELD IF NOT EXISTS source_ids ON TABLE studio_artifact TYPE array<record<source>> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS prompt ON TABLE studio_artifact TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS model_id ON TABLE studio_artifact TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS provider ON TABLE studio_artifact TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS output_format ON TABLE studio_artifact TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS output_payload ON TABLE studio_artifact FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS citations ON TABLE studio_artifact FLEXIBLE TYPE array<object> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS export_paths ON TABLE studio_artifact FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS revision_of_id ON TABLE studio_artifact TYPE option<record<studio_artifact>>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE studio_artifact DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE studio_artifact DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_studio_artifact_notebook ON TABLE studio_artifact COLUMNS notebook_id;
+DEFINE INDEX IF NOT EXISTS idx_studio_artifact_status ON TABLE studio_artifact COLUMNS status;
+DEFINE INDEX IF NOT EXISTS idx_studio_artifact_type ON TABLE studio_artifact COLUMNS artifact_type;

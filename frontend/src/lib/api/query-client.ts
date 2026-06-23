@@ -1,5 +1,13 @@
 import { QueryClient } from '@tanstack/react-query'
 
+export function shouldRetryMutation(failureCount: number, error: unknown): boolean {
+  const status = (error as { response?: { status?: number } })?.response?.status
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    return false
+  }
+  return failureCount < 1
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -9,7 +17,7 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
     },
     mutations: {
-      retry: 1,
+      retry: shouldRetryMutation,
     },
   },
 })
@@ -19,9 +27,11 @@ export const QUERY_KEYS = {
   notebook: (id: string) => ['notebooks', id] as const,
   notes: (notebookId?: string) => ['notes', notebookId] as const,
   note: (id: string) => ['notes', id] as const,
-  sources: (notebookId?: string) => ['sources', notebookId] as const,
+  sources: (notebookId?: string) =>
+    notebookId ? ['sources', 'list', notebookId] as const : ['sources', 'list'] as const,
   sourcesInfinite: (notebookId: string) => ['sources', 'infinite', notebookId] as const,
-  source: (id: string) => ['sources', id] as const,
+  source: (id: string) => ['sources', 'detail', id] as const,
+  sourceStatus: (id: string) => ['sources', 'status', id] as const,
   settings: ['settings'] as const,
   // v0.7.136 — Read-only observability config from /settings/observability.
   // Separate key from `settings` because the underlying endpoint is
@@ -32,6 +42,9 @@ export const QUERY_KEYS = {
   sourceChatSession: (sourceId: string, sessionId: string) => ['source-chat', sourceId, 'sessions', sessionId] as const,
   notebookChatSessions: (notebookId: string) => ['notebook-chat', notebookId, 'sessions'] as const,
   notebookChatSession: (sessionId: string) => ['notebook-chat', 'sessions', sessionId] as const,
+  studioArtifacts: (notebookId: string) => ['studio', notebookId, 'artifacts'] as const,
+  studioArtifactRevisions: (artifactId: string) => ['studio', 'artifacts', artifactId, 'revisions'] as const,
+  studioWorkflowRuns: (artifactId: string) => ['studio', 'artifacts', artifactId, 'workflow-runs'] as const,
   podcastEpisodes: ['podcasts', 'episodes'] as const,
   podcastEpisode: (episodeId: string) => ['podcasts', 'episodes', episodeId] as const,
   episodeProfiles: ['podcasts', 'episode-profiles'] as const,
