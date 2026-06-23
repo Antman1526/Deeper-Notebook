@@ -21,6 +21,7 @@ import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 
 export default function SourcesPage() {
   const { t, language } = useTranslation()
+  const failedToLoadMessage = t('sources.failedToLoad')
   const { openSourceDialog } = useCreateDialogs()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,20 +78,27 @@ export default function SourcesPage() {
       offsetRef.current += data.length
     } catch (err) {
       console.error('Failed to fetch sources:', err)
-      setError(t('sources.failedToLoad'))
-      toast.error(t('sources.failedToLoad'))
+      setError(failedToLoadMessage)
+      toast.error(failedToLoadMessage)
     } finally {
       setLoading(false)
       setLoadingMore(false)
       loadingMoreRef.current = false
     }
-  }, [sortBy, sortOrder, t('sources.failedToLoad')])
+  }, [sortBy, sortOrder, failedToLoadMessage])
+
+  const openSourceDialogAndRefresh = useCallback(() => {
+    openSourceDialog({
+      onSourceCreated: () => {
+        void fetchSources(true)
+      },
+    })
+  }, [fetchSources, openSourceDialog])
 
   // Initial load and when sort changes
   useEffect(() => {
     fetchSources(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortBy, sortOrder])
+  }, [fetchSources])
 
   useEffect(() => {
     // Focus the table when component mounts or sources change
@@ -304,7 +312,7 @@ export default function SourcesPage() {
           title={t('sources.noSourcesYet')}
           description={t('sources.allSourcesDescShort')}
           action={
-            <Button onClick={openSourceDialog}>
+            <Button onClick={openSourceDialogAndRefresh}>
               <Upload className="mr-2 h-4 w-4" />
               {t('sources.addNew')}
             </Button>
@@ -330,7 +338,7 @@ export default function SourcesPage() {
           {/* v0.7.34 — header-level Add Source button. Discoverability
               fix: there was no in-page way to create a source from the
               all-sources list; users had to drill into a notebook. */}
-          <Button onClick={openSourceDialog} className="shrink-0">
+          <Button onClick={openSourceDialogAndRefresh} className="shrink-0">
             <Plus className="mr-2 h-4 w-4" />
             {t('sources.addNew')}
           </Button>

@@ -32,6 +32,8 @@ export interface SourceListResponse {
   created: string
   updated: string
   file_available?: boolean
+  extracted_char_count?: number | null
+  extraction_quality?: 'pending' | 'no_text' | 'low_text' | 'ok' | null
   // ADD: Async processing fields from Python API
   command_id?: string
   status?: string

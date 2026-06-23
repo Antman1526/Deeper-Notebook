@@ -128,6 +128,38 @@ async def test_save_uploaded_file_allows_files_under_max_bytes(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_save_uploaded_file_does_not_overwrite_racing_upload(
+    tmp_path, monkeypatch
+):
+    """If another upload creates the selected name just before open(),
+    save_uploaded_file must choose a fresh path instead of truncating it."""
+    monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(tmp_path))
+
+    racing_path = tmp_path / "same-name.pdf"
+    fallback_path = tmp_path / "same-name (1).pdf"
+
+    def _racing_unique_filename(_filename, _upload_folder):
+        if not racing_path.exists():
+            racing_path.write_bytes(b"first upload")
+            return str(racing_path)
+        return str(fallback_path)
+
+    monkeypatch.setattr(
+        sources_mod,
+        "generate_unique_filename",
+        _racing_unique_filename,
+    )
+
+    f = _FakeUploadFile("same-name.pdf", b"second upload")
+
+    saved = await sources_mod.save_uploaded_file(f)
+
+    assert Path(saved) == fallback_path
+    assert racing_path.read_bytes() == b"first upload"
+    assert fallback_path.read_bytes() == b"second upload"
+
+
+@pytest.mark.asyncio
 async def test_save_uploaded_file_no_cap_when_max_bytes_is_none(tmp_path, monkeypatch):
     """Backward-compat: existing callers that don't pass max_bytes
     keep the prior unbounded behavior (caller is responsible for

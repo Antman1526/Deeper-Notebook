@@ -18,9 +18,11 @@ const nextConfig: NextConfig = {
   // Experimental features
   // Type assertion needed: proxyClientMaxBodySize is valid in Next.js 15 but types lag behind
   experimental: {
-    // Increase proxy body size limit for file uploads (default is 10MB)
-    // This allows larger files to be uploaded through the /api/* rewrite proxy to FastAPI
-    proxyClientMaxBodySize: '100mb',
+    // Keep browser uploads aligned with the backend source cap
+    // (ONP_SOURCE_UPLOAD_MAX_BYTES defaults to 500 MB). A lower Next proxy
+    // cap rejects large-but-valid PDFs before FastAPI can stream, clean up,
+    // and return the app's friendly 413 response.
+    proxyClientMaxBodySize: '500mb',
   } as NextConfig['experimental'],
 
   // API Rewrites: Proxy /api/* requests to FastAPI backend

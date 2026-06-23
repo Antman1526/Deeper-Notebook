@@ -39,8 +39,28 @@ describe('Unused Key Detection', () => {
     () => {
       const srcDir = path.resolve(__dirname, '../../..')
       const localesDir = path.resolve(__dirname)
+      const ignoredDirs = new Set(['.next', 'node_modules', 'coverage', 'dist', 'build'])
 
-      const files = fs.readdirSync(srcDir, { recursive: true }) as string[]
+      const collectFiles = (dir: string): string[] => {
+        let entries: fs.Dirent[]
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true })
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+          throw error
+        }
+
+        return entries.flatMap(entry => {
+          const full = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            if (ignoredDirs.has(entry.name)) return []
+            return collectFiles(full)
+          }
+          return [path.relative(srcDir, full)]
+        })
+      }
+
+      const files = collectFiles(srcDir)
       const sourceFiles = files.filter(f => {
         const full = path.join(srcDir, f)
         if (full.startsWith(localesDir)) return false
@@ -51,7 +71,14 @@ describe('Unused Key Detection', () => {
       // Normalize optional chaining (t?.common?.key → t.common.key)
       // so that keys like "common.errorDetails" match "common?.errorDetails"
       const corpus = sourceFiles
-        .map(f => fs.readFileSync(path.join(srcDir, f), 'utf-8'))
+        .map(f => {
+          try {
+            return fs.readFileSync(path.join(srcDir, f), 'utf-8')
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+            throw error
+          }
+        })
         .join('\n')
         .replace(/\?\./g, '.')
 

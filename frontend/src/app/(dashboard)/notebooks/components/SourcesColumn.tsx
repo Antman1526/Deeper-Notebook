@@ -63,6 +63,7 @@ export function SourcesColumn({
   fetchNextPage,
 }: SourcesColumnProps) {
   const { t } = useTranslation()
+  const sourcesLabel = t('navigation.sources')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
@@ -79,8 +80,8 @@ export function SourcesColumn({
   // Collapsible column state
   const { sourcesCollapsed, toggleSources } = useNotebookColumnsStore()
   const collapseButton = useMemo(
-    () => createCollapseButton(toggleSources, t('navigation.sources')),
-    [toggleSources, t('navigation.sources')]
+    () => createCollapseButton(toggleSources, sourcesLabel),
+    [toggleSources, sourcesLabel]
   )
 
   // v0.7.51 — read scroll metrics from `event.currentTarget`, NOT from a
@@ -280,6 +281,7 @@ export function SourcesColumn({
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         defaultNotebookId={notebookId}
+        onSourceCreated={onRefresh}
       />
 
       <AddExistingSourceDialog

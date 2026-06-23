@@ -362,13 +362,13 @@ class SourceCreate(BaseModel):
     transformations: Optional[list[str]] = Field(
         default_factory=list, description="Transformation IDs to apply"
     )
-    embed: bool = Field(False, description="Whether to embed content for vector search")
+    embed: bool = Field(True, description="Whether to embed content for vector search")
     delete_source: bool = Field(
         False, description="Whether to delete uploaded file after processing"
     )
     # New async processing support
     async_processing: bool = Field(
-        False, description="Whether to process source asynchronously"
+        True, description="Whether to process source asynchronously"
     )
 
     @model_validator(mode="after")
@@ -429,6 +429,8 @@ class SourceResponse(BaseModel):
     embedded_chunks: int
     insights_count: int = 0  # v0.7.181 — parity with SourceListResponse
     file_available: Optional[bool] = None
+    extracted_char_count: Optional[int] = None
+    extraction_quality: Optional[Literal["pending", "no_text", "low_text", "ok"]] = None
     # v0.7.181 — created/updated are now Optional[str]. Previously they
     # were required `str`, which combined with the natural `str(model.created)`
     # serialisation pattern silently returned the literal string `"None"`
@@ -464,6 +466,8 @@ class SourceListResponse(BaseModel):
     created: Optional[str] = None
     updated: Optional[str] = None
     file_available: Optional[bool] = None
+    extracted_char_count: Optional[int] = None
+    extraction_quality: Optional[Literal["pending", "no_text", "low_text", "ok"]] = None
     # Status fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
