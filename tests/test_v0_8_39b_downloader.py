@@ -294,6 +294,88 @@ def test_download_endpoint_rejects_non_gguf(app):
     assert "gguf" in resp.text.lower()
 
 
+def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, tmp_path):
+    import open_notebook.local_models as lm
+
+    calls: list[tuple[str, str, Path]] = []
+
+    async def fake_start_download(repo_id: str, filename: str, dest_dir: Path):
+        calls.append((repo_id, filename, dest_dir))
+
+        class Job:
+            job_id = "job-nested"
+            status = "queued"
+            target_path = str(dest_dir / filename)
+            bytes_downloaded = 0
+            bytes_total = None
+
+        return Job()
+
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setattr(lm, "start_download", fake_start_download, raising=False)
+    target = (
+        tmp_path
+        / "GGUF"
+        / "bartowski__Qwen2.5-7B-Instruct-GGUF"
+        / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    )
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/download",
+            json={
+                "repo_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+                "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+                "target_path": str(target),
+            },
+        )
+
+    assert resp.status_code == 200
+    assert calls == [
+        (
+            "bartowski/Qwen2.5-7B-Instruct-GGUF",
+            "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            target.parent.resolve(),
+        )
+    ]
+    assert resp.json()["target_path"] == str(target)
+
+
+def test_download_endpoint_rejects_target_path_outside_model_dir(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path / "models"))
+    outside = tmp_path / "outside" / "model.gguf"
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/download",
+            json={
+                "repo_id": "repo/model",
+                "filename": "model.gguf",
+                "target_path": str(outside),
+            },
+        )
+
+    assert resp.status_code == 400
+    assert "configured model directory" in resp.text
+
+
+def test_download_endpoint_rejects_target_path_filename_mismatch(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/local-models/download",
+            json={
+                "repo_id": "repo/model",
+                "filename": "model.gguf",
+                "target_path": str(tmp_path / "other.gguf"),
+            },
+        )
+
+    assert resp.status_code == 400
+    assert "basename" in resp.text
+
+
 def test_download_status_404_for_unknown_job(app):
     with TestClient(app) as client:
         resp = client.get("/api/local-models/downloads/unknown-id-xyz")

@@ -504,6 +504,12 @@ def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_pat
         '{"model_type": "fastcontext", "max_position_embeddings": 65536}'
     )
     (transformers / "model.safetensors").write_bytes(b"y" * 4096)
+    experimental = tmp_path / "Experimental" / "antman__Prototype-7B"
+    experimental.mkdir(parents=True)
+    (experimental / "config.json").write_text(
+        '{"model_type": "prototype", "max_position_embeddings": 32768}'
+    )
+    (experimental / "model.safetensors").write_bytes(b"z" * 4096)
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
@@ -528,6 +534,12 @@ def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_pat
         by_name["microsoft/FastContext-1.0-4B-SFT"]["setup_href"]
         == "/settings/launcher-prefs"
     )
+
+    assert by_name["antman/Prototype-7B"]["runtime"] == "experimental"
+    assert by_name["antman/Prototype-7B"]["runnable"] is False
+    assert by_name["antman/Prototype-7B"]["activation_supported"] is False
+    assert by_name["antman/Prototype-7B"]["runtime_status"] == "inventory_only"
+    assert "Experimental" in by_name["antman/Prototype-7B"]["runtime_note"]
     assert (
         by_name["microsoft/FastContext-1.0-4B-SFT"]["setup_label"]
         == "Open launcher preferences"

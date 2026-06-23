@@ -362,11 +362,16 @@ async def start_download(
     write the same .part file from two coroutines and corrupt it.
     """
     async with _get_registry_lock():
-        # De-dupe in-flight jobs.
+        target_path = dest_dir / filename
+
+        # De-dupe in-flight jobs. Include the destination because manifest
+        # rows can intentionally place the same HF filename in nested
+        # AI_Models folders.
         for existing in _JOBS.values():
             if (
                 existing.repo_id == repo_id
                 and existing.filename == filename
+                and existing.target_path == str(target_path)
                 and existing.status in ("queued", "downloading")
             ):
                 return existing
@@ -378,7 +383,7 @@ async def start_download(
             job_id=job_id,
             repo_id=repo_id,
             filename=filename,
-            target_path=str(dest_dir / filename),
+            target_path=str(target_path),
         )
 
         # v0.8.40c — Skip the network round-trip when the final file
@@ -391,7 +396,7 @@ async def start_download(
         # filters out as not-real-models. We DON'T cache the synthetic
         # job in _JOBS so a subsequent download after file deletion
         # produces a fresh real job.
-        target = dest_dir / filename
+        target = target_path
         try:
             size = target.stat().st_size if target.exists() else 0
         except OSError:

@@ -7,7 +7,7 @@
  */
 import apiClient from './client'
 
-export type StudioMode = 'notebook' | 'podcast'
+export type StudioMode = 'notebook' | 'podcast' | 'both'
 export type StudioArtifactType =
   | 'report'
   | 'study_guide'
@@ -40,18 +40,18 @@ export interface StudioGenerateOptions {
   mode: StudioMode
   /** Optional notebook title. Auto-generated from first filename if absent. */
   title?: string
-  /** Required for podcast mode. */
+  /** Required for podcast and combined mode. */
   episode_profile_name?: string
-  /** Required for podcast mode. */
+  /** Required for podcast and combined mode. */
   speaker_profile_name?: string
 }
 
 export interface StudioGenerateResponse {
   notebook_id: string
   mode: StudioMode
-  /** Notebook mode: id of the generated study-notes Note. */
+  /** Notebook / combined mode: id of the generated study-notes Note. */
   note_id?: string
-  /** Podcast mode: surreal_commands job id to poll for progress. */
+  /** Podcast / combined mode: surreal_commands job id to poll for progress. */
   job_id?: string
   source_ids: string[]
   title: string
@@ -155,7 +155,7 @@ export const studioApi = {
    *   4. For notebook mode: invoke the LLM with the combined parsed text
    *      and save the response as an AI-authored Note attached to the
    *      notebook
-   *   5. For podcast mode: submit a podcast generation job against the
+   *   5. For podcast / combined mode: submit a podcast generation job against the
    *      newly-created notebook, return job_id
    *
    * Throws on HTTP errors; the caller's hook should display the message.
@@ -164,8 +164,8 @@ export const studioApi = {
     if (opts.files.length === 0) {
       throw new Error('At least one file is required')
     }
-    if (opts.mode === 'podcast' && (!opts.episode_profile_name || !opts.speaker_profile_name)) {
-      throw new Error('Podcast mode requires episode_profile_name + speaker_profile_name')
+    if (opts.mode !== 'notebook' && (!opts.episode_profile_name || !opts.speaker_profile_name)) {
+      throw new Error('Podcast and combined modes require episode_profile_name + speaker_profile_name')
     }
 
     const formData = new FormData()

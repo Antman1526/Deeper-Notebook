@@ -25,7 +25,7 @@ import { useState, useCallback, useRef, DragEvent, ChangeEvent, KeyboardEvent } 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft } from 'lucide-react'
+import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
@@ -58,8 +58,9 @@ import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 // Must match api/routers/studio.py:_ALLOWED_EXTENSIONS
 const ALLOWED_EXTS = new Set([
-  '.pdf', '.docx', '.txt', '.md', '.markdown',
-  '.pptx', '.html', '.htm',
+  '.pdf', '.doc', '.docx', '.txt', '.md', '.markdown',
+  '.ppt', '.pptx', '.html', '.htm',
+  '.mp3', '.mp4', '.m4a', '.wav', '.mov',
 ])
 const MAX_FILE_MB = 50
 
@@ -126,12 +127,12 @@ export default function StudioPage() {
   const { data: episodeProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.episodeProfiles,
     queryFn: async () => (await apiClient.get('/episode-profiles')).data,
-    enabled: mode === 'podcast',
+    enabled: mode !== 'notebook',
   })
   const { data: speakerProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.speakerProfiles,
     queryFn: async () => (await apiClient.get('/speaker-profiles')).data,
-    enabled: mode === 'podcast',
+    enabled: mode !== 'notebook',
   })
 
   // ----- File handling -----
@@ -219,6 +220,28 @@ export default function StudioPage() {
   const canSubmit = files.length > 0 && !mutation.isPending && (
     mode === 'notebook' || (episodeProfile && speakerProfile)
   )
+  const requiresPodcastProfiles = mode !== 'notebook'
+
+  const successTitleKey = mode === 'notebook'
+    ? 'studio.notebookGenerated'
+    : mode === 'both'
+      ? 'studio.bothJobStarted'
+      : 'studio.podcastJobStarted'
+  const successDescriptionKey = mode === 'notebook'
+    ? 'studio.notebookGeneratedDescription'
+    : mode === 'both'
+      ? 'studio.bothJobStartedDescription'
+      : 'studio.podcastJobStartedDescription'
+  const generatingText = mode === 'notebook'
+    ? t('studio.generatingNotebook')
+    : mode === 'both'
+      ? t('studio.generatingBoth')
+      : t('studio.generatingPodcast')
+  const generateText = mode === 'notebook'
+    ? t('studio.generateNotebook')
+    : mode === 'both'
+      ? t('studio.generateBoth')
+      : t('studio.generatePodcast')
 
   const onGenerate = async () => {
     try {
@@ -226,8 +249,8 @@ export default function StudioPage() {
         files,
         mode,
         title: title.trim() || undefined,
-        episode_profile_name: mode === 'podcast' ? episodeProfile : undefined,
-        speaker_profile_name: mode === 'podcast' ? speakerProfile : undefined,
+        episode_profile_name: requiresPodcastProfiles ? episodeProfile : undefined,
+        speaker_profile_name: requiresPodcastProfiles ? speakerProfile : undefined,
       })
       // Warnings, if any
       if (result.warnings.length > 0) {
@@ -238,13 +261,8 @@ export default function StudioPage() {
         })
       } else {
         toast({
-          title: mode === 'notebook'
-            ? t('studio.notebookGenerated')
-            : t('studio.podcastJobStarted'),
-          description:
-            mode === 'notebook'
-              ? t('studio.notebookGeneratedDescription')
-              : t('studio.podcastJobStartedDescription').replace('{jobId}', result.job_id ?? ''),
+          title: t(successTitleKey),
+          description: t(successDescriptionKey).replace('{jobId}', result.job_id ?? ''),
         })
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
@@ -383,7 +401,7 @@ export default function StudioPage() {
             glance). Inner card spacing bumped to `space-y-6` so the
             dropdowns below don't crowd the tiles. */}
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => setMode('notebook')}
@@ -417,9 +435,26 @@ export default function StudioPage() {
                 {t('studio.podcastModeDescription')}
               </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('both')}
+              className={`
+                border rounded-lg p-6 text-left transition-colors
+                ${mode === 'both'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
+              `}
+            >
+              <Sparkles className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">{t('studio.bothModeTitle')}</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {t('studio.bothModeDescription')}
+              </div>
+            </button>
           </div>
 
-          {mode === 'podcast' && (
+          {requiresPodcastProfiles && (
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="space-y-1.5">
                 <Label htmlFor="ep-profile" className="text-xs">{t('studio.episodeProfileLabel')}</Label>
@@ -482,14 +517,10 @@ export default function StudioPage() {
               {mutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {mode === 'notebook'
-                    ? t('studio.generatingNotebook')
-                    : t('studio.generatingPodcast')}
+                  {generatingText}
                 </>
               ) : (
-                <>{mode === 'notebook'
-                  ? t('studio.generateNotebook')
-                  : t('studio.generatePodcast')}</>
+                <>{generateText}</>
               )}
             </Button>
           </div>
