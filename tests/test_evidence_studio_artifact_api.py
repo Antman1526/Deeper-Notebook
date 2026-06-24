@@ -576,6 +576,53 @@ def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
     assert not studio_mod.provision_langchain_model.called
 
 
+def test_generate_course_pack_blocks_completed_source_without_text(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:empty-text",
+        notebook_id="notebook:alpha",
+        artifact_type="course_pack",
+        title="Course Pack",
+        source_ids=["source:empty"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:empty"
+            return SimpleNamespace(
+                id="source:empty",
+                title="Completed Empty Source",
+                status="completed",
+                full_text="   ",
+                command=None,
+            )
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(),
+    )
+
+    response = _client().post("/api/studio/artifacts/studio_artifact:empty-text/generate")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "sources_not_ready"
+    assert detail["not_ready_sources"] == [
+        {
+            "source_id": "source:empty",
+            "title": "Completed Empty Source",
+            "command_id": None,
+        }
+    ]
+    assert _FakeArtifact.records["studio_artifact:empty-text"].status == "pending"
+    assert not studio_mod.provision_langchain_model.called
+
+
 def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_path):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
@@ -688,6 +735,64 @@ def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_pa
         statements = json.loads(package.read("xapi-statements.json").decode())
         assert statements["activity"]["id"].endswith("studio_artifact:course-pack")
         assert statements["modules"][0]["title"] == "Module 1: Local Model Orientation"
+
+
+def test_generate_course_pack_flags_unsupported_citation_markers(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:citation-guard",
+        notebook_id="notebook:training",
+        artifact_type="course_pack",
+        title="Citation Guard Course Pack",
+        source_ids=["source:one", "source:two"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            return SimpleNamespace(
+                id=source_id,
+                title=f"Source {source_id.rsplit(':', 1)[-1]}",
+                full_text=f"Grounded content from {source_id}.",
+            )
+
+    generated_markdown = "\n".join([
+        "# Course Pack",
+        "",
+        "## Module 1: Verified markers",
+        "Use the first source for supported claims. [S1]",
+        "This line cites a source marker that was never provided. [S3]",
+    ])
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content=generated_markdown))
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    response = _client().post("/api/studio/artifacts/studio_artifact:citation-guard/generate")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [citation["source_id"] for citation in body["citations"]] == [
+        "source:one",
+        "source:two",
+    ]
+    assert [citation["marker"] for citation in body["citations"]] == ["[S1]", "[S2]"]
+    assert body["output_payload"]["citation_warnings"] == {
+        "unsupported_markers": ["[S3]"],
+    }
+    exported_metadata = json.loads(
+        (tmp_path / body["export_paths"]["json"].split("/")[-1]).read_text()
+    )
+    assert exported_metadata["output_payload"]["citation_warnings"] == {
+        "unsupported_markers": ["[S3]"],
+    }
 
 
 def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_path):
