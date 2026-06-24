@@ -40,7 +40,7 @@ class NotebookResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     type: Literal["text", "vector"] = Field("text", description="Search type")
-    limit: int = Field(100, description="Maximum number of results", le=1000)
+    limit: int = Field(100, description="Maximum number of results", ge=1, le=1000)
     search_sources: bool = Field(True, description="Include sources in search")
     search_notes: bool = Field(True, description="Include notes in search")
     minimum_score: float = Field(
@@ -713,6 +713,9 @@ class CreateCredentialRequest(BaseModel):
     credentials_path: Optional[str] = Field(
         None, description="Credentials file path (Vertex)"
     )
+    num_ctx: Optional[int] = Field(
+        None, description="Context window size (Ollama only; defaults to 8192)"
+    )
 
 
 class UpdateCredentialRequest(BaseModel):
@@ -731,6 +734,9 @@ class UpdateCredentialRequest(BaseModel):
     project: Optional[str] = Field(None, description="Project ID")
     location: Optional[str] = Field(None, description="Location")
     credentials_path: Optional[str] = Field(None, description="Credentials path")
+    num_ctx: Optional[int] = Field(
+        None, description="Context window size (Ollama only; defaults to 8192)"
+    )
 
 
 class CredentialResponse(BaseModel):
@@ -750,6 +756,7 @@ class CredentialResponse(BaseModel):
     project: Optional[str] = None
     location: Optional[str] = None
     credentials_path: Optional[str] = None
+    num_ctx: Optional[int] = None
     has_api_key: bool = False
     # v0.7.182 — Optional[str] (was required `str`). Combined with
     # the new iso() helper that returns None for None input, this

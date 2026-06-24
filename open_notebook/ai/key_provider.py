@@ -57,6 +57,9 @@ PROVIDER_CONFIG = {
     "elevenlabs": {
         "env_var": "ELEVENLABS_API_KEY",
     },
+    "deepgram": {
+        "env_var": "DEEPGRAM_API_KEY",
+    },
     # URL-based providers
     "ollama": {
         "env_var": "OLLAMA_API_BASE",

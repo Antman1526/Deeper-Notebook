@@ -341,7 +341,7 @@ export function SettingsForm() {
           type="submit"
           disabled={!isDirty || updateSettings.isPending}
         >
-          {updateSettings.isPending ? t('common.saving') : t('navigation.settings')}
+          {updateSettings.isPending ? t('common.saving') : t('common.save')}
         </Button>
       </div>
     </form>
