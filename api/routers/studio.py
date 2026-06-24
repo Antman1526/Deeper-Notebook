@@ -726,7 +726,31 @@ def _course_pack_assessment_markdown(content: str) -> str:
     return "# Course Pack Assessment\n\nNo dedicated assessment sections were generated.\n"
 
 
-def _artifact_output_payload(artifact: StudioArtifact, content: str) -> dict[str, object]:
+def _citation_warnings(
+    content: str,
+    citations: list[dict[str, str]] | None,
+) -> dict[str, list[str]]:
+    valid_markers = {
+        str(citation.get("marker"))
+        for citation in (citations or [])
+        if citation.get("marker")
+    }
+    seen_markers = set(re.findall(r"\[S[1-9]\d*\]", content))
+    unsupported_markers = sorted(
+        seen_markers - valid_markers,
+        key=lambda marker: int(marker.removeprefix("[S").removesuffix("]")),
+    )
+    warnings: dict[str, list[str]] = {}
+    if unsupported_markers:
+        warnings["unsupported_markers"] = unsupported_markers
+    return warnings
+
+
+def _artifact_output_payload(
+    artifact: StudioArtifact,
+    content: str,
+    citations: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
     payload: dict[str, object] = {"content": content}
     if artifact.artifact_type == "data_table":
         rows = _data_table_rows(content)
@@ -740,6 +764,9 @@ def _artifact_output_payload(artifact: StudioArtifact, content: str) -> dict[str
         modules = _course_pack_modules(content)
         if modules:
             payload["course_pack_modules"] = modules
+    citation_warnings = _citation_warnings(content, citations)
+    if citation_warnings:
+        payload["citation_warnings"] = citation_warnings
     return payload
 
 
@@ -1732,8 +1759,8 @@ Requirements:
             raise InvalidInputError("Generated artifact output was empty")
         artifact.status = "completed"
         artifact.output_format = "markdown"
-        artifact.output_payload = _artifact_output_payload(artifact, content)
         artifact.citations = citations
+        artifact.output_payload = _artifact_output_payload(artifact, content, citations)
         artifact.source_ids = [citation["source_id"] for citation in citations]
         try:
             artifact.export_paths = await asyncio.to_thread(
