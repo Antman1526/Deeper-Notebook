@@ -167,7 +167,7 @@ async def save_source(state: SourceState) -> dict:
     if isinstance(content_metadata, dict):
         extraction_provenance["content_metadata"] = content_metadata
     source.provenance = {
-        **(source.provenance or {}),
+        **(getattr(source, "provenance", None) or {}),
         "extraction": extraction_provenance,
     }
 

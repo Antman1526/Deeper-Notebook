@@ -1056,6 +1056,8 @@ async def local_models_set_launch_default(body: dict):
     config_path = Path.home() / ".open-notebook-plus" / "config.toml"
     try:
         cfg = load_or_create(config_path)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=400,

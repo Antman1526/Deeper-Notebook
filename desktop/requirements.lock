@@ -223,6 +223,7 @@ httpx-sse==0.4.3
     #   mcp
 huggingface-hub==1.14.0
     # via
+    #   open-notebook (pyproject.toml)
     #   faster-whisper
     #   tokenizers
     #   transformers
