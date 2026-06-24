@@ -55,9 +55,12 @@ import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ModelFleetBadge } from '@/components/onp'
+import { SmartRoutingPanel } from '@/components/settings/SmartRoutingPanel'
 import apiClient from '@/lib/api/client'
+import { useAutoAssignCapability, useModelDefaults, useModels } from '@/lib/hooks/use-models'
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import type { Model, ModelDefaults } from '@/lib/types/models'
 // v0.8.39b — curated HuggingFace recommendations + one-click download
 import { DownloadPanel } from './DownloadPanel'
 
@@ -535,10 +538,55 @@ function isActiveJobStatus(status: string): boolean {
   return status === 'queued' || status === 'downloading' || status === 'running'
 }
 
+const LOCAL_DEFAULT_SLOTS: Array<{
+  key: keyof ModelDefaults
+  label: string
+  hint: string
+}> = [
+  {
+    key: 'default_chat_model',
+    label: 'Chat',
+    hint: 'General Q&A and source chat',
+  },
+  {
+    key: 'default_transformation_model',
+    label: 'Source synthesis',
+    hint: 'Study guides, summaries, and Course Packs',
+  },
+  {
+    key: 'default_tools_model',
+    label: 'Coding / tools',
+    hint: 'Tool use, code, and structured actions',
+  },
+  {
+    key: 'large_context_model',
+    label: 'Large context',
+    hint: 'Long PDFs, transcripts, and notebooks',
+  },
+  {
+    key: 'default_reasoning_model',
+    label: 'Reasoning',
+    hint: 'Slow, deeper analysis jobs',
+  },
+  {
+    key: 'default_embedding_model',
+    label: 'Embedding',
+    hint: 'Retrieval and search memory',
+  },
+]
+
+function modelNameById(models: Model[], id?: string | null): string | null {
+  if (!id) return null
+  return models.find(model => model.id === id)?.name ?? id
+}
+
 export default function LocalModelsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const localModelsHealth = useLocalModelsHealth()
+  const registeredModels = useModels()
+  const modelDefaults = useModelDefaults()
+  const autoAssignCapability = useAutoAssignCapability()
   const [inventoryFilter, setInventoryFilter] = React.useState<InventoryFilter>('all')
   const [manifestFilter, setManifestFilter] = React.useState<ManifestFilter>('all')
   const [inventorySearch, setInventorySearch] = React.useState('')
@@ -804,6 +852,13 @@ export default function LocalModelsPage() {
     installs: activeSnapshotInstallCount,
     benchmark: latestBenchmark?.status ?? 'idle',
   })
+  const registeredModelList = Array.isArray(registeredModels.data)
+    ? registeredModels.data
+    : []
+  const defaults = modelDefaults.data
+  const assignedDefaultCount = defaults
+    ? LOCAL_DEFAULT_SLOTS.filter(slot => Boolean(defaults[slot.key])).length
+    : 0
   const revealModelPath = useMutation({
     mutationFn: async (path: string) => {
       const resp = await apiClient.post<RevealPathResponse>(
@@ -1257,6 +1312,158 @@ export default function LocalModelsPage() {
                 })}
               </AlertDescription>
             </Alert>
+          )}
+
+          {data && data.available && (
+            <section className="space-y-4" data-testid="local-model-routing-defaults">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold tracking-tight">
+                  {t('localModels.routingDefaultsTitle', {
+                    defaultValue: 'Local routing and defaults',
+                  })}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {t('localModels.routingDefaultsDesc', {
+                    defaultValue:
+                      'Control whether Open Notebook Plus uses local, cloud, or automatic routing, then fill app defaults from your registered model fleet.',
+                  })}
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]">
+                {defaults ? (
+                  <SmartRoutingPanel defaults={defaults} />
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        {t('models.smartRouting.title', {
+                          defaultValue: 'Smart routing',
+                        })}
+                      </CardTitle>
+                      <CardDescription>
+                        {modelDefaults.isError
+                          ? t('localModels.defaultsErrorDesc', {
+                            defaultValue: 'Could not load routing defaults.',
+                          })
+                          : t('localModels.defaultsLoadingDesc', {
+                            defaultValue: 'Loading routing defaults.',
+                          })}
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                )}
+
+                <Card data-testid="local-model-defaults-preview">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="text-base font-medium flex items-center gap-2">
+                          <BrainCircuit className="h-4 w-4 text-primary" />
+                          {t('localModels.defaultsPreviewTitle', {
+                            defaultValue: 'App defaults',
+                          })}
+                        </CardTitle>
+                        <CardDescription>
+                          {t('localModels.defaultsPreviewDesc', {
+                            defaultValue:
+                              'The registered models Open Notebook Plus will use for chat, synthesis, tools, long context, reasoning, and retrieval.',
+                          })}
+                        </CardDescription>
+                      </div>
+                      {defaults && (
+                        <Badge variant="outline" className="w-fit text-xs">
+                          {t('localModels.defaultsAssignedCount', {
+                            defaultValue: '{{count}} / {{total}} assigned',
+                            count: assignedDefaultCount,
+                            total: LOCAL_DEFAULT_SLOTS.length,
+                          })}
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-2">
+                      {LOCAL_DEFAULT_SLOTS.map(slot => {
+                        const assigned = defaults
+                          ? modelNameById(registeredModelList, defaults[slot.key] as string | null | undefined)
+                          : null
+                        return (
+                          <div
+                            key={slot.key}
+                            className="rounded-md border bg-muted/20 px-3 py-2"
+                            data-testid={`local-model-default-${slot.key}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium">{slot.label}</div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  {slot.hint}
+                                </div>
+                              </div>
+                              <Badge
+                                variant={assigned ? 'secondary' : 'outline'}
+                                className="shrink-0 text-[0.68rem]"
+                              >
+                                {assigned
+                                  ? t('localModels.defaultAssigned', {
+                                    defaultValue: 'Assigned',
+                                  })
+                                  : t('localModels.defaultEmpty', {
+                                    defaultValue: 'Empty',
+                                  })}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 break-all font-mono text-xs text-muted-foreground">
+                              {assigned || t('localModels.defaultNotSet', {
+                                defaultValue: 'Not set',
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={autoAssignCapability.isPending}
+                        onClick={() => autoAssignCapability.mutate({ force: false })}
+                      >
+                        {autoAssignCapability.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3 w-3" />
+                        )}
+                        {t('localModels.fillEmptyDefaults', {
+                          defaultValue: 'Fill empty slots',
+                        })}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={autoAssignCapability.isPending}
+                        onClick={() => autoAssignCapability.mutate({ force: true })}
+                      >
+                        {autoAssignCapability.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                        {t('localModels.resetDefaults', {
+                          defaultValue: 'Reset and re-evaluate',
+                        })}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
           )}
 
           {data && data.available && localModelsHealth.data && (
