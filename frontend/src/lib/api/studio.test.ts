@@ -51,6 +51,38 @@ describe('studioApi artifact endpoints', () => {
     expect(result.job_id).toBe('job:podcast')
   })
 
+  it('generates from links without files', async () => {
+    apiPost.mockResolvedValue({
+      data: {
+        notebook_id: 'notebook:links',
+        mode: 'notebook',
+        note_id: 'note:links',
+        source_ids: ['source:link-a', 'source:link-b'],
+        title: 'Link training',
+        warnings: [],
+      },
+    })
+
+    const result = await studioApi.generate({
+      files: [],
+      links: [
+        'https://example.com/video',
+        ' https://example.com/guide ',
+      ],
+      mode: 'notebook',
+      title: 'Link training',
+    })
+
+    expect(apiPost).toHaveBeenCalledWith('/studio/generate', expect.any(FormData))
+    const formData = apiPost.mock.calls[0][1] as FormData
+    expect(formData.getAll('links')).toEqual([
+      'https://example.com/video',
+      'https://example.com/guide',
+    ])
+    expect(formData.get('mode')).toBe('notebook')
+    expect(result.source_ids).toEqual(['source:link-a', 'source:link-b'])
+  })
+
   it('lists durable artifacts for a notebook', async () => {
     apiGet.mockResolvedValue({
       data: [
