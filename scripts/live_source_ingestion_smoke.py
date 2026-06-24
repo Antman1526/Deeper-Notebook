@@ -143,7 +143,7 @@ def source_is_ready(
     detail: dict[str, Any],
     marker: str,
     *,
-    require_embedding: bool,
+    require_embedding: bool = True,
 ) -> bool:
     full_text = str(detail.get("full_text") or "")
     if marker not in full_text:
