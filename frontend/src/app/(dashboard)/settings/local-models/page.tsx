@@ -510,6 +510,31 @@ function fleetSummary(models: LocalModel[]) {
   }
 }
 
+function modelDisplayRef(model: LocalModel | null | undefined): string | null {
+  if (!model) return null
+  return model.launcher_model_ref || model.name || model.path || null
+}
+
+function findLaunchDefaultModel(
+  models: LocalModel[],
+  launcherDefault?: string | null,
+): LocalModel | null {
+  return models.find(model => model.is_launch_default)
+    ?? models.find(model => Boolean(
+      launcherDefault
+      && (
+        model.launcher_model_ref === launcherDefault
+        || model.path === launcherDefault
+        || model.name === launcherDefault
+      ),
+    ))
+    ?? null
+}
+
+function isActiveJobStatus(status: string): boolean {
+  return status === 'queued' || status === 'downloading' || status === 'running'
+}
+
 export default function LocalModelsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -743,6 +768,42 @@ export default function LocalModelsPage() {
     },
   })
   const latestBenchmark = startBenchmark.data ?? benchmarks.data?.benchmarks?.[0]
+  const activeModel = inventoryModels.find(model => model.is_live_active) ?? null
+  const launchDefaultModel = findLaunchDefaultModel(
+    inventoryModels,
+    data?.launcher_config?.default_model,
+  )
+  const activeModelRef = modelDisplayRef(activeModel) ?? data?.launcher_config?.active_gguf_model ?? null
+  const launchDefaultModelRef = modelDisplayRef(launchDefaultModel)
+    ?? data?.launcher_config?.default_model
+    ?? null
+  const launchDefaultDiffers = Boolean(
+    activeModelRef
+    && launchDefaultModelRef
+    && activeModelRef !== launchDefaultModelRef
+  )
+  const activeSnapshotInstallCount = (
+    snapshotInstalls.data?.snapshot_installs ?? []
+  ).filter(job => isActiveJobStatus(job.status)).length
+  const manifestAlignmentCounts = roleRouting.data?.manifest?.alignment_counts
+  const manifestControlLabel = roleRouting.data?.manifest?.available
+    ? t('localModels.controlManifestReady', {
+      defaultValue: '{{primary}} primary, {{untracked}} untracked',
+      primary: manifestAlignmentCounts?.primary ?? 0,
+      untracked: manifestAlignmentCounts?.untracked ?? 0,
+    })
+    : roleRouting.isError
+      ? t('localModels.controlManifestUnavailable', {
+        defaultValue: 'Manifest unavailable',
+      })
+      : t('localModels.controlManifestWaiting', {
+        defaultValue: 'Waiting for role scan',
+      })
+  const jobControlLabel = t('localModels.controlJobsLabel', {
+    defaultValue: '{{installs}} installs, benchmark {{benchmark}}',
+    installs: activeSnapshotInstallCount,
+    benchmark: latestBenchmark?.status ?? 'idle',
+  })
   const revealModelPath = useMutation({
     mutationFn: async (path: string) => {
       const resp = await apiClient.post<RevealPathResponse>(
@@ -1059,6 +1120,144 @@ export default function LocalModelsPage() {
               good first picks). Hidden on dir-missing/error states
               since downloads need a real dest dir. */}
           {data && data.available && <DownloadPanel />}
+
+          {data && data.available && (
+            <Card data-testid="local-model-control-state">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                      <Settings2 className="h-4 w-4 text-primary" />
+                      {t('localModels.controlStateTitle', {
+                        defaultValue: 'Control state',
+                      })}
+                    </CardTitle>
+                    <CardDescription>
+                      {t('localModels.controlStateDesc', {
+                        defaultValue:
+                          'Current runtime, next launch default, manifest alignment, and active local jobs.',
+                      })}
+                    </CardDescription>
+                  </div>
+                  {launchDefaultDiffers && (
+                    <Badge variant="outline" className="w-fit text-xs">
+                      {t('localModels.controlRestartNeeded', {
+                        defaultValue: 'Restart applies next-launch default',
+                      })}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-md border bg-muted/20 px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Power className="h-3.5 w-3.5" />
+                      {t('localModels.controlActiveNowLabel', {
+                        defaultValue: 'Active now',
+                      })}
+                    </div>
+                    <div
+                      className="mt-2 min-h-5 break-all font-mono text-sm"
+                      data-testid="control-state-active-now"
+                    >
+                      {activeModelRef || t('localModels.controlNoActiveModel', {
+                        defaultValue: 'No live GGUF detected',
+                      })}
+                    </div>
+                    {activeModel?.runtime && (
+                      <div className="mt-2">
+                        <ModelFleetBadge runtime={activeModel.runtime} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border bg-muted/20 px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t('localModels.controlLaunchDefaultLabel', {
+                        defaultValue: 'Launch default',
+                      })}
+                    </div>
+                    <div
+                      className="mt-2 min-h-5 break-all font-mono text-sm"
+                      data-testid="control-state-launch-default"
+                    >
+                      {launchDefaultModelRef || t('localModels.controlLaunchDefaultAuto', {
+                        defaultValue: 'auto',
+                      })}
+                    </div>
+                    {launchDefaultModel?.runtime && (
+                      <div className="mt-2">
+                        <ModelFleetBadge runtime={launchDefaultModel.runtime} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border bg-muted/20 px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Database className="h-3.5 w-3.5" />
+                      {t('localModels.controlManifestLabel', {
+                        defaultValue: 'Manifest',
+                      })}
+                    </div>
+                    <div
+                      className="mt-2 min-h-5 text-sm"
+                      data-testid="control-state-manifest"
+                    >
+                      {manifestControlLabel}
+                    </div>
+                    {roleRouting.data?.manifest?.reconciliation_counts && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {t('localModels.controlManifestReconciliation', {
+                          defaultValue: '{{matched}} matched, {{missing}} missing',
+                          matched: roleRouting.data.manifest.reconciliation_counts.matched,
+                          missing: roleRouting.data.manifest.reconciliation_counts.missing,
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border bg-muted/20 px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Gauge className="h-3.5 w-3.5" />
+                      {t('localModels.controlJobsTitle', {
+                        defaultValue: 'Jobs',
+                      })}
+                    </div>
+                    <div
+                      className="mt-2 min-h-5 text-sm"
+                      data-testid="control-state-jobs"
+                    >
+                      {jobControlLabel}
+                    </div>
+                    {latestBenchmark?.job_id && (
+                      <div className="mt-2 truncate font-mono text-xs text-muted-foreground">
+                        {latestBenchmark.job_id}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {data && data.available && hasRunnableModels && roleRouting.isError && (
+            <Alert variant="destructive" data-testid="local-model-role-routing-error">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {t('localModels.roleRoutingErrorTitle', {
+                  defaultValue: 'Role routing unavailable',
+                })}
+              </AlertTitle>
+              <AlertDescription>
+                {t('localModels.roleRoutingErrorDesc', {
+                  defaultValue:
+                    'The local router could not score installed models. Inventory controls still work, but recommendations and manifest alignment may be stale.',
+                })}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {data && data.available && localModelsHealth.data && (
             <Card data-testid="local-model-connection-checks">
