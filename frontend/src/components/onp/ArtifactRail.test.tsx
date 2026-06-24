@@ -1202,6 +1202,60 @@ describe('ArtifactRail', () => {
     expect(screen.getByText('1 complete')).toBeInTheDocument()
   })
 
+  it('shows unsupported citation marker warnings in the artifact viewer', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:citation-warning',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'course_pack',
+          title: 'Course Pack',
+          status: 'completed',
+          source_ids: ['source:video', 'source:pdf'],
+          output_payload: {
+            content: [
+              '# Course Pack',
+              '',
+              '## Module 1: Citation Review',
+              'Supported claim. [S1]',
+              'Unsupported claim. [S3]',
+            ].join('\n'),
+            citation_warnings: {
+              unsupported_markers: ['[S3]'],
+            },
+          },
+          citations: [
+            {
+              source_id: 'source:video',
+              title: 'Video source',
+              marker: '[S1]',
+              preview: 'Supported transcript text.',
+            },
+            {
+              source_id: 'source:pdf',
+              title: 'PDF source',
+              marker: '[S2]',
+              preview: 'Supported document text.',
+            },
+          ],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Course Pack' }))
+
+    expect(screen.getByTestId('artifact-citation-warning')).toHaveTextContent(
+      'Citation markers need review',
+    )
+    expect(screen.getByTestId('artifact-citation-warning')).toHaveTextContent('[S3]')
+    expect(screen.getByText('Video source')).toBeInTheDocument()
+    expect(screen.getByText('PDF source')).toBeInTheDocument()
+  })
+
   it('opens Research runs in a staged investigation viewer', async () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
     useStudioArtifacts.mockReturnValue({

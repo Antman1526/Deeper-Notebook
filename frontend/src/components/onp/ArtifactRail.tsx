@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileJson, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileJson, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
@@ -131,6 +131,14 @@ function statusClassName(status: StudioArtifact['status']): string {
 function artifactMarkdown(artifact: StudioArtifact | null): string {
   const content = artifact?.output_payload?.content
   return typeof content === 'string' ? content : ''
+}
+
+function unsupportedCitationMarkers(artifact: StudioArtifact | null): string[] {
+  const warnings = artifact?.output_payload?.citation_warnings
+  if (!warnings || typeof warnings !== 'object' || Array.isArray(warnings)) return []
+  const markers = (warnings as Record<string, unknown>).unsupported_markers
+  if (!Array.isArray(markers)) return []
+  return markers.filter((marker): marker is string => typeof marker === 'string')
 }
 
 function studyContentFingerprint(markdown: string): string {
@@ -288,6 +296,7 @@ export function ArtifactRail({
     || generateArtifact.isPending
   )
   const selectedMarkdown = artifactMarkdown(selectedArtifact)
+  const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
   const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
   const selectedExportEntries = artifactExportEntries(selectedArtifact)
   const flashcardCount = selectedArtifact?.artifact_type === 'flashcards'
@@ -697,54 +706,78 @@ export function ArtifactRail({
 
               <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
                 <ScrollArea className="max-h-[55vh] rounded-md border bg-background p-4">
-                  {selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
-                    <FlashcardDeck
-                      markdown={selectedMarkdown}
-                      progress={selectedStudyProgress?.flashcards}
-                      onProgressChange={(flashcards: FlashcardProgress) => {
-                        void saveStudyProgress({ flashcards })
-                      }}
-                    />
-                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'quiz' && quizQuestionCount > 0 ? (
-                    <QuizRunner
-                      markdown={selectedMarkdown}
-                      progress={selectedStudyProgress?.quiz}
-                      onProgressChange={(quiz: QuizProgress) => {
-                        void saveStudyProgress({ quiz })
-                      }}
-                    />
-                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'research_run' ? (
-                    <ResearchRunViewer
-                      markdown={selectedMarkdown}
-                      stages={selectedArtifact.output_payload.research_stages}
-                    />
-                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'data_table' ? (
-                    <DataTableViewer
-                      markdown={selectedMarkdown}
-                      rows={selectedArtifact.output_payload.data_table_rows}
-                    />
-                  ) : selectedMarkdown && selectedArtifact.artifact_type === 'mind_map' ? (
-                    <MindMapViewer markdown={selectedMarkdown} />
-                  ) : selectedMarkdown && (
-                    selectedArtifact.artifact_type === 'course_pack'
-                    || selectedArtifact.artifact_type === 'training_guide'
-                  ) ? (
-                    <CoursePackViewer
-                      markdown={selectedMarkdown}
-                      progress={selectedStudyProgress?.course_pack}
-                      onProgressChange={(coursePack: CoursePackProgress) => {
-                        void saveStudyProgress({ course_pack: coursePack })
-                      }}
-                    />
-                  ) : selectedMarkdown ? (
-                    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-                      <ReactMarkdown>{selectedMarkdown}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-muted-foreground">
-                      This artifact does not have markdown output yet.
-                    </div>
-                  )}
+                  <div className="space-y-4">
+                    {selectedUnsupportedCitationMarkers.length > 0 && (
+                      <div
+                        className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+                        role="status"
+                        data-testid="artifact-citation-warning"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+                          <div>
+                            <div className="font-medium text-destructive">
+                              Citation markers need review
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              This artifact cites markers that are not attached to selected sources:{' '}
+                              <span className="font-mono">
+                                {selectedUnsupportedCitationMarkers.join(', ')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
+                      <FlashcardDeck
+                        markdown={selectedMarkdown}
+                        progress={selectedStudyProgress?.flashcards}
+                        onProgressChange={(flashcards: FlashcardProgress) => {
+                          void saveStudyProgress({ flashcards })
+                        }}
+                      />
+                    ) : selectedMarkdown && selectedArtifact.artifact_type === 'quiz' && quizQuestionCount > 0 ? (
+                      <QuizRunner
+                        markdown={selectedMarkdown}
+                        progress={selectedStudyProgress?.quiz}
+                        onProgressChange={(quiz: QuizProgress) => {
+                          void saveStudyProgress({ quiz })
+                        }}
+                      />
+                    ) : selectedMarkdown && selectedArtifact.artifact_type === 'research_run' ? (
+                      <ResearchRunViewer
+                        markdown={selectedMarkdown}
+                        stages={selectedArtifact.output_payload.research_stages}
+                      />
+                    ) : selectedMarkdown && selectedArtifact.artifact_type === 'data_table' ? (
+                      <DataTableViewer
+                        markdown={selectedMarkdown}
+                        rows={selectedArtifact.output_payload.data_table_rows}
+                      />
+                    ) : selectedMarkdown && selectedArtifact.artifact_type === 'mind_map' ? (
+                      <MindMapViewer markdown={selectedMarkdown} />
+                    ) : selectedMarkdown && (
+                      selectedArtifact.artifact_type === 'course_pack'
+                      || selectedArtifact.artifact_type === 'training_guide'
+                    ) ? (
+                      <CoursePackViewer
+                        markdown={selectedMarkdown}
+                        progress={selectedStudyProgress?.course_pack}
+                        onProgressChange={(coursePack: CoursePackProgress) => {
+                          void saveStudyProgress({ course_pack: coursePack })
+                        }}
+                      />
+                    ) : selectedMarkdown ? (
+                      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
+                        <ReactMarkdown>{selectedMarkdown}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        This artifact does not have markdown output yet.
+                      </div>
+                    )}
+                  </div>
                 </ScrollArea>
 
                 <aside className="rounded-md border bg-muted/30 p-3">
