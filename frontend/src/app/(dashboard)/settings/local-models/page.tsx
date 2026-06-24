@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
+import { SidecarLogPopover, sidecarKindFromName } from '@/components/chat/SidecarLogPopover'
 import {
   Card,
   CardContent,
@@ -57,8 +58,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ModelFleetBadge } from '@/components/onp'
 import { SmartRoutingPanel } from '@/components/settings/SmartRoutingPanel'
 import apiClient from '@/lib/api/client'
-import { useAutoAssignCapability, useModelDefaults, useModels } from '@/lib/hooks/use-models'
-import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
+import { useAutoAssignCapability, useModelDefaults, useModels, useTestModel } from '@/lib/hooks/use-models'
+import { type LocalModelHealth, useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { Model, ModelDefaults } from '@/lib/types/models'
 // v0.8.39b — curated HuggingFace recommendations + one-click download
@@ -580,6 +581,46 @@ function modelNameById(models: Model[], id?: string | null): string | null {
   return models.find(model => model.id === id)?.name ?? id
 }
 
+function normalizeModelLabel(value: string | null | undefined): string {
+  return (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function findRegisteredModel(models: Model[], id?: string | null): Model | null {
+  if (!id) return null
+  return models.find(model => model.id === id) ?? null
+}
+
+function findHealthForRegisteredModel(
+  model: Model | null,
+  healthModels: LocalModelHealth[],
+): LocalModelHealth | null {
+  if (!model) return null
+  const modelName = normalizeModelLabel(model.name)
+  if (!modelName) return null
+  return healthModels.find(health => {
+    const healthName = normalizeModelLabel(health.name)
+    return Boolean(healthName && (healthName.includes(modelName) || modelName.includes(healthName)))
+  }) ?? null
+}
+
+function defaultUsabilityLabel(
+  model: Model | null,
+  health: LocalModelHealth | null,
+): 'Needs registration' | 'Usable' | 'Needs repair' | 'Untested' {
+  if (!model) return 'Needs registration'
+  if (health?.status === 'healthy') return 'Usable'
+  if (health && health.status !== 'unknown') return 'Needs repair'
+  return 'Untested'
+}
+
+function defaultUsabilityBadgeVariant(
+  label: ReturnType<typeof defaultUsabilityLabel>,
+): 'outline' | 'secondary' | 'destructive' {
+  if (label === 'Usable') return 'secondary'
+  if (label === 'Needs registration' || label === 'Needs repair') return 'destructive'
+  return 'outline'
+}
+
 export default function LocalModelsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -587,6 +628,7 @@ export default function LocalModelsPage() {
   const registeredModels = useModels()
   const modelDefaults = useModelDefaults()
   const autoAssignCapability = useAutoAssignCapability()
+  const modelTest = useTestModel()
   const [inventoryFilter, setInventoryFilter] = React.useState<InventoryFilter>('all')
   const [manifestFilter, setManifestFilter] = React.useState<ManifestFilter>('all')
   const [inventorySearch, setInventorySearch] = React.useState('')
@@ -855,6 +897,7 @@ export default function LocalModelsPage() {
   const registeredModelList = Array.isArray(registeredModels.data)
     ? registeredModels.data
     : []
+  const healthModels = localModelsHealth.data?.models ?? []
   const defaults = modelDefaults.data
   const assignedDefaultCount = defaults
     ? LOCAL_DEFAULT_SLOTS.filter(slot => Boolean(defaults[slot.key])).length
@@ -1385,9 +1428,13 @@ export default function LocalModelsPage() {
                   <CardContent className="space-y-4">
                     <div className="grid gap-2">
                       {LOCAL_DEFAULT_SLOTS.map(slot => {
-                        const assigned = defaults
-                          ? modelNameById(registeredModelList, defaults[slot.key] as string | null | undefined)
+                        const modelId = defaults
+                          ? defaults[slot.key] as string | null | undefined
                           : null
+                        const registered = findRegisteredModel(registeredModelList, modelId)
+                        const assigned = registered?.name ?? modelNameById(registeredModelList, modelId)
+                        const health = findHealthForRegisteredModel(registered, healthModels)
+                        const usability = assigned ? defaultUsabilityLabel(registered, health) : null
                         return (
                           <div
                             key={slot.key}
@@ -1419,10 +1466,65 @@ export default function LocalModelsPage() {
                                 defaultValue: 'Not set',
                               })}
                             </div>
+                            {assigned && (
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant={registered ? 'secondary' : 'destructive'}
+                                  className="text-[0.68rem]"
+                                >
+                                  {registered
+                                    ? t('localModels.defaultRegistered', {
+                                      defaultValue: 'Registered',
+                                    })
+                                    : t('localModels.defaultNeedsRegistration', {
+                                      defaultValue: 'Needs registration',
+                                    })}
+                                </Badge>
+                                {usability && (
+                                  <Badge
+                                    variant={defaultUsabilityBadgeVariant(usability)}
+                                    className="text-[0.68rem]"
+                                  >
+                                    {usability}
+                                  </Badge>
+                                )}
+                                {registered && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1.5 px-2 text-xs"
+                                    disabled={modelTest.isPending}
+                                    onClick={() => modelTest.testModel(registered.id, registered.name)}
+                                    aria-label={t('localModels.testDefaultModelAria', {
+                                      defaultValue: 'Test default model for {{slot}}',
+                                      slot: slot.label,
+                                    })}
+                                  >
+                                    <Gauge className="h-3 w-3" />
+                                    {t('localModels.testDefaultModel', {
+                                      defaultValue: 'Test',
+                                    })}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
                     </div>
+
+                    {modelTest.testResult && (
+                      <div
+                        data-testid="local-model-default-test-result"
+                        className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+                      >
+                        <span className="font-medium text-foreground">
+                          {modelTest.testedModelName}:
+                        </span>{' '}
+                        {modelTest.testResult.message}
+                      </div>
+                    )}
 
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Button
@@ -1490,53 +1592,81 @@ export default function LocalModelsPage() {
                 </div>
               </CardHeader>
               <CardContent className="grid gap-2 sm:grid-cols-2">
-                {localModelsHealth.data.models.map(model => (
-                  <div
-                    key={model.name}
-                    className="rounded-md border bg-muted/20 px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {model.name}
-                        </div>
-                        {(model.runtime || model.endpoint) && (
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.68rem] text-muted-foreground">
-                            {model.runtime && (
-                              <span className="font-medium uppercase tracking-wide">
-                                {model.runtime}
-                              </span>
-                            )}
-                            {model.endpoint && (
-                              <span className="truncate">
-                                {model.endpoint}
-                                {model.probe_path ? model.probe_path : ''}
-                              </span>
-                            )}
+                {localModelsHealth.data.models.map(model => {
+                  const sidecarKind = sidecarKindFromName(model.name)
+                  const showRepair = Boolean(sidecarKind && model.status !== 'healthy')
+                  return (
+                    <div
+                      key={model.name}
+                      className="rounded-md border bg-muted/20 px-3 py-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">
+                            {model.name}
                           </div>
-                        )}
-                        <div className="mt-1 truncate text-xs text-muted-foreground">
-                          {model.detail || t('models.status.noDetail', {
-                            defaultValue: 'No detail',
-                          })}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <Badge
-                          variant={healthStatusBadgeVariant(model.status)}
-                          className="text-[0.68rem]"
-                        >
-                          {healthStatusLabel(model.status)}
-                        </Badge>
-                        {model.latency_ms != null && (
-                          <div className="mt-1 text-[0.68rem] text-muted-foreground">
-                            {model.latency_ms} ms
+                          {(model.runtime || model.endpoint) && (
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.68rem] text-muted-foreground">
+                              {model.runtime && (
+                                <span className="font-medium uppercase tracking-wide">
+                                  {model.runtime}
+                                </span>
+                              )}
+                              {model.endpoint && (
+                                <span className="truncate">
+                                  {model.endpoint}
+                                  {model.probe_path ? model.probe_path : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <div className="mt-1 truncate text-xs text-muted-foreground">
+                            {model.detail || t('models.status.noDetail', {
+                              defaultValue: 'No detail',
+                            })}
                           </div>
-                        )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <Badge
+                            variant={healthStatusBadgeVariant(model.status)}
+                            className="text-[0.68rem]"
+                          >
+                            {healthStatusLabel(model.status)}
+                          </Badge>
+                          {model.latency_ms != null && (
+                            <div className="mt-1 text-[0.68rem] text-muted-foreground">
+                              {model.latency_ms} ms
+                            </div>
+                          )}
+                          {showRepair && sidecarKind && (
+                            <div className="mt-2">
+                              <SidecarLogPopover
+                                kind={sidecarKind}
+                                showRestartWhenLogUnavailable
+                              >
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1.5 px-2 text-xs"
+                                  aria-label={t('localModels.repairSidecarAria', {
+                                    defaultValue: 'View log and restart {{name}}',
+                                    name: model.name,
+                                  })}
+                                >
+                                  <Settings2 className="h-3 w-3" />
+                                  {t('localModels.repairSidecar', {
+                                    defaultValue: 'View log / Restart',
+                                  })}
+                                </Button>
+                              </SidecarLogPopover>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </CardContent>
             </Card>
           )}
