@@ -382,13 +382,56 @@ def test_download_status_404_for_unknown_job(app):
     assert resp.status_code == 404
 
 
-def test_recommendations_endpoint_returns_list(app):
+def test_recommendations_endpoint_returns_static_fallback_without_manifest(app, monkeypatch, tmp_path):
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+
     with TestClient(app) as client:
         resp = client.get("/api/local-models/recommendations")
     assert resp.status_code == 200
     body = resp.json()
+    assert body["source"] == "static"
     assert "recommendations" in body
     assert len(body["recommendations"]) >= 1
     first = body["recommendations"][0]
     assert "repo_id" in first
     assert "filename" in first
+
+
+def test_recommendations_endpoint_returns_manifest_cards_when_manifest_exists(
+    app,
+    monkeypatch,
+    tmp_path,
+):
+    mlx_path = tmp_path / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    gguf_path = (
+        tmp_path
+        / "GGUF"
+        / "bartowski__Qwen2.5-7B-Instruct-GGUF"
+        / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    )
+    manifest = tmp_path / "manifests" / "model_inventory.md"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        "\n".join([
+            "# Local Model Inventory",
+            "",
+            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+            "|---|---|---|---|---|---|---|",
+            f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
+            f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+
+    with TestClient(app) as client:
+        resp = client.get("/api/local-models/recommendations")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "manifest"
+    assert body["manifest_path"] == str(manifest)
+    assert body["recommendations"][0]["runtime_type"] == "MLX"
+    assert body["recommendations"][0]["setup_task"]["action_type"] == "download_snapshot"
+    assert body["recommendations"][1]["runtime_type"] == "GGUF"
+    assert body["recommendations"][1]["setup_task"]["action_type"] == "download_gguf"
+    assert body["recommendations"][1]["setup_task"]["target_path"] == str(gguf_path)

@@ -204,8 +204,6 @@ async def local_models_role_routing():
     stable contract for chat, source synthesis, coding research, study tools,
     and embedding/retrieval picks.
     """
-    from pathlib import Path as _Path
-
     from open_notebook.local_models import (
         build_manifest_reconciliation,
         enumerate_models,
@@ -238,7 +236,12 @@ async def local_models_role_routing():
     launcher_config = _launcher_config_summary(model_dir)
     benchmark_history = await asyncio.to_thread(load_benchmark_history, model_dir)
     manifest_entries = await asyncio.to_thread(load_model_manifest, model_dir)
-    routes = await asyncio.to_thread(recommend_model_roles, rows, benchmark_history)
+    routes = await asyncio.to_thread(
+        recommend_model_roles,
+        rows,
+        benchmark_history,
+        manifest_entries,
+    )
     route_matches = [
         find_manifest_matches(route.model, manifest_entries)
         for route in routes
@@ -723,6 +726,26 @@ def _manifest_setup_task_to_dict(task):
     }
 
 
+def _manifest_recommendation_to_dict(rec):
+    return {
+        "id": rec.id,
+        "label": rec.label,
+        "description": rec.description,
+        "repo_id": rec.repo_id,
+        "filename": rec.filename,
+        "runtime_type": rec.runtime_type,
+        "target_path": rec.target_path,
+        "status": rec.status,
+        "tags": rec.tags,
+        "approx_size_gb": rec.approx_size_gb,
+        "context_length": rec.context_length,
+        "setup_task": (
+            _manifest_setup_task_to_dict(rec.setup_task)
+            if rec.setup_task else None
+        ),
+    }
+
+
 def _snapshot_install_job_to_dict(job):
     return {
         "job_id": job.job_id,
@@ -1105,21 +1128,48 @@ async def local_models_benchmark_status(job_id: str):
 
 @router.get("/api/local-models/recommendations")
 async def local_models_recommendations():
-    """v0.8.39b — Curated HuggingFace GGUF recommendations.
+    """Return MLX-first manifest recommendations when available.
 
-    Static list maintained in
-    `open_notebook/local_models/downloader.py:RECOMMENDATIONS`. The
-    frontend renders these as one-click download cards on the Local
-    Models page. Each entry carries:
-      - `id`: stable key for React.
-      - `label`, `description`: UI copy.
-      - `repo_id`, `filename`: HuggingFace location.
-      - `approx_size_gb`: pre-download size hint.
-      - `tags`: ["chat", "tools", "small", "recommended", "embedding"…]
-      - `context_length`: native n_ctx; informs router headroom.
+    The static GGUF list remains the fallback for users without an
+    `AI_Models/manifests/model_inventory.md` file.
     """
-    from open_notebook.local_models import RECOMMENDATIONS
-    return {"recommendations": RECOMMENDATIONS}
+    from pathlib import Path as _Path
+
+    from open_notebook.local_models import (
+        RECOMMENDATIONS,
+        build_manifest_recommendations,
+        enumerate_models,
+        load_model_manifest,
+        model_manifest_path,
+    )
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        return {"source": "static", "recommendations": RECOMMENDATIONS}
+
+    manifest_entries = await asyncio.to_thread(load_model_manifest, model_dir)
+    if not manifest_entries:
+        return {
+            "source": "static",
+            "manifest_path": str(model_manifest_path(model_dir)),
+            "recommendations": RECOMMENDATIONS,
+        }
+
+    available = model_dir.exists() and model_dir.is_dir()
+    models = await asyncio.to_thread(enumerate_models, model_dir) if available else []
+    recommendations = await asyncio.to_thread(
+        build_manifest_recommendations,
+        manifest_entries,
+        models,
+    )
+    return {
+        "source": "manifest",
+        "manifest_path": str(model_manifest_path(model_dir)),
+        "recommendations": [
+            _manifest_recommendation_to_dict(rec)
+            for rec in recommendations
+        ],
+    }
 
 
 @router.post("/api/local-models/download")

@@ -46,14 +46,15 @@ _SMALL_FAST_MARKERS = ("gemma", "phi", "qwen", "mini", "small")
 def recommend_model_roles(
     models: list[LocalModelInfo],
     benchmark_results: list[object] | None = None,
+    manifest_entries: list[object] | None = None,
 ) -> list[ModelRoleRecommendation]:
     """Recommend installed local models for the main NotebookLM-style roles."""
     return [
-        _recommend("chat", models, benchmark_results),
-        _recommend("source_synthesis", models, benchmark_results),
-        _recommend("coding_research", models, benchmark_results),
-        _recommend("study_fast", models, benchmark_results),
-        _recommend("embedding", models, benchmark_results),
+        _recommend("chat", models, benchmark_results, manifest_entries),
+        _recommend("source_synthesis", models, benchmark_results, manifest_entries),
+        _recommend("coding_research", models, benchmark_results, manifest_entries),
+        _recommend("study_fast", models, benchmark_results, manifest_entries),
+        _recommend("embedding", models, benchmark_results, manifest_entries),
     ]
 
 
@@ -82,10 +83,22 @@ def _recommend(
     role: str,
     models: list[LocalModelInfo],
     benchmark_results: list[object] | None,
+    manifest_entries: list[object] | None,
 ) -> ModelRoleRecommendation:
     measured = _measured_candidates(role, models, benchmark_results or [])
     if measured:
         score, model, reason = measured[0]
+        return ModelRoleRecommendation(
+            role=role,
+            label=_ROLE_LABELS[role],
+            model=model,
+            confidence=min(1.0, round(score / 100.0, 2)),
+            reason=reason,
+        )
+
+    manifest_candidates = _manifest_candidates(role, models, manifest_entries or [])
+    if manifest_candidates:
+        score, model, reason = manifest_candidates[0]
         return ModelRoleRecommendation(
             role=role,
             label=_ROLE_LABELS[role],
@@ -161,10 +174,110 @@ def _measured_candidates(
     return candidates
 
 
+def _manifest_candidates(
+    role: str,
+    models: list[LocalModelInfo],
+    manifest_entries: list[object],
+) -> list[tuple[float, LocalModelInfo, str]]:
+    candidates: list[tuple[float, LocalModelInfo, str]] = []
+    for entry in manifest_entries:
+        relevance = _manifest_role_relevance_score(role, entry)
+        if relevance <= 0:
+            continue
+        entry_keys = inventory_model_match_keys(
+            str(_entry_value(entry, "repo") or ""),
+            str(_entry_value(entry, "local_path") or ""),
+        )
+        entry_path = _resolved_path(str(_entry_value(entry, "local_path") or ""))
+        for model in models:
+            if model.runtime.lower() not in {"gguf", "mlx"}:
+                continue
+            model_path = _resolved_path(model.path)
+            model_keys = inventory_model_match_keys(model.name, model.path)
+            if entry_path and model_path and entry_path != model_path and not (entry_keys & model_keys):
+                continue
+            if not entry_path and not (entry_keys & model_keys):
+                continue
+            runtime_bonus = 10 if model.runtime.lower() == "mlx" else 4
+            status_bonus = (
+                6
+                if "verified" in str(_entry_value(entry, "estimated_status") or "").lower()
+                else 0
+            )
+            score = relevance + runtime_bonus + status_bonus
+            role_text = str(_entry_value(entry, "role") or "curated")
+            candidates.append((
+                score,
+                model,
+                (
+                    f"Curated {role_text} manifest row for "
+                    f"{_entry_value(entry, 'category') or model.name}."
+                ),
+            ))
+    candidates.sort(key=lambda item: (
+        -item[0],
+        0 if item[1].runtime.lower() == "mlx" else 1,
+        item[1].name.lower(),
+    ))
+    return candidates
+
+
 def _result_value(result: object, key: str):
     if isinstance(result, dict):
         return result.get(key)
     return getattr(result, key, None)
+
+
+def _entry_value(entry: object, key: str):
+    if isinstance(entry, dict):
+        return entry.get(key)
+    return getattr(entry, key, None)
+
+
+def _resolved_path(value: str) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(Path(value).expanduser().resolve())
+    except OSError:
+        return value
+
+
+def _manifest_role_relevance_score(role: str, entry: object) -> float:
+    text = (
+        f"{_entry_value(entry, 'category') or ''} "
+        f"{_entry_value(entry, 'role') or ''} "
+        f"{_entry_value(entry, 'notes') or ''}"
+    ).lower()
+    runtime = str(_entry_value(entry, "runtime_type") or "").lower()
+    if runtime not in {"gguf", "mlx"}:
+        return 0
+
+    if role == "embedding":
+        score = 78 if _has_any(text, _EMBEDDING_MARKERS) else 0
+    elif role == "coding_research":
+        score = 72 if _has_any(text, ("coding", "coder", "debugging", "agentic", "terminal")) else 0
+    elif role == "source_synthesis":
+        score = 62 if _has_any(text, ("research", "reasoning", "synthesis", "general chat")) else 0
+    elif role == "study_fast":
+        score = 60 if _has_any(text, ("study", "fast", "general chat", "creative", "fable")) else 0
+    elif role == "chat":
+        score = 58 if _has_any(text, ("chat", "instruct", "research", "reasoning", "creative")) else 0
+    else:
+        score = 0
+
+    if score <= 0:
+        return 0
+    role_text = str(_entry_value(entry, "role") or "").lower()
+    if role_text.startswith("primary"):
+        score += 18
+    elif role_text.startswith("backup"):
+        score += 10
+    elif role_text.startswith("priority"):
+        score += 8
+    elif role_text.startswith("requested"):
+        score += 5
+    return score
 
 
 def _score(role: str, model: LocalModelInfo) -> tuple[float, str]:

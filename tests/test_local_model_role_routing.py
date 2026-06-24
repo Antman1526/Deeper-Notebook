@@ -12,6 +12,7 @@ from open_notebook.local_models.benchmarks import (
 )
 from open_notebook.local_models.gguf_metadata import GGUFMetadata
 from open_notebook.local_models.inventory import LocalModelInfo
+from open_notebook.local_models.manifest import ManifestModelEntry
 from open_notebook.local_models.role_routing import recommend_model_roles
 
 
@@ -89,6 +90,38 @@ def test_role_routing_does_not_recommend_transformers_repos_without_runtime_prov
     assert by_role["source_synthesis"].model is None
     assert by_role["coding_research"].model is None
     assert by_role["study_fast"].model is None
+
+
+def test_role_routing_prefers_curated_primary_mlx_before_generic_scoring():
+    curated = _model(
+        "mlx-community/North-Mini-Code-1.0-6bit",
+        runtime="mlx",
+        params=7,
+        context=32768,
+    )
+    generic = _model("Qwen3-Coder-30B-A3B-Q4_K_M", params=30, context=262144)
+
+    routes = recommend_model_roles(
+        [generic, curated],
+        manifest_entries=[
+            ManifestModelEntry(
+                manifest_path="/models/manifests/model_inventory.md",
+                category="Coding Assistant - Mac MLX",
+                role="primary",
+                repo="mlx-community/North-Mini-Code-1.0-6bit",
+                local_path=curated.path,
+                runtime_type="MLX",
+                estimated_status="downloaded - verified",
+                notes="coding and agent workflows",
+            )
+        ],
+    )
+
+    by_role = {route.role: route for route in routes}
+
+    assert by_role["coding_research"].model is not None
+    assert by_role["coding_research"].model.name == "mlx-community/North-Mini-Code-1.0-6bit"
+    assert "Curated primary manifest row" in by_role["coding_research"].reason
 
 
 def test_role_routing_endpoint_uses_inventory(app, monkeypatch, tmp_path):

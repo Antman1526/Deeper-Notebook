@@ -115,6 +115,116 @@ describe('DownloadPanel', () => {
     expect(screen.getByTestId('progress')).toBeInTheDocument()
   })
 
+  it('starts a snapshot install for manifest MLX recommendations', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/local-models/recommendations') {
+        return Promise.resolve({
+          data: {
+            source: 'manifest',
+            recommendations: [
+              {
+                id: 'manifest-mlx',
+                label: 'North Mini Code',
+                description: 'primary - missing',
+                repo_id: 'mlx-community/North-Mini-Code-1.0-6bit',
+                filename: 'mlx-community__North-Mini-Code-1.0-6bit',
+                runtime_type: 'MLX',
+                target_path: '/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+                status: 'missing',
+                tags: ['manifest', 'mlx', 'primary'],
+                setup_task: {
+                  action_type: 'download_snapshot',
+                  label: 'Install snapshot',
+                  description: 'Install full repo',
+                  repo_id: 'mlx-community/North-Mini-Code-1.0-6bit',
+                  target_path: '/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+                },
+              },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({ data: { downloads: [] } })
+    })
+    apiPost.mockResolvedValue({
+      data: {
+        job_id: 'snap-1',
+        repo_id: 'mlx-community/North-Mini-Code-1.0-6bit',
+        target_path: '/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+        status: 'queued',
+        error: null,
+        log_tail: [],
+      },
+    })
+
+    renderPanel()
+    const btn = await screen.findByTestId('download-manifest-mlx')
+    expect(btn.textContent).toMatch(/Install snapshot/i)
+    fireEvent.click(btn)
+
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/local-models/snapshot-installs', {
+        repo_id: 'mlx-community/North-Mini-Code-1.0-6bit',
+        target_path: '/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+      }),
+    )
+  })
+
+  it('uses manifest target_path for direct GGUF recommendations', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/local-models/recommendations') {
+        return Promise.resolve({
+          data: {
+            source: 'manifest',
+            recommendations: [
+              {
+                id: 'manifest-gguf',
+                label: 'Qwen GGUF',
+                description: 'primary - missing',
+                repo_id: 'bartowski/Qwen2.5-7B-Instruct-GGUF',
+                filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+                runtime_type: 'GGUF',
+                target_path: '/models/GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+                status: 'missing',
+                tags: ['manifest', 'gguf', 'primary'],
+                setup_task: {
+                  action_type: 'download_gguf',
+                  label: 'Download GGUF',
+                  description: 'Download exact file',
+                  repo_id: 'bartowski/Qwen2.5-7B-Instruct-GGUF',
+                  filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+                  target_path: '/models/GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+                },
+              },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({ data: { downloads: [] } })
+    })
+    apiPost.mockResolvedValue({
+      data: {
+        job_id: 'job-gguf',
+        status: 'queued',
+        target_path: '/models/GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+        bytes_downloaded: 0,
+        bytes_total: 0,
+      },
+    })
+
+    renderPanel()
+    const btn = await screen.findByTestId('download-manifest-gguf')
+    fireEvent.click(btn)
+
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/local-models/download', {
+        repo_id: 'bartowski/Qwen2.5-7B-Instruct-GGUF',
+        filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+        target_path: '/models/GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+      }),
+    )
+  })
+
   it('v0.8.39e — shows Cancel button on in-flight downloads + clicking POSTs to /cancel', async () => {
     apiGet.mockResolvedValueOnce({
       data: {
