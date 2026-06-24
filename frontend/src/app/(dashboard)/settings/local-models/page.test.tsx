@@ -66,8 +66,12 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
 }))
 
 vi.mock('@/components/ui/alert', () => ({
-  Alert: ({ children, className }: { children: React.ReactNode; className?: string }) =>
-    React.createElement('div', { 'data-testid': 'alert', className }, children),
+  Alert: ({
+    children,
+    className,
+    ...props
+  }: { children: React.ReactNode; className?: string; [key: string]: unknown }) =>
+    React.createElement('div', { 'data-testid': 'alert', className, ...props }, children),
   AlertTitle: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'alert-title' }, children),
   AlertDescription: ({ children }: { children: React.ReactNode }) =>
@@ -1029,6 +1033,200 @@ describe('LocalModelsPage', () => {
     expect(within(mlxCard).queryByTestId(
       'set-active-mlx-community/North-Mini-Code-1.0-6bit',
     )).not.toBeInTheDocument()
+  })
+
+  it('summarizes active model, launch default, manifest, and jobs in the control state strip', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/local-models/role-routing') {
+        return Promise.resolve({
+          data: {
+            model_dir: '/tmp/models',
+            available: true,
+            manifest: {
+              path: '/tmp/models/manifests/model_inventory.md',
+              available: true,
+              entry_count: 4,
+              matched_route_count: 2,
+              alignment_counts: {
+                primary: 1,
+                curated: 1,
+                untracked: 2,
+                missing_model: 0,
+                no_manifest: 0,
+              },
+              reconciliation_counts: {
+                matched: 3,
+                missing: 1,
+                unsupported_runtime: 0,
+              },
+              reconciliation_entries: [],
+            },
+            routes: [],
+          },
+        })
+      }
+      if (url === '/local-models/snapshot-installs') {
+        return Promise.resolve({
+          data: {
+            snapshot_installs: [
+              {
+                job_id: 'snap-active',
+                repo_id: 'mlx-community/North-Mini-Code-1.0-6bit',
+                target_path: '/tmp/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+                status: 'downloading',
+                error: null,
+                log_tail: [],
+              },
+              {
+                job_id: 'snap-done',
+                repo_id: 'mlx-community/Done',
+                target_path: '/tmp/models/MLX/mlx-community__Done',
+                status: 'completed',
+                error: null,
+                log_tail: [],
+              },
+            ],
+          },
+        })
+      }
+      if (url === '/local-models/benchmarks') {
+        return Promise.resolve({
+          data: {
+            benchmarks: [
+              {
+                job_id: 'benchmark_7',
+                roles: ['chat'],
+                status: 'completed',
+                results: [],
+                error: null,
+              },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({
+        data: {
+          model_dir: '/tmp/models',
+          available: true,
+          launcher_config: {
+            available: true,
+            path: '/Users/Antman/.open-notebook-plus/config.toml',
+            provider: 'mlx',
+            default_model: 'MLX/mlx-community__North-Mini-Code-1.0-6bit',
+            model_dir: '/tmp/models',
+            model_dir_matches_inventory: true,
+            active_gguf_model: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+          },
+          models: [
+            {
+              name: 'Qwen3-8B-Q4_K_M',
+              path: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+              launcher_model_ref: 'GGUF/Qwen3-8B-Q4_K_M.gguf',
+              runtime: 'gguf',
+              runnable: true,
+              activation_supported: true,
+              is_live_active: true,
+              is_launch_default: false,
+              runtime_status: 'runnable',
+              runtime_note: null,
+              architecture: 'qwen2',
+              context_length: 32768,
+              quant: 'Q4_K_M',
+              parameter_count_b: 8,
+              file_size_bytes: 1000,
+            },
+            {
+              name: 'mlx-community/North-Mini-Code-1.0-6bit',
+              path: '/tmp/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+              launcher_model_ref: 'MLX/mlx-community__North-Mini-Code-1.0-6bit',
+              runtime: 'mlx',
+              runnable: true,
+              activation_supported: false,
+              is_live_active: false,
+              is_launch_default: true,
+              runtime_status: 'runnable',
+              runtime_note: null,
+              architecture: 'qwen2',
+              context_length: 32768,
+              quant: '6bit',
+              parameter_count_b: 7,
+              file_size_bytes: 1000,
+            },
+          ],
+        },
+      })
+    })
+
+    renderPage()
+
+    const controlState = await screen.findByTestId('local-model-control-state')
+    expect(within(controlState).getByTestId('control-state-active-now')).toHaveTextContent(
+      'GGUF/Qwen3-8B-Q4_K_M.gguf',
+    )
+    expect(within(controlState).getByTestId('control-state-launch-default')).toHaveTextContent(
+      'MLX/mlx-community__North-Mini-Code-1.0-6bit',
+    )
+    expect(controlState).toHaveTextContent('Restart applies next-launch default')
+    await waitFor(() => {
+      expect(within(controlState).getByTestId('control-state-manifest')).toHaveTextContent(
+        '1 primary, 2 untracked',
+      )
+    })
+    expect(controlState).toHaveTextContent('3 matched, 1 missing')
+    await waitFor(() => {
+      expect(within(controlState).getByTestId('control-state-jobs')).toHaveTextContent(
+        '1 installs, benchmark completed',
+      )
+    })
+    expect(controlState).toHaveTextContent('benchmark_7')
+  })
+
+  it('shows a visible role-routing error while preserving inventory controls', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/local-models/role-routing') {
+        return Promise.reject(new Error('role router failed'))
+      }
+      if (url === '/local-models/snapshot-installs') {
+        return Promise.resolve({ data: { snapshot_installs: [] } })
+      }
+      if (url === '/local-models/benchmarks') {
+        return Promise.resolve({ data: { benchmarks: [] } })
+      }
+      return Promise.resolve({
+        data: {
+          model_dir: '/tmp/models',
+          available: true,
+          models: [
+            {
+              name: 'Qwen3-8B-Q4_K_M',
+              path: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+              launcher_model_ref: 'GGUF/Qwen3-8B-Q4_K_M.gguf',
+              runtime: 'gguf',
+              runnable: true,
+              activation_supported: true,
+              runtime_status: 'runnable',
+              runtime_note: null,
+              architecture: 'qwen2',
+              context_length: 32768,
+              quant: 'Q4_K_M',
+              parameter_count_b: 8,
+              file_size_bytes: 1000,
+            },
+          ],
+        },
+      })
+    })
+
+    renderPage()
+
+    const controlState = await screen.findByTestId('local-model-control-state')
+    await waitFor(() => {
+      expect(controlState).toHaveTextContent('Manifest unavailable')
+    })
+    expect(await screen.findByTestId('local-model-role-routing-error')).toHaveTextContent(
+      'Role routing unavailable',
+    )
+    expect(screen.getByTestId('local-model-Qwen3-8B-Q4_K_M')).toBeInTheDocument()
   })
 
   it('sets an MLX model as the native launch default', async () => {
