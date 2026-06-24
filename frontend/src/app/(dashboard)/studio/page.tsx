@@ -285,11 +285,11 @@ export default function StudioPage() {
           })
         } else {
           toast({
-            title: result.generationStatus === 'completed'
-              ? t('studio.coursePackGenerated')
+            title: result.generationStatus === 'queued'
+              ? t('studio.coursePackQueued')
               : t(successTitleKey),
-            description: result.generationStatus === 'completed'
-              ? t('studio.coursePackGeneratedDescription')
+            description: result.generationStatus === 'queued'
+              ? t('studio.coursePackQueuedDescription').replace('{count}', String(result.sources.length))
               : t(successDescriptionKey).replace('{count}', String(result.sources.length)),
           })
         }

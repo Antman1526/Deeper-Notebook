@@ -39,7 +39,7 @@ export interface StudioCoursePackResponse {
   sources: SourceResponse[]
   artifact: StudioArtifact
   warnings: string[]
-  generationStatus: 'completed' | 'pending' | 'failed'
+  generationStatus: 'queued' | 'pending' | 'failed'
 }
 
 export function useStudioGenerate() {
@@ -122,7 +122,7 @@ export function useStudioCoursePack() {
       )))
 
       const sources = [...fileSources, ...linkSources]
-      let artifact = await studioApi.createArtifact({
+      const artifact = await studioApi.createArtifact({
         notebook_id: notebook.id,
         artifact_type: 'course_pack',
         title: `${notebookTitle} Course Pack`,
@@ -147,8 +147,12 @@ export function useStudioCoursePack() {
           generationStatus = 'failed'
         } else if (readiness.ready) {
           try {
-            artifact = await studioApi.generateArtifact(artifact.id)
-            generationStatus = artifact.status === 'completed' ? 'completed' : 'pending'
+            await studioApi.createWorkflowRun(artifact.id, {
+              title: `Generate ${artifact.title}`,
+              source_ids: sources.map((source) => source.id),
+              approval_required: false,
+            })
+            generationStatus = 'queued'
           } catch (error) {
             if (isSourcesNotReadyError(error)) {
               warnings.push('Sources are queued. Course Pack generation will be ready from the notebook once extraction finishes.')
@@ -169,11 +173,12 @@ export function useStudioCoursePack() {
         generationStatus,
       }
     },
-    onSuccess: ({ notebook }) => {
+    onSuccess: ({ notebook, artifact }) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebook.id) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebook.id) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebook.id) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioWorkflowRuns(artifact.id) })
     },
   })
 }

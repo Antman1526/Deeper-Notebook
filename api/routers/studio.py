@@ -54,6 +54,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 from pydantic import BaseModel
 
+from api.command_service import CommandService
 from api.podcast_service import PodcastService
 from api.routers.sources import save_uploaded_file
 from api.schemas.studio import (
@@ -195,6 +196,73 @@ async def _active_workflow_run_for_artifact(
 
     active_statuses = {"queued", "awaiting_approval", "running"}
     return next((run for run in runs if run.status in active_statuses), None)
+
+
+def _sources_not_ready_exception(
+    not_ready_sources: list[dict[str, str | None]],
+) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "sources_not_ready",
+            "message": (
+                "One or more selected sources are still processing. "
+                "Wait for extraction to finish, then generate again."
+            ),
+            "not_ready_sources": not_ready_sources,
+        },
+    )
+
+
+async def _ensure_artifact_sources_ready(artifact: StudioArtifact) -> None:
+    sources = await _artifact_sources(artifact)
+    not_ready_sources = _artifact_not_ready_sources(sources)
+    if not_ready_sources:
+        raise _sources_not_ready_exception(not_ready_sources)
+
+
+async def _submit_studio_generation_command(
+    artifact: StudioArtifact,
+    run: StudioWorkflowRun,
+) -> None:
+    if run.command_id:
+        return
+
+    if run.source_ids:
+        artifact.source_ids = [str(source_id) for source_id in run.source_ids]
+    await _ensure_artifact_sources_ready(artifact)
+
+    try:
+        import commands.studio_commands  # noqa: F401
+
+        command_id = await CommandService.submit_command_job(
+            "open_notebook",
+            "generate_studio_artifact",
+            {
+                "artifact_id": str(artifact.id),
+                "workflow_run_id": str(run.id),
+            },
+        )
+    except ValueError as exc:
+        run.status = "failed"
+        _set_workflow_step_status(run, {"artifact_generation"}, "failed")
+        await run.save()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Studio generation queue is temporarily unavailable. "
+                "Please retry in a moment."
+            ),
+        ) from exc
+
+    run.command_id = command_id
+    run.status = "queued"
+    run.approval_required = False
+    _set_workflow_step_status(run, {"privacy_gate"}, "completed")
+    _set_workflow_step_status(run, {"model_route", "artifact_generation"}, "pending")
+    artifact.status = "running"
+    await artifact.save()
+    await run.save()
 
 
 _ARTIFACT_TYPE_INSTRUCTIONS: dict[str, str] = {
@@ -1585,7 +1653,13 @@ async def create_studio_workflow_run(
             approval_required=approval_required,
         ),
     )
+    if not approval_required:
+        if run.source_ids:
+            artifact.source_ids = [str(source_id) for source_id in run.source_ids]
+        await _ensure_artifact_sources_ready(artifact)
     await run.save()
+    if not approval_required:
+        await _submit_studio_generation_command(artifact, run)
     return _workflow_run_response(run)
 
 
@@ -1624,12 +1698,19 @@ async def approve_studio_workflow_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Studio workflow run not found",
         )
+    try:
+        artifact = await StudioArtifact.get(str(run.artifact_id))
+    except (KeyError, NotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Studio artifact not found",
+        )
 
     run.status = "queued"
     run.approval_required = False
     _set_workflow_step_status(run, {"privacy_gate"}, "completed")
     _set_workflow_step_status(run, {"model_route", "artifact_generation"}, "pending")
-    await run.save()
+    await _submit_studio_generation_command(artifact, run)
     return _workflow_run_response(run)
 
 
