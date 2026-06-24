@@ -356,9 +356,51 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
         "default_model": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
         "model_dir": str(model_dir),
         "model_dir_matches_inventory": True,
+        "active_gguf_model": "",
     }
     assert "do-not-leak" not in str(body)
     assert "also-do-not-leak" not in str(body)
+
+
+def test_inventory_endpoint_marks_activation_state(
+    app, monkeypatch, tmp_path,
+):
+    model_dir = tmp_path / "AI_Models"
+    gguf = model_dir / "GGUF" / "Qwen3-8B-Q4_K_M.gguf"
+    gguf.parent.mkdir(parents=True)
+    gguf.write_bytes(b"x" * 2048)
+    mlx = model_dir / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    mlx.mkdir(parents=True)
+    (mlx / "config.json").write_text('{"model_type": "qwen2"}')
+    (mlx / "model.safetensors").write_bytes(b"y" * 4096)
+    config_home = tmp_path / "home"
+    config_dir = config_home / ".open-notebook-plus"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        "\n".join([
+            f"model_dir = '{model_dir}'",
+            "provider = 'mlx'",
+            "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
+        ])
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", str(gguf))
+    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+
+    with TestClient(app) as client:
+        resp = client.get("/api/local-models/inventory")
+    body = resp.json()
+    by_name = {model["name"]: model for model in body["models"]}
+
+    assert body["launcher_config"]["active_gguf_model"] == str(gguf)
+    assert by_name["Qwen3-8B-Q4_K_M"]["is_live_active"] is True
+    assert by_name["Qwen3-8B-Q4_K_M"]["is_launch_default"] is False
+    assert by_name["Qwen3-8B-Q4_K_M"]["activation_mode"] == "active_now"
+    assert "live chat model" in by_name["Qwen3-8B-Q4_K_M"]["activation_detail"]
+
+    assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["is_live_active"] is False
+    assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["is_launch_default"] is True
+    assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["activation_mode"] == "launch_default"
 
 
 def test_set_launch_default_updates_native_config_for_mlx_model(

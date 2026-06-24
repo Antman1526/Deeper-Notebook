@@ -16,6 +16,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import {
   BookOpenCheck,
   BrainCircuit,
@@ -67,6 +68,10 @@ type LocalModel = {
   runtime?: string | null
   runnable?: boolean | null
   activation_supported?: boolean | null
+  is_launch_default?: boolean | null
+  is_live_active?: boolean | null
+  activation_mode?: string | null
+  activation_detail?: string | null
   runtime_status?: string | null
   runtime_note?: string | null
   setup_href?: string | null
@@ -88,6 +93,7 @@ type InventoryResponse = {
     default_model: string
     model_dir: string
     model_dir_matches_inventory: boolean
+    active_gguf_model?: string
   }
   models: LocalModel[]
 }
@@ -359,6 +365,22 @@ function supportsChatActivation(model: LocalModel): boolean {
 function supportsLaunchDefault(model: LocalModel): boolean {
   return (!model.runtime || model.runtime === 'gguf' || model.runtime === 'mlx')
     && Boolean(model.launcher_model_ref)
+}
+
+function launchDefaultButtonLabel(model: LocalModel, t: TFunction): string {
+  if (model.is_launch_default) {
+    return t('localModels.launchDefaultCurrent', {
+      defaultValue: 'Launch default',
+    })
+  }
+  if (model.runtime === 'mlx') {
+    return t('localModels.useOnNextLaunch', {
+      defaultValue: 'Use on next launch',
+    })
+  }
+  return t('localModels.setLaunchDefault', {
+    defaultValue: 'Set launch default',
+  })
 }
 
 function matchesInventorySearch(model: LocalModel, query: string): boolean {
@@ -903,6 +925,8 @@ export default function LocalModelsPage() {
         // mmaps the GGUF — invalidate so the polling picks up the
         // transition.
         queryClient.invalidateQueries({ queryKey: ['local-models', 'health'] })
+        queryClient.invalidateQueries({ queryKey: ['local-models', 'inventory'] })
+        queryClient.invalidateQueries({ queryKey: ['local-models', 'role-routing'] })
       } else {
         toast.error(
           t('localModels.setActiveFailed', {
@@ -2141,6 +2165,27 @@ export default function LocalModelsPage() {
                             {m.architecture}
                           </Badge>
                         )}
+                        {m.is_live_active && (
+                          <Badge variant="default" className="text-xs">
+                            {t('localModels.activeNowBadge', {
+                              defaultValue: 'Active now',
+                            })}
+                          </Badge>
+                        )}
+                        {m.is_launch_default && (
+                          <Badge variant="secondary" className="text-xs">
+                            {t('localModels.launchDefaultBadge', {
+                              defaultValue: 'Launch default',
+                            })}
+                          </Badge>
+                        )}
+                        {m.activation_mode === 'restart_required' && (
+                          <Badge variant="outline" className="text-xs">
+                            {t('localModels.restartNeededBadge', {
+                              defaultValue: 'Restart needed',
+                            })}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </CardHeader>
@@ -2201,6 +2246,7 @@ export default function LocalModelsPage() {
                             disabled={
                               setLaunchDefault.isPending
                               || launchDefaultRef === m.launcher_model_ref
+                              || Boolean(m.is_launch_default)
                             }
                             onClick={() => setLaunchDefault.mutate(m)}
                             aria-label={t('localModels.setLaunchDefaultAria', {
@@ -2213,9 +2259,7 @@ export default function LocalModelsPage() {
                             ) : (
                               <Power className="h-3 w-3" />
                             )}
-                            {t('localModels.setLaunchDefault', {
-                              defaultValue: 'Set launch default',
-                            })}
+                            {launchDefaultButtonLabel(m, t)}
                           </Button>
                         )}
                         {supportsChatActivation(m) && (
@@ -2239,7 +2283,7 @@ export default function LocalModelsPage() {
                                   defaultValue: 'Switching…',
                                 })
                               : t('localModels.setActive', {
-                                  defaultValue: 'Set as active chat model',
+                                  defaultValue: 'Switch live chat model',
                                 })}
                           </Button>
                         )}
