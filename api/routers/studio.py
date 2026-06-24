@@ -83,6 +83,7 @@ from open_notebook.local_models.role_routing import (
     model_match_key,
     recommend_model_roles,
 )
+from open_notebook.studio import artifact_generation as artifact_generation_service
 from open_notebook.utils.text_utils import (
     clean_thinking_content,
     extract_text_content,
@@ -140,6 +141,17 @@ def _workflow_run_response(run: StudioWorkflowRun) -> StudioWorkflowRunResponse:
         created=_iso(getattr(run, "created", None)),
         updated=_iso(getattr(run, "updated", None)),
     )
+
+
+def _sync_artifact_generation_service_dependencies() -> None:
+    artifact_generation_service.StudioArtifact = StudioArtifact
+    artifact_generation_service.StudioWorkflowRun = StudioWorkflowRun
+    artifact_generation_service.Notebook = Notebook
+    artifact_generation_service.Source = Source
+    artifact_generation_service.Model = Model
+    artifact_generation_service.provision_langchain_model = provision_langchain_model
+    artifact_generation_service.enumerate_models = enumerate_models
+    artifact_generation_service.recommend_model_roles = recommend_model_roles
 
 
 def _workflow_steps_for_artifact(
@@ -1763,143 +1775,9 @@ async def generate_studio_artifact(
     artifact_id: str,
 ) -> StudioArtifactResponse:
     _require_evidence_studio()
-    try:
-        artifact = await StudioArtifact.get(artifact_id)
-    except (KeyError, NotFoundError):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Studio artifact not found",
-        )
-
-    workflow_run = await _active_workflow_run_for_artifact(str(artifact.id))
-    if workflow_run is not None and workflow_run.status == "awaiting_approval":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Workflow run is awaiting approval",
-        )
-
-    await _snapshot_artifact_revision(artifact)
-
-    artifact.status = "running"
-    await artifact.save()
-    if workflow_run is not None:
-        workflow_run.status = "running"
-        _set_workflow_step_status(workflow_run, {"model_route", "artifact_generation"}, "running")
-        await workflow_run.save()
-
-    try:
-        sources = await _artifact_sources(artifact)
-        not_ready_sources = _artifact_not_ready_sources(sources)
-        if not_ready_sources:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "sources_not_ready",
-                    "message": (
-                        "One or more selected sources are still processing. "
-                        "Wait for extraction to finish, then generate again."
-                    ),
-                    "not_ready_sources": not_ready_sources,
-                },
-            )
-        combined_context, citations = _artifact_context(sources)
-        if not combined_context.strip():
-            raise InvalidInputError("No extracted source text is available")
-
-        system_prompt = f"""\
-You are Evidence Studio inside Open Notebook Plus.
-
-{_artifact_instruction(artifact)}
-
-Requirements:
-- Stay faithful to the provided sources.
-- Do not invent facts, dates, numbers, or quotes.
-- Cite specific claims with the provided source markers.
-- Use source markers like [S1] in the artifact body so readers can verify claims.
-- If the sources are insufficient, say what is missing.
-- Return markdown only.
-"""
-        model_id, provider = await _resolve_artifact_model_route(artifact)
-        artifact.model_id = model_id
-        artifact.provider = provider
-
-        chain = await provision_langchain_model(
-            combined_context,
-            model_id,
-            "chat",
-            max_tokens=3072,
-        )
-        response = await asyncio.wait_for(
-            chain.ainvoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
-            ),
-            timeout=_PAGE_TIMEOUT_SEC,
-        )
-        content = clean_thinking_content(extract_text_content(response.content)).strip()
-        if not content:
-            raise InvalidInputError("Generated artifact output was empty")
-        artifact.status = "completed"
-        artifact.output_format = "markdown"
-        artifact.citations = citations
-        artifact.output_payload = _artifact_output_payload(artifact, content, citations)
-        artifact.source_ids = [citation["source_id"] for citation in citations]
-        try:
-            artifact.export_paths = await asyncio.to_thread(
-                _persist_artifact_exports,
-                artifact,
-                content,
-            )
-        except Exception as export_exc:
-            logger.warning("Evidence Studio artifact export failed: {}", export_exc)
-            artifact.export_paths = {}
-        await artifact.save()
-        if workflow_run is not None:
-            workflow_run.status = "completed"
-            _set_workflow_step_status(
-                workflow_run,
-                {"model_route", "artifact_generation"},
-                "completed",
-            )
-            await workflow_run.save()
-        return _artifact_response(artifact)
-    except HTTPException as exc:
-        if (
-            exc.status_code == status.HTTP_409_CONFLICT
-            and isinstance(exc.detail, dict)
-            and exc.detail.get("code") == "sources_not_ready"
-        ):
-            artifact.status = "pending"
-            await artifact.save()
-            if workflow_run is not None:
-                workflow_run.status = "queued"
-                _set_workflow_step_status(
-                    workflow_run,
-                    {"model_route", "artifact_generation"},
-                    "pending",
-                )
-                await workflow_run.save()
-            raise
-
-        artifact.status = "failed"
-        await artifact.save()
-        if workflow_run is not None:
-            workflow_run.status = "failed"
-            _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")
-            await workflow_run.save()
-        raise
-    except Exception as exc:
-        logger.exception("Evidence Studio artifact generation failed")
-        artifact.status = "failed"
-        artifact.output_payload = {"error": _brief(exc)}
-        await artifact.save()
-        if workflow_run is not None:
-            workflow_run.status = "failed"
-            _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")
-            await workflow_run.save()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Artifact generation failed",
-        ) from exc
+    _sync_artifact_generation_service_dependencies()
+    artifact = await artifact_generation_service.generate_studio_artifact(artifact_id)
+    return _artifact_response(artifact)
 
 
 @router.delete("/artifacts/{artifact_id}")

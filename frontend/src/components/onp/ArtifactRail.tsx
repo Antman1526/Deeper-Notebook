@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileJson, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Copy, Cpu, Download, ExternalLink, FileJson, FileQuestion, FolderOpen, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
@@ -180,6 +180,19 @@ function jsonHref(artifact: StudioArtifact): string {
   return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(artifact, null, 2))}`
 }
 
+function filePathHref(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  const withPrefix = normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`
+  return encodeURI(withPrefix)
+}
+
+function parentFilePath(path: string): string | null {
+  const normalized = path.replace(/\\/g, '/')
+  const lastSlash = normalized.lastIndexOf('/')
+  if (lastSlash <= 0) return null
+  return normalized.slice(0, lastSlash)
+}
+
 function artifactExportEntries(artifact: StudioArtifact | null): Array<[string, string]> {
   if (!artifact) return []
   const exportPaths = artifact.export_paths ?? {}
@@ -268,6 +281,7 @@ export function ArtifactRail({
   const [selectedArtifact, setSelectedArtifact] = useState<StudioArtifact | null>(null)
   const [selectedCitation, setSelectedCitation] = useState<CitationEvidence | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [copiedExportKey, setCopiedExportKey] = useState<string | null>(null)
   const enabled = isEvidenceStudioEnabled()
   const researchRunsEnabled = isResearchRunsEnabled()
   const { data: artifacts = [], isLoading } = useStudioArtifacts(notebookId, {
@@ -320,6 +334,16 @@ export function ArtifactRail({
   const quickArtifacts = researchRunsEnabled
     ? [...QUICK_ARTIFACTS, RESEARCH_RUN_ARTIFACT]
     : QUICK_ARTIFACTS
+
+  async function copyExportPath(key: string, path: string) {
+    try {
+      await navigator.clipboard?.writeText(path)
+      setCopiedExportKey(key)
+      window.setTimeout(() => setCopiedExportKey(null), 1600)
+    } catch {
+      setCopiedExportKey(null)
+    }
+  }
 
   useEffect(() => {
     if (sources.length === 0 || selectedSourceIds.length === 0) return
@@ -814,19 +838,51 @@ export function ArtifactRail({
                         Saved exports
                       </div>
                       <div className="mt-2 space-y-2">
-                        {selectedExportEntries.map(([format, path]) => (
-                          <div key={`${format}-${path}`} className="rounded-md border bg-muted/30 px-2 py-1.5">
-                            <div className="text-[0.68rem] font-medium uppercase tracking-normal text-muted-foreground">
-                              {exportLabel(format)}
+                        {selectedExportEntries.map(([format, path]) => {
+                          const exportKey = `${format}-${path}`
+                          const folderPath = parentFilePath(path)
+                          return (
+                            <div key={exportKey} className="rounded-md border bg-muted/30 px-2 py-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-[0.68rem] font-medium uppercase tracking-normal text-muted-foreground">
+                                  {exportLabel(format)}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                                    <a href={filePathHref(path)} target="_blank" rel="noreferrer">
+                                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                                      Open
+                                    </a>
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={() => void copyExportPath(exportKey, path)}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {copiedExportKey === exportKey ? 'Copied' : 'Copy'}
+                                  </Button>
+                                  {folderPath && (
+                                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                                      <a href={filePathHref(folderPath)} target="_blank" rel="noreferrer">
+                                        <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Folder
+                                      </a>
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              <div
+                                title={path}
+                                className="mt-1 break-all font-mono text-[0.68rem] leading-4 text-muted-foreground"
+                              >
+                                {path}
+                              </div>
                             </div>
-                            <div
-                              title={path}
-                              className="mt-1 break-all font-mono text-[0.68rem] leading-4 text-muted-foreground"
-                            >
-                              {path}
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}

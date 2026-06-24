@@ -3,7 +3,7 @@
 Use this opt-in smoke when you need proof beyond fixture tests. It talks to a
 running native Open Notebook Plus API and verifies:
 
-1. A source can be created through the real API.
+1. A text, upload, or link source can be created through the real API.
 2. The background worker finishes processing it.
 3. The source detail API returns extracted text containing a unique marker.
 4. Embedding completed.
@@ -21,6 +21,30 @@ python scripts/live_source_ingestion_smoke.py \
 
 The script creates a short text source, waits up to 120 seconds, prints a JSON
 proof summary, and deletes the smoke source afterward.
+
+## Prove Upload And Link Ingestion Too
+
+```bash
+python scripts/live_source_ingestion_smoke.py \
+  --base-url http://127.0.0.1:5055 \
+  --source-kind all
+```
+
+`--source-kind all` creates one text source, one generated `.txt` upload, and
+one link source backed by a temporary local HTTP page. Use `--source-kind upload`
+or `--source-kind link` for a narrower run. To point at specific material:
+
+```bash
+python scripts/live_source_ingestion_smoke.py \
+  --base-url http://127.0.0.1:5055 \
+  --source-kind upload \
+  --upload-file ~/Desktop/sample-training-guide.pdf
+
+python scripts/live_source_ingestion_smoke.py \
+  --base-url http://127.0.0.1:5055 \
+  --source-kind link \
+  --link-url https://example.com/training-source
+```
 
 ## Keep The Source For Manual Inspection
 

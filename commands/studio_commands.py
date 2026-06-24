@@ -38,7 +38,7 @@ async def generate_studio_artifact_command(
     input_data: StudioArtifactGenerationInput,
 ) -> StudioArtifactGenerationOutput:
     try:
-        from api.routers.studio import generate_studio_artifact
+        from open_notebook.studio.artifact_generation import generate_studio_artifact
 
         response = await generate_studio_artifact(input_data.artifact_id)
         payload = _dump_response(response)

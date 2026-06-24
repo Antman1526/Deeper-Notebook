@@ -326,3 +326,14 @@ def test_studio_workflow_run_domain_queries_by_artifact():
     get_for_artifact = src[src.index("async def get_for_artifact"): src.index("class ChatSession")]
     assert "FROM studio_workflow_run" in get_for_artifact
     assert "WHERE artifact_id = $artifact_id" in get_for_artifact
+
+
+def test_studio_command_uses_service_not_router_import():
+    command_src = (_REPO / "commands" / "studio_commands.py").read_text()
+    service_src = (
+        _REPO / "open_notebook" / "studio" / "artifact_generation.py"
+    ).read_text()
+
+    assert "api.routers.studio" not in command_src
+    assert "api.routers.studio" not in service_src
+    assert "open_notebook.studio.artifact_generation" in command_src

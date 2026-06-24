@@ -9,12 +9,15 @@ Optionally, it can also create a source-chat session and stream one answer.
 from __future__ import annotations
 
 import argparse
+import http.server
 import json
 import os
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
@@ -81,6 +84,57 @@ def request_json(
         raise SmokeFailure(f"{method} {url} failed: {exc}") from exc
 
 
+def request_multipart(
+    url: str,
+    *,
+    fields: dict[str, str],
+    files: dict[str, tuple[str, bytes, str]],
+    token: str | None = None,
+    timeout: float = 30,
+) -> ApiResponse:
+    boundary = f"----onp-smoke-{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend([
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+            value.encode("utf-8"),
+            b"\r\n",
+        ])
+    for name, (filename, content, content_type) in files.items():
+        chunks.extend([
+            f"--{boundary}\r\n".encode("utf-8"),
+            (
+                f'Content-Disposition: form-data; name="{name}"; '
+                f'filename="{filename}"\r\n'
+            ).encode("utf-8"),
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+            content,
+            b"\r\n",
+        ])
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(url, data=b"".join(chunks), headers=headers, method="POST")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+            return ApiResponse(
+                status=resp.status,
+                data=json.loads(text) if text else None,
+                text=text,
+            )
+    except HTTPError as exc:
+        text = exc.read().decode("utf-8", errors="replace")
+        raise SmokeFailure(f"POST {url} failed with HTTP {exc.code}: {text}") from exc
+    except URLError as exc:
+        raise SmokeFailure(f"POST {url} failed: {exc}") from exc
+
+
 def source_is_processing(status: str | None) -> bool:
     return status in {"new", "queued", "running", "unknown"}
 
@@ -124,6 +178,121 @@ def create_text_source(args: argparse.Namespace, marker: str) -> dict[str, Any]:
     if not isinstance(response.data, dict) or not response.data.get("id"):
         raise SmokeFailure(f"Create source returned unexpected payload: {response.text}")
     return response.data
+
+
+def source_form_fields(
+    args: argparse.Namespace,
+    *,
+    source_type: str,
+    title: str,
+    marker: str,
+    url: str | None = None,
+) -> dict[str, str]:
+    fields = {
+        "type": source_type,
+        "title": title,
+        "topics": json.dumps(["smoke", "source-ingestion"]),
+        "provenance": json.dumps({
+            "origin": "live_source_ingestion_smoke",
+            "marker": marker,
+            "source_kind": source_type,
+        }),
+        "source_type": source_type,
+        "embed": "true",
+        "delete_source": "false",
+        "async_processing": "true",
+    }
+    if args.notebook_id:
+        fields["notebook_id"] = args.notebook_id
+        fields["notebooks"] = json.dumps([args.notebook_id])
+    if url:
+        fields["url"] = url
+    return fields
+
+
+def create_upload_source(args: argparse.Namespace, marker: str) -> dict[str, Any]:
+    if args.upload_file:
+        upload_path = args.upload_file
+        content = upload_path.read_bytes()
+        filename = upload_path.name
+    else:
+        filename = f"onp-live-smoke-{marker}.txt"
+        content = (
+            f"Open Notebook Plus upload smoke marker {marker}. "
+            "This proves multipart upload ingestion, extraction, embedding, "
+            "and source detail retrieval are wired together."
+        ).encode("utf-8")
+    response = request_multipart(
+        build_api_url(args.base_url, "/sources", args.api_prefix),
+        fields=source_form_fields(
+            args,
+            source_type="upload",
+            title=args.title or f"Live upload smoke {marker}",
+            marker=marker,
+        ),
+        files={"file": (filename, content, "text/plain")},
+        token=args.token,
+        timeout=args.request_timeout,
+    )
+    if not isinstance(response.data, dict) or not response.data.get("id"):
+        raise SmokeFailure(f"Create upload source returned unexpected payload: {response.text}")
+    return response.data
+
+
+def create_link_source(args: argparse.Namespace, marker: str, url: str) -> dict[str, Any]:
+    payload = {
+        "type": "link",
+        "title": args.title or f"Live link smoke {marker}",
+        "url": url,
+        "topics": ["smoke", "source-ingestion"],
+        "provenance": {
+            "origin": "live_source_ingestion_smoke",
+            "marker": marker,
+            "source_kind": "link",
+        },
+        "source_type": "link",
+        "embed": True,
+        "delete_source": False,
+        "async_processing": True,
+    }
+    if args.notebook_id:
+        payload["notebook_id"] = args.notebook_id
+        payload["notebooks"] = [args.notebook_id]
+    response = request_json(
+        "POST",
+        build_api_url(args.base_url, "/sources/json", args.api_prefix),
+        payload=payload,
+        token=args.token,
+        timeout=args.request_timeout,
+    )
+    if not isinstance(response.data, dict) or not response.data.get("id"):
+        raise SmokeFailure(f"Create link source returned unexpected payload: {response.text}")
+    return response.data
+
+
+def start_marker_http_server(marker: str) -> tuple[http.server.ThreadingHTTPServer, str]:
+    class MarkerHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = (
+                "<!doctype html><html><body>"
+                f"<h1>Open Notebook Plus link smoke {marker}</h1>"
+                f"<p>The unique ingestion marker is {marker}.</p>"
+                "</body></html>"
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: Any) -> None:
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), MarkerHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    return server, f"http://127.0.0.1:{port}/smoke-{marker}.html"
 
 
 def wait_for_source(args: argparse.Namespace, source_id: str, marker: str) -> dict[str, Any]:
@@ -255,6 +424,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--notebook-id", default=os.environ.get("ONP_SMOKE_NOTEBOOK_ID"))
     parser.add_argument("--title")
     parser.add_argument("--content")
+    parser.add_argument(
+        "--source-kind",
+        choices=("text", "upload", "link", "all"),
+        default="text",
+        help="Source lane to prove. Use 'all' for text, upload, and link.",
+    )
+    parser.add_argument(
+        "--upload-file",
+        type=lambda value: Path(value).expanduser(),
+        help="Optional file to use for upload smoke. Defaults to generated text.",
+    )
+    parser.add_argument(
+        "--link-url",
+        help="Optional URL to use for link smoke. Defaults to a temporary local page.",
+    )
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--poll-interval", type=float, default=2)
     parser.add_argument("--request-timeout", type=float, default=30)
@@ -267,20 +451,43 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     marker = f"onp-smoke-{uuid.uuid4().hex[:10]}"
-    source_id = ""
+    source_ids: list[str] = []
+    local_server: http.server.ThreadingHTTPServer | None = None
     try:
-        created = create_text_source(args, marker)
-        source_id = str(created["id"])
-        detail = wait_for_source(args, source_id, marker)
-        chat = maybe_run_source_chat(args, source_id, marker)
+        source_kinds = (
+            ["text", "upload", "link"]
+            if args.source_kind == "all"
+            else [args.source_kind]
+        )
+        results: list[dict[str, Any]] = []
+        for source_kind in source_kinds:
+            if source_kind == "text":
+                created = create_text_source(args, marker)
+            elif source_kind == "upload":
+                created = create_upload_source(args, marker)
+            else:
+                link_url = args.link_url
+                if not link_url:
+                    local_server, link_url = start_marker_http_server(marker)
+                created = create_link_source(args, marker, link_url)
+
+            source_id = str(created["id"])
+            source_ids.append(source_id)
+            detail = wait_for_source(args, source_id, marker)
+            chat = maybe_run_source_chat(args, source_id, marker)
+            results.append({
+                "source_kind": source_kind,
+                "source_id": source_id,
+                "embedded": detail.get("embedded"),
+                "extracted_char_count": detail.get("extracted_char_count"),
+                "extraction_quality": detail.get("extraction_quality"),
+                "chat": chat,
+            })
+
         result = {
             "ok": True,
             "marker": marker,
-            "source_id": source_id,
-            "embedded": detail.get("embedded"),
-            "extracted_char_count": detail.get("extracted_char_count"),
-            "extraction_quality": detail.get("extraction_quality"),
-            "chat": chat,
+            "sources": results,
         }
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
@@ -288,11 +495,14 @@ def main(argv: list[str]) -> int:
         print(f"live source ingestion smoke failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        if source_id and not args.keep_source:
-            try:
-                delete_source(args, source_id)
-            except SmokeFailure as exc:
-                print(f"warning: cleanup failed for {source_id}: {exc}", file=sys.stderr)
+        if local_server is not None:
+            local_server.shutdown()
+        if not args.keep_source:
+            for source_id in source_ids:
+                try:
+                    delete_source(args, source_id)
+                except SmokeFailure as exc:
+                    print(f"warning: cleanup failed for {source_id}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

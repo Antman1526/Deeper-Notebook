@@ -12,7 +12,7 @@ SYNC_BRANCH="${SYNC_BRANCH:-integrate/${UPSTREAM_REMOTE}-${UPSTREAM_BRANCH}-${DA
 WORKTREE_DIR="${WORKTREE_DIR:-../open-notebook-plus-upstream-sync-${DATE_STAMP}}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-output/upstream-sync/${DATE_STAMP}}"
 
-PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|open_notebook/local_models/|frontend/src/components/onp/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|open_notebook/domain/|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
+PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|open_notebook/local_models/|open_notebook/database/migrations/|frontend/src/components/onp/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|open_notebook/domain/|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
 
 usage() {
   cat <<'USAGE'
