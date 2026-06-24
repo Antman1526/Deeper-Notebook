@@ -339,7 +339,7 @@ Exact versions from `pyproject.toml`, `frontend/package.json`,
 
 | Component | Package | Version constraint |
 |-----------|---------|--------------------|
-| Web framework | `fastapi` | `>=0.104.0` |
+| Web framework | `fastapi` | `>=0.136.3` |
 | ASGI server | `uvicorn` | `>=0.24.0` |
 | Validation | `pydantic` | `>=2.9.2` |
 | Workflows | `langgraph` | `>=1.0.10` (CVE-2026-28277 fix) |
