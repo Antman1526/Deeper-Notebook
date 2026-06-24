@@ -331,7 +331,7 @@ export function useRetrySource() {
         queryKey: QUERY_KEYS.sourceStatus(sourceId)
       })
       // Invalidate ALL sources queries to refresh the UI
-      queryClient.invalidateQueries({ predicate: q => isSourcesListQuery(q.queryKey) })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
 
       toast({
@@ -371,7 +371,7 @@ export function useAddSourcesToNotebook() {
     },
     onSuccess: (result, { notebookId, sourceIds }) => {
       // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ predicate: q => isSourcesListQuery(q.queryKey) })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Specifically invalidate the notebook's sources
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
       // Invalidate each affected source
@@ -426,7 +426,7 @@ export function useRemoveSourceFromNotebook() {
     },
     onSuccess: (_, { notebookId, sourceId }) => {
       // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ predicate: q => isSourcesListQuery(q.queryKey) })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Specifically invalidate the notebook's sources
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
       // Also invalidate the specific source
