@@ -25,7 +25,7 @@ import { useState, useCallback, useRef, useMemo, DragEvent, ChangeEvent, Keyboar
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2 } from 'lucide-react'
+import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2, GraduationCap } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/lib/hooks/use-toast'
-import { useStudioGenerate } from '@/lib/hooks/use-studio'
+import { useStudioCoursePack, useStudioGenerate } from '@/lib/hooks/use-studio'
 import { StudioMode } from '@/lib/api/studio'
 import apiClient from '@/lib/api/client'
 // v0.7.1 — use existing QUERY_KEYS so Studio's profile fetches share
@@ -64,6 +64,7 @@ const ALLOWED_EXTS = new Set([
   '.mp3', '.mp4', '.m4a', '.wav', '.mov',
 ])
 const MAX_FILE_MB = 50
+type StudioOutputMode = StudioMode | 'course_pack'
 
 interface ProfileSummary {
   name: string
@@ -126,10 +127,11 @@ export default function StudioPage() {
   const { toast } = useToast()
   const { t } = useTranslation()
   const mutation = useStudioGenerate()
+  const coursePackMutation = useStudioCoursePack()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [files, setFiles] = useState<File[]>([])
-  const [mode, setMode] = useState<StudioMode>('notebook')
+  const [mode, setMode] = useState<StudioOutputMode>('notebook')
   const [title, setTitle] = useState('')
   const [linkText, setLinkText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -141,12 +143,12 @@ export default function StudioPage() {
   const { data: episodeProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.episodeProfiles,
     queryFn: async () => (await apiClient.get('/episode-profiles')).data,
-    enabled: mode !== 'notebook',
+    enabled: mode === 'podcast' || mode === 'both',
   })
   const { data: speakerProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.speakerProfiles,
     queryFn: async () => (await apiClient.get('/speaker-profiles')).data,
-    enabled: mode !== 'notebook',
+    enabled: mode === 'podcast' || mode === 'both',
   })
 
   // ----- File handling -----
@@ -233,34 +235,65 @@ export default function StudioPage() {
   // ----- Submit -----
   const parsedLinks = useMemo(() => parseLinks(linkText), [linkText])
   const hasSourceInputs = files.length > 0 || parsedLinks.length > 0
-  const canSubmit = hasSourceInputs && !mutation.isPending && (
-    mode === 'notebook' || (episodeProfile && speakerProfile)
+  const isPending = mutation.isPending || coursePackMutation.isPending
+  const canSubmit = hasSourceInputs && !isPending && (
+    mode === 'notebook' || mode === 'course_pack' || (episodeProfile && speakerProfile)
   )
-  const requiresPodcastProfiles = mode !== 'notebook'
+  const requiresPodcastProfiles = mode === 'podcast' || mode === 'both'
 
-  const successTitleKey = mode === 'notebook'
-    ? 'studio.notebookGenerated'
-    : mode === 'both'
-      ? 'studio.bothJobStarted'
-      : 'studio.podcastJobStarted'
-  const successDescriptionKey = mode === 'notebook'
-    ? 'studio.notebookGeneratedDescription'
-    : mode === 'both'
-      ? 'studio.bothJobStartedDescription'
-      : 'studio.podcastJobStartedDescription'
-  const generatingText = mode === 'notebook'
-    ? t('studio.generatingNotebook')
-    : mode === 'both'
-      ? t('studio.generatingBoth')
-      : t('studio.generatingPodcast')
-  const generateText = mode === 'notebook'
-    ? t('studio.generateNotebook')
-    : mode === 'both'
-      ? t('studio.generateBoth')
-      : t('studio.generatePodcast')
+  const successTitleKey = mode === 'course_pack'
+    ? 'studio.coursePackQueued'
+    : mode === 'notebook'
+      ? 'studio.notebookGenerated'
+      : mode === 'both'
+        ? 'studio.bothJobStarted'
+        : 'studio.podcastJobStarted'
+  const successDescriptionKey = mode === 'course_pack'
+    ? 'studio.coursePackQueuedDescription'
+    : mode === 'notebook'
+      ? 'studio.notebookGeneratedDescription'
+      : mode === 'both'
+        ? 'studio.bothJobStartedDescription'
+        : 'studio.podcastJobStartedDescription'
+  const generatingText = mode === 'course_pack'
+    ? t('studio.queuingCoursePack')
+    : mode === 'notebook'
+      ? t('studio.generatingNotebook')
+      : mode === 'both'
+        ? t('studio.generatingBoth')
+        : t('studio.generatingPodcast')
+  const generateText = mode === 'course_pack'
+    ? t('studio.generateCoursePack')
+    : mode === 'notebook'
+      ? t('studio.generateNotebook')
+      : mode === 'both'
+        ? t('studio.generateBoth')
+        : t('studio.generatePodcast')
 
   const onGenerate = async () => {
     try {
+      if (mode === 'course_pack') {
+        const result = await coursePackMutation.mutateAsync({
+          files,
+          links: parsedLinks,
+          title: title.trim() || undefined,
+        })
+        if (result.warnings.length > 0) {
+          toast({
+            title: t('studio.generatedWithWarnings'),
+            description: result.warnings.join('; '),
+          })
+        } else {
+          toast({
+            title: t(successTitleKey),
+            description: t(successDescriptionKey)
+              .replace('{count}', String(result.sources.length)),
+          })
+        }
+        router.push(`/notebooks/${encodeURIComponent(result.notebook.id)}`)
+        return
+      }
+
       const result = await mutation.mutateAsync({
         files,
         links: parsedLinks,
@@ -307,7 +340,7 @@ export default function StudioPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-6 max-w-3xl">
+        <div className="container mx-auto p-6 max-w-5xl">
           <div className="mb-4">
             <Link href="/notebooks">
               <Button variant="ghost" size="sm">
@@ -437,7 +470,7 @@ export default function StudioPage() {
             glance). Inner card spacing bumped to `space-y-6` so the
             dropdowns below don't crowd the tiles. */}
         <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={() => setMode('notebook')}
@@ -488,6 +521,23 @@ export default function StudioPage() {
                 {t('studio.bothModeDescription')}
               </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('course_pack')}
+              className={`
+                border rounded-lg p-6 text-left transition-colors
+                ${mode === 'course_pack'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
+              `}
+            >
+              <GraduationCap className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">{t('studio.coursePackModeTitle')}</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {t('studio.coursePackModeDescription')}
+              </div>
+            </button>
           </div>
 
           {requiresPodcastProfiles && (
@@ -536,21 +586,25 @@ export default function StudioPage() {
         </CardContent>
       </Card>
 
-      {mutation.isError && (
+      {(mutation.isError || coursePackMutation.isError) && (
         <div className="mb-4 p-3 rounded border border-destructive/50 bg-destructive/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="text-sm text-destructive">
             {/* v0.7.196 — same helper as the catch-branch toast. Was
                 an inline unwrap that could surface raw axios + FastAPI
                 500-default text. */}
-            {getApiErrorMessage(mutation.error, t, 'apiErrors.genericError')}
+            {getApiErrorMessage(
+              mutation.error ?? coursePackMutation.error,
+              t,
+              'apiErrors.genericError',
+            )}
           </div>
         </div>
       )}
 
           <div className="flex justify-end">
             <Button onClick={onGenerate} disabled={!canSubmit} size="lg">
-              {mutation.isPending ? (
+              {isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   {generatingText}
