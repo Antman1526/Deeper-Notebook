@@ -6,7 +6,8 @@ running native Open Notebook Plus API and verifies:
 1. A text, upload, or link source can be created through the real API.
 2. The background worker finishes processing it.
 3. The source detail API returns extracted text containing a unique marker.
-4. Embedding completed.
+4. Embedding completed, unless `--skip-embedding` is used for a fresh local
+   setup without an embedding model.
 5. Optionally, source chat can stream an answer from that source.
 
 Open Notebook Plus should be running natively on the host. Do not use Docker
@@ -44,6 +45,15 @@ python scripts/live_source_ingestion_smoke.py \
   --base-url http://127.0.0.1:5055 \
   --source-kind link \
   --link-url https://example.com/training-source
+```
+
+If the native app does not yet have an embedding model configured, use:
+
+```bash
+python scripts/live_source_ingestion_smoke.py \
+  --base-url http://127.0.0.1:5055 \
+  --source-kind all \
+  --skip-embedding
 ```
 
 ## Keep The Source For Manual Inspection
