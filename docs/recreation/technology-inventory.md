@@ -24,9 +24,9 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 
 | Name | Version | Role in this project |
 |------|---------|----------------------|
-| FastAPI | >=0.104.0 | REST API server (`api/`) @ port 5055 — notebooks, sources, notes, chat, podcasts, search, credentials, metrics endpoints |
+| FastAPI | >=0.136.3 | REST API server (`api/`) @ port 5055 — notebooks, sources, notes, chat, podcasts, search, credentials, metrics endpoints |
 | Uvicorn | >=0.24.0 | ASGI server running the FastAPI app (`run_api.py`, desktop launcher) |
-| Starlette | (via FastAPI) | `BaseHTTPMiddleware` for `PasswordAuthMiddleware` (`api/auth.py`), CORS, middleware stack |
+| Starlette | >=1.2.1 | `BaseHTTPMiddleware` for `PasswordAuthMiddleware` (`api/auth.py`), CORS, middleware stack; explicitly constrained for CVE-2026-48710 |
 | Pydantic | >=2.9.2 (v2) | Request/response schemas (`api/models.py`), domain model validation, settings |
 | Loguru | >=0.7.2 | Structured logging across backend and desktop (`open_notebook/logging.py`) |
 | LangGraph | >=1.0.10 (CVE-2026-28277 remediation) | State-machine workflows: source ingest, chat, ask/search-synthesis, transformation (`open_notebook/graphs/`) |
@@ -175,7 +175,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | Docker / docker compose | — | Multi-stage `Dockerfile`, `Dockerfile.single`, `docker-compose.yml` (surrealdb + app) |
 | docker buildx | — | Multi-platform image builds (`make docker-release`) |
 | supervisord | (`supervisord.conf`, `.single.conf`) | Process supervision in single-container Docker image |
-| create-dmg / codesign / notarytool | (macOS, post_build_mac.sh) | macOS DMG packaging, code signing, notarization |
+| hdiutil / codesign | (macOS, Makefile + post_build_mac.sh) | macOS DMG creation and local bundle re-sealing; notarization is not performed by the local build |
 | Makefile | — | Orchestrates dev, docker, mypy, export-docs, tag targets |
 | GitHub Actions | — | `build-windows.yml`, `build-desktop.yml`, `build-dev.yml`, `test.yml`, `claude*.yml`; Windows `.exe` is produced on Windows runners because PyInstaller is platform-native |
 | Ralph Loop | (`scripts/ralph.sh`, `.ralph/`) | Autonomous self-correcting dev loop harness |

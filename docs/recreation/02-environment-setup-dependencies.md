@@ -18,7 +18,7 @@
 | Python | **3.12** (pinned in `.python-version`; `pyproject.toml` allows `>=3.11,<3.13`) | Backend runtime |
 | Node.js | **22** (`README.md` badge) | Next.js 16 frontend |
 | `uv` | latest (Astral) | Python dependency + venv manager |
-| `npm` | bundled with Node 22 (README uses `npm ci`; the desktop pipeline references `pnpm`/`npm`) | Frontend deps |
+| `npm` | bundled with Node 22 (`npm ci`, `npm run build`, `npm test`) | Frontend deps |
 | Docker | for self-host SurrealDB (`make database`) | Optional in dev |
 | SurrealDB | **v2** | Database (Docker image or bundled binary) |
 
@@ -54,7 +54,7 @@ To run anything in the venv, prefix with `uv run`, e.g.
 `requires-python = ">=3.11,<3.13"`. Runtime `dependencies`:
 
 ```
-fastapi>=0.104.0
+fastapi>=0.136.3
 uvicorn>=0.24.0
 pydantic>=2.9.2
 loguru>=0.7.2
@@ -90,6 +90,8 @@ langsmith>=0.8.0                  # CVE-2026-45134
 lxml>=6.1.0                       # CVE-2026-41066
 urllib3>=2.7.0                    # CVE-2026-44431 + 44432
 python-multipart>=0.0.27          # CVE-2026-42561
+starlette>=1.2.1                  # CVE-2026-48710 (BadHost)
+huggingface-hub>=1.3.0            # managed local-model snapshot installs
 ```
 
 > **Known blocked upgrade** (documented in `pyproject.toml`): pillow cannot be

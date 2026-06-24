@@ -1,10 +1,9 @@
 # 11 — Build & Deployment Pipeline
 
 Recreation reference for how Open Notebook Plus is built, packaged, launched,
-and supervised. Two deployment targets exist today: the **native macOS .app/.dmg**
-(the documented Plus target) and the **Docker images** (upstream's server
-deployment). A **Windows path is scaffolded but not wired into a one-shot
-build** (see §8).
+and supervised. Three deployment targets exist today: the **native macOS .app/.dmg**,
+the **Windows x64 PyInstaller package** produced on a Windows runner, and the
+**Docker images** inherited from upstream's server deployment.
 
 All paths repo-relative to `/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus`.
 
@@ -56,6 +55,13 @@ BUILD_PYTHON ?= python3.12
 BUILD_VENV   := .build-venv          # separate from .venv (tests) and .venv-py312 (runtime)
 BUILD_ARCH   := $(shell uname -m)    # arm64 vs x86_64 → drives DMG filename
 ONP_CODESIGN_IDENTITY ?= -           # ad-hoc by default; stable identity avoids TCC resets
+```
+
+Expected local outputs:
+
+```text
+dist/Open Notebook Plus.app
+dist/Open-Notebook-Plus-mac-arm64.dmg   # or mac-x86_64 on Intel
 ```
 
 ### Stage 0 — `build-mac-test` (precondition)
@@ -413,28 +419,42 @@ visible.
 
 ---
 
-## 8. Windows path (currently missing)
+## 8. Windows x64 build path
 
-The build is **scaffolded for Windows but not a one-shot target**:
+The Windows build is produced on a **Windows host** because PyInstaller is
+platform-native and is not a cross-compiler. The repo provides both a manual
+local PowerShell script and a GitHub Actions workflow:
+
+```bash
+gh workflow run build-windows.yml --repo Antman1526/open-notebook-Plus --ref desktop-app
+gh run download <RUN_ID> --repo Antman1526/open-notebook-Plus \
+  --name Open-Notebook-Plus-windows-x64 --dir /tmp/onp-win
+```
+
+Workflow: `.github/workflows/build-windows.yml`.
+Manual script: `desktop/build/build_windows.ps1`.
+
+Outputs:
+
+```text
+dist/Open Notebook Plus/Open Notebook Plus.exe
+dist/Open-Notebook-Plus-windows-x64.zip
+```
+
+Implementation details:
 
 - `pyinstaller.spec` handles `windows-x86_64` arch, `.exe` binary names, the
   `webview.platforms.winforms` backend, and `CREATE_NEW_PROCESS_GROUP |
   CREATE_NO_WINDOW`.
 - `bootstrap.py` and `ports.py` have Windows branches
   (`Scripts/python.exe`, `SO_REUSEADDR` fallback, etc.).
+- `desktop/build/build_windows.ps1` creates `.venv-build-win`, installs
+  `desktop/requirements.txt` plus the editable package, builds the Next.js
+  frontend, fetches Windows runtimes, runs PyInstaller, and then calls the
+  post-build zip step.
 - `desktop/build/post_build_windows.ps1` exists and wraps
   `dist/Open Notebook Plus` into `Open-Notebook-Plus-windows-x64.zip` via
   `Compress-Archive`.
 
-What's **not** present:
-
-- No `make build-win` chain mirroring `build-mac` (no Windows test/lock/venv/
-  frontend/runtimes/pyinstaller orchestration target in the `Makefile`).
-- `_spawn` notes Windows process-group teardown is "future-work"; only POSIX
-  `killpg` subtree kill is exercised in the launcher today.
-- No signed/notarized Windows installer (MSI/NSIS) — only the `.zip` wrapper.
-
-Recreating Windows support means adding the `build-win` Make target chain,
-fetching Windows runtimes in `fetch_runtimes.py`, verifying `stop_all` uses
-`taskkill /T` against the process group, and producing an installer rather than
-a bare zip.
+Current limitation: there is no signed MSI/NSIS installer; the distributable is
+the zipped PyInstaller onedir app containing `Open Notebook Plus.exe`.

@@ -17,8 +17,8 @@ All file paths are repo-relative to `/Users/Antman/Desktop/OpenNotebook/open-not
 | Backend hermetic | pytest | `tests/` (minus `tests/integration/`) | ~1,668 test fns across 207 files | `uv run pytest tests/ --ignore=tests/integration` |
 | Backend integration | pytest | `tests/integration/` | 2 modules (lifecycle, memory recall) | `SURREAL_INTEGRATION=1 uv run --env-file .env pytest tests/integration/ -m integration_surreal` |
 | Desktop launcher/bootstrap | pytest | `desktop/tests/`, `desktop/memory/tests/` | 43 modules | `.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q` |
-| Frontend unit/component | vitest | `frontend/src/**/*.test.ts(x)` | 36 files, 203 tests | `pnpm test --run` (`vitest run --pool=forks --maxWorkers=1`) |
-| Frontend type-check | tsc | `frontend/` | n/a | `pnpm tsc --noEmit` |
+| Frontend unit/component | vitest | `frontend/src/**/*.test.ts(x)` | 36 files, 203 tests | `npm test -- --run` (`vitest run --pool=forks --maxWorkers=1`) |
+| Frontend type-check | Next.js build | `frontend/` | n/a | `npm run build` runs the TypeScript step |
 
 Tool/runtime versions (from `pyproject.toml`, `frontend/package.json`,
 `desktop/requirements.txt`):
@@ -28,7 +28,8 @@ Tool/runtime versions (from `pyproject.toml`, `frontend/package.json`,
 requires-python = ">=3.11,<3.13"
 pytest>=9.0.3
 pytest-asyncio>=1.2.0
-fastapi>=0.104.0
+fastapi>=0.136.3
+starlette>=1.2.1
 pydantic>=2.9.2
 langgraph>=1.0.10
 surrealdb>=1.0.4
@@ -368,7 +369,7 @@ from desktop import bootstrap
 
 def test_is_venv_current_keys_off_lock_hash(tmp_path, monkeypatch):
     lock = tmp_path / "requirements.lock"
-    lock.write_text("fastapi==0.104.0\n")
+    lock.write_text("fastapi==0.136.3\n")
     # no venv → not current
     assert bootstrap.is_venv_current(lock) is False
     # marker matching the lock hash → current
@@ -476,9 +477,9 @@ SURREAL_INTEGRATION=1 uv run --env-file .env pytest tests/integration/ -v -m int
 # Desktop launcher / bootstrap / memory
 /Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q
 
-# Frontend unit/component (203 tests) + type-check
-cd frontend && pnpm test --run        # vitest run --pool=forks --maxWorkers=1
-cd frontend && pnpm tsc --noEmit
+# Frontend unit/component (203 tests) + production build/type-check
+cd frontend && npm test -- --run      # vitest run --pool=forks --maxWorkers=1
+cd frontend && npm run build          # Next.js compile + TypeScript step
 ```
 
 The macOS build runs the desktop suite **and** the backend hermetic suite as a

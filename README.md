@@ -6,7 +6,7 @@
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![React 19](https://img.shields.io/badge/React-19-149eca)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136.3%2B-009688)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0-ff6f00)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
 ![Tests](https://img.shields.io/badge/tests-1712%20backend%20%2B%20195%20frontend-success)
@@ -160,7 +160,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | UI components | Shadcn/ui (Radix UI) + Tailwind CSS | Radix 1.x / Tailwind 4 |
 | Markdown/editor | `@uiw/react-md-editor`, `react-markdown`, `remark-gfm` | — |
 | i18n | i18next / react-i18next | 25 / 16 |
-| API framework | FastAPI | 0.104+ |
+| API framework | FastAPI | 0.136.3+ |
 | Language (backend) | Python | 3.11–3.12 (3.12 runtime) |
 | Workflow engine | LangGraph | 1.0.10+ |
 | LLM glue | LangChain + provider packages | 1.x |
@@ -184,7 +184,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | Metrics | prometheus-client | 0.20+ |
 | MCP | `mcp` client | 1.0+ |
 | Desktop shell | pywebview + PyInstaller | — |
-| Package managers | `uv` (Python), `pnpm`/`npm` (JS) | — |
+| Package managers | `uv` (Python), `npm` (JS) | — |
 
 ---
 
@@ -243,7 +243,7 @@ The recommended way to run Open Notebook Plus — no Docker, no terminal, with a
 
 ### From source (development)
 
-Requirements: **Python 3.12**, [`uv`](https://github.com/astral-sh/uv), **Node 22+** with `pnpm` (or `npm`), and **SurrealDB v2**.
+Requirements: **Python 3.12**, [`uv`](https://github.com/astral-sh/uv), **Node 22+** with `npm`, and **SurrealDB v2**.
 
 ```bash
 git clone https://github.com/Antman1526/open-notebook-Plus
@@ -254,7 +254,7 @@ uv sync                          # creates .venv and installs Python deps
 cp .env.example .env             # then fill in the values below
 
 # --- Frontend ---
-cd frontend && pnpm install      # or: npm ci
+cd frontend && npm ci
 cd ..
 ```
 
@@ -351,7 +351,7 @@ make test                         # or: uv run pytest tests/ --ignore=tests/inte
 make test-integration
 
 # Frontend — Vitest
-cd frontend && pnpm test          # or: npm test
+cd frontend && npm test
 ```
 
 Current suites: **1712 backend tests + 195 frontend Vitest tests**, plus SurrealDB integration tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
