@@ -1431,6 +1431,21 @@ async def text_search(
         )
         return search_results
     except Exception as e:
+        error_text = str(e).lower()
+        if "position overflow" in error_text:
+            logger.warning(
+                "Text-search highlight overflow for {!r}; falling back to vector search",
+                keyword,
+            )
+            try:
+                return await vector_search(keyword, results, source, note)
+            except Exception as vector_error:
+                logger.error(
+                    "Vector-search fallback also failed for {!r}: {}",
+                    keyword,
+                    vector_error,
+                )
+                raise DatabaseOperationError(vector_error)
         logger.error(f"Error performing text search: {str(e)}")
         logger.exception(e)
         raise DatabaseOperationError(e)

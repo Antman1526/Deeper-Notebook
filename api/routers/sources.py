@@ -801,8 +801,8 @@ async def create_source(
                     id=source.id or "",
                     title=source.title,
                     topics=source.topics or [],
-                    provenance=source.provenance or {},
-                    source_type=source.source_type,
+                    provenance=_source_provenance_value(source),
+                    source_type=_source_type_value(source),
                     notebook_count=len(notebook_ids),
                     is_shared=len(notebook_ids) > 1,
                     asset=response_asset,
@@ -1112,6 +1112,27 @@ def _resolve_retry_upload_file_path(file_path: str, source_id: str) -> str:
     return str(resolved_path)
 
 
+def _asset_payload(asset: Any | None) -> dict[str, Any] | None:
+    if asset is None:
+        return None
+    return {
+        "file_path": getattr(asset, "file_path", None),
+        "url": getattr(asset, "url", None),
+    }
+
+
+def _source_type_value(source: Source) -> str | None:
+    raw = getattr(source, "source_type", None)
+    if isinstance(raw, str):
+        return raw
+    return get_source_type_from_asset(_asset_payload(getattr(source, "asset", None)))
+
+
+def _source_provenance_value(source: Source) -> dict[str, Any]:
+    raw = getattr(source, "provenance", None)
+    return raw if isinstance(raw, dict) else {}
+
+
 @router.get("/sources/{source_id}", response_model=SourceResponse)
 async def get_source(source_id: str):
     """Get a specific source by ID."""
@@ -1172,10 +1193,8 @@ async def get_source(source_id: str):
             id=source.id or "",
             title=source.title,
             topics=source.topics or [],
-            provenance=source.provenance or {},
-            source_type=source.source_type or get_source_type_from_asset(
-                source.asset.model_dump() if source.asset else None
-            ),
+            provenance=_source_provenance_value(source),
+            source_type=_source_type_value(source),
             notebook_count=notebook_count,
             is_shared=notebook_count > 1,
             asset=AssetModel(
@@ -1206,6 +1225,8 @@ async def get_source(source_id: str):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Source not found")
     except Exception as e:
         logger.error(f"Error fetching source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching source")
@@ -1333,10 +1354,8 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             id=source.id or "",
             title=source.title,
             topics=source.topics or [],
-            provenance=source.provenance or {},
-            source_type=source.source_type or get_source_type_from_asset(
-                source.asset.model_dump() if source.asset else None
-            ),
+            provenance=_source_provenance_value(source),
+            source_type=_source_type_value(source),
             notebook_count=notebook_count,
             is_shared=notebook_count > 1,
             asset=AssetModel(
@@ -1476,17 +1495,15 @@ async def retry_source_processing(source_id: str):
             extracted_char_count = (
                 len(source.full_text) if source.full_text is not None else None
             )
-            notebook_count = await _source_notebook_count(source.id or source_id)
+            notebook_count = len(notebook_ids)
 
             # Return updated source response
             return SourceResponse(
                 id=source.id or "",
                 title=source.title,
                 topics=source.topics or [],
-                provenance=source.provenance or {},
-                source_type=source.source_type or get_source_type_from_asset(
-                    source.asset.model_dump() if source.asset else None
-                ),
+                provenance=_source_provenance_value(source),
+                source_type=_source_type_value(source),
                 notebook_count=notebook_count,
                 is_shared=notebook_count > 1,
                 asset=AssetModel(
@@ -1524,6 +1541,8 @@ async def retry_source_processing(source_id: str):
 
     except HTTPException:
         raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Source not found")
     except Exception as e:
         logger.error(f"Error retrying source processing for {source_id}: {str(e)}")
         raise HTTPException(

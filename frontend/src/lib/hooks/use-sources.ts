@@ -20,7 +20,7 @@ import {
 // status polls too — every mutation triggered a status refetch for
 // every source the user had open, even completed ones. On a notebook
 // with 30+ sources this was a measurable hit.
-export const isSourcesListQuery = (queryKey: readonly unknown[]): boolean => {
+export const _isSourcesListQuery = (queryKey: readonly unknown[]): boolean => {
   if (queryKey[0] !== 'sources') return false
   return queryKey[1] === 'list' || queryKey[1] === 'infinite'
 }
@@ -191,7 +191,7 @@ export function useUpdateSource() {
       sourcesApi.update(id, data),
     onSuccess: (_, { id }) => {
       // Invalidate ALL sources queries (both general and notebook-specific)
-      queryClient.invalidateQueries({ predicate: q => isSourcesListQuery(q.queryKey) })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
       toast({
         title: t('common.success'),
@@ -217,7 +217,7 @@ export function useDeleteSource() {
     mutationFn: (id: string) => sourcesApi.delete(id),
     onSuccess: (_, id) => {
       // Invalidate ALL sources queries (both general and notebook-specific)
-      queryClient.invalidateQueries({ predicate: q => isSourcesListQuery(q.queryKey) })
+      queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
       // v0.7.166 — Invalidate the notebooks list so the sidebar's
