@@ -179,11 +179,19 @@ async def local_models_inventory():
         return {"model_dir": str(model_dir), "available": False, "models": []}
 
     rows = await asyncio.to_thread(enumerate_models, model_dir)
+    launcher_config = _launcher_config_summary(model_dir)
     return {
         "model_dir": str(model_dir),
         "available": True,
-        "launcher_config": _launcher_config_summary(model_dir),
-        "models": [_local_model_to_dict(r, model_dir=model_dir) for r in rows],
+        "launcher_config": launcher_config,
+        "models": [
+            _local_model_to_dict(
+                r,
+                model_dir=model_dir,
+                launcher_config=launcher_config,
+            )
+            for r in rows
+        ],
     }
 
 
@@ -227,6 +235,7 @@ async def local_models_role_routing():
         return {"model_dir": str(model_dir), "available": False, "routes": []}
 
     rows = await asyncio.to_thread(enumerate_models, model_dir)
+    launcher_config = _launcher_config_summary(model_dir)
     benchmark_history = await asyncio.to_thread(load_benchmark_history, model_dir)
     manifest_entries = await asyncio.to_thread(load_model_manifest, model_dir)
     routes = await asyncio.to_thread(recommend_model_roles, rows, benchmark_history)
@@ -282,7 +291,11 @@ async def local_models_role_routing():
                 "label": route.label,
                 "confidence": route.confidence,
                 "reason": route.reason,
-                "model": _local_model_to_dict(route.model, model_dir=model_dir),
+                "model": _local_model_to_dict(
+                    route.model,
+                    model_dir=model_dir,
+                    launcher_config=launcher_config,
+                ),
                 "manifest_matches": [
                     _manifest_entry_to_dict(entry)
                     for entry in matches
@@ -318,7 +331,17 @@ def _launcher_model_ref(model, model_dir: Path | None):
         return model.path
 
 
+def _launcher_provider_for_runtime(runtime: str | None) -> str | None:
+    normalized = (runtime or "").lower()
+    if normalized == "gguf":
+        return "llamacpp"
+    if normalized == "mlx":
+        return "mlx"
+    return None
+
+
 def _launcher_config_summary(model_dir: Path):
+    active_gguf_model = os.environ.get("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
     config_path = Path.home() / ".open-notebook-plus" / "config.toml"
     if not config_path.exists():
         return {
@@ -328,6 +351,7 @@ def _launcher_config_summary(model_dir: Path):
             "default_model": "",
             "model_dir": "",
             "model_dir_matches_inventory": False,
+            "active_gguf_model": active_gguf_model,
         }
     try:
         raw = tomllib.loads(config_path.read_text())
@@ -339,6 +363,7 @@ def _launcher_config_summary(model_dir: Path):
             "default_model": "",
             "model_dir": "",
             "model_dir_matches_inventory": False,
+            "active_gguf_model": active_gguf_model,
         }
 
     raw_model_dir = str(raw.get("model_dir") or "")
@@ -356,20 +381,59 @@ def _launcher_config_summary(model_dir: Path):
         "default_model": str(raw.get("default_model") or ""),
         "model_dir": raw_model_dir,
         "model_dir_matches_inventory": matches_inventory,
+        "active_gguf_model": active_gguf_model,
     }
 
 
-def _local_model_to_dict(model, model_dir: Path | None = None):
+def _local_model_to_dict(
+    model,
+    model_dir: Path | None = None,
+    launcher_config: dict | None = None,
+):
     if model is None:
         return None
     capabilities = _local_model_runtime_capabilities(model.runtime)
+    launcher_ref = _launcher_model_ref(model, model_dir)
+    launcher_provider = _launcher_provider_for_runtime(model.runtime)
+    config_provider = (launcher_config or {}).get("provider") or ""
+    config_default = (launcher_config or {}).get("default_model") or ""
+    active_gguf = (launcher_config or {}).get("active_gguf_model") or ""
+    is_launch_default = bool(
+        launcher_provider
+        and config_provider == launcher_provider
+        and config_default == launcher_ref
+    )
+    is_live_active = bool(
+        (model.runtime or "").lower() == "gguf"
+        and active_gguf
+        and active_gguf in {model.path, launcher_ref}
+    )
+    if is_live_active:
+        activation_mode = "active_now"
+        activation_detail = "This GGUF is the live chat model."
+    elif is_launch_default:
+        activation_mode = "launch_default"
+        activation_detail = "This model is the native launch default."
+    elif capabilities["activation_supported"]:
+        activation_mode = "live_switch_available"
+        activation_detail = "Can switch the live chat model without restart."
+    elif capabilities["runnable"]:
+        activation_mode = "restart_required"
+        activation_detail = "Can be used as the native launch default after restart."
+    else:
+        activation_mode = "inventory_only"
+        activation_detail = capabilities["runtime_note"]
     return {
         "name": model.name,
         "path": model.path,
-        "launcher_model_ref": _launcher_model_ref(model, model_dir),
+        "launcher_model_ref": launcher_ref,
         "runtime": model.runtime,
         "runnable": capabilities["runnable"],
         "activation_supported": capabilities["activation_supported"],
+        "is_launch_default": is_launch_default,
+        "is_live_active": is_live_active,
+        "activation_mode": activation_mode,
+        "activation_detail": activation_detail,
         "runtime_status": capabilities["runtime_status"],
         "runtime_note": capabilities["runtime_note"],
         "setup_href": capabilities["setup_href"],
@@ -1565,6 +1629,8 @@ async def local_models_set_active(body: dict):
             detail=lbody.get("error") or lbody.get("detail")
                    or f"Launcher returned HTTP {status_code}",
         )
+    if lbody.get("ok", False):
+        os.environ["OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL"] = str(resolved)
     return {
         "ok": lbody.get("ok", False),
         "path": str(resolved),
