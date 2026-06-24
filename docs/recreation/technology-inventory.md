@@ -1,6 +1,6 @@
 # Technology Inventory — Open Notebook Plus
 
-> Exhaustive audit of every language, framework, library, tool, database, service, and integration used in this codebase, with the **specific role each plays in this project**. Generated 2026-06-12. All secrets/credentials are redacted — only structure and key names are listed.
+> Exhaustive audit of every language, framework, library, tool, database, service, and integration used in this codebase, with the **specific role each plays in this project**. Refreshed 2026-06-24. All secrets/credentials are redacted — only structure and key names are listed.
 
 Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first, self-hosted research assistant (Notebook LM alternative). It is a **three-tier app** — Next.js frontend → FastAPI backend → SurrealDB — packaged as a **native desktop app** (pywebview + PyInstaller) that bundles its own Python, Node, SurrealDB, and local-model runtimes. The same code also ships as Docker images.
 
@@ -80,6 +80,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | zod | ^4.0.5 | Schema validation for forms and API payloads |
 | @uiw/react-md-editor | ^4.0.8 | Markdown editor for notes |
 | react-markdown + remark-gfm | ^10.1.0 / ^4.0.1 | Render markdown (chat, notes) with GitHub-flavored markdown |
+| remark-math + rehype-katex | ^6.0.0 / ^7.0.1 | Render math notation in markdown responses and generated artifacts |
 | date-fns | ^4.1.0 | Date formatting |
 | use-debounce | ^10.0.6 | Debounced inputs (search/autosave) |
 | postcss | ^8.5.10 (override) | CSS processing |
@@ -94,7 +95,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | surrealdb (Python driver) | >=1.0.4 | Async SurrealQL client / connection pooling (`open_notebook/database/`) |
 | SQLite | (stdlib `sqlite3` / aiosqlite) | LangGraph checkpoint persistence |
 | RocksDB | (inside SurrealDB) | On-disk storage engine for SurrealDB (`surreal_data/`, `rocksdb:` path) |
-| Filesystem stores | — | Local model weights (GGUF), HuggingFace cache (`~/.cache/huggingface`), uploaded source files under `data/`, logs under `~/.open-notebook-plus/logs/` |
+| Filesystem stores | — | Local model weights under `~/Desktop/AI_Models` (`GGUF/` for llama.cpp, `MLX/` for Apple-Silicon repos), HuggingFace cache (`~/.cache/huggingface`), uploaded source files under `data/`, logs under `~/.open-notebook-plus/logs/` |
 | AsyncMigrationManager | (in-repo) | Runs `*.surrealql` migrations 1–22 automatically on API startup |
 
 ---
@@ -121,6 +122,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | Name | Version | Role in this project |
 |------|---------|----------------------|
 | llama-cpp-python[server] | >=0.3.16,<0.4 (CVE-2024-42479) | Local GGUF chat + embedding inference via OpenAI-compatible `llama_cpp.server` (ports auto-registered) |
+| mlx-lm | >=0.26,<0.27 (macOS arm64 only) | Native Apple-Silicon MLX local model runtime; scans complete repos under `~/Desktop/AI_Models/MLX`, starts `python -m mlx_lm.server`, and exposes an OpenAI-compatible API |
 | gguf | (lib) | Parse GGUF model metadata/inventory (`open_notebook/local_models/gguf_metadata.py`) |
 | Ollama | (external, auto-registered) | Detected local Ollama server; registered as a provider (`desktop/providers/ollama.py`) |
 | Osaurus | (external, `brew install --cask osaurus`, port 1337) | Native macOS/Apple-Silicon MLX OpenAI-compatible local server, auto-registered (`desktop/auto_register/osaurus.py`) |
@@ -134,6 +136,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | Name | Version | Role in this project |
 |------|---------|----------------------|
 | content-core | >=1.14.1,<2 | File/URL content extraction (50+ file types) feeding the source-ingest graph |
+| huggingface-hub | >=1.3.0 | Managed local-model snapshot installs and asset downloads used by the local model manager |
 | crawl4ai | (via content-core / web tools) | Web page crawling/extraction (`open_notebook/utils/crawler.py`, `tools/add_web_source.py`) |
 | pymupdf | (transitive) | PDF text/image extraction |
 | beautifulsoup4 | (transitive) | HTML parsing in extraction |
@@ -174,7 +177,7 @@ Open Notebook Plus is a desktop fork of `lfnovo/open-notebook`: a privacy-first,
 | supervisord | (`supervisord.conf`, `.single.conf`) | Process supervision in single-container Docker image |
 | create-dmg / codesign / notarytool | (macOS, post_build_mac.sh) | macOS DMG packaging, code signing, notarization |
 | Makefile | — | Orchestrates dev, docker, mypy, export-docs, tag targets |
-| GitHub Actions | — | `build-and-release.yml`, `build-desktop.yml`, `build-dev.yml`, `test.yml`, `claude*.yml` |
+| GitHub Actions | — | `build-windows.yml`, `build-desktop.yml`, `build-dev.yml`, `test.yml`, `claude*.yml`; Windows `.exe` is produced on Windows runners because PyInstaller is platform-native |
 | Ralph Loop | (`scripts/ralph.sh`, `.ralph/`) | Autonomous self-correcting dev loop harness |
 
 ---

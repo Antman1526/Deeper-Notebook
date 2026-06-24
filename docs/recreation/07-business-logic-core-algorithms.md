@@ -423,7 +423,72 @@ event per dialogue line (via `Send`), so the stage transition is written only on
 
 ---
 
-## 5. SkillOpt Prompt Optimizer (`open_notebook/prompt_optimizer/`, v0.8.68)
+## 5. Evidence Studio Course Pack Generation
+
+Evidence Studio uses `studio_artifact` and `studio_workflow_run` records to turn a
+notebook's source bundle into durable markdown artifacts. The legacy
+`training_guide` artifact type remains supported for backward compatibility, but the
+product name and UI label are **Course Pack** because the output is broader than a
+linear guide: it is intended for instructors, facilitators, and learners.
+
+The main service boundary is `open_notebook/studio/artifact_generation.py`. The
+Course Pack instruction is deliberately source-type aware:
+
+```python
+_ARTIFACT_TYPE_INSTRUCTIONS: dict[str, str] = {
+    "course_pack": (
+        "Create an instructor-ready Course Pack in markdown from the provided "
+        "linked and uploaded source content. Include audience, learning outcomes, "
+        "prerequisite knowledge, source readiness notes, a module roadmap, timed "
+        "lesson blocks, hands-on exercises, facilitator notes, learner handouts, "
+        "knowledge checks, a final assessment, source citations, and follow-up "
+        "resources. Treat video and audio sources as lesson segments, PDFs and "
+        "documents as readings or reference modules, and links as external "
+        "resources or source-backed exercises. Warn when transcript/source text "
+        "appears thin. Ground every substantive lesson point in citation markers."
+    ),
+    "training_guide": (
+        "... This artifact type is a legacy alias for Course Pack."
+    ),
+}
+```
+
+Workflow steps are exposed to the frontend so a user can see where generation is
+blocked:
+
+```python
+return [
+    {"id": "context", "label": "Context built", "status": "completed"},
+    {"id": "privacy_gate", "label": "Privacy gate", "status": approval_status},
+    {"id": "model_route", "label": "Model route", "status": model_status},
+    {"id": "artifact_generation", "label": _artifact_type_label(artifact.artifact_type), "status": model_status},
+]
+```
+
+Before any Course Pack is generated, selected sources are checked for extraction
+readiness. If an uploaded video, audio file, PDF, document, or link is still processing,
+the API returns `409` with `code="sources_not_ready"` and a list of not-ready sources
+instead of generating weak training material from partial context.
+
+Automatic model selection is local-model aware. If no explicit model is set on the
+artifact, the service enumerates `OPEN_NOTEBOOK_MODEL_DIR` (default
+`~/Desktop/AI_Models`), recommends a model role such as `source_synthesis`, and matches
+that local file/repo to a registered model. This is how Course Pack generation can use
+local GGUF, Ollama, or MLX models without the user reselecting a provider each time.
+
+Important edge cases:
+
+- Thin transcripts should be called out in the generated output as source-readiness
+  notes.
+- The API keeps `training_guide` as an enum alias so older records still render.
+- Long generation is submitted through `commands.studio_commands` so the UI can poll
+  progress and preserve failure state.
+- Generated content must include source markers; citations are stored with the artifact
+  and can be revised/regenerated without replacing the original record.
+
+---
+
+## 6. SkillOpt Prompt Optimizer (`open_notebook/prompt_optimizer/`, v0.8.68)
 
 Wraps **microsoft/SkillOpt** (MIT) to optimize a Transformation's prompt. The prompt
 is SkillOpt's trainable "skill document": rollouts run it over example sources with a
@@ -432,7 +497,7 @@ proposes bounded add/delete/replace edits, and a validation gate accepts only ed
 that improve the held-out score. `skillopt` is an **optional** dependency
 (`skillopt_available()`); the API returns an actionable error when missing.
 
-### 5.1 `runner.py`
+### 6.1 `runner.py`
 
 - `resolve_backend(model_id)` — `_resolve_model_config(model_id)` →
   `{model_name, endpoint, api_key}`. Both target and optimizer are configured as
@@ -453,7 +518,7 @@ that improve the held-out score. `skillopt` is an **optional** dependency
   thread (`asyncio.to_thread`). Collects `best_skill.md` (deployment artifact) +
   `history.json`; returns `{optimized_prompt, changed, history, run_dir}`.
 
-### 5.2 `adapter.py` — `TransformationAdapter(EnvAdapter)`
+### 6.2 `adapter.py` — `TransformationAdapter(EnvAdapter)`
 
 Modeled on skillopt's `searchqa` benchmark.
 
@@ -475,9 +540,9 @@ offline gate for cloud models; `_MAX_EXAMPLES=10`, `_MAX_INPUT_CHARS=6000`).
 
 ---
 
-## 6. Memory Writer / Recall
+## 7. Memory Writer / Recall
 
-### 6.1 Writer (`desktop/memory/writer.py` — Hermes 3 agent)
+### 7.1 Writer (`desktop/memory/writer.py` — Hermes 3 agent)
 
 Two entry points, both call `<llm>.complete(system_prompt, user_prompt)` and parse
 `<tool_call>…</tool_call>` blocks (`_TOOL_CALL_RE`), dispatching each via
@@ -492,7 +557,7 @@ Two entry points, both call `<llm>.complete(system_prompt, user_prompt)` and par
 Storage routes by `kind` into SurrealDB tables `memory_fact`, `memory_preference`,
 `memory_episode` (`desktop/memory/surreal_store.py`).
 
-### 6.2 Recall (`open_notebook/utils/memory_recall.py`)
+### 7.2 Recall (`open_notebook/utils/memory_recall.py`)
 
 `recall_memory(query)` is a thin orchestrator with caps `_MAX_FACTS=15`,
 `_MAX_PREFERENCES=10`, `_MAX_EPISODES=2`:
