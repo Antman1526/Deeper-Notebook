@@ -72,6 +72,9 @@ replacement plan:
 - ONP shadow components under `frontend/src/components/onp/`.
 - Source ingestion safety: async defaults, upload caps, retry preflight,
   processing progress, extraction-quality signals, and source-readiness gates.
+  This includes `api/routers/sources.py`, the Sources page, source detail and
+  source list components, source API/hooks, `frontend/next.config.ts`, and the
+  Playwright ingestion smoke harness.
 - BrainPulseKnowledge export/import paths.
 
 ## Verification Ladder
