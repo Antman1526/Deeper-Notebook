@@ -1234,6 +1234,8 @@ export const enUS = {
     bothJobStartedDescription: "Navigating to the new notebook. Podcast job {jobId} will appear in /podcasts when done.",
     coursePackQueued: "Course Pack queued",
     coursePackQueuedDescription: "{count} source(s) are processing. Open the notebook to generate the Course Pack when the source text is ready.",
+    coursePackGenerated: "Course Pack generated",
+    coursePackGeneratedDescription: "Navigating to the new notebook with the generated Course Pack.",
     generatedWithWarnings: "Generated with warnings",
     generationFailed: "Studio generation failed",
     filesRejected: "{count} file rejected",
