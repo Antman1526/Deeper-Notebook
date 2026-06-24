@@ -5,7 +5,7 @@ and caching mechanism in **Open Notebook Plus**. Each section cites the real
 source file and line range so the behavior can be recreated exactly.
 
 > **Version baseline** (from `pyproject.toml`): app `v1.8.5`,
-> `fastapi>=0.104.0`, `langgraph>=1.0.10`, `surrealdb>=1.0.4`,
+> `fastapi>=0.136.3`, `langgraph>=1.0.10`, `surrealdb>=1.0.4`,
 > `pydantic>=2.9.2`, `esperanto>=2.20.0,<3`. Frontend (`frontend/package.json`):
 > `next ^16.2.3`, `react ^19.2.3`, `@tanstack/react-query ^5.83.0`,
 > `@tanstack/react-virtual ^3.13.24`.

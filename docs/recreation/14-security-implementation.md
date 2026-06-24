@@ -10,7 +10,8 @@ protect the one piece of long-lived secret material that unlocks everything else
 > placeholders (`<...>` / `sk-...`). No real secret values appear here.
 
 > **Version baseline**: app `v1.8.5`, `pydantic>=2.9.2`,
-> `cryptography` (Fernet), `surrealdb>=1.0.4`, `fastapi>=0.104.0`.
+> `cryptography` (Fernet), `surrealdb>=1.0.4`, `fastapi>=0.136.3`,
+> `starlette>=1.2.1`.
 
 ---
 

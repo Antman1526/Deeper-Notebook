@@ -20,7 +20,7 @@ Key library versions (`pyproject.toml`):
 | `surrealdb` | `>=1.0.4` |
 | `mcp` | `>=1.0.0` |
 | `pydantic` | `>=2.9.2` |
-| `fastapi` | `>=0.104.0` |
+| `fastapi` | `>=0.136.3` |
 
 ---
 
