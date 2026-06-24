@@ -601,13 +601,22 @@ function apiFixture(url, method, body = '') {
         body: { detail: 'Studio workflow run not found' },
       }
     }
+    const artifactIndex = dynamicArtifacts.findIndex(
+      row => row.id === dynamicWorkflowRuns[index].artifact_id,
+    )
+    if (artifactIndex !== -1) {
+      dynamicArtifacts[artifactIndex] = generatedArtifact(dynamicArtifacts[artifactIndex])
+    }
     dynamicWorkflowRuns[index] = {
       ...dynamicWorkflowRuns[index],
-      status: 'queued',
+      status: 'completed',
       approval_required: false,
       steps: dynamicWorkflowRuns[index].steps.map(step => (
-        step.id === 'privacy_gate' ? { ...step, status: 'completed' } : step
+        ['privacy_gate', 'model_route', 'artifact_generation'].includes(step.id)
+          ? { ...step, status: 'completed' }
+          : step
       )),
+      command_id: `command:${runId.replace(/[^a-z0-9_:-]/gi, '-')}`,
       updated: now,
     }
     return dynamicWorkflowRuns[index]
@@ -753,7 +762,7 @@ function apiFixture(url, method, body = '') {
   if (pathname === '/api/settings') return {}
   if (pathname === '/api/system/db-repair-needed') return { repair_needed: false }
   if (pathname === '/api/system/network-status') return { online: true, offline_mode: false }
-  if (pathname === '/api/healthz/deep') {
+  if (pathname === '/api/healthz/deep' || pathname === '/healthz/deep') {
     return {
       status: 'healthy',
       checks: {
@@ -979,9 +988,10 @@ async function main() {
       await waitForReady(page, 'Workflow runs')
       await page.getByRole('button', { name: /Approve Generate Course Pack/i }).click()
       await waitForCondition(
-        'artifact generate endpoint call',
-        () => artifactGenerateRequests.some(request => request.includes('/generate'))
+        'workflow approval endpoint call',
+        () => workflowRunRequests.some(request => request.includes('/approve'))
       )
+      await waitForReady(page, 'completed')
       await page.getByRole('button', { name: /Open Course Pack/i }).click()
       await waitForReady(page, 'Course Pack workspace')
       await waitForReady(page, 'Module checklist')
@@ -1281,6 +1291,7 @@ async function main() {
       body => body.includes('source-upload-too-large.md')
     )
     return !issue.includes('Download the React DevTools')
+      && !issue.includes('Image with src "/logo.svg" was detected as the Largest Contentful Paint')
       && !issue.includes('Failed to load resource: the server responded with a status of 404')
       && !(expectedPartialBatchFailure && issue.includes('Failed to load resource: the server responded with a status of 502'))
       && !(expectedPartialBatchFailure && issue.includes('Error creating source for https://example.com/browser-smoke-partial-fail'))
