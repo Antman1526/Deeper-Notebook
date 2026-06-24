@@ -52,13 +52,15 @@ def _init_sync_fixture(tmp_path: Path) -> tuple[Path, Path]:
     _git(repo, "config", "user.name", "Test User")
     _write(repo, "README.md", "base\n")
     _write(repo, "api/routers/studio.py", "base\n")
+    _write(repo, "frontend/src/lib/api/sources.ts", "base\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "base")
     _git(repo, "clone", "--bare", str(repo), str(upstream))
     _git(repo, "remote", "add", "upstream", str(upstream))
     _git(repo, "checkout", "-b", "upstream-main")
     _write(repo, "api/routers/studio.py", "upstream\n")
-    _git(repo, "commit", "-am", "upstream protected change")
+    _write(repo, "frontend/src/lib/api/sources.ts", "upstream\n")
+    _git(repo, "commit", "-am", "upstream protected changes")
     _git(repo, "push", "upstream", "upstream-main:main")
     _git(repo, "checkout", "desktop-app")
     return repo, upstream
@@ -128,10 +130,11 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (snapshot_dir / "merge-status.txt").exists()
     assert (snapshot_dir / "changed-files.txt").read_text(encoding="utf-8")
-    assert (
-        "api/routers/studio.py"
-        in (snapshot_dir / "protected-plus-path-changes.txt").read_text(encoding="utf-8")
-    )
+    protected_changes = (
+        snapshot_dir / "protected-plus-path-changes.txt"
+    ).read_text(encoding="utf-8")
+    assert "api/routers/studio.py" in protected_changes
+    assert "frontend/src/lib/api/sources.ts" in protected_changes
     assert (snapshot_dir / "conflicted-files.txt").read_text(encoding="utf-8") == ""
 
     # The integration worktree is outside the temp repo; remove it explicitly
