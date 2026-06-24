@@ -1010,6 +1010,21 @@ def _artifact_context(sources: list[Source]) -> tuple[str, list[dict[str, str]]]
     return "\n\n---\n\n".join(blocks), citations
 
 
+def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | None]]:
+    not_ready: list[dict[str, str | None]] = []
+    for source in sources:
+        text = (getattr(source, "full_text", None) or "").strip()
+        if text:
+            continue
+        command = getattr(source, "command", None)
+        not_ready.append({
+            "source_id": str(getattr(source, "id", "")),
+            "title": getattr(source, "title", None) or "Untitled source",
+            "command_id": str(command) if command is not None else None,
+        })
+    return not_ready
+
+
 # Restrict uploads to formats content_core handles well. Defense-in-depth
 # even though content_core itself attempts to extract anything; this list
 # matches what the spec promises for documents and common training media.
@@ -1666,6 +1681,19 @@ async def generate_studio_artifact(
 
     try:
         sources = await _artifact_sources(artifact)
+        not_ready_sources = _artifact_not_ready_sources(sources)
+        if not_ready_sources:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "sources_not_ready",
+                    "message": (
+                        "One or more selected sources are still processing. "
+                        "Wait for extraction to finish, then generate again."
+                    ),
+                    "not_ready_sources": not_ready_sources,
+                },
+            )
         combined_context, citations = _artifact_context(sources)
         if not combined_context.strip():
             raise InvalidInputError("No extracted source text is available")
@@ -1726,7 +1754,24 @@ Requirements:
             )
             await workflow_run.save()
         return _artifact_response(artifact)
-    except HTTPException:
+    except HTTPException as exc:
+        if (
+            exc.status_code == status.HTTP_409_CONFLICT
+            and isinstance(exc.detail, dict)
+            and exc.detail.get("code") == "sources_not_ready"
+        ):
+            artifact.status = "pending"
+            await artifact.save()
+            if workflow_run is not None:
+                workflow_run.status = "queued"
+                _set_workflow_step_status(
+                    workflow_run,
+                    {"model_route", "artifact_generation"},
+                    "pending",
+                )
+                await workflow_run.save()
+            raise
+
         artifact.status = "failed"
         await artifact.save()
         if workflow_run is not None:

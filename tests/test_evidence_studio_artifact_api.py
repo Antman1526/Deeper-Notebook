@@ -530,6 +530,52 @@ def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch,
     assert "Important source text" in messages[1].content
 
 
+def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:not-ready",
+        notebook_id="notebook:alpha",
+        artifact_type="course_pack",
+        title="Course Pack",
+        source_ids=["source:queued"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:queued"
+            return SimpleNamespace(
+                id="source:queued",
+                title="Queued source",
+                full_text=None,
+                command="command:process-source",
+            )
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(),
+    )
+
+    response = _client().post("/api/studio/artifacts/studio_artifact:not-ready/generate")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "sources_not_ready"
+    assert detail["not_ready_sources"] == [
+        {
+            "source_id": "source:queued",
+            "title": "Queued source",
+            "command_id": "command:process-source",
+        }
+    ]
+    assert _FakeArtifact.records["studio_artifact:not-ready"].status == "pending"
+    assert not studio_mod.provision_langchain_model.called
+
+
 def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_path):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
