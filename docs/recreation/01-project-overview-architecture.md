@@ -17,10 +17,11 @@
 Open Notebook Plus is a **privacy-first, local-first alternative to Google
 NotebookLM**. Users upload PDFs, audio, video, web pages, or text; take notes;
 chat with an AI grounded in their own sources; run multi-step "Ask" synthesis
-across their library; and generate multi-speaker podcasts. A closed-loop memory
-layer extracts facts/preferences from each chat and recalls them into future
-sessions. Everything can run **entirely on the host machine** — no request
-leaves the device when the local model is healthy.
+across their library; generate multi-speaker podcasts; and turn videos, audio,
+PDFs, documents, and links into instructor-ready **Course Packs** through Evidence
+Studio. A closed-loop memory layer extracts facts/preferences from each chat and
+recalls them into future sessions. Everything can run **entirely on the host
+machine** — no request leaves the device when the local model is healthy.
 
 Project version at the time of writing: **`pyproject.toml` reports `1.8.5`** (the
 upstream package version), while the desktop fork tracks its own build string
@@ -30,7 +31,7 @@ Two ways to run it:
 
 1. **Native desktop app** — a macOS `.dmg` (built with `make build-mac`) or a
    Windows local-dev install. The desktop bundle ships SurrealDB, a Node.js
-   runtime, a Python-standalone runtime, and local llama.cpp model servers. It
+   runtime, a Python-standalone runtime, and local llama.cpp / MLX model servers. It
    **never runs in Docker**.
 2. **Self-host** — `docker compose up -d` (legacy path) or a 3-terminal local
    dev workflow (SurrealDB + FastAPI + Next.js).
@@ -148,6 +149,7 @@ startup it allocates 9 ports and spawns:
 | Next.js   | `_spawn_next(port)`    | Node standalone server, `PORT=<frontend_port>` | Frontend |
 | llama.cpp **embed** | `_spawn_llamacpp_embed(port)` | `python -m llama_cpp.server --model <nomic-embed> --embedding true --n_gpu_layers ...` | Embeddings (nomic-embed-text-v1.5, 768-dim) |
 | llama.cpp **chat**  | `_spawn_llamacpp_chat(port)`  | `python -m llama_cpp.server --model <chat.gguf> --n_ctx <auto> --n_gpu_layers ...` | Local chat LLM (Hermes-3 / Qwen2.5-Instruct / Llama-3.2) |
+| MLX **chat** | `desktop/providers/mlx.py` | `python -m mlx_lm.server --model <AI_Models/MLX/repo> --host 127.0.0.1 --port <free>` | Apple-Silicon local OpenAI-compatible chat |
 | Whisper STT | `_spawn_whisper(port)` | `python -m desktop_shims.whisper_shim --model <name>` | Speech-to-text (faster-whisper) |
 | Piper TTS   | `_spawn_piper(port)`   | `python -m desktop_shims.piper_shim --voice name=<path> ...` | Text-to-speech |
 | Memory      | `_spawn_memory_retriever(...)` | mem0-backed memory shim | Fact/preference/episode recall |
@@ -229,6 +231,8 @@ hands the same ephemeral port to two sockets.
 `surreal_user`, `surreal_password`, `theme`, `openchronicle_choice`,
 `encryption_key` (auto-generated `secrets.token_urlsafe(32)` if absent). The
 default `model_dir` is `~/Desktop/AI_Models` (`desktop/config.py::default_model_dir`).
+GGUF models are expected under `~/Desktop/AI_Models/GGUF/`; complete MLX model
+repositories are expected under `~/Desktop/AI_Models/MLX/`.
 
 > Path resolution is centralized in `desktop/paths.py::user_home()` —
 > `$HOME` → `$USERPROFILE` → `Path.home()` — to guarantee a writable home dir

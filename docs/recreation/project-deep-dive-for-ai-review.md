@@ -6,7 +6,7 @@
 > are sanitized. Where I suspect a better approach exists, I flag it with
 > **⚠️ REVIEW**.
 >
-> Generated 2026-06-12 against the `Unreleased` (v0.8.68) tree. File paths are
+> Refreshed 2026-06-24 against the `desktop-app` tree. File paths are
 > absolute-from-repo-root unless noted. Version tags like `v0.8.68` are the repo's
 > own per-commit changelog markers and double as inline code comments.
 
@@ -43,6 +43,10 @@ the desktop experience is native PyInstaller + pywebview).
   with progress, cancel, and outline-review (`commands/podcast_staged.py`).
 - **Prompt optimizer** — trains transformation prompts with Microsoft SkillOpt against
   real sources (`open_notebook/prompt_optimizer/`).
+- **Evidence Studio / Course Pack** — turns uploaded files, links, and existing
+  notebook sources into source-grounded reports, study guides, instructor-ready Course
+  Packs, quizzes, data tables, mind maps, slide-deck outlines, podcast outlines, and
+  research runs (`api/routers/studio.py`, `open_notebook/studio/artifact_generation.py`).
 - **Memory** — mem0-style fact/preference/episode recall woven into the chat system
   prompt.
 - **Offline gate + smart router** — instant local-model substitution when offline.
@@ -57,7 +61,7 @@ the desktop experience is native PyInstaller + pywebview).
 | AI abstraction | **Esperanto** — unified factory for 8+ providers (OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI, OpenRouter, Azure, Vertex, openai_compatible) |
 | Job queue | **surreal-commands** — DB-backed async command queue (podcasts, embeddings, insights, prompt-opt) |
 | Desktop | PyInstaller bundle, pywebview window, splash + python handoff controller, tray, singleton lock |
-| Sidecars | llama.cpp chat server, Ollama, faster-whisper STT, local TTS, memory dashboard, MCP servers |
+| Sidecars | llama.cpp chat server, MLX server, Ollama, faster-whisper STT, local TTS, memory dashboard, MCP servers |
 | Podcasts | `podcast-creator` library (its compiled LangGraph is streamed directly) |
 | Prompts | `ai-prompter` (Jinja2 templates referenced by path, e.g. `chat/system`) |
 | Content | `content-core` (50+ file types), optional `crawl4ai` (Playwright) URL engine |
@@ -91,6 +95,10 @@ the desktop experience is native PyInstaller + pywebview).
 The launcher is the orchestration brain on the desktop: it decides ports, RAM tiers,
 which sidecars to start, and writes their URLs into env vars (e.g.
 `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL`) that the API's smart router reads at request time.
+
+Local model discovery is rooted at `~/Desktop/AI_Models` by default. GGUF models live
+under `GGUF/`; complete Apple-Silicon MLX repos live under `MLX/` and are served by
+`python -m mlx_lm.server`; Ollama is detected from the running service.
 
 ---
 
@@ -513,6 +521,66 @@ command owns the timeout (`ONP_PROMPT_OPT_TIMEOUT_SEC`, default 30 min). Artifac
 > by an upgrade-guard test, but the surface area is large; a fork or upstream PR may be
 > cheaper long-term than maintaining the backfill.
 
+### 2.7 Evidence Studio Course Pack generation (`api/routers/studio.py`, `open_notebook/studio/artifact_generation.py`)
+
+Evidence Studio is the project-facing artifact workbench. It persists generated
+outputs as `StudioArtifact` records and long-running work as `StudioWorkflowRun`
+records, so reports and Course Packs can be revised instead of being throwaway LLM
+text. The old `training_guide` enum remains as a compatibility alias, but the UI label
+and prompt intent are **Course Pack**:
+
+```python
+def _artifact_type_label(artifact_type: str) -> str:
+    if artifact_type in {"course_pack", "training_guide"}:
+        return "Course Pack"
+    return artifact_type.replace("_", " ").title()
+```
+
+The Course Pack prompt is deliberately more specific than a summary prompt. It tells
+the model how to treat different source types and asks for instructor/learner assets:
+
+```python
+"course_pack": (
+    "Create an instructor-ready Course Pack in markdown from the provided "
+    "linked and uploaded source content. Include audience, learning outcomes, "
+    "prerequisite knowledge, source readiness notes, a module roadmap, timed "
+    "lesson blocks, hands-on exercises, facilitator notes, learner handouts, "
+    "knowledge checks, a final assessment, source citations, and follow-up "
+    "resources. Treat video and audio sources as lesson segments, PDFs and "
+    "documents as readings or reference modules, and links as external "
+    "resources or source-backed exercises. Warn when transcript/source text "
+    "appears thin. Ground every substantive lesson point in citation markers."
+)
+```
+
+Source readiness is checked before generation. This matters for video/audio because
+thin or missing transcripts would otherwise create confident-looking but low-value
+training output:
+
+```python
+def _sources_not_ready_exception(not_ready_sources):
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "sources_not_ready",
+            "message": "One or more selected sources are still processing. ...",
+            "not_ready_sources": not_ready_sources,
+        },
+    )
+```
+
+Auto-routing is local-model aware: if the artifact has no explicit `model_id`, the
+service enumerates the configured model directory, recommends a role like
+`source_synthesis`, and matches that recommendation to a registered model. On this
+machine that directory is expected to be `~/Desktop/AI_Models`, with `GGUF/` for
+llama.cpp and `MLX/` for Apple-Silicon repositories.
+
+> ⚠️ **REVIEW:** Course Pack quality now depends on prompt shape, source-readiness
+> checks, and local-model role routing. The next product leap is probably a structured
+> intermediate plan (`modules[]`, `assessments[]`, `citations[]`) before markdown
+> rendering, so the UI can edit modules, regenerate one lesson, and export SCORM/xAPI
+> style packages later.
+
 ---
 
 ## 3. Data Flow & Dependencies
@@ -827,3 +895,9 @@ Concrete questions for an AI reviewer, each tied to real files:
     backup→reimport is a *recovery* for a corruption that still recurs after unclean
     shutdown. Is there a SurrealDB-config or shutdown-handling change that prevents the
     live-query state corruption at the source rather than repairing it after?
+
+13. **Course Pack structure and export path** (`studio/artifact_generation.py`,
+    `frontend/src/components/onp/ArtifactRail.tsx`): generation now produces rich
+    markdown, but there is no structured module graph yet. Should Course Packs move to
+    a typed intermediate schema so users can edit/reorder modules, regenerate individual
+    lessons, and eventually export SCORM/xAPI/LMS packages?

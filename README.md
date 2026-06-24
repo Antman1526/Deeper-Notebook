@@ -1,6 +1,6 @@
 # Open Notebook Plus
 
-**A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, and **170+ production-hardening commits** on top of upstream.
+**A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts and instructor-ready Course Packs — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama / MLX model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, Evidence Studio artifact generation, and a downstream-friendly update strategy on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
@@ -28,6 +28,7 @@
   - [From source (development)](#from-source-development)
 - [Configuration](#configuration)
 - [Running tests](#running-tests)
+- [Reconstruction documentation](#reconstruction-documentation)
 - [Project structure](#project-structure)
 - [Privacy & local-first stance](#privacy--local-first-stance)
 - [Contributing](#contributing)
@@ -55,6 +56,11 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - Generate AI notes and structured **insights** from any source. **Transformations** are reusable, named prompt templates (summaries, key-point extraction, topic lists, custom analyses) that you run over sources to produce new notes.
 - **Prompt optimizer (SkillOpt, MIT):** every transformation card has an **Optimize** action that *trains* the prompt against real sources from a notebook of your choice. Each round runs the prompt over example sources, an LLM judge scores the outputs against your plain-English criteria, the optimizer proposes bounded edits, and only edits that improve a held-out validation split are kept. The result is shown side-by-side and applied only when you click **Apply**. It runs against any OpenAI-compatible endpoint, so the local llama.cpp sidecar (or Ollama) can fill both the target and judge roles with zero data leaving the machine.
 
+### Evidence Studio and Course Packs
+- **Evidence Studio** turns a selected notebook, upload batch, link set, or mixed source bundle into reusable artifacts: reports, study guides, Course Packs, briefings, FAQs, timelines, flashcards, quizzes, data tables, mind maps, slide-deck outlines, infographic briefs, podcast outlines, and research runs.
+- **Course Pack** is the richer successor to the old "training guide" label. It treats videos and audio as lesson segments, PDFs and docs as readings/reference modules, and links as external resources. The generated markdown includes audience, learning outcomes, prerequisite knowledge, source-readiness notes, module roadmap, timed lessons, hands-on exercises, facilitator notes, learner handouts, knowledge checks, final assessment, follow-up resources, and citation markers.
+- **Workflow approval gates** track context building, privacy review, model routing, and artifact generation. If selected sources are still processing, generation fails with a structured `sources_not_ready` response instead of producing thin material.
+
 ### Chat grounded in your sources
 - Converse with an AI that answers from your notebook's sources, with **interactive citation pills** linking every grounded claim back to the originating document.
 - **MCP tool support:** plug in any Model Context Protocol server (web search, fetch, custom tools) per conversation; the chat graph wires them into the LLM's tool surface automatically.
@@ -75,8 +81,8 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - **Smart routing (opt-in):** per-turn local-vs-cloud routing picks the best provider for each turn based on context size and sidecar health, so you don't switch manually.
 
 ### Local-AI-first, multi-provider
-- Bundled `llama-cpp-python` chat + embedding servers, Ollama auto-detection, and a **GGUF Manager** for downloading models from HuggingFace and hot-swapping them at runtime.
-- Drop any `.gguf` file into your model directory and it appears in the picker on next launch; `ollama pull <name>` makes Ollama models available too.
+- Bundled `llama-cpp-python` chat + embedding servers, Ollama auto-detection, Apple-Silicon MLX server support, and a **GGUF Manager** for downloading models from HuggingFace and hot-swapping them at runtime.
+- Drop any `.gguf` file into `~/Desktop/AI_Models/GGUF/` and it appears in the picker on next launch; place complete MLX repos under `~/Desktop/AI_Models/MLX/`; `ollama pull <name>` makes Ollama models available too.
 - Cloud providers are available through the **Esperanto** unified model layer (14+ providers) and are entirely opt-in via encrypted credentials you add in Settings.
 
 ### Production-grade operations
@@ -167,7 +173,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | Content extraction | content-core | 1.14+ |
 | Prompt templating | ai-prompter (Jinja2) | 0.4+ |
 | Podcast generation | podcast-creator | 0.12+ |
-| Local LLM runtime | llama-cpp-python | 0.3.23 |
+| Local LLM runtime | llama-cpp-python / MLX / Ollama | llama-cpp-python 0.3.x / mlx-lm 0.26.x |
 | Local embeddings | nomic-embed-text-v1.5 (GGUF) | — |
 | Local STT | faster-whisper (CTranslate2) | — |
 | Local TTS | Piper | — |
@@ -233,7 +239,7 @@ The recommended way to run Open Notebook Plus — no Docker, no terminal, with a
 3. The build is unsigned, so the first launch needs **Right-click → Open** to clear macOS Gatekeeper.
 4. On first run the app boots its bundled SurrealDB + Node runtime, downloads the local model files it needs, and opens on a welcome splash before handing off to the main UI.
 
-> **Windows:** desktop builds are produced on a Windows host (PyInstaller is not a cross-compiler). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) and the build scripts under `desktop/build/`.
+> **Windows:** desktop builds are produced on a Windows host through GitHub Actions because PyInstaller is not a cross-compiler. The workflow packages `dist/Open-Notebook-Plus-windows-x64.zip`, containing `Open Notebook Plus.exe` and its bundled runtime folder. See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml) and [`desktop/build/post_build_windows.ps1`](desktop/build/post_build_windows.ps1).
 
 ### From source (development)
 
@@ -278,7 +284,7 @@ make build-mac      # test → lockfile → build venv → Next.js build →
 
 Configuration is supplied through **environment variables** (a `.env` file in development, copied from `.env.example`) and through an optional **`config.toml`** for non-secret application settings. Application data — the SurrealDB store, uploads, SQLite checkpoints, and the tiktoken cache — lives under the directory named by `DATA_FOLDER` (default `./data` in dev; a per-user app-data directory in the desktop build).
 
-**Local models** are read from a GGUF model directory (by convention `~/Desktop/AI_Models/GGUF/` on macOS); any `.gguf` file dropped there is picked up on the next launch, and Ollama models are auto-detected. Encrypted cloud-provider credentials are added in-app under **Settings → Models** rather than via env vars.
+**Local models** are read from the model root `~/Desktop/AI_Models` on macOS by default. GGUF files live under `~/Desktop/AI_Models/GGUF/`; complete MLX repositories live under `~/Desktop/AI_Models/MLX/`; Ollama models are auto-detected from the running Ollama service. Encrypted cloud-provider credentials are added in-app under **Settings → Models** rather than via env vars.
 
 The full reference lives in [`docs/5-CONFIGURATION/`](docs/5-CONFIGURATION/index.md). The minimum set (names only — never commit real secret values):
 
@@ -349,6 +355,19 @@ cd frontend && pnpm test          # or: npm test
 ```
 
 Current suites: **1712 backend tests + 195 frontend Vitest tests**, plus SurrealDB integration tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
+
+---
+
+## Reconstruction documentation
+
+The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or senior engineer to recreate the project without guessing:
+
+- [`00-reconstruction-manifest.md`](docs/recreation/00-reconstruction-manifest.md) — index, scope, source-of-truth map, build artifacts, and verification gates.
+- `01` through `15` — architecture, environment, data model, API, frontend, auth, business logic, integrations, config, tests, build/deploy, logging, performance, security, and file organization.
+- [`project-deep-dive-for-ai-review.md`](docs/recreation/project-deep-dive-for-ai-review.md) — dense AI-review brief with real code snippets, known trade-offs, and Areas for Review.
+- [`technology-inventory.md`](docs/recreation/technology-inventory.md) — exhaustive technology audit with each tool's specific role in this repo.
+
+These files are mirrored into `/Users/Antman/Desktop/OpenNotebook` during local documentation exports so they can be loaded into Open Notebook Plus itself as source material.
 
 ---
 
