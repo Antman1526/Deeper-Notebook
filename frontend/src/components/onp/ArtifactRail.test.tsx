@@ -879,6 +879,15 @@ describe('ArtifactRail', () => {
     expect(screen.getByText('JSON')).toBeInTheDocument()
     expect(screen.getByText(markdownPath)).toBeInTheDocument()
     expect(screen.getByText(jsonPath)).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Open' })[0]).toHaveAttribute(
+      'href',
+      `file://${markdownPath}`,
+    )
+    expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Folder' })[0]).toHaveAttribute(
+      'href',
+      'file:///Users/Antman/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio',
+    )
   })
 
   it('opens citation evidence in a focused drawer from the artifact viewer', async () => {
