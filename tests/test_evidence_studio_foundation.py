@@ -83,6 +83,27 @@ def test_studio_artifact_domain_contract():
         )
 
 
+def test_studio_artifact_domain_accepts_course_pack_types():
+    from open_notebook.domain.notebook import StudioArtifact
+
+    for artifact_type in ("course_pack", "training_guide"):
+        artifact = StudioArtifact(
+            notebook_id="notebook:alpha",
+            artifact_type=artifact_type,
+            title="Course Pack",
+            source_ids=["source:video", "source:pdf"],
+        )
+
+        data = artifact._prepare_save_data()
+
+        assert artifact.artifact_type == artifact_type
+        assert str(data["notebook_id"]) == "notebook:alpha"
+        assert [str(source_id) for source_id in data["source_ids"]] == [
+            "source:video",
+            "source:pdf",
+        ]
+
+
 def test_studio_workflow_run_domain_contract():
     from open_notebook.domain.notebook import StudioWorkflowRun
 
