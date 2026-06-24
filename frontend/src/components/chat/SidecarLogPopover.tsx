@@ -47,6 +47,8 @@ export interface SidecarLogPopoverProps {
   /** The kind passed to /healthz/sidecars/{kind}/log. Must match the
    * backend's _KIND_TO_SUPERVISOR allowlist. */
   kind: SidecarKind
+  /** Render restart even when the launcher has not captured a log file yet. */
+  showRestartWhenLogUnavailable?: boolean
   /** The trigger element — typically the colored status dot. Receives
    * onClick + cursor-pointer styling via Popover.Trigger asChild. */
   children: React.ReactNode
@@ -58,7 +60,11 @@ type RestartResponse = {
   detail: string
 }
 
-export function SidecarLogPopover({ kind, children }: SidecarLogPopoverProps) {
+export function SidecarLogPopover({
+  kind,
+  showRestartWhenLogUnavailable = false,
+  children,
+}: SidecarLogPopoverProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   // Don't auto-fetch — only when the popover opens. Saves bandwidth
@@ -185,9 +191,11 @@ export function SidecarLogPopover({ kind, children }: SidecarLogPopoverProps) {
                 })}
               </p>
             )}
-            {/* v0.8.40 — in-place restart via the launcher control
-                plane. Disabled while the mutation is in flight; toast
-                surfaces success/error. */}
+          </>
+        )}
+
+        {data && (data.available || showRestartWhenLogUnavailable) && (
+          <>
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] text-muted-foreground flex-1">
                 {t('models.sidecarLog.restartHintInline', {
@@ -212,7 +220,7 @@ export function SidecarLogPopover({ kind, children }: SidecarLogPopoverProps) {
                   ? t('models.sidecarLog.restarting', {
                       defaultValue: 'Restarting…',
                     })
-                  : t('models.sidecarLog.restart', { defaultValue: 'Restart' })}
+                : t('models.sidecarLog.restart', { defaultValue: 'Restart' })}
               </Button>
             </div>
           </>
@@ -233,6 +241,7 @@ export function SidecarLogPopover({ kind, children }: SidecarLogPopoverProps) {
  */
 export function sidecarKindFromName(name: string): SidecarKind | null {
   const n = name.toLowerCase()
+  if (n.includes('ollama')) return null
   if (n.includes('embed')) return 'embed'
   if (n.includes('whisper') || n.includes('stt')) return 'whisper'
   if (n.includes('piper') || n.includes('tts')) return 'piper'

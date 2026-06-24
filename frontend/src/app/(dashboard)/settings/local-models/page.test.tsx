@@ -165,9 +165,9 @@ describe('LocalModelsPage', () => {
         models: [
           {
             name: 'Local GGUF',
-            status: 'healthy',
-            detail: 'Hermes-3 ready',
-            latency_ms: 12,
+            status: 'unhealthy',
+            detail: 'model file missing',
+            latency_ms: null,
             runtime: 'llama.cpp',
             endpoint: 'http://127.0.0.1:8080/v1',
             probe_path: '/models',
@@ -207,8 +207,11 @@ describe('LocalModelsPage', () => {
     expect(screen.getByTestId('local-model-connection-checks')).toHaveTextContent(
       'http://127.0.0.1:8080/v1',
     )
-    expect(screen.getByTestId('local-model-connection-checks')).toHaveTextContent('Hermes-3 ready')
-    expect(screen.getByTestId('local-model-connection-checks')).toHaveTextContent('12 ms')
+    expect(screen.getByTestId('local-model-connection-checks')).toHaveTextContent('model file missing')
+    expect(screen.getByRole('button', {
+      name: /View log and restart Local GGUF/i,
+    })).toBeInTheDocument()
+    expect(screen.getByText('View log / Restart')).toBeInTheDocument()
     expect(screen.getByTestId('local-model-connection-checks')).toHaveTextContent(
       'Ollama',
     )
@@ -1242,6 +1245,32 @@ describe('LocalModelsPage', () => {
   })
 
   it('manages smart routing and local default auto-assignment from Local Models', async () => {
+    localModelsHealthState.value = {
+      isLoading: false,
+      data: {
+        overall: 'degraded',
+        models: [
+          {
+            name: 'Local Qwen Chat',
+            status: 'healthy',
+            detail: 'ready',
+            latency_ms: 15,
+            runtime: 'llama.cpp',
+            endpoint: 'http://127.0.0.1:8080/v1',
+            probe_path: '/models',
+          },
+          {
+            name: 'North Mini Source Synthesis',
+            status: 'unhealthy',
+            detail: 'runtime unavailable',
+            latency_ms: null,
+            runtime: 'mlx',
+            endpoint: null,
+            probe_path: null,
+          },
+        ],
+      },
+    }
     apiGet.mockImplementation((url: string) => {
       if (url === '/models/defaults') {
         return Promise.resolve({
@@ -1326,12 +1355,19 @@ describe('LocalModelsPage', () => {
         auto_route_provider_pref: 'auto',
       },
     })
-    apiPost.mockResolvedValue({
-      data: {
-        assigned: { default_tools_model: 'model:local-chat' },
-        skipped: [],
-        missing: [],
-      },
+    apiPost.mockImplementation((url: string) => {
+      if (url === '/models/model:local-chat/test') {
+        return Promise.resolve({
+          data: { success: true, message: 'Model responded' },
+        })
+      }
+      return Promise.resolve({
+        data: {
+          assigned: { default_tools_model: 'model:local-chat' },
+          skipped: [],
+          missing: [],
+        },
+      })
     })
 
     renderPage()
@@ -1341,13 +1377,34 @@ describe('LocalModelsPage', () => {
     expect(within(routingDefaults).getByTestId('local-model-default-default_chat_model')).toHaveTextContent(
       'Local Qwen Chat',
     )
+    expect(within(routingDefaults).getByTestId('local-model-default-default_chat_model')).toHaveTextContent(
+      'Registered',
+    )
+    expect(within(routingDefaults).getByTestId('local-model-default-default_chat_model')).toHaveTextContent(
+      'Usable',
+    )
     expect(within(routingDefaults).getByTestId('local-model-default-default_transformation_model')).toHaveTextContent(
       'North Mini Source Synthesis',
+    )
+    expect(within(routingDefaults).getByTestId('local-model-default-default_transformation_model')).toHaveTextContent(
+      'Needs repair',
     )
     expect(within(routingDefaults).getByTestId('local-model-default-default_embedding_model')).toHaveTextContent(
       'Nomic Embed Local',
     )
     expect(routingDefaults).toHaveTextContent('3 / 6 assigned')
+
+    fireEvent.click(
+      within(routingDefaults).getByRole('button', {
+        name: /Test default model for Chat/i,
+      }),
+    )
+    await waitFor(() => {
+      expect(apiPost).toHaveBeenCalledWith('/models/model:local-chat/test')
+    })
+    expect(await within(routingDefaults).findByTestId('local-model-default-test-result')).toHaveTextContent(
+      'Local Qwen Chat: Model responded',
+    )
 
     fireEvent.click(within(routingDefaults).getByTestId('smart-routing-toggle'))
     await waitFor(() => {
