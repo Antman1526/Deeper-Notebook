@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
@@ -570,7 +572,8 @@ function AIMessageContent({
           return (
             <ReactMarkdown
               key={idx}
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={mdComponents}
             >
               {markdownWithCompactRefs}
