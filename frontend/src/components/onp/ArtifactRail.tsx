@@ -40,7 +40,6 @@ import {
   useCreateStudioWorkflowRun,
   useDeleteStudioArtifact,
   useStudioArtifactRevisions,
-  useGenerateStudioArtifact,
   useStudioArtifacts,
   useStudioWorkflowRuns,
   useUpdateStudioArtifact,
@@ -277,7 +276,6 @@ export function ArtifactRail({
   const createArtifact = useCreateStudioArtifact(notebookId)
   const createWorkflowRun = useCreateStudioWorkflowRun(notebookId)
   const approveWorkflowRun = useApproveStudioWorkflowRun(notebookId)
-  const generateArtifact = useGenerateStudioArtifact(notebookId)
   const deleteArtifact = useDeleteStudioArtifact(notebookId)
   const updateArtifact = useUpdateStudioArtifact(notebookId)
   const artifactIds = artifacts.map((artifact) => artifact.id)
@@ -293,7 +291,6 @@ export function ArtifactRail({
     createArtifact.isPending
     || createWorkflowRun.isPending
     || approveWorkflowRun.isPending
-    || generateArtifact.isPending
   )
   const selectedMarkdown = artifactMarkdown(selectedArtifact)
   const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
@@ -362,7 +359,18 @@ export function ArtifactRail({
 
   async function approveAndGenerate(run: StudioWorkflowRun) {
     await approveWorkflowRun.mutateAsync(run.id)
-    await generateArtifact.mutateAsync(run.artifact_id)
+  }
+
+  async function queueExistingArtifact(artifact: StudioArtifact) {
+    const action = regenerateArtifactLabel(artifact.status)
+    await createWorkflowRun.mutateAsync({
+      artifactId: artifact.id,
+      payload: {
+        title: `${action} ${artifact.title}`,
+        source_ids: artifact.source_ids,
+        approval_required: false,
+      },
+    })
   }
 
   async function deleteSelectedArtifact(artifact: StudioArtifact) {
@@ -562,7 +570,7 @@ export function ArtifactRail({
                             aria-label={`Approve ${run.title}`}
                             onClick={() => void approveAndGenerate(run)}
                           >
-                            {approveWorkflowRun.isPending || generateArtifact.isPending ? (
+                            {approveWorkflowRun.isPending ? (
                               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                             ) : (
                               <Play className="h-4 w-4" aria-hidden="true" />
@@ -947,10 +955,10 @@ export function ArtifactRail({
                 </Button>
                 <Button
                   type="button"
-                  disabled={generateArtifact.isPending || selectedArtifact.status === 'running'}
-                  onClick={() => void generateArtifact.mutateAsync(selectedArtifact.id)}
+                  disabled={createWorkflowRun.isPending || selectedArtifact.status === 'running'}
+                  onClick={() => void queueExistingArtifact(selectedArtifact)}
                 >
-                  {generateArtifact.isPending ? (
+                  {createWorkflowRun.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   ) : (
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
