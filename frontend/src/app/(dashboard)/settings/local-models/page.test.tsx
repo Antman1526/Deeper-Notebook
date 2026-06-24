@@ -80,10 +80,12 @@ vi.mock('@/components/ui/alert', () => ({
 
 const apiGet = vi.fn()
 const apiPost = vi.fn()
+const apiPut = vi.fn()
 vi.mock('@/lib/api/client', () => ({
   default: {
     get: (...args: unknown[]) => apiGet(...args),
     post: (...args: unknown[]) => apiPost(...args),
+    put: (...args: unknown[]) => apiPut(...args),
   },
 }))
 
@@ -94,6 +96,14 @@ vi.mock('sonner', () => ({
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
   },
+}))
+
+const hookToastState = vi.hoisted(() => ({
+  toast: vi.fn(),
+}))
+
+vi.mock('@/lib/hooks/use-toast', () => ({
+  useToast: () => ({ toast: hookToastState.toast }),
 }))
 
 const clipboardWriteText = vi.fn()
@@ -110,8 +120,10 @@ function renderPage() {
 beforeEach(() => {
   apiGet.mockReset()
   apiPost.mockReset()
+  apiPut.mockReset()
   toastSuccess.mockReset()
   toastError.mockReset()
+  hookToastState.toast.mockReset()
   clipboardWriteText.mockReset()
   clipboardWriteText.mockResolvedValue(undefined)
   localModelsHealthState.value = {
@@ -1227,6 +1239,132 @@ describe('LocalModelsPage', () => {
       'Role routing unavailable',
     )
     expect(screen.getByTestId('local-model-Qwen3-8B-Q4_K_M')).toBeInTheDocument()
+  })
+
+  it('manages smart routing and local default auto-assignment from Local Models', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/models/defaults') {
+        return Promise.resolve({
+          data: {
+            default_chat_model: 'model:local-chat',
+            default_transformation_model: 'model:source-synthesis',
+            default_tools_model: null,
+            large_context_model: null,
+            default_reasoning_model: null,
+            default_embedding_model: 'model:embed',
+            auto_route_enabled: false,
+            auto_route_provider_pref: 'auto',
+          },
+        })
+      }
+      if (url === '/models') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'model:local-chat',
+              name: 'Local Qwen Chat',
+              provider: 'openai_compatible',
+              type: 'language',
+              created: '2026-06-23T00:00:00Z',
+              updated: '2026-06-23T00:00:00Z',
+            },
+            {
+              id: 'model:source-synthesis',
+              name: 'North Mini Source Synthesis',
+              provider: 'mlx',
+              type: 'language',
+              created: '2026-06-23T00:00:00Z',
+              updated: '2026-06-23T00:00:00Z',
+            },
+            {
+              id: 'model:embed',
+              name: 'Nomic Embed Local',
+              provider: 'openai_compatible',
+              type: 'embedding',
+              created: '2026-06-23T00:00:00Z',
+              updated: '2026-06-23T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (url === '/local-models/role-routing') {
+        return Promise.resolve({ data: { model_dir: '/tmp/models', available: true, routes: [] } })
+      }
+      if (url === '/local-models/snapshot-installs') {
+        return Promise.resolve({ data: { snapshot_installs: [] } })
+      }
+      if (url === '/local-models/benchmarks') {
+        return Promise.resolve({ data: { benchmarks: [] } })
+      }
+      return Promise.resolve({
+        data: {
+          model_dir: '/tmp/models',
+          available: true,
+          models: [
+            {
+              name: 'Qwen3-8B-Q4_K_M',
+              path: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+              launcher_model_ref: 'GGUF/Qwen3-8B-Q4_K_M.gguf',
+              runtime: 'gguf',
+              runnable: true,
+              activation_supported: true,
+              runtime_status: 'runnable',
+              runtime_note: null,
+              architecture: 'qwen2',
+              context_length: 32768,
+              quant: 'Q4_K_M',
+              parameter_count_b: 8,
+              file_size_bytes: 1000,
+            },
+          ],
+        },
+      })
+    })
+    apiPut.mockResolvedValue({
+      data: {
+        auto_route_enabled: true,
+        auto_route_provider_pref: 'auto',
+      },
+    })
+    apiPost.mockResolvedValue({
+      data: {
+        assigned: { default_tools_model: 'model:local-chat' },
+        skipped: [],
+        missing: [],
+      },
+    })
+
+    renderPage()
+
+    const routingDefaults = await screen.findByTestId('local-model-routing-defaults')
+    expect(routingDefaults).toHaveTextContent('Local routing and defaults')
+    expect(within(routingDefaults).getByTestId('local-model-default-default_chat_model')).toHaveTextContent(
+      'Local Qwen Chat',
+    )
+    expect(within(routingDefaults).getByTestId('local-model-default-default_transformation_model')).toHaveTextContent(
+      'North Mini Source Synthesis',
+    )
+    expect(within(routingDefaults).getByTestId('local-model-default-default_embedding_model')).toHaveTextContent(
+      'Nomic Embed Local',
+    )
+    expect(routingDefaults).toHaveTextContent('3 / 6 assigned')
+
+    fireEvent.click(within(routingDefaults).getByTestId('smart-routing-toggle'))
+    await waitFor(() => {
+      expect(apiPut).toHaveBeenCalledWith('/models/defaults', {
+        auto_route_enabled: true,
+      })
+    })
+
+    fireEvent.click(within(routingDefaults).getByRole('button', { name: 'Fill empty slots' }))
+    await waitFor(() => {
+      expect(apiPost).toHaveBeenCalledWith('/models/auto-assign-capability?force=false')
+    })
+
+    fireEvent.click(within(routingDefaults).getByRole('button', { name: 'Reset and re-evaluate' }))
+    await waitFor(() => {
+      expect(apiPost).toHaveBeenCalledWith('/models/auto-assign-capability?force=true')
+    })
   })
 
   it('sets an MLX model as the native launch default', async () => {
