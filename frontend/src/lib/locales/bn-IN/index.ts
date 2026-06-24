@@ -1214,6 +1214,8 @@ export const bnIN = {
     bothJobStartedDescription: "Navigating to the new notebook. Podcast job {jobId} will appear in /podcasts when done.",
     coursePackQueued: "Course Pack queued",
     coursePackQueuedDescription: "{count} source(s) are processing. Open the notebook to generate the Course Pack when the source text is ready.",
+    coursePackGenerated: "Course Pack generated",
+    coursePackGeneratedDescription: "Navigating to the new notebook with the generated Course Pack.",
     generatedWithWarnings: "সতর্কতা সহ তৈরি হয়েছে",
     generationFailed: "স্টুডিও তৈরি ব্যর্থ হয়েছে",
     filesRejected: "{count}টি ফাইল প্রত্যাখ্যাত",

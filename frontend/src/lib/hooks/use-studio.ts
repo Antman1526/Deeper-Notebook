@@ -29,6 +29,9 @@ export interface StudioCoursePackOptions {
   files: File[]
   links?: string[]
   title?: string
+  autoGenerate?: boolean
+  sourceReadinessTimeoutMs?: number
+  sourceReadinessPollMs?: number
 }
 
 export interface StudioCoursePackResponse {
@@ -36,6 +39,7 @@ export interface StudioCoursePackResponse {
   sources: SourceResponse[]
   artifact: StudioArtifact
   warnings: string[]
+  generationStatus: 'completed' | 'pending' | 'failed'
 }
 
 export function useStudioGenerate() {
@@ -56,7 +60,14 @@ export function useStudioCoursePack() {
   const queryClient = useQueryClient()
 
   return useMutation<StudioCoursePackResponse, Error, StudioCoursePackOptions>({
-    mutationFn: async ({ files, links = [], title }) => {
+    mutationFn: async ({
+      files,
+      links = [],
+      title,
+      autoGenerate = true,
+      sourceReadinessTimeoutMs = 60_000,
+      sourceReadinessPollMs = 2_000,
+    }) => {
       const cleanLinks = links.map((link) => link.trim()).filter(Boolean)
       if (files.length === 0 && cleanLinks.length === 0) {
         throw new Error('At least one file or link is required')
@@ -111,20 +122,51 @@ export function useStudioCoursePack() {
       )))
 
       const sources = [...fileSources, ...linkSources]
-      const artifact = await studioApi.createArtifact({
+      let artifact = await studioApi.createArtifact({
         notebook_id: notebook.id,
         artifact_type: 'course_pack',
         title: `${notebookTitle} Course Pack`,
         source_ids: sources.map((source) => source.id),
       })
 
+      const warnings = sources
+        .filter((source) => source.status === 'failed')
+        .map((source) => `${source.title ?? source.id} failed to queue`)
+      let generationStatus: StudioCoursePackResponse['generationStatus'] = 'pending'
+
+      if (autoGenerate && warnings.length === 0) {
+        const readiness = await waitForCoursePackSources(
+          sources.map((source) => source.id),
+          {
+            timeoutMs: sourceReadinessTimeoutMs,
+            pollMs: sourceReadinessPollMs,
+          },
+        )
+        if (readiness.failed.length > 0) {
+          warnings.push(`${readiness.failed.length} source(s) failed during processing`)
+          generationStatus = 'failed'
+        } else if (readiness.ready) {
+          try {
+            artifact = await studioApi.generateArtifact(artifact.id)
+            generationStatus = artifact.status === 'completed' ? 'completed' : 'pending'
+          } catch (error) {
+            if (isSourcesNotReadyError(error)) {
+              warnings.push('Sources are queued. Course Pack generation will be ready from the notebook once extraction finishes.')
+            } else {
+              throw error
+            }
+          }
+        } else {
+          warnings.push('Sources are still processing. Open the notebook to generate the Course Pack when extraction finishes.')
+        }
+      }
+
       return {
         notebook,
         sources,
         artifact,
-        warnings: sources
-          .filter((source) => source.status === 'failed')
-          .map((source) => `${source.title ?? source.id} failed to queue`),
+        warnings,
+        generationStatus,
       }
     },
     onSuccess: ({ notebook }) => {
@@ -134,6 +176,55 @@ export function useStudioCoursePack() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebook.id) })
     },
   })
+}
+
+async function waitForCoursePackSources(
+  sourceIds: string[],
+  {
+    timeoutMs,
+    pollMs,
+  }: {
+    timeoutMs: number
+    pollMs: number
+  },
+): Promise<{ ready: boolean; failed: string[] }> {
+  if (sourceIds.length === 0) return { ready: true, failed: [] }
+
+  const deadline = Date.now() + Math.max(0, timeoutMs)
+  const interval = Math.max(100, pollMs)
+
+  while (true) {
+    const statuses = await Promise.all(
+      sourceIds.map(async (sourceId) => ({
+        sourceId,
+        status: (await sourcesApi.status(sourceId)).status,
+      })),
+    )
+    const failed = statuses
+      .filter((item) => item.status === 'failed')
+      .map((item) => item.sourceId)
+    if (failed.length > 0) return { ready: false, failed }
+    const processing = statuses.some((item) => (
+      item.status === 'new'
+      || item.status === 'queued'
+      || item.status === 'running'
+      || !item.status
+    ))
+    if (!processing) return { ready: true, failed: [] }
+    if (Date.now() >= deadline) return { ready: false, failed: [] }
+    await sleep(Math.min(interval, Math.max(0, deadline - Date.now())))
+  }
+}
+
+function isSourcesNotReadyError(error: unknown): boolean {
+  const detail = (error as {
+    response?: { data?: { detail?: { code?: string } } }
+  })?.response?.data?.detail
+  return detail?.code === 'sources_not_ready'
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function useStudioArtifacts(

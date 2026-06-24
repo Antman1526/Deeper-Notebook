@@ -1214,6 +1214,8 @@ export const esES = {
     bothJobStartedDescription: "Navigating to the new notebook. Podcast job {jobId} will appear in /podcasts when done.",
     coursePackQueued: "Course Pack queued",
     coursePackQueuedDescription: "{count} source(s) are processing. Open the notebook to generate the Course Pack when the source text is ready.",
+    coursePackGenerated: "Course Pack generated",
+    coursePackGeneratedDescription: "Navigating to the new notebook with the generated Course Pack.",
     generatedWithWarnings: "Generado con advertencias",
     generationFailed: "Falló la generación de Studio",
     filesRejected: "{count} archivo rechazado",
