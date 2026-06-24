@@ -957,6 +957,80 @@ describe('LocalModelsPage', () => {
     expect(toastSuccess).toHaveBeenCalledWith('Launcher reference copied')
   })
 
+  it('shows active and launch-default activation badges', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        model_dir: '/tmp/models',
+        available: true,
+        launcher_config: {
+          available: true,
+          path: '/Users/Antman/.open-notebook-plus/config.toml',
+          provider: 'mlx',
+          default_model: 'MLX/mlx-community__North-Mini-Code-1.0-6bit',
+          model_dir: '/tmp/models',
+          model_dir_matches_inventory: true,
+          active_gguf_model: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+        },
+        models: [
+          {
+            name: 'Qwen3-8B-Q4_K_M',
+            path: '/tmp/models/GGUF/Qwen3-8B-Q4_K_M.gguf',
+            launcher_model_ref: 'GGUF/Qwen3-8B-Q4_K_M.gguf',
+            runtime: 'gguf',
+            runnable: true,
+            activation_supported: true,
+            is_live_active: true,
+            is_launch_default: false,
+            activation_mode: 'active_now',
+            activation_detail: 'This GGUF is the live chat model.',
+            runtime_status: 'runnable',
+            runtime_note: null,
+            architecture: 'qwen2',
+            context_length: 32768,
+            quant: 'Q4_K_M',
+            parameter_count_b: 8,
+            file_size_bytes: 1000,
+          },
+          {
+            name: 'mlx-community/North-Mini-Code-1.0-6bit',
+            path: '/tmp/models/MLX/mlx-community__North-Mini-Code-1.0-6bit',
+            launcher_model_ref: 'MLX/mlx-community__North-Mini-Code-1.0-6bit',
+            runtime: 'mlx',
+            runnable: true,
+            activation_supported: false,
+            is_live_active: false,
+            is_launch_default: true,
+            activation_mode: 'launch_default',
+            activation_detail: 'This model is the native launch default.',
+            runtime_status: 'runnable',
+            runtime_note: null,
+            architecture: 'qwen2',
+            context_length: 32768,
+            quant: '6bit',
+            parameter_count_b: 7,
+            file_size_bytes: 1000,
+          },
+        ],
+      },
+    })
+
+    renderPage()
+
+    const ggufCard = await screen.findByTestId('local-model-Qwen3-8B-Q4_K_M')
+    expect(within(ggufCard).getByText('Active now')).toBeInTheDocument()
+    expect(within(ggufCard).getByRole('button', {
+      name: /Switch live chat model/i,
+    })).toBeInTheDocument()
+
+    const mlxCard = await screen.findByTestId(
+      'local-model-mlx-community/North-Mini-Code-1.0-6bit',
+    )
+    expect(within(mlxCard).getAllByText('Launch default').length).toBeGreaterThanOrEqual(1)
+    expect(within(mlxCard).queryByTestId(
+      'set-active-mlx-community/North-Mini-Code-1.0-6bit',
+    )).not.toBeInTheDocument()
+  })
+
   it('sets an MLX model as the native launch default', async () => {
     apiGet.mockResolvedValue({
       data: {
