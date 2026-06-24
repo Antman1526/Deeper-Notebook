@@ -1177,6 +1177,8 @@ class Note(ObjectModel):
 StudioArtifactType = Literal[
     "report",
     "study_guide",
+    "course_pack",
+    "training_guide",
     "briefing",
     "faq",
     "flashcards",
