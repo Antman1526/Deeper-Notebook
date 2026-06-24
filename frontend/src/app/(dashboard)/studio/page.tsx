@@ -285,9 +285,12 @@ export default function StudioPage() {
           })
         } else {
           toast({
-            title: t(successTitleKey),
-            description: t(successDescriptionKey)
-              .replace('{count}', String(result.sources.length)),
+            title: result.generationStatus === 'completed'
+              ? t('studio.coursePackGenerated')
+              : t(successTitleKey),
+            description: result.generationStatus === 'completed'
+              ? t('studio.coursePackGeneratedDescription')
+              : t(successDescriptionKey).replace('{count}', String(result.sources.length)),
           })
         }
         router.push(`/notebooks/${encodeURIComponent(result.notebook.id)}`)

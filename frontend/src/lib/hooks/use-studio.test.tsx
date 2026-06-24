@@ -13,6 +13,7 @@ vi.mock('@/lib/api/notebooks', () => ({
 vi.mock('@/lib/api/sources', () => ({
   sourcesApi: {
     create: vi.fn(),
+    status: vi.fn(),
   },
 }))
 
@@ -107,6 +108,7 @@ describe('useStudioCoursePack', () => {
         files: [file],
         links: [' https://example.com/policy '],
         title: 'Onboarding',
+        autoGenerate: false,
       })
     })
 
@@ -146,5 +148,72 @@ describe('useStudioCoursePack', () => {
       title: 'Onboarding Course Pack',
       source_ids: ['source:file', 'source:link'],
     })
+    expect(studioApi.generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('generates the Course Pack automatically once queued sources are completed', async () => {
+    vi.mocked(notebooksApi.create).mockResolvedValue({
+      id: 'notebook:course',
+      name: 'Onboarding',
+      description: 'Instructor-ready Course Pack queued from Studio sources.',
+      archived: false,
+      created: '2026-06-23T00:00:00Z',
+      updated: '2026-06-23T00:00:00Z',
+      source_count: 0,
+      note_count: 0,
+    })
+    vi.mocked(sourcesApi.create).mockResolvedValue({
+      id: 'source:file',
+      title: 'training.pdf',
+      asset: null,
+      full_text: '',
+      embedded: false,
+      embedded_chunks: 0,
+      insights_count: 0,
+      created: '2026-06-23T00:00:00Z',
+      updated: '2026-06-23T00:00:00Z',
+      status: 'queued',
+    } as any)
+    vi.mocked(sourcesApi.status).mockResolvedValue({
+      status: 'completed',
+      message: 'done',
+    })
+    vi.mocked(studioApi.createArtifact).mockResolvedValue({
+      id: 'studio_artifact:course',
+      notebook_id: 'notebook:course',
+      artifact_type: 'course_pack',
+      title: 'Onboarding Course Pack',
+      status: 'pending',
+      source_ids: ['source:file'],
+      output_payload: {},
+      citations: [],
+      export_paths: {},
+    })
+    vi.mocked(studioApi.generateArtifact).mockResolvedValue({
+      id: 'studio_artifact:course',
+      notebook_id: 'notebook:course',
+      artifact_type: 'course_pack',
+      title: 'Onboarding Course Pack',
+      status: 'completed',
+      source_ids: ['source:file'],
+      output_payload: { markdown: '# Course Pack' },
+      citations: [],
+      export_paths: {},
+    })
+
+    const file = new File(['pdf'], 'training.pdf', { type: 'application/pdf' })
+    const { result } = renderHook(() => useStudioCoursePack(), { wrapper })
+    let response: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined
+
+    await act(async () => {
+      response = await result.current.mutateAsync({
+        files: [file],
+        title: 'Onboarding',
+      })
+    })
+
+    expect(sourcesApi.status).toHaveBeenCalledWith('source:file')
+    expect(studioApi.generateArtifact).toHaveBeenCalledWith('studio_artifact:course')
+    expect(response?.generationStatus).toBe('completed')
   })
 })

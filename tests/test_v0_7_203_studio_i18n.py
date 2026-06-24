@@ -76,6 +76,8 @@ STUDIO_KEYS = (
     "bothJobStartedDescription",
     "coursePackQueued",
     "coursePackQueuedDescription",
+    "coursePackGenerated",
+    "coursePackGeneratedDescription",
     "generatedWithWarnings",
     "generationFailed",
     "filesRejected",
