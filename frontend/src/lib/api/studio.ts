@@ -34,8 +34,10 @@ export type StudioArtifactStatus =
   | 'cancelled'
 
 export interface StudioGenerateOptions {
-  /** One or more files to ingest. Must be at least 1. */
+  /** Files to ingest. Link-only requests may leave this empty. */
   files: File[]
+  /** Optional http(s) links to ingest with the files. */
+  links?: string[]
   /** Output mode. */
   mode: StudioMode
   /** Optional notebook title. Auto-generated from first filename if absent. */
@@ -151,7 +153,8 @@ export const studioApi = {
    * The backend will:
    *   1. Create a Notebook record
    *   2. Stream each file to UPLOADS_FOLDER + create a Source record
-   *   3. Parse each file via content_core (PDF/DOCX/PPTX/HTML/MD/TXT)
+   *   3. Create link Source records for provided URLs
+   *   4. Parse each source via content_core
    *   4. For notebook mode: invoke the LLM with the combined parsed text
    *      and save the response as an AI-authored Note attached to the
    *      notebook
@@ -161,8 +164,9 @@ export const studioApi = {
    * Throws on HTTP errors; the caller's hook should display the message.
    */
   generate: async (opts: StudioGenerateOptions): Promise<StudioGenerateResponse> => {
-    if (opts.files.length === 0) {
-      throw new Error('At least one file is required')
+    const links = (opts.links ?? []).map((link) => link.trim()).filter(Boolean)
+    if (opts.files.length === 0 && links.length === 0) {
+      throw new Error('At least one file or link is required')
     }
     if (opts.mode !== 'notebook' && (!opts.episode_profile_name || !opts.speaker_profile_name)) {
       throw new Error('Podcast and combined modes require episode_profile_name + speaker_profile_name')
@@ -171,6 +175,9 @@ export const studioApi = {
     const formData = new FormData()
     for (const file of opts.files) {
       formData.append('files', file)
+    }
+    for (const link of links) {
+      formData.append('links', link)
     }
     formData.append('mode', opts.mode)
     if (opts.title) formData.append('title', opts.title)
