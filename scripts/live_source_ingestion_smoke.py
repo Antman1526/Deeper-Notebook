@@ -139,11 +139,16 @@ def source_is_processing(status: str | None) -> bool:
     return status in {"new", "queued", "running", "unknown"}
 
 
-def source_is_ready(detail: dict[str, Any], marker: str) -> bool:
+def source_is_ready(
+    detail: dict[str, Any],
+    marker: str,
+    *,
+    require_embedding: bool,
+) -> bool:
     full_text = str(detail.get("full_text") or "")
     if marker not in full_text:
         return False
-    if detail.get("embedded") is False:
+    if require_embedding and detail.get("embedded") is False:
         return False
     quality = detail.get("extraction_quality")
     return quality not in {"pending", "no_text"}
@@ -161,7 +166,7 @@ def create_text_source(args: argparse.Namespace, marker: str) -> dict[str, Any]:
             "marker": marker,
         },
         "source_type": "text",
-        "embed": True,
+        "embed": not args.skip_embedding,
         "delete_source": False,
         "async_processing": True,
     }
@@ -198,7 +203,7 @@ def source_form_fields(
             "source_kind": source_type,
         }),
         "source_type": source_type,
-        "embed": "true",
+        "embed": "false" if args.skip_embedding else "true",
         "delete_source": "false",
         "async_processing": "true",
     }
@@ -251,7 +256,7 @@ def create_link_source(args: argparse.Namespace, marker: str, url: str) -> dict[
             "source_kind": "link",
         },
         "source_type": "link",
-        "embed": True,
+        "embed": not args.skip_embedding,
         "delete_source": False,
         "async_processing": True,
     }
@@ -320,7 +325,11 @@ def wait_for_source(args: argparse.Namespace, source_id: str, marker: str) -> di
             token=args.token,
             timeout=args.request_timeout,
         ).data
-        if isinstance(detail, dict) and source_is_ready(detail, marker):
+        if isinstance(detail, dict) and source_is_ready(
+            detail,
+            marker,
+            require_embedding=not args.skip_embedding,
+        ):
             return detail
 
         if not source_is_processing(status) and time.monotonic() >= deadline:
@@ -438,6 +447,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--link-url",
         help="Optional URL to use for link smoke. Defaults to a temporary local page.",
+    )
+    parser.add_argument(
+        "--skip-embedding",
+        action="store_true",
+        help="Verify extraction only. Use when the native app has no embedding model configured.",
     )
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--poll-interval", type=float, default=2)
