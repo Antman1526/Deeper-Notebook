@@ -42,6 +42,22 @@ class ManifestReconciliationEntry:
 
 
 @dataclass(frozen=True)
+class ManifestRecommendation:
+    id: str
+    label: str
+    description: str
+    repo_id: str
+    filename: str | None
+    runtime_type: str
+    target_path: str
+    status: str
+    tags: list[str]
+    approx_size_gb: float
+    context_length: int
+    setup_task: "ManifestSetupTask | None" = None
+
+
+@dataclass(frozen=True)
 class ManifestSetupTask:
     action_type: str
     label: str
@@ -300,6 +316,20 @@ def build_manifest_reconciliation(
     return rows
 
 
+def build_manifest_recommendations(
+    entries: list[ManifestModelEntry],
+    models: list[LocalModelInfo],
+    *,
+    limit: int = 8,
+) -> list[ManifestRecommendation]:
+    rows = build_manifest_reconciliation(entries, models)
+    rows.sort(key=_recommendation_sort_key)
+    return [
+        _recommendation_from_reconciliation(row)
+        for row in rows[:max(0, limit)]
+    ]
+
+
 def _setup_task_for_missing_entry(
     entry: ManifestModelEntry,
 ) -> ManifestSetupTask | None:
@@ -362,6 +392,106 @@ def _setup_task_for_unsupported_runtime(
         target_path=entry.local_path,
         setup_href="/settings/launcher-prefs",
     )
+
+
+def _recommendation_from_reconciliation(
+    row: ManifestReconciliationEntry,
+) -> ManifestRecommendation:
+    entry = row.entry
+    runtime = entry.runtime_type.strip().upper() or "UNKNOWN"
+    tags = [
+        "manifest",
+        runtime.lower(),
+        _role_tag(entry.role),
+        row.status,
+    ]
+    if "verified" in entry.estimated_status.lower():
+        tags.append("verified")
+    filename = (
+        row.setup_task.filename
+        if row.setup_task and row.setup_task.filename
+        else Path(entry.local_path).name or None
+    )
+    return ManifestRecommendation(
+        id=f"manifest:{entry.repo}:{entry.local_path}",
+        label=entry.category or entry.repo,
+        description=_recommendation_description(row),
+        repo_id=entry.repo,
+        filename=filename,
+        runtime_type=runtime,
+        target_path=entry.local_path,
+        status=row.status,
+        tags=[tag for tag in tags if tag],
+        approx_size_gb=0,
+        context_length=0,
+        setup_task=row.setup_task,
+    )
+
+
+def _recommendation_description(row: ManifestReconciliationEntry) -> str:
+    entry = row.entry
+    parts = [
+        entry.role or "curated",
+        entry.estimated_status or row.status,
+        entry.notes,
+    ]
+    return " - ".join(part for part in parts if part)
+
+
+def _recommendation_sort_key(row: ManifestReconciliationEntry):
+    entry = row.entry
+    return (
+        _runtime_recommendation_priority(entry.runtime_type),
+        _manifest_role_priority(entry.role),
+        _status_recommendation_priority(row.status),
+        entry.category.lower(),
+        entry.repo.lower(),
+    )
+
+
+def _runtime_recommendation_priority(runtime: str) -> int:
+    normalized = runtime.strip().lower()
+    if normalized == "mlx":
+        return 0
+    if normalized == "gguf":
+        return 1
+    return 2
+
+
+def _manifest_role_priority(role: str) -> int:
+    normalized = role.strip().lower()
+    if normalized.startswith("primary"):
+        return 0
+    if normalized.startswith("backup"):
+        return 1
+    if normalized.startswith("priority"):
+        return 2
+    if normalized.startswith("requested"):
+        return 3
+    return 4
+
+
+def _status_recommendation_priority(status: str) -> int:
+    if status == "matched":
+        return 0
+    if status == "missing":
+        return 1
+    if status == "unsupported_runtime":
+        return 2
+    return 3
+
+
+def _role_tag(role: str) -> str:
+    normalized = role.strip().lower()
+    if normalized.startswith("primary"):
+        return "primary"
+    if normalized.startswith("backup"):
+        return "backup"
+    if normalized.startswith("priority"):
+        return "priority"
+    if normalized.startswith("requested"):
+        return "requested"
+    return normalized.replace(" ", "-")
 
 
 def _clean_cell(value: str) -> str:

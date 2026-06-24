@@ -6,6 +6,7 @@ from pathlib import Path
 from open_notebook.local_models.gguf_metadata import GGUFMetadata
 from open_notebook.local_models.inventory import LocalModelInfo
 from open_notebook.local_models.manifest import (
+    build_manifest_recommendations,
     build_manifest_reconciliation,
     find_manifest_matches,
     find_unmatched_manifest_entries,
@@ -170,3 +171,35 @@ def test_build_manifest_reconciliation_creates_direct_gguf_download_task(tmp_pat
     assert task.repo_id == "bartowski/Qwen2.5-7B-Instruct-GGUF"
     assert task.filename == "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
     assert task.target_path == str(gguf_path)
+
+
+def test_build_manifest_recommendations_rank_mlx_and_emit_setup_tasks(tmp_path):
+    manifest = tmp_path / "manifests" / "model_inventory.md"
+    manifest.parent.mkdir(parents=True)
+    mlx_path = tmp_path / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
+    gguf_path = (
+        tmp_path
+        / "GGUF"
+        / "bartowski__Qwen2.5-7B-Instruct-GGUF"
+        / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    )
+    manifest.write_text(
+        "\n".join([
+            "# Local Model Inventory",
+            "",
+            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+            "|---|---|---|---|---|---|---|",
+            f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
+            f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
+        ])
+    )
+
+    cards = build_manifest_recommendations(load_model_manifest(tmp_path), [])
+
+    assert cards[0].runtime_type == "MLX"
+    assert cards[0].setup_task is not None
+    assert cards[0].setup_task.action_type == "download_snapshot"
+    assert cards[1].runtime_type == "GGUF"
+    assert cards[1].setup_task is not None
+    assert cards[1].setup_task.action_type == "download_gguf"
+    assert cards[1].setup_task.filename == "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
