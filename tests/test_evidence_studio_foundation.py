@@ -129,6 +129,15 @@ def test_studio_workflow_run_domain_contract():
     assert [str(source_id) for source_id in data["source_ids"]] == ["source:one"]
     assert data["command_id"] is None
 
+    queued = StudioWorkflowRun(
+        artifact_id="studio_artifact:alpha",
+        notebook_id="notebook:alpha",
+        title="Queued report generation",
+        command_id="command:studio_generate",
+    )
+    queued_data = queued._prepare_save_data()
+    assert str(queued_data["command_id"]) == "command:studio_generate"
+
     with pytest.raises(ValidationError):
         StudioWorkflowRun(
             artifact_id="studio_artifact:alpha",

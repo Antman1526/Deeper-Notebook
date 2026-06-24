@@ -348,6 +348,123 @@ def test_create_workflow_run_for_artifact_requires_approval(monkeypatch):
     assert body["steps"][1]["status"] == "pending"
 
 
+def test_create_workflow_run_without_approval_submits_generation_command(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    _install_fake_workflow_runs(monkeypatch)
+    _FakeArtifact.records = {
+        "studio_artifact:course-pack": _FakeArtifact(
+            id="studio_artifact:course-pack",
+            notebook_id="notebook:training",
+            artifact_type="course_pack",
+            title="Course Pack",
+            source_ids=["source:ready"],
+        ),
+    }
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:ready"
+            return SimpleNamespace(
+                id=source_id,
+                title="Ready transcript",
+                full_text="Transcript text is ready.",
+                command=None,
+            )
+
+    submitted: list[tuple[str, str, dict]] = []
+
+    class _CommandServiceMock:
+        @staticmethod
+        async def submit_command_job(app_name, command_name, command_args):
+            submitted.append((app_name, command_name, command_args))
+            return "command:studio-generate"
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(studio_mod, "provision_langchain_model", AsyncMock())
+
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:course-pack/workflow-runs",
+        json={
+            "title": "Generate Course Pack",
+            "source_ids": ["source:ready"],
+            "approval_required": False,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["command_id"] == "command:studio-generate"
+    assert submitted == [
+        (
+            "open_notebook",
+            "generate_studio_artifact",
+            {
+                "artifact_id": "studio_artifact:course-pack",
+                "workflow_run_id": "studio_workflow_run:1",
+            },
+        )
+    ]
+    assert not studio_mod.provision_langchain_model.called
+
+
+def test_create_workflow_run_rejects_not_ready_sources_before_queueing(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    _install_fake_workflow_runs(monkeypatch)
+    _FakeArtifact.records = {
+        "studio_artifact:course-pack": _FakeArtifact(
+            id="studio_artifact:course-pack",
+            notebook_id="notebook:training",
+            artifact_type="course_pack",
+            title="Course Pack",
+            source_ids=["source:queued"],
+        ),
+    }
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:queued"
+            return SimpleNamespace(
+                id=source_id,
+                title="Queued video",
+                full_text=None,
+                command="command:process-video",
+            )
+
+    class _CommandServiceMock:
+        submit_command_job = AsyncMock(return_value="command:should-not-submit")
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:course-pack/workflow-runs",
+        json={
+            "title": "Generate Course Pack",
+            "source_ids": ["source:queued"],
+            "approval_required": False,
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "sources_not_ready"
+    assert detail["not_ready_sources"] == [
+        {
+            "source_id": "source:queued",
+            "title": "Queued video",
+            "command_id": "command:process-video",
+        }
+    ]
+    assert not _CommandServiceMock.submit_command_job.called
+    assert _FakeWorkflowRun.records == {}
+
+
 def test_list_workflow_runs_for_artifact(monkeypatch):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
@@ -380,6 +497,15 @@ def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
+    _FakeArtifact.records = {
+        "studio_artifact:1": _FakeArtifact(
+            id="studio_artifact:1",
+            notebook_id="notebook:alpha",
+            artifact_type="report",
+            title="Report",
+            source_ids=["source:one"],
+        ),
+    }
     _FakeWorkflowRun.records = {
         "studio_workflow_run:1": _FakeWorkflowRun(
             id="studio_workflow_run:1",
@@ -388,12 +514,32 @@ def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
             title="Generate Report",
             status="awaiting_approval",
             approval_required=True,
+            source_ids=["source:one"],
             steps=[
                 {"id": "context", "label": "Context built", "status": "completed"},
                 {"id": "privacy_gate", "label": "Privacy gate", "status": "pending"},
             ],
         ),
     }
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:one"
+            return SimpleNamespace(
+                id=source_id,
+                title="Ready source",
+                full_text="Ready source text.",
+                command=None,
+            )
+
+    class _CommandServiceMock:
+        @staticmethod
+        async def submit_command_job(_app_name, _command_name, _command_args):
+            return "command:studio-report"
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
 
     response = _client().post("/api/studio/workflow-runs/studio_workflow_run:1/approve")
 
@@ -402,6 +548,80 @@ def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
     assert body["status"] == "queued"
     assert body["approval_required"] is False
     assert body["steps"][1]["status"] == "completed"
+
+
+def test_approve_workflow_run_submits_generation_command(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    _install_fake_workflow_runs(monkeypatch)
+    _FakeArtifact.records = {
+        "studio_artifact:course-pack": _FakeArtifact(
+            id="studio_artifact:course-pack",
+            notebook_id="notebook:training",
+            artifact_type="course_pack",
+            title="Course Pack",
+            source_ids=["source:ready"],
+        ),
+    }
+    _FakeWorkflowRun.records = {
+        "studio_workflow_run:1": _FakeWorkflowRun(
+            id="studio_workflow_run:1",
+            artifact_id="studio_artifact:course-pack",
+            notebook_id="notebook:training",
+            title="Generate Course Pack",
+            status="awaiting_approval",
+            approval_required=True,
+            source_ids=["source:ready"],
+            steps=[
+                {"id": "context", "label": "Context built", "status": "completed"},
+                {"id": "privacy_gate", "label": "Privacy gate", "status": "pending"},
+                {"id": "model_route", "label": "Model route", "status": "blocked"},
+                {"id": "artifact_generation", "label": "Course Pack", "status": "blocked"},
+            ],
+        ),
+    }
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, source_id):
+            assert source_id == "source:ready"
+            return SimpleNamespace(
+                id=source_id,
+                title="Ready transcript",
+                full_text="Transcript text is ready.",
+                command=None,
+            )
+
+    submitted: list[tuple[str, str, dict]] = []
+
+    class _CommandServiceMock:
+        @staticmethod
+        async def submit_command_job(app_name, command_name, command_args):
+            submitted.append((app_name, command_name, command_args))
+            return "command:studio-approved"
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(studio_mod, "provision_langchain_model", AsyncMock())
+
+    response = _client().post("/api/studio/workflow-runs/studio_workflow_run:1/approve")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["approval_required"] is False
+    assert body["command_id"] == "command:studio-approved"
+    assert submitted == [
+        (
+            "open_notebook",
+            "generate_studio_artifact",
+            {
+                "artifact_id": "studio_artifact:course-pack",
+                "workflow_run_id": "studio_workflow_run:1",
+            },
+        )
+    ]
+    assert not studio_mod.provision_langchain_model.called
 
 
 def test_update_artifact_patches_only_supplied_fields(monkeypatch):

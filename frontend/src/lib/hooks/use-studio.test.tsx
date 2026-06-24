@@ -189,16 +189,16 @@ describe('useStudioCoursePack', () => {
       citations: [],
       export_paths: {},
     })
-    vi.mocked(studioApi.generateArtifact).mockResolvedValue({
-      id: 'studio_artifact:course',
+    vi.mocked(studioApi.createWorkflowRun).mockResolvedValue({
+      id: 'studio_workflow_run:course',
+      artifact_id: 'studio_artifact:course',
       notebook_id: 'notebook:course',
-      artifact_type: 'course_pack',
-      title: 'Onboarding Course Pack',
-      status: 'completed',
+      title: 'Generate Onboarding Course Pack',
+      status: 'queued',
       source_ids: ['source:file'],
-      output_payload: { markdown: '# Course Pack' },
-      citations: [],
-      export_paths: {},
+      approval_required: false,
+      steps: [],
+      command_id: 'command:course-pack',
     })
 
     const file = new File(['pdf'], 'training.pdf', { type: 'application/pdf' })
@@ -213,7 +213,12 @@ describe('useStudioCoursePack', () => {
     })
 
     expect(sourcesApi.status).toHaveBeenCalledWith('source:file')
-    expect(studioApi.generateArtifact).toHaveBeenCalledWith('studio_artifact:course')
-    expect(response?.generationStatus).toBe('completed')
+    expect(studioApi.createWorkflowRun).toHaveBeenCalledWith('studio_artifact:course', {
+      title: 'Generate Onboarding Course Pack',
+      source_ids: ['source:file'],
+      approval_required: false,
+    })
+    expect(studioApi.generateArtifact).not.toHaveBeenCalled()
+    expect(response?.generationStatus).toBe('queued')
   })
 })

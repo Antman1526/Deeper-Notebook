@@ -242,6 +242,7 @@ def test_all_command_input_schemas_resolve():
     registry = CommandRegistry()
     cmds = registry._commands  # no public enumeration API in 1.x
     assert "open_notebook.optimize_prompt" in cmds
+    assert "open_notebook.generate_studio_artifact" in cmds
     for key, cmd in cmds.items():
         runnable = getattr(cmd, "runnable", cmd)  # dict stores RunnableLambda
         schema = runnable.get_input_schema()

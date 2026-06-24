@@ -659,9 +659,7 @@ describe('ArtifactRail', () => {
     await waitFor(() => {
       expect(approveWorkflowRun).toHaveBeenCalledWith('studio_workflow_run:1')
     })
-    await waitFor(() => {
-      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:1')
-    })
+    expect(generateArtifact).not.toHaveBeenCalled()
   })
 
   it('blocks artifact generation when a scoped source has no extracted text', async () => {
@@ -1400,8 +1398,16 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
 
     await waitFor(() => {
-      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:1')
+      expect(createWorkflowRun).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:1',
+        payload: {
+          title: 'Regenerate Quarterly Report',
+          source_ids: ['source:one'],
+          approval_required: false,
+        },
+      })
     })
+    expect(generateArtifact).not.toHaveBeenCalled()
   })
 
   it('retries a failed artifact from the viewer', async () => {
@@ -1428,8 +1434,16 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
 
     await waitFor(() => {
-      expect(generateArtifact).toHaveBeenCalledWith('studio_artifact:failed')
+      expect(createWorkflowRun).toHaveBeenCalledWith({
+        artifactId: 'studio_artifact:failed',
+        payload: {
+          title: 'Retry Failed Briefing',
+          source_ids: ['source:one'],
+          approval_required: false,
+        },
+      })
     })
+    expect(generateArtifact).not.toHaveBeenCalled()
   })
 
   it('saves quiz study progress when a learner answers a question', async () => {
