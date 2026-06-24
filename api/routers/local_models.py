@@ -204,6 +204,8 @@ async def local_models_role_routing():
     stable contract for chat, source synthesis, coding research, study tools,
     and embedding/retrieval picks.
     """
+    from pathlib import Path as _Path
+
     from open_notebook.local_models import (
         build_manifest_reconciliation,
         enumerate_models,

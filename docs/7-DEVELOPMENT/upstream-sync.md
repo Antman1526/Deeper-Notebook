@@ -108,6 +108,17 @@ ONP_FIXTURE_API_PORT=5055 \
 node output/playwright/onp-visual-smoke.mjs
 ```
 
+For native end-to-end proof after source-ingestion changes, run the live API
+smoke against the host app:
+
+```bash
+python scripts/live_source_ingestion_smoke.py \
+  --base-url http://127.0.0.1:5055
+```
+
+Add `--chat-question "What marker appears in this source?"` when a local or
+cloud chat model is configured and you need chat-with-source proof too.
+
 ## Useful Read-Only Commands
 
 Compare branch divergence:
