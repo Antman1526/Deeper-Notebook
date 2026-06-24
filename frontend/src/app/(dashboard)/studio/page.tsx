@@ -21,17 +21,18 @@
  */
 'use client'
 
-import { useState, useCallback, useRef, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
+import { useState, useCallback, useRef, useMemo, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles } from 'lucide-react'
+import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2 } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -72,6 +73,18 @@ interface ProfileSummary {
 function fileExt(name: string): string {
   const i = name.lastIndexOf('.')
   return i < 0 ? '' : name.slice(i).toLowerCase()
+}
+
+function parseLinks(raw: string): string[] {
+  const seen = new Set<string>()
+  return raw
+    .split(/[\n,]+/)
+    .map((value) => value.trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
 }
 
 // v0.7.203 — isAllowed returns a key + interpolation map so the
@@ -118,6 +131,7 @@ export default function StudioPage() {
   const [files, setFiles] = useState<File[]>([])
   const [mode, setMode] = useState<StudioMode>('notebook')
   const [title, setTitle] = useState('')
+  const [linkText, setLinkText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [episodeProfile, setEpisodeProfile] = useState('')
   const [speakerProfile, setSpeakerProfile] = useState('')
@@ -217,7 +231,9 @@ export default function StudioPage() {
   }
 
   // ----- Submit -----
-  const canSubmit = files.length > 0 && !mutation.isPending && (
+  const parsedLinks = useMemo(() => parseLinks(linkText), [linkText])
+  const hasSourceInputs = files.length > 0 || parsedLinks.length > 0
+  const canSubmit = hasSourceInputs && !mutation.isPending && (
     mode === 'notebook' || (episodeProfile && speakerProfile)
   )
   const requiresPodcastProfiles = mode !== 'notebook'
@@ -247,6 +263,7 @@ export default function StudioPage() {
     try {
       const result = await mutation.mutateAsync({
         files,
+        links: parsedLinks,
         mode,
         title: title.trim() || undefined,
         episode_profile_name: requiresPodcastProfiles ? episodeProfile : undefined,
@@ -382,6 +399,25 @@ export default function StudioPage() {
               ))}
             </ul>
           )}
+
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="studio-links" className="text-sm font-medium">
+              {t('studio.linksLabel')}
+            </Label>
+            <div className="relative">
+              <Link2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Textarea
+                id="studio-links"
+                value={linkText}
+                onChange={(e) => setLinkText(e.target.value)}
+                placeholder={t('studio.linksPlaceholder')}
+                className="min-h-24 pl-9 text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('studio.linksHelp').replace('{count}', String(parsedLinks.length))}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

@@ -47,6 +47,7 @@ import zipfile
 from io import StringIO
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -1018,10 +1019,61 @@ _ALLOWED_EXTENSIONS: set[str] = {
     ".mp3", ".mp4", ".m4a", ".wav", ".mov",
 }
 
+_MAX_STUDIO_LINKS = 20
+
 # Per-file cap (50 MB). Combined with Next.js's 100 MB proxy limit
 # (frontend/next.config.ts), this prevents a single huge file from
 # starving downstream LLM context window.
 _MAX_FILE_BYTES = 50 * 1024 * 1024
+
+
+def _normalize_studio_links(raw_links: list[str] | None) -> list[str]:
+    if not raw_links:
+        return []
+
+    expanded: list[str] = []
+    for raw in raw_links:
+        value = (raw or "").strip()
+        if not value:
+            continue
+        if value.startswith("["):
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                decoded = None
+            if isinstance(decoded, list):
+                expanded.extend(str(item).strip() for item in decoded)
+                continue
+        expanded.extend(part.strip() for part in re.split(r"[\n,]+", value))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for link in expanded:
+        if not link or link in seen:
+            continue
+        parsed = urlparse(link)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid Studio link {link!r}; use a full http(s) URL.",
+            )
+        seen.add(link)
+        deduped.append(link)
+
+    if len(deduped) > _MAX_STUDIO_LINKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Studio supports up to {_MAX_STUDIO_LINKS} links per generation.",
+        )
+    return deduped
+
+
+def _studio_link_title(link: str) -> str:
+    parsed = urlparse(link)
+    path = parsed.path.rstrip("/")
+    tail = path.rsplit("/", 1)[-1] if path else ""
+    return tail or parsed.netloc or link
+
 
 # v0.7.4 — Per-source / combined caps tuned for LOCAL MODEL deployments.
 #
@@ -1718,7 +1770,8 @@ async def delete_studio_artifact(artifact_id: str) -> dict[str, object]:
 
 @router.post("/generate", response_model=StudioGenerateResponse)
 async def studio_generate(
-    files: list[UploadFile] = File(..., description="One or more documents to ingest"),
+    files: Optional[list[UploadFile]] = File(None, description="One or more documents to ingest"),
+    links: Optional[list[str]] = Form(None, description="Optional http(s) links to ingest"),
     mode: str = Form(..., description="'notebook', 'podcast', or 'both'"),
     title: Optional[str] = Form(None, description="Notebook title; auto-generated if absent"),
     episode_profile_name: Optional[str] = Form(
@@ -1742,8 +1795,10 @@ async def studio_generate(
             status_code=400,
             detail="mode must be 'notebook', 'podcast', or 'both'",
         )
-    if not files:
-        raise HTTPException(status_code=400, detail="at least one file is required")
+    files = files or []
+    normalized_links = _normalize_studio_links(links)
+    if not files and not normalized_links:
+        raise HTTPException(status_code=400, detail="at least one file or link is required")
     if mode in ("podcast", "both"):
         if not episode_profile_name or not speaker_profile_name:
             raise HTTPException(
@@ -1780,14 +1835,20 @@ async def studio_generate(
 
     # 2. Title default — use the first file's stem if user didn't supply one.
     if not title:
-        first = Path(files[0].filename or "Untitled").stem  # type: ignore[arg-type]
+        if files:
+            first = Path(files[0].filename or "Untitled").stem
+        else:
+            first = _studio_link_title(normalized_links[0])
         title = f"Studio: {first[:80]}"
 
     # 3. Create the Notebook record.
     try:
         notebook = Notebook(
             name=title[:200],
-            description=f"Generated via Studio from {len(files)} file(s); mode={mode}",
+            description=(
+                f"Generated via Studio from {len(files)} file(s) and "
+                f"{len(normalized_links)} link(s); mode={mode}"
+            ),
         )
         await notebook.save()
     except InvalidInputError as exc:
@@ -1807,7 +1868,7 @@ async def studio_generate(
         raise HTTPException(status_code=500, detail="Could not create notebook")
     notebook_id = str(notebook.id)
 
-    # 4. Per-file: save → Source → extract → link.
+    # 4. Per-input: save/link → Source → extract → link notebook.
     source_ids: list[str] = []
     extracted: list[tuple[str, str]] = []  # (filename, parsed_text)
     warnings: list[str] = []
@@ -1815,6 +1876,80 @@ async def studio_generate(
     # Lazy import to avoid pulling content_core into module load
     from content_core import extract_content
     from content_core.common import ProcessSourceState
+
+    async def _extract_and_persist_source(
+        *,
+        source: Source,
+        label: str,
+        process_state,
+    ) -> None:
+        try:
+            _extract_timeout = float(
+                os.environ.get("ONP_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+            )
+            try:
+                processed = await asyncio.wait_for(
+                    extract_content(process_state), timeout=_extract_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Studio: extract_content timed out for {!r} after {}s",
+                    label, _extract_timeout,
+                )
+                warnings.append(
+                    f"Parsing {label!r} timed out after {_extract_timeout:.0f}s. "
+                    "The source may be inaccessible, malformed, or password-protected. "
+                    "Raise ONP_STUDIO_EXTRACT_TIMEOUT_SEC or provide a cleaner source."
+                )
+                return
+            text = (processed.content or "").strip()
+            if not text:
+                warnings.append(
+                    f"No text could be extracted from {label!r} — the source may be "
+                    "empty, inaccessible, image-only (no OCR), or in a corrupt state."
+                )
+                return
+            if len(text) > _MAX_EXTRACT_CHARS_PER_FILE:
+                logger.info(
+                    "Studio: truncating {!r} from {} → {} chars",
+                    label, len(text), _MAX_EXTRACT_CHARS_PER_FILE,
+                )
+                text = text[:_MAX_EXTRACT_CHARS_PER_FILE] + "\n\n[…truncated…]"
+            extracted.append((label, text))
+            source.full_text = text
+            if processed.title and not source.title:
+                source.title = processed.title
+            extraction_provenance = {
+                key: value
+                for key, value in {
+                    "content_source_type": getattr(processed, "source_type", None),
+                    "identified_type": getattr(processed, "identified_type", None),
+                    "extractor": "content_core",
+                    "url": getattr(processed, "url", None),
+                    "file_path": getattr(processed, "file_path", None),
+                }.items()
+                if value is not None
+            }
+            content_metadata = getattr(processed, "metadata", None)
+            if isinstance(content_metadata, dict):
+                extraction_provenance["content_metadata"] = content_metadata
+            if extraction_provenance:
+                source.provenance = {
+                    **(source.provenance or {}),
+                    "extraction": extraction_provenance,
+                }
+            await source.save()
+            try:
+                await source.vectorize()
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.warning("Studio: vectorize failed (non-fatal) for {!r}: {}", label, exc)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("Studio: extract_content failed for {!r}", label)
+            warnings.append(f"Could not parse {label!r}: {_brief(exc)}")
 
     for upload in files:
         filename = upload.filename or "upload"
@@ -1837,6 +1972,8 @@ async def studio_generate(
             source = Source(
                 title=Path(filename).name,
                 asset=Asset(file_path=saved_path),
+                provenance={"origin": "studio_generate", "mode": mode},
+                source_type="upload",
             )
             await source.save()
             await source.add_to_notebook(notebook_id)
@@ -1850,68 +1987,35 @@ async def studio_generate(
             warnings.append(f"Could not create source for {filename!r}: {_brief(exc)}")
             continue
 
-        # Extract content via content_core (handles pdf/docx/pptx/html/md/txt)
+        await _extract_and_persist_source(
+            source=source,
+            label=filename,
+            process_state=ProcessSourceState(file_path=saved_path, output_format="markdown"),
+        )
+
+    for link in normalized_links:
         try:
-            cs = ProcessSourceState(file_path=saved_path, output_format="markdown")
-            # v0.7.101 — extract_content can hang on pathological inputs:
-            # encrypted PDFs missing the password handler, embedded JS in
-            # PPTX, slow OCR fallback paths. A single bad upload would
-            # otherwise pin the request indefinitely. 60s default per file
-            # — generous for normal PDFs/docx; tunable via env.
-            _extract_timeout = float(
-                os.environ.get("ONP_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+            source = Source(
+                title=_studio_link_title(link),
+                asset=Asset(url=link),
+                provenance={"origin": "studio_generate", "mode": mode, "url": link},
+                source_type="link",
             )
-            try:
-                processed = await asyncio.wait_for(
-                    extract_content(cs), timeout=_extract_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Studio: extract_content timed out for {!r} after {}s",
-                    filename, _extract_timeout,
-                )
-                warnings.append(
-                    f"Parsing {filename!r} timed out after {_extract_timeout:.0f}s. "
-                    "The file may be malformed or password-protected. Raise "
-                    "ONP_STUDIO_EXTRACT_TIMEOUT_SEC or upload a cleaner copy."
-                )
-                continue
-            text = (processed.content or "").strip()
-            if not text:
-                warnings.append(
-                    f"No text could be extracted from {filename!r} — the file "
-                    "may be empty, image-only (no OCR), or in a corrupt state."
-                )
-                continue
-            # Truncate per-file
-            if len(text) > _MAX_EXTRACT_CHARS_PER_FILE:
-                logger.info(
-                    "Studio: truncating {!r} from {} → {} chars",
-                    filename, len(text), _MAX_EXTRACT_CHARS_PER_FILE,
-                )
-                text = text[:_MAX_EXTRACT_CHARS_PER_FILE] + "\n\n[…truncated…]"
-            extracted.append((filename, text))
-            # Persist to source for later chat-with-sources access
-            source.full_text = text
-            if processed.title and not source.title:
-                source.title = processed.title
             await source.save()
-            # Fire-and-forget vectorize so chat can use it later
-            try:
-                await source.vectorize()
-            except HTTPException:
-                # v0.7.108 — re-raise typed HTTPExceptions so the next
-                # `except Exception` doesn't clobber them to 500.
-                raise
-            except Exception as exc:
-                logger.warning("Studio: vectorize failed (non-fatal) for {!r}: {}", filename, exc)
+            await source.add_to_notebook(notebook_id)
+            source_ids.append(str(source.id))
         except HTTPException:
-            # v0.7.108 — re-raise typed HTTPExceptions so the next
-            # `except Exception` doesn't clobber them to 500.
             raise
         except Exception as exc:
-            logger.exception("Studio: extract_content failed for {!r}", filename)
-            warnings.append(f"Could not parse {filename!r}: {_brief(exc)}")
+            logger.warning("Studio: link source create failed for {!r}: {}", link, exc)
+            warnings.append(f"Could not create source for {link!r}: {_brief(exc)}")
+            continue
+
+        await _extract_and_persist_source(
+            source=source,
+            label=link,
+            process_state=ProcessSourceState(url=link, output_format="markdown"),
+        )
 
     if not extracted:
         # We created an empty notebook + maybe some empty sources. That's
@@ -1922,8 +2026,8 @@ async def studio_generate(
             status_code=400,
             detail=(
                 f"No usable text could be extracted from the {len(files)} uploaded "
-                f"file(s). Notebook {notebook_id} was created and contains the "
-                "uploaded source records (visible in the UI), but generation was "
+                f"file(s) and {len(normalized_links)} link(s). Notebook {notebook_id} "
+                "was created and contains the source records (visible in the UI), but generation was "
                 "skipped. Warnings: " + "; ".join(warnings)
             ),
         )
