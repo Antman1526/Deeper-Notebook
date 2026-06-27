@@ -22,7 +22,21 @@ for _dev in $(hdiutil info 2>/dev/null | grep -iE 'Open Notebook' | grep -oE '/d
 done
 
 rm -f "${DMG_PATH}"
+
+# v0.8.70 — stage the .app alongside an /Applications symlink so the mounted
+# DMG shows a "drag to Applications" target. Previously the DMG contained ONLY
+# the .app, so users double-clicked it IN PLACE and ran it off the read-only,
+# compressed UDZO mount — markedly slower to launch (every bundled dylib/python
+# file decompresses on read) and re-triggers a Gatekeeper scan of the unsigned
+# bundle each time. Guiding installation to /Applications (local SSD, cached
+# Gatekeeper assessment) is the fix. No external tool needed — `create-dmg`
+# isn't required for the functional symlink affordance.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "${STAGE}"' EXIT
+cp -R "${APP_PATH}" "${STAGE}/"
+ln -s /Applications "${STAGE}/Applications"
+
 hdiutil create -volname "${APP_NAME}" \
-               -srcfolder "${APP_PATH}" \
+               -srcfolder "${STAGE}" \
                -ov -format UDZO "${DMG_PATH}"
-echo "Built ${DMG_PATH}"
+echo "Built ${DMG_PATH} (with /Applications drag target)"
