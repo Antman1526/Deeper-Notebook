@@ -1,5 +1,11 @@
 [project]
 name = "open-notebook"
+# NOTE (v0.8.70): this is the UPSTREAM open-notebook / Docker image version,
+# consumed by .github/workflows/build-and-release.yml to tag the server
+# container image. It is a SEPARATE track from the Plus DESKTOP app version,
+# which lives in desktop/__init__.py (`__version__`, currently on the 0.8.x
+# fork line) and drives the window/`/api/version`/update-notifier baseline.
+# Do not "reconcile" the two — they intentionally version different artifacts.
 version = "1.8.5"
 description = "An open source implementation of a research assistant, inspired by Google Notebook LM"
 authors = [
