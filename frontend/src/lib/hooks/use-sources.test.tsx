@@ -24,7 +24,9 @@ vi.mock('@/lib/api/sources', () => ({
 
 import { sourcesApi } from '@/lib/api/sources'
 import { QUERY_KEYS } from '@/lib/api/query-client'
-import { isSourcesListQuery, useCreateSource } from './use-sources'
+// v0.8.70 — the helper is exported underscore-prefixed (exported for tests,
+// not public API). Alias it so the existing test body reads naturally.
+import { _isSourcesListQuery as isSourcesListQuery, useCreateSource } from './use-sources'
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
