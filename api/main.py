@@ -56,6 +56,7 @@ from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
 from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
 from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
+from api.routers import updates as _updates_router  # v0.8.70 — in-app update notifier
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -959,6 +960,7 @@ app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — l
 app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
 app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
 app.include_router(_system_router.router, tags=["system"])  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
+app.include_router(_updates_router.router, tags=["updates"])  # v0.8.70 — in-app update notifier
 
 
 @app.get("/")
