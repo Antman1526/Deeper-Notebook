@@ -7,6 +7,7 @@ import { SettingsForm } from './components/SettingsForm'
 // intentionally separated because the env-derived values aren't
 // user-mutable from this UI.
 import { ObservabilityCard } from './components/ObservabilityCard'
+import { UpdatesCard } from './components/UpdatesCard'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
@@ -45,6 +46,7 @@ export default function SettingsPage() {
             </header>
 
             <SettingsForm />
+            <UpdatesCard />
             <ObservabilityCard />
           </div>
         </div>

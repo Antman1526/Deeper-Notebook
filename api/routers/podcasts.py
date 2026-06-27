@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -19,6 +20,29 @@ from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.podcasts.models import EpisodeProfile
 
 router = APIRouter()
+
+
+# v0.8.70 — per-episode retry serialization. The retry handler reads the
+# episode's terminal-state status, then (much later) destructively deletes the
+# record + audio and resubmits. Without a guard, a double-click or two
+# concurrent retries could both pass the terminal-state check and both
+# delete+resubmit — duplicating episodes or deleting content out from under a
+# just-started job. These locks serialize retries of the SAME episode within
+# this process (the desktop app runs a single Uvicorn worker, so process-level
+# is sufficient; a multi-worker deployment would need a DB-level optimistic
+# status transition instead). Locks are created lazily and keyed by episode id.
+_RETRY_LOCKS: dict[str, asyncio.Lock] = {}
+_RETRY_LOCKS_GUARD = asyncio.Lock()
+
+
+async def _get_retry_lock(episode_id: str) -> asyncio.Lock:
+    """Return the (lazily created) per-episode retry lock."""
+    async with _RETRY_LOCKS_GUARD:
+        lock = _RETRY_LOCKS.get(episode_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _RETRY_LOCKS[episode_id] = lock
+        return lock
 
 
 # v0.7.2 — Containment root for podcast audio files. The generation
@@ -389,6 +413,23 @@ async def retry_podcast_episode(episode_id: str):
     error. Still blocked while queued/running — retrying an in-flight job
     would orphan the running generation and race it for the episode record.
     """
+    # v0.8.70 — serialize concurrent retries of the same episode so the
+    # check-then-delete-then-resubmit sequence below is atomic per episode.
+    retry_lock = await _get_retry_lock(episode_id)
+    try:
+        async with retry_lock:
+            return await _retry_podcast_episode_locked(episode_id)
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retry episode {episode_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retry episode")
+
+
+async def _retry_podcast_episode_locked(episode_id: str):
+    """Body of the retry handler; runs while holding the per-episode lock."""
     try:
         episode = await PodcastService.get_episode(episode_id)
 
