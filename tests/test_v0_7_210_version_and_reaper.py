@@ -84,6 +84,16 @@ def test_version_matches_latest_changelog_release():
     )
 
 
+def test_pyinstaller_spec_uses_real_version():
+    """v0.8.70 — the macOS bundle version must derive from __version__, not the
+    old hardcoded "0.1.0" that made every built .app report 0.1.0 in Finder."""
+    src = _src("desktop/build/pyinstaller.spec")
+    assert '"CFBundleShortVersionString": "0.1.0"' not in src
+    assert "APP_VERSION = _read_app_version()" in src
+    assert '"CFBundleShortVersionString": APP_VERSION' in src
+    assert '"CFBundleVersion": APP_VERSION' in src
+
+
 def test_window_injects_onp_version_global():
     """v0.7.210 — desktop/window.py must inject window.ONP_VERSION
     alongside the existing theme / memory / voice globals so the
