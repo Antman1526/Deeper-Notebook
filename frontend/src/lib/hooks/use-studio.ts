@@ -11,6 +11,12 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { QUERY_KEYS } from '@/lib/api/query-client'
+import { useToast } from '@/lib/hooks/use-toast'
+import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.8.70 — getApiErrorMessage resolves the backend's descriptive error for
+// the toast body; in the common 4xx case (e.g. sources_not_ready) it returns
+// that message directly, so studio failures are no longer silent.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { notebooksApi } from '@/lib/api/notebooks'
 import { sourcesApi } from '@/lib/api/sources'
 import {
@@ -44,6 +50,8 @@ export interface StudioCoursePackResponse {
 
 export function useStudioGenerate() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<StudioGenerateResponse, Error, StudioGenerateOptions>({
     mutationFn: studioApi.generate,
     onSuccess: () => {
@@ -53,11 +61,23 @@ export function useStudioGenerate() {
       // record types changed.
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
     },
+    // v0.8.70 — surface failures. Call sites use mutateAsync without a
+    // try/catch and the axios interceptor only toasts 5xx, so 4xx errors
+    // (validation, sources_not_ready) were previously invisible.
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
 export function useStudioCoursePack() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
 
   return useMutation<StudioCoursePackResponse, Error, StudioCoursePackOptions>({
     mutationFn: async ({
@@ -180,6 +200,15 @@ export function useStudioCoursePack() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebook.id) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioWorkflowRuns(artifact.id) })
     },
+    onError: (error) => {
+      // v0.8.70 — Course Pack creation spans notebook + source + artifact
+      // calls; any failure should tell the user rather than fail silently.
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
@@ -286,16 +315,27 @@ export function useStudioWorkflowRuns(
 
 export function useCreateStudioArtifact(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<StudioArtifact, Error, StudioArtifactCreate>({
     mutationFn: studioApi.createArtifact,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
+    },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
     },
   })
 }
 
 export function useUpdateStudioArtifact(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<
     StudioArtifact,
     Error,
@@ -306,11 +346,20 @@ export function useUpdateStudioArtifact(notebookId: string) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifactRevisions(artifact.id) })
     },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
 export function useCreateStudioWorkflowRun(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<
     StudioWorkflowRun,
     Error,
@@ -321,37 +370,71 @@ export function useCreateStudioWorkflowRun(notebookId: string) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioWorkflowRuns(run.artifact_id) })
     },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
 export function useGenerateStudioArtifact(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<StudioArtifact, Error, string>({
     mutationFn: studioApi.generateArtifact,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
       queryClient.invalidateQueries({ queryKey: ['studio', 'artifacts'] })
     },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
 export function useApproveStudioWorkflowRun(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<StudioWorkflowRun, Error, string>({
     mutationFn: studioApi.approveWorkflowRun,
     onSuccess: (run) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioWorkflowRuns(run.artifact_id) })
     },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
+    },
   })
 }
 
 export function useDeleteStudioArtifact(notebookId: string) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
   return useMutation<{ deleted: boolean; id: string }, Error, string>({
     mutationFn: studioApi.deleteArtifact,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studioArtifacts(notebookId) })
+    },
+    onError: (error) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t),
+        variant: 'destructive',
+      })
     },
   })
 }
