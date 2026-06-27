@@ -76,8 +76,13 @@ STUDIO_KEYS = (
     "bothJobStartedDescription",
     "coursePackQueued",
     "coursePackQueuedDescription",
-    "coursePackGenerated",
-    "coursePackGeneratedDescription",
+    # v0.8.70 — retired `coursePackGenerated` / `coursePackGeneratedDescription`
+    # from the pin. They belonged to the original SYNCHRONOUS course-pack flow;
+    # course packs now generate via the async/queued path (`coursePackQueued*`,
+    # still referenced in studio/page.tsx). The two "generated" keys had zero
+    # references anywhere in source (caught by the frontend unused-key test) and
+    # were removed from every locale, so pinning them here only forced dead
+    # strings back into 14 files. coursePackQueued* stays pinned — it's live.
     "generatedWithWarnings",
     "generationFailed",
     "filesRejected",
