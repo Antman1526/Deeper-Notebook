@@ -22,8 +22,21 @@ const INTRO_SEEN_KEY = 'onp_intro_seen'
 // Survives client-side route changes within a session so it can't replay.
 let _introHandledThisSession = false
 
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return m ? decodeURIComponent(m[1]) : null
+}
+
 function hasSeenIntro(): boolean {
   if (_introHandledThisSession) return true
+  // v0.8.71 — the cookie is the source of truth. The desktop app serves the
+  // frontend on a DIFFERENT dynamic port every launch, and localStorage is
+  // origin-scoped (host:port) — so a localStorage flag wouldn't survive across
+  // launches and the intro would replay every time. A cookie is host-scoped
+  // (127.0.0.1, port-independent), so it persists like the wizard_completed
+  // cookie. localStorage is kept as a same-session fallback.
+  if (readCookie(INTRO_SEEN_KEY) === '1') return true
   try {
     return localStorage.getItem(INTRO_SEEN_KEY) === '1'
   } catch {
@@ -38,6 +51,13 @@ function markIntroSeen() {
   } catch {
     /* private mode / quota — non-fatal */
   }
+  try {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie =
+      `${INTRO_SEEN_KEY}=1; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Strict${secure}`
+  } catch {
+    /* non-fatal */
+  }
 }
 
 const REPLAY_EVENT = 'onp:replay-intro'
@@ -47,6 +67,11 @@ export function resetIntro() {
   _introHandledThisSession = false
   try {
     localStorage.removeItem(INTRO_SEEN_KEY)
+  } catch {
+    /* non-fatal */
+  }
+  try {
+    document.cookie = `${INTRO_SEEN_KEY}=; path=/; max-age=0; SameSite=Strict`
   } catch {
     /* non-fatal */
   }
