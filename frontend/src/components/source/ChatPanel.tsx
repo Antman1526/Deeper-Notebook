@@ -288,10 +288,14 @@ export function ChatPanel({
                   )}
                   <div className="flex flex-col gap-2 max-w-[80%]">
                     <div
-                      className={`rounded-lg px-4 py-2 ${
+                      className={`rounded-2xl px-4 py-2.5 shadow-sm ${
+                        // v0.8.70 — softer, deeper bubbles: a subtle gradient on
+                        // the user's messages and a bordered card surface for the
+                        // assistant. No backdrop-blur per bubble (GPU cost in a
+                        // long thread); depth comes from the gradient + shadow.
                         message.type === 'human'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
+                          ? 'bg-gradient-to-br from-primary to-primary/85 text-primary-foreground'
+                          : 'border border-border/60 bg-card'
                       }`}
                     >
                       {message.type === 'ai' ? (
@@ -385,8 +389,14 @@ export function ChatPanel({
                     <Bot className="h-4 w-4" />
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-muted">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {/* v0.8.70 — a "typing" dot wave reads more alive than a
+                    spinner; the global reduced-motion rule freezes it. */}
+                <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
+                  </div>
                 </div>
               </div>
             )}

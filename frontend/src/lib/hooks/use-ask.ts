@@ -101,6 +101,21 @@ export function useAsk() {
       // the final_answer payload, < 100 KB).
       const BUFFER_MAX = 4 * 1024 * 1024
 
+      // v0.8.70 — batch the per-token `final_answer_delta` into ≤1 setState per
+      // paint frame via rAF (was one setState per token → a re-render storm
+      // during long synthesis). `finalAccum` is the source of truth; the
+      // terminal `final_answer` event still replaces it with the canonical text.
+      let finalAccum = ''
+      let finalRafId: number | null = null
+      const flushFinal = () => {
+        finalRafId = null
+        if (!mountedRef.current) return
+        setState(prev => ({ ...prev, finalAnswer: finalAccum }))
+      }
+      const scheduleFinalFlush = () => {
+        if (finalRafId == null) finalRafId = requestAnimationFrame(flushFinal)
+      }
+
       while (true) {
         // Bail if unmounted between chunks — don't bother reading further.
         if (!mountedRef.current) break
@@ -145,19 +160,22 @@ export function useAsk() {
                 }))
               } else if (data.type === 'final_answer_delta') {
                 // v0.7.43 — per-token chunk for the final synthesis.
-                // Append to the running buffer; isStreaming stays true
-                // until the terminal `final_answer` event lands.
-                setState(prev => ({
-                  ...prev,
-                  finalAnswer: (prev.finalAnswer || '') + (data.content || ''),
-                }))
+                // v0.8.70 — accumulate + rAF-flush instead of setState/token.
+                finalAccum += data.content || ''
+                scheduleFinalFlush()
               } else if (data.type === 'final_answer') {
                 // v0.7.43 — canonical terminal event. Replaces the
                 // streamed buffer with the server's final string
                 // (after any post-processing like clean_thinking_content).
+                // v0.8.70 — cancel any pending delta flush first.
+                if (finalRafId != null) {
+                  cancelAnimationFrame(finalRafId)
+                  finalRafId = null
+                }
+                finalAccum = data.content || finalAccum
                 setState(prev => ({
                   ...prev,
-                  finalAnswer: data.content || prev.finalAnswer || '',
+                  finalAnswer: finalAccum,
                   isStreaming: false
                 }))
               } else if (data.type === 'complete') {
@@ -179,6 +197,13 @@ export function useAsk() {
           }
         }
       }
+
+      // v0.8.70 — drain any buffered final-answer delta before finishing.
+      if (finalRafId != null) {
+        cancelAnimationFrame(finalRafId)
+        finalRafId = null
+      }
+      flushFinal()
 
       // Ensure streaming is stopped
       if (mountedRef.current) {
