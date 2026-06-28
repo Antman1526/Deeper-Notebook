@@ -23,6 +23,13 @@ vi.mock('@/lib/hooks/use-deep-health', () => ({
   DEEP_HEALTH_QUERY_KEY: ['system', 'healthz', 'deep'],
 }))
 
+// v0.8.70 — the wizard now reads notebooks to detect a returning user.
+// Mutable holder (mock-prefixed so vitest's hoist allows the factory ref).
+const mockNotebooks: { value: unknown[] } = { value: [] }
+vi.mock('@/lib/hooks/use-notebooks', () => ({
+  useNotebooks: () => ({ data: mockNotebooks.value }),
+}))
+
 const pushMock = vi.fn()
 const replaceMock = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -89,6 +96,7 @@ describe('SetupWizardPage', () => {
     vi.clearAllMocks()
     pushMock.mockClear()
     replaceMock.mockClear()
+    mockNotebooks.value = []  // default: fresh install (no notebooks)
     if (typeof window !== 'undefined') {
       window.localStorage.clear()
       document.cookie = `${WIZARD_COMPLETED_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
@@ -178,5 +186,29 @@ describe('SetupWizardPage', () => {
 
     expect(replaceMock).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(WIZARD_COMPLETED_KEY)).toBeNull()
+  })
+
+  // v0.8.70 — a returning user (existing notebooks) whose wizard_completed
+  // cookie was lost (e.g. a rebuild reset the webview cookie store) must skip
+  // the first-launch wizard even when a subsystem is transiently degraded.
+  it('auto-advances for a returning user (existing notebooks) when degraded', async () => {
+    mockNotebooks.value = [{ id: 'notebook:abc', name: 'Existing' }]
+    mockDeepHealth(DEGRADED)
+    render(<SetupWizardPage />)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(replaceMock).toHaveBeenCalledWith('/')
+    expect(document.cookie).toContain(`${WIZARD_COMPLETED_KEY}=1`)
+  })
+
+  it('still shows the wizard (no auto-advance) for a fresh install when not_ready', async () => {
+    mockNotebooks.value = []
+    mockDeepHealth(NOT_READY)
+    render(<SetupWizardPage />)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(replaceMock).not.toHaveBeenCalled()
   })
 })
