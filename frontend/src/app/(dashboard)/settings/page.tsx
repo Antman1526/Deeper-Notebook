@@ -10,8 +10,10 @@ import { ObservabilityCard } from './components/ObservabilityCard'
 import { UpdatesCard } from './components/UpdatesCard'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+// v0.8.70 — replay the launch "Aurora Reveal" intro on demand.
+import { replayIntro } from '@/components/intro/IntroReveal'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -47,6 +49,20 @@ export default function SettingsPage() {
 
             <SettingsForm />
             <UpdatesCard />
+            <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/50 px-4 py-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">
+                  {t('intro.replayTitle', { defaultValue: 'Welcome intro' })}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {t('intro.replayDesc', { defaultValue: 'Play the opening animation again.' })}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => replayIntro()}>
+                <Sparkles className="h-4 w-4" />
+                {t('intro.replay', { defaultValue: 'Replay' })}
+              </Button>
+            </div>
             <ObservabilityCard />
           </div>
         </div>

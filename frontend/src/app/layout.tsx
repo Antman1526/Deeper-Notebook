@@ -12,6 +12,8 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { ConnectionGuard } from "@/components/common/ConnectionGuard";
 import { themeScript } from "@/lib/theme-script";
 import { I18nProvider } from "@/components/providers/I18nProvider";
+// v0.8.70 — skippable, once-per-user "Aurora Reveal" launch intro.
+import { IntroReveal } from "@/components/intro/IntroReveal";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -37,6 +39,7 @@ export default function RootLayout({
               <I18nProvider>
                 <ConnectionGuard>
                   {children}
+                  <IntroReveal />
                   <Toaster />
                 </ConnectionGuard>
               </I18nProvider>
