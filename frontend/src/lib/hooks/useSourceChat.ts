@@ -265,6 +265,24 @@ export function useSourceChat(sourceId: string) {
     let aiCreated = false
     let aiAccumulated = ''
 
+    // v0.8.70 — batch streamed deltas with requestAnimationFrame (≤1 render per
+    // paint frame) instead of a setMessages() per delta. `aiAccumulated` is the
+    // source of truth; the flush just syncs the placeholder message to it.
+    // Mirrors the useNotebookChat token-batching fix.
+    let streamRafId: number | null = null
+    const flushStream = () => {
+      streamRafId = null
+      if (!aiCreated) return
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === streamingAiId ? { ...msg, content: aiAccumulated } : msg,
+        ),
+      )
+    }
+    const scheduleStreamFlush = () => {
+      if (streamRafId == null) streamRafId = requestAnimationFrame(flushStream)
+    }
+
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
       const response = await sourceChatApi.sendMessage(
@@ -333,12 +351,8 @@ export function useSourceChat(sourceId: string) {
                   setMessages(prev => [...prev, initial])
                   aiCreated = true
                 } else {
-                  setMessages(prev =>
-                    prev.map(msg => msg.id === streamingAiId
-                      ? { ...msg, content: aiAccumulated }
-                      : msg
-                    )
-                  )
+                  // v0.8.70 — batch (rAF) instead of a setMessages per delta.
+                  scheduleStreamFlush()
                 }
               } else if (data.type === 'ai_message') {
                 // Terminal canonical message — replaces accumulator.
@@ -421,6 +435,13 @@ export function useSourceChat(sourceId: string) {
           }
         }
       }
+
+      // v0.8.70 — drain any delta still buffered when the stream closed.
+      if (streamRafId != null) {
+        cancelAnimationFrame(streamRafId)
+        streamRafId = null
+      }
+      flushStream()
     } catch (err: unknown) {
       // AbortError = user clicked Stop OR component unmounted; silent.
       if ((err as { name?: string }).name === 'AbortError') {
