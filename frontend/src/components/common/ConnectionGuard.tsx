@@ -20,59 +20,82 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
     if (isCheckingRef.current) {
        return
     }
-    
+
     isCheckingRef.current = true
     setIsChecking(true)
-    
     setError(null)
 
-    // Reset config cache to force a fresh fetch
-    resetConfig()
+    // v0.8.71 — retry through the cold-boot startup race before surfacing an
+    // error. On a fresh desktop launch the Next `/api/config` proxy can briefly
+    // return ECONNREFUSED (the dynamic API port isn't listening yet, so the
+    // proxy falls back to localhost:5055), and the DB can momentarily report
+    // `offline` while migrations finish. The previous single-shot check latched
+    // the full-screen ConnectionErrorOverlay ("reload error on startup") even
+    // though the backend came up a beat later. Poll a handful of times with a
+    // short backoff; only show the overlay once the backend is genuinely
+    // unreachable. The user-triggered Retry path reuses this same loop.
+    const MAX_ATTEMPTS = 10
+    const DELAY_MS = 600
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-    try {
-      const config = await getConfig()
+    let lastError: unknown = null
+    let dbOfflineUrl: string | undefined
 
-      // Check if database is offline
-      if (config.dbStatus === 'offline') {
-        const dbError: ConnectionError = {
-          type: 'database-offline',
-          details: {
-            message: 'Database is offline', // Fallback message, UI will translate
-            attemptedUrl: config.apiUrl,
-          },
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Force a fresh fetch each attempt (clears the cached/rejected promise).
+      resetConfig()
+      try {
+        const config = await getConfig()
+
+        if (config.dbStatus === 'offline') {
+          // Give the DB a few beats to finish migrations on a cold boot before
+          // treating "offline" as a real failure.
+          dbOfflineUrl = config.apiUrl
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await sleep(DELAY_MS)
+            continue
+          }
+          setError({
+            type: 'database-offline',
+            details: { message: 'Database is offline', attemptedUrl: dbOfflineUrl },
+          })
+          break
         }
-        setError(dbError)
+
+        // Connection is good.
+        setError(null)
         isCheckingRef.current = false
         setIsChecking(false)
         return
+      } catch (err) {
+        lastError = err
+        if (attempt < MAX_ATTEMPTS - 1) {
+          await sleep(DELAY_MS)
+          continue
+        }
       }
+    }
 
-      // If we got here, connection is good
-      setError(null)
-      isCheckingRef.current = false
-      setIsChecking(false)
-    } catch (err) {
-      // API is unreachable
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    // Exhausted retries with the API unreachable.
+    if (lastError) {
+      const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error'
       const attemptedUrl =
         typeof window !== 'undefined'
           ? `${window.location.origin}/api/config`
           : undefined
-
-      const apiError: ConnectionError = {
+      setError({
         type: 'api-unreachable',
         details: {
-          message: 'Unable to connect to API', // Fallback message
+          message: 'Unable to connect to API',
           technicalMessage: errorMessage,
-          stack: err instanceof Error ? err.stack : undefined,
+          stack: lastError instanceof Error ? lastError.stack : undefined,
           attemptedUrl,
         },
-      }
-      
-      setError(apiError)
-      isCheckingRef.current = false
-      setIsChecking(false)
+      })
     }
+
+    isCheckingRef.current = false
+    setIsChecking(false)
   }, []) // Empty dependency array - stable callback
 
   // Check connection on mount
@@ -112,9 +135,18 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
     return <ConnectionErrorOverlay error={error} onRetry={checkConnection} />
   }
 
-  // Show nothing while checking (prevents flash of content)
+  // v0.8.71 — while checking (incl. the retry window above), show a quiet
+  // themed "Connecting…" instead of a blank screen. The spin is auto-zeroed
+  // under prefers-reduced-motion by the global rule in globals.css.
   if (isChecking) {
-    return null
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <span className="text-sm">Connecting…</span>
+        </div>
+      </div>
+    )
   }
 
   // Render children if connection is good
