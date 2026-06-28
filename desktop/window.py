@@ -384,12 +384,29 @@ def _frontend_server_ready(url: str) -> bool:
     not-found page (HTTP 200!) for valid routes, reads as not-ready.
     """
     import httpx
+    import re
 
     try:
         r = httpx.get(url, timeout=2.0, follow_redirects=True)
     except Exception:
         return False
-    return r.status_code < 400 and b"next-error-h1" not in r.content
+    if r.status_code >= 400:
+        return False
+    # v0.8.70 — Next.js 16 streams the global `notFound` boundary (including
+    # its `.next-error-h1` style block) into the RSC payload of EVERY page, so
+    # the old `b"next-error-h1" not in content` test was permanently False —
+    # `_frontend_server_ready` never returned True, the splash→app handoff
+    # never navigated the window, and the splash hung forever. Detect Next's
+    # ACTUAL not-found page by its <title> ("404: This page could not be
+    # found") instead, mirroring the JS sentinel (which checks that
+    # document.title doesn't start with "404"). This still catches Next's
+    # warm-up window, where valid routes briefly serve the 404 page at HTTP
+    # 200. Require the Next runtime marker so a stray page can't false-pass.
+    m = re.search(rb"<title>([^<]*)</title>", r.content)
+    title = m.group(1).strip() if m else b""
+    if title.startswith(b"404"):
+        return False
+    return b"__next_f" in r.content
 
 
 def _start_handoff_controller(
