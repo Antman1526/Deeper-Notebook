@@ -4,7 +4,7 @@ import { NotebookResponse } from '@/lib/types/api'
 import { NotebookCard } from './NotebookCard'
 import { NotebookRow } from './NotebookRow'
 import { useNotebookViewStore } from '@/lib/stores/notebook-view-store'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Book, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -37,9 +37,21 @@ export function NotebookList({
   const [isExpanded, setIsExpanded] = useState(!collapsible)
 
   if (isLoading) {
+    // v0.8.70 — skeleton cards instead of a centered spinner: the layout
+    // settles instantly (no jump when data lands) and reads as faster.
     return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="lg" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="space-y-3 rounded-lg border bg-card p-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-md" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
+        ))}
       </div>
     )
   }
