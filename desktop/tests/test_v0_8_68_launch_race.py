@@ -152,13 +152,19 @@ class _Resp:
 def test_server_ready_rejects_next_warmup_404(monkeypatch):
     """Next 16 standalone briefly serves its not-found page (HTTP 200!) for
     valid routes while route manifests lazy-load — seen live. Status alone
-    cannot catch it; the body check must."""
+    cannot catch it; the <title> ("404: …") must. The real warm-up page DOES
+    carry the Next runtime (__next_f) — the title is the discriminator."""
     import desktop.window as w
 
     class _Httpx:
         @staticmethod
         def get(url, timeout=None, follow_redirects=False):
-            return _Resp(200, b'<h1 class="next-error-h1">404</h1>')
+            return _Resp(
+                200,
+                b"<html><head><title>404: This page could not be found.</title>"
+                b'</head><body><script>self.__next_f=[]</script>'
+                b'<h1 class="next-error-h1">404</h1></body></html>',
+            )
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
     assert w._frontend_server_ready("http://x/") is False
@@ -171,7 +177,34 @@ def test_server_ready_accepts_real_page(monkeypatch):
         @staticmethod
         def get(url, timeout=None, follow_redirects=False):
             assert follow_redirects is True  # must probe the FINAL page
-            return _Resp(200, b"<html>app</html>")
+            return _Resp(
+                200,
+                b"<html><head><title>Open notebook+</title></head>"
+                b"<body><script>self.__next_f=[]</script>app</body></html>",
+            )
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
+    assert w._frontend_server_ready("http://x/") is True
+
+
+def test_server_ready_accepts_page_with_embedded_next_error_styles(monkeypatch):
+    """v0.8.70 regression — Next 16 streams the global notFound boundary
+    (including its `.next-error-h1` style block) into EVERY page's RSC payload.
+    The old `b"next-error-h1" not in content` check therefore returned False
+    for real pages too, so `_frontend_server_ready` never passed and the
+    splash→app handoff hung forever. A real app page (title != 404, Next
+    runtime present) must read READY even though it contains `next-error-h1`."""
+    import desktop.window as w
+
+    class _Httpx:
+        @staticmethod
+        def get(url, timeout=None, follow_redirects=False):
+            return _Resp(
+                200,
+                b"<html><head><title>Open notebook+</title></head><body>"
+                b"<style>.next-error-h1{border-right:1px solid}</style>"
+                b"<script>self.__next_f=[]</script></body></html>",
+            )
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
     assert w._frontend_server_ready("http://x/") is True
