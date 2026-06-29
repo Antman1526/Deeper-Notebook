@@ -24,6 +24,17 @@ export const notebooksApi = {
     return response.data
   },
 
+  // v0.8.74 — corpus-grounded starter questions for the empty chat state
+  // (improvement roadmap, Batch 1). Best-effort on the backend: returns [] on
+  // any failure, so callers never need to special-case errors.
+  suggestedQuestions: async (id: string, limit = 4): Promise<string[]> => {
+    const response = await apiClient.get<{ questions: string[] }>(
+      `/notebooks/${id}/suggested-questions`,
+      { params: { limit } }
+    )
+    return response.data.questions ?? []
+  },
+
   create: async (data: CreateNotebookRequest) => {
     const response = await apiClient.post<NotebookResponse>('/notebooks', data)
     return response.data
