@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.75 — Actionable empty state for sources (roadmap Batch 1)**
+  - The notebook's empty sources list now shows a clear **"Add source" CTA button** (opens the existing AddSourceDialog) instead of a dead-end "no sources yet" message — lowers friction to the first source. (`SourcesColumn.tsx`, reusing `EmptyState`'s `action` slot; tsc clean.) Drag-drop-anywhere (the other half of this roadmap item) is tracked separately — it needs a real file-drag test in the running app to verify the `DataTransfer` prefill.
+
 - **✨ v0.8.74 — Suggested starter questions (roadmap Batch 1)**
   - **Backend:** new `GET /api/notebooks/{id}/suggested-questions?limit=N` generates a few concise, **corpus-grounded** starter questions from the notebook's source titles + topics via one bounded (30s) LLM call — so chat needn't open to a blank box (NotebookLM parity). Strictly **best-effort**: no sources / no model / LLM error / unparseable output all degrade to `{"questions": []}` and can never block the notebook UI; NotFound/InvalidInput still surface as 404/400. (`api/routers/notebooks.py`; `tests/test_suggested_questions.py`, 4 tests.)
   - **Frontend:** the notebook chat's empty state now shows clickable starter-question **chips** (fetched only when sources exist and no messages yet; `retry:false`, 5-min cache). Clicking a chip sends it. Added as optional `suggestedQuestions` / `onSuggestedQuestionClick` props on the shared `ChatPanel` (source chat omits them → no change there). Header label uses an inline `defaultValue` (no locale-parity keys). (`ChatPanel.tsx`, `ChatColumn.tsx`, `lib/api/notebooks.ts`; ChatColumn test wrapped in a QueryClientProvider.)
