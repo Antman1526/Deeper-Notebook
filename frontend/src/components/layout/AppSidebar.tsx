@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 // ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
-// shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
+// shadow-layer ThemeSwitcher that supports all ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
 import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'

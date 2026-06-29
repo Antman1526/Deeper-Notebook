@@ -27,11 +27,15 @@ router = APIRouter()
 _VALID_THEMES = {
     "light-blue", "system", "solarized-light", "github-light", "paper",
     "dark", "solarized-dark", "dracula", "nord",
+    # v0.8.72 — premium theme pack (must mirror desktop/window.py:_THEMES
+    # and frontend ThemeSwitcher:ONP_THEMES).
+    "midnight-aurora", "tokyo-night", "catppuccin-mocha", "rose-pine",
+    "gruvbox-dark", "one-dark", "catppuccin-latte", "rose-pine-dawn",
 }
 
 
 class ThemeRequest(BaseModel):
-    theme: str = Field(..., description="One of the 9 ONP themes")
+    theme: str = Field(..., description="One of the ONP themes (see _VALID_THEMES)")
 
 
 class ThemeResponse(BaseModel):
