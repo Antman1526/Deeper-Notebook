@@ -688,4 +688,28 @@ def open_window(url: str, on_close: Callable[[], None],
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
     _start_handoff_controller(window, url, _page_loaded, splash_html)
-    webview.start()  # noqa: F821 — already imported above
+    # v0.8.73 — PERSIST the webview's cookie/localStorage store across launches.
+    # pywebview defaults to private_mode=True: an EPHEMERAL WKWebsiteDataStore
+    # that is wiped on every app close. That silently broke every persisted
+    # web-storage feature — most importantly the `wizard_completed` cookie never
+    # survived a restart, so the first-launch Setup Wizard redirect fired on
+    # EVERY launch (`/` → 307 → /setup-wizard), and the wizard's client-side
+    # auto-skip (router.replace('/')) raced a cold boot straight into WebKit's
+    # "This page couldn't load" — the exact reload-screen-every-launch the user
+    # hit. (The same ephemeral wipe also reset the "show the intro once"
+    # cookie.) Persisting to a stable path under ~/.open-notebook-plus means the
+    # wizard shows ONCE, the intro shows ONCE, and they stay dismissed across
+    # launches AND across rebuilds (the stable code-signing identity keeps the
+    # same data container).
+    import os as _os
+    _storage_path = str(data_home / "webview_data")
+    try:
+        _os.makedirs(_storage_path, exist_ok=True)
+    except Exception:
+        _storage_path = None
+    try:
+        webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
+    except TypeError:
+        # Defensive: if a future pywebview drops these kwargs, fall back so the
+        # app still launches (persistence degrades, but it won't crash).
+        webview.start()  # noqa: F821
