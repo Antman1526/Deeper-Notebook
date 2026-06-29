@@ -489,12 +489,27 @@ def _start_handoff_controller(
     min_splash_sec: float = 3.0,
     consecutive: int = 2,
     poll_sec: float = 0.4,
-    attempt_timeout_sec: float = 12.0,
-    max_attempts: int = 10,
+    attempt_timeout_sec: float = 6.0,
+    max_attempts: int = 40,
     sleep=None,
     clock=None,
 ) -> "threading.Thread":
     """v0.8.68 — python-driven splash→app handoff with failure recovery.
+
+    v0.8.72 — retry budget widened from 10×12s (~2 min) to 40×6s (~4 min).
+    Live finding: on a slow ad-hoc cold boot WKWebView's `load_url` keeps
+    failing ("This page couldn't load") for *minutes* even though the frontend
+    server is provably serving (an httpx probe AND a manual webview Reload both
+    succeed) — a known WebKit quirk where the probe passes but the real
+    navigation races/fails. The old 10-attempt budget exhausted long before
+    WKWebView became willing, so the controller gave up and the error page
+    became the resting state; only a manual Reload recovered it. The wider
+    budget keeps re-issuing the navigation (restoring the splash between tries,
+    never the error page) until WKWebView finally loads the app — which a
+    manual reload proves always eventually works. The shorter per-attempt
+    timeout also shrinks how long a failed attempt's error page flashes before
+    the splash is restored. (A stable code-signing identity keeps boots ~30s,
+    where the very first attempt succeeds; this covers the ad-hoc slow path.)
 
     The first cut had the splash navigate itself after in-page no-cors
     probes; a probe can succeed and the subsequent real navigation still
