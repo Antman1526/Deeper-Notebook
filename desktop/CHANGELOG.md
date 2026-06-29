@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **✨ v0.8.74 — Suggested starter questions: backend (roadmap Batch 1)**
+  - New `GET /api/notebooks/{id}/suggested-questions?limit=N` generates a few concise, **corpus-grounded** starter questions from the notebook's source titles + topics via one bounded (30s) LLM call — so chat needn't open to a blank box (NotebookLM parity). Strictly **best-effort**: no sources / no model / LLM error / unparseable output all degrade to `{"questions": []}` and can never block the notebook UI; NotFound/InvalidInput still surface as 404/400. (`api/routers/notebooks.py`; `tests/test_suggested_questions.py`, 4 tests.) Frontend chips to follow.
+
 - **✨ v0.8.74 — Chat grounding guardrail (roadmap Batch 1)**
   - Added an explicit **GROUNDING & HONESTY** section to the chat (`prompts/chat/system.jinja`) and source-chat (`prompts/source_chat/system.jinja`) system prompts: answer from the provided CONTEXT/sources (or this turn's tool results); when the sources don't cover something, **say so plainly** rather than inventing facts or citations; never attach a document-ID citation to an unsupported claim; and prefer "I'm not certain" to a confident guess. Deliberately preserves the `web_search`/`mcp_*` tool path and general-knowledge fallback (with a "not from your sources" caveat). Reduces hallucination and mirrors NotebookLM's strict source-grounding. First item of the design/functionality improvement roadmap (`~/BrainPulseKnowledge/.../Projects/OpenNotebookPlus/Roadmap`).
 
