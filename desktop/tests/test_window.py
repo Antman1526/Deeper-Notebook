@@ -12,7 +12,7 @@ from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
 @pytest.mark.parametrize("theme_id", list(_THEMES.keys()))
 def test_every_theme_produces_27_shadcn_tokens(theme_id):
-    """All 9 themes must produce the full shadcn token set so no upstream
+    """Every theme must produce the full shadcn token set so no upstream
     component falls back to default colors (the source of the v0.4
     unreadable-labels bug)."""
     tokens = _theme_tokens(theme_id)
@@ -81,22 +81,37 @@ def test_dark_themes_set_dark_class_in_injection_js():
     <html>. v0.5.7 — applyTheme() uses classList.toggle('dark', is_dark)
     so a single code path covers both light and dark transitions."""
     js = _theme_injection_js("dark")
-    # All 9 themes are present in the IS_DARK map
+    # Every theme is present in the IS_DARK map
     for theme_id in _THEMES:
         assert f'"{theme_id}":' in js
     # And applyTheme toggles the class
     assert "classList.toggle('dark'" in js or 'classList.toggle("dark"' in js
 
 
-def test_injection_contains_all_nine_themes_as_attribute_selectors():
-    """v0.5.7 — injection emits all 9 themes as :root[data-theme="X"]
-    blocks so the ThemeSwitcher can swap live by changing dataset.theme."""
+def test_injection_contains_every_theme_as_attribute_selector():
+    """v0.5.7 — injection emits every theme as a :root[data-theme="X"] block
+    so the ThemeSwitcher can swap live by changing dataset.theme."""
     js = _theme_injection_js("dracula")
     # Every theme id should appear as an attribute selector
     for theme_id in _THEMES:
         assert f'data-theme="{theme_id}"' in js, (
             f"injection missing :root[data-theme=\"{theme_id}\"] block"
         )
+
+
+def test_theme_ids_are_in_lockstep_with_api_allowlist():
+    """v0.8.72 — the theme palette lives in desktop/window.py:_THEMES, but the
+    API (api/routers/onp.py:_VALID_THEMES) independently allowlists which theme
+    strings POST /api/onp/theme will accept and persist. If they drift, a theme
+    shown in the picker would be rejected on save (or vice-versa). Pin them
+    together. (The frontend ThemeSwitcher:ONP_THEMES is the third copy — kept in
+    sync by code review, since it can't be imported here.)"""
+    from api.routers.onp import _VALID_THEMES
+
+    assert set(_THEMES) == set(_VALID_THEMES), (
+        "desktop _THEMES and api _VALID_THEMES are out of sync: "
+        f"{set(_THEMES) ^ set(_VALID_THEMES)}"
+    )
 
 
 def test_injection_exposes_setTheme_bridge():

@@ -34,32 +34,37 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
     // though the backend came up a beat later. Poll a handful of times with a
     // short backoff; only show the overlay once the backend is genuinely
     // unreachable. The user-triggered Retry path reuses this same loop.
-    const MAX_ATTEMPTS = 10
-    const DELAY_MS = 600
+    // v0.8.72 — retry against a GENEROUS TIME BUDGET, not a fixed 10 attempts.
+    // The previous 6s window (10×600ms) was the bug behind "it flickers, then
+    // goes to a reload page; clicking reload works": a normal cold desktop boot
+    // is ~30s, and a first launch where the Desktop model scan stalls can be
+    // ~2 min — so the API/`/api/config` proxy wasn't ready inside 6s, the retry
+    // exhausted, and the full-screen ConnectionErrorOverlay ("reload page")
+    // latched. A manual reload — by which point the backend was finally up —
+    // recovered it. Now keep polling (showing the quiet "Connecting…" state)
+    // until the backend is reachable OR the budget elapses; the overlay only
+    // appears on a genuine, sustained failure (and a background poll below
+    // self-heals it even then). The user-triggered Retry reuses this loop.
+    const TOTAL_BUDGET_MS = 120_000
+    const POLL_MS = 800
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
     let lastError: unknown = null
     let dbOfflineUrl: string | undefined
+    const startedAt = Date.now()
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    while (Date.now() - startedAt < TOTAL_BUDGET_MS) {
       // Force a fresh fetch each attempt (clears the cached/rejected promise).
       resetConfig()
       try {
         const config = await getConfig()
 
         if (config.dbStatus === 'offline') {
-          // Give the DB a few beats to finish migrations on a cold boot before
-          // treating "offline" as a real failure.
+          // DB still finishing migrations on a cold boot — keep waiting.
           dbOfflineUrl = config.apiUrl
-          if (attempt < MAX_ATTEMPTS - 1) {
-            await sleep(DELAY_MS)
-            continue
-          }
-          setError({
-            type: 'database-offline',
-            details: { message: 'Database is offline', attemptedUrl: dbOfflineUrl },
-          })
-          break
+          lastError = null
+          await sleep(POLL_MS)
+          continue
         }
 
         // Connection is good.
@@ -69,14 +74,12 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
         return
       } catch (err) {
         lastError = err
-        if (attempt < MAX_ATTEMPTS - 1) {
-          await sleep(DELAY_MS)
-          continue
-        }
+        await sleep(POLL_MS)
       }
     }
 
-    // Exhausted retries with the API unreachable.
+    // Budget exhausted — surface the appropriate error. An unreachable API wins
+    // over a reachable-but-offline DB (the more fundamental failure).
     if (lastError) {
       const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error'
       const attemptedUrl =
@@ -92,6 +95,11 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
           attemptedUrl,
         },
       })
+    } else if (dbOfflineUrl) {
+      setError({
+        type: 'database-offline',
+        details: { message: 'Database is offline', attemptedUrl: dbOfflineUrl },
+      })
     }
 
     isCheckingRef.current = false
@@ -102,6 +110,20 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
   useEffect(() => {
     checkConnection()
   }, [checkConnection])
+
+  // v0.8.72 — self-heal the overlay. If the time-budget retry above still
+  // exhausted and we surfaced the ConnectionErrorOverlay, keep polling quietly
+  // in the background so it auto-recovers the moment the backend comes up — the
+  // user never has to click "Retry"/reload. checkConnection's own re-entry
+  // guard (isCheckingRef) prevents overlapping loops; a successful poll clears
+  // `error`, which tears this interval down.
+  useEffect(() => {
+    if (!error) return
+    const id = window.setInterval(() => {
+      checkConnection()
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [error, checkConnection])
 
   // Add keyboard shortcut for retry (R key)
   useEffect(() => {

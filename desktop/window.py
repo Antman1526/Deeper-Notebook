@@ -120,6 +120,76 @@ _THEMES = {
         "accent": "#5E81AC", "accent_fg": "#ECEFF4",
         "border": "#4C566A", "destructive": "#BF616A",
     },
+    # --- v0.8.72: premium theme pack ---------------------------------------
+    # Eight popular, hand-tuned palettes. Each fg/bg clears WCAG AAA (7:1) and
+    # each muted_fg/bg clears AA (4.5:1) — enforced by desktop/tests/test_window.py
+    # (parametrized over every key here), so a future tweak can't silently
+    # regress legibility. "midnight-aurora" is the signature theme: its
+    # indigo→violet palette matches the launch splash + Aurora Reveal intro.
+    "midnight-aurora": {  # dark · signature (matches splash/intro)
+        "is_dark": True,
+        "bg": "#0D0E1D", "fg": "#EEF0FF",
+        "card": "#181A33", "muted": "#20223F", "muted_fg": "#B9BEE0",
+        "primary": "#6C7BFF", "primary_fg": "#FFFFFF",
+        "accent": "#B96CFF", "accent_fg": "#FFFFFF",
+        "border": "#2A2D52", "destructive": "#FF6B8B",
+    },
+    "tokyo-night": {  # dark
+        "is_dark": True,
+        "bg": "#1A1B26", "fg": "#C0CAF5",
+        "card": "#24283B", "muted": "#2F334D", "muted_fg": "#A9B1D6",
+        "primary": "#7AA2F7", "primary_fg": "#1A1B26",
+        "accent": "#BB9AF7", "accent_fg": "#1A1B26",
+        "border": "#3B4261", "destructive": "#F7768E",
+    },
+    "catppuccin-mocha": {  # dark
+        "is_dark": True,
+        "bg": "#1E1E2E", "fg": "#CDD6F4",
+        "card": "#313244", "muted": "#45475A", "muted_fg": "#A6ADC8",
+        "primary": "#CBA6F7", "primary_fg": "#1E1E2E",
+        "accent": "#F5C2E7", "accent_fg": "#1E1E2E",
+        "border": "#45475A", "destructive": "#F38BA8",
+    },
+    "rose-pine": {  # dark
+        "is_dark": True,
+        "bg": "#191724", "fg": "#E0DEF4",
+        "card": "#1F1D2E", "muted": "#26233A", "muted_fg": "#908CAA",
+        "primary": "#C4A7E7", "primary_fg": "#191724",
+        "accent": "#EBBCBA", "accent_fg": "#191724",
+        "border": "#403D52", "destructive": "#EB6F92",
+    },
+    "gruvbox-dark": {  # dark
+        "is_dark": True,
+        "bg": "#282828", "fg": "#EBDBB2",
+        "card": "#3C3836", "muted": "#504945", "muted_fg": "#BDAE93",
+        "primary": "#FABD2F", "primary_fg": "#282828",
+        "accent": "#FE8019", "accent_fg": "#282828",
+        "border": "#504945", "destructive": "#FB4934",
+    },
+    "one-dark": {  # dark
+        "is_dark": True,
+        "bg": "#282C34", "fg": "#C5CCD6",
+        "card": "#21252B", "muted": "#3B4048", "muted_fg": "#9AA2AF",
+        "primary": "#61AFEF", "primary_fg": "#282C34",
+        "accent": "#C678DD", "accent_fg": "#282C34",
+        "border": "#3E4451", "destructive": "#E06C75",
+    },
+    "catppuccin-latte": {  # light
+        "is_dark": False,
+        "bg": "#EFF1F5", "fg": "#4C4F69",
+        "card": "#FFFFFF", "muted": "#CCD0DA", "muted_fg": "#5C5F74",
+        "primary": "#8839EF", "primary_fg": "#FFFFFF",
+        "accent": "#1E66F5", "accent_fg": "#FFFFFF",
+        "border": "#BCC0CC", "destructive": "#D20F39",
+    },
+    "rose-pine-dawn": {  # light
+        "is_dark": False,
+        "bg": "#FAF4ED", "fg": "#4B4661",
+        "card": "#FFFAF3", "muted": "#F2E9E1", "muted_fg": "#6A6580",
+        "primary": "#907AA9", "primary_fg": "#FAF4ED",
+        "accent": "#D7827E", "accent_fg": "#FAF4ED",
+        "border": "#DFDAD9", "destructive": "#B4637A",
+    },
 }
 
 
@@ -182,7 +252,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
                         remind_openchronicle: bool = False,
                         stt_url: str | None = None,
                         tts_url: str | None = None) -> str:
-    """Inject ALL 9 themes' tokens up front, keyed by [data-theme="X"]
+    """Inject ALL themes' tokens up front, keyed by [data-theme="X"]
     attribute selectors. The active theme is set by `dataset.theme` on
     <html>. The onp/ThemeSwitcher React component (and `window.ONP.setTheme`
     that we expose below) can switch themes live — instant, no reload.
@@ -210,7 +280,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     base_js = f"""
     (function() {{
       var INITIAL_THEME = "{initial}";
-      // ONP v0.5.7 — all 9 themes live in CSS; live-switch via data-theme attr.
+      // ONP v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
       // The same <style id="onp-theme-injection"> is reused across Next.js soft
       // navigations because the CSS block is theme-independent.
       if (!document.getElementById('onp-theme-injection')) {{
