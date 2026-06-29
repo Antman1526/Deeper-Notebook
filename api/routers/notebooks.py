@@ -273,6 +273,99 @@ async def get_notebook(notebook_id: str):
         )
 
 
+# v0.8.74 — Suggested starter questions (improvement roadmap, Batch 1).
+# NotebookLM seeds clickable starter questions so the chat never opens to a
+# blank box. Generate a few concise, corpus-grounded questions from the
+# notebook's source titles + topics via a single bounded LLM call. This is a
+# NON-CRITICAL convenience: any failure (no sources, no model configured, LLM
+# error/timeout, unparseable output) degrades gracefully to an empty list
+# rather than a 500, so it can never block opening a notebook.
+_SUGGESTED_QUESTIONS_SYSTEM = (
+    "You help a user start exploring a research notebook. Given the notebook and "
+    "a list of its sources (titles and topics), propose {n} concise, specific "
+    "starter questions the user could ask that THIS corpus can plausibly answer.\n"
+    "Rules:\n"
+    "- Only propose questions answerable from the listed sources; do not invent "
+    "topics that aren't present.\n"
+    "- Each question is under ~16 words and ends with '?'. No numbering or bullets.\n"
+    "- Output ONLY the questions, exactly one per line."
+)
+
+
+@router.get("/notebooks/{notebook_id}/suggested-questions")
+async def get_suggested_questions(
+    notebook_id: str, limit: int = Query(4, ge=1, le=8)
+):
+    """Generate starter questions grounded in the notebook's sources.
+
+    Best-effort: returns ``{"questions": []}`` on any failure (no sources, no
+    model configured, LLM error) — starter questions must never block the
+    notebook UI. NotFound/InvalidInput still surface as 404/400.
+    """
+    import asyncio
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from open_notebook.ai.provision import provision_langchain_model
+    from open_notebook.utils import clean_thinking_content
+    from open_notebook.utils.text_utils import extract_text_content
+
+    try:
+        notebook = await Notebook.get(notebook_id)
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"suggested-questions: notebook fetch failed {notebook_id}: {e}")
+        raise HTTPException(status_code=404, detail="Notebook not found")
+
+    try:
+        sources = await notebook.get_sources()
+    except Exception as e:
+        logger.warning(f"suggested-questions: get_sources failed for {notebook_id}: {e}")
+        return {"questions": []}
+    if not sources:
+        return {"questions": []}
+
+    # Build a compact corpus digest (titles + topics); cap so the prompt stays
+    # small on large notebooks.
+    lines = []
+    for s in sources[:40]:
+        title = (getattr(s, "title", None) or "Untitled source").strip()
+        topics = ", ".join((getattr(s, "topics", None) or [])[:6])
+        lines.append(f"- {title}" + (f" — {topics}" if topics else ""))
+    corpus = (
+        f"Notebook: {notebook.name or 'Untitled'}\n"
+        f"Description: {notebook.description or '(none)'}\n\n"
+        "Sources:\n" + "\n".join(lines)
+    )
+    system = _SUGGESTED_QUESTIONS_SYSTEM.format(n=limit)
+
+    try:
+        chain = await provision_langchain_model(
+            system + "\n" + corpus, None, "transformation", max_tokens=400
+        )
+        response = await asyncio.wait_for(
+            chain.ainvoke(
+                [SystemMessage(content=system), HumanMessage(content=corpus)]
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        # Non-critical: log at info and degrade to no suggestions.
+        logger.info(f"suggested-questions: generation skipped for {notebook_id} ({e})")
+        return {"questions": []}
+
+    text = clean_thinking_content(extract_text_content(response.content))
+    questions: list[str] = []
+    for raw in text.splitlines():
+        q = raw.strip().lstrip("-*•0123456789.) ").strip().strip('"').strip()
+        if len(q) >= 8 and "?" in q and q not in questions:
+            questions.append(q)
+        if len(questions) >= limit:
+            break
+    return {"questions": questions}
+
+
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
 async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
     """Update a notebook."""
