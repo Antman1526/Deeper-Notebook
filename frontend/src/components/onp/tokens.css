@@ -41,12 +41,18 @@
   --onp-space-6: 1.5rem;
 
   /* ── Aurora-glass system (v0.8.70) ──────────────────────────────────────
-   * Brand aurora palette mirrors desktop/splash.py (indigo → violet → teal)
-   * so the splash → app → intro reveal reads as one continuous gradient
-   * world. All motion uses GPU-composited transform/opacity/filter only. */
-  --onp-aurora-1: #6c7bff; /* indigo */
-  --onp-aurora-2: #b96cff; /* violet */
-  --onp-aurora-3: #36c9b0; /* teal   */
+   * v0.8.72 — the in-app aurora is now THEME-AWARE: it derives from the live
+   * theme's --primary / --accent (set per [data-theme] by the desktop theme
+   * injection), so every theme gets a cohesive hero/glow in its own palette.
+   * The "Midnight Aurora" theme's primary/accent ARE indigo (#6c7bff) / violet
+   * (#b96cff), so under it the visuals stay pixel-identical to the brand splash
+   * → app → Aurora Reveal flow. The hardcoded brand hues live as a final
+   * fallback if a theme somehow leaves --primary/--accent unset. aurora-3 is a
+   * harmonious blend of the two so the third gradient stop always fits.
+   * All motion uses GPU-composited transform/opacity/filter only. */
+  --onp-aurora-1: var(--primary, #6c7bff); /* theme primary (brand: indigo) */
+  --onp-aurora-2: var(--accent, #b96cff);  /* theme accent  (brand: violet) */
+  --onp-aurora-3: color-mix(in oklab, var(--accent, #b96cff) 55%, var(--primary, #36c9b0)); /* blend */
 
   /* Soft outer glow keyed to the live theme primary. */
   --onp-glow-accent:
