@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.76 — Citation hover-preview (roadmap Batch 1)**
+  - Inline citation pills (`CitationPill`) already showed the cited document's title + snippet on **click**; they now also open on **hover** (and keyboard focus), so users can skim the grounding without leaving the answer — closer to NotebookLM's at-a-glance citation UX. Implemented by controlling the existing Popover's open state with small open (280ms) / close (140ms) delays and a grace window (moving the cursor pill→popover keeps it open); hover-open does not steal focus mid-read. **Click still toggles via Radix's own `onOpenChange`**, so the proven click path is unchanged if hover timing ever misbehaves. (`CitationPill.tsx`; tsc clean, all 58 chat tests pass incl. CitationPill.test.tsx.)
+
 - **🎨 v0.8.75 — Actionable empty state for sources (roadmap Batch 1)**
   - The notebook's empty sources list now shows a clear **"Add source" CTA button** (opens the existing AddSourceDialog) instead of a dead-end "no sources yet" message — lowers friction to the first source. (`SourcesColumn.tsx`, reusing `EmptyState`'s `action` slot; tsc clean.) Drag-drop-anywhere (the other half of this roadmap item) is tracked separately — it needs a real file-drag test in the running app to verify the `DataTransfer` prefill.
 
