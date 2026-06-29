@@ -99,6 +99,12 @@ interface ChatPanelProps {
   // already had AbortController plumbing; ChatPanel now exposes it as
   // a visible action so long local generations are user-controllable.
   onCancelStreaming?: () => void
+  // v0.8.74 — optional starter-question chips shown in the empty chat state
+  // (improvement roadmap, Batch 1). Notebook chat passes corpus-grounded
+  // questions from GET /notebooks/{id}/suggested-questions; clicking one sends
+  // it. Omitted by source chat → no chips, no behavior change.
+  suggestedQuestions?: string[]
+  onSuggestedQuestionClick?: (question: string) => void
 }
 
 export function ChatPanel({
@@ -123,6 +129,8 @@ export function ChatPanel({
   onToggleMcpServer,
   onReaskAllowCloud,
   onCancelStreaming,
+  suggestedQuestions,
+  onSuggestedQuestionClick,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -270,6 +278,28 @@ export function ChatPanel({
                   {t('chat.startConversation').replace('{type}', contextType === 'source' ? t('navigation.sources') : t('common.notebook'))}
                 </p>
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
+                {/* v0.8.74 — corpus-grounded starter questions (roadmap Batch 1).
+                    Removes the blank-slate problem; clicking a chip sends it. */}
+                {suggestedQuestions && suggestedQuestions.length > 0 && (
+                  <div className="mx-auto mt-5 max-w-md">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground/80">
+                      {t('chat.tryAsking', { defaultValue: 'Try asking' })}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {suggestedQuestions.map((q) => (
+                        <button
+                          key={q}
+                          type="button"
+                          onClick={() => onSuggestedQuestionClick?.(q)}
+                          disabled={isStreaming || !onSuggestedQuestionClick}
+                          className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-left text-xs text-foreground/90 shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               messages.map((message, idx) => (

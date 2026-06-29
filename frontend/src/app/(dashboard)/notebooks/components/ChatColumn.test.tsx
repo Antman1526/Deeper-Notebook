@@ -1,6 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChatColumn } from './ChatColumn'
+
+// v0.8.74 — ChatColumn now uses useQuery (suggested starter questions), so it
+// must render inside a QueryClientProvider. The query is disabled when there
+// are no sources, but the hook still requires a client.
+function renderWithClient(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+}
 import { useNotes } from '@/lib/hooks/use-notes'
 import { useNotebookChat } from '@/lib/hooks/useNotebookChat'
 
@@ -45,7 +54,7 @@ describe('ChatColumn', () => {
     vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: true }))
     vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
 
-    render(<ChatColumn {...baseProps} sourcesLoading={true} />)
+    renderWithClient(<ChatColumn {...baseProps} sourcesLoading={true} />)
 
     // Should show loading spinner
     expect(screen.getByTestId('loading-spinner')).toBeInTheDocument()
@@ -55,7 +64,7 @@ describe('ChatColumn', () => {
     vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: false }))
     vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
 
-    render(<ChatColumn {...baseProps} sourcesLoading={false} />)
+    renderWithClient(<ChatColumn {...baseProps} sourcesLoading={false} />)
 
     // Should show chat panel
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
