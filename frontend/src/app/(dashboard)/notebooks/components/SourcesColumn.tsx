@@ -238,6 +238,15 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
+                action={
+                  // v0.8.75 — actionable empty state (improvement roadmap,
+                  // Batch 1): a clear CTA to add the first source instead of a
+                  // dead-end message. Opens the existing AddSourceDialog.
+                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('sources.addSource')}
+                  </Button>
+                }
               />
             ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
               <VirtualizedListAuto
