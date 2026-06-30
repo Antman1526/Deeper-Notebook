@@ -836,3 +836,26 @@ class NotebookDeleteResponse(BaseModel):
     unlinked_sources: int = Field(
         ..., description="Number of sources unlinked from notebook"
     )
+
+
+# v0.8.78 — citation passage location (improvement roadmap, Batch 2). The
+# frontend posts the citing sentence; the backend returns the char-offset range
+# of the best-matching passage in the source's full_text so the source viewer
+# can scroll to + highlight it.
+class LocatePassageRequest(BaseModel):
+    query: str = Field(
+        ..., description="The citing sentence / claim text to locate in the source"
+    )
+
+
+class PassageMatchResponse(BaseModel):
+    start: int = Field(..., description="Start char offset in the source full_text")
+    end: int = Field(..., description="End char offset (exclusive)")
+    score: float = Field(..., description="Match confidence 0..1 (token containment)")
+    snippet: str = Field(..., description="The matched passage text")
+
+
+class LocatePassageResponse(BaseModel):
+    match: Optional[PassageMatchResponse] = Field(
+        None, description="Best passage match, or null when there's no decent match"
+    )
