@@ -131,6 +131,38 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
+    async def get_graph(self) -> dict[str, Any]:
+        """v0.8.83 — mind-map graph (improvement roadmap, Batch 3).
+
+        Returns the notebook as a hub node with its sources and notes as
+        connected nodes, grounded in the existing ``reference``
+        (source→notebook) and ``artifact`` (note→notebook) edges — no schema
+        change. Node ids are the record ids so the frontend can deep-link to
+        each item; labels are trimmed to keep the payload small.
+        """
+        sources = await self.get_sources()
+        notes = await self.get_notes()
+
+        def _label(text: Optional[str], fallback: str) -> str:
+            cleaned = (text or "").strip() or fallback
+            return cleaned if len(cleaned) <= 80 else cleaned[:79] + "…"
+
+        nodes: list[dict[str, Any]] = [
+            {"id": str(self.id), "type": "notebook", "label": _label(self.name, "Notebook")}
+        ]
+        edges: list[dict[str, Any]] = []
+        for s in sources:
+            nodes.append(
+                {"id": str(s.id), "type": "source", "label": _label(s.title, "Untitled source")}
+            )
+            edges.append({"source": str(self.id), "target": str(s.id), "kind": "reference"})
+        for n in notes:
+            nodes.append(
+                {"id": str(n.id), "type": "note", "label": _label(n.title, "Untitled note")}
+            )
+            edges.append({"source": str(self.id), "target": str(n.id), "kind": "artifact"})
+        return {"nodes": nodes, "edges": edges}
+
     async def get_chat_sessions(
         self,
         limit: int | None = None,
