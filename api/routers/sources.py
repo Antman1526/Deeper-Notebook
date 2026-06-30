@@ -22,6 +22,8 @@ from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
     InsightCreationResponse,
+    LocatePassageRequest,
+    LocatePassageResponse,
     SourceCreate,
     SourceInsightResponse,
     SourceListResponse,
@@ -1260,6 +1262,36 @@ async def download_source_file(source_id: str):
     except Exception as e:
         logger.error(f"Error downloading file for source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to download source file")
+
+
+@router.post(
+    "/sources/{source_id}/locate-passage", response_model=LocatePassageResponse
+)
+async def locate_source_passage(source_id: str, body: LocatePassageRequest):
+    """v0.8.78 — locate the passage in a source's extracted text that best
+    matches `query` (the citing sentence), for citation jump-to-highlight in the
+    source viewer (improvement roadmap, Batch 2).
+
+    Best-effort: returns ``{"match": null}`` when the source has no text or there
+    is no decent match, so the frontend can simply open the source at the top.
+    """
+    from open_notebook.utils.citation_offsets import locate_passage
+
+    try:
+        source = await Source.get(source_id)
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"locate-passage: source fetch failed {source_id}: {e}")
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    text = (getattr(source, "full_text", None) or "")
+    if not text.strip() or not body.query.strip():
+        return LocatePassageResponse(match=None)
+    match = locate_passage(text, body.query)
+    return LocatePassageResponse(match=match)  # type: ignore[arg-type]
 
 
 @router.get("/sources/{source_id}/status", response_model=SourceStatusResponse)
