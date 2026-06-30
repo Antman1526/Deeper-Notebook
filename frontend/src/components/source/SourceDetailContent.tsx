@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import dynamic from 'next/dynamic'
 import { sourcesApi } from '@/lib/api/sources'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
@@ -112,6 +113,14 @@ function formatProvenanceEntries(provenance: Record<string, unknown> | undefined
   return values
 }
 
+// v0.8.82 — inline PDF viewer, dynamically imported with ssr:false (react-pdf
+// needs the DOM + the pdfjs worker; it cannot server-render). On any load
+// failure the viewer reports up and we fall back to the extracted-text view.
+const PdfSourceViewer = dynamic(() => import('./PdfSourceViewer'), {
+  ssr: false,
+  loading: () => null,
+})
+
 export function SourceDetailContent({
   sourceId,
   showChatButton = false,
@@ -125,6 +134,12 @@ export function SourceDetailContent({
   // v0.8.78 — located cited passage (from highlightQuery). Best-effort.
   const [citedPassage, setCitedPassage] = useState<{ snippet: string; score: number } | null>(null)
   const citedPassageRef = useRef<HTMLDivElement | null>(null)
+
+  // v0.8.82 — inline PDF rendering: render the original PDF above the extracted
+  // text for uploaded .pdf sources. `pdfUnavailable` hides the viewer (and we
+  // keep showing the extracted text) if the fetch/render fails.
+  const [pdfUnavailable, setPdfUnavailable] = useState(false)
+  const handlePdfUnavailable = useCallback(() => setPdfUnavailable(true), [])
 
   // v0.8.78 — when opened from a citation, locate the grounded passage. Runs
   // once the source text is loaded so the backend has full_text to match
@@ -734,6 +749,19 @@ export function SourceDetailContent({
                     )}
                   </div>
                 )}
+                {/* v0.8.82 — inline PDF render for uploaded .pdf sources, shown
+                    above the extracted text. Falls back to text on any failure. */}
+                {source.asset?.file_path &&
+                  /\.pdf$/i.test(source.asset.file_path) &&
+                  fileAvailable !== false &&
+                  !pdfUnavailable && (
+                    <div className="mb-4">
+                      <PdfSourceViewer
+                        sourceId={sourceId}
+                        onUnavailable={handlePdfUnavailable}
+                      />
+                    </div>
+                  )}
                 {/* v0.8.78 — cited-passage callout (citation jump-to-highlight).
                     Shows the grounded passage located from the citing sentence;
                     reliably highlights the cited text without fighting markdown
