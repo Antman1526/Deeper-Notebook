@@ -13,6 +13,24 @@ import {
   NotebookVectorizeResponse,
 } from '@/lib/types/api'
 
+// v0.8.83 — mind-map graph types (improvement roadmap, Batch 3)
+export interface NotebookGraphNode {
+  id: string
+  type: 'notebook' | 'source' | 'note'
+  label: string
+}
+
+export interface NotebookGraphEdge {
+  source: string
+  target: string
+  kind: 'reference' | 'artifact'
+}
+
+export interface NotebookGraph {
+  nodes: NotebookGraphNode[]
+  edges: NotebookGraphEdge[]
+}
+
 export const notebooksApi = {
   list: async (params?: { archived?: boolean; order_by?: string }) => {
     const response = await apiClient.get<NotebookResponse[]>('/notebooks', { params })
@@ -33,6 +51,13 @@ export const notebooksApi = {
       { params: { limit } }
     )
     return response.data.questions ?? []
+  },
+
+  // v0.8.83 — mind-map graph (improvement roadmap, Batch 3): the notebook hub
+  // plus its sources/notes as nodes, grounded in the reference/artifact edges.
+  getGraph: async (id: string): Promise<NotebookGraph> => {
+    const response = await apiClient.get<NotebookGraph>(`/notebooks/${id}/graph`)
+    return response.data
   },
 
   create: async (data: CreateNotebookRequest) => {
