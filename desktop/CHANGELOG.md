@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.80 — First-run "Explore a sample notebook" (roadmap Batch 2)**
+  - When a brand-new user has **no notebooks**, the empty state now offers a one-click **"Explore a sample notebook"** that seeds an example notebook + a bundled "Getting started" text source, then opens it — so first use shows value instead of a blank list (NotebookLM/onboarding parity). Content is bundled (no network — local-first), and once processed the v0.8.74 starter-question chips appear automatically. Reuses the existing create-notebook / create-source mutations; best-effort (notebook still opens if the source add fails). Shows only when genuinely empty (not a filtered-empty search). (`lib/hooks/use-sample-notebook.ts`, `NotebookList` `extraAction` slot, `notebooks/page.tsx`; tsc clean, 12 notebook tests pass; label uses inline `defaultValue`.)
+
 - **✨ v0.8.79 — Citation jump-to-highlight: wired end-to-end (roadmap Batch 2)**
   - Clicking a `[source:ID]` citation pill now shows a **"View source →"** action in its popover that opens the source reading view and **highlights the passage that claim is grounded in** (scrolled into view) — the NotebookLM trust mechanic, now functional in ONP. ChatPanel derives the **citing sentence** (the last sentence of the text preceding the marker) and passes it as the highlight query to a local `SourceDialog` → `SourceDetailContent`; the backend locator (v0.8.78) finds the matching passage. Kept separate from the global reference modal so it can carry the query without touching shared modal state; the hover-preview popover is unchanged. (`CitationPill.tsx`, `ChatPanel.tsx`, `SourceDialog.tsx`; tsc clean, 82 chat/source tests pass.) Inline PDF rendering still to come.
 
