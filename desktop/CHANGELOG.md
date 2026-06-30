@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎨 v0.8.77 — Drag-drop files onto the sources panel (roadmap Batch 1)**
+  - Dropping files onto a notebook's **Sources** panel now opens AddSourceDialog with the **upload tab preselected and the files prefilled** (NotebookLM/rivals parity). A dashed "Drop files to add as sources" overlay appears while dragging (file drags only; child-element drag-leave is guarded to avoid flicker). Files are prefilled via a `DataTransfer`-built `FileList` and **degrade gracefully** — if the prefill fails, the dialog still opens on the upload tab for a manual pick; dropped files are cleared on close so a later manual "Add source" isn't re-prefilled. (`SourcesColumn.tsx` drop zone, new `initialFiles` prop on `AddSourceDialog`; tsc clean, 24 sources/notebook component tests pass.) **⚠️ Needs an in-app file-drag test** to confirm the `DataTransfer` prefill lands — jsdom/vitest can't fully exercise it (covered by the Batch 1 verification build).
+
 - **🎨 v0.8.76 — Citation hover-preview (roadmap Batch 1)**
   - Inline citation pills (`CitationPill`) already showed the cited document's title + snippet on **click**; they now also open on **hover** (and keyboard focus), so users can skim the grounding without leaving the answer — closer to NotebookLM's at-a-glance citation UX. Implemented by controlling the existing Popover's open state with small open (280ms) / close (140ms) delays and a grace window (moving the cursor pill→popover keeps it open); hover-open does not steal focus mid-read. **Click still toggles via Radix's own `onOpenChange`**, so the proven click path is unchanged if hover timing ever misbehaves. (`CitationPill.tsx`; tsc clean, all 58 chat tests pass incl. CitationPill.test.tsx.)
 

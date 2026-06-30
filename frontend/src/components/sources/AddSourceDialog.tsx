@@ -78,6 +78,10 @@ interface AddSourceDialogProps {
   onOpenChange: (open: boolean) => void
   defaultNotebookId?: string
   onSourceCreated?: () => void
+  // v0.8.77 — files handed in by drag-drop (improvement roadmap, Batch 1).
+  // When present and the dialog opens, the upload tab is preselected and these
+  // files prefill the file input. Best-effort (see the prefill effect).
+  initialFiles?: File[]
 }
 
 interface ProcessingState {
@@ -92,11 +96,12 @@ interface BatchProgress {
   currentItem?: string
 }
 
-export function AddSourceDialog({ 
-  open, 
-  onOpenChange, 
+export function AddSourceDialog({
+  open,
+  onOpenChange,
   defaultNotebookId,
   onSourceCreated,
+  initialFiles,
 }: AddSourceDialogProps) {
   const { t } = useTranslation()
 
@@ -168,6 +173,28 @@ export function AddSourceDialog({
       })
     }
   }, [settings, transformations, defaultNotebookId, reset])
+
+  // v0.8.77 — drag-drop prefill (improvement roadmap, Batch 1). When opened
+  // with dropped files, preselect the upload tab and prefill the file input via
+  // a DataTransfer-built FileList (the only programmatic way to set an
+  // <input type=file>). Graceful: any failure still leaves the dialog on the
+  // upload tab for a manual pick. NOTE: this FileList prefill needs a real
+  // in-app file-drag test — jsdom/vitest can't fully exercise DataTransfer.
+  useEffect(() => {
+    if (!open || !initialFiles || initialFiles.length === 0) return
+    try {
+      setValue('type', 'upload')
+      const dt = new DataTransfer()
+      for (const f of initialFiles) dt.items.add(f)
+      setValue('file', dt.files, { shouldValidate: true })
+    } catch {
+      try {
+        setValue('type', 'upload')
+      } catch {
+        /* noop — dialog still opens for a manual pick */
+      }
+    }
+  }, [open, initialFiles, setValue])
 
   // Cleanup effect
   useEffect(() => {

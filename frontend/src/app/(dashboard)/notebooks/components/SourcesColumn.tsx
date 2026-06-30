@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, type UIEvent } from 'react'
+import { useState, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -74,6 +74,33 @@ export function SourcesColumn({
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [sourceToRemove, setSourceToRemove] = useState<string | null>(null)
+  // v0.8.77 — drag-drop-anywhere (improvement roadmap, Batch 1). Drop files
+  // onto the sources panel to open AddSourceDialog prefilled with them. The
+  // file prefill is best-effort (AddSourceDialog degrades to a manual pick).
+  // NOTE: needs a real in-app file-drag test to confirm the prefill lands.
+  const [droppedFiles, setDroppedFiles] = useState<File[] | undefined>(undefined)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault()
+      setIsDragging(true)
+    }
+  }, [])
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    // Ignore leaves into child elements (avoids overlay flicker).
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setIsDragging(false)
+  }, [])
+  const handleDrop = useCallback((e: DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return
+    e.preventDefault()
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length === 0) return
+    setDroppedFiles(files)
+    setAddDialogOpen(true)
+  }, [])
 
   const { openModal } = useModalManager()
   const deleteSource = useDeleteSource()
@@ -168,7 +195,19 @@ export function SourcesColumn({
         collapsedIcon={FileText}
         collapsedLabel={t('navigation.sources')}
       >
-        <Card className="h-full flex flex-col flex-1 overflow-hidden">
+        <Card
+          className="relative h-full flex flex-col flex-1 overflow-hidden"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragging && (
+            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm">
+              <p className="text-sm font-medium text-primary">
+                {t('sources.dropToAdd', { defaultValue: 'Drop files to add as sources' })}
+              </p>
+            </div>
+          )}
           <CardHeader className="pb-3 flex-shrink-0">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
@@ -312,9 +351,15 @@ export function SourcesColumn({
 
       <AddSourceDialog
         open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
+        onOpenChange={(o) => {
+          setAddDialogOpen(o)
+          // Clear dropped files when the dialog closes so a later manual "Add
+          // source" click doesn't re-prefill stale drag-drop files.
+          if (!o) setDroppedFiles(undefined)
+        }}
         defaultNotebookId={notebookId}
         onSourceCreated={onRefresh}
+        initialFiles={droppedFiles}
       />
 
       <AddExistingSourceDialog
