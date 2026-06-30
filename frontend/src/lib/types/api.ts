@@ -33,6 +33,8 @@ export interface SourceListResponse {
   embedded: boolean
   embedded_chunks: number            // ADD: From Python API
   insights_count: number
+  // v0.8.88 — one-line preview of the auto-summary insight (opt-in feature).
+  summary_preview?: string | null
   created: string
   updated: string
   file_available?: boolean
@@ -66,6 +68,8 @@ export interface SettingsResponse {
   youtube_preferred_languages?: string[]
   // v0.8.68 — forced offline mode toggle.
   offline_mode?: boolean
+  // v0.8.88 — opt-in source auto-summary on ingest (default off).
+  auto_summarize_on_ingest?: boolean
 }
 
 // v0.7.136 — Read-only observability config from GET /settings/observability

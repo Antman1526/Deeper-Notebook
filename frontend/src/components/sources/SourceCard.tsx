@@ -437,6 +437,12 @@ export function SourceCard({
                 </>
               )}
             </div>
+            {/* v0.8.88 — auto-summary preview (opt-in source auto-summary). */}
+            {isCompleted && source.summary_preview && (
+              <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground">
+                {source.summary_preview}
+              </p>
+            )}
           </div>
 
           {/* Context toggle and actions */}

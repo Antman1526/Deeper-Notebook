@@ -29,6 +29,9 @@ const settingsSchema = z.object({
   // v0.8.68 — forced offline mode (boolean in the API; yes/no in the form
   // to match the existing Select idiom).
   offline_mode: z.enum(['yes', 'no']).optional(),
+  // v0.8.88 — opt-in source auto-summary (boolean in the API; yes/no in the
+  // form to match the Select idiom).
+  auto_summarize_on_ingest: z.enum(['yes', 'no']).optional(),
 })
 
 type SettingsFormData = z.infer<typeof settingsSchema>
@@ -60,6 +63,7 @@ export function SettingsForm() {
       default_embedding_option: undefined,
       auto_delete_files: undefined,
       offline_mode: undefined,
+      auto_summarize_on_ingest: undefined,
     }
   })
 
@@ -77,6 +81,8 @@ export function SettingsForm() {
         auto_delete_files: settings.auto_delete_files as 'yes' | 'no',
         // v0.8.68 — boolean from the API mapped to the form's yes/no idiom.
         offline_mode: (settings.offline_mode ? 'yes' : 'no') as 'yes' | 'no',
+        // v0.8.88 — opt-in source auto-summary (default off → 'no').
+        auto_summarize_on_ingest: (settings.auto_summarize_on_ingest ? 'yes' : 'no') as 'yes' | 'no',
       }
       reset(formData)
       setHasResetForm(true)
@@ -86,11 +92,15 @@ export function SettingsForm() {
   const onSubmit = async (data: SettingsFormData) => {
     // v0.8.68 — offline_mode is a boolean on the wire; the form keeps the
     // Select-friendly 'yes'/'no' representation.
-    const { offline_mode, ...rest } = data
+    const { offline_mode, auto_summarize_on_ingest, ...rest } = data
     await updateSettings.mutateAsync({
       ...rest,
       ...(offline_mode !== undefined
         ? { offline_mode: offline_mode === 'yes' }
+        : {}),
+      // v0.8.88 — map the form's yes/no back to the API's boolean.
+      ...(auto_summarize_on_ingest !== undefined
+        ? { auto_summarize_on_ingest: auto_summarize_on_ingest === 'yes' }
         : {}),
     })
   }
@@ -288,6 +298,50 @@ export function SettingsForm() {
                 <p>{t('settings.filesHelp')}</p>
               </CollapsibleContent>
             </Collapsible>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* v0.8.88 — opt-in source auto-summary (improvement roadmap, Batch 4). */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.sources', { defaultValue: 'Sources' })}</CardTitle>
+          <CardDescription>
+            {t('settings.sourcesDesc', { defaultValue: 'Options applied when sources are added.' })}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <Label htmlFor="auto_summarize">
+              {t('settings.autoSummarize', { defaultValue: 'Automatically summarize sources on import' })}
+            </Label>
+            <Controller
+              name="auto_summarize_on_ingest"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  key={field.value}
+                  name={field.name}
+                  value={field.value || ''}
+                  onValueChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                >
+                  <SelectTrigger id="auto_summarize" className="w-full">
+                    <SelectValue placeholder={t('common.no')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">{t('common.yes')}</SelectItem>
+                    <SelectItem value="no">{t('common.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-sm text-muted-foreground">
+              {t('settings.autoSummarizeHelp', {
+                defaultValue:
+                  'When on, each source you add gets a short AI summary (one extra LLM call per source). It appears on the source card and in the source’s insights.',
+              })}
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -349,6 +349,8 @@ class SettingsResponse(BaseModel):
     youtube_preferred_languages: Optional[list[str]] = None
     # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
     offline_mode: Optional[bool] = None
+    # v0.8.88 — opt-in source auto-summary on ingest (default off).
+    auto_summarize_on_ingest: Optional[bool] = None
 
 
 # v0.7.130 — tightened the literal fields from Optional[str] to
@@ -375,6 +377,8 @@ class SettingsUpdate(BaseModel):
     youtube_preferred_languages: Optional[list[str]] = None
     # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
     offline_mode: Optional[bool] = None
+    # v0.8.88 — opt-in source auto-summary on ingest (default off).
+    auto_summarize_on_ingest: Optional[bool] = None
 
 
 # Sources API models
@@ -518,6 +522,8 @@ class SourceListResponse(BaseModel):
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
     insights_count: int
+    # v0.8.88 — one-line preview of the auto-summary insight (None if absent).
+    summary_preview: Optional[str] = None
     # v0.7.181 — same Optional[str] treatment as SourceResponse for
     # consistency. List rows always come from persisted records so in
     # practice these are never None, but the type widening keeps the

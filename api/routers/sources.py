@@ -85,6 +85,21 @@ def _source_upload_max_bytes() -> int:
         return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
 
 
+_SUMMARY_PREVIEW_CHARS = 140
+
+
+def _summary_preview(content: Optional[str]) -> Optional[str]:
+    """v0.8.88 — collapse the auto-summary insight to a one-line card preview."""
+    if not content:
+        return None
+    text = " ".join(str(content).split())
+    if not text:
+        return None
+    if len(text) <= _SUMMARY_PREVIEW_CHARS:
+        return text
+    return text[: _SUMMARY_PREVIEW_CHARS - 1].rstrip() + "…"
+
+
 def _extraction_quality(
     extracted_char_count: int | None,
     *,
@@ -493,7 +508,8 @@ async def get_sources(
                 string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
+                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM (select value in from reference where out=$notebook_id)
                 {order_clause}
                 LIMIT $limit START $offset
@@ -515,7 +531,8 @@ async def get_sources(
                 string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
+                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM source
                 {order_clause}
                 LIMIT $limit START $offset
@@ -597,6 +614,8 @@ async def get_sources(
                     embedded=row.get("embedded", False),
                     embedded_chunks=0,  # Not needed in list view
                     insights_count=row.get("insights_count", 0),
+                    # v0.8.88 — one-line preview of the auto-summary insight.
+                    summary_preview=_summary_preview(row.get("summary_preview")),
                     created=str(row["created"]),
                     updated=str(row["updated"]),
                     file_available=file_available,
