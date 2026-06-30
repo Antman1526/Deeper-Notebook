@@ -589,13 +589,20 @@ class _OnpJsApi:
     `window.pywebview.api`. Currently just `relaunch()`, called by the DB
     repair banner's one-click "Repair & restart".
 
-    relaunch() spawns a DETACHED helper that waits for THIS process to fully
-    exit and only THEN reopens the .app bundle, then cleanly closes the window
-    (running the normal teardown). On the next boot the launcher's auto-repair
-    (db_repair.auto_repair, backup-first) runs and clears the flag. Waiting for
-    exit before reopening avoids any port/singleton race, and it reopens exactly
-    once (no relaunch loop). In dev (no .app bundle on the path) it just closes
-    the window — the developer reopens manually.
+    relaunch() spawns a DETACHED helper that terminates THIS process and then
+    reopens the .app bundle; it also closes the window for immediate feedback.
+    On the next boot the launcher's auto-repair (db_repair.auto_repair,
+    backup-first) runs and clears the flag. It reopens exactly once (no relaunch
+    loop). In dev (no .app bundle on the path) it just closes the window.
+
+    v0.8.84 — FIX: the helper now ACTIVELY terminates the process (SIGTERM, then
+    SIGKILL fallback) instead of passively waiting for it to exit. `window
+    .destroy()` closes the webview window but does NOT make the launcher process
+    exit (a non-daemon thread keeps it alive), so the old "wait for the pid to
+    die, then open" helper waited forever and the app never reopened. SIGTERM
+    lets the launcher's signal handler tear down its children first; the
+    SIGKILL after a grace period is the backstop, and the reopened instance
+    frees any stale ports on boot regardless.
     """
 
     def __init__(self) -> None:
@@ -611,8 +618,15 @@ class _OnpJsApi:
             app_bundle = next((p for p in exe.parents if p.suffix == ".app"), None)
             if app_bundle is not None:
                 pid = os.getpid()
+                # Give the window a beat to close, SIGTERM for a clean child
+                # teardown, wait up to ~6s, SIGKILL as a backstop, then reopen.
                 sh = (
-                    f"while /bin/kill -0 {pid} 2>/dev/null; do /bin/sleep 0.3; done; "
+                    f"/bin/sleep 1; "
+                    f"/bin/kill {pid} 2>/dev/null; "
+                    f"n=0; while /bin/kill -0 {pid} 2>/dev/null && [ $n -lt 20 ]; do "
+                    f"/bin/sleep 0.3; n=$((n+1)); done; "
+                    f"/bin/kill -9 {pid} 2>/dev/null; "
+                    f"/bin/sleep 0.5; "
                     f'/usr/bin/open "{app_bundle}"'
                 )
                 subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
