@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **↔️ v0.8.85 — Resizable 3-pane notebook workspace (roadmap Batch 3, item 2)**
+  - The desktop notebook layout (**sources │ notes │ chat**) is now **resizable via draggable handles**, and the widths are **remembered** across sessions (`autoSaveId` → localStorage). Built on the shadcn `resizable` primitive (`react-resizable-panels`). The existing per-column collapse buttons still work and stay in sync with the panels (and dragging a pane shut also collapses it); chat is always present. Mobile's tabbed layout is untouched. (`components/ui/resizable.tsx`, `notebooks/[id]/page.tsx`; tsc clean, `npm run build` passes, notebook tests pass.) **Note:** pinned `react-resizable-panels@^2` — the latest v4 is a breaking API rewrite incompatible with the shadcn component. ⚠️ drag + width-persistence need an in-app check.
+
 - **🐛 v0.8.84 — Fix: "Repair & restart" button now actually relaunches**
   - The v0.8.81 one-click "Repair & restart" closed the window but the app **never reopened** — verified in-app: `relaunch()` fired and spawned its helper, but `window.destroy()` doesn't make the launcher process exit, so the old helper's "wait for the pid to die, then reopen" loop waited forever (the user was left with a vanished window). Fix: the detached helper now **actively terminates** the process — `SIGTERM` (clean child teardown) → wait ~6s → `SIGKILL` backstop → reopen. Confirmed the rest of the chain works once the process exits: helper reopens → boot auto-repair rebuilds a clean DB (backup-first) → flag clears. (`desktop/window.py` `_OnpJsApi.relaunch`; window.py parses, 60 window tests pass. ⚠️ relaunch still exercised in-app only.)
 

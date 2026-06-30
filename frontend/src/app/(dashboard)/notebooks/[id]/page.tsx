@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import type { ImperativePanelHandle } from 'react-resizable-panels'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookHeader } from '../components/NotebookHeader'
@@ -16,6 +17,11 @@ import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileText, StickyNote, MessageSquare } from 'lucide-react'
 import {
@@ -51,7 +57,30 @@ export default function NotebookPage() {
   const { data: notes, isLoading: notesLoading } = useNotes(notebookId)
 
   // Get collapse states for dynamic layout
-  const { sourcesCollapsed, notesCollapsed } = useNotebookColumnsStore()
+  const { sourcesCollapsed, notesCollapsed, setSources, setNotes } =
+    useNotebookColumnsStore()
+
+  // v0.8.85 — resizable workspace: imperative refs to the sources/notes panels
+  // so the existing collapse buttons (which flip the store) stay in sync with
+  // the React Flow… er, react-resizable-panels collapse state, and vice-versa.
+  const sourcesPanelRef = useRef<ImperativePanelHandle>(null)
+  const notesPanelRef = useRef<ImperativePanelHandle>(null)
+
+  // Store → panel: when the column's collapse button toggles the store, drive
+  // the panel. Guarded by isCollapsed() so the onCollapse/onExpand callbacks
+  // (panel → store) don't loop.
+  useEffect(() => {
+    const p = sourcesPanelRef.current
+    if (!p) return
+    if (sourcesCollapsed && !p.isCollapsed()) p.collapse()
+    else if (!sourcesCollapsed && p.isCollapsed()) p.expand()
+  }, [sourcesCollapsed])
+  useEffect(() => {
+    const p = notesPanelRef.current
+    if (!p) return
+    if (notesCollapsed && !p.isCollapsed()) p.collapse()
+    else if (!notesCollapsed && p.isCollapsed()) p.expand()
+  }, [notesCollapsed])
 
   // Detect desktop to avoid double-mounting ChatColumn
   const isDesktop = useIsDesktop()
@@ -243,64 +272,82 @@ export default function NotebookPage() {
             </>
           )}
 
-          {/* Desktop: Collapsible columns layout */}
-          <div className={cn(
-            'hidden lg:flex h-full min-h-0 gap-6 transition-all duration-150',
-            'flex-row'
-          )}>
-            {/* Sources Column */}
-            {/* v0.7.25 — was `flex-none basis-1/3` which doesn't shrink.
-                Two of those + chat's flex-1 + sidebar + gap-6 ×2 + p-6
-                overflowed the viewport at the lg breakpoint (1024px),
-                triggering the parent's overflow-x-auto and giving a
-                horizontal scrollbar on common laptop sizes. Switched to
-                flex-1 basis-0 min-w-0 so columns shrink proportionally. */}
-            <div className={cn(
-              'transition-all duration-150',
-              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-1 basis-0 min-w-0'
-            )}>
-              <SourcesColumn
-                sources={sources}
-                isLoading={sourcesLoading}
-                notebookId={notebookId}
-                notebookName={notebook?.name}
-                onRefresh={refetchSources}
-                contextSelections={contextSelections.sources}
-                onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
-                onBulkContextModeChange={handleBulkSourceContext}
-                hasNextPage={hasNextPage}
-                isFetchingNextPage={isFetchingNextPage}
-                fetchNextPage={fetchNextPage}
-              />
-            </div>
+          {/* Desktop: resizable 3-pane workspace (v0.8.85 — roadmap Batch 3).
+              Draggable handles; widths remembered via autoSaveId (localStorage).
+              Sources/Notes panels are collapsible and stay in sync with the
+              notebook-columns store (the in-column collapse buttons still work;
+              dragging a pane shut also updates the store via onCollapse). */}
+          <div className="hidden lg:flex h-full min-h-0 flex-1">
+            <ResizablePanelGroup
+              direction="horizontal"
+              autoSaveId="onp-notebook-workspace"
+              className="h-full"
+            >
+              <ResizablePanel
+                ref={sourcesPanelRef}
+                collapsible
+                collapsedSize={4}
+                minSize={12}
+                defaultSize={28}
+                onCollapse={() => setSources(true)}
+                onExpand={() => setSources(false)}
+                className="min-w-0"
+              >
+                <div className="h-full pr-3">
+                  <SourcesColumn
+                    sources={sources}
+                    isLoading={sourcesLoading}
+                    notebookId={notebookId}
+                    notebookName={notebook?.name}
+                    onRefresh={refetchSources}
+                    contextSelections={contextSelections.sources}
+                    onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
+                    onBulkContextModeChange={handleBulkSourceContext}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    fetchNextPage={fetchNextPage}
+                  />
+                </div>
+              </ResizablePanel>
 
-            {/* Notes Column */}
-            <div className={cn(
-              'transition-all duration-150',
-              notesCollapsed ? 'w-12 flex-shrink-0' : 'flex-1 basis-0 min-w-0'
-            )}>
-              <NotesColumn
-                notes={notes}
-                isLoading={notesLoading}
-                notebookId={notebookId}
-                contextSelections={contextSelections.notes}
-                onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
-                onBulkContextModeChange={handleBulkNoteContext}
-              />
-            </div>
+              <ResizableHandle withHandle />
 
-            {/* Chat Column - always expanded, takes remaining space.
-                v0.7.25 — removed the `lg:-mr-6` negative margin that
-                cancelled `lg:pr-6` for no visible benefit, just to
-                clip focus rings. */}
-            <div className="transition-all duration-150 flex-[2] min-w-0">
-              <ChatColumn
-                notebookId={notebookId}
-                contextSelections={contextSelections}
-                sources={sources}
-                sourcesLoading={sourcesLoading}
-              />
-            </div>
+              <ResizablePanel
+                ref={notesPanelRef}
+                collapsible
+                collapsedSize={4}
+                minSize={12}
+                defaultSize={28}
+                onCollapse={() => setNotes(true)}
+                onExpand={() => setNotes(false)}
+                className="min-w-0"
+              >
+                <div className="h-full px-3">
+                  <NotesColumn
+                    notes={notes}
+                    isLoading={notesLoading}
+                    notebookId={notebookId}
+                    contextSelections={contextSelections.notes}
+                    onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
+                    onBulkContextModeChange={handleBulkNoteContext}
+                  />
+                </div>
+              </ResizablePanel>
+
+              <ResizableHandle withHandle />
+
+              {/* Chat — always expanded, takes the remaining space. */}
+              <ResizablePanel defaultSize={44} minSize={25} className="min-w-0">
+                <div className="h-full pl-3">
+                  <ChatColumn
+                    notebookId={notebookId}
+                    contextSelections={contextSelections}
+                    sources={sources}
+                    sourcesLoading={sourcesLoading}
+                  />
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
           </div>
         </div>
       </div>
