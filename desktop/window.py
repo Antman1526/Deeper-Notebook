@@ -339,6 +339,18 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
         }} catch (e) {{}}
       }};
       window.ONP.themes = Object.keys(IS_DARK);
+      // v0.8.81 — one-click relaunch for the DB repair banner. Bridges to the
+      // pywebview js_api; returns false in a plain browser (dev) so callers can
+      // fall back. The native side reopens the app after this process exits.
+      window.ONP.relaunch = function() {{
+        try {{
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.relaunch) {{
+            window.pywebview.api.relaunch();
+            return true;
+          }}
+        }} catch (e) {{}}
+        return false;
+      }};
     }})();
     """
     voice_js = _voice_injection_js()
@@ -572,6 +584,48 @@ def _start_handoff_controller(
     return t
 
 
+class _OnpJsApi:
+    """v0.8.81 — pywebview js_api bridge, exposed to the page as
+    `window.pywebview.api`. Currently just `relaunch()`, called by the DB
+    repair banner's one-click "Repair & restart".
+
+    relaunch() spawns a DETACHED helper that waits for THIS process to fully
+    exit and only THEN reopens the .app bundle, then cleanly closes the window
+    (running the normal teardown). On the next boot the launcher's auto-repair
+    (db_repair.auto_repair, backup-first) runs and clears the flag. Waiting for
+    exit before reopening avoids any port/singleton race, and it reopens exactly
+    once (no relaunch loop). In dev (no .app bundle on the path) it just closes
+    the window — the developer reopens manually.
+    """
+
+    def __init__(self) -> None:
+        self._window = None  # set by open_window after create_window
+
+    def relaunch(self) -> bool:  # pragma: no cover - exercised in-app only
+        import os
+        import subprocess
+        import sys
+
+        try:
+            exe = Path(sys.executable)
+            app_bundle = next((p for p in exe.parents if p.suffix == ".app"), None)
+            if app_bundle is not None:
+                pid = os.getpid()
+                sh = (
+                    f"while /bin/kill -0 {pid} 2>/dev/null; do /bin/sleep 0.3; done; "
+                    f'/usr/bin/open "{app_bundle}"'
+                )
+                subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
+        except Exception:
+            pass
+        try:
+            if self._window is not None:
+                self._window.destroy()
+        except Exception:
+            pass
+        return True
+
+
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Open notebook+",
                 width: int = 1280, height: int = 800,
@@ -623,9 +677,13 @@ def open_window(url: str, on_close: Callable[[], None],
     from desktop.splash import build_splash_html
 
     splash_html = build_splash_html(url)
+    # v0.8.81 — js_api bridge for window.pywebview.api.relaunch (DB repair
+    # banner's "Repair & restart"). Window ref is set right after creation.
+    _onp_api = _OnpJsApi()
     window = webview.create_window(
-        title, html=splash_html, width=win_w, height=win_h
+        title, html=splash_html, width=win_w, height=win_h, js_api=_onp_api
     )
+    _onp_api._window = window
 
     # Track live size via the resize event when available (defensive: the event
     # name has varied across pywebview versions, so never let its absence break
