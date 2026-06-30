@@ -31,6 +31,19 @@ export interface NotebookGraph {
   edges: NotebookGraphEdge[]
 }
 
+// v0.8.87 — Discover sources (improvement roadmap, Batch 3)
+export interface DiscoverResult {
+  title: string
+  url: string
+  snippet: string
+}
+
+export interface DiscoverSourcesResponse {
+  enabled: boolean
+  provider: string | null
+  results: DiscoverResult[]
+}
+
 export const notebooksApi = {
   list: async (params?: { archived?: boolean; order_by?: string }) => {
     const response = await apiClient.get<NotebookResponse[]>('/notebooks', { params })
@@ -57,6 +70,20 @@ export const notebooksApi = {
   // plus its sources/notes as nodes, grounded in the reference/artifact edges.
   getGraph: async (id: string): Promise<NotebookGraph> => {
     const response = await apiClient.get<NotebookGraph>(`/notebooks/${id}/graph`)
+    return response.data
+  },
+
+  // v0.8.87 — Discover sources: guarded web search (search-only; the caller
+  // adds chosen results as link sources). enabled=false → no provider key set.
+  discoverSources: async (
+    id: string,
+    query: string,
+    limit?: number
+  ): Promise<DiscoverSourcesResponse> => {
+    const response = await apiClient.post<DiscoverSourcesResponse>(
+      `/notebooks/${id}/discover-sources`,
+      { query, limit }
+    )
     return response.data
   },
 

@@ -10,11 +10,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, ChevronDown, Loader2, ListChecks } from 'lucide-react'
+import { Plus, FileText, Link2, ChevronDown, Loader2, ListChecks, Compass } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
+import { DiscoverSourcesDialog } from '@/components/sources/DiscoverSourcesDialog'
 import { SourceCard } from '@/components/sources/SourceCard'
 import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
 
@@ -70,6 +71,8 @@ export function SourcesColumn({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
+  // v0.8.87 — Discover sources (guarded web search) dialog.
+  const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
@@ -251,6 +254,11 @@ export function SourcesColumn({
                       <Link2 className="h-4 w-4 mr-2" />
                       {t('sources.addExistingTitle')}
                     </DropdownMenuItem>
+                    {/* v0.8.87 — Discover: guarded web search → add link sources. */}
+                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
+                      <Compass className="h-4 w-4 mr-2" />
+                      {t('sources.discover', { defaultValue: 'Discover sources' })}
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {collapseButton}
@@ -367,6 +375,13 @@ export function SourcesColumn({
         onOpenChange={setAddExistingDialogOpen}
         notebookId={notebookId}
         onSuccess={onRefresh}
+      />
+
+      {/* v0.8.87 — Discover sources (guarded web search). */}
+      <DiscoverSourcesDialog
+        open={discoverDialogOpen}
+        onOpenChange={setDiscoverDialogOpen}
+        notebookId={notebookId}
       />
 
       <ConfirmDialog
