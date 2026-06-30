@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🕸 v0.8.83 — Mind-map graph: backend endpoint (roadmap Batch 3, in progress)**
+  - New `GET /api/notebooks/{id}/graph` returns the notebook as a hub node with its **sources and notes** as connected nodes, grounded in the existing `reference` (source→notebook) and `artifact` (note→notebook) edges — **no schema change**. Node ids are record ids so the frontend can deep-link each item; labels are trimmed to ≤80 chars. (`Notebook.get_graph()`, `NotebookGraphResponse`, router endpoint; HTTPException-reraise + NotFoundError→404 compliant; 3 new tests pass, meta-test green.) Frontend (React Flow mind-map view) follows in the next iteration.
+
 - **📄 v0.8.82 — Inline PDF rendering (roadmap Batch 2, closes the source-viewer epic)**
   - Uploaded **PDF sources now render inline** in the source view (NotebookLM parity), above the extracted text, via `react-pdf`. The pdfjs worker is **bundled locally** (`frontend/public/pdf.worker.min.mjs`, copied from the `pdfjs-dist` version react-pdf ships) — **no CDN**, keeping the app fully offline/local-first. Loaded with `next/dynamic` `ssr:false` (react-pdf needs the DOM + worker), so it never server-renders. Robust fallback: on any fetch/parse failure the viewer reports up (`onUnavailable`) and the **extracted-text + cited-passage callout stays as the default view**; the object URL is revoked on unmount (no blob leak) and the fetch is cancel-guarded. Gated on `.pdf` + the file being present. (`PdfSourceViewer.tsx`, `SourceDetailContent.tsx`; tsc clean, **`npm run build` passes** with react-pdf, 24 source tests pass.) **⚠️ The actual PDF render + offline worker can't be verified headlessly — needs an in-app test** (open a PDF source; it should render inline, and gracefully fall back to text if not).
 

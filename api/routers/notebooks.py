@@ -7,6 +7,7 @@ from api.models import (
     NotebookCreate,
     NotebookDeletePreview,
     NotebookDeleteResponse,
+    NotebookGraphResponse,
     NotebookResponse,
     NotebookUpdate,
 )
@@ -368,6 +369,29 @@ async def get_suggested_questions(
         if len(questions) >= limit:
             break
     return {"questions": questions}
+
+
+@router.get("/notebooks/{notebook_id}/graph", response_model=NotebookGraphResponse)
+async def get_notebook_graph(notebook_id: str):
+    """v0.8.83 — mind-map graph (improvement roadmap, Batch 3).
+
+    Returns the notebook as a hub node plus its sources and notes as connected
+    nodes, grounded in the existing reference/artifact edges (no schema change).
+    The frontend renders this with React Flow and deep-links node clicks.
+    """
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+        graph = await notebook.get_graph()
+        return NotebookGraphResponse(**graph)
+    except HTTPException:
+        raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    except Exception as e:
+        logger.error(f"Error building notebook graph for {notebook_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build notebook graph")
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
