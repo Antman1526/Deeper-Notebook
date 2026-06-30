@@ -312,6 +312,10 @@ async def get_suggested_questions(
 
     try:
         notebook = await Notebook.get(notebook_id)
+    except HTTPException:
+        # v0.8.74 — re-raise typed HTTP errors so the generic catch below can't
+        # clobber a 4xx/5xx to 500 (enforced by tests/test_v0_7_135_meta.py).
+        raise
     except (NotFoundError, InvalidInputError):
         raise
     except Exception as e:
