@@ -481,6 +481,7 @@ export default function SourcesPage() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={t('sources.delete', { defaultValue: 'Delete source' })}
                       onClick={(e) => handleDeleteClick(e, source)}
                       className="text-destructive hover:text-destructive"
                     >
