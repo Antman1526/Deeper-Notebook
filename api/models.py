@@ -36,6 +36,24 @@ class NotebookResponse(BaseModel):
     note_count: int
 
 
+# v0.8.83 — mind-map graph (improvement roadmap, Batch 3)
+class GraphNode(BaseModel):
+    id: str
+    type: str  # "notebook" | "source" | "note"
+    label: str
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    kind: str  # "reference" | "artifact"
+
+
+class NotebookGraphResponse(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
 # Search models
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
