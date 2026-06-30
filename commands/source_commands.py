@@ -6,8 +6,12 @@ from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.database.repository import ensure_record_id
+from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Source
-from open_notebook.domain.transformation import Transformation
+from open_notebook.domain.transformation import (
+    Transformation,
+    get_or_create_summarize_transformation,
+)
 from open_notebook.exceptions import ConfigurationError
 
 try:
@@ -82,6 +86,23 @@ async def process_source_command(
             transformations.append(transformation)
 
         logger.info(f"Loaded {len(transformations)} transformations")
+
+        # v0.8.88 — opt-in source auto-summary (improvement roadmap, Batch 4).
+        # When enabled in ContentSettings, append the built-in "summarize"
+        # transformation so the existing transform node produces a Summary
+        # insight on ingest. Best-effort: summary setup must never fail ingest,
+        # and we don't double-add if the user already requested it.
+        try:
+            content_settings = await ContentSettings.get_instance()
+            if getattr(content_settings, "auto_summarize_on_ingest", False):
+                summarize = await get_or_create_summarize_transformation()
+                if not any(str(t.id) == str(summarize.id) for t in transformations):
+                    transformations.append(summarize)
+                    logger.info(
+                        "Auto-summary enabled — added 'Summary' transformation to ingest."
+                    )
+        except Exception as e:  # non-fatal
+            logger.warning(f"Auto-summary setup skipped (non-fatal): {e}")
 
         # 2. Get existing source record to update its command field
         source = await Source.get(input_data.source_id)
