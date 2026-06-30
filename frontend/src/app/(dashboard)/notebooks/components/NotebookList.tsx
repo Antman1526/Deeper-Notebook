@@ -20,17 +20,21 @@ interface NotebookListProps {
   emptyDescription?: string
   onAction?: () => void
   actionLabel?: string
+  // v0.8.80 — extra empty-state action (e.g. "Explore a sample notebook"),
+  // rendered below the primary action button.
+  extraAction?: React.ReactNode
 }
 
-export function NotebookList({ 
-  notebooks, 
-  isLoading, 
-  title, 
+export function NotebookList({
+  notebooks,
+  isLoading,
+  title,
   collapsible = false,
   emptyTitle,
   emptyDescription,
   onAction,
   actionLabel,
+  extraAction,
 }: NotebookListProps) {
   const { t } = useTranslation()
   const viewMode = useNotebookViewStore((state) => state.viewMode)
@@ -62,11 +66,16 @@ export function NotebookList({
         icon={Book}
         title={emptyTitle ?? t('common.noResults')}
         description={emptyDescription ?? t('chat.startByCreating')}
-        action={onAction && actionLabel ? (
-          <Button onClick={onAction} variant="outline" className="mt-4">
-            <Plus className="h-4 w-4 mr-2" />
-            {actionLabel}
-          </Button>
+        action={(onAction && actionLabel) || extraAction ? (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {onAction && actionLabel && (
+              <Button onClick={onAction} variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                {actionLabel}
+              </Button>
+            )}
+            {extraAction}
+          </div>
         ) : undefined}
       />
     )
