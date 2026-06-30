@@ -93,6 +93,19 @@ def get_resume_graph():
     return _resume_graph
 
 
+# v0.8.86 — per-episode length control (improvement roadmap, Batch 3). Maps a
+# short/medium/long choice to a segment count, overriding the profile's
+# num_segments for this one episode (values stay within the profile validator's
+# 3-20 range). Unknown/None → no override (use the profile default).
+_LENGTH_TO_SEGMENTS = {"short": 3, "medium": 5, "long": 8}
+
+
+def segments_for_length(episode_length: Optional[str]) -> Optional[int]:
+    if not episode_length:
+        return None
+    return _LENGTH_TO_SEGMENTS.get(episode_length.strip().lower())
+
+
 def build_state_and_config(
     *,
     content: str,
@@ -103,6 +116,7 @@ def build_state_and_config(
     output_dir: str,
     episode_name: str,
     outline: Optional[dict] = None,
+    episode_length: Optional[str] = None,
 ) -> tuple[dict, dict]:
     """Mirror of create_podcast()'s setup for OUR call shape (explicit
     briefing + episode_profile, which the upstream function treats as
@@ -114,11 +128,13 @@ def build_state_and_config(
         speaker_profile_name or episode_config.speaker_config
     )
     resolved_language = resolve_language_name(language) if language else None
+    # v0.8.86 — length override (falls back to the profile's num_segments).
+    num_segments = segments_for_length(episode_length) or episode_config.num_segments
 
     state: PodcastState = {
         "content": content,
         "briefing": briefing,
-        "num_segments": episode_config.num_segments,
+        "num_segments": num_segments,
         "language": resolved_language,
         "outline": (
             Outline.model_validate(outline) if isinstance(outline, dict) else outline

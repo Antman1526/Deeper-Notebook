@@ -24,6 +24,9 @@ class PodcastGenerationRequest(BaseModel):
     content: Optional[str] = None
     notebook_id: Optional[str] = None
     briefing_suffix: Optional[str] = None
+    # v0.8.86 — per-episode length: "short" | "medium" | "long" (overrides the
+    # profile's num_segments for this episode). None → use the profile default.
+    episode_length: Optional[str] = None
     # v0.8.68 — outline-review workflow: stop after the outline so the user
     # can edit it before transcript + audio are generated.
     review_outline: bool = False
@@ -96,6 +99,7 @@ class PodcastService:
         notebook_id: Optional[str] = None,
         content: Optional[str] = None,
         briefing_suffix: Optional[str] = None,
+        episode_length: Optional[str] = None,
         review_outline: bool = False,
     ) -> str:
         """Submit a podcast generation job for background processing"""
@@ -204,6 +208,8 @@ class PodcastService:
                 "episode_name": episode_name,
                 "content": str(content),
                 "briefing_suffix": briefing_suffix,
+                # v0.8.86 — per-episode length override (None → profile default).
+                "episode_length": episode_length,
                 # v0.8.68 — outline-review workflow flag.
                 "review_outline": bool(review_outline),
             }

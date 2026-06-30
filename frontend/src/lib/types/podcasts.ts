@@ -80,6 +80,8 @@ export interface PodcastGenerationRequest {
   content?: string
   notebook_id?: string
   briefing_suffix?: string | null
+  // v0.8.86 — per-episode length (overrides the profile's segment count).
+  episode_length?: 'short' | 'medium' | 'long'
   // v0.8.68 — stop after the outline for user review before audio.
   review_outline?: boolean
 }
