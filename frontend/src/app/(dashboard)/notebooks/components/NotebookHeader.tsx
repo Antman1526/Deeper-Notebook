@@ -11,6 +11,7 @@ import { ExportNotebookDialog } from './ExportNotebookDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
+import { MindMapButton } from '@/components/notebooks/MindMapButton'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface NotebookHeaderProps {
@@ -73,6 +74,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
               )}
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+              <MindMapButton notebookId={notebook.id} />
               <Button
                 variant="outline"
                 size="sm"
