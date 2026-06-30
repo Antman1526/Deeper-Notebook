@@ -70,6 +70,8 @@ export interface SettingsResponse {
   offline_mode?: boolean
   // v0.8.88 — opt-in source auto-summary on ingest (default off).
   auto_summarize_on_ingest?: boolean
+  // v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+  auto_extract_topics_on_ingest?: boolean
 }
 
 // v0.7.136 — Read-only observability config from GET /settings/observability

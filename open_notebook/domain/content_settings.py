@@ -38,3 +38,10 @@ class ContentSettings(RecordModel):
     auto_summarize_on_ingest: Optional[bool] = Field(
         False, description="Automatically summarize sources when they are added"
     )
+    # v0.8.91 — opt-in source key-topics extraction (improvement roadmap, later
+    # idea). When True, adding a source also runs the built-in "Key Topics"
+    # transformation on ingest; the parsed topics populate the source's `topics`
+    # field (the card's topic badges). Default OFF to respect local-LLM cost.
+    auto_extract_topics_on_ingest: Optional[bool] = Field(
+        False, description="Automatically extract key topics when sources are added"
+    )

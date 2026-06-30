@@ -9,8 +9,11 @@ from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import (
+    KEY_TOPICS_TRANSFORMATION_TITLE,
     Transformation,
+    get_or_create_key_topics_transformation,
     get_or_create_summarize_transformation,
+    parse_topics,
 )
 from open_notebook.exceptions import ConfigurationError
 
@@ -87,11 +90,12 @@ async def process_source_command(
 
         logger.info(f"Loaded {len(transformations)} transformations")
 
-        # v0.8.88 — opt-in source auto-summary (improvement roadmap, Batch 4).
-        # When enabled in ContentSettings, append the built-in "summarize"
-        # transformation so the existing transform node produces a Summary
-        # insight on ingest. Best-effort: summary setup must never fail ingest,
-        # and we don't double-add if the user already requested it.
+        # v0.8.88 / v0.8.91 — opt-in auto-summary + key-topics on ingest. When
+        # enabled in ContentSettings, append the built-in "summarize" / "key
+        # topics" transformations so the existing transform node produces a
+        # Summary / Key Topics insight on ingest. Best-effort: never let this
+        # fail ingest, and don't double-add if the user already requested one.
+        extract_topics = False
         try:
             content_settings = await ContentSettings.get_instance()
             if getattr(content_settings, "auto_summarize_on_ingest", False):
@@ -101,8 +105,16 @@ async def process_source_command(
                     logger.info(
                         "Auto-summary enabled — added 'Summary' transformation to ingest."
                     )
+            if getattr(content_settings, "auto_extract_topics_on_ingest", False):
+                key_topics = await get_or_create_key_topics_transformation()
+                if not any(str(t.id) == str(key_topics.id) for t in transformations):
+                    transformations.append(key_topics)
+                    logger.info(
+                        "Auto key-topics enabled — added 'Key Topics' transformation to ingest."
+                    )
+                extract_topics = True
         except Exception as e:  # non-fatal
-            logger.warning(f"Auto-summary setup skipped (non-fatal): {e}")
+            logger.warning(f"Auto-summary/topics setup skipped (non-fatal): {e}")
 
         # 2. Get existing source record to update its command field
         source = await Source.get(input_data.source_id)
@@ -141,6 +153,28 @@ async def process_source_command(
         # the actual count when it finishes.
         insights_list = await processed_source.get_insights()
         insights_created = len(insights_list)
+
+        # v0.8.91 — populate the source's `topics` from the Key Topics insight so
+        # the card's topic badges light up. Best-effort: never fail processing.
+        if extract_topics:
+            try:
+                topic_insight = next(
+                    (
+                        i
+                        for i in insights_list
+                        if getattr(i, "insight_type", None) == KEY_TOPICS_TRANSFORMATION_TITLE
+                    ),
+                    None,
+                )
+                topics = parse_topics(topic_insight.content) if topic_insight else []
+                if topics:
+                    processed_source.topics = topics
+                    await processed_source.save()
+                    logger.info(
+                        f"Key-topics: set {len(topics)} topics on {processed_source.id}"
+                    )
+            except Exception as e:  # non-fatal
+                logger.warning(f"Key-topics population skipped (non-fatal): {e}")
 
         processing_time = time.time() - start_time
         embed_status = "submitted" if input_data.embed else "skipped"

@@ -351,6 +351,8 @@ class SettingsResponse(BaseModel):
     offline_mode: Optional[bool] = None
     # v0.8.88 — opt-in source auto-summary on ingest (default off).
     auto_summarize_on_ingest: Optional[bool] = None
+    # v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+    auto_extract_topics_on_ingest: Optional[bool] = None
 
 
 # v0.7.130 — tightened the literal fields from Optional[str] to
@@ -379,6 +381,8 @@ class SettingsUpdate(BaseModel):
     offline_mode: Optional[bool] = None
     # v0.8.88 — opt-in source auto-summary on ingest (default off).
     auto_summarize_on_ingest: Optional[bool] = None
+    # v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+    auto_extract_topics_on_ingest: Optional[bool] = None
 
 
 # Sources API models
