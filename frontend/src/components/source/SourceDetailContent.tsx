@@ -76,6 +76,12 @@ interface SourceDetailContentProps {
   showChatButton?: boolean
   onChatClick?: () => void
   onClose?: () => void
+  // v0.8.78 — citation jump-to-highlight (improvement roadmap, Batch 2). When a
+  // user opens this source from a citation, the citing sentence is passed here;
+  // we locate the grounded passage (POST /sources/{id}/locate-passage) and show
+  // it as a highlighted "Cited passage" callout at the top. Best-effort: no
+  // match → no callout.
+  highlightQuery?: string
 }
 
 function formatProvenanceEntries(provenance: Record<string, unknown> | undefined) {
@@ -110,11 +116,45 @@ export function SourceDetailContent({
   sourceId,
   showChatButton = false,
   onChatClick,
-  onClose
+  onClose,
+  highlightQuery,
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
   const [source, setSource] = useState<SourceDetailResponse | null>(null)
+  // v0.8.78 — located cited passage (from highlightQuery). Best-effort.
+  const [citedPassage, setCitedPassage] = useState<{ snippet: string; score: number } | null>(null)
+  const citedPassageRef = useRef<HTMLDivElement | null>(null)
+
+  // v0.8.78 — when opened from a citation, locate the grounded passage. Runs
+  // once the source text is loaded so the backend has full_text to match
+  // against. Never throws (best-effort); clears when there's no query/match.
+  useEffect(() => {
+    let cancelled = false
+    if (!highlightQuery || !highlightQuery.trim() || !source?.full_text) {
+      setCitedPassage(null)
+      return
+    }
+    sourcesApi
+      .locatePassage(sourceId, highlightQuery)
+      .then((m) => {
+        if (!cancelled) setCitedPassage(m ? { snippet: m.snippet, score: m.score } : null)
+      })
+      .catch(() => {
+        if (!cancelled) setCitedPassage(null)
+      })
+    return () => {
+      cancelled = true
+    }
+    // depend on full_text presence (not value) so we fetch once it's loaded
+  }, [sourceId, highlightQuery, source?.full_text])
+
+  // v0.8.78 — scroll the cited-passage callout into view once it's resolved.
+  useEffect(() => {
+    if (citedPassage && citedPassageRef.current) {
+      citedPassageRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [citedPassage])
   const [insights, setInsights] = useState<SourceInsightResponse[]>([])
   const [transformations, setTransformations] = useState<Transformation[]>([])
   const [selectedTransformation, setSelectedTransformation] = useState<string>('')
@@ -692,6 +732,25 @@ export function SourceDetailContent({
                         </a>
                       </div>
                     )}
+                  </div>
+                )}
+                {/* v0.8.78 — cited-passage callout (citation jump-to-highlight).
+                    Shows the grounded passage located from the citing sentence;
+                    reliably highlights the cited text without fighting markdown
+                    char-offset mapping. Scrolls into view on resolve. */}
+                {citedPassage && (
+                  <div
+                    ref={citedPassageRef}
+                    className="mb-4 rounded-lg border-l-4 border-primary bg-primary/10 p-3"
+                  >
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                      {t('sources.citedPassage', { defaultValue: 'Cited passage' })}
+                    </p>
+                    <p className="text-sm leading-6 text-foreground/90">
+                      <mark className="rounded bg-primary/20 px-0.5 text-foreground">
+                        {citedPassage.snippet}
+                      </mark>
+                    </p>
                   </div>
                 )}
                 <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">

@@ -30,6 +30,19 @@ export const sourcesApi = {
     return response.data
   },
 
+  // v0.8.78 — locate the passage in a source's text best matching a citing
+  // sentence, for citation jump-to-highlight (improvement roadmap, Batch 2).
+  // Best-effort backend: returns null when there's no text / no decent match.
+  locatePassage: async (
+    id: string,
+    query: string
+  ): Promise<{ start: number; end: number; score: number; snippet: string } | null> => {
+    const response = await apiClient.post<{
+      match: { start: number; end: number; score: number; snippet: string } | null
+    }>(`/sources/${id}/locate-passage`, { query })
+    return response.data.match ?? null
+  },
+
   create: async (data: CreateSourceRequest & { file?: File }) => {
     // Always use FormData to match backend expectations
     const formData = new FormData()
