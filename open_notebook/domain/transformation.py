@@ -1,3 +1,4 @@
+import re
 from typing import ClassVar, Optional
 
 from loguru import logger
@@ -54,6 +55,71 @@ async def get_or_create_summarize_transformation() -> "Transformation":
     )
     await transformation.save()
     return transformation
+
+
+# v0.8.91 — built-in "Key Topics" transformation for opt-in key-topics
+# extraction (improvement roadmap, later idea). Same lazy get-or-create pattern
+# as the summary one; its output is parsed into the source's `topics` field.
+KEY_TOPICS_TRANSFORMATION_NAME = "key_topics"
+KEY_TOPICS_TRANSFORMATION_TITLE = "Key Topics"
+_KEY_TOPICS_PROMPT = (
+    "Identify the 5-8 most important topics, themes, or concepts in the "
+    "following content. Respond with ONLY a plain bulleted list — one short "
+    "topic per line (2-4 words each), no commentary, no numbering, no "
+    "explanations."
+)
+_MAX_TOPICS = 8
+_MAX_TOPIC_LEN = 60
+
+
+async def get_or_create_key_topics_transformation() -> "Transformation":
+    """Return the built-in key-topics transformation, creating it if absent."""
+    rows = await repo_query(
+        "SELECT * FROM transformation WHERE name = $name LIMIT 1",
+        {"name": KEY_TOPICS_TRANSFORMATION_NAME},
+    )
+    if rows:
+        return Transformation(**rows[0])
+
+    logger.info("Seeding built-in 'key_topics' transformation.")
+    transformation = Transformation(
+        name=KEY_TOPICS_TRANSFORMATION_NAME,
+        title=KEY_TOPICS_TRANSFORMATION_TITLE,
+        description="Auto-extracted key topics/themes for the source.",
+        prompt=_KEY_TOPICS_PROMPT,
+        apply_default=False,
+    )
+    await transformation.save()
+    return transformation
+
+
+def parse_topics(text: Optional[str]) -> list[str]:
+    """Parse the key-topics LLM output (a bulleted list) into clean topics.
+
+    Strips bullet/number markers, trims, drops empties + over-long lines (which
+    are usually the model ignoring the format), de-dupes case-insensitively, and
+    caps the count. Pure + testable.
+    """
+    if not text:
+        return []
+    topics: list[str] = []
+    seen: set[str] = set()
+    for raw in str(text).splitlines():
+        line = raw.strip()
+        # Strip a leading bullet/number marker: -, *, •, "1.", "1)".
+        line = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+        # Strip surrounding markdown emphasis/quotes.
+        line = line.strip("*_`\"' ").strip()
+        if not line or len(line) > _MAX_TOPIC_LEN:
+            continue
+        key = line.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        topics.append(line)
+        if len(topics) >= _MAX_TOPICS:
+            break
+    return topics
 
 
 class DefaultPrompts(RecordModel):

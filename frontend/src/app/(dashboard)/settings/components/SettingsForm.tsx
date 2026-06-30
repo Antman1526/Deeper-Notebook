@@ -32,6 +32,8 @@ const settingsSchema = z.object({
   // v0.8.88 — opt-in source auto-summary (boolean in the API; yes/no in the
   // form to match the Select idiom).
   auto_summarize_on_ingest: z.enum(['yes', 'no']).optional(),
+  // v0.8.91 — opt-in source key-topics extraction.
+  auto_extract_topics_on_ingest: z.enum(['yes', 'no']).optional(),
 })
 
 type SettingsFormData = z.infer<typeof settingsSchema>
@@ -64,6 +66,7 @@ export function SettingsForm() {
       auto_delete_files: undefined,
       offline_mode: undefined,
       auto_summarize_on_ingest: undefined,
+      auto_extract_topics_on_ingest: undefined,
     }
   })
 
@@ -83,6 +86,8 @@ export function SettingsForm() {
         offline_mode: (settings.offline_mode ? 'yes' : 'no') as 'yes' | 'no',
         // v0.8.88 — opt-in source auto-summary (default off → 'no').
         auto_summarize_on_ingest: (settings.auto_summarize_on_ingest ? 'yes' : 'no') as 'yes' | 'no',
+        // v0.8.91 — opt-in source key-topics extraction (default off → 'no').
+        auto_extract_topics_on_ingest: (settings.auto_extract_topics_on_ingest ? 'yes' : 'no') as 'yes' | 'no',
       }
       reset(formData)
       setHasResetForm(true)
@@ -92,7 +97,7 @@ export function SettingsForm() {
   const onSubmit = async (data: SettingsFormData) => {
     // v0.8.68 — offline_mode is a boolean on the wire; the form keeps the
     // Select-friendly 'yes'/'no' representation.
-    const { offline_mode, auto_summarize_on_ingest, ...rest } = data
+    const { offline_mode, auto_summarize_on_ingest, auto_extract_topics_on_ingest, ...rest } = data
     await updateSettings.mutateAsync({
       ...rest,
       ...(offline_mode !== undefined
@@ -101,6 +106,10 @@ export function SettingsForm() {
       // v0.8.88 — map the form's yes/no back to the API's boolean.
       ...(auto_summarize_on_ingest !== undefined
         ? { auto_summarize_on_ingest: auto_summarize_on_ingest === 'yes' }
+        : {}),
+      // v0.8.91 — same mapping for key-topics extraction.
+      ...(auto_extract_topics_on_ingest !== undefined
+        ? { auto_extract_topics_on_ingest: auto_extract_topics_on_ingest === 'yes' }
         : {}),
     })
   }
@@ -340,6 +349,40 @@ export function SettingsForm() {
               {t('settings.autoSummarizeHelp', {
                 defaultValue:
                   'When on, each source you add gets a short AI summary (one extra LLM call per source). It appears on the source card and in the source’s insights.',
+              })}
+            </p>
+          </div>
+
+          {/* v0.8.91 — opt-in key-topics extraction on ingest. */}
+          <div className="space-y-3">
+            <Label htmlFor="auto_extract_topics">
+              {t('settings.autoExtractTopics', { defaultValue: 'Automatically extract key topics on import' })}
+            </Label>
+            <Controller
+              name="auto_extract_topics_on_ingest"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  key={field.value}
+                  name={field.name}
+                  value={field.value || ''}
+                  onValueChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                >
+                  <SelectTrigger id="auto_extract_topics" className="w-full">
+                    <SelectValue placeholder={t('common.no')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">{t('common.yes')}</SelectItem>
+                    <SelectItem value="no">{t('common.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-sm text-muted-foreground">
+              {t('settings.autoExtractTopicsHelp', {
+                defaultValue:
+                  'When on, each source you add gets a few key topics extracted (one extra LLM call per source), shown as tags on the source card.',
               })}
             </p>
           </div>
