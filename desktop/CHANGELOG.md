@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🛠 v0.8.81 — One-click "Repair & restart" for the DB-corruption banner (roadmap Batch 2)**
+  - The "Database needs repair" banner previously told the user to **manually ⌘Q + reopen** so the boot-time auto-repair (backup-first, already shipped) could run. It now has a one-click **"Repair & restart"** button that relaunches the app for you. Mechanism: a new pywebview `js_api` bridge (`window.ONP.relaunch` → `_OnpJsApi.relaunch` in `desktop/window.py`) spawns a **detached helper that waits for this process to fully exit, then reopens the .app bundle**, and cleanly closes the window — so there's no port/singleton race and it reopens exactly once (no relaunch loop). In a plain browser (dev) the bridge returns false and the banner falls back to a reload. (`desktop/window.py`, `DbRepairBanner.tsx`; window.py parses, 72 desktop tests pass, tsc clean.) **⚠️ The relaunch behavior needs an in-app test** — js_api + self-relaunch can't be exercised headlessly (covered by the batch build + a manual check).
+
 - **🎨 v0.8.80 — First-run "Explore a sample notebook" (roadmap Batch 2)**
   - When a brand-new user has **no notebooks**, the empty state now offers a one-click **"Explore a sample notebook"** that seeds an example notebook + a bundled "Getting started" text source, then opens it — so first use shows value instead of a blank list (NotebookLM/onboarding parity). Content is bundled (no network — local-first), and once processed the v0.8.74 starter-question chips appear automatically. Reuses the existing create-notebook / create-source mutations; best-effort (notebook still opens if the source add fails). Shows only when genuinely empty (not a filtered-empty search). (`lib/hooks/use-sample-notebook.ts`, `NotebookList` `extraAction` slot, `notebooks/page.tsx`; tsc clean, 12 notebook tests pass; label uses inline `defaultValue`.)
 
