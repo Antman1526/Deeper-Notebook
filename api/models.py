@@ -54,6 +54,27 @@ class NotebookGraphResponse(BaseModel):
     edges: list[GraphEdge]
 
 
+# v0.8.87 — Discover sources (improvement roadmap, Batch 3): guarded web search
+# over the existing env-keyed web_search tool. Search-only; the user picks which
+# results to add (as link sources via the existing pipeline).
+class DiscoverSourcesRequest(BaseModel):
+    query: str
+    limit: Optional[int] = None
+
+
+class DiscoverResult(BaseModel):
+    title: str
+    url: str
+    snippet: str
+
+
+class DiscoverSourcesResponse(BaseModel):
+    # enabled=False → no provider key configured; the UI shows a setup hint.
+    enabled: bool
+    provider: Optional[str] = None
+    results: list[DiscoverResult]
+
+
 # Search models
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
