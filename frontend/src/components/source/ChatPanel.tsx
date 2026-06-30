@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { SourceDialog } from './SourceDialog'
 import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -136,6 +137,10 @@ export function ChatPanel({
   const chatInputId = useId()
   const [input, setInput] = useState('')
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
+  // v0.8.79 — local source viewer opened from a citation (improvement roadmap,
+  // Batch 2). Kept separate from the global modal so it can carry the citing
+  // sentence as the highlight query.
+  const [citationSource, setCitationSource] = useState<{ id: string; query: string } | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   // v0.8.67 (F5) — true while the user is at/near the bottom; gates auto-scroll
@@ -333,6 +338,9 @@ export function ChatPanel({
                           content={message.content}
                           onReferenceClick={handleReferenceClick}
                           messageId={message.id}
+                          onViewSource={(sourceId, query) =>
+                            setCitationSource({ id: sourceId, query })
+                          }
                         />
                       ) : (
                         // v0.7.25 — `break-all` breaks between any two
@@ -542,6 +550,18 @@ export function ChatPanel({
       </CardContent>
     </Card>
 
+      {/* v0.8.79 — citation jump-to-highlight: a source viewer opened from a
+          [source:ID] citation, scrolled to + highlighting the cited passage.
+          Kept local (not the global modal) so it can carry the highlight query. */}
+      <SourceDialog
+        open={!!citationSource}
+        onOpenChange={(o) => {
+          if (!o) setCitationSource(null)
+        }}
+        sourceId={citationSource?.id ?? null}
+        highlightQuery={citationSource?.query}
+      />
+
     </>
   )
 }
@@ -552,14 +572,28 @@ export function ChatPanel({
 // markers within text segments are handled by the existing compact-reference system.
 // v0.8.1 Item 3 — messageId passed through to CitationPill so the MCP
 // popover can look up tool-call payloads from the TanStack Query cache.
+// v0.8.79 — the "citing sentence" for a citation is the last sentence of the
+// text immediately preceding the marker — i.e. the claim the citation grounds.
+// Used as the query to locate + highlight the cited passage in the source.
+function lastSentence(text: string): string {
+  const trimmed = (text || '').trim()
+  if (!trimmed) return ''
+  const parts = trimmed.split(/(?<=[.!?])\s+/)
+  return (parts[parts.length - 1] || trimmed).slice(-400)
+}
+
 function AIMessageContent({
   content,
   onReferenceClick,
   messageId,
+  onViewSource,
 }: {
   content: string
   onReferenceClick: (type: string, id: string) => void
   messageId?: string
+  // v0.8.79 — open the source reading view for a [source:ID] citation,
+  // passing the citing sentence so it can highlight the grounded passage.
+  onViewSource?: (sourceId: string, query: string) => void
 }) {
   const { t } = useTranslation()
 
@@ -623,8 +657,23 @@ function AIMessageContent({
         // Citation segment → render as an inline pill.
         // v0.8.1 Item 3 — pass messageId so MCP pills can look up
         // tool-call payloads from the TanStack Query cache.
+        // v0.8.79 — for source citations, wire "View source" to open the
+        // reading view highlighting the cited passage (citing sentence = the
+        // last sentence of the preceding text segment).
+        const prev = idx > 0 ? segments[idx - 1] : undefined
+        const citingSentence = prev && prev.kind === 'text' ? lastSentence(prev.value) : ''
         return (
-          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} messageId={messageId} />
+          <CitationPill
+            key={`${seg.kind}-${idx}`}
+            kind={seg.kind}
+            value={seg.value}
+            messageId={messageId}
+            onViewSource={
+              seg.kind === 'source' && onViewSource
+                ? () => onViewSource(`source:${seg.value}`, citingSentence)
+                : undefined
+            }
+          />
         )
       })}
     </div>
