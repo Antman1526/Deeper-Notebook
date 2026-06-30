@@ -416,6 +416,10 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const [episodeProfileId, setEpisodeProfileId] = useState<string>('')
   const [episodeName, setEpisodeName] = useState('')
   const [instructions, setInstructions] = useState('')
+  // v0.8.86 — per-episode length. 'profile' = use the episode profile's own
+  // num_segments (default; preserves existing behavior); short/medium/long
+  // override it for this episode only.
+  const [episodeLength, setEpisodeLength] = useState<'profile' | 'short' | 'medium' | 'long'>('profile')
   // v0.8.68 — outline-review workflow opt-in.
   const [reviewOutline, setReviewOutline] = useState(false)
 
@@ -566,6 +570,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     setEpisodeProfileId('')
     setEpisodeName('')
     setInstructions('')
+    setEpisodeLength('profile')
     setReviewOutline(false)
     setTokenCount(0)
     setCharCount(0)
@@ -913,6 +918,9 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         episode_name: episodeName.trim(),
         content,
         briefing_suffix: instructions.trim() ? instructions.trim() : undefined,
+        // v0.8.86 — only send a length override when it differs from the
+        // profile default ('profile' → omit → backend keeps num_segments).
+        episode_length: episodeLength === 'profile' ? undefined : episodeLength,
         review_outline: reviewOutline || undefined,
       }
 
@@ -1072,6 +1080,37 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       placeholder={t('podcasts.episodeNamePlaceholder')}
                       autoComplete="off"
                     />
+                  </div>
+
+                  {/* v0.8.86 — per-episode length control (roadmap Batch 3). */}
+                  <div className="space-y-2">
+                    <Label htmlFor="episode_length">
+                      {t('podcasts.lengthLabel', { defaultValue: 'Length' })}
+                    </Label>
+                    <Select
+                      value={episodeLength}
+                      onValueChange={(value) =>
+                        setEpisodeLength(value as 'profile' | 'short' | 'medium' | 'long')
+                      }
+                    >
+                      <SelectTrigger id="episode_length">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="profile">
+                          {t('podcasts.lengthProfile', { defaultValue: 'Profile default' })}
+                        </SelectItem>
+                        <SelectItem value="short">
+                          {t('podcasts.lengthShort', { defaultValue: 'Short (~4–6 min)' })}
+                        </SelectItem>
+                        <SelectItem value="medium">
+                          {t('podcasts.lengthMedium', { defaultValue: 'Medium (~8–10 min)' })}
+                        </SelectItem>
+                        <SelectItem value="long">
+                          {t('podcasts.lengthLong', { defaultValue: 'Long (~15–20 min)' })}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                    <div className="space-y-2">

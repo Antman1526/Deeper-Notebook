@@ -147,6 +147,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
             notebook_id=request.notebook_id,
             content=request.content,
             briefing_suffix=request.briefing_suffix,
+            episode_length=request.episode_length,
             review_outline=request.review_outline,
         )
 

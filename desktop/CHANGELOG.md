@@ -20,6 +20,9 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **🎙 v0.8.86 — Podcast depth: per-episode length control (roadmap Batch 3, item 3)**
+  - The **Generate Podcast** dialog now has a **Length** selector — *Profile default / Short (~4–6 min) / Medium (~8–10 min) / Long (~15–20 min)* — that overrides the episode profile's segment count **for that one episode** (short→3, medium→5, long→8 segments; "Profile default" keeps the profile's `num_segments`, so existing behavior is unchanged). Threaded request → `PodcastService.submit_generation_job` → command → `build_state_and_config` (`segments_for_length`). The **focus** half of "podcast depth" already exists: the dialog's *Instructions* field is appended to the briefing (`briefing_suffix`) and steers what the episode emphasizes. (`commands/podcast_staged.py`, `commands/podcast_commands.py`, `api/podcast_service.py`, `api/routers/podcasts.py`, `GeneratePodcastDialog.tsx`, `lib/types/podcasts.ts`; 3 new backend tests + meta-test pass, tsc clean, `npm run build` + locale tests pass.) **⚠️ Generating with a chosen length needs an in-app test** (requires TTS credentials).
+
 - **↔️ v0.8.85 — Resizable 3-pane notebook workspace (roadmap Batch 3, item 2)**
   - The desktop notebook layout (**sources │ notes │ chat**) is now **resizable via draggable handles**, and the widths are **remembered** across sessions (`autoSaveId` → localStorage). Built on the shadcn `resizable` primitive (`react-resizable-panels`). The existing per-column collapse buttons still work and stay in sync with the panels (and dragging a pane shut also collapses it); chat is always present. Mobile's tabbed layout is untouched. (`components/ui/resizable.tsx`, `notebooks/[id]/page.tsx`; tsc clean, `npm run build` passes, notebook tests pass.) **Note:** pinned `react-resizable-panels@^2` — the latest v4 is a breaking API rewrite incompatible with the shadcn component. ⚠️ drag + width-persistence need an in-app check.
 

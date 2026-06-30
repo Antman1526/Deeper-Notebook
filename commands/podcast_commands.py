@@ -71,6 +71,9 @@ class PodcastGenerationInput(CommandInput):
     episode_name: str
     content: str
     briefing_suffix: Optional[str] = None
+    # v0.8.86 — per-episode length: "short" | "medium" | "long" (overrides the
+    # profile's num_segments for this episode). None → use the profile default.
+    episode_length: Optional[str] = None
     # v0.8.68 — outline-review workflow: when True, generation stops after
     # the outline stage; the user reviews/edits it in the UI and approval
     # submits a resume_podcast command for the remaining stages.
@@ -315,6 +318,8 @@ async def generate_podcast_command(
             language=_episode_language,
             output_dir=str(output_dir),
             episode_name=episode_dir_name,
+            # v0.8.86 — per-episode length override (None → profile default).
+            episode_length=input_data.episode_length,
         )
 
         # Outline-review phase 1: outline only, then stop for user review.
