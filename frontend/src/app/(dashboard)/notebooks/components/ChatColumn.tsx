@@ -51,14 +51,20 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
     let sourcesInsights = 0
     let sourcesFull = 0
     let notesCount = 0
+    // v0.8.89 — names of the sources currently in context, for the chat
+    // "Using X of Y sources" indicator + its popover (per-source filtering
+    // is the off/insights/full toggle; this just makes it visible).
+    const contextSourceTitles: string[] = []
 
     // Count sources by mode
     sources.forEach(source => {
       const mode = contextSelections.sources[source.id]
       if (mode === 'insights') {
         sourcesInsights++
+        contextSourceTitles.push(source.title || '(untitled)')
       } else if (mode === 'full') {
         sourcesFull++
+        contextSourceTitles.push(source.title || '(untitled)')
       }
     })
 
@@ -74,6 +80,8 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       sourcesInsights,
       sourcesFull,
       notesCount,
+      totalSources: sources.length,
+      contextSourceTitles,
       tokenCount: chat.tokenCount,
       charCount: chat.charCount
     }

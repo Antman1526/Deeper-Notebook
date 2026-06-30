@@ -46,6 +46,10 @@ interface NotebookContextStats {
   notesCount: number
   tokenCount?: number
   charCount?: number
+  // v0.8.89 — total sources in the notebook + names of the in-context ones,
+  // for the "Using X of Y sources" indicator + popover.
+  totalSources?: number
+  contextSourceTitles?: string[]
 }
 
 // v0.8.67 (audit F5) — pure, testable predicate: is the scroll viewport within
@@ -476,6 +480,8 @@ export function ChatPanel({
             notesCount={notebookContextStats.notesCount}
             tokenCount={notebookContextStats.tokenCount}
             charCount={notebookContextStats.charCount}
+            totalSources={notebookContextStats.totalSources}
+            contextSourceTitles={notebookContextStats.contextSourceTitles}
           />
         )}
 
@@ -537,6 +543,7 @@ export function ChatPanel({
               onClick={handleSend}
               disabled={!input.trim() || isStreaming}
               size="icon"
+              aria-label={t('chat.send', { defaultValue: 'Send message' })}
               className="h-[40px] w-[40px] flex-shrink-0"
             >
               {isStreaming ? (

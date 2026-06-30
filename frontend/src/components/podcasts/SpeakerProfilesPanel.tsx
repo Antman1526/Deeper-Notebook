@@ -182,6 +182,7 @@ export function SpeakerProfilesPanel({
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={t('common.moreActions', { defaultValue: 'More actions' })}
                             className="h-8 w-8"
                             onClick={(e) => e.stopPropagation()}
                           >

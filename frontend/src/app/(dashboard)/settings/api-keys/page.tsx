@@ -842,7 +842,7 @@ function DefaultModelSelectors({
                     </SelectContent>
                   </Select>
                   {!config.required && currentValue && (
-                    <Button variant="ghost" size="icon" onClick={() => handleChange(config.key, "")} className="h-8 w-8 shrink-0">
+                    <Button variant="ghost" size="icon" aria-label={t('common.clear', { defaultValue: 'Clear' })} onClick={() => handleChange(config.key, "")} className="h-8 w-8 shrink-0">
                       <X className="h-3 w-3" />
                     </Button>
                   )}
@@ -894,7 +894,7 @@ function DefaultModelSelectors({
                         </SelectContent>
                       </Select>
                       {!config.required && currentValue && (
-                        <Button variant="ghost" size="icon" onClick={() => handleChange(config.key, "")} className="h-8 w-8 shrink-0">
+                        <Button variant="ghost" size="icon" aria-label={t('common.clear', { defaultValue: 'Clear' })} onClick={() => handleChange(config.key, "")} className="h-8 w-8 shrink-0">
                           <X className="h-3 w-3" />
                         </Button>
                       )}
