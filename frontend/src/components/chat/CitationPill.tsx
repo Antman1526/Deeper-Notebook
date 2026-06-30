@@ -51,6 +51,14 @@ interface CitationPillProps {
    * rendered without messageId fall back to the placeholder).
    */
   messageId?: string
+  /**
+   * v0.8.79 — citation jump-to-highlight (improvement roadmap, Batch 2). When
+   * provided (notebook chat passes it for `source` citations), the popover
+   * shows a "View source" action that opens the source reading view scrolled
+   * to + highlighting the cited passage. Omitted → no action (e.g. source chat,
+   * or note/insight pills).
+   */
+  onViewSource?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +264,7 @@ const KIND_ICONS: Record<CitationKind, React.ElementType> = {
  * Accessibility: the trigger is a focusable button; Radix Popover handles
  * keyboard navigation (Enter/Space to open, Escape to close, focus-trap).
  */
-export function CitationPill({ kind, value, messageId }: CitationPillProps) {
+export function CitationPill({ kind, value, messageId, onViewSource }: CitationPillProps) {
   const { t } = useTranslation()
   const Icon = KIND_ICONS[kind]
 
@@ -346,6 +354,20 @@ export function CitationPill({ kind, value, messageId }: CitationPillProps) {
         {kind === 'source' && <SourcePopoverContent id={value} />}
         {kind === 'note' && <NotePopoverContent id={value} />}
         {kind === 'insight' && <InsightPopoverContent id={value} />}
+        {/* v0.8.79 — citation jump-to-highlight: open the source reading view
+            scrolled to + highlighting the cited passage. */}
+        {kind === 'source' && onViewSource && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              onViewSource()
+            }}
+            className="mt-2 w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   )
