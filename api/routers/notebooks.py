@@ -4,6 +4,9 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from api.models import (
+    DiscoverResult,
+    DiscoverSourcesRequest,
+    DiscoverSourcesResponse,
     NotebookCreate,
     NotebookDeletePreview,
     NotebookDeleteResponse,
@@ -392,6 +395,57 @@ async def get_notebook_graph(notebook_id: str):
     except Exception as e:
         logger.error(f"Error building notebook graph for {notebook_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to build notebook graph")
+
+
+@router.post(
+    "/notebooks/{notebook_id}/discover-sources",
+    response_model=DiscoverSourcesResponse,
+)
+async def discover_sources(notebook_id: str, request: DiscoverSourcesRequest):
+    """v0.8.87 — Discover sources (improvement roadmap, Batch 3).
+
+    Guarded web search over the existing env-keyed `web_search` tool. SEARCH
+    ONLY — returns candidate {title, url, snippet}; the user picks which to add
+    (as link sources via the normal POST /sources pipeline). Privacy: this only
+    reaches the network when a provider key is configured AND the user runs it;
+    with no provider, `enabled=False` and the UI shows a setup hint (HTTP 200,
+    never an error). Best-effort: provider/transport errors degrade to empty
+    results rather than failing the request.
+    """
+    from open_notebook.tools.web_search import (
+        active_provider,
+        run_web_search,
+        web_search_enabled,
+    )
+
+    if not web_search_enabled():
+        return DiscoverSourcesResponse(enabled=False, provider=None, results=[])
+
+    query = (request.query or "").strip()
+    if not query:
+        return DiscoverSourcesResponse(
+            enabled=True, provider=active_provider(), results=[]
+        )
+
+    try:
+        limit = max(1, min(int(request.limit or 6), 20))
+        raw = await run_web_search(query, max_results=limit)
+    except Exception as e:  # best-effort — never 500 on a search hiccup
+        logger.warning(f"discover-sources search failed for {notebook_id}: {e}")
+        raw = []
+
+    results = [
+        DiscoverResult(
+            title=str(r.get("title") or ""),
+            url=str(r.get("url") or ""),
+            snippet=str(r.get("snippet") or ""),
+        )
+        for r in raw
+        if r.get("url")
+    ]
+    return DiscoverSourcesResponse(
+        enabled=True, provider=active_provider(), results=results
+    )
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
