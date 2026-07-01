@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136.3%2B-009688)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0-ff6f00)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-1712%20backend%20%2B%20195%20frontend-success)
+![Tests](https://img.shields.io/badge/tests-2033%20backend%20%2B%20477%20frontend-success)
 
 > GitHub: **https://github.com/Antman1526/open-notebook-Plus** — a downstream fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
 
@@ -88,7 +88,22 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 ### Production-grade operations
 - **Closed observability:** every response carries an `X-Request-ID`, every log line is request-correlated, and a Prometheus `/metrics` endpoint exposes request latency, DB query latency, slow-query counts, memory-recall fall-through reasons, checkpoint-prune cycles, and privacy-gate / tool-loop counters.
 - **Backup & restore** with atomic writes, an embedded SHA-256 manifest, and versioned bundle format; the desktop app also auto-exports the database on an interval.
-- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch.
+- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch. A **"Repair & restart"** button in the banner relaunches the app in one click (via a `window.ONP.relaunch` pywebview `js_api` bridge) so the boot-time repair runs without a manual quit-and-reopen.
+
+### NotebookLM-parity research UX (v0.8.x)
+A focused improvement cycle (benchmarked against Google NotebookLM and local-first rivals) added, verified, and shipped the following — each behind automated gates (backend pytest + `tsc` + `npm run build`), several confirmed live in the packaged app:
+
+- **Citation jump-to-highlight** — clicking a `[source]` citation opens the source reading pane and scrolls to + highlights the exact grounding passage (on-demand token-containment offset matching via `open_notebook/utils/citation_offsets.py`; `POST /sources/{id}/locate-passage`), turning citations from "reference" into "verify in one click."
+- **Inline PDF rendering** — PDF sources render inline (react-pdf 10) with a **locally-bundled, offline pdfjs worker** (no CDN) and a graceful fall-back to extracted text.
+- **Interactive mind map** — a React Flow (`@xyflow/react`) radial graph of the notebook hub + its sources and notes, grounded in the existing `reference`/`artifact` edges (no schema change; `GET /notebooks/{id}/graph`); clicking a source node opens it.
+- **Discover sources** — an opt-in, privacy-preserving web-search-to-source dialog in the Sources panel: type a topic → review candidate URLs → add chosen results as link sources. Search only reaches the network when a provider key (`SERPER`/`TAVILY`/`SEARXNG`) is configured; otherwise the dialog shows a setup hint.
+- **Resizable 3-pane workspace** — draggable `sources │ notes │ chat` panes with widths remembered across sessions (shadcn `resizable` on `react-resizable-panels@2`), preserving the per-column collapse toggles.
+- **Podcast depth** — a per-episode **Length** selector (short / medium / long → segment-count override) in the Generate dialog, alongside the existing focus/instructions field.
+- **Opt-in source enrichment on ingest** — Settings → Sources toggles (both default OFF) to **auto-summarize** a source (a Summary insight + one-line card preview) and **extract key topics** (parsed into the source's `topics` tags) when it's added, each reusing the existing transform→insight pipeline.
+- **Per-source chat filtering + context transparency** — the off/insights/full source toggles already scope the chat context; the chat bar now shows **"Using X of Y sources"** with a popover listing the in-context sources.
+- **First-run onboarding** — a one-click **"Explore a sample notebook"** seeds an example notebook + source so first use shows value instead of a blank screen; corpus-grounded **suggested questions** greet an empty chat.
+- **Source-grounding guardrail** — chat/ask prompts instruct the model to answer only from the provided sources (or say so plainly), and the Ask workflow declares CLARIFY rather than emit an ungrounded synthesis.
+- **Accessibility & theming** — ARIA labels on icon-only controls, Radix-managed dialog focus-trap/restore, 17 WCAG-AA/AAA themes with theme-aware aurora visuals, list virtualization, and rAF-batched streaming for a smoother WKWebView experience.
 
 ---
 
@@ -354,20 +369,19 @@ make test-integration
 cd frontend && npm test
 ```
 
-Current suites: **1712 backend tests + 195 frontend Vitest tests**, plus SurrealDB integration tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
+Current suites: **2033 backend tests + 477 frontend Vitest tests**, plus SurrealDB integration tests. Every macOS desktop build runs the full backend + frontend suite as a Stage-0 precondition, so a green build implies green tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
 
 ---
 
 ## Reconstruction documentation
 
-The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or senior engineer to recreate the project without guessing:
+The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or a senior engineer to recreate the project from scratch without guessing — real code snippets, exact versions, config specs, and step-by-step instructions:
 
-- [`00-reconstruction-manifest.md`](docs/recreation/00-reconstruction-manifest.md) — index, scope, source-of-truth map, build artifacts, and verification gates.
-- `01` through `15` — architecture, environment, data model, API, frontend, auth, business logic, integrations, config, tests, build/deploy, logging, performance, security, and file organization.
-- [`project-deep-dive-for-ai-review.md`](docs/recreation/project-deep-dive-for-ai-review.md) — dense AI-review brief with real code snippets, known trade-offs, and Areas for Review.
-- [`technology-inventory.md`](docs/recreation/technology-inventory.md) — exhaustive technology audit with each tool's specific role in this repo.
+- **`01`–`15`** — (1) project overview & architecture, (2) environment setup & dependencies, (3) database schema & data models, (4) backend API specifications, (5) frontend architecture & components, (6) authentication & authorization, (7) business logic & core algorithms, (8) integration points & external services, (9) configuration & environment variables, (10) testing strategy & test cases, (11) build & deployment pipeline, (12) error handling & logging, (13) performance optimization & caching, (14) security implementation, (15) file structure & code organization.
+- [`PROJECT-DEEP-DIVE.md`](docs/recreation/PROJECT-DEEP-DIVE.md) — a dense AI-review brief: key code walkthrough, data flow, pain points, design trade-offs, and an **"Areas for Review"** prompt for an AI reviewer.
+- [`TECHNOLOGY-AUDIT.md`](docs/recreation/TECHNOLOGY-AUDIT.md) — an exhaustive technology inventory with each tool's specific role in this repo.
 
-These files are mirrored into `/Users/Antman/Desktop/OpenNotebook` during local documentation exports so they can be loaded into Open Notebook Plus itself as source material.
+These files are also mirrored to `~/Desktop/OpenNotebook/project-docs/` for loading into Open Notebook Plus itself as source material.
 
 ---
 

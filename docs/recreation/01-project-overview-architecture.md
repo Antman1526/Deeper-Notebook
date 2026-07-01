@@ -1,456 +1,323 @@
 # 01 — Project Overview & Architecture
 
-> Recreation documentation for **Open Notebook Plus** (`open-notebook-Plus`), a
-> desktop-app fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook).
-> This document describes the high-level system design so another engineer (or AI)
-> can rebuild the architecture from scratch. Companion docs:
-> [`02-environment-setup-dependencies.md`](./02-environment-setup-dependencies.md)
-> and [`03-database-schema-data-models.md`](./03-database-schema-data-models.md).
->
-> **Secrets policy:** every key / password / token in this document is a
-> placeholder (`<YOUR_KEY>`). Never commit real `.env` values.
+> Exhaustive recreation documentation for **Open Notebook Plus**.
+> Target: an engineer (or AI) rebuilding the system from scratch.
+> Repo: `Antman1526/open-notebook-Plus`, branch `desktop-app`.
+> Desktop app version: **0.8.5** (`desktop/__init__.py` `__version__`).
+> Upstream/Docker image version: **1.8.5** (`pyproject.toml` `version` — a *separate* version track; do not conflate).
 
 ---
 
-## 1. What it is
+## 1. What the product is
 
-Open Notebook Plus is a **privacy-first, local-first alternative to Google
-NotebookLM**. Users upload PDFs, audio, video, web pages, or text; take notes;
-chat with an AI grounded in their own sources; run multi-step "Ask" synthesis
-across their library; generate multi-speaker podcasts; and turn videos, audio,
-PDFs, documents, and links into instructor-ready **Course Packs** through Evidence
-Studio. A closed-loop memory layer extracts facts/preferences from each chat and
-recalls them into future sessions. Everything can run **entirely on the host
-machine** — no request leaves the device when the local model is healthy.
+**Open Notebook Plus** is a local-first, privacy-focused **desktop research assistant** — an open-source alternative to Google's NotebookLM. It is a **fork of `lfnovo/open-notebook`** that wraps the upstream three-tier web application inside a **native desktop app** (macOS `.app`/`.dmg`, Windows local install) so that the *entire stack runs on the user's own machine*, including the LLMs.
 
-Project version at the time of writing: **`pyproject.toml` reports `1.8.5`** (the
-upstream package version), while the desktop fork tracks its own build string
-(`v0.8.67w` in `README.md`). The Python package name is `open-notebook`.
+The user uploads multi-modal content (PDFs, audio, video, web pages, text), the app extracts and embeds it, and the user can then:
 
-Two ways to run it:
+- **Chat** with an AI model grounded in their sources (RAG).
+- **Ask** questions that trigger search + synthesis across all sources.
+- **Generate notes** and AI **insights/transformations** per source.
+- **Semantic + full-text search** across everything.
+- **Produce multi-speaker podcasts** from their notebook (TTS).
+- Do all of the above **fully offline** using local GGUF models via llama.cpp / Ollama / MLX, or optionally with cloud providers (OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, xAI, …) through the **Esperanto** multi-provider library.
 
-1. **Native desktop app** — a macOS `.dmg` (built with `make build-mac`) or a
-   Windows local-dev install. The desktop bundle ships SurrealDB, a Node.js
-   runtime, a Python-standalone runtime, and local llama.cpp / MLX model servers. It
-   **never runs in Docker**.
-2. **Self-host** — `docker compose up -d` (legacy path) or a 3-terminal local
-   dev workflow (SurrealDB + FastAPI + Next.js).
+**Key values:** privacy-first (data never leaves the machine unless the user opts into a cloud provider), multi-provider AI, self-hosted, open-source.
+
+### The dual role of "Plus"
+The "Plus" fork adds a full **desktop wrapper** (`desktop/`) that:
+1. Bundles a Python runtime, SurrealDB, Node, and model sidecars.
+2. Boots the whole stack as child processes ("supervisor").
+3. Renders the Next.js frontend inside a native **pywebview** window (WKWebView on macOS).
+4. Adds local-model management, a first-run wizard, a memory layer (mem0 + OpenChronicle), and self-healing DB repair.
 
 ---
 
-## 2. Three-tier architecture
+## 2. Full feature list
 
-The system is a classic three-tier stack. Source of truth:
-`README.md`, root `CLAUDE.md`, and the running services.
+**Content & knowledge**
+- Multi-modal ingestion (files + URLs) via **content-core** (50+ file types).
+- Automatic chunking + embedding (vector search) with content-type-aware splitters.
+- Per-source **insights** and reusable **transformations** (LLM prompts).
+- Standalone and source-linked **notes** (auto-embedded).
+- **Full-text** (`text_search`) and **semantic/vector** (`vector_search`, default `minimum_score=0.2`) search, with graceful fallback between them.
 
-```
-+--------------------------------------------------------------+
-|  FRONTEND   Next.js 16 + React 19 + TypeScript    :3000      |
-|  - Zustand state, TanStack Query 5                           |
-|  - Shadcn/ui (Radix primitives) + Tailwind CSS 4            |
-|  - Notebooks / sources / notes / chat / podcasts / search UI |
-+----------------------------+---------------------------------+
-                             |  HTTP REST + NDJSON + SSE streams
-                             v
-+--------------------------------------------------------------+
-|  API        FastAPI 0.104+ on Python 3.12         :5055      |
-|  - LangGraph 1.0 workflow orchestration (chat/ask/source...) |
-|  - Esperanto multi-provider model layer (14+ providers)      |
-|  - surreal_commands async job queue (podcasts, embeds)       |
-|  - Pydantic v2 validation, Loguru logging                    |
-|  - Prometheus /metrics, X-Request-ID middleware              |
-+----------------------------+---------------------------------+
-                             |  SurrealQL over AsyncSurreal (ws://)
-                             v
-+--------------------------------------------------------------+
-|  DATABASE   SurrealDB v2                            :8000     |
-|  - Graph + document + vector + KV in one engine              |
-|  - HNSW vector indexes (DIMENSION 768)                       |
-|  - native vector::similarity::cosine, BM25 full-text         |
-+--------------------------------------------------------------+
-```
+**AI interaction**
+- **Chat** graph (conversational agent with message history + optional MCP tool use).
+- **Ask** graph (query → retrieve → synthesize with citations).
+- **Source chat** (chat scoped to one source).
+- **Transformation** graph (custom per-source LLM operations).
+- Smart provider routing: prefer local model when healthy, fall back to cloud (`open_notebook/ai/provision.py`).
+- Per-request model override via `RunnableConfig`.
 
-The same diagram is mirrored in `CLAUDE.md` (root) and `open_notebook/CLAUDE.md`.
+**Podcasts**
+- Multi-speaker podcast generation (`podcast-creator`) with episode + speaker profiles.
+- Async job queue; retry endpoint (`POST /podcasts/episodes/{id}/retry`); no silent-audio fallback.
 
-### Default ports
+**Memory (Plus-only)**
+- **mem0** in-process memory (chat summarizer + fact extractor).
+- Optional **OpenChronicle** MCP bridge for a "Capture Inbox".
+- Memory dashboard window.
 
-| Service     | Dev port | Notes |
-|-------------|----------|-------|
-| Frontend    | `3000`   | `make frontend` / `npm run dev` |
-| API         | `5055`   | `make api` → `uv run --env-file .env run_api.py` |
-| SurrealDB   | `8000`   | `make database` → `docker compose up -d surrealdb` |
-| Legacy Streamlit UI | `8502` | Docker-only legacy path |
+**Desktop platform (Plus-only)**
+- First-run setup wizard (provider selection, model dir).
+- Auto-download of embedding + STT + TTS models.
+- Local model manager window; hot-swap chat GGUF without restart.
+- System tray (Open Main / Models / Memory / Quit).
+- 20+ built-in themes injected into the webview.
+- Singleton enforcement + orphan process reaper.
+- Automatic DB backup/export + self-healing repair on boot.
+- In-app update notifier.
 
-In the **desktop bundle**, ports are not fixed — the launcher allocates 9 free
-ports atomically at startup via `desktop/ports.py::find_free_ports(9)` (surreal,
-api, frontend, embed, whisper, piper, chat-llm, memory, openchronicle). See §4.
+**Ops / security**
+- Prometheus `/metrics`; health endpoints `/health`, `/livez`, `/readyz`.
+- Fernet-encrypted credential store (per-provider records).
+- Password auth middleware, rate limiting, security headers, request IDs.
+- SSRF-protected URL validation.
 
 ---
 
-## 3. Component relationships
+## 3. Tech stack (with versions)
 
-```
-                         frontend/src/lib/api/*  (axios clients)
-                                   |
-                                   v
-   frontend (Next.js)  --rewrites-->  /api/*  --->  api/main.py (FastAPI)
-                                                       |
-        +----------------------------------------------+-------------------+
-        |                         |                    |                   |
-        v                         v                    v                   v
-  api/routers/*.py         api/*_service.py     open_notebook/graphs/*  open_notebook/
-  (thin HTTP layer)        (orchestration)      (LangGraph workflows)   domain/*.py
-        |                         |                    |                   |
-        +-------------------------+--------------------+-------------------+
-                                  |
-                                  v
-                 open_notebook/database/repository.py
-                 (repo_query / repo_create / repo_relate / ...)
-                                  |
-                                  v
-                          SurrealDB (graph DB)
-```
+### Frontend — `frontend/` (`frontend/package.json`)
+| Concern | Choice | Version |
+|---|---|---|
+| Framework | Next.js (App Router, standalone output) | `^16.2.3` |
+| UI runtime | React / React DOM | `^19.2.3` |
+| Language | TypeScript | `^5` |
+| State | Zustand | `^5.0.6` |
+| Data fetching | TanStack React Query | `^5.83.0` |
+| Styling | Tailwind CSS v4 (`@tailwindcss/postcss`) + shadcn/ui | `^4` |
+| Components | Radix UI primitives (accordion, dialog, dropdown, select, tabs, tooltip, …) | `1.x`–`2.x` |
+| Forms | react-hook-form `^7.60.0` + zod `^4.0.5` + `@hookform/resolvers` `^5.1.1` |
+| Markdown/math | react-markdown `^10.1.0`, remark-gfm/math, rehype-katex, `@uiw/react-md-editor` |
+| Graph/flow | `@xyflow/react` `^12.11.1` |
+| HTTP | axios `^1.15.0` |
+| i18n | i18next `^25.7.3`, react-i18next `^16.5.0`, browser language detector |
+| Virtualization | `@tanstack/react-virtual` `^3.13.24` |
+| PDF | react-pdf `^10.4.1` |
+| Toasts / cmd / motion | sonner, cmdk, framer-motion |
+| Test | Vitest `^4.1.8`, Testing Library, jsdom |
+| Lint | ESLint `^9` + `eslint-config-next` |
 
-Key layering rules (from `api/CLAUDE.md`, `open_notebook/CLAUDE.md`):
+### Backend — `api/` + `open_notebook/` (`pyproject.toml`)
+| Concern | Choice | Constraint |
+|---|---|---|
+| Python | CPython | `>=3.11,<3.13` (bundled desktop runtime is 3.12) |
+| Web framework | FastAPI | `>=0.136.3` |
+| ASGI server | uvicorn | `>=0.24.0` |
+| Validation | Pydantic v2 | `>=2.9.2` |
+| Logging | Loguru | `>=0.7.2` |
+| Orchestration | LangChain / LangGraph | `langchain>=1.2.0`, `langgraph>=1.0.10` |
+| LG checkpoints | langgraph-checkpoint-sqlite | `>=3.0.1` |
+| LC providers | langchain-openai/anthropic/ollama/google-genai/groq/mistralai/deepseek/community | see pyproject |
+| Tokenizer | tiktoken | `>=0.12.0` |
+| DB driver | surrealdb | `>=1.0.4` |
+| Multi-provider AI | esperanto | `>=2.20.0,<3` |
+| Job queue | surreal-commands | `>=1.3.1,<2` |
+| Content extraction | content-core | `>=1.14.1,<2` |
+| Prompt templating | ai-prompter (Jinja2) | `>=0.4,<1` |
+| Podcasts | podcast-creator | `>=0.12.0,<1` |
+| MCP | mcp | `>=1.0.0` |
+| Metrics | prometheus-client | `>=0.20.0` |
+| Numerics / i18n | numpy `>=2.4.1`, pycountry `>=26.2.16`, babel `>=2.18.0` |
+| Model fetch | huggingface-hub | `>=1.3.0` |
 
-- **Routers** (`api/routers/*.py`) are thin: parse request → call a service →
-  shape the HTTP response. Registered in `api/main.py` via `app.include_router(...)`
-  under the `/api` prefix.
-- **Services** (`api/*_service.py`, e.g. `chat_service.py`, `podcast_service.py`,
-  `credentials_service.py`) own orchestration and call into domain models and
-  LangGraph workflows.
-- **Domain models** (`open_notebook/domain/*.py`) are Pydantic models bound to
-  SurrealDB tables via the repository layer. Two base classes:
-  - `ObjectModel` — mutable records (notebook, source, note, chat_session,
-    model, credential…).
-  - `RecordModel` — singleton config rows (ContentSettings, DefaultPrompts).
-- **Repository** (`open_notebook/database/repository.py`) is the only place that
-  speaks SurrealQL. No connection pooling — each `repo_*` call opens and closes a
-  connection via the `db_connection()` async context manager.
-- **AI layer** (`open_notebook/ai/`) wraps Esperanto's `AIFactory` and resolves
-  model selection + credentials (`models.py`, `provision.py`, `key_provider.py`,
-  `router.py`, `offline_gate.py`, `privacy_gate.py`).
-
----
-
-## 4. Desktop launcher + sidecars
-
-The desktop app is a Python process (entry `desktop/__main__.py` → `desktop/app.py`
-→ `desktop/launcher.py`) that renders a `pywebview` window pointing at the local
-Next.js frontend, and **supervises a tree of child processes ("sidecars")**.
-
-Spawn orchestration lives in `desktop/launcher.py` (`Supervisor.start_all`). At
-startup it allocates 9 ports and spawns:
-
-| Sidecar | Spawn method | Command (paraphrased from `launcher.py`) | Purpose |
-|---------|--------------|------------------------------------------|---------|
-| SurrealDB | `_spawn_surreal(port)` | bundled `surreal` binary, RocksDB store | Database engine |
-| FastAPI   | `_spawn_api(port)`     | `run_api.py` via bundled venv python | REST/SSE API |
-| Next.js   | `_spawn_next(port)`    | Node standalone server, `PORT=<frontend_port>` | Frontend |
-| llama.cpp **embed** | `_spawn_llamacpp_embed(port)` | `python -m llama_cpp.server --model <nomic-embed> --embedding true --n_gpu_layers ...` | Embeddings (nomic-embed-text-v1.5, 768-dim) |
-| llama.cpp **chat**  | `_spawn_llamacpp_chat(port)`  | `python -m llama_cpp.server --model <chat.gguf> --n_ctx <auto> --n_gpu_layers ...` | Local chat LLM (Hermes-3 / Qwen2.5-Instruct / Llama-3.2) |
-| MLX **chat** | `desktop/providers/mlx.py` | `python -m mlx_lm.server --model <AI_Models/MLX/repo> --host 127.0.0.1 --port <free>` | Apple-Silicon local OpenAI-compatible chat |
-| Whisper STT | `_spawn_whisper(port)` | `python -m desktop_shims.whisper_shim --model <name>` | Speech-to-text (faster-whisper) |
-| Piper TTS   | `_spawn_piper(port)`   | `python -m desktop_shims.piper_shim --voice name=<path> ...` | Text-to-speech |
-| Memory      | `_spawn_memory_retriever(...)` | mem0-backed memory shim | Fact/preference/episode recall |
-| OpenChronicle | `_spawn_openchronicle(...)` | `desktop_shims/openchronicle_shim.py` (MCP bridge) | Optional MCP integration |
-
-Reference (verbatim) — the embed sidecar spawn, `desktop/launcher.py:1599`:
-
-```python
-def _spawn_llamacpp_embed(self, port: int) -> None:
-    if self.nomic_embed_path is None or not self.nomic_embed_path.exists():
-        return  # silently skip; embeddings just won't work this session
-    args = [
-        str(self.venv_python), "-m", "llama_cpp.server",
-        "--model", str(self.nomic_embed_path),
-        "--host", "127.0.0.1", "--port", str(port),
-        "--embedding", "true",
-        # v0.8.67c — GPU-offload the embedder too (Metal on Apple Silicon).
-        "--n_gpu_layers", _n_gpu_layers("ONP_EMBED_N_GPU_LAYERS"),
-    ]
-    self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
-```
-
-And the chat sidecar (`desktop/launcher.py:1939`):
-
-```python
-args = [
-    str(self.venv_python), "-m", "llama_cpp.server",
-    "--model", str(self.chat_llm_path),
-    "--host", "127.0.0.1", "--port", str(port),
-    "--n_ctx", n_ctx,                     # auto-detected from GGUF metadata
-    "--n_gpu_layers", _n_gpu_layers("ONP_CHAT_LLM_N_GPU_LAYERS"),  # -1 = all on macOS
-]
-```
-
-### Sidecar wiring (env handed to the API)
-
-`start_all` builds a shared `session_env` dict and exports the sidecar URLs to
-the API process (`desktop/launcher.py:~373`), e.g.:
-
-```python
-"SURREAL_URL":      f"ws://127.0.0.1:{surreal_port}/rpc",
-"API_PORT":         str(api_port),
-"MEMORY_CHAT_LLM_URL":  f"http://127.0.0.1:{chat_llm_port}/v1",
-"MEMORY_EMBED_URL":     f"http://127.0.0.1:{embed_port}/v1",
-"MEMORY_SURREAL_URL":   f"ws://127.0.0.1:{surreal_port}/rpc",
-```
-
-> **Gotcha baked into the code (`launcher.py:~379`):** `PORT` is deliberately
-> *not* placed in the shared `session_env`. `llama_cpp.server` and other
-> uvicorn-based children read `PORT` from the environment, so a shared `PORT`
-> caused the embed server to bind the frontend's port. `PORT` is now passed
-> **only** to the Next.js spawn.
-
-### GPU offload helper
-
-`_n_gpu_layers(env_name)` (`launcher.py:42`) resolves `--n_gpu_layers`: defaults
-to `-1` (all layers) on macOS (Metal), `0` (CPU) elsewhere, overridable per
-sidecar via the named env var without a rebuild.
-
-### Context-length autodetection
-
-`_detect_gguf_context_length(gguf_path)` (`launcher.py:1639`) reads the
-`<arch>.context_length` GGUF metadata field without loading the whole model, so
-`n_ctx` matches what the model advertises (e.g. Hermes-3 → 131072), capped by
-`ONP_CHAT_LLM_CTX_MAX` for RAM safety. Falls back to `32768` on any parse error.
-
-### Port allocation
-
-`desktop/ports.py::find_free_ports(n)` binds `n` probe sockets with
-`SO_REUSEADDR` simultaneously (held until return) and de-duplicates the result,
-re-probing up to `_MAX_REPROBE_ATTEMPTS = 5` times to avoid a race where the OS
-hands the same ephemeral port to two sockets.
-
-### Desktop config
-
-`desktop/config.py` defines a frozen `Config` dataclass persisted to
-`~/.open-notebook-plus/config.toml` (mode `0o600`, parent dir `0o700`). Fields:
-`model_dir`, `provider` (`ollama` | `llamacpp` | `none`), `default_model`,
-`surreal_user`, `surreal_password`, `theme`, `openchronicle_choice`,
-`encryption_key` (auto-generated `secrets.token_urlsafe(32)` if absent). The
-default `model_dir` is `~/Desktop/AI_Models` (`desktop/config.py::default_model_dir`).
-GGUF models are expected under `~/Desktop/AI_Models/GGUF/`; complete MLX model
-repositories are expected under `~/Desktop/AI_Models/MLX/`.
-
-> Path resolution is centralized in `desktop/paths.py::user_home()` —
-> `$HOME` → `$USERPROFILE` → `Path.home()` — to guarantee a writable home dir
-> on every OS (Windows installs put the `.exe` in a read-only `Program Files`).
-
----
-
-## 5. LangGraph workflow patterns
-
-All AI workflows are LangGraph `StateGraph`s living in `open_notebook/graphs/`.
-Each defines a `TypedDict` state, node coroutines, edges, and compiles with a
-checkpointer. They all resolve models through `provision_langchain_model()` /
-`provision_langchain_chat_model()` (`open_notebook/ai/provision.py`).
-
-### `chat.py` — conversational agent
-
-State + graph (`open_notebook/graphs/chat.py:69,916`):
-
-```python
-class ThreadState(TypedDict):
-    messages: Annotated[list, add_messages]
-    notebook: Optional[Notebook]
-    context: Optional[str]
-    # ... routing / memory / tool-loop fields
-
-agent_state = StateGraph(ThreadState)
-agent_state.add_node("agent", call_model_with_messages)
-agent_state.add_edge(START, "agent")
-agent_state.add_edge("agent", END)
-graph = agent_state.compile(checkpointer=memory)            # sync SqliteSaver
-_async_graph = agent_state.compile(checkpointer=async_memory)  # AsyncSqliteSaver
-```
-
-Notable patterns:
-- **Dual checkpointers** — a sync `SqliteSaver` for `asyncio.to_thread(graph.get_state)`
-  reads and an `AsyncSqliteSaver` for the `astream_events` / `ainvoke` streaming
-  path. Both point at the **same** SQLite file (`LANGGRAPH_CHECKPOINT_FILE`).
-- **Message-history trimming** — `add_messages` is append-only, so each turn the
-  graph trims history to `ONP_CHAT_HISTORY_CHAR_CAP` (default `12_000` chars ≈
-  3,000 tokens) via `trim_message_history`.
-- **Memory recall** — `recall_memory(query=last_user_message)` +
-  `render_memory_block` inject a "WHAT YOU REMEMBER ABOUT THE USER" block into
-  the system prompt.
-- **Smart routing / privacy gate / MCP tools** — opt-in per-turn local-vs-cloud
-  routing (`open_notebook/ai/router.py`), fail-closed privacy gate
-  (`privacy_gate.py`), and DB-backed MCP tool servers resolved per conversation.
-
-### `ask.py` — search + synthesis
-
-Multi-node graph (`open_notebook/graphs/ask.py:348`):
-
-```python
-agent_state = StateGraph(ThreadState)
-agent_state.add_node("agent", call_model_with_messages)        # plan queries
-agent_state.add_node("provide_answer", provide_answer)         # per-query subgraph
-agent_state.add_node("write_final_answer", write_final_answer) # synthesize
-agent_state.add_edge(START, "agent")
-agent_state.add_edge("provide_answer", "write_final_answer")
-agent_state.add_edge("write_final_answer", END)
-```
-
-The "Ask" flow plans search queries, fans out into a `provide_answer` subgraph
-(`SubGraphState`), then synthesizes a final grounded answer. Per-node timeouts
-(`_ask_node_timeout_sec`) and an optional agent-reliability FSM (`_agent_fsm_enabled`,
-`open_notebook/graphs/agent_fsm.py`) let the agent decline to synthesize an
-ungrounded answer (declare `clarify` / `complete`).
-
-### Other graphs
-
-- `source.py` — content ingestion: extract → embed → save.
-- `source_chat.py` — chat scoped to a single source.
-- `transformation.py` — run reusable transformation prompts over content.
-- `prompt.py`, `tools.py` — prompt assembly + tool definitions.
-
----
-
-## 6. Async job queue (`surreal_commands`)
-
-Long-running work (podcast generation, embedding, insight creation) is **not**
-done inline. It is submitted to the `surreal_commands` library, which persists a
-`command` record in SurrealDB and runs a worker process. Patterns:
-
-- `Source.vectorize()` returns a `command_id` and does **not** wait
-  (fire-and-forget).
-- `Note.save()` auto-submits an `embed_note` command.
-- `PodcastEpisode.command` links the episode to its `surreal_commands` job;
-  `get_job_status()` / `get_job_detail()` poll status.
-- **Critical concurrency rule** (root `CLAUDE.md`): the sync
-  `surreal_commands.submit_command` must be wrapped in `asyncio.to_thread(...)`
-  when called from `async def`, or it blocks the event loop.
-
-The worker is started via `make worker` / `make worker-start` (or as a desktop
-sidecar). Podcast commands use `retry={"max_attempts": 1}` to avoid duplicate
-episode records; retries are user-initiated (`POST /podcasts/episodes/{id}/retry`).
-
----
-
-## 7. Technology stack (with versions)
-
-Exact versions from `pyproject.toml`, `frontend/package.json`,
-`desktop/requirements.txt`. See doc 02 for the full pinned lists.
-
-### Backend (`pyproject.toml`, `requires-python = ">=3.11,<3.13"`)
-
-| Component | Package | Version constraint |
-|-----------|---------|--------------------|
-| Web framework | `fastapi` | `>=0.136.3` |
-| ASGI server | `uvicorn` | `>=0.24.0` |
-| Validation | `pydantic` | `>=2.9.2` |
-| Workflows | `langgraph` | `>=1.0.10` (CVE-2026-28277 fix) |
-| LangChain core | `langchain` | `>=1.2.0`; `langchain-core>=1.3.3` |
-| Checkpoints | `langgraph-checkpoint-sqlite` | `>=3.0.1` |
-| Multi-provider AI | `esperanto` | `>=2.20.0,<3` |
-| Database driver | `surrealdb` | `>=1.0.4` |
-| Job queue | `surreal-commands` | `>=1.3.1,<2` |
-| Podcasts | `podcast-creator` | `>=0.12.0,<1` |
-| Content extraction | `content-core` | `>=1.14.1,<2` |
-| Prompts | `ai-prompter` | `>=0.4,<1` |
-| Tokenization | `tiktoken` | `>=0.12.0` |
-| Logging | `loguru` | `>=0.7.2` |
-| Metrics | `prometheus-client` | `>=0.20.0` |
-| MCP client | `mcp` | `>=1.0.0` |
-| LLM providers | `langchain-openai>=1.1.14`, `langchain-anthropic>=1.3.0`, `langchain-ollama>=1.0.1`, `langchain-google-genai>=4.1.2`, `langchain-groq>=1.1.1`, `langchain_mistralai>=1.1.1`, `langchain_deepseek>=1.0.0` | — |
-
-### Frontend (`frontend/package.json`)
-
-| Component | Package | Version |
-|-----------|---------|---------|
-| Framework | `next` | `^16.2.3` |
-| UI runtime | `react` / `react-dom` | `^19.2.3` |
-| State | `zustand` | `^5.0.6` |
-| Data fetching | `@tanstack/react-query` | `^5.83.0` |
-| HTTP | `axios` | `^1.15.0` |
-| Styling | `tailwindcss` | `^4` |
-| Components | `@radix-ui/*` (Shadcn/ui), `lucide-react ^0.525.0` | — |
-| Forms | `react-hook-form ^7.60.0`, `zod ^4.0.5`, `@hookform/resolvers ^5.1.1` | — |
-| Markdown | `react-markdown ^10.1.0`, `@uiw/react-md-editor ^4.0.8`, `remark-gfm ^4.0.1` | — |
-| i18n | `i18next ^25.7.3`, `react-i18next ^16.5.0` | — |
-| Tests | `vitest ^4.1.8`, `@testing-library/react ^16.2.0`, `jsdom ^26.0.0` | — |
-
-### Desktop bundle (`desktop/requirements.txt`)
-
-| Component | Package | Version |
-|-----------|---------|---------|
-| Webview window | `pywebview` | `==5.4` |
-| Packager | `pyinstaller` | `>=6.13.0,<7` |
-| Async HTTP | `aiohttp` | `>=3.11.18,<4` |
-| Local LLM server | `llama-cpp-python[server]` | `>=0.3.16,<0.4` |
-| STT | `faster-whisper` | `>=1.1.0,<2` |
-| TTS | `piper-tts` | `>=1.2.0,<2` |
-| Memory layer | `mem0ai` | `>=0.1.0,<2` |
-| MCP bridge | `mcp>=1.0,<2`, `fastmcp>=3.0,<4` | — |
-| Prompt optimizer | `skillopt` | `>=0.1.0,<0.2` (microsoft/SkillOpt, MIT) |
+Backend dev tools (`[dependency-groups].dev`): `pytest>=9.0.3`, `pytest-asyncio>=1.2.0`, `ruff>=0.14.13`, `mypy`, `pre-commit`. Ruff/isort line length 88; ruff selects `E,F,I,UP006,UP007`.
 
 ### Database
+- **SurrealDB** graph DB (`ws://…/rpc`), namespace/database both `open_notebook`. Stores records + vector embeddings; supports full-text (`search::highlight`) and vector search. Migrations auto-run on API startup via `AsyncMigrationManager` from `.surrealql` files.
 
-- **SurrealDB v2** — single engine providing graph + document + vector + KV.
-  Schema lives in `open_notebook/database/migrations/*.surrealql` and is applied
-  automatically on API startup by `AsyncMigrationManager` (see doc 03).
+### Desktop wrapper — `desktop/` (`desktop/requirements.txt`, pinned separately from pyproject)
+| Concern | Package | Pin |
+|---|---|---|
+| Native window | pywebview | `==5.4` |
+| Packaging | pyinstaller | `>=6.13.0,<7` |
+| Local chat/embed server | llama-cpp-python[server] | `>=0.3.16,<0.4` |
+| Apple-Silicon LLM server | mlx-lm | `>=0.26,<0.27` (darwin/arm64 only) |
+| STT | faster-whisper | `>=1.1.0,<2` |
+| TTS | piper-tts | `>=1.2.0,<2` |
+| Memory | mem0ai | `>=0.1.0,<2` |
+| MCP client / server | mcp `>=1.0,<2`, fastmcp `>=3.0,<4` |
+| Async HTTP | aiohttp `>=3.11.18,<4`, httpx `==0.28.1` |
+| Prompt optimizer | skillopt `>=0.1.0,<0.2` |
 
----
-
-## 8. Cross-cutting concerns
-
-- **Observability** — every response carries an `X-Request-ID` header
-  (`RequestIDMiddleware`); every log line includes `req=<8-char-id>`. A
-  `PrometheusMetricsMiddleware` exposes `GET /metrics` (`api/metrics.py`):
-  HTTP request totals/latency, `db_query_duration_seconds`, `db_slow_queries_total`
-  (gated by `ONP_SLOW_QUERY_LOG_MS`), `memory_recall_fallthrough_total`,
-  `checkpoint_prune_runs_total`, privacy-gate + tool-loop counters.
-- **Security middleware** (`api/main.py`): `SecurityHeadersMiddleware`,
-  `SelectiveGZipMiddleware`, `RateLimitMiddleware` (`api/rate_limit.py`), CORS,
-  and a simple password auth middleware (`api/auth.py`, dev-grade — replace with
-  OAuth/JWT in production).
-- **Encryption** — provider API keys + Gmail OAuth tokens are encrypted at rest
-  with Fernet (`open_notebook/utils/encryption.py`), keyed by
-  `OPEN_NOTEBOOK_ENCRYPTION_KEY`. Optional PBKDF2-HMAC-SHA256 KDF
-  (`ONP_ENCRYPTION_KDF=pbkdf2`, 600k iterations) and key rotation
-  (`OPEN_NOTEBOOK_ENCRYPTION_KEYS=new-key,old-key`).
-- **Privacy gate** (`ONP_PRIVACY_GATE`) — keeps turns containing detected
-  secrets/PII on the local model (or blocks them) instead of sending to cloud.
-- **Offline gate** (`open_notebook/ai/offline_gate.py`) — `offline_mode` setting
-  forces local-only operation and short-circuits web search / Gmail digests.
+Bundled binaries live under `desktop/bin/` (fetched by `desktop/build/fetch_runtimes.py`): the `surreal` binary, a Node runtime, the `uv` binary, and a `python-build-standalone` tarball (`python-{arch}.tar.gz`).
 
 ---
 
-## 9. API startup sequence
+## 4. Three-tier + desktop-wrapper architecture
 
-`api/main.py` uses a FastAPI `lifespan` handler (`api/main.py:203`):
-
-1. Construct `AsyncMigrationManager()` (auto-discovers migrations).
-2. `await migration_manager.run_migration_up()` — apply all pending SurrealQL
-   migrations.
-3. `await migrate_podcast_profiles()` — data-migrate legacy podcast
-   provider/model strings to `record<model>` references.
-4. Pre-warm connections, start the digest scheduler task, register routers.
-
-> **Ordering invariant:** SurrealDB must be up before the API starts, and the
-> API must be up before the UI — the UI depends on the API for all data.
-
----
-
-## 10. Repository map (top level)
+Upstream is a classic three-tier web app. "Plus" adds a **process-supervisor + native-window wrapper** (tier 0) around it, plus **model sidecars** hanging off the API tier.
 
 ```
-api/                 FastAPI app: main.py, routers/, *_service.py, middleware/
-open_notebook/       Backend core
-  ai/                Esperanto wrapper, model resolution, routing, gates
-  database/          repository.py, async_migrate.py, migrations/*.surrealql
-  domain/            ObjectModel/RecordModel domain models
-  graphs/            LangGraph workflows (chat, ask, source, transformation)
-  podcasts/          Podcast domain models + data migration
-  mcp/, memory*, digest/, health/, local_models/, tools/, utils/
-frontend/            Next.js 16 app (src/app, src/components, src/lib)
-desktop/             pywebview launcher, sidecar supervision, build/, shims
-prompts/             Jinja2 prompt templates (ai-prompter)
-scripts/             Dev/ops scripts (incl. ralph.sh autonomous loop)
-Makefile             dev + docker + build-mac targets
-pyproject.toml       Backend deps (uv-managed)
-docker-compose.yml   SurrealDB + services for self-host
+┌───────────────────────────────────────────────────────────────────────┐
+│  TIER 0 — DESKTOP WRAPPER  (desktop/, runs natively, never in Docker)  │
+│  launcher.Supervisor  +  pywebview window (WKWebView)                  │
+│  system tray · first-run wizard · model manager · memory dashboard     │
+└───────────────┬───────────────────────────────────────────────────────┘
+                │ spawns + supervises child processes; opens webview at frontend_url
+                ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  TIER 1 — FRONTEND   frontend/  (Next.js 16 standalone, node child)    │
+│  React 19 · Zustand · TanStack Query · shadcn/Radix · Tailwind v4      │
+│  Notebooks · Sources · Notes · Chat · Podcasts · Search · Settings     │
+└───────────────┬───────────────────────────────────────────────────────┘
+                │ HTTP REST (Next.js rewrites /api/* → dynamic uvicorn port)
+                ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  TIER 2 — API   api/ + open_notebook/  (FastAPI on uvicorn, py child)  │
+│  routers/*  ·  4 real services  ·  LangGraph graphs  ·  Esperanto      │
+│  Fernet credential store · migrations · Prometheus · health endpoints  │
+│                                                                         │
+│  ── async job worker (surreal-commands): podcasts, embeddings,         │
+│     insights, transformations  (separate python child, imports        │
+│     `commands/`)                                                        │
+└───────┬──────────────────────────────────────┬────────────────────────┘
+        │ SurrealQL (ws://…/rpc)                │ OpenAI-compatible HTTP (/v1)
+        ▼                                       ▼
+┌─────────────────────────┐   ┌────────────────────────────────────────┐
+│  TIER 3 — SurrealDB      │   │  LOCAL MODEL SIDECARS (per-launch)      │
+│  graph DB + vectors      │   │  llama.cpp chat · llama.cpp embed       │
+│  ns/db = open_notebook   │   │  faster-whisper (STT) · piper (TTS)     │
+│  (surreal binary child)  │   │  mem0 memory retriever · OpenChronicle  │
+└─────────────────────────┘   └────────────────────────────────────────┘
 ```
+
+### Component relationships
+- **Frontend → API:** the browser hits `/api/*`; Next.js rewrites proxy to the API. In dev the API is `http://localhost:5055`; in the packaged app the port is dynamic and injected via env (`API_URL`, `INTERNAL_API_URL`, `NEXT_PUBLIC_API_URL`) and patched into the Next.js standalone rewrites at boot (`desktop/next_rewrites_patcher.py`).
+- **API → SurrealDB:** async driver, connection-pooled, lazy-initialized on first `repo_query`.
+- **API → AI:** `open_notebook/ai/provision.py` picks a provider (local vs cloud) and returns a LangChain model via **Esperanto**; credentials are decrypted from the DB (Fernet) or fall back to env vars (`open_notebook/ai/key_provider.py`).
+- **API → local sidecars:** the API talks to the llama.cpp chat/embed servers over OpenAI-compatible `/v1`; the frontend voice UI talks to whisper/piper shims directly on their dynamic ports.
+- **Worker:** the `surreal-commands` worker imports `commands/` and executes fire-and-forget jobs (podcasts, embeddings, insights, source processing) submitted by the API/domain models.
+
+---
+
+## 5. Request / data-flow diagrams (ASCII)
+
+### Source ingestion (upload → searchable)
+```
+UI upload ──POST /sources──▶ api/routers/sources.py
+                                │ create Source record (SurrealDB)
+                                │ submit "process_source" job (fire-and-forget)
+                                ▼
+                    surreal-commands worker (commands/source_commands.py)
+                                │ source_graph.ainvoke:  extract → transform → save
+                                │ (content-core extracts text/metadata)
+                                ▼
+                        submit "embed_source" job (commands/embedding_commands.py)
+                                │ chunk_text() (content-type aware, 1500/225)
+                                │ generate_embeddings() (batches of 50, Esperanto)
+                                ▼
+                        write SourceEmbedding rows ──▶ SurrealDB (vector index)
+UI polls  GET /commands/{id}  ◀── job status
+```
+
+### Chat turn (SSE stream)
+```
+UI ──POST /chat (message, notebook_id, session_id)──▶ api/routers/chat.py
+        │ load ChatSession history (SurrealDB, capped)
+        │ build context from notebook sources/notes
+        ▼
+   chat graph (open_notebook/graphs/chat.py)
+        │ provision_langchain_model()  (local-if-healthy else cloud, Esperanto)
+        │ optional MCP tool loop
+        │ checkpoint state → SQLite (langgraph-checkpoint-sqlite)
+        ▼
+   token stream ──SSE──▶ UI  (disconnect-aware; reader.cancel on abort)
+```
+
+### Ask / RAG synthesis
+```
+UI ──POST (question)──▶ ask graph (open_notebook/graphs/ask.py)
+        │ query_process → vector_search + text_search over sources
+        │ assemble evidence → final_answer prompt (prompts/ask/*.jinja)
+        ▼
+   answer + citations ──▶ UI
+```
+
+---
+
+## 6. Process model (desktop)
+
+When the user double-clicks the `.app`, the frozen PyInstaller launcher runs `desktop.app.run()`, which builds one **`Supervisor`** (`desktop/launcher.py`) that spawns and monitors a tree of child processes. Ports are all allocated dynamically and atomically via `desktop/ports.py :: find_free_ports(9)` (SO_REUSEADDR probe sockets, de-dup + re-probe).
+
+```
+Open Notebook Plus.app (frozen launcher, pywebview main thread)
+│
+├─ surreal-<arch>  start --user --pass --bind 127.0.0.1:<surreal_port>  file://<data_dir>
+│      (SurrealDB; data at ~/.open-notebook-plus/surreal_data)   [core]
+│
+├─ <venv python> -m uvicorn api.main:app --host 127.0.0.1 --port <api_port>
+│      cwd = upstream_root; waits on /readyz (migrations applied)  [core]
+│
+├─ <venv python> -m surreal_commands.cli.worker --import-modules commands --max-tasks 5
+│      (async job worker; no port)                                [core]
+│
+├─ node <next standalone server>  PORT=<frontend_port>
+│      (Next.js; rewrites patched to api_port; waits on "/" 3× 200) [core]
+│
+├─ llama.cpp embed sidecar   (llama_cpp.server, nomic-embed GGUF)  [optional]
+├─ faster-whisper STT shim   (/v1/audio/transcriptions)           [optional]
+├─ piper TTS shim            (/v1/audio/speech)                    [optional]
+├─ llama.cpp chat sidecar    (chat GGUF, --n_gpu_layers -1 on mac) [optional]
+├─ mem0 memory retriever shim                                     [optional]
+└─ OpenChronicle MCP bridge  (only if a live MCP daemon detected) [optional]
+
+Plus in-process (aiohttp threads in the launcher, not subprocesses):
+  · launcher control plane (restart/hot-swap callbacks)
+  · model-manager window server        (mm_port)
+  · memory-dashboard window server     (memory_dashboard_port)
+  · system tray
+  · pywebview main window → http://127.0.0.1:<frontend_port>/
+```
+
+Core services block startup with early-exit-on-dead-child gates (`_wait_tcp` / `_wait_http` poll `proc.poll()`); optional sidecars are best-effort via `_try_spawn` and degrade gracefully. On `stop_all` the launcher kills whole **process groups** (`start_new_session=True` + `os.killpg` on POSIX, `taskkill /F /T` on Windows) so no `next-server` grandchildren leak.
+
+**Env threaded into every child (`session_env`, `launcher.py :: start_all`)** includes: `DATA_FOLDER` (absolute, always writable), `SURREAL_URL/USER/PASSWORD/NAMESPACE/DATABASE`, `API_PORT`, `API_URL`/`INTERNAL_API_URL`/`NEXT_PUBLIC_API_URL`, `OPEN_NOTEBOOK_ENCRYPTION_KEY`, `OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL`, `OPEN_NOTEBOOK_LOCAL_N_CTX`, `MEMORY_*_URL`, and the launcher control-plane URL/token. `PORT` is deliberately **not** in the shared env (it would hijack uvicorn-based sidecars) — it is passed only to the Next.js child.
+
+---
+
+## 7. Boot sequence (how the pieces come up)
+
+`desktop/app.py :: run()` threads a mutable `AppContext` dataclass through ordered phases:
+
+| # | Phase (`_phase_*`) | What it does |
+|---|---|---|
+| 1 | `load_config` | Locate `~/.open-notebook-plus/config.toml`; set `_first_run`; set up `logs/` + rotating `launcher.log` + `ProgressBus` (`progress.jsonl`). |
+| 2 | `wizard_if_first_run` | On first launch, run the blocking first-run wizard (`desktop/first_run/server.py`); then load `Config`. |
+| 3 | `bootstrap_runtime` | Extract bundled `python-build-standalone` into `~/.open-notebook-plus/`; provision the venv from `desktop/requirements.lock` using bundled `uv` (`desktop/bootstrap.py`). Sets `ctx.venv_py`, `ctx.bin_dir`, `ctx.arch`. |
+| 4 | `download_models` | Auto-download embedding + STT + TTS voice models into `model_dir` (`desktop/model_downloads.py`). Non-fatal. |
+| 5 | `select_provider` | For `ollama`/`mlx` start/connect the provider and populate `extra_env`. (`llamacpp` is now a no-op here — the Supervisor owns the spawn.) |
+| — | `detect_openchronicle` | Two-stage probe (TCP then MCP `initialize`) of the OpenChronicle daemon; sets `openchronicle_available`. Never raises. |
+| — | `register_memory_commands` | Copy `desktop/memory/memory_commands.py` into the upstream `commands/` dir so the worker discovers the memory handlers. |
+| 6 | `start_supervisor` | Resolve model paths (chat GGUF via a **timeout-bounded** dir scan, nomic embed, piper voices, whisper), build `Supervisor(...)`, call `start_all()`. Handles the `AlreadyRunning` singleton case with a native dialog. |
+| 7 | `auto_register` | Register discovered local models/credentials with the API using the supervisor's dynamic ports; active health-probe each sidecar. Non-fatal. |
+| 8 | `start_model_manager` | Start the aiohttp model-manager window server thread (`mm_port`). |
+| — | `start_memory_dashboard` | Start the aiohttp memory-dashboard server thread; wire memory-retriever + OpenChronicle + upstream-API URLs. |
+| 9 | `install_tray` | Install the system tray (Open Main / Models / Memory / Quit). |
+| 10 | `open_window` | Open the pywebview main window at `frontend_url` — **blocks** until closed; teardown calls `sv.stop_all()`. |
+
+Phases 7–10 are wrapped in `try/except BaseException` that calls `sv.stop_all()` so no child processes are orphaned if a late phase fails.
+
+### The window handoff (`desktop/window.py :: open_window`)
+The window opens on an **inline splash HTML** first (paints instantly, no network). A python-driven **handoff controller** (`_start_handoff_controller`) then:
+1. Waits until `_frontend_server_ready(url)` passes `consecutive` times AND the splash has shown ≥ `min_splash_sec`.
+2. Calls `window.load_url(url)`.
+3. Waits for the `loaded` event to confirm a *real* Next.js app page via the JS sentinel `(!!window.__next_f) && !title.startsWith("404")` — this rejects WebKit's error page and Next's warm-up 404 (which returns HTTP 200).
+4. On timeout, restores the splash and retries (budget ~40×6s) — the error page can never be the resting state.
+
+Once confirmed, `_theme_injection_js()` injects all ~20 themes' shadcn CSS variables (keyed by `[data-theme]`), the voice-injection JS (with per-launch STT/TTS shim URLs), and the memory-injection JS (with `window.ONP_VERSION`, `window.ONP_MEMORY_URL`). WebKit storage is persisted (`private_mode=False`, `storage_path=~/.open-notebook-plus/webview_data`) so the wizard/intro cookies survive restarts.
+
+`window.pywebview.api.relaunch()` (`_OnpJsApi`) powers the one-click "Repair & restart" DB-repair banner: it spawns a detached shell that SIGTERMs (then SIGKILLs) this process and `open`s the `.app` again.
+
+---
+
+## 8. Key architectural notes & gotchas (from CLAUDE.md)
+
+- **Two real API layers:** routers (most business logic lives inline) + Pydantic models. Only four `*_service.py` files are actually imported: `chat_service`, `podcast_service`, `command_service`, `credentials_service` (per-resource services were deleted in v0.7.21).
+- **Async-first:** every DB query, graph invocation, and AI call is `await`. Sync `surreal_commands.submit_command` inside `async def` must be wrapped in `asyncio.to_thread`.
+- **Edge tables** `reference`, `artifact`, `refers_to` — `in`/`out` direction is easy to invert; delete cascades must be complete.
+- **LangGraph state-shape variance:** accept both dict and Pydantic via `getattr` fallback.
+- **SSE handlers** must check `is_disconnected()` and `reader.cancel()` before release.
+- **Credentials** are individual Fernet-encrypted records (`open_notebook/domain/credential.py`); `OPEN_NOTEBOOK_ENCRYPTION_KEY` is required.
+- **Error handling:** `open_notebook.exceptions` hierarchy + `classify_error()` map raw provider errors to typed exceptions → HTTP codes (404/400/401/429/422/502/500) via global FastAPI handlers.
