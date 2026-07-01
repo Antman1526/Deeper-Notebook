@@ -1,653 +1,731 @@
 # 03 — Database Schema & Data Models
 
-> Recreation documentation for **Open Notebook Plus**. This document describes the
-> complete SurrealDB schema (from `open_notebook/database/migrations/*.surrealql`),
-> the edge/relation tables, the Pydantic domain models, indexes, and the
-> `AsyncMigrationManager`. Companion docs:
-> [`01-project-overview-architecture.md`](./01-project-overview-architecture.md),
-> [`02-environment-setup-dependencies.md`](./02-environment-setup-dependencies.md).
->
-> **Secrets policy:** API keys live in the `credential` table **encrypted at
-> rest** (Fernet). Never store or document plaintext keys; use `<YOUR_KEY>`.
+> Recreation reference for **Open Notebook Plus** (`desktop-app` branch).
+> Persistence tier: **SurrealDB** (graph DB with native vector search + full-text
+> BM25 search). All access goes through the async repository layer
+> (`open_notebook/database/repository.py`) and Pydantic domain models
+> (`open_notebook/domain/`, `open_notebook/ai/models.py`,
+> `open_notebook/podcasts/models.py`). Schema is applied by numbered SurrealQL
+> migrations run automatically on API startup.
+
+This document is exhaustive enough to rebuild the schema and the domain layer
+from scratch. Field lists are copied verbatim from the Pydantic models; table
+definitions are copied from the `.surrealql` migrations.
 
 ---
 
-## 1. Database engine model
+## 1. Storage & connection model
 
-The store is **SurrealDB v2** — a single engine combining graph relations,
-schema-full/schema-less documents, native vector search, BM25 full-text search,
-and KV. Connection is over WebSocket RPC (`ws://host:8000/rpc`) using the
-`surrealdb` Python `AsyncSurreal` client, namespace `open_notebook`, database
-`open_notebook` (or `production` in the desktop bundle).
+- **Engine**: SurrealDB (`surrealdb>=1.0.4` async driver). Default endpoint
+  `ws://localhost:8000` namespace/database configurable via env.
+- **Connection resolution** (`repository.py`):
+  - `get_database_url()` — `SURREAL_URL`, else built from `SURREAL_ADDRESS` +
+    `SURREAL_PORT`.
+  - `get_database_password()` — `SURREAL_PASSWORD`, falling back to legacy
+    `SURREAL_PASS`.
+  - Namespace/database selected after sign-in inside the `db_connection()` async
+    context manager.
+- **Pooling**: A DB pool lazy-initializes on the first `repo_query` call
+  (v0.7.18). Pool size via `ONP_DB_POOL_SIZE` (default 4). Pool is drained on
+  API shutdown.
+- **Repository functions** (all async): `repo_query(query, vars)`,
+  `repo_create(table, data)`, `repo_insert(table, data_list, ignore_duplicates)`,
+  `repo_upsert(table, id, data, add_timestamp)`, `repo_update(table, id, data)`,
+  `repo_delete(record_id)`, `repo_relate(source, relationship, target, data)`.
+- **Helpers**: `ensure_record_id(value)` coerces `str | RecordID` → `RecordID`;
+  `parse_record_ids(obj)` recursively stringifies `RecordID`s in a result tree.
+- **Timestamps**: `repo_create` / `repo_update` auto-set `created` / `updated`.
+  The domain `ObjectModel.save()` writes them as **aware-UTC ISO-8601 strings**
+  (v0.7.187 — `datetime.now(timezone.utc).isoformat()`), not naive local time.
 
-All SQL is SurrealQL. There is **no ORM**; domain models map to tables through
-the repository layer (`open_notebook/database/repository.py`).
+### 1.1 Two persistence base classes (`open_notebook/domain/base.py`)
 
----
-
-## 2. Migration system (`AsyncMigrationManager`)
-
-Source: `open_notebook/database/async_migrate.py`. Migrations are plain
-`.surrealql` files numbered `1..N` in
-`open_notebook/database/migrations/`, each optionally paired with `<n>_down.surrealql`.
-
-### Discovery & ordering
-
-`AsyncMigrationManager._discover_migrations()` scans the migrations directory at
-construction time and builds two parallel lists (ups, downs) indexed by version.
-Key invariants enforced (from the code comments):
-
-- **Contiguous numbering** — a gap (e.g. missing `4.surrealql` between `3` and
-  `5`) raises `RuntimeError` rather than silently mis-numbering versions. This
-  replaced an earlier hard-coded `1..N` list.
-- **Parallel down list** — `down_migrations[i]` is `None` if `<n>_down.surrealql`
-  is absent; `run_one_down` guards against missing entries instead of
-  `IndexError`-ing.
+**`ObjectModel`** — mutable records with SurrealDB auto-IDs.
 
 ```python
-class AsyncMigrationManager:
-    def __init__(self):
-        self.up_migrations, self.down_migrations = self._discover_migrations()
-        self.runner = AsyncMigrationRunner(
-            up_migrations=self.up_migrations,
-            down_migrations=self.down_migrations,
-        )
-
-    async def needs_migration(self) -> bool:
-        return await self.get_current_version() < len(self.up_migrations)
-
-    async def run_migration_up(self):
-        if await self.needs_migration():
-            await self.runner.run_all()
+class ObjectModel(BaseModel):
+    id: Optional[str] = None
+    table_name: ClassVar[str] = ""
+    nullable_fields: ClassVar[set[str]] = set()  # fields allowed to persist as None
+    created: Optional[datetime] = None
+    updated: Optional[datetime] = None
 ```
 
-### Version tracking
+Key behaviors:
+- `get(id)` — **polymorphic** fetch; resolves the subclass from the ID's table
+  prefix (`table:id`) by scanning `ObjectModel.__subclasses__()`. Fails if the
+  subclass module isn't imported.
+- `get_all(order_by, limit, offset)` — table scan; `order_by` is validated
+  against `^[a-z_][a-z0-9_]*$` + `{asc,desc}` (SurrealQL-injection guard);
+  `limit`/`offset` validated as positive/non-negative ints (rejects `bool`),
+  raising `InvalidInputError` (→ HTTP 400) *before* the DB call.
+- `save()` — validates, calls `_prepare_save_data()`, then `repo_create` (new)
+  or `repo_update` (existing). `_prepare_save_data()` drops `None` values
+  **unless** the key is in `nullable_fields`.
+- `_coerce_id_to_str` validator (v0.8.66 D-6) — every model coerces a raw
+  `RecordID` id to `str` uniformly.
 
-Versions are recorded in the `_sbl_migrations` table:
-
-```python
-async def bump_version() -> None:
-    current_version = await get_latest_version()
-    new_version = current_version + 1
-    await repo_query(
-        "CREATE type::thing('_sbl_migrations', $version) "
-        "SET version = $version, applied_at = time::now();",
-        {"version": new_version},
-    )
-```
-
-`get_latest_version()` returns `max(version)` from `_sbl_migrations`, or `0` if
-the table is missing (the fresh-install bootstrap case). `get_all_versions()`
-classifies errors: a missing table logs at DEBUG (bootstrap), any other error
-logs at WARNING (could otherwise re-run every migration on a transient failure).
-
-### When migrations run
-
-The FastAPI `lifespan` handler (`api/main.py:237`) constructs the manager and
-calls `run_migration_up()` on startup, then runs the podcast data migration
-(`migrate_podcast_profiles()`). A sync wrapper `MigrationManager` exists in
-`migrate.py` for legacy callers.
-
-### Loading & sanitizing files
-
-`AsyncMigration.from_file()` reads a `.surrealql` file, strips comment lines
-(`--`) and blank lines, and joins the rest with spaces into a single statement
-batch executed via `connection.query(sql)`.
+**`RecordModel`** — **singletons** with a fixed `record_id` (config records).
+`__new__` returns the cached instance per `record_id`; `update()` does an
+`repo_upsert`; `get_instance()` loads from DB lazily; `clear_instance()` resets
+for tests.
 
 ---
 
-## 3. Migration-by-migration schema
+## 2. Record tables
 
-Below is what each migration file defines. Files are in
-`open_notebook/database/migrations/`.
+Below, each table is given with its migration-defined SurrealQL schema and its
+Pydantic domain model (verbatim field list). Unless noted, `created`/`updated`
+are `datetime` auto-managed on every table.
 
-### Migration 1 — core content tables, search, default models
+### 2.1 `notebook` (SCHEMAFULL) — research project container
 
-Defines the foundational tables and the search functions.
+Migration `1.surrealql`:
+```surql
+DEFINE TABLE IF NOT EXISTS notebook SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name        ON TABLE notebook TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS description ON TABLE notebook TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS archived    ON TABLE notebook TYPE option<bool> DEFAULT False;
+DEFINE FIELD IF NOT EXISTS created ON notebook DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON notebook DEFAULT time::now() VALUE time::now();
+```
 
-```sql
--- source: a content item (file / URL / text)
+Domain model (`open_notebook/domain/notebook.py`):
+```python
+class Notebook(ObjectModel):
+    table_name: ClassVar[str] = "notebook"
+    name: str
+    description: str
+    archived: Optional[bool] = False
+    # name_must_not_be_empty validator → InvalidInputError on blank name
+```
+Navigation methods: `get_sources()`, `get_notes()`, `get_chat_sessions(limit,
+offset)`, `get_graph()` (mind-map: notebook hub + source/note nodes),
+`get_delete_preview()`, `delete(delete_exclusive_sources)`. See §5 for cascade.
+
+### 2.2 `source` (SCHEMAFULL) — ingested content item
+
+Migration `1.surrealql` (+ `25.surrealql` adds `provenance`, `source_type`;
+`8.surrealql` adds `command`):
+```surql
 DEFINE TABLE IF NOT EXISTS source SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS asset ON TABLE source FLEXIBLE TYPE option<object>;
-DEFINE FIELD IF NOT EXISTS title ON TABLE source TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS topics ON TABLE source TYPE option<array<string>>;
+DEFINE FIELD IF NOT EXISTS asset     ON TABLE source FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS title     ON TABLE source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS topics    ON TABLE source TYPE option<array<string>>;
 DEFINE FIELD IF NOT EXISTS full_text ON TABLE source TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS created ON source DEFAULT time::now() VALUE $before OR time::now();
 DEFINE FIELD IF NOT EXISTS updated ON source DEFAULT time::now() VALUE time::now();
+-- migration 8:
+DEFINE FIELD IF NOT EXISTS command    ON source TYPE option<record<command>>;
+-- migration 25:
+DEFINE FIELD IF NOT EXISTS provenance  ON TABLE source FLEXIBLE TYPE option<object> DEFAULT {};
+DEFINE FIELD IF NOT EXISTS source_type ON TABLE source TYPE option<string>;
+```
 
--- source_embedding: chunked vector store for a source
+Domain model:
+```python
+class Source(ObjectModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    table_name: ClassVar[str] = "source"
+    asset: Optional[Asset] = None
+    title: Optional[str] = None
+    topics: Optional[list[str]] = Field(default_factory=list)
+    provenance: Optional[dict[str, Any]] = Field(default_factory=dict)
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = None
+    full_text: Optional[str] = None
+    command: Optional[str | RecordID] = Field(default=None, ...)  # link to surreal-commands job
+```
+`Asset` helper: `class Asset(BaseModel): file_path: Optional[str]; url: Optional[str]`.
+
+Methods: `vectorize()` (submits `embed_source` job, fire-and-forget, returns
+command_id — NOT auto-called on save), `add_insight(type, content)` (submits
+`create_insight` job), `get_insights()`, `get_context(short|long)`,
+`get_status()` / `get_processing_progress()` (poll surreal-commands),
+`get_embedded_chunks()`, `add_to_notebook()` (idempotent `reference` edge).
+
+### 2.3 `source_embedding` (SCHEMAFULL) — vector chunks
+
+Migration `1.surrealql`:
+```surql
 DEFINE TABLE IF NOT EXISTS source_embedding SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS source    ON TABLE source_embedding TYPE record<source>;
 DEFINE FIELD IF NOT EXISTS order     ON TABLE source_embedding TYPE int;
 DEFINE FIELD IF NOT EXISTS content   ON TABLE source_embedding TYPE string;
 DEFINE FIELD IF NOT EXISTS embedding ON TABLE source_embedding TYPE array<float>;
+```
+HNSW vector index (migration `21.surrealql`):
+`DEFINE INDEX source_embedding_hnsw ON source_embedding FIELDS embedding HNSW DIMENSION 768;`
 
--- source_insight: derived insight (transformation output) for a source
+Domain model (minimal — only `content` is declared; `source`/`order`/`embedding`
+are written by the embed worker):
+```python
+class SourceEmbedding(ObjectModel):
+    table_name: ClassVar[str] = "source_embedding"
+    content: str
+    # get_source() → parent Source via `fetch source`
+```
+
+### 2.4 `source_insight` (SCHEMAFULL) — derived AI insight
+
+Migration `1.surrealql` (+ `10`/`13` make `embedding` optional):
+```surql
 DEFINE TABLE IF NOT EXISTS source_insight SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS source       ON TABLE source_insight TYPE record<source>;
 DEFINE FIELD IF NOT EXISTS insight_type ON TABLE source_insight TYPE string;
 DEFINE FIELD IF NOT EXISTS content      ON TABLE source_insight TYPE string;
-DEFINE FIELD IF NOT EXISTS embedding    ON TABLE source_insight TYPE array<float>;
+DEFINE FIELD OVERWRITE     embedding    ON TABLE source_insight TYPE option<array<float>>;
+```
+HNSW index: `source_insight_hnsw ... DIMENSION 768` (migration 21).
 
--- delete cascade: removing a source removes its embeddings + insights
-DEFINE EVENT IF NOT EXISTS source_delete ON TABLE source WHEN ($after == NONE) THEN {
-    delete source_embedding where source == $before.id;
-    delete source_insight  where source == $before.id;
-};
+Domain model:
+```python
+class SourceInsight(ObjectModel):
+    table_name: ClassVar[str] = "source_insight"
+    insight_type: str
+    content: str
+    # get_source(); save_as_note(notebook_id) → creates a Note from the insight
+```
 
--- note: standalone or notebook-linked note
+### 2.5 `note` (SCHEMAFULL) — human/AI note
+
+Migration `1.surrealql` (+ `2` adds `note_type`, `10`/`13` make `embedding`
+optional). **Note: the embedding is a column on the row — there is NO separate
+`note_embedding` table** (a phantom table; audit D-1 removed dead cleanup code):
+```surql
 DEFINE TABLE IF NOT EXISTS note SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS title     ON TABLE note TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS summary   ON TABLE note TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS content   ON TABLE note TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS embedding ON TABLE note TYPE array<float>;
-
--- notebook: research project container
-DEFINE TABLE IF NOT EXISTS notebook SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS name        ON TABLE notebook TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS description ON TABLE notebook TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS archived    ON TABLE notebook TYPE option<bool> DEFAULT False;
-
--- EDGE TABLES (graph relations)
-DEFINE TABLE IF NOT EXISTS reference TYPE RELATION FROM source TO notebook;
-DEFINE TABLE IF NOT EXISTS artifact  TYPE RELATION FROM note   TO notebook;
-
-DEFINE TABLE IF NOT EXISTS podcast_config SCHEMALESS;
-
--- full-text analyzer + BM25 indexes
-DEFINE ANALYZER IF NOT EXISTS my_analyzer
-    TOKENIZERS blank,class,camel,punct FILTERS snowball(english), lowercase;
-DEFINE INDEX IF NOT EXISTS idx_source_title      ON TABLE source         COLUMNS title     SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-DEFINE INDEX IF NOT EXISTS idx_source_full_text  ON TABLE source         COLUMNS full_text SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-DEFINE INDEX IF NOT EXISTS idx_source_embed_chunk ON TABLE source_embedding COLUMNS content  SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-DEFINE INDEX IF NOT EXISTS idx_source_insight    ON TABLE source_insight COLUMNS content    SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-DEFINE INDEX IF NOT EXISTS idx_note              ON TABLE note           COLUMNS content    SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-DEFINE INDEX IF NOT EXISTS idx_note_title        ON TABLE note           COLUMNS title      SEARCH ANALYZER my_analyzer BM25 HIGHLIGHTS;
-
--- fn::text_search(...) and fn::vector_search(...) defined here (see §5)
--- seed singleton:
-IF array::len(select * from open_notebook:default_models) == 0 THEN
-    CREATE open_notebook:default_models SET default_chat_model = ""
-END;
+DEFINE FIELD OVERWRITE     embedding ON TABLE note TYPE option<array<float>>;
+DEFINE FIELD IF NOT EXISTS note_type ON TABLE note TYPE option<string>;   -- migration 2
+DEFINE FIELD IF NOT EXISTS created ON note DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON note DEFAULT time::now() VALUE time::now();
 ```
+HNSW index: `note_hnsw ON note FIELDS embedding HNSW DIMENSION 768` (migration 21).
 
-> **Edge-table direction (critical):** `reference` is `FROM source TO notebook`
-> — so `in` = source, `out` = notebook. `Notebook.get_sources()` queries
-> `select in as source from reference where out=$id`. `artifact` is
-> `FROM note TO notebook` (`in` = note, `out` = notebook). Inverting `in`/`out`
-> is a documented recurring bug class in this codebase.
-
-### Migration 2 — note typing
-
-```sql
-DEFINE FIELD IF NOT EXISTS note_type ON TABLE note TYPE option<string>;
+Domain model:
+```python
+class Note(ObjectModel):
+    table_name: ClassVar[str] = "note"
+    title: Optional[str] = None
+    note_type: Optional[Literal["human", "ai"]] = None
+    content: Optional[str] = None
+    # content_must_not_be_empty validator
 ```
+`Note.save()` **auto-submits an `embed_note` job** (fire-and-forget) if content
+is non-empty and the command is registered in surreal-commands. `add_to_notebook`
+creates an idempotent `artifact` edge. `get_context(short)` uses a token budget
+(`_SHORT_CONTEXT_MAX_TOKENS = 160`) with an ellipsis, not a raw char slice.
 
-### Migration 3 — chat sessions + `refers_to` edge + richer search
+### 2.6 `chat_session` (SCHEMALESS) — conversation container
 
-```sql
+Migration `3.surrealql` creates it; `8` adds `model_override`; `20` adds
+`disabled_mcp_servers`:
+```surql
 DEFINE TABLE IF NOT EXISTS chat_session SCHEMALESS;
-DEFINE TABLE IF NOT EXISTS refers_to TYPE RELATION FROM chat_session TO notebook;
--- Redefines fn::vector_search with a $min_similarity arg and returns
---   id, title, content, parent_id, similarity
--- Redefines fn::text_search to return id/title/content/parent_id/relevance
+DEFINE FIELD IF NOT EXISTS model_override        ON chat_session TYPE option<string>;         -- migration 8
+DEFINE FIELD IF NOT EXISTS disabled_mcp_servers  ON chat_session TYPE option<array<string>> DEFAULT NONE;  -- migration 20
+```
+Actual message history is NOT stored in this row — it lives in the **LangGraph
+SQLite checkpointer** keyed by `thread_id == str(chat_session.id)`.
+
+Domain model:
+```python
+class ChatSession(ObjectModel):
+    table_name: ClassVar[str] = "chat_session"
+    nullable_fields: ClassVar[set[str]] = {"model_override", "disabled_mcp_servers"}
+    title: Optional[str] = None
+    model_override: Optional[str] = None
+    disabled_mcp_servers: Optional[list[str]] = None
+    # relate_to_notebook() / relate_to_source() → idempotent refers_to edges
+    # delete() sweeps refers_to edges first (v0.8.68)
 ```
 
-### Migration 4 — search function refinements
+### 2.7 `transformation` (SCHEMAFULL) — reusable prompt
 
-Re-defines `fn::text_search` and `fn::vector_search` (fixes `id`/`parent_id`
-selection, adds `array::flatten(content) as matches` to vector results).
-
-### Migration 5 — transformations + default prompts
-
-```sql
+Migration `5.surrealql`:
+```surql
 DEFINE TABLE IF NOT EXISTS transformation SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS name          ON TABLE transformation TYPE string;
 DEFINE FIELD IF NOT EXISTS title         ON TABLE transformation TYPE string;
 DEFINE FIELD IF NOT EXISTS description   ON TABLE transformation TYPE string;
 DEFINE FIELD IF NOT EXISTS prompt        ON TABLE transformation TYPE string;
 DEFINE FIELD IF NOT EXISTS apply_default ON TABLE transformation TYPE bool DEFAULT False;
--- seeds 6 default transformations: Analyze Paper, Key Insights,
---   Dense Summary (apply_default: True), Reflections, Table of Contents,
---   Simple Summary
--- UPSERT open_notebook:default_prompts CONTENT { transformation_instructions: "..." }
 ```
+Migration 5 also seeds several default transformations (e.g. "Analyze Paper").
 
-### Migration 6 — data fix
-
-```sql
-update model set provider='vertex' where provider='vertexai';
+Domain model:
+```python
+class Transformation(ObjectModel):
+    table_name: ClassVar[str] = "transformation"
+    name: str
+    title: str
+    description: str
+    prompt: str
+    apply_default: bool
 ```
+Two built-ins are lazily seeded on first use: `summarize` (name="summarize",
+title="Summary") and `key_topics` (name="key_topics", title="Key Topics") — see
+`get_or_create_summarize_transformation()` / `get_or_create_key_topics_transformation()`.
 
-### Migration 7 — podcast tables
+### 2.8 `model` (SCHEMALESS) — AI model registry
 
-Defines `episode_profile`, `speaker_profile`, and `episode` (see §4 and §6 for
-full field lists), plus indexes and seed data (`tech_experts`, `solo_expert`,
-`business_panel` speaker profiles; `tech_discussion`, `solo_expert`,
-`business_analysis` episode profiles).
-
-```sql
-DEFINE TABLE IF NOT EXISTS episode SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS name            ON TABLE episode TYPE string;
-DEFINE FIELD IF NOT EXISTS briefing        ON TABLE episode TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS episode_profile ON TABLE episode FLEXIBLE TYPE object;
-DEFINE FIELD IF NOT EXISTS speaker_profile ON TABLE episode FLEXIBLE TYPE object;
-DEFINE FIELD IF NOT EXISTS transcript      ON TABLE episode FLEXIBLE TYPE option<object>;
-DEFINE FIELD IF NOT EXISTS outline         ON TABLE episode FLEXIBLE TYPE option<object>;
-DEFINE FIELD IF NOT EXISTS command         ON TABLE episode TYPE option<record<command>>;
-DEFINE FIELD IF NOT EXISTS content         ON TABLE episode TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS audio_file      ON TABLE episode TYPE option<string>;
-DEFINE INDEX IF NOT EXISTS idx_episode_profile_name ON TABLE episode_profile COLUMNS name UNIQUE CONCURRENTLY;
-DEFINE INDEX IF NOT EXISTS idx_speaker_profile_name ON TABLE speaker_profile COLUMNS name UNIQUE CONCURRENTLY;
-```
-
-### Migration 8 — broaden chat target + per-session model override
-
-```sql
-DEFINE TABLE OVERWRITE refers_to TYPE RELATION FROM chat_session TO notebook|source;
-DEFINE FIELD IF NOT EXISTS model_override ON chat_session TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS command        ON source       TYPE option<record<command>>;
-```
-
-> `refers_to` now points a `chat_session` at **either** a `notebook` or a
-> `source`, enabling source-scoped chat.
-
-### Migration 9 — vector search null-guard
-
-Redefines `fn::vector_search` to skip rows where `embedding` is `none` or whose
-length differs from the query (`array::len(embedding)=array::len($query)`),
-preventing dimension-mismatch errors.
-
-### Migration 10 — performance indexes + orphan cleanup
-
-```sql
-DEFINE INDEX IF NOT EXISTS idx_source_insight_source   ON source_insight   FIELDS source CONCURRENTLY;
-DEFINE INDEX IF NOT EXISTS idx_source_embedding_source ON source_embedding FIELDS source CONCURRENTLY;
-DEFINE FIELD OVERWRITE embedding ON TABLE source_insight TYPE option<array<float>>;
-DEFINE FIELD OVERWRITE embedding ON TABLE note           TYPE option<array<float>>;
-DELETE from source_embedding WHERE source.id=NONE;   -- orphans
-DELETE from source_insight   WHERE source.id=NONE;
-```
-
-### Migration 11 — provider config singleton (legacy)
-
-```sql
-UPSERT open_notebook:provider_configs CONTENT { credentials: {} };
-```
-
-### Migration 12 — `credential` table + model→credential link
-
-```sql
-DEFINE TABLE IF NOT EXISTS credential SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS name       ON credential TYPE string;
-DEFINE FIELD IF NOT EXISTS provider   ON credential TYPE string;
-DEFINE FIELD IF NOT EXISTS modalities ON credential TYPE array DEFAULT [];
-DEFINE FIELD IF NOT EXISTS modalities.* ON credential TYPE string;
-DEFINE FIELD IF NOT EXISTS api_key    ON credential TYPE option<string>;   -- ENCRYPTED at rest
-DEFINE FIELD IF NOT EXISTS base_url   ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS endpoint   ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS api_version ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS endpoint_llm       ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS endpoint_embedding ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS endpoint_stt       ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS endpoint_tts       ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS project          ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS location         ON credential TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS credentials_path ON credential TYPE option<string>;
-DEFINE INDEX IF NOT EXISTS idx_credential_provider ON credential FIELDS provider;
+There is **no `DEFINE TABLE model`** — the table is created implicitly on first
+insert (SCHEMALESS). Migration `6.surrealql` normalizes `provider='vertexai'` →
+`'vertex'`; migration `12.surrealql` adds the credential link field:
+```surql
+-- migration 12:
 DEFINE FIELD IF NOT EXISTS credential ON model TYPE option<record<credential>>;
 ```
 
-> The `model` table itself is **schema-less** (records created via the repository
-> layer by the `Model` domain class, `table_name = "model"`). Migration 12 only
-> adds the typed `credential` reference field onto it.
-
-### Migration 13 — make derived embeddings optional
-
-```sql
-DEFINE FIELD OVERWRITE embedding ON TABLE source_insight TYPE option<array<float>>;
-DEFINE FIELD OVERWRITE embedding ON TABLE note           TYPE option<array<float>>;
+Domain model (`open_notebook/ai/models.py`):
+```python
+class Model(ObjectModel):
+    table_name: ClassVar[str] = "model"
+    nullable_fields: ClassVar[set[str]] = {"credential"}
+    name: str
+    provider: str
+    type: str                      # language | embedding | speech_to_text | text_to_speech
+    credential: Optional[str] = None   # record<credential> link
+    # get_models_by_type(), get_by_credential(), get_credential_obj()
+    # delete() nulls out any DefaultModels field referencing this model
 ```
 
-### Migration 14 — podcast profiles → model registry
-
-Makes legacy provider/model string fields optional and adds `record<model>`
-references + `language`:
-
-```sql
-DEFINE FIELD IF NOT EXISTS outline_llm    ON TABLE episode_profile TYPE option<record<model>>;
-DEFINE FIELD IF NOT EXISTS transcript_llm ON TABLE episode_profile TYPE option<record<model>>;
-DEFINE FIELD IF NOT EXISTS language       ON TABLE episode_profile TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS voice_model    ON TABLE speaker_profile TYPE option<record<model>>;
-DEFINE FIELD IF NOT EXISTS speakers.*.voice_model ON TABLE speaker_profile TYPE option<record<model>>;
+**`default_models` singleton** (`RecordModel`, `record_id =
+open_notebook:default_models`). Migration 1 seeds `default_chat_model=""`;
+migration 18 adds `auto_route_cloud`:
+```python
+class DefaultModels(RecordModel):
+    record_id: ClassVar[str] = "open_notebook:default_models"
+    default_chat_model: Optional[str] = None
+    default_transformation_model: Optional[str] = None
+    large_context_model: Optional[str] = None
+    default_text_to_speech_model: Optional[str] = None
+    default_speech_to_text_model: Optional[str] = None
+    default_embedding_model: Optional[str] = None
+    default_tools_model: Optional[str] = None
+    default_reasoning_model: Optional[str] = None      # ONP v0.5 — slow/deep reasoning slot
+    auto_route_cloud: Optional[str] = None             # migration 18 — smart-router cloud slot
+    auto_route_enabled: Optional[bool] = False         # v0.8.37 UI toggle
+    auto_route_provider_pref: Optional[str] = "auto"   # auto | local | cloud
+    # get_instance() ALWAYS fetches fresh (bypasses singleton cache)
 ```
 
-### Migration 15 — memory layer (3 tables, HNSW 768)
+### 2.9 `episode_profile` (SCHEMAFULL) — podcast episode config
 
-```sql
-DEFINE TABLE IF NOT EXISTS memory_fact SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS text       ON memory_fact TYPE string;
-DEFINE FIELD IF NOT EXISTS embedding  ON memory_fact TYPE array<float>;
-DEFINE FIELD IF NOT EXISTS metadata   ON memory_fact TYPE object DEFAULT {};
-DEFINE FIELD IF NOT EXISTS scope      ON memory_fact TYPE string DEFAULT "user";
-DEFINE FIELD IF NOT EXISTS confidence ON memory_fact TYPE float  DEFAULT 1.0;
-DEFINE FIELD IF NOT EXISTS created_at ON memory_fact TYPE datetime DEFAULT time::now();
-DEFINE INDEX IF NOT EXISTS memory_fact_embedding ON memory_fact FIELDS embedding HNSW DIMENSION 768;
--- memory_preference and memory_episode have the IDENTICAL shape + HNSW index
+Migration `7.surrealql` (+ `14` adds model-registry refs + `language`):
+```surql
+DEFINE TABLE IF NOT EXISTS episode_profile SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name               ON TABLE episode_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS description        ON TABLE episode_profile TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speaker_config     ON TABLE episode_profile TYPE string;
+DEFINE FIELD OVERWRITE     outline_provider   ON TABLE episode_profile TYPE option<string>;   -- legacy (migration 14)
+DEFINE FIELD OVERWRITE     outline_model      ON TABLE episode_profile TYPE option<string>;   -- legacy
+DEFINE FIELD OVERWRITE     transcript_provider ON TABLE episode_profile TYPE option<string>;  -- legacy
+DEFINE FIELD OVERWRITE     transcript_model   ON TABLE episode_profile TYPE option<string>;   -- legacy
+DEFINE FIELD IF NOT EXISTS outline_llm        ON TABLE episode_profile TYPE option<record<model>>;    -- migration 14
+DEFINE FIELD IF NOT EXISTS transcript_llm     ON TABLE episode_profile TYPE option<record<model>>;    -- migration 14
+DEFINE FIELD IF NOT EXISTS language           ON TABLE episode_profile TYPE option<string>;            -- migration 14 (BCP 47)
+DEFINE FIELD IF NOT EXISTS default_briefing   ON TABLE episode_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS num_segments       ON TABLE episode_profile TYPE int DEFAULT 5;
+DEFINE INDEX IF NOT EXISTS idx_episode_profile_name ON TABLE episode_profile COLUMNS name UNIQUE CONCURRENTLY;
+```
+Migration 7 seeds three profiles: `tech_discussion`, `solo_expert`,
+`business_analysis`.
+
+Domain model (`open_notebook/podcasts/models.py`) — key fields:
+```python
+class EpisodeProfile(ObjectModel):
+    table_name: ClassVar[str] = "episode_profile"
+    name: str                          # unique
+    description: Optional[str] = None
+    speaker_config: str                # references a SpeakerProfile by name
+    outline_llm: Optional[str] = None      # record<model>
+    transcript_llm: Optional[str] = None   # record<model>
+    language: Optional[str] = None         # BCP 47 (e.g. pt-BR)
+    default_briefing: str
+    num_segments: int = 5              # validated 3..20
+    # resolve_outline_config()/resolve_transcript_config() → (provider, name, config)
 ```
 
-The three tables (`memory_fact`, `memory_preference`, `memory_episode`) are
-routed by a `kind` field in payloads. `DIMENSION 768` matches
-`nomic-embed-text-v1.5`.
+### 2.10 `speaker_profile` (SCHEMAFULL) — podcast voices
 
-### Migration 16 — Gmail digest integration
-
-```sql
-DEFINE TABLE IF NOT EXISTS gmail_integration SCHEMAFULL;
--- encrypted OAuth fields: client_id_enc, client_secret_enc,
---   access_token_enc, refresh_token_enc, token_expires_at, email_address
--- prefs: enabled (bool), frequency ("daily"|"weekly"|"manual"),
---   include_notebooks/sources/notes/podcasts/memory (bool),
---   last_sent_at, created_at, updated_at
+Migration `7.surrealql` (+ `14` adds `voice_model` + per-speaker override):
+```surql
+DEFINE TABLE IF NOT EXISTS speaker_profile SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name        ON TABLE speaker_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE speaker_profile TYPE option<string>;
+DEFINE FIELD OVERWRITE     tts_provider ON TABLE speaker_profile TYPE option<string>;  -- legacy (migration 14)
+DEFINE FIELD OVERWRITE     tts_model    ON TABLE speaker_profile TYPE option<string>;  -- legacy
+DEFINE FIELD IF NOT EXISTS voice_model  ON TABLE speaker_profile TYPE option<record<model>>;   -- migration 14
+DEFINE FIELD IF NOT EXISTS speakers     ON TABLE speaker_profile TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS speakers.*.name        ON TABLE speaker_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS speakers.*.voice_id    ON TABLE speaker_profile TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speakers.*.backstory   ON TABLE speaker_profile TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speakers.*.personality ON TABLE speaker_profile TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speakers.*.voice_model ON TABLE speaker_profile TYPE option<record<model>>;  -- migration 14
+DEFINE INDEX IF NOT EXISTS idx_speaker_profile_name ON TABLE speaker_profile COLUMNS name UNIQUE CONCURRENTLY;
 ```
 
-Single record per installation (ONP is single-user).
-
-### Migration 17 — MCP server registry
-
-```sql
-DEFINE TABLE IF NOT EXISTS mcp_server SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS name    ON mcp_server TYPE string;
-DEFINE FIELD IF NOT EXISTS url     ON mcp_server TYPE string;
-DEFINE FIELD IF NOT EXISTS enabled ON mcp_server TYPE bool DEFAULT true;
-DEFINE INDEX IF NOT EXISTS mcp_server_name_unique ON mcp_server FIELDS name UNIQUE;
+Domain model:
+```python
+class SpeakerProfile(ObjectModel):
+    table_name: ClassVar[str] = "speaker_profile"
+    name: str
+    description: Optional[str] = None
+    voice_model: Optional[str] = None   # record<model>
+    speakers: list[dict[str, Any]]      # 1..4 speakers, each requires
+                                        # name/voice_id/backstory/personality
+    # resolve_tts_config() → (provider, name, config)
 ```
 
-### Migration 18 — smart-router cloud slot
+### 2.11 `episode` (SCHEMAFULL) — generated podcast episode
 
-```sql
-DEFINE FIELD IF NOT EXISTS auto_route_cloud ON open_notebook TYPE option<string> DEFAULT NONE;
-```
-
-A dedicated cloud-model slot separate from `default_chat_model` so the router
-doesn't silently fall back to a local model.
-
-### Migration 19 — MCP server priority
-
-```sql
-DEFINE FIELD IF NOT EXISTS priority ON mcp_server TYPE int DEFAULT 100;
-```
-
-### Migration 20 — per-conversation MCP disable list
-
-```sql
-DEFINE FIELD IF NOT EXISTS disabled_mcp_servers ON chat_session TYPE option<array<string>> DEFAULT NONE;
-```
-
-### Migration 21 — HNSW vector indexes + KNN search
-
-```sql
-DEFINE INDEX IF NOT EXISTS source_embedding_hnsw ON source_embedding FIELDS embedding HNSW DIMENSION 768;
-DEFINE INDEX IF NOT EXISTS source_insight_hnsw    ON source_insight   FIELDS embedding HNSW DIMENSION 768;
-DEFINE INDEX IF NOT EXISTS note_hnsw              ON note             FIELDS embedding HNSW DIMENSION 768;
--- redefines fn::vector_search to use the KNN operator `embedding <|100|> $query`
--- in addition to the cosine-similarity filter (brute-force O(N) → indexed)
-```
-
-### Migration 22 — staged podcast generation fields
-
-```sql
+Migration `7.surrealql` (+ `22` adds staged-generation fields):
+```surql
+DEFINE TABLE IF NOT EXISTS episode SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name             ON TABLE episode TYPE string;
+DEFINE FIELD IF NOT EXISTS briefing         ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS episode_profile  ON TABLE episode FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS speaker_profile  ON TABLE episode FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS transcript       ON TABLE episode FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS outline          ON TABLE episode FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS command          ON TABLE episode TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS content          ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS audio_file       ON TABLE episode TYPE option<string>;
+-- migration 22 (staged generation):
 DEFINE FIELD IF NOT EXISTS briefing_suffix  ON TABLE episode TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS generation_stage ON TABLE episode TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS cancel_requested ON TABLE episode TYPE option<bool>;
 ```
+Profiles are stored as **object snapshots** (frozen at generation time), not
+references. `generation_stage` ∈ {`generating_outline`, `generating_transcript`,
+`generating_audio`, `combining_audio`, `awaiting_review`, `cancelled`}.
 
-> Because `episode` is `SCHEMAFULL`, undefined fields are silently dropped — the
-> v0.8.68 staged-generation domain fields needed this migration to actually
-> persist (caught by a live smoke test).
+Domain model `PodcastEpisode` (`table_name = "episode"`,
+`nullable_fields = {"generation_stage"}`): `name`, `episode_profile: dict`,
+`speaker_profile: dict`, `briefing`, `briefing_suffix`, `content`,
+`audio_file`, `transcript: dict`, `outline: dict`, `command`, `generation_stage`,
+`cancel_requested`. `get_job_status()` / `get_job_detail()` poll surreal-commands.
 
----
+### 2.12 `credential` (SCHEMAFULL) — encrypted provider credentials
 
-## 4. Tables summary
+Migration `12.surrealql`:
+```surql
+DEFINE TABLE IF NOT EXISTS credential SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name               ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS provider           ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS modalities         ON credential TYPE array DEFAULT [];
+DEFINE FIELD IF NOT EXISTS modalities.*        ON credential TYPE string;
+DEFINE FIELD IF NOT EXISTS api_key            ON credential TYPE option<string>;   -- Fernet-encrypted
+DEFINE FIELD IF NOT EXISTS base_url           ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint           ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS api_version        ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_llm       ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_embedding ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_stt       ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint_tts       ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS project            ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS location           ON credential TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS credentials_path   ON credential TYPE option<string>;
+DEFINE INDEX IF NOT EXISTS idx_credential_provider ON credential FIELDS provider;
+```
+Migration `15.surrealql` note references a flexible `config` object addition in
+some builds; the current domain model exposes the discrete fields above.
 
-| Table | Kind | Purpose |
-|-------|------|---------|
-| `notebook` | SCHEMAFULL | Research project container |
-| `source` | SCHEMAFULL | Content item (file/URL/text); `asset`, `title`, `topics`, `full_text` |
-| `source_embedding` | SCHEMAFULL | Chunked vectors for a source (`order`, `content`, `embedding`) |
-| `source_insight` | SCHEMAFULL | Transformation outputs (`insight_type`, `content`, `embedding`) |
-| `note` | SCHEMAFULL | Standalone/linked notes (`title`, `summary`, `content`, `note_type`, `embedding`) |
-| `chat_session` | SCHEMALESS | Conversation container (`model_override`, `disabled_mcp_servers`) |
-| `model` | SCHEMALESS | Registered AI model (`name`, `provider`, `type`, `credential`) |
-| `credential` | SCHEMAFULL | Encrypted provider credentials |
-| `transformation` | SCHEMAFULL | Reusable transformation prompts |
-| `episode_profile` | SCHEMAFULL | Podcast generation config |
-| `speaker_profile` | SCHEMAFULL | Podcast voices/personalities |
-| `episode` | SCHEMAFULL | Generated podcast episode + job link |
-| `memory_fact` / `memory_preference` / `memory_episode` | SCHEMAFULL | Closed-loop memory (HNSW 768) |
-| `gmail_integration` | SCHEMAFULL | Gmail digest OAuth + prefs |
-| `mcp_server` | SCHEMAFULL | MCP tool-server registry |
-| `podcast_config` | SCHEMALESS | Legacy podcast config |
-| `_sbl_migrations` | (auto) | Migration version tracking |
-| `open_notebook:default_models` / `:default_prompts` / `:provider_configs` | singleton records | Global config |
-
-### Edge (relation) tables
-
-| Edge | Direction | `in` | `out` | Meaning |
-|------|-----------|------|-------|---------|
-| `reference` | `FROM source TO notebook` | source | notebook | A source belongs to a notebook |
-| `artifact` | `FROM note TO notebook` | note | notebook | A note belongs to a notebook |
-| `refers_to` | `FROM chat_session TO notebook\|source` | chat_session | notebook/source | A chat is scoped to a notebook or source |
-
----
-
-## 5. Search functions
-
-Two user-defined SurrealQL functions provide hybrid search. Final form (after
-migration 21):
-
-- **`fn::text_search($query_text, $match_count, $sources, $show_notes)`** — BM25
-  full-text search across `source.title`, `source.full_text`, `source_embedding.content`,
-  `source_insight.content`, `note.title`, `note.content`. Uses `@1@` match
-  operator + `search::highlight` + `search::score(1)`; unions all result sets and
-  returns `id, title, content, parent_id, relevance` ordered by relevance.
-
-- **`fn::vector_search($query, $match_count, $sources, $show_notes, $min_similarity)`**
-  — semantic search using the HNSW KNN operator and cosine similarity:
-
-  ```sql
-  SELECT source.id as id, source.title as title, content, source.id as parent_id,
-         vector::similarity::cosine(embedding, $query) as similarity
-  FROM source_embedding
-  WHERE embedding <|100|> $query
-    AND embedding != none AND array::len(embedding)=array::len($query)
-    AND vector::similarity::cosine(embedding, $query) >= $min_similarity
-  ORDER BY similarity DESC LIMIT $match_count
-  ```
-
-Both are called from `open_notebook/domain/notebook.py`:
-
+Domain model (`open_notebook/domain/credential.py`):
 ```python
-async def vector_search(keyword, results, source=True, note=True, minimum_score=None):
-    if minimum_score is None:
-        minimum_score = _vector_min_score()      # env-tunable, default 0.3
-    embed = await generate_embedding(keyword)
-    return await repo_query(
-        "SELECT * FROM fn::vector_search($embed, $results, $source, $note, $minimum_score);",
-        {"embed": embed, "results": results, "source": source, "note": note,
-         "minimum_score": minimum_score},
-    )
+class Credential(ObjectModel):
+    table_name: ClassVar[str] = "credential"
+    nullable_fields: ClassVar[set[str]] = {
+        "api_key","base_url","endpoint","api_version","endpoint_llm",
+        "endpoint_embedding","endpoint_stt","endpoint_tts","project",
+        "location","credentials_path",
+    }
+    name: str
+    provider: str
+    modalities: list[str] = []
+    api_key: Optional[SecretStr] = None      # NEVER returned raw by the API
+    decryption_error: Optional[str] = None   # transient (not persisted)
+    base_url / endpoint / api_version / endpoint_llm / endpoint_embedding
+    endpoint_stt / endpoint_tts / project / location / credentials_path: Optional[str]
+```
+**Encryption**: `_prepare_save_data()` extracts the `SecretStr` and
+`encrypt_value()`s it (Fernet, key derived by SHA-256 from
+`OPEN_NOTEBOOK_ENCRYPTION_KEY`; rotation via `OPEN_NOTEBOOK_ENCRYPTION_KEYS`,
+comma-separated, primary first, `MultiFernet` for decrypt). `get()` / `get_all()`
+are overridden to `decrypt_value()` on read; a decryption failure yields a
+placeholder credential with `decryption_error` set (never crashes the list).
+`to_esperanto_config()` builds the config dict passed to Esperanto AIFactory.
+
+### 2.13 `content_settings` singleton (`open_notebook:content_settings`)
+
+`RecordModel` (`open_notebook/domain/content_settings.py`) — no dedicated
+migration DEFINE; stored as a singleton config record:
+```python
+class ContentSettings(RecordModel):
+    record_id: ClassVar[str] = "open_notebook:content_settings"
+    default_content_processing_engine_doc: Optional[Literal["auto","docling","simple"]] = "auto"
+    default_content_processing_engine_url: Optional[
+        Literal["auto","crawl4ai","firecrawl","jina","simple"]] = "auto"
+    default_embedding_option: Optional[Literal["ask","always","never"]] = "ask"
+    auto_delete_files: Optional[Literal["yes","no"]] = "yes"
+    youtube_preferred_languages: Optional[list[str]] = ["en","pt","es","de","nl","en-GB","fr","de","hi","ja"]
+    offline_mode: Optional[bool] = False                  # v0.8.68 force-offline
+    auto_summarize_on_ingest: Optional[bool] = False      # v0.8.88
+    auto_extract_topics_on_ingest: Optional[bool] = False # v0.8.91
 ```
 
+Other singletons: `default_prompts` (`open_notebook:default_prompts`, one field
+`transformation_instructions`).
+
+### 2.14 Studio artifact tables (Evidence Studio)
+
+Migration `23.surrealql` (`studio_artifact`) and `24.surrealql`
+(`studio_workflow_run`). `studio_artifact` fields: `notebook_id record<notebook>`,
+`artifact_type string`, `title string`, `status string DEFAULT "pending"`,
+`source_ids array<record<source>>`, `prompt`, `model_id`, `provider`,
+`output_format`, `output_payload FLEXIBLE object`, `citations FLEXIBLE array<object>`,
+`export_paths FLEXIBLE object`, `revision_of_id record<studio_artifact>`.
+Indexes on `notebook_id`, `status`, `artifact_type`. Domain models
+`StudioArtifact` / `StudioWorkflowRun` live in `domain/notebook.py`.
+`StudioArtifactType` literal includes report/study_guide/course_pack/briefing/
+faq/flashcards/quiz/data_table/mind_map/timeline/infographic/slide_deck/
+podcast_outline/podcast_audio/research_run.
+
+### 2.15 Auxiliary tables
+
+- **`mcp_server`** (migration 17, SCHEMAFULL): `name string` (UNIQUE),
+  `url string`, `enabled bool DEFAULT true`, `priority int DEFAULT 100`
+  (migration 19). DB-backed MCP registry the chat graph reads.
+- **`gmail_integration`** (migration 16, SCHEMAFULL): encrypted OAuth token
+  fields (`client_id_enc`, `client_secret_enc`, `access_token_enc`,
+  `refresh_token_enc`), `token_expires_at`, `email_address`, `enabled`,
+  `frequency` (daily|weekly|manual), `include_*` digest toggles, `last_sent_at`.
+  Single record per install (single-user).
+- **`memory_fact` / `memory_preference` / `memory_episode`** (migration 15,
+  SCHEMAFULL, identical shape): `text string`, `embedding array<float>`,
+  `metadata object`, `scope string DEFAULT "user"`, `confidence float DEFAULT 1.0`,
+  `created_at datetime`. Each has `HNSW DIMENSION 768` index (nomic-embed-text-v1.5).
+- **`podcast_config`** (migration 1, SCHEMALESS): legacy podcast config.
+- **`_sbl_migrations`**: migration version-tracking table (see §4).
+- **`open_notebook:provider_configs`** (migration 11): legacy ProviderConfig
+  singleton, retained only for migration to the `credential` table.
+
 ---
 
-## 6. Domain models
+## 3. Edge / relation tables
 
-Domain models are Pydantic v2 classes in `open_notebook/domain/` (+
-`open_notebook/podcasts/models.py`, `open_notebook/ai/models.py`), bound to tables
-via two base classes in `open_notebook/domain/base.py`.
+SurrealDB `TYPE RELATION` tables. Direction is **`in` → `out`** and is
+easy to invert — the codebase repeatedly warns about this. All three are created
+in migrations 1 and 3.
 
-### Base classes
+| Edge | Direction (`FROM in → TO out`) | Meaning | Created |
+|------|-------------------------------|---------|---------|
+| `reference` | `source → notebook` | a source is attached to a notebook | migration 1 |
+| `artifact`  | `note → notebook`   | a note belongs to a notebook | migration 1 |
+| `refers_to` | `chat_session → notebook\|source` | a chat session is scoped to a notebook or source | migration 3 (broadened to `notebook\|source` in migration 8) |
 
-- **`ObjectModel`** (mutable records). Fields: `id`, `created`, `updated`;
-  ClassVars `table_name` and `nullable_fields` (fields allowed to persist as
-  `None`). Methods: `save()`, `delete()`, `relate(relationship, target_id)`,
-  `get(id)` (polymorphic — resolves subclass from the `table:id` prefix),
-  `get_all(order_by, limit, offset)`. `_prepare_save_data()` drops `None` values
-  unless the field is in `nullable_fields`.
-- **`RecordModel`** (singletons). Fixed `record_id` per subclass, `update()`
-  upserts, lazy `_load_from_db()`. Used by `ContentSettings`, `DefaultPrompts`.
-
-```python
-class ObjectModel(BaseModel):
-    id: Optional[str] = None
-    table_name: ClassVar[str] = ""
-    nullable_fields: ClassVar[set[str]] = set()
-    created: Optional[datetime] = None
-    updated: Optional[datetime] = None
+```surql
+-- migration 1
+DEFINE TABLE IF NOT EXISTS reference TYPE RELATION FROM source TO notebook;
+DEFINE TABLE IF NOT EXISTS artifact  TYPE RELATION FROM note   TO notebook;
+-- migration 3
+DEFINE TABLE IF NOT EXISTS refers_to TYPE RELATION FROM chat_session TO notebook;
+-- migration 8
+DEFINE TABLE OVERWRITE     refers_to TYPE RELATION FROM chat_session TO notebook|source;
 ```
 
-### `notebook.py`
+### 3.1 Direction semantics in queries
 
-- **`Notebook`** (`table_name = "notebook"`): `name` (non-empty validated),
-  `description`, `archived`. Navigation: `get_sources()` (via `reference` edge),
-  `get_notes()` (via `artifact`), `get_chat_sessions()`. `get_delete_preview()`
-  returns counts; `delete(delete_exclusive_sources)` always deletes notes,
-  optionally deletes exclusive sources, always unlinks all sources.
-- **`Source`** (`table_name = "source"`): `asset` (file/URL ref via `Asset`),
-  `title`, `topics`, `full_text`, `command`. `vectorize()` submits an async embed
-  job (fire-and-forget, returns command_id); `add_insight()` submits
-  `create_insight_command`; `get_status()` / `get_processing_progress()` poll via
-  `surreal_commands`; `get_context()` returns an LLM-context summary.
-- **`Note`** (`table_name = "note"`): `title`, `summary`, `content`, `note_type`,
-  `embedding`. `save()` auto-submits an `embed_note` command;
-  `add_to_notebook()` links via `artifact`.
-- **`SourceEmbedding`** (`source_embedding`), **`SourceInsight`** (`source_insight`),
-  **`Asset`** (helper BaseModel).
-- **`ChatSession`** (`table_name = "chat_session"`): optional `model_override`;
-  `relate_to_notebook()` / `relate_to_source()` create the `refers_to` edge.
-- Module functions `text_search(...)` and `vector_search(...)` (see §5).
-
-### `credential.py` — `Credential`
-
-`table_name = "credential"`. Stores per-provider auth. `api_key` is a Pydantic
-`SecretStr` (masked in logs). Custom serialization:
-
-- `_prepare_save_data()` **encrypts** `api_key` with `encrypt_value()` before
-  storage.
-- `get()` / `get_all()` / `_from_db_row()` **decrypt** on read; `get_all()` has
-  per-row error handling (sets `decryption_error="Failed to decrypt API key…"`
-  and `api_key="UNDECRYPTABLE"` when the encryption key changed).
-- `to_esperanto_config()` builds the config dict passed to Esperanto's
-  `AIFactory.create_*()` (api_key, base_url/endpoint, api_version, per-modality
-  endpoints, project/location/credentials_path; Azure maps `base_url`→`endpoint`).
-- `get_by_provider(provider)`, `get_linked_models()`.
+The **notebook** is always the `out` side of `reference`/`artifact`; the source
+or note is the `in` side. Canonical traversals (`domain/notebook.py`):
 
 ```python
-def _prepare_save_data(self) -> dict[str, Any]:
-    data = {}
-    for key, value in self.model_dump().items():
-        if key == "decryption_error":
-            continue
-        if key == "api_key":
-            data["api_key"] = encrypt_value(self.api_key.get_secret_value()) if self.api_key else None
-        elif value is not None or key in self.__class__.nullable_fields:
-            data[key] = value
-    return data
+# sources of a notebook: in = source, out = notebook
+"select in as source from reference where out=$id fetch source"
+# notes of a notebook: in = note, out = notebook
+"select in as note from artifact where out=$id fetch note"
+# chat sessions of a notebook: in = chat_session, out = notebook
+"select <- chat_session as chat_session from refers_to where out=$id fetch chat_session"
 ```
 
-### `ai/models.py` — `Model`
+### 3.2 Edge creation is NOT upsert — dedup is manual
 
-`table_name = "model"`, `nullable_fields = {"credential"}`. Fields: `name`,
-`provider`, `type` (e.g. `language`/`embedding`/`speech_to_text`/`text_to_speech`),
-`credential` (record reference). `get_models_by_type()`, `get_by_credential()`,
-`get_credential_obj()`. Its `delete()` proactively clears the seven
-`default_models` singleton reference fields (`default_chat_model`,
-`default_transformation_model`, `large_context_model`, `default_text_to_speech_model`,
-`default_speech_to_text_model`, `default_embedding_model`, `default_tools_model`,
-`auto_route_cloud`) and warns about referencing podcast profiles. Esperanto
-`ModelType = LanguageModel | EmbeddingModel | SpeechToTextModel | TextToSpeechModel`.
+SurrealDB `RELATE` always creates a new edge. Every relate path guards for an
+existing edge first (idempotency), because a duplicate edge inflates
+source/note counts:
 
-### `podcasts/models.py`
-
-- **`EpisodeProfile`** (`episode_profile`): `name`, `description`,
-  `speaker_config` (name reference), `default_briefing`, `num_segments`
-  (validated 3–20), `language` (BCP 47), new model refs `outline_llm` /
-  `transcript_llm` (legacy `outline_provider`/`outline_model`/`transcript_provider`/
-  `transcript_model` kept nullable). `resolve_outline_config()` /
-  `resolve_transcript_config()` → `(provider, model_name, config_dict)`.
-- **`SpeakerProfile`** (`speaker_profile`): `name`, `description`, `voice_model`
-  (model ref; legacy `tts_provider`/`tts_model` nullable), `speakers` (1–4 dicts,
-  each requiring `name`, `voice_id`, `backstory`, `personality`; per-speaker
-  `voice_model` override). `resolve_tts_config()`.
-- **`PodcastEpisode`** (`episode`): `name`, `episode_profile`/`speaker_profile`
-  (dict snapshots), `briefing`, `briefing_suffix`, `content`, `audio_file`,
-  `transcript`, `outline`, `command` (surreal_commands link), `generation_stage`
-  (one of `GENERATION_STAGES`), `cancel_requested`. `nullable_fields =
-  {"generation_stage"}` so a `None` stage on success reaches the DB.
-  `get_job_status()` / `get_job_detail()` poll the command.
-
-  ```python
-  STAGE_OUTLINE = "generating_outline"
-  STAGE_TRANSCRIPT = "generating_transcript"
-  STAGE_AUDIO = "generating_audio"
-  STAGE_COMBINE = "combining_audio"
-  STAGE_AWAITING_REVIEW = "awaiting_review"
-  STAGE_CANCELLED = "cancelled"
-  ```
-
-`_resolve_model_config(model_id)` (module helper) loads a `Model`, resolves its
-`Credential` to an Esperanto config, and falls back to `provision_provider_keys()`
-when no credential is linked.
-
-### `content_settings.py` / `transformation.py`
-
-- **`ContentSettings`** (`RecordModel` singleton): processing engines, embedding
-  strategy, file-deletion policy, YouTube languages.
-- **`Transformation`** (`ObjectModel`): reusable transformation; **`DefaultPrompts`**
-  (`RecordModel`) holds the transformation-instructions prompt.
+```python
+# Source.add_to_notebook (reference edge)
+existing = await repo_query(
+    "SELECT * FROM reference WHERE out = $notebook_id AND in = $source_id", ...)
+if existing: return existing[0]
+return await self.relate("reference", notebook_id)
+```
+`Note.add_to_notebook` (artifact) and `ChatSession.relate_to_notebook` /
+`relate_to_source` (refers_to) follow the same pattern (v0.8.66 D-3).
 
 ---
 
-## 7. Repository layer
+## 4. Migrations
 
-`open_notebook/database/repository.py` is the only SurrealQL gateway. Connection
-helpers: `get_database_url()` (`SURREAL_URL` or `SURREAL_ADDRESS`+`SURREAL_PORT`),
-`get_database_password()` (`SURREAL_PASSWORD` → legacy `SURREAL_PASS`),
-`db_connection()` (async context manager: sign-in → select ns/db → yield → close).
+### 4.1 Files
 
-CRUD/relation primitives:
+Location: `open_notebook/database/migrations/` — pairs of `N.surrealql` (up) and
+optional `N_down.surrealql` (down). The current set runs **1 → 25**.
 
-| Function | Purpose |
-|----------|---------|
-| `repo_query(query_str, vars)` | Raw SurrealQL with param substitution → list of dicts |
-| `repo_create(table, data)` | Insert; auto-adds `created`/`updated`; strips inbound `id` |
-| `repo_insert(table, data_list, ignore_duplicates)` | Bulk insert |
-| `repo_upsert(table, id, data, add_timestamp)` | MERGE create-or-update |
-| `repo_update(table, id, data)` | Update by id; auto-`updated`; parses ISO dates |
-| `repo_delete(record_id)` | Delete by RecordID |
-| `repo_relate(source, relationship, target, data)` | Create a graph edge |
-| `parse_record_ids(obj)` | Recursively stringify `RecordID`s |
-| `ensure_record_id(value)` | Coerce string/`RecordID` → `RecordID` |
+| # | Adds |
+|---|------|
+| 1 | Core tables (source, source_embedding, source_insight, note, notebook), reference/artifact edges, analyzer + BM25 indexes, `fn::text_search`, `fn::vector_search`, `podcast_config`, seeds `default_models` |
+| 2 | `note.note_type` |
+| 3 | `chat_session`, `refers_to` edge, refined `fn::vector_search`/`fn::text_search` (add `min_similarity`, highlight columns) |
+| 4 | Rewrites search functions (parent_id, highlight) |
+| 5 | `transformation` table + seed default transformations |
+| 6 | Normalize `model.provider` vertexai→vertex |
+| 7 | `episode_profile`, `speaker_profile`, `episode` + seed profiles |
+| 8 | `refers_to` → `notebook\|source`; `chat_session.model_override`; `source.command` |
+| 9 | Refine `fn::vector_search` (dimension/None guards) |
+| 10 | Insight/embedding source indexes; make embeddings optional; delete orphans |
+| 11 | Legacy `provider_configs` singleton |
+| 12 | `credential` table + `model.credential` link |
+| 13 | `source_insight.embedding` / `note.embedding` → optional |
+| 14 | Podcast model-registry refs (`outline_llm`, `transcript_llm`, `voice_model`), `episode_profile.language`, per-speaker override |
+| 15 | Memory tables (`memory_fact`/`memory_preference`/`memory_episode`), HNSW dim 768; credential `config` object |
+| 16 | `gmail_integration` |
+| 17 | `mcp_server` registry |
+| 18 | `default_models.auto_route_cloud` |
+| 19 | `mcp_server.priority` |
+| 20 | `chat_session.disabled_mcp_servers` |
+| 21 | HNSW vector indexes + KNN `<|100|>` operator in `fn::vector_search` |
+| 22 | `episode` staged-generation fields (`briefing_suffix`, `generation_stage`, `cancel_requested`) |
+| 23 | `studio_artifact` |
+| 24 | `studio_workflow_run` |
+| 25 | `source.provenance`, `source.source_type` |
 
-Notes: no connection pooling (one connection per call, HTTP-request-scoped);
-`RuntimeError` transaction conflicts are logged at DEBUG (retriable, avoids log
-spam under concurrency).
+Migrations are **re-run-safe**: nearly all `DEFINE` use `IF NOT EXISTS`
+(or `OVERWRITE` where a redefine is intended).
+
+### 4.2 `AsyncMigrationManager` (`database/async_migrate.py`)
+
+- **Auto-discovery** (`_discover_migrations`): scans the migrations dir, parses
+  `N` / `N_down`, and builds parallel `ups`/`downs` lists indexed by version.
+  It **enforces contiguous numbering 1..N** — a gap raises `RuntimeError` rather
+  than silently mis-numbering.
+- `get_latest_version()` reads `MAX(version)` from `_sbl_migrations` (returns 0
+  if the table is missing → fresh-install bootstrap).
+- `needs_migration()` = `current_version < len(up_migrations)`.
+- `run_migration_up()` → `runner.run_all()` runs every pending up migration and
+  bumps the version after each. `bump_version()` does
+  `CREATE type::thing('_sbl_migrations', $version) SET version=$version, applied_at=time::now()`.
+- `AsyncMigration.from_file()` strips `--` comments and blank lines and joins
+  into one statement string; `run(bump)` executes it inside `db_connection()`.
+- Called from the FastAPI **lifespan** handler on startup (see doc 04). A sync
+  wrapper `MigrationManager` (`migrate.py`) exists for legacy call sites.
+
+### 4.3 Search functions (defined in migrations)
+
+- `fn::text_search($query_text, $match_count, $sources, $show_notes)` — BM25 over
+  source titles/full_text, source_embedding chunks, insights, and note
+  title/content; uses `search::highlight('`','`',1)` and `search::score(1)`.
+- `fn::vector_search($query, $match_count, $sources, $show_notes, $min_similarity)`
+  — HNSW KNN (`embedding <|100|> $query`) + `vector::similarity::cosine`
+  thresholded at `$min_similarity`, grouped by parent id.
+
+Domain wrappers (`domain/notebook.py`): `text_search(keyword, results, source,
+note)` and `vector_search(keyword, results, source, note, minimum_score)`.
+`text_search` **falls back to `vector_search`** on a `search::highlight`
+"position overflow" (large/multi-byte chunks), and raises
+`DatabaseOperationError` if that also fails (never silently returns empty).
+Default vector floor `_DEFAULT_VECTOR_MIN_SCORE = 0.3` (env-tunable via
+`ONP_VECTOR_MIN_SCORE`, clamped to [0,1]).
 
 ---
 
-## 8. Recurring schema gotchas (from CLAUDE.md)
+## 5. Delete-cascade behavior
 
-- **Edge direction** — `in`/`out` is easy to invert for `reference` / `artifact` /
-  `refers_to`. Always check the `FROM … TO …` clause.
-- **SCHEMAFULL drops undefined fields** — adding a domain field requires a
-  migration for `SCHEMAFULL` tables (`episode`, `source`, `note`, …) or the value
-  silently vanishes.
-- **Delete cascades** — only `source` has a DB-level `DEFINE EVENT` cascade
-  (→ embeddings + insights). Notebook/profile cascades are handled in Python
-  (`Notebook.delete`, `Model.delete`); profiles do **not** cascade to episodes.
-- **Embedding dimension** — all HNSW indexes are `DIMENSION 768`; the embedding
-  model must output 768-dim vectors (`nomic-embed-text-v1.5`). `fn::vector_search`
-  guards against length mismatch.
-- **Migration contiguity** — never leave a gap in `1..N.surrealql`; the manager
-  refuses to run a partial set.
+Cascades are enforced in the **domain layer** (Python), not by DB triggers —
+except one legacy DB event. Because edges are not auto-cleaned, every delete
+sweeps its edges to prevent `fetch` producing `null` rows that crash
+`Model(**None)`.
+
+### 5.1 DB-level event (migration 1)
+```surql
+DEFINE EVENT source_delete ON TABLE source WHEN ($after == NONE) THEN {
+    delete source_embedding where source == $before.id;
+    delete source_insight  where source == $before.id;
+};
+```
+The domain `Source.delete()` also performs these deletes explicitly (belt-and-
+suspenders), so cleanup happens regardless of event firing.
+
+### 5.2 `Source.delete()` (`domain/notebook.py`)
+1. **Cancel in-flight command** first (if `command` status ∈ {new,running,queued})
+   via `surreal_commands` — prevents the embed worker racing to write embeddings
+   on a deleted source (v0.7.32).
+2. **Unlink the file** only if inside `UPLOADS_FOLDER` (SSRF/path-traversal
+   guard, v0.6.34).
+3. `DELETE source_embedding WHERE source=$id`, `DELETE source_insight WHERE
+   source=$id`, `DELETE reference WHERE in=$id` (unlink from all notebooks).
+4. `super().delete()` (remove the row).
+5. **Race-window post-sweep** (v0.7.133): re-run the embedding/insight deletes
+   *after* the row delete, since the cancel doesn't actually stop the worker.
+
+### 5.3 `Note.delete()`
+`DELETE artifact WHERE in=$note_id` first (unlink), then `super().delete()`.
+Embedding is a column on the note row, so it goes with the row (no
+`note_embedding` table exists — audit D-1).
+
+### 5.4 `ChatSession.delete()` (v0.8.68)
+`DELETE refers_to WHERE in=$sid` (sweep edges) then `super().delete()`.
+Best-effort; never blocks the primary delete.
+
+### 5.5 `Notebook.delete(delete_exclusive_sources=False)` — the big cascade
+Returns `{deleted_notes, deleted_sources, unlinked_sources,
+deleted_chat_session_ids}`.
+1. **Notes**: gather all linked notes; for ≤ `ONP_NOTEBOOK_DELETE_BULK_THRESHOLD`
+   (default 25) delete concurrently via `asyncio.gather(return_exceptions=True)`;
+   above the threshold use `_bulk_delete_notes()` (2 statements:
+   `DELETE note WHERE id IN $ids`, then `DELETE artifact WHERE in IN $ids`).
+2. `DELETE artifact WHERE out=$notebook_id` (unlink any orphan note edges).
+3. **Sources**: if `delete_exclusive_sources`, delete sources whose `reference`
+   edges point to no other notebook (`assigned_others == 0`), else just count.
+   Always `DELETE reference WHERE out=$notebook_id` (unlink all).
+4. **Chat sessions**: capture their ids, `DELETE refers_to WHERE out=$notebook_id`
+   then `DELETE chat_session WHERE id IN $ids`. The ids are **returned to the API
+   layer** so it can delete each session's LangGraph SQLite checkpoint thread
+   (`thread_id == str(session_id)`); the domain layer must not import the
+   checkpointer (layering) — v0.8.48.
+5. `super().delete()` removes the notebook row.
+
+`get_delete_preview()` returns `{note_count, exclusive_source_count,
+shared_source_count}` for a confirmation dialog, computed via
+`count(->reference[WHERE out != $notebook_id])`.
+
+### 5.6 `Model.delete()`
+Nulls out every `default_models` field that referenced this model (so lookups
+fall through to the handled "no model configured" path), warn-logs any
+episode/speaker profile still referencing it (not auto-cleared), then
+`super().delete()`.
+
+**No cascade**: deleting an `episode_profile` / `speaker_profile` does NOT touch
+`episode` rows (episodes store profile snapshots, not references).
+
+---
+
+## 6. Vector-embedding storage summary
+
+| What | Where | Dimension | Index |
+|------|-------|-----------|-------|
+| Source chunks | `source_embedding.embedding` (`array<float>`) | 768 | HNSW `source_embedding_hnsw` |
+| Source insights | `source_insight.embedding` (`option<array<float>>`) | 768 | HNSW `source_insight_hnsw` |
+| Notes | `note.embedding` (`option<array<float>>`) — column, no separate table | 768 | HNSW `note_hnsw` |
+| Memory (fact/pref/episode) | `memory_*.embedding` | 768 | HNSW `memory_*_embedding` |
+
+Dimension **768** matches `nomic-embed-text-v1.5`. Embeddings are generated
+fire-and-forget via surreal-commands (`embed_source`, `embed_note`,
+`embed_insight`) — see doc 08. Similarity is cosine
+(`vector::similarity::cosine`), with a KNN pre-filter (`<|100|>`) added in
+migration 21.
