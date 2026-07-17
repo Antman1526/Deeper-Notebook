@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pptx import Presentation
 
 from api.routers import studio as studio_mod
 from open_notebook.exceptions import NotFoundError
@@ -913,6 +915,81 @@ def test_update_artifact_recomputes_derived_metadata(monkeypatch):
     ]
     assert "citation_warnings" not in output
     assert output["study_progress"] == {"selected_row": 0}
+
+
+def test_update_visual_artifact_snapshots_and_refreshes_exports(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    previous_document = {
+        "schema_version": 1,
+        "artifact_type": "slide_deck",
+        "title": "Original slides",
+        "audience": "Researchers",
+        "slides": [{"title": "Original slide", "bullets": ["Old content"]}],
+    }
+    artifact = _FakeArtifact(
+        id="studio_artifact:edited-slides",
+        notebook_id="notebook:alpha",
+        artifact_type="slide_deck",
+        title="Slides",
+        status="completed",
+        output_format="markdown",
+        output_payload={
+            "schema_version": 1,
+            "document": previous_document,
+            "markdown": "# Original slides\n",
+            "content": "# Original slides\n",
+            "validation": {"status": "valid", "errors": []},
+        },
+        export_paths={"pptx": str(tmp_path / "original.pptx")},
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:edited-slides",
+        json={
+            "output_payload": {
+                "schema_version": 1,
+                "document": {
+                    "schema_version": 1,
+                    "artifact_type": "slide_deck",
+                    "title": "Edited slides",
+                    "audience": "Researchers",
+                    "slides": [
+                        {
+                            "title": "Edited slide",
+                            "bullets": ["Current content"],
+                            "citations": ["[S1]"],
+                        }
+                    ],
+                },
+                "validation": {"status": "valid", "errors": []},
+                "study_progress": {"selected_slide": 0},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["output_payload"]["study_progress"] == {"selected_slide": 0}
+    presentation = Presentation(body["export_paths"]["pptx"])
+    slide_text = " ".join(
+        shape.text
+        for slide in presentation.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text")
+    )
+    assert "Edited slides" in slide_text
+    assert "Edited slide" in slide_text
+    revisions = [
+        row
+        for row in _FakeArtifact.records.values()
+        if row.revision_of_id == artifact.id
+    ]
+    assert len(revisions) == 1
+    assert revisions[0].output_payload["document"] == previous_document
+    assert revisions[0].export_paths == {"pptx": str(tmp_path / "original.pptx")}
 
 
 def test_delete_artifact_deletes_record(monkeypatch):
@@ -1937,6 +2014,169 @@ def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path)
     assert "data table" in lower_prompt
     assert "markdown table" in lower_prompt
     assert "source marker" in lower_prompt
+
+
+def test_generate_slide_deck_persists_pptx_and_pdf_exports(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:slides",
+        notebook_id="notebook:alpha",
+        artifact_type="slide_deck",
+        title="Slides",
+        source_ids=["source:one"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, _source_id):
+            return SimpleNamespace(
+                id="source:one",
+                title="Source One",
+                full_text="Source-grounded presentations retain evidence.",
+            )
+
+    fake_chain = _json_chain(
+        "slide_deck",
+        document={
+            "artifact_type": "slide_deck",
+            "title": "Evidence Slides",
+            "audience": "Researchers",
+            "slides": [
+                {
+                    "title": "Grounded output",
+                    "bullets": ["Claims remain traceable."],
+                    "speaker_notes": "Explain the retained evidence.",
+                    "visual_direction": "Show a simple evidence path.",
+                    "citations": ["[S1]"],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    response = _client().post("/api/studio/artifacts/studio_artifact:slides/generate")
+
+    assert response.status_code == 200
+    paths = response.json()["export_paths"]
+    assert Path(paths["pptx"]).read_bytes().startswith(b"PK")
+    assert Path(paths["pdf"]).read_bytes().startswith(b"%PDF")
+    exported_metadata = json.loads(Path(paths["json"]).read_text())
+    assert exported_metadata["export_paths"]["pptx"] == paths["pptx"]
+    assert exported_metadata["export_paths"]["pdf"] == paths["pdf"]
+
+
+def test_generate_infographic_persists_png_and_pdf_exports(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:infographic",
+        notebook_id="notebook:alpha",
+        artifact_type="infographic",
+        title="Infographic",
+        source_ids=["source:one"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, _source_id):
+            return SimpleNamespace(
+                id="source:one",
+                title="Source One",
+                full_text="Evidence can be summarized as a constrained visual.",
+            )
+
+    fake_chain = _json_chain(
+        "infographic",
+        document={
+            "artifact_type": "infographic",
+            "title": "Evidence Visual",
+            "orientation": "portrait",
+            "panels": [
+                {
+                    "kind": "metric",
+                    "heading": "Coverage",
+                    "value": "95%",
+                    "body": "Resolved evidence",
+                    "citations": ["[S1]"],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:infographic/generate"
+    )
+
+    assert response.status_code == 200
+    paths = response.json()["export_paths"]
+    assert Path(paths["png"]).read_bytes().startswith(b"\x89PNG")
+    assert Path(paths["pdf"]).read_bytes().startswith(b"%PDF")
+
+
+def test_visual_export_failure_keeps_completed_text_exports(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:visual-failure",
+        notebook_id="notebook:alpha",
+        artifact_type="slide_deck",
+        title="Slides",
+        source_ids=["source:one"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, _source_id):
+            return SimpleNamespace(
+                id="source:one",
+                title="Source One",
+                full_text="PRIVATE SOURCE TEXT THAT MUST NOT ENTER WARNINGS",
+            )
+
+    def _broken_export(*_args, **_kwargs):
+        raise RuntimeError("PRIVATE SOURCE TEXT THAT MUST NOT ENTER WARNINGS")
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=_json_chain("slide_deck")),
+    )
+    monkeypatch.setattr(
+        studio_mod.artifact_generation_service,
+        "export_slide_deck",
+        _broken_export,
+    )
+
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:visual-failure/generate"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert set(body["export_paths"]) == {"markdown", "json"}
+    warning = body["output_payload"]["export_warnings"]["visual"]
+    assert warning["type"] == "RuntimeError"
+    assert "PRIVATE SOURCE" not in json.dumps(warning)
 
 
 def test_generate_artifact_uses_all_notebook_sources_when_none_selected(monkeypatch):

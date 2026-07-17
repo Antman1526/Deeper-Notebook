@@ -1768,6 +1768,9 @@ async def update_studio_artifact(
 
     updates = payload.model_dump(exclude_unset=True)
     output_payload = updates.get("output_payload")
+    snapshot_before_update = False
+    refresh_exports = False
+    canonical_markdown = ""
     if isinstance(output_payload, dict) and "schema_version" in output_payload:
         try:
             document = parse_payload_document(
@@ -1807,6 +1810,16 @@ async def update_studio_artifact(
             ) from exc
 
         if document is not None:
+            previous_document = (
+                artifact.output_payload.get("document")
+                if isinstance(artifact.output_payload, dict)
+                else None
+            )
+            snapshot_before_update = (
+                artifact.status == "completed"
+                and previous_document != document.model_dump(mode="json")
+            )
+            refresh_exports = snapshot_before_update and bool(artifact.export_paths)
             core_keys = {
                 "schema_version",
                 "document",
@@ -1835,6 +1848,7 @@ async def update_studio_artifact(
                     if key in previous_validation:
                         validation[key] = previous_validation[key]
             markdown = render_artifact_markdown(document)
+            canonical_markdown = markdown
             derived_metadata = _artifact_output_payload(
                 artifact,
                 markdown,
@@ -1849,8 +1863,16 @@ async def update_studio_artifact(
                 extras=extras,
             )
 
+    if snapshot_before_update:
+        await _snapshot_artifact_revision(artifact)
     for key, value in updates.items():
         setattr(artifact, key, value)
+    if refresh_exports:
+        artifact.export_paths = await asyncio.to_thread(
+            artifact_generation_service.persist_artifact_exports,
+            artifact,
+            canonical_markdown,
+        )
     await artifact.save()
     return _artifact_response(artifact)
 
