@@ -34,6 +34,7 @@ import {
   StudyProgress,
 } from '@/components/onp/StudyArtifactViewers'
 import { isEvidenceStudioEnabled, isResearchRunsEnabled } from '@/lib/features'
+import { artifactMarkdown } from '@/lib/studio-artifacts'
 import {
   useCreateStudioArtifact,
   useApproveStudioWorkflowRun,
@@ -125,11 +126,6 @@ function statusClassName(status: StudioArtifact['status']): string {
   if (status === 'failed' || status === 'cancelled') return 'border-destructive text-destructive'
   if (status === 'running') return 'border-[var(--onp-info)] text-[var(--onp-info)]'
   return 'border-[var(--onp-warning)] text-[var(--onp-warning)]'
-}
-
-function artifactMarkdown(artifact: StudioArtifact | null): string {
-  const content = artifact?.output_payload?.content
-  return typeof content === 'string' ? content : ''
 }
 
 function unsupportedCitationMarkers(artifact: StudioArtifact | null): string[] {
@@ -306,7 +302,7 @@ export function ArtifactRail({
     || createWorkflowRun.isPending
     || approveWorkflowRun.isPending
   )
-  const selectedMarkdown = artifactMarkdown(selectedArtifact)
+  const selectedMarkdown = artifactMarkdown(selectedArtifact?.output_payload)
   const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
   const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
   const selectedExportEntries = artifactExportEntries(selectedArtifact)
