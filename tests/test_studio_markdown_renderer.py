@@ -219,7 +219,8 @@ def test_course_pack_renderer_exposes_modules_lessons_and_assessment():
     assert "## Module 1: Grounding" in markdown
     assert "### Lesson 1: Source selection" in markdown
     assert "Duration: 20 minutes" in markdown
-    assert "Facilitator notes: Discuss trade-offs." in markdown
+    assert "#### Facilitator notes" in markdown
+    assert "Discuss trade-offs." in markdown
     assert "## Final Assessment" in markdown
 
 

@@ -17,7 +17,13 @@ from loguru import logger
 
 from open_notebook.ai.models import Model
 from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.domain.notebook import Notebook, Source, StudioArtifact, StudioWorkflowRun
+from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.domain.notebook import (
+    Notebook,
+    Source,
+    StudioArtifact,
+    StudioWorkflowRun,
+)
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.local_models.inventory import enumerate_models
 from open_notebook.local_models.role_routing import (
@@ -25,7 +31,13 @@ from open_notebook.local_models.role_routing import (
     model_match_key,
     recommend_model_roles,
 )
-from open_notebook.utils.text_utils import clean_thinking_content, extract_text_content
+from open_notebook.studio.payloads import build_structured_payload
+from open_notebook.studio.renderers import render_artifact_markdown
+from open_notebook.studio.schemas import schema_for_artifact_type
+from open_notebook.studio.structured_generation import (
+    StructuredArtifactGenerationError,
+    generate_structured_document,
+)
 
 
 def _set_workflow_step_status(
@@ -1049,6 +1061,14 @@ async def generate_studio_artifact(artifact_id: str) -> StudioArtifact:
             detail="Studio artifact not found",
         )
 
+    try:
+        schema = schema_for_artifact_type(artifact.artifact_type)
+    except InvalidInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
     workflow_run = await _active_workflow_run_for_artifact(str(artifact.id))
     if workflow_run is not None and workflow_run.status == "awaiting_approval":
         raise HTTPException(
@@ -1083,9 +1103,9 @@ Requirements:
 - Stay faithful to the provided sources.
 - Do not invent facts, dates, numbers, or quotes.
 - Cite specific claims with the provided source markers.
-- Use source markers like [S1] in the artifact body so readers can verify claims.
+- Use source markers like [S1] only in the schema's citation fields so readers can verify claims.
 - If the sources are insufficient, say what is missing.
-- Return markdown only.
+- Return data matching the required artifact schema.
 """
         model_id, provider = await _resolve_artifact_model_route(artifact)
         artifact.model_id = model_id
@@ -1097,19 +1117,32 @@ Requirements:
             "chat",
             max_tokens=3072,
         )
-        response = await asyncio.wait_for(
-            chain.ainvoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
-            ),
-            timeout=_PAGE_TIMEOUT_SEC,
+        result = await generate_structured_document(
+            model=chain,
+            schema=schema,
+            messages=[
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=combined_context),
+            ],
+            timeout_seconds=_PAGE_TIMEOUT_SEC,
         )
-        content = clean_thinking_content(extract_text_content(response.content)).strip()
-        if not content:
-            raise InvalidInputError("Generated artifact output was empty")
+        content = render_artifact_markdown(result.document)
         artifact.status = "completed"
         artifact.output_format = "markdown"
         artifact.citations = citations
-        artifact.output_payload = _artifact_output_payload(artifact, content, citations)
+        legacy_extras = _artifact_output_payload(artifact, content, citations)
+        legacy_extras.pop("content", None)
+        artifact.output_payload = build_structured_payload(
+            result.document,
+            content,
+            validation={
+                "status": "valid",
+                "errors": [],
+                "strategy": result.strategy,
+                "attempts": result.attempts,
+            },
+            extras=legacy_extras,
+        )
         artifact.source_ids = [citation["source_id"] for citation in citations]
         try:
             artifact.export_paths = await asyncio.to_thread(
@@ -1155,6 +1188,30 @@ Requirements:
             _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")
             await workflow_run.save()
         raise
+    except StructuredArtifactGenerationError as exc:
+        artifact.status = "failed"
+        artifact.output_payload = {
+            "schema_version": 1,
+            "validation": {
+                "status": "invalid",
+                "errors": exc.errors,
+                "attempts": exc.attempts,
+            },
+            "error": "Artifact output did not match the required structure",
+        }
+        await artifact.save()
+        if workflow_run is not None:
+            workflow_run.status = "failed"
+            _set_workflow_step_status(
+                workflow_run,
+                {"artifact_generation"},
+                "failed",
+            )
+            await workflow_run.save()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Artifact generation failed",
+        ) from exc
     except Exception as exc:
         logger.exception("Evidence Studio artifact generation failed")
         artifact.status = "failed"

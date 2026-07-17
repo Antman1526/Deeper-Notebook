@@ -112,13 +112,18 @@ def _escape_table_cell(value: str) -> str:
 
 @render_artifact_markdown.register
 def _(document: DataTableDocument) -> str:
-    columns = [*document.columns, "Source"]
+    include_citation_column = "Source" not in document.columns
+    columns = [
+        *document.columns,
+        *(["Source"] if include_citation_column else []),
+    ]
     parts = [f"# {document.title}"]
     parts.append("| " + " | ".join(_escape_table_cell(c) for c in columns) + " |")
     parts.append("| " + " | ".join("---" for _ in columns) + " |")
     for row in document.rows:
         values = [_escape_table_cell(row.values[column]) for column in document.columns]
-        values.append(_citations(row.citations))
+        if include_citation_column:
+            values.append(_citations(row.citations))
         parts.append("| " + " | ".join(values) + " |")
     return _finish([parts[0], "\n".join(parts[1:])])
 
@@ -197,7 +202,9 @@ def _(document: CoursePackDocument) -> str:
             if lesson.exercise:
                 parts.append(f"Exercise: {lesson.exercise}")
             if lesson.facilitator_notes:
-                parts.append(f"Facilitator notes: {lesson.facilitator_notes}")
+                parts.extend(
+                    ["#### Facilitator notes", lesson.facilitator_notes]
+                )
             source = _source(lesson.citations)
             if source:
                 parts.append(source)
