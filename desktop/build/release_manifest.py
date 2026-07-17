@@ -9,7 +9,6 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
