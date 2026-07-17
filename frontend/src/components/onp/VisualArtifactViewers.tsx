@@ -108,7 +108,8 @@ export function isInfographicDocument(value: unknown): value is InfographicVisua
 export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocument }) {
   const [index, setIndex] = useState(0)
   const [showNotes, setShowNotes] = useState(false)
-  const slide = document.slides[index]
+  const totalSlides = document.slides.length + 1
+  const slide = index === 0 ? null : document.slides[index - 1]
 
   useEffect(() => {
     setIndex(0)
@@ -116,7 +117,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
   }, [document])
 
   const move = (offset: number) => {
-    setIndex((current) => Math.min(document.slides.length - 1, Math.max(0, current + offset)))
+    setIndex((current) => Math.min(totalSlides - 1, Math.max(0, current + offset)))
     setShowNotes(false)
   }
 
@@ -132,25 +133,45 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
       }}
     >
       <div className="flex gap-2 overflow-x-auto pb-1 lg:max-h-[32rem] lg:flex-col lg:overflow-y-auto lg:pr-1">
+        <button
+          type="button"
+          aria-label={`Open slide 1: ${document.title}`}
+          aria-current={index === 0 ? 'true' : undefined}
+          className={cn(
+            'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
+            index === 0
+              ? 'border-l-teal-600 bg-muted text-foreground'
+              : 'border-l-transparent text-muted-foreground hover:bg-muted/60',
+          )}
+          onClick={() => {
+            setIndex(0)
+            setShowNotes(false)
+          }}
+        >
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">01</span>
+          <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
+            {document.title}
+          </span>
+        </button>
         {document.slides.map((item, slideIndex) => (
           <button
             key={`${slideIndex}-${item.title}`}
             type="button"
-            aria-label={`Open slide ${slideIndex + 1}: ${item.title}`}
-            aria-current={slideIndex === index ? 'true' : undefined}
+            aria-label={`Open slide ${slideIndex + 2}: ${item.title}`}
+            aria-current={slideIndex + 1 === index ? 'true' : undefined}
             className={cn(
               'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
-              slideIndex === index
+              slideIndex + 1 === index
                 ? 'border-l-teal-600 bg-muted text-foreground'
                 : 'border-l-transparent text-muted-foreground hover:bg-muted/60',
             )}
             onClick={() => {
-              setIndex(slideIndex)
+              setIndex(slideIndex + 1)
               setShowNotes(false)
             }}
           >
             <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">
-              {String(slideIndex + 1).padStart(2, '0')}
+              {String(slideIndex + 2).padStart(2, '0')}
             </span>
             <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
               {item.title}
@@ -164,7 +185,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           <div>
             <div className="text-sm font-semibold">{document.title}</div>
             <div className="text-xs text-muted-foreground">
-              Slide {index + 1} of {document.slides.length}
+              Slide {index + 1} of {totalSlides}
               {document.audience ? ` · ${document.audience}` : ''}
             </div>
           </div>
@@ -188,7 +209,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               className="h-8 w-8"
               aria-label="Next slide"
               title="Next slide"
-              disabled={index === document.slides.length - 1}
+              disabled={index === totalSlides - 1}
               onClick={() => move(1)}
             >
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -196,44 +217,65 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           </div>
         </div>
 
-        <article className="aspect-video min-h-0 overflow-hidden border bg-[#f7f8fa] text-[#17202a] shadow-sm">
-          <div className="h-2 bg-teal-600" />
-          <div className="grid h-[calc(100%_-_0.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 p-[clamp(1rem,4cqi,2.5rem)] [container-type:inline-size]">
-            <h3 className="line-clamp-2 text-[clamp(1rem,4cqi,2rem)] font-semibold leading-tight">
-              {slide.title}
-            </h3>
-            <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)]">
-              <ul className="min-h-0 space-y-[clamp(0.3rem,1.4cqi,0.8rem)] overflow-y-auto pr-2 text-[clamp(0.72rem,2.4cqi,1.15rem)] leading-relaxed">
-                {slide.bullets.map((bullet, bulletIndex) => (
-                  <li key={`${bulletIndex}-${bullet}`} className="flex gap-2">
-                    <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600" aria-hidden="true" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-              {slide.visual_direction && (
-                <div className="hidden min-h-0 overflow-y-auto border-l border-[#d8dee8] pl-4 md:block">
-                  <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-teal-700">
-                    Visual direction
+        {slide === null ? (
+          <article className="aspect-video min-h-0 overflow-hidden border bg-[#17324d] text-white shadow-sm [container-type:inline-size]">
+            <div className="grid h-full grid-cols-[0.65rem_minmax(0,1fr)] gap-[clamp(1rem,4cqi,2.5rem)] p-[clamp(1rem,5cqi,3rem)]">
+              <div className="rounded-full bg-teal-500" aria-hidden="true" />
+              <div className="flex min-w-0 flex-col justify-center">
+                <h3 className="line-clamp-3 text-[clamp(1.35rem,5cqi,3rem)] font-semibold leading-tight">
+                  {document.title}
+                </h3>
+                {document.audience && (
+                  <div className="mt-[clamp(1rem,5cqi,3rem)] text-[clamp(0.75rem,2.2cqi,1.2rem)] text-[#d8e3ed]">
+                    Prepared for {document.audience}
                   </div>
-                  <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[#475467]">
-                    {slide.visual_direction}
-                  </div>
+                )}
+                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[#b7c8d8]">
+                  Open Notebook Plus / Evidence Studio
                 </div>
-              )}
-            </div>
-            <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[#667085]">
-              <div className="flex flex-wrap gap-1">
-                {slide.citations.map((citation) => (
-                  <span key={citation}>{citation}</span>
-                ))}
               </div>
-              <span>{index + 1}/{document.slides.length}</span>
             </div>
-          </div>
-        </article>
+          </article>
+        ) : (
+          <article className="aspect-video min-h-0 overflow-hidden border bg-[#f7f8fa] text-[#17202a] shadow-sm">
+            <div className="h-2 bg-teal-600" />
+            <div className="grid h-[calc(100%_-_0.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 p-[clamp(1rem,4cqi,2.5rem)] [container-type:inline-size]">
+              <h3 className="line-clamp-2 text-[clamp(1rem,4cqi,2rem)] font-semibold leading-tight">
+                {slide.title}
+              </h3>
+              <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)]">
+                <ul className="min-h-0 space-y-[clamp(0.3rem,1.4cqi,0.8rem)] overflow-y-auto pr-2 text-[clamp(0.72rem,2.4cqi,1.15rem)] leading-relaxed">
+                  {slide.bullets.map((bullet, bulletIndex) => (
+                    <li key={`${bulletIndex}-${bullet}`} className="flex gap-2">
+                      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600" aria-hidden="true" />
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
+                {slide.visual_direction && (
+                  <div className="hidden min-h-0 overflow-y-auto border-l border-[#d8dee8] pl-4 md:block">
+                    <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-teal-700">
+                      Visual direction
+                    </div>
+                    <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[#475467]">
+                      {slide.visual_direction}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[#667085]">
+                <div className="flex flex-wrap gap-1">
+                  {slide.citations.map((citation) => (
+                    <span key={citation}>{citation}</span>
+                  ))}
+                </div>
+                <span>{index}/{document.slides.length}</span>
+              </div>
+            </div>
+          </article>
+        )}
 
-        {(slide.speaker_notes || slide.visual_direction) && (
+        {slide && (slide.speaker_notes || slide.visual_direction) && (
           <div className="border-l-2 border-l-teal-600 bg-muted/30 px-3 py-2">
             <Button
               type="button"

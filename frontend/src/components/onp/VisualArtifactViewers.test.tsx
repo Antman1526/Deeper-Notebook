@@ -70,13 +70,19 @@ describe('SlideDeckViewer', () => {
     render(<SlideDeckViewer document={slideDeck} />)
 
     const workspace = screen.getByRole('region', { name: 'Slide deck' })
-    expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
-    expect(screen.getByText(/Slide 1 of 2/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Evidence Slides' })).toBeInTheDocument()
+    expect(screen.getByText('Prepared for Researchers')).toBeInTheDocument()
+    expect(screen.getByText(/Slide 1 of 3/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Grounded output' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Private workflow' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
+    expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
+    expect(screen.getByText(/Slide 2 of 3/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
     expect(screen.getByRole('heading', { name: 'Private workflow' })).toBeInTheDocument()
-    expect(screen.getByText(/Slide 2 of 2/)).toBeInTheDocument()
+    expect(screen.getByText(/Slide 3 of 3/)).toBeInTheDocument()
 
     fireEvent.keyDown(workspace, { key: 'ArrowLeft' })
     expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
@@ -85,6 +91,7 @@ describe('SlideDeckViewer', () => {
   it('reveals speaker notes, visual direction, and citations', () => {
     render(<SlideDeckViewer document={slideDeck} />)
 
+    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
     expect(screen.getByText('[S1]')).toBeInTheDocument()
     expect(screen.queryByText('Explain the evidence trail.')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show speaker notes' }))
