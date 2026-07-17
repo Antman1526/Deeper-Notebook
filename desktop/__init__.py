@@ -14,4 +14,4 @@
 # the macOS bundle CFBundleShortVersionString). It is a separate track from
 # pyproject.toml's `version`, which versions the upstream/Docker image — see
 # the note there. Don't conflate them.
-__version__ = "0.8.5"
+__version__ = "0.8.94"
