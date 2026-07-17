@@ -4,6 +4,7 @@
 #define MyAppExeName "Open Notebook Plus.exe"
 
 [Setup]
+SourceDir=..\..
 AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -12,7 +13,6 @@ DefaultDirName={localappdata}\Programs\Open Notebook Plus
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=dist
 OutputBaseFilename=Open-Notebook-Plus-Setup-x64
 Compression=lzma2/ultra64
