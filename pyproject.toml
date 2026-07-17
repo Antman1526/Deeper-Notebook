@@ -71,6 +71,10 @@ dependencies = [
     # v0.8.70 — Managed local-model snapshot installs call
     # huggingface_hub.snapshot_download directly.
     "huggingface-hub>=1.3.0",
+    # Evidence Studio visual deliverables. Keep Pillow below 12 until the
+    # podcast-creator constraint documented below is lifted.
+    "pillow>=11.3.0,<12.0",
+    "python-pptx>=1.0.2,<2.0",
     # NOTE: pillow upgrade BLOCKED by podcast-creator 0.12.0 pinning
     # pillow<12.0. The 6 pillow CVEs (CVE-2026-25990/40192/42308/
     # 42309/42310/42311) all require pillow>=12.1.1 to fix. Lower
