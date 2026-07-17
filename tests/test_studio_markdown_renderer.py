@@ -105,6 +105,29 @@ def test_data_table_renderer_escapes_pipes_and_line_breaks():
     assert "| Local \\| private | Fast<br>enough | [S1] |" in markdown
 
 
+def test_data_table_renderer_appends_citations_to_existing_source_column():
+    markdown = _render(
+        "data_table",
+        {
+            "artifact_type": "data_table",
+            "title": "Comparison",
+            "columns": ["Topic", "Source"],
+            "rows": [
+                {
+                    "values": {
+                        "Topic": "Local models",
+                        "Source": "Source One",
+                    },
+                    "citations": ["[S1]"],
+                }
+            ],
+        },
+    )
+
+    assert markdown.count("| Topic | Source |") == 1
+    assert "| Local models | Source One [S1] |" in markdown
+
+
 def test_mind_map_renderer_uses_two_space_tree_indentation():
     markdown = _render(
         "mind_map",

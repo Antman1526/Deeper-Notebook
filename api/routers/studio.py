@@ -1814,10 +1814,16 @@ async def update_studio_artifact(
                 "content",
                 "validation",
             }
+            derived_keys = {
+                "data_table_rows",
+                "research_stages",
+                "course_pack_modules",
+                "citation_warnings",
+            }
             extras = {
                 key: value
                 for key, value in output_payload.items()
-                if key not in core_keys
+                if key not in core_keys | derived_keys
             }
             previous_validation = output_payload.get("validation")
             validation: dict[str, object] = {
@@ -1829,6 +1835,13 @@ async def update_studio_artifact(
                     if key in previous_validation:
                         validation[key] = previous_validation[key]
             markdown = render_artifact_markdown(document)
+            derived_metadata = _artifact_output_payload(
+                artifact,
+                markdown,
+                artifact.citations,
+            )
+            derived_metadata.pop("content", None)
+            extras.update(derived_metadata)
             updates["output_payload"] = build_structured_payload(
                 document,
                 markdown,
