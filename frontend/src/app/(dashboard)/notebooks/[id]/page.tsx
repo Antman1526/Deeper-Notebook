@@ -16,7 +16,6 @@ import { ArtifactRail } from '@/components/onp'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { cn } from '@/lib/utils'
 import {
   ResizablePanelGroup,
   ResizablePanel,
