@@ -46,12 +46,14 @@ class MlxProvider:
         model_dir: Path,
         ready_probe: Callable[[int], bool] = _http_ready,
         max_wait: float = 60.0,
-        python_executable: Path | None = None,
+        python_executable: str | Path | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
         self._max_wait = max_wait
-        self._python_executable = python_executable or Path(sys.executable)
+        self._python_executable: str | Path = (
+            sys.executable if python_executable is None else python_executable
+        )
         self._proc: subprocess.Popen | None = None
         self._port: int | None = None
 
@@ -67,7 +69,7 @@ class MlxProvider:
                 continue
             for repo in candidates:
                 if _is_complete_mlx_repo(repo):
-                    models.append(str(repo.relative_to(self.model_dir)))
+                    models.append(repo.relative_to(self.model_dir).as_posix())
         return sorted(models)
 
     def start(self, model: str) -> ProviderEnv:

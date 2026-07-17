@@ -1,6 +1,6 @@
 import subprocess
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,6 +39,22 @@ def test_list_models_returns_complete_mlx_repos(mlx_model_root):
     assert provider.list_models() == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
 
 
+def test_list_models_uses_forward_slashes_for_windows_public_ids(monkeypatch):
+    model_dir = PureWindowsPath(r"C:\AI_Models")
+    root = model_dir / "MLX"
+    repo = root / "mlx-community__North-Mini-Code-1.0-6bit"
+
+    class CandidateRoot:
+        def iterdir(self):
+            return iter([repo])
+
+    monkeypatch.setattr("desktop.providers.mlx._mlx_roots", lambda _: [CandidateRoot()])
+    monkeypatch.setattr("desktop.providers.mlx._is_complete_mlx_repo", lambda _: True)
+
+    provider = MlxProvider(model_dir=model_dir)
+    assert provider.list_models() == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
+
+
 def test_start_spawns_mlx_server_and_returns_openai_compatible_env(
     mlx_model_root,
     monkeypatch,
@@ -55,10 +71,11 @@ def test_start_spawns_mlx_server_and_returns_openai_compatible_env(
     monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51231)
     monkeypatch.setattr(time, "sleep", lambda _: None)
 
+    configured_python = "/tmp/venv/bin/python"
     provider = MlxProvider(
         model_dir=mlx_model_root,
         ready_probe=lambda port: True,
-        python_executable=Path("/tmp/venv/bin/python"),
+        python_executable=configured_python,
     )
     env = provider.start("MLX/mlx-community__North-Mini-Code-1.0-6bit")
 
@@ -66,7 +83,7 @@ def test_start_spawns_mlx_server_and_returns_openai_compatible_env(
     assert env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
     assert env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     assert captured == [[
-        "/tmp/venv/bin/python",
+        configured_python,
         "-m",
         "mlx_lm.server",
         "--model",
