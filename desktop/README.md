@@ -42,4 +42,5 @@ shasum -a 256 dist/Open-Notebook-Plus-mac-arm64.dmg > dist/SHA256SUMS
 
 CI runs the backend and frontend quality gates before packaging. The Windows
 job additionally installs the setup package silently into a temporary folder,
-checks that the installed launcher remains running briefly, then uninstalls it.
+checks that the installed launcher remains running briefly, repeats the install
+to exercise the upgrade path, then uninstalls it.

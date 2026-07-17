@@ -5,11 +5,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PLATFORMS = ("macos", "windows")
+ARCHITECTURES = ("arm64", "x64", "x86_64")
 
 
 def desktop_version() -> str:
@@ -53,21 +57,47 @@ def build_manifest(artifact: Path, platform: str, architecture: str) -> dict[str
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact", type=Path, required=True)
-    parser.add_argument("--platform", required=True)
-    parser.add_argument("--arch", required=True)
+    parser.add_argument("--platform", choices=PLATFORMS, required=True)
+    parser.add_argument("--arch", choices=ARCHITECTURES, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
+def write_manifest(output: Path, manifest: dict[str, object]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output.parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(manifest, temporary_file, indent=2)
+            temporary_file.write("\n")
+        os.replace(temporary_path, output)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+
+
 def main() -> int:
     args = parse_args()
+    artifact = args.artifact.resolve()
+    output = args.output.resolve()
+    if output == artifact:
+        raise SystemExit(f"output must not overwrite artifact: {output}")
+
     try:
-        manifest = build_manifest(args.artifact, args.platform, args.arch)
+        manifest = build_manifest(artifact, args.platform, args.arch)
     except ValueError as error:
         raise SystemExit(str(error)) from error
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    write_manifest(output, manifest)
     return 0
 
 
