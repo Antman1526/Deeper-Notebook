@@ -31,9 +31,17 @@ from open_notebook.local_models.role_routing import (
     model_match_key,
     recommend_model_roles,
 )
-from open_notebook.studio.payloads import build_structured_payload
+from open_notebook.studio.exporters import export_infographic, export_slide_deck
+from open_notebook.studio.payloads import (
+    build_structured_payload,
+    parse_payload_document,
+)
 from open_notebook.studio.renderers import render_artifact_markdown
-from open_notebook.studio.schemas import schema_for_artifact_type
+from open_notebook.studio.schemas import (
+    InfographicDocument,
+    SlideDeckDocument,
+    schema_for_artifact_type,
+)
 from open_notebook.studio.structured_generation import (
     StructuredArtifactGenerationError,
     generate_structured_document,
@@ -826,7 +834,77 @@ def _write_course_pack_lms_packages(
             package.write(path, arcname)
 
 
-def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str, str]:
+def _set_visual_export_warning(
+    artifact: StudioArtifact,
+    exc: Exception | None,
+) -> None:
+    payload = artifact.output_payload
+    if not isinstance(payload, dict):
+        return
+    existing = payload.get("export_warnings")
+    warnings = dict(existing) if isinstance(existing, dict) else {}
+    if exc is None:
+        warnings.pop("visual", None)
+    else:
+        warnings["visual"] = {
+            "type": type(exc).__name__[:120],
+            "message": (
+                "Visual export could not be rendered. "
+                "Markdown and JSON exports remain available."
+            ),
+        }
+    if warnings:
+        payload["export_warnings"] = warnings
+    else:
+        payload.pop("export_warnings", None)
+
+
+def _persist_visual_exports(
+    *,
+    artifact: StudioArtifact,
+    export_dir: Path,
+    stem: str,
+) -> dict[str, str]:
+    try:
+        document = parse_payload_document(
+            artifact.artifact_type,
+            artifact.output_payload,
+        )
+    except (InvalidInputError, ValueError):
+        return {}
+
+    paths: list[Path] = []
+    try:
+        if isinstance(document, SlideDeckDocument):
+            pptx_path = _artifact_export_path(export_dir, stem, ".pptx")
+            pdf_path = _artifact_export_path(export_dir, stem, ".pdf")
+            paths = [pptx_path, pdf_path]
+            export_slide_deck(document, pptx_path, pdf_path)
+            result = {"pptx": str(pptx_path), "pdf": str(pdf_path)}
+        elif isinstance(document, InfographicDocument):
+            png_path = _artifact_export_path(export_dir, stem, ".png")
+            pdf_path = _artifact_export_path(export_dir, stem, ".pdf")
+            paths = [png_path, pdf_path]
+            export_infographic(document, png_path, pdf_path)
+            result = {"png": str(png_path), "pdf": str(pdf_path)}
+        else:
+            return {}
+    except Exception as exc:
+        for path in paths:
+            path.unlink(missing_ok=True)
+        _set_visual_export_warning(artifact, exc)
+        logger.warning(
+            "Evidence Studio visual export failed for artifact {} ({})",
+            artifact.id,
+            type(exc).__name__,
+        )
+        return {}
+
+    _set_visual_export_warning(artifact, None)
+    return result
+
+
+def persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str, str]:
     export_dir = _artifact_export_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -860,7 +938,6 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
     if data_table_csv:
         csv_path = _artifact_export_path(export_dir, f"{stem}-data-table", ".csv")
         export_paths["csv"] = str(csv_path)
-    artifact.export_paths = export_paths
     markdown_path.write_text(_artifact_markdown_export(artifact, content), encoding="utf-8")
     if data_table_csv:
         csv_path.write_text(data_table_csv, encoding="utf-8")
@@ -898,6 +975,14 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
                 "assessment.md": assessment_path,
             },
         )
+    export_paths.update(
+        _persist_visual_exports(
+            artifact=artifact,
+            export_dir=export_dir,
+            stem=stem,
+        )
+    )
+    artifact.export_paths = export_paths
     json_path.write_text(
         json.dumps(_artifact_export_payload(artifact), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -1146,7 +1231,7 @@ Requirements:
         artifact.source_ids = [citation["source_id"] for citation in citations]
         try:
             artifact.export_paths = await asyncio.to_thread(
-                _persist_artifact_exports,
+                persist_artifact_exports,
                 artifact,
                 content,
             )
