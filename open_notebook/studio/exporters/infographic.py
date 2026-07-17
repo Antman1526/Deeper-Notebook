@@ -35,14 +35,114 @@ def _panel_grid(
     width: int,
     height: int,
 ) -> tuple[int, int, int, int]:
-    columns = 1 if document.orientation == "portrait" else 2
     if document.orientation == "square" and len(document.panels) <= 3:
         columns = 1
-    rows = math.ceil(len(document.panels) / columns)
+        rows = len(document.panels)
+        gap = 28
+        return columns, rows, width - 120, (height - 370 - gap * (rows - 1)) // rows
+
     gap = 28
-    available_width = width - 120 - gap * (columns - 1)
-    available_height = height - 340 - gap * (rows - 1)
-    return columns, rows, available_width // columns, max(190, available_height // rows)
+    best: tuple[tuple[float, int, int], tuple[int, int, int, int]] | None = None
+    for columns in range(1, min(6, len(document.panels)) + 1):
+        rows = math.ceil(len(document.panels) / columns)
+        panel_width = (width - 120 - gap * (columns - 1)) // columns
+        panel_height = (height - 370 - gap * (rows - 1)) // rows
+        if panel_width < 1 or panel_height < 1:
+            continue
+        score = (
+            min(panel_width / 300, panel_height / 220),
+            panel_width * panel_height,
+            -columns,
+        )
+        candidate = (columns, rows, panel_width, panel_height)
+        if best is None or score > best[0]:
+            best = (score, candidate)
+
+    if best is None:
+        raise ValueError("Infographic panels cannot fit within the selected orientation")
+    return best[1]
+
+
+def _draw_compact_panel(
+    draw: ImageDraw.ImageDraw,
+    panel: InfographicPanel,
+    box: tuple[int, int, int, int],
+    index: int,
+) -> None:
+    left, top, right, bottom = box
+    accent = PANEL_ACCENTS[panel.kind]
+    draw.rounded_rectangle(box, radius=6, fill=WHITE, outline=BORDER, width=2)
+    draw.rectangle((left, top, right, top + 9), fill=accent)
+    draw.text(
+        (left + 16, top + 20),
+        panel.kind.upper(),
+        font=load_font(11, bold=True),
+        fill=accent,
+    )
+    draw.text(
+        (right - 34, top + 20),
+        f"{index:02d}",
+        font=load_font(11, bold=True),
+        fill=MUTED,
+    )
+    draw_fitted_text(
+        draw,
+        (left + 16, top + 45),
+        panel.heading,
+        max_width=right - left - 32,
+        max_height=48,
+        max_size=22,
+        min_size=14,
+        fill=INK,
+        bold=True,
+        spacing=3,
+        max_lines=2,
+    )
+
+    content_top = top + 100
+    if panel.value:
+        draw_fitted_text(
+            draw,
+            (left + 16, content_top),
+            panel.value,
+            max_width=right - left - 32,
+            max_height=34,
+            max_size=28,
+            min_size=16,
+            fill=accent,
+            bold=True,
+            spacing=2,
+            max_lines=1,
+        )
+        content_top += 38
+
+    body_height = bottom - content_top - 30
+    if panel.body and body_height >= 16:
+        draw_fitted_text(
+            draw,
+            (left + 16, content_top),
+            panel.body,
+            max_width=right - left - 32,
+            max_height=body_height,
+            max_size=16,
+            min_size=11,
+            fill=INK,
+            spacing=3,
+            max_lines=max(1, body_height // 15),
+        )
+    if panel.citations:
+        draw_fitted_text(
+            draw,
+            (left + 16, bottom - 23),
+            "Sources  " + " ".join(panel.citations),
+            max_width=right - left - 32,
+            max_height=14,
+            max_size=11,
+            min_size=9,
+            fill=MUTED,
+            spacing=1,
+            max_lines=1,
+        )
 
 
 def _draw_panel(
@@ -52,6 +152,10 @@ def _draw_panel(
     index: int,
 ) -> None:
     left, top, right, bottom = box
+    if bottom - top < 300 or right - left < 280:
+        _draw_compact_panel(draw, panel, box, index)
+        return
+
     accent = PANEL_ACCENTS[panel.kind]
     draw.rounded_rectangle(box, radius=8, fill=WHITE, outline=BORDER, width=2)
     draw.rounded_rectangle(
