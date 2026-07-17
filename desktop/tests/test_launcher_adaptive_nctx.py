@@ -29,6 +29,7 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
     monkeypatch.setattr(
         "desktop.launcher.os.sysconf_names",
         {"SC_PHYS_PAGES": 1, "SC_PAGE_SIZE": 2},
+        raising=False,
     )
 
     def fake_sysconf(name):
@@ -72,6 +73,14 @@ def test_non_darwin_uses_floor(monkeypatch):
     # The KV-cache sizing assumes Apple-Silicon unified memory; on other
     # platforms stay at the historical conservative default.
     _patch_ram(monkeypatch, 128, platform="linux")
+    assert Supervisor._default_ctx_max() == 32768
+
+
+def test_windows_without_sysconf_names_uses_floor(monkeypatch):
+    # Windows does not define os.sysconf_names. The shared test helper must
+    # still be able to simulate its RAM without assuming POSIX APIs exist.
+    monkeypatch.delattr("desktop.launcher.os.sysconf_names", raising=False)
+    _patch_ram(monkeypatch, 128, platform="win32")
     assert Supervisor._default_ctx_max() == 32768
 
 

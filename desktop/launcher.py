@@ -1725,7 +1725,7 @@ class Supervisor:
         if sys.platform != "darwin":
             return default
         try:
-            names = os.sysconf_names
+            names = getattr(os, "sysconf_names", {})
             if "SC_PHYS_PAGES" not in names or "SC_PAGE_SIZE" not in names:
                 return default
             total = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
