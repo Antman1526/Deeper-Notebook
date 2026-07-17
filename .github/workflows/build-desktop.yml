@@ -86,16 +86,23 @@ jobs:
         shell: pwsh
         run: |
           $installDir = Join-Path $env:RUNNER_TEMP "Open Notebook Plus"
-          Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait
+          $installerArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
+          $installProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Installer failed with exit code $($installProcess.ExitCode)." }
           $launcher = Join-Path $installDir "Open Notebook Plus.exe"
           if (-not (Test-Path $launcher)) { throw "Installed launcher not found: $launcher" }
           $process = Start-Process -FilePath $launcher -PassThru
           Start-Sleep -Seconds 15
           if ($process.HasExited) { throw "Installed launcher exited during smoke probe." }
           Stop-Process -Id $process.Id -Force
+          $upgradeProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          if ($upgradeProcess.ExitCode -ne 0) { throw "Upgrade-path install failed with exit code $($upgradeProcess.ExitCode)." }
+          if (-not (Test-Path $launcher)) { throw "Launcher not found after upgrade-path install: $launcher" }
           $uninstaller = Join-Path $installDir "unins000.exe"
           if (-not (Test-Path $uninstaller)) { throw "Uninstaller not found: $uninstaller" }
-          Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)." }
+          if (Test-Path $installDir) { throw "Install directory remains after uninstall: $installDir" }
       - name: Generate Windows release metadata
         shell: pwsh
         run: |
