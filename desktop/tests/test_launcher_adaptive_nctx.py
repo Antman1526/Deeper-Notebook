@@ -86,7 +86,7 @@ def test_windows_without_sysconf_names_uses_floor(monkeypatch):
 
 def test_sysconf_names_missing_falls_back(monkeypatch):
     monkeypatch.setattr("desktop.launcher.sys.platform", "darwin")
-    monkeypatch.setattr("desktop.launcher.os.sysconf_names", {})
+    monkeypatch.delattr("desktop.launcher.os.sysconf_names", raising=False)
     assert Supervisor._default_ctx_max() == 32768
 
 
