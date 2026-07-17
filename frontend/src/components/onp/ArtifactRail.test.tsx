@@ -957,6 +957,9 @@ describe('ArtifactRail', () => {
       'lg:overflow-hidden',
     )
     expect(screen.getByRole('region', { name: 'Slide deck' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Evidence Slides' })).toHaveLength(2)
+    expect(screen.getByText('Prepared for Researchers')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
     expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
     expect(screen.getByText('PPTX')).toBeInTheDocument()
     expect(screen.getByText('PDF')).toBeInTheDocument()
