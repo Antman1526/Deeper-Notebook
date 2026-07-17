@@ -78,6 +78,29 @@ def _infographic(orientation: str = "portrait") -> InfographicDocument:
     return document
 
 
+def _dense_infographic(orientation: str) -> InfographicDocument:
+    document = parse_artifact_document(
+        "infographic",
+        {
+            "artifact_type": "infographic",
+            "title": "Twenty grounded findings",
+            "orientation": orientation,
+            "panels": [
+                {
+                    "kind": "metric" if index % 3 == 0 else "text",
+                    "heading": f"Finding {index + 1}",
+                    "value": f"{index + 1}%" if index % 3 == 0 else "",
+                    "body": "A compact source-grounded finding.",
+                    "citations": [f"[S{(index % 4) + 1}]"],
+                }
+                for index in range(20)
+            ],
+        },
+    )
+    assert isinstance(document, InfographicDocument)
+    return document
+
+
 def _assert_nonblank_image(path: Path, expected_size: tuple[int, int]) -> None:
     with Image.open(path) as image:
         assert image.size == expected_size
@@ -142,6 +165,29 @@ def test_infographic_exports_nonblank_png_and_pdf(
     assert pdf[0].rect.width > 0
     assert pdf[0].rect.height > 0
     pdf.close()
+
+
+@pytest.mark.parametrize(
+    ("orientation", "expected_size"),
+    [
+        ("portrait", (1200, 1800)),
+        ("landscape", (1800, 1200)),
+        ("square", (1400, 1400)),
+    ],
+)
+def test_infographic_exports_schema_maximum_panel_count(
+    tmp_path,
+    orientation,
+    expected_size,
+):
+    png_path = tmp_path / f"dense-{orientation}.png"
+    pdf_path = tmp_path / f"dense-{orientation}.pdf"
+
+    export_infographic(_dense_infographic(orientation), png_path, pdf_path)
+
+    _assert_nonblank_image(png_path, expected_size)
+    with fitz.open(pdf_path) as pdf:
+        assert pdf.page_count == 1
 
 
 def test_visual_exporters_reject_the_wrong_document(tmp_path):
