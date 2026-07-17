@@ -62,6 +62,15 @@ export interface StudioGenerateResponse {
   warnings: string[]
 }
 
+export type StudioArtifactOutputPayload = Record<string, unknown> & {
+  schema_version?: unknown
+  document?: unknown
+  markdown?: unknown
+  content?: unknown
+  validation?: unknown
+  study_progress?: unknown
+}
+
 export interface StudioArtifact {
   id: string
   notebook_id: string
@@ -73,7 +82,7 @@ export interface StudioArtifact {
   model_id?: string | null
   provider?: string | null
   output_format?: string | null
-  output_payload: Record<string, unknown>
+  output_payload: StudioArtifactOutputPayload
   citations: Array<Record<string, unknown>>
   export_paths: Record<string, string>
   revision_of_id?: string | null
@@ -101,7 +110,7 @@ export interface StudioArtifactUpdate {
   model_id?: string | null
   provider?: string | null
   output_format?: string | null
-  output_payload?: Record<string, unknown>
+  output_payload?: StudioArtifactOutputPayload
   citations?: Array<Record<string, unknown>>
   export_paths?: Record<string, string>
   revision_of_id?: string | null

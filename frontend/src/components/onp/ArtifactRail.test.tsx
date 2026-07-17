@@ -812,7 +812,18 @@ describe('ArtifactRail', () => {
           source_ids: ['source:one'],
           model_id: 'model:qwen-coder',
           provider: 'openai_compatible',
-          output_payload: { content: '# Quarterly Report\n\nGrounded result.' },
+          output_payload: {
+            schema_version: 1,
+            document: {
+              schema_version: 1,
+              artifact_type: 'report',
+              title: 'Quarterly Report',
+              sections: [{ heading: 'Evidence', body: 'Structured result.' }],
+            },
+            markdown: '# Quarterly Report\n\nStructured result.',
+            content: '# Quarterly Report\n\nCompatibility result.',
+            validation: { status: 'valid', errors: [], strategy: 'native', attempts: 1 },
+          },
           citations: [
             {
               source_id: 'source:one',
@@ -835,7 +846,8 @@ describe('ArtifactRail', () => {
     expect(screen.getAllByText('1 citation').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('model:qwen-coder')).toBeInTheDocument()
     expect(screen.getByText('openai_compatible')).toBeInTheDocument()
-    expect(screen.getByText('Grounded result.')).toBeInTheDocument()
+    expect(screen.getByText('Structured result.')).toBeInTheDocument()
+    expect(screen.queryByText('Compatibility result.')).not.toBeInTheDocument()
     const sourceLink = screen.getByRole('link', { name: 'Source One' })
     expect(sourceLink).toHaveAttribute('href', '/sources/source%3Aone')
     expect(screen.getByText('Important excerpt from the source.')).toBeInTheDocument()
@@ -938,7 +950,17 @@ describe('ArtifactRail', () => {
           title: 'Quarterly Report',
           status: 'completed',
           source_ids: ['source:one'],
-          output_payload: { content: '# Quarterly Report\n\nCurrent result.' },
+          output_payload: {
+            schema_version: 1,
+            document: {
+              schema_version: 1,
+              artifact_type: 'report',
+              title: 'Quarterly Report',
+            },
+            markdown: '# Quarterly Report\n\nCurrent structured result.',
+            content: '# Quarterly Report\n\nCurrent compatibility result.',
+            validation: { status: 'valid', errors: [] },
+          },
           citations: [],
           export_paths: {},
         },
@@ -954,7 +976,17 @@ describe('ArtifactRail', () => {
           title: 'Quarterly Report revision',
           status: 'completed',
           source_ids: ['source:one'],
-          output_payload: { content: '# Quarterly Report\n\nPrevious result.' },
+          output_payload: {
+            schema_version: 1,
+            document: {
+              schema_version: 1,
+              artifact_type: 'report',
+              title: 'Quarterly Report revision',
+            },
+            markdown: '# Quarterly Report\n\nPrevious structured result.',
+            content: '# Quarterly Report\n\nPrevious compatibility result.',
+            validation: { status: 'valid', errors: [] },
+          },
           citations: [],
           export_paths: {},
           revision_of_id: 'studio_artifact:1',
@@ -969,7 +1001,8 @@ describe('ArtifactRail', () => {
     expect(screen.getByText('Revision history')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open Quarterly Report revision' }))
 
-    expect(screen.getByText('Previous result.')).toBeInTheDocument()
+    expect(screen.getByText('Previous structured result.')).toBeInTheDocument()
+    expect(screen.queryByText('Previous compatibility result.')).not.toBeInTheDocument()
   })
 
   it('opens flashcards in an interactive review deck', async () => {
@@ -1457,6 +1490,30 @@ describe('ArtifactRail', () => {
 
   it('saves quiz study progress when a learner answers a question', async () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
+    const quizDocument = {
+      schema_version: 1,
+      artifact_type: 'quiz',
+      title: 'Safety Quiz',
+      questions: [
+        {
+          prompt: 'What should the learner do first?',
+          options: [
+            { id: 'A', text: 'Guess' },
+            { id: 'B', text: 'Read the procedure' },
+          ],
+          correct_option_id: 'B',
+        },
+      ],
+    }
+    const quizMarkdown = [
+      '# Safety Quiz',
+      '',
+      '## Question 1',
+      'What should the learner do first?',
+      'A. Guess',
+      'B. Read the procedure',
+      'Answer: B',
+    ].join('\n')
     useStudioArtifacts.mockReturnValue({
       data: [
         {
@@ -1467,15 +1524,12 @@ describe('ArtifactRail', () => {
           status: 'completed',
           source_ids: ['source:one'],
           output_payload: {
-            content: [
-              '# Safety Quiz',
-              '',
-              '## Question 1',
-              'What should the learner do first?',
-              'A. Guess',
-              'B. Read the procedure',
-              'Answer: B',
-            ].join('\n'),
+            schema_version: 1,
+            document: quizDocument,
+            markdown: quizMarkdown,
+            content: quizMarkdown,
+            validation: { status: 'valid', errors: [], strategy: 'json', attempts: 1 },
+            exporter_metadata: { retained: true },
           },
           citations: [],
           export_paths: {},
@@ -1493,7 +1547,12 @@ describe('ArtifactRail', () => {
         artifactId: 'studio_artifact:quiz',
         payload: {
           output_payload: expect.objectContaining({
-            content: expect.stringContaining('# Safety Quiz'),
+            schema_version: 1,
+            document: quizDocument,
+            markdown: quizMarkdown,
+            content: quizMarkdown,
+            validation: { status: 'valid', errors: [], strategy: 'json', attempts: 1 },
+            exporter_metadata: { retained: true },
             study_progress: expect.objectContaining({
               version: 1,
               quiz: {
