@@ -739,7 +739,7 @@ export function ArtifactRail({
           }
         }}
       >
-        <DialogContent className="max-h-[85vh] max-w-4xl bg-card text-card-foreground shadow-2xl">
+        <DialogContent className="max-h-[85vh] w-[calc(100%-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto bg-card text-card-foreground shadow-2xl sm:max-w-4xl lg:overflow-hidden">
           {selectedArtifact && (
             <>
               <DialogHeader>

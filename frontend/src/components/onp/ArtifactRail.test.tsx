@@ -949,6 +949,13 @@ describe('ArtifactRail', () => {
     render(<ArtifactRail notebookId="notebook:alpha" />)
     fireEvent.click(screen.getByRole('button', { name: 'Open Evidence Slides' }))
 
+    expect(screen.getByRole('dialog')).toHaveClass(
+      'w-[calc(100%-2rem)]',
+      'max-w-[calc(100%-2rem)]',
+      'overflow-y-auto',
+      'sm:max-w-4xl',
+      'lg:overflow-hidden',
+    )
     expect(screen.getByRole('region', { name: 'Slide deck' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
     expect(screen.getByText('PPTX')).toBeInTheDocument()

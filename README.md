@@ -57,9 +57,11 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - **Prompt optimizer (SkillOpt, MIT):** every transformation card has an **Optimize** action that *trains* the prompt against real sources from a notebook of your choice. Each round runs the prompt over example sources, an LLM judge scores the outputs against your plain-English criteria, the optimizer proposes bounded edits, and only edits that improve a held-out validation split are kept. The result is shown side-by-side and applied only when you click **Apply**. It runs against any OpenAI-compatible endpoint, so the local llama.cpp sidecar (or Ollama) can fill both the target and judge roles with zero data leaving the machine.
 
 ### Evidence Studio and Course Packs
-- **Evidence Studio** turns a selected notebook, upload batch, link set, or mixed source bundle into reusable artifacts: reports, study guides, Course Packs, briefings, FAQs, timelines, flashcards, quizzes, data tables, mind maps, slide-deck outlines, infographic briefs, podcast outlines, and research runs.
+- **Evidence Studio** turns a selected notebook, upload batch, link set, or mixed source bundle into reusable artifacts: reports, study guides, Course Packs, briefings, FAQs, timelines, flashcards, quizzes, data tables, mind maps, editable slide decks, rendered infographics, podcast outlines, and research runs.
 - **Validated artifact documents:** newly generated text artifacts are model-independent, versioned Pydantic documents rather than unverified free-form Markdown. Provider-native structured output is preferred; local and other plain-chat models receive the exact JSON Schema and get at most one bounded repair attempt when their first response is invalid. The server deterministically renders the validated document to Markdown for the current viewers and exports.
 - **Backward-compatible storage:** each new `output_payload` stores `schema_version`, the typed `document`, canonical `markdown`, the legacy `content` alias, and a compact validation receipt. Existing `{content: markdown}` artifacts continue to open, revise, export, and retain study progress without a migration. Structured PATCH edits are revalidated and re-rendered server-side so stale client Markdown cannot disagree with the document.
+- **Visual deliverables:** completed slide decks save an editable 16:9 `.pptx` plus a deterministic multipage `.pdf`; completed infographics save a `.png` plus a one-page `.pdf` in portrait, landscape, or square orientation. The PPTX keeps titles, bullets, speaker notes, visual direction, and citation markers as editable content. Visual files appear beside Markdown and JSON in the artifact viewer and are refreshed after a valid structured edit.
+- **Local, failure-isolated exports:** artifacts save beneath `~/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/` by default, or `OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR` when set. Rendering uses local Python libraries only, with no hosted office or image service. If an optional PPTX/PDF/PNG renderer fails, the validated artifact remains completed with its Markdown/JSON exports and a bounded warning; incomplete visual files are removed.
 - **Course Pack** is the richer successor to the old "training guide" label. It treats videos and audio as lesson segments, PDFs and docs as readings/reference modules, and links as external resources. The generated markdown includes audience, learning outcomes, prerequisite knowledge, source-readiness notes, module roadmap, timed lessons, hands-on exercises, facilitator notes, learner handouts, knowledge checks, final assessment, follow-up resources, and citation markers.
 - **Workflow approval gates** track context building, privacy review, model routing, and artifact generation. If selected sources are still processing, generation fails with a structured `sources_not_ready` response instead of producing thin material.
 
@@ -157,7 +159,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 
 **Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 10 locales.
 
-**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic renderers, and a backward-compatible payload envelope under `open_notebook/studio/`; the flexible existing SurrealDB field holds that envelope, so no database migration is required. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
+**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic Markdown and visual renderers, and a backward-compatible payload envelope under `open_notebook/studio/`; `python-pptx` writes editable decks and Pillow writes self-contained slide/infographic PDF and PNG files. The flexible existing SurrealDB field holds the envelope, so no database migration is required. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
 
 **Database (SurrealDB v2)** — A single engine providing graph relationships, document storage, vector search, and key-value storage. Domain records (Notebook, Source, Note, ChatSession, PodcastEpisode, Credential, memory tables) and their edges (`reference`, `artifact`, `refers_to`) all live here. Schema migrations run automatically on API startup via `AsyncMigrationManager`.
 
@@ -251,6 +253,9 @@ Selected ready sources → citation-marked context + artifact schema
   → deterministic Markdown renderer
   → save v1 document + Markdown/content alias + validation receipt
   → write Markdown/JSON and artifact-specific sidecar exports
+      slide_deck: editable PPTX + multipage PDF
+      infographic: PNG + one-page PDF
+  → valid structured edits retain a revision and refresh every export
 ```
 
 ---
@@ -425,6 +430,7 @@ open-notebook-Plus/
 │   ├── podcasts/             # podcast domain logic
 │   ├── studio/               # typed artifact schemas, payload envelope,
 │   │                         #   structured generation, renderers, exports
+│   │   └── exporters/        #   PPTX/PDF/PNG visual artifact writers
 │   ├── mcp/                  # MCP client integration
 │   ├── digest/               # Gmail digest scheduling
 │   └── config.py             # DATA_FOLDER, paths, app config

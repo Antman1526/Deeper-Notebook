@@ -136,9 +136,6 @@ def _draw_panel(
             fill=INK,
             max_lines=8,
         )
-    if panel.kind == "comparison":
-        center = (left + right) // 2
-        draw.line((center, bottom - 90, center, bottom - 32), fill=BORDER, width=2)
     if panel.kind == "chart":
         baseline = bottom - 38
         bar_width = max(18, (right - left - 100) // 7)
