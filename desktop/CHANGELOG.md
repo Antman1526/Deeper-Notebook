@@ -20,6 +20,15 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+- **v0.8.94** 🛠 **Verified desktop release baseline.** Added deterministic
+  release manifests (version, commit, UTC build time, artifact size, and
+  SHA-256), checksum publishing, and CI package gates. Windows now ships a
+  per-user Inno Setup 6.7.1 installer alongside the complete onedir ZIP; both
+  paths include the full PyInstaller bundle, Start Menu entry, upgrade identity,
+  and uninstall support. CI verifies the setup package with a silent
+  install-launch-uninstall probe. Also fixed the notebook unused import and the
+  podcast submit callback dependency.
+
 - **✨ v0.8.93 — Evidence Studio visual deliverables and responsive previews**
   - Structured Slide deck artifacts now export an editable 16:9 **PPTX** plus a deterministic multipage **PDF**. Titles and bullets remain real PowerPoint text, while speaker notes retain the generated notes, visual direction, and citation markers. Structured Infographic artifacts now export nonblank **PNG** plus one-page **PDF** files in portrait, landscape, or square orientation, with distinct treatments for text, metric, timeline, comparison, process, and chart panels.
   - Added purpose-built in-app Slide deck and Infographic viewers. Slide decks have a thumbnail rail, keyboard/icon navigation, a stable 16:9 stage, notes disclosure, and citations; infographics use orientation-aware constrained layouts. Saved-file actions prioritize PPTX/PDF/PNG ahead of Markdown/JSON while preserving the existing Open, Copy, and Folder workflow.

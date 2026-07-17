@@ -17,14 +17,21 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
-      - run: cd frontend && npm ci && npm run build
+      - run: python -m pytest desktop/tests -q
+      - run: python -m pytest tests -q --ignore=tests/integration
+      - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
       - run: bash desktop/build/post_build_mac.sh
+      - run: |
+          mkdir -p release
+          cp dist/Open-Notebook-Plus-mac-arm64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
+          shasum -a 256 release/Open-Notebook-Plus-mac-arm64.dmg > release/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Open-Notebook-Plus-mac-arm64
-          path: dist/Open-Notebook-Plus-mac-arm64.dmg
+          path: release/
 
   build-mac-x86_64:
     runs-on: macos-13
@@ -36,14 +43,21 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
-      - run: cd frontend && npm ci && npm run build
+      - run: python -m pytest desktop/tests -q
+      - run: python -m pytest tests -q --ignore=tests/integration
+      - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
       - run: bash desktop/build/post_build_mac.sh
+      - run: |
+          mkdir -p release
+          cp dist/Open-Notebook-Plus-mac-x86_64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
+          shasum -a 256 release/Open-Notebook-Plus-mac-x86_64.dmg > release/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Open-Notebook-Plus-mac-x86_64
-          path: dist/Open-Notebook-Plus-mac-x86_64.dmg
+          path: release/
 
   build-windows-x64:
     runs-on: windows-latest
@@ -57,14 +71,45 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
-      - run: cd frontend; npm ci; npm run build
+      - run: python -m pytest desktop/tests -q
+      - run: python -m pytest tests -q --ignore=tests/integration
+      - run: cd frontend; npm ci; npm run lint; npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
       - run: pwsh desktop/build/post_build_windows.ps1
+      - name: Install Inno Setup 6.7.1
+        run: choco install innosetup --version=6.7.1 --no-progress --yes
+      - name: Build Windows setup package
+        shell: pwsh
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop/build/open-notebook-plus.iss'
+      - name: Smoke test installed Windows package
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "Open Notebook Plus"
+          Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait
+          $launcher = Join-Path $installDir "Open Notebook Plus.exe"
+          if (-not (Test-Path $launcher)) { throw "Installed launcher not found: $launcher" }
+          $process = Start-Process -FilePath $launcher -PassThru
+          Start-Sleep -Seconds 15
+          if ($process.HasExited) { throw "Installed launcher exited during smoke probe." }
+          Stop-Process -Id $process.Id -Force
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          if (-not (Test-Path $uninstaller)) { throw "Uninstaller not found: $uninstaller" }
+          Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait
+      - name: Generate Windows release metadata
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release/windows-zip, release/windows-setup | Out-Null
+          Copy-Item dist/Open-Notebook-Plus-windows-x64.zip release/windows-zip/
+          python desktop/build/release_manifest.py --artifact release/windows-zip/Open-Notebook-Plus-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
+          (Get-FileHash release/windows-zip/Open-Notebook-Plus-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-windows-x64.zip" | Set-Content release/windows-zip/SHA256SUMS
+          Copy-Item dist/Open-Notebook-Plus-Setup-x64.exe release/windows-setup/
+          python desktop/build/release_manifest.py --artifact release/windows-setup/Open-Notebook-Plus-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
+          (Get-FileHash release/windows-setup/Open-Notebook-Plus-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-Setup-x64.exe" | Set-Content release/windows-setup/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Open-Notebook-Plus-windows-x64
-          path: dist/Open-Notebook-Plus-windows-x64.zip
+          path: release/
 
   release:
     needs: [build-mac-arm64, build-mac-x86_64, build-windows-x64]
@@ -76,6 +121,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Open-Notebook-Plus-mac-arm64/*.dmg
-            dist/Open-Notebook-Plus-mac-x86_64/*.dmg
-            dist/Open-Notebook-Plus-windows-x64/*.zip
+            dist/Open-Notebook-Plus-mac-arm64/**
+            dist/Open-Notebook-Plus-mac-x86_64/**
+            dist/Open-Notebook-Plus-windows-x64/**
