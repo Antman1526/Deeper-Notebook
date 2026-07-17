@@ -751,6 +751,122 @@ def test_update_artifact_patches_only_supplied_fields(monkeypatch):
     assert body["artifact_type"] == "report"
 
 
+def test_update_artifact_rejects_invalid_structured_document(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:structured",
+        notebook_id="notebook:alpha",
+        artifact_type="quiz",
+        title="Quiz",
+        output_payload={"content": "# Existing"},
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:structured",
+        json={
+            "output_payload": {
+                "schema_version": 1,
+                "document": {"artifact_type": "quiz", "title": "Broken"},
+                "markdown": "# Broken",
+                "content": "# Broken",
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_artifact_document"
+    assert artifact.output_payload == {"content": "# Existing"}
+
+
+def test_update_artifact_accepts_legacy_markdown_payload(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:legacy",
+        notebook_id="notebook:alpha",
+        artifact_type="report",
+        title="Report",
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:legacy",
+        json={"output_payload": {"content": "# Owner edited legacy artifact"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["output_payload"] == {
+        "content": "# Owner edited legacy artifact"
+    }
+
+
+def test_update_artifact_rejects_unknown_schema_version(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:future",
+        notebook_id="notebook:alpha",
+        artifact_type="report",
+        title="Report",
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:future",
+        json={
+            "output_payload": {
+                "schema_version": 2,
+                "document": {"artifact_type": "report", "title": "Future"},
+                "content": "# Compatibility fallback",
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_artifact_schema"
+
+
+def test_update_artifact_renders_canonical_markdown_and_keeps_extras(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:cards",
+        notebook_id="notebook:alpha",
+        artifact_type="flashcards",
+        title="Cards",
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:cards",
+        json={
+            "output_payload": {
+                "schema_version": 1,
+                "document": {
+                    "schema_version": 1,
+                    "artifact_type": "flashcards",
+                    "title": "Edited cards",
+                    "cards": [{"front": "Question", "back": "Answer"}],
+                },
+                "markdown": "# Client supplied stale Markdown",
+                "content": "# Different stale alias",
+                "validation": {"status": "valid", "errors": []},
+                "study_progress": {"index": 1},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    output = response.json()["output_payload"]
+    assert output["markdown"] == output["content"]
+    assert output["markdown"].startswith("# Edited cards\n")
+    assert "## Flashcard 1" in output["markdown"]
+    assert "stale" not in output["markdown"]
+    assert output["study_progress"] == {"index": 1}
+
+
 def test_delete_artifact_deletes_record(monkeypatch):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
