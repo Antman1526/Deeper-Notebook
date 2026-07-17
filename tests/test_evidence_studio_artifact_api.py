@@ -20,6 +20,108 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
+def _minimal_document(artifact_type: str, title: str | None = None) -> dict:
+    document_title = title or artifact_type.replace("_", " ").title()
+    if artifact_type in {"report", "study_guide", "briefing", "faq", "timeline"}:
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "sections": [{"heading": "Evidence", "body": "Grounded answer."}],
+        }
+    if artifact_type in {"course_pack", "training_guide"}:
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "audience": "Learners",
+            "learning_outcomes": ["Apply the source evidence"],
+            "modules": [
+                {
+                    "title": "Foundation",
+                    "lessons": [
+                        {"title": "Evidence", "content": "Grounded lesson."}
+                    ],
+                }
+            ],
+        }
+    if artifact_type == "flashcards":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "cards": [{"front": "Question", "back": "Answer"}],
+        }
+    if artifact_type == "quiz":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "questions": [
+                {
+                    "prompt": "Question?",
+                    "options": [
+                        {"id": "A", "text": "Answer"},
+                        {"id": "B", "text": "Distractor"},
+                    ],
+                    "correct_option_id": "A",
+                }
+            ],
+        }
+    if artifact_type == "data_table":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "columns": ["Topic", "Evidence"],
+            "rows": [{"values": {"Topic": "Studio", "Evidence": "Grounded"}}],
+        }
+    if artifact_type == "mind_map":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "root": {"label": "Open Notebook Plus", "children": []},
+        }
+    if artifact_type == "slide_deck":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "slides": [{"title": "Evidence", "bullets": ["Grounded claim"]}],
+        }
+    if artifact_type == "infographic":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "panels": [{"kind": "text", "heading": "Evidence"}],
+        }
+    if artifact_type == "podcast_outline":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "cold_open": "Start with evidence.",
+            "segments": [{"title": "Grounding", "beats": ["Verify claims"]}],
+        }
+    if artifact_type == "research_run":
+        return {
+            "artifact_type": artifact_type,
+            "title": document_title,
+            "objective": "Investigate the evidence.",
+            "stages": [{"title": "Synthesis", "findings": []}],
+        }
+    raise AssertionError(f"No test document for {artifact_type}")
+
+
+def _json_chain(
+    artifact_type: str,
+    *,
+    title: str | None = None,
+    document: dict | None = None,
+) -> MagicMock:
+    chain = MagicMock()
+    chain.with_structured_output.side_effect = NotImplementedError
+    chain.ainvoke = AsyncMock(
+        return_value=SimpleNamespace(
+            content=json.dumps(document or _minimal_document(artifact_type, title))
+        )
+    )
+    return chain
+
+
 class _FakeArtifact:
     records: dict[str, "_FakeArtifact"] = {}
     deleted: list[str] = []
@@ -701,10 +803,7 @@ def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch,
                 full_text="Important source text.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="# Generated Report\n\nGrounded answer.")
-    )
+    fake_chain = _json_chain("report", title="Generated Report")
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -719,6 +818,10 @@ def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch,
     assert body["status"] == "completed"
     assert body["output_format"] == "markdown"
     assert body["output_payload"]["content"].startswith("# Generated Report")
+    assert body["output_payload"]["schema_version"] == 1
+    assert body["output_payload"]["document"]["artifact_type"] == "report"
+    assert body["output_payload"]["markdown"] == body["output_payload"]["content"]
+    assert body["output_payload"]["validation"]["status"] == "valid"
     assert body["export_paths"]["markdown"].endswith(".md")
     assert body["export_paths"]["json"].endswith(".json")
     markdown_export = tmp_path / body["export_paths"]["markdown"].split("/")[-1]
@@ -748,6 +851,40 @@ def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch,
     assert "## Source [S1]: Source One" in messages[1].content
     assert "Source ID: source:one" in messages[1].content
     assert "Important source text" in messages[1].content
+
+
+def test_generate_artifact_rejects_podcast_audio_text_generation(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:podcast-audio",
+        notebook_id="notebook:alpha",
+        artifact_type="podcast_audio",
+        title="Audio overview",
+        source_ids=["source:one"],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    class _SourceMock:
+        @classmethod
+        async def get(cls, _source_id):
+            return SimpleNamespace(
+                id="source:one",
+                title="Source One",
+                full_text="Important source text.",
+            )
+
+    monkeypatch.setattr(studio_mod, "Source", _SourceMock)
+    provision = AsyncMock()
+    monkeypatch.setattr(studio_mod, "provision_langchain_model", provision)
+
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:podcast-audio/generate"
+    )
+
+    assert response.status_code == 422
+    assert "does not support structured generation" in response.json()["detail"]
+    assert provision.await_count == 0
 
 
 def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
@@ -865,34 +1002,44 @@ def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_pa
                 full_text="A transcript and reference reading for admins.",
             )
 
-    generated_markdown = "\n".join([
-        "# Course Pack",
-        "",
-        "## Audience",
-        "Workspace admins. [S1]",
-        "",
-        "## Module 1: Local Model Orientation",
-        "Duration: 20 minutes",
-        "Learners map model roles to training tasks. [S1]",
-        "",
-        "### Learner handout",
-        "- Compare source synthesis and study-fast roles. [S1]",
-        "",
-        "### Hands-on exercise",
-        "- Select a model for course-pack generation. [S1]",
-        "",
-        "### Knowledge check",
-        "Question: Which model role handles long-form synthesis?",
-        "Answer: source_synthesis",
-        "",
-        "### Facilitator notes",
-        "Open the local model settings page during the demo.",
-        "",
-        "## Final assessment",
-        "- Build a source-grounded learner handout. [S2]",
-    ])
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content=generated_markdown))
+    fake_chain = _json_chain(
+        "course_pack",
+        document={
+            "artifact_type": "course_pack",
+            "title": "Course Pack",
+            "audience": "Workspace admins",
+            "learning_outcomes": ["Map model roles to training tasks"],
+            "modules": [
+                {
+                    "title": "Local Model Orientation",
+                    "summary": "Duration: 20 minutes",
+                    "lessons": [
+                        {
+                            "title": "Learner handout",
+                            "content": "Compare source synthesis and study-fast roles.",
+                            "duration_minutes": 20,
+                            "exercise": "Select a model for course-pack generation.",
+                            "facilitator_notes": (
+                                "Open the local model settings page during the demo."
+                            ),
+                            "citations": ["[S1]"],
+                        }
+                    ],
+                }
+            ],
+            "final_assessment": [
+                {
+                    "prompt": "Build a source-grounded learner handout.",
+                    "options": [
+                        {"id": "A", "text": "Use cited evidence"},
+                        {"id": "B", "text": "Invent examples"},
+                    ],
+                    "correct_option_id": "A",
+                    "citations": ["[S2]"],
+                }
+            ],
+        },
+    )
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -979,15 +1126,27 @@ def test_generate_course_pack_flags_unsupported_citation_markers(monkeypatch, tm
                 full_text=f"Grounded content from {source_id}.",
             )
 
-    generated_markdown = "\n".join([
-        "# Course Pack",
-        "",
-        "## Module 1: Verified markers",
-        "Use the first source for supported claims. [S1]",
-        "This line cites a source marker that was never provided. [S3]",
-    ])
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content=generated_markdown))
+    fake_chain = _json_chain(
+        "course_pack",
+        document={
+            "artifact_type": "course_pack",
+            "title": "Course Pack",
+            "audience": "Learners",
+            "learning_outcomes": ["Verify citations"],
+            "modules": [
+                {
+                    "title": "Verified markers",
+                    "lessons": [
+                        {
+                            "title": "Citation check",
+                            "content": "Use the first source for supported claims.",
+                            "citations": ["[S1]", "[S3]"],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1053,8 +1212,7 @@ def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_pa
             ]
 
     captured: list[dict] = []
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content="# Report"))
+    fake_chain = _json_chain("report", title="Report")
 
     async def _fake_provision(content, model_id, default_type, **kwargs):
         captured.append({
@@ -1118,8 +1276,7 @@ def test_generate_artifact_keeps_explicit_model_over_role_routing(monkeypatch, t
             ]
 
     captured: list[str | None] = []
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content="# Quiz"))
+    fake_chain = _json_chain("quiz", title="Quiz")
 
     async def _fake_provision(_content, model_id, _default_type, **_kwargs):
         captured.append(model_id)
@@ -1141,6 +1298,18 @@ def test_generate_artifact_keeps_explicit_model_over_role_routing(monkeypatch, t
 def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
+    previous_payload = {
+        "schema_version": 1,
+        "document": {
+            "schema_version": 1,
+            "artifact_type": "report",
+            "title": "Previous Report",
+            "sections": [{"heading": "Evidence", "body": "Previous answer."}],
+        },
+        "markdown": "# Previous Report\n",
+        "content": "# Previous Report\n",
+        "validation": {"status": "valid", "errors": []},
+    }
     artifact = _FakeArtifact(
         id="studio_artifact:primary",
         notebook_id="notebook:alpha",
@@ -1152,7 +1321,7 @@ def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
         model_id="model:local",
         provider="llamacpp",
         output_format="markdown",
-        output_payload={"content": "# Previous Report"},
+        output_payload=previous_payload,
         citations=[
             {
                 "source_id": "source:old",
@@ -1173,10 +1342,7 @@ def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
                 full_text="New source text.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="# New Report\n\nUpdated answer.")
-    )
+    fake_chain = _json_chain("report", title="New Report")
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1202,7 +1368,7 @@ def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
     assert revision.model_id == "model:local"
     assert revision.provider == "llamacpp"
     assert revision.output_format == "markdown"
-    assert revision.output_payload == {"content": "# Previous Report"}
+    assert revision.output_payload == previous_payload
     assert revision.citations == [
         {
             "source_id": "source:old",
@@ -1247,10 +1413,7 @@ def test_generate_artifact_supports_first_text_artifact_types(monkeypatch):
         )
         _FakeArtifact.records = {artifact.id: artifact}
 
-        fake_chain = MagicMock()
-        fake_chain.ainvoke = AsyncMock(
-            return_value=SimpleNamespace(content=f"# {artifact_type}")
-        )
+        fake_chain = _json_chain(artifact_type)
         monkeypatch.setattr(
             studio_mod,
             "provision_langchain_model",
@@ -1286,18 +1449,7 @@ def test_generate_artifact_supports_mind_map_instruction(monkeypatch):
                 full_text="The project has source ingestion, citations, and local models.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(
-            content=(
-                "# Mind Map\n\n"
-                "- Open Notebook Plus [S1]\n"
-                "  - Source ingestion [S1]\n"
-                "  - Citations [S1]\n"
-                "  - Local models [S1]"
-            )
-        )
-    )
+    fake_chain = _json_chain("mind_map", title="Mind Map")
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1345,10 +1497,7 @@ def test_generate_artifact_supports_visual_study_artifact_instructions(monkeypat
         )
         _FakeArtifact.records = {artifact.id: artifact}
 
-        fake_chain = MagicMock()
-        fake_chain.ainvoke = AsyncMock(
-            return_value=SimpleNamespace(content=f"# {artifact_type}")
-        )
+        fake_chain = _json_chain(artifact_type)
         monkeypatch.setattr(
             studio_mod,
             "provision_langchain_model",
@@ -1386,16 +1535,7 @@ def test_generate_artifact_supports_podcast_outline_instruction(monkeypatch):
                 full_text="Open Notebook Plus creates citation-backed research artifacts.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(
-            content=(
-                "# Podcast Outline\n\n"
-                "## Cold open\n"
-                "Introduce citation-backed research artifacts. [S1]"
-            )
-        )
-    )
+    fake_chain = _json_chain("podcast_outline", title="Podcast Outline")
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1438,16 +1578,7 @@ def test_generate_artifact_supports_research_run_instruction(monkeypatch):
                 full_text="Open Notebook Plus needs competitive research synthesis.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(
-            content=(
-                "# Research Run\n\n"
-                "## Research plan\n"
-                "- Compare NotebookLM-style capabilities. [S1]"
-            )
-        )
-    )
+    fake_chain = _json_chain("research_run", title="Research Run")
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1492,21 +1623,26 @@ def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, t
                 full_text="Open Notebook Plus can route local models and generate artifacts.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(
-            content=(
-                "# Research Run\n\n"
-                "## Research objective\n"
-                "Compare Open Notebook Plus with NotebookLM. [S1]\n\n"
-                "## Working hypotheses\n"
-                "- Local model routing is a differentiator. [S1]\n\n"
-                "## Evidence-backed findings\n"
-                "- Evidence Studio can generate study artifacts. [S1]\n\n"
-                "## Follow-up questions\n"
-                "- Which local model handles source synthesis best?"
-            )
-        )
+    fake_chain = _json_chain(
+        "research_run",
+        document={
+            "artifact_type": "research_run",
+            "title": "Research Run",
+            "objective": "Compare Open Notebook Plus with NotebookLM.",
+            "hypotheses": ["Local model routing is a differentiator."],
+            "stages": [
+                {
+                    "title": "Evidence-backed findings",
+                    "findings": [
+                        {
+                            "text": "Evidence Studio can generate study artifacts.",
+                            "citations": ["[S1]"],
+                        }
+                    ],
+                }
+            ],
+            "next_actions": ["Which local model handles source synthesis best?"],
+        },
     )
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
@@ -1519,22 +1655,24 @@ def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, t
 
     assert response.status_code == 200
     body = response.json()
+    assert body["output_payload"]["document"]["objective"] == (
+        "Compare Open Notebook Plus with NotebookLM."
+    )
     stages = body["output_payload"]["research_stages"]
     assert stages == [
         {
-            "title": "Research objective",
-            "items": ["Compare Open Notebook Plus with NotebookLM. [S1]"],
+            "title": "Hypotheses",
+            "items": ["Local model routing is a differentiator."],
         },
         {
-            "title": "Working hypotheses",
-            "items": ["Local model routing is a differentiator. [S1]"],
+            "title": "Stage 1: Evidence-backed findings",
+            "items": [
+                "Status: complete",
+                "Evidence Studio can generate study artifacts. [S1]",
+            ],
         },
         {
-            "title": "Evidence-backed findings",
-            "items": ["Evidence Studio can generate study artifacts. [S1]"],
-        },
-        {
-            "title": "Follow-up questions",
+            "title": "Next Actions",
             "items": ["Which local model handles source synthesis best?"],
         },
     ]
@@ -1565,17 +1703,33 @@ def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path)
                 full_text="Open Notebook Plus supports local models and Evidence Studio.",
             )
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(
-            content=(
-                "# Data Table\n\n"
-                "| Topic | Evidence | Source | Confidence | Notes |\n"
-                "|---|---|---|---|---|\n"
-                "| Local models | Scans AI_Models and routes roles [S1] | Source One | High | User-owned runtime |\n"
-                "| Evidence Studio | Generates citation-backed artifacts [S1] | Source One | High | Exportable |\n"
-            )
-        )
+    fake_chain = _json_chain(
+        "data_table",
+        document={
+            "artifact_type": "data_table",
+            "title": "Data Table",
+            "columns": ["Topic", "Evidence", "Source", "Confidence", "Notes"],
+            "rows": [
+                {
+                    "values": {
+                        "Topic": "Local models",
+                        "Evidence": "Scans AI_Models and routes roles [S1]",
+                        "Source": "Source One",
+                        "Confidence": "High",
+                        "Notes": "User-owned runtime",
+                    }
+                },
+                {
+                    "values": {
+                        "Topic": "Evidence Studio",
+                        "Evidence": "Generates citation-backed artifacts [S1]",
+                        "Source": "Source One",
+                        "Confidence": "High",
+                        "Notes": "Exportable",
+                    }
+                },
+            ],
+        },
     )
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
@@ -1653,8 +1807,7 @@ def test_generate_artifact_uses_all_notebook_sources_when_none_selected(monkeypa
                 ),
             ]
 
-    fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content="# Guide"))
+    fake_chain = _json_chain("study_guide", title="Guide")
     monkeypatch.setattr(studio_mod, "Notebook", _NotebookMock)
     monkeypatch.setattr(
         studio_mod,
@@ -1762,6 +1915,7 @@ def test_generate_artifact_marks_failed_when_model_returns_blank_output(monkeypa
             )
 
     fake_chain = MagicMock()
+    fake_chain.with_structured_output.side_effect = NotImplementedError
     fake_chain.ainvoke = AsyncMock(return_value=SimpleNamespace(content="   \n\t  "))
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
     monkeypatch.setattr(
@@ -1776,7 +1930,8 @@ def test_generate_artifact_marks_failed_when_model_returns_blank_output(monkeypa
     assert response.json()["detail"] == "Artifact generation failed"
     saved = _FakeArtifact.records["studio_artifact:blank"]
     assert saved.status == "failed"
-    assert "empty" in saved.output_payload["error"].lower()
+    assert saved.output_payload["validation"]["status"] == "invalid"
+    assert "required structure" in saved.output_payload["error"].lower()
     assert saved.export_paths == {}
 
 
