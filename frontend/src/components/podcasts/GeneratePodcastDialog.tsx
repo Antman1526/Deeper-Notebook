@@ -955,6 +955,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     }
   }, [
     buildContentFromSelections,
+    episodeLength,
     episodeName,
     generatePodcast,
     instructions,
