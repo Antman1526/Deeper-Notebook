@@ -22,7 +22,7 @@ focused commit; each ships with regression tests.
 
 ## v0.8.94 — 2026-07-17 — Verified desktop release baseline
 
-- **🛠 Verified desktop release baseline.** Added deterministic
+- **v0.8.94** 🛠 **Verified desktop release baseline.** Added deterministic
   release manifests (version, commit, UTC build time, artifact size, and
   SHA-256), checksum publishing, and CI package gates. Windows now ships a
   per-user Inno Setup 6.7.1 installer alongside the complete onedir ZIP; both
