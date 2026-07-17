@@ -28,7 +28,7 @@ focused commit; each ships with regression tests.
   per-user Inno Setup 6.7.1 installer alongside the complete onedir ZIP; both
   paths include the full PyInstaller bundle, Start Menu entry, upgrade identity,
   and uninstall support. CI verifies the setup package with a silent
-  install-launch-uninstall probe. Also fixed the notebook unused import and the
+  install-launch-upgrade-uninstall probe. Also fixed the notebook unused import and the
   podcast submit callback dependency.
 
 - **✨ v0.8.93 — Evidence Studio visual deliverables and responsive previews**
