@@ -52,7 +52,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from api.command_service import CommandService
 from api.podcast_service import PodcastService
@@ -84,6 +84,11 @@ from open_notebook.local_models.role_routing import (
     recommend_model_roles,
 )
 from open_notebook.studio import artifact_generation as artifact_generation_service
+from open_notebook.studio.payloads import (
+    build_structured_payload,
+    parse_payload_document,
+)
+from open_notebook.studio.renderers import render_artifact_markdown
 from open_notebook.utils.text_utils import (
     clean_thinking_content,
     extract_text_content,
@@ -1761,7 +1766,77 @@ async def update_studio_artifact(
             detail="Studio artifact not found",
         )
 
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    output_payload = updates.get("output_payload")
+    if isinstance(output_payload, dict) and "schema_version" in output_payload:
+        try:
+            document = parse_payload_document(
+                artifact.artifact_type,
+                output_payload,
+            )
+        except InvalidInputError as exc:
+            code = (
+                "unsupported_artifact_schema"
+                if str(exc).startswith("Unsupported artifact schema version")
+                else "invalid_artifact_document"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "code": code,
+                    "errors": [{"message": str(exc)[:240]}],
+                },
+            ) from exc
+        except ValidationError as exc:
+            errors = [
+                {
+                    "type": str(error.get("type", "validation_error"))[:120],
+                    "location": [
+                        str(part)[:120] for part in error.get("loc", ())
+                    ],
+                    "message": str(error.get("msg", "Invalid value"))[:240],
+                }
+                for error in exc.errors(include_url=False)[:12]
+            ]
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "code": "invalid_artifact_document",
+                    "errors": errors,
+                },
+            ) from exc
+
+        if document is not None:
+            core_keys = {
+                "schema_version",
+                "document",
+                "markdown",
+                "content",
+                "validation",
+            }
+            extras = {
+                key: value
+                for key, value in output_payload.items()
+                if key not in core_keys
+            }
+            previous_validation = output_payload.get("validation")
+            validation: dict[str, object] = {
+                "status": "valid",
+                "errors": [],
+            }
+            if isinstance(previous_validation, dict):
+                for key in ("strategy", "attempts"):
+                    if key in previous_validation:
+                        validation[key] = previous_validation[key]
+            markdown = render_artifact_markdown(document)
+            updates["output_payload"] = build_structured_payload(
+                document,
+                markdown,
+                validation=validation,
+                extras=extras,
+            )
+
+    for key, value in updates.items():
         setattr(artifact, key, value)
     await artifact.save()
     return _artifact_response(artifact)
