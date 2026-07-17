@@ -867,6 +867,54 @@ def test_update_artifact_renders_canonical_markdown_and_keeps_extras(monkeypatch
     assert output["study_progress"] == {"index": 1}
 
 
+def test_update_artifact_recomputes_derived_metadata(monkeypatch):
+    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    _install_fake_artifacts(monkeypatch)
+    artifact = _FakeArtifact(
+        id="studio_artifact:table",
+        notebook_id="notebook:alpha",
+        artifact_type="data_table",
+        title="Table",
+        citations=[{"marker": "[S1]", "source_id": "source:one"}],
+    )
+    _FakeArtifact.records = {artifact.id: artifact}
+
+    response = _client().patch(
+        "/api/studio/artifacts/studio_artifact:table",
+        json={
+            "output_payload": {
+                "schema_version": 1,
+                "document": {
+                    "schema_version": 1,
+                    "artifact_type": "data_table",
+                    "title": "Edited table",
+                    "columns": ["Topic", "Notes"],
+                    "rows": [
+                        {
+                            "values": {"Topic": "New", "Notes": "Fresh"},
+                            "citations": ["[S1]"],
+                        }
+                    ],
+                },
+                "markdown": "# Stale",
+                "content": "# Stale",
+                "validation": {"status": "valid", "errors": []},
+                "data_table_rows": [{"Topic": "Old", "Notes": "Stale"}],
+                "citation_warnings": {"unsupported_markers": ["[S9]"]},
+                "study_progress": {"selected_row": 0},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    output = response.json()["output_payload"]
+    assert output["data_table_rows"] == [
+        {"Topic": "New", "Notes": "Fresh", "Source": "[S1]"}
+    ]
+    assert "citation_warnings" not in output
+    assert output["study_progress"] == {"selected_row": 0}
+
+
 def test_delete_artifact_deletes_record(monkeypatch):
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)

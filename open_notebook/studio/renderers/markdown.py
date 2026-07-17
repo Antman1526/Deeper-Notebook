@@ -110,6 +110,11 @@ def _escape_table_cell(value: str) -> str:
     )
 
 
+def _append_missing_citations(value: str, markers: list[str]) -> str:
+    missing = [marker for marker in markers if marker not in value]
+    return _cited_text(value, missing)
+
+
 @render_artifact_markdown.register
 def _(document: DataTableDocument) -> str:
     include_citation_column = "Source" not in document.columns
@@ -121,7 +126,14 @@ def _(document: DataTableDocument) -> str:
     parts.append("| " + " | ".join(_escape_table_cell(c) for c in columns) + " |")
     parts.append("| " + " | ".join("---" for _ in columns) + " |")
     for row in document.rows:
-        values = [_escape_table_cell(row.values[column]) for column in document.columns]
+        values = [
+            _escape_table_cell(
+                _append_missing_citations(row.values[column], row.citations)
+                if column == "Source"
+                else row.values[column]
+            )
+            for column in document.columns
+        ]
         if include_citation_column:
             values.append(_citations(row.citations))
         parts.append("| " + " | ".join(values) + " |")
