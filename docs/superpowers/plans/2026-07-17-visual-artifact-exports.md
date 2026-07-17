@@ -1,6 +1,6 @@
 # Visual Artifact Exports Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Turn structured slide-deck and infographic artifacts into professional, local, reopenable PPTX, PDF, and PNG deliverables with purpose-built previews and edit-safe export refresh.
 
@@ -20,6 +20,7 @@
 - Existing Markdown/JSON/CSV/Course Pack exports remain unchanged.
 - A failed optional visual export does not discard a successfully generated artifact; the failure is recorded as a bounded export warning.
 - Structured edits recompute derived metadata and regenerate sidecar exports from the edited document.
+- Edited artifacts allocate new export paths after snapshotting the prior revision. This keeps historical revision files immutable while the active artifact exposes only the newly generated paths.
 
 ## File Map
 
@@ -40,7 +41,7 @@
 
 ### Task 1: Direct Dependencies And Exporter Contract
 
-- [ ] **Step 1: Add failing import and dispatch tests**
+- [x] **Step 1: Add failing import and dispatch tests**
 
 Create tests that parse a `SlideDeckDocument` and `InfographicDocument`, call the public exporter functions, and initially fail because `open_notebook.studio.exporters` does not exist.
 
@@ -52,13 +53,13 @@ def test_visual_exporters_reject_the_wrong_document(tmp_path):
         export_slide_deck(infographic_document(), tmp_path / "wrong.pptx", tmp_path / "wrong.pdf")
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `uv run pytest tests/test_studio_visual_exporters.py -q`
 
 Expected: collection fails because the exporter package is absent.
 
-- [ ] **Step 3: Add direct dependencies and public API**
+- [x] **Step 3: Add direct dependencies and public API**
 
 Add these compatible direct dependencies without upgrading the existing Pillow constraint:
 
@@ -72,7 +73,7 @@ pdf_path: Path) -> None` and `export_infographic(document:
 InfographicDocument, png_path: Path, pdf_path: Path) -> None`. Each function
 validates the concrete document type before creating either output file.
 
-- [ ] **Step 4: Lock and verify dependencies**
+- [x] **Step 4: Lock and verify dependencies**
 
 Run: `uv lock`
 
@@ -82,7 +83,7 @@ Expected: Pillow 11.3.x and python-pptx 1.0.2 import successfully.
 
 ### Task 2: Editable PPTX And Slide PDF
 
-- [ ] **Step 1: Write PPTX reopen tests**
+- [x] **Step 1: Write PPTX reopen tests**
 
 The test must reopen the output with `Presentation(path)` and assert:
 
@@ -92,23 +93,23 @@ The test must reopen the output with `Presentation(path)` and assert:
 - speaker notes include notes, visual direction, and citation markers;
 - all generated files are non-empty.
 
-- [ ] **Step 2: Write PDF reopen tests**
+- [x] **Step 2: Write PDF reopen tests**
 
 Open the PDF with Pillow or PyMuPDF and assert page count, 16:9 page bounds, and nonblank rendered pixels.
 
-- [ ] **Step 3: Implement shared visual theme**
+- [x] **Step 3: Implement shared visual theme**
 
 Use a restrained multi-color palette with fixed constants, 16:9 dimensions, bounded text wrapping, safe truncation, and a citation footer. The theme must not depend on network fonts or generated images.
 
-- [ ] **Step 4: Implement PPTX rendering**
+- [x] **Step 4: Implement PPTX rendering**
 
 Use `python-pptx` shapes and text frames. Do not flatten slides to images. Add notes through `slide.notes_slide.notes_text_frame` and include source markers in both the footer and notes.
 
-- [ ] **Step 5: Implement raster PDF rendering**
+- [x] **Step 5: Implement raster PDF rendering**
 
 Render each slide to an RGB Pillow image using the same hierarchy and save a multipage PDF with fixed resolution and margins.
 
-- [ ] **Step 6: Verify GREEN and lint**
+- [x] **Step 6: Verify GREEN and lint**
 
 Run: `uv run pytest tests/test_studio_visual_exporters.py -q`
 
@@ -116,99 +117,99 @@ Run: `uv run ruff check open_notebook/studio/exporters tests/test_studio_visual_
 
 ### Task 3: Deterministic Infographic PNG And PDF
 
-- [ ] **Step 1: Write image reopen tests**
+- [x] **Step 1: Write image reopen tests**
 
 Cover portrait, landscape, and square orientations. Assert exact dimensions, RGB/RGBA mode, nonblank pixel variance, title/panel count metadata, and a one-page PDF that reopens.
 
-- [ ] **Step 2: Implement constrained panel layouts**
+- [x] **Step 2: Implement constrained panel layouts**
 
 Render `text`, `metric`, `timeline`, `comparison`, `process`, and `chart` panels with distinct but consistent treatments. Use stable grid tracks and bounded wrapping so long content cannot overlap adjacent panels.
 
-- [ ] **Step 3: Preserve citations**
+- [x] **Step 3: Preserve citations**
 
 Every panel with citations must display markers within that panel. The footer lists all unique markers in first-seen order.
 
-- [ ] **Step 4: Verify GREEN and lint**
+- [x] **Step 4: Verify GREEN and lint**
 
 Run the exporter tests and Ruff. Inspect generated test fixtures with Pillow pixel checks.
 
 ### Task 4: Artifact Export Integration And Edit Refresh
 
-- [ ] **Step 1: Add failing generation integration tests**
+- [x] **Step 1: Add failing generation integration tests**
 
 For `slide_deck`, assert `export_paths` includes `pptx` and `pdf`. For `infographic`, assert it includes `png` and `pdf`. Reopen every path and assert the JSON sidecar contains the same paths.
 
-- [ ] **Step 2: Add visual failure-isolation test**
+- [x] **Step 2: Add visual failure-isolation test**
 
 Monkeypatch the visual exporter to raise and assert the artifact remains completed with Markdown/JSON exports plus a bounded `export_warnings.visual` entry that contains no source text.
 
-- [ ] **Step 3: Add structured PATCH refresh test**
+- [x] **Step 3: Add structured PATCH refresh test**
 
 Start with a completed slide artifact, PATCH a changed v1 document, and assert a revision snapshot is retained and newly allocated visual exports contain the edited title while owner state is preserved.
 
-- [ ] **Step 4: Integrate validated document dispatch**
+- [x] **Step 4: Integrate validated document dispatch**
 
 Parse `artifact.output_payload.document` with `parse_payload_document`, allocate paths through `_artifact_export_path`, call only the matching visual exporter, and update `artifact.export_paths` before writing JSON metadata.
 
-- [ ] **Step 5: Keep failures bounded and local**
+- [x] **Step 5: Keep failures bounded and local**
 
 Catch visual-export exceptions at the visual boundary, log the exception without source content, remove incomplete files, and store only exception type plus a 240-character message.
 
-- [ ] **Step 6: Refresh exports after structured edits**
+- [x] **Step 6: Refresh exports after structured edits**
 
 Snapshot the previous completed artifact before applying a changed document, save canonical payload state, and regenerate all sidecars in a worker thread. Legacy content-only PATCH behavior remains unchanged.
 
-- [ ] **Step 7: Verify API tests and lint**
+- [x] **Step 7: Verify API tests and lint**
 
 Run focused artifact API tests and Ruff for all changed backend files.
 
 ### Task 5: Purpose-Built Visual Viewers
 
-- [ ] **Step 1: Write failing viewer tests**
+- [x] **Step 1: Write failing viewer tests**
 
 Test slide navigation, stable 16:9 sizing, speaker-note visibility, infographic orientation, panel labels, citation markers, malformed-document Markdown fallback, and keyboard previous/next behavior.
 
-- [ ] **Step 2: Implement a narrow structured-document guard**
+- [x] **Step 2: Implement a narrow structured-document guard**
 
 Accept only v1 `slide_deck` and `infographic` documents with the expected arrays. Never render arbitrary HTML from model output.
 
-- [ ] **Step 3: Implement SlideDeckViewer**
+- [x] **Step 3: Implement SlideDeckViewer**
 
 Provide a thumbnail rail, one stable 16:9 stage, icon previous/next controls with tooltips, slide count, speaker-notes disclosure, and citation footer. Long bullets wrap and scroll inside fixed bounds rather than resizing the stage.
 
-- [ ] **Step 4: Implement InfographicViewer**
+- [x] **Step 4: Implement InfographicViewer**
 
 Use constrained responsive tracks and orientation-aware bounds. Give each panel kind a recognizable visual treatment without nested cards or decorative gradients.
 
-- [ ] **Step 5: Integrate ArtifactRail exports**
+- [x] **Step 5: Integrate ArtifactRail exports**
 
 Prefer visual formats in this order: PPTX, PDF, PNG, Markdown, JSON. Keep generic Open, Copy, and Folder actions for every saved file.
 
-- [ ] **Step 6: Verify frontend gates**
+- [x] **Step 6: Verify frontend gates**
 
 Run focused Vitest, TypeScript typecheck, lint, and production build.
 
 ### Task 6: Documentation, Full Verification, And Review
 
-- [ ] **Step 1: Update README and changelog**
+- [x] **Step 1: Update README and changelog**
 
 Document actual formats, local output location, editability boundaries, deterministic rendering, and fallback behavior.
 
-- [ ] **Step 2: Run full backend and frontend suites**
+- [x] **Step 2: Run full backend and frontend suites**
 
 Run `uv run pytest -q`, full Vitest, TypeScript typecheck, lint, and production build.
 
-- [ ] **Step 3: Inspect generated deliverables**
+- [x] **Step 3: Inspect generated deliverables**
 
 Reopen PPTX with python-pptx, PDF with PyMuPDF/Pillow, and PNG with Pillow. Confirm nonblank output, expected dimensions, notes, and citation markers.
 
-- [ ] **Step 4: Run fresh-context review**
+- [x] **Step 4: Run fresh-context review**
 
 Challenge path containment, malformed structured documents, text overflow, source leakage in errors, stale exports after edits, legacy compatibility, and optional-export failure isolation.
 
-- [ ] **Step 5: Address findings test-first and rerun gates**
+- [x] **Step 5: Address findings test-first and rerun gates**
 
-- [ ] **Step 6: Mark this plan complete, commit, merge, and push**
+- [x] **Step 6: Mark this plan complete, commit, merge, and push**
 
 ## Acceptance Criteria
 
@@ -220,3 +221,16 @@ Challenge path containment, malformed structured documents, text overflow, sourc
 - Legacy Markdown artifacts remain readable and downloadable.
 - Export failures do not erase a completed artifact or leak source content.
 - No accounts, roles, sharing, or remote rendering are introduced.
+
+## Completion Receipt
+
+Completed on 2026-07-17 on branch `feature/visual-exports-v1`.
+
+- Backend: `2522 passed, 9 skipped, 8 warnings` from `uv run pytest -q`. Warnings are dependency deprecations and are not introduced by this work.
+- Frontend: `56` test files and `364` tests passed from the full Vitest run.
+- Static gates: TypeScript passed, Ruff passed, and `git diff --check` passed.
+- Lint: zero errors and two pre-existing warnings outside this feature (`notebooks/[id]/page.tsx` unused `cn`; `GeneratePodcastDialog.tsx` missing `episodeLength` hook dependency).
+- Production build: Next.js 16.2.6 compiled successfully and generated all 19 static pages.
+- Deliverable inspection: PPTX, slide PDF, infographic PNG, and infographic PDF reopened successfully. Portrait, landscape, square, and schema-maximum 20-panel infographics were visually checked for clipping and overlap.
+- Browser inspection: desktop at 1440x1000 and mobile at 390x844 showed no horizontal document overflow. The mobile artifact dialog scrolls to all controls, and the final mocked notebook route produced no console errors or warnings.
+- Fresh-context review: fixed dense 20-panel infographic layout overflow and added coverage for all orientations; fixed the slide preview to include the same generated cover page as PPTX/PDF exports. The suggestion to overwrite export paths in place was intentionally rejected because revision snapshots retain those paths and require immutable historical files.
