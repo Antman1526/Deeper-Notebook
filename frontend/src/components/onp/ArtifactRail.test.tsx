@@ -902,6 +902,62 @@ describe('ArtifactRail', () => {
     )
   })
 
+  it('opens structured slides and prioritizes visual export formats', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:slides',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'slide_deck',
+          title: 'Evidence Slides',
+          status: 'completed',
+          source_ids: ['source:one'],
+          output_payload: {
+            schema_version: 1,
+            document: {
+              schema_version: 1,
+              artifact_type: 'slide_deck',
+              title: 'Evidence Slides',
+              audience: 'Researchers',
+              slides: [
+                {
+                  title: 'Grounded output',
+                  bullets: ['Claims remain traceable.'],
+                  speaker_notes: 'Explain the evidence trail.',
+                  visual_direction: 'Use a source flow.',
+                  citations: ['[S1]'],
+                },
+              ],
+            },
+            markdown: '# Evidence Slides\n\n## Slide 1: Grounded output\n',
+            content: '# Evidence Slides\n\n## Slide 1: Grounded output\n',
+            validation: { status: 'valid', errors: [] },
+          },
+          citations: [],
+          export_paths: {
+            markdown: '/tmp/evidence-slides.md',
+            json: '/tmp/evidence-slides.json',
+            pdf: '/tmp/evidence-slides.pdf',
+            pptx: '/tmp/evidence-slides.pptx',
+          },
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Evidence Slides' }))
+
+    expect(screen.getByRole('region', { name: 'Slide deck' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
+    expect(screen.getByText('PPTX')).toBeInTheDocument()
+    expect(screen.getByText('PDF')).toBeInTheDocument()
+    const openLinks = screen.getAllByRole('link', { name: 'Open' })
+    expect(openLinks[0]).toHaveAttribute('href', 'file:///tmp/evidence-slides.pptx')
+    expect(openLinks[1]).toHaveAttribute('href', 'file:///tmp/evidence-slides.pdf')
+  })
+
   it('opens citation evidence in a focused drawer from the artifact viewer', async () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
     useStudioArtifacts.mockReturnValue({

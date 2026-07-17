@@ -33,6 +33,12 @@ import {
   ResearchRunViewer,
   StudyProgress,
 } from '@/components/onp/StudyArtifactViewers'
+import {
+  InfographicViewer,
+  isInfographicDocument,
+  isSlideDeckDocument,
+  SlideDeckViewer,
+} from '@/components/onp/VisualArtifactViewers'
 import { isEvidenceStudioEnabled, isResearchRunsEnabled } from '@/lib/features'
 import { artifactMarkdown } from '@/lib/studio-artifacts'
 import {
@@ -196,9 +202,12 @@ function artifactExportEntries(artifact: StudioArtifact | null): Array<[string, 
     return typeof entry[1] === 'string' && entry[1].trim().length > 0
   })
   const priority: Record<string, number> = {
-    markdown: 0,
-    md: 0,
-    json: 1,
+    pptx: 0,
+    pdf: 1,
+    png: 2,
+    markdown: 3,
+    md: 3,
+    json: 4,
   }
   return entries.sort(([left], [right]) => {
     const leftPriority = priority[left.toLowerCase()] ?? 10
@@ -209,9 +218,11 @@ function artifactExportEntries(artifact: StudioArtifact | null): Array<[string, 
 }
 
 function exportLabel(format: string): string {
-  if (format.toLowerCase() === 'json') return 'JSON'
-  if (format.toLowerCase() === 'csv') return 'CSV'
-  if (format.toLowerCase() === 'md') return 'Markdown'
+  const normalized = format.toLowerCase()
+  if (['json', 'csv', 'pptx', 'pdf', 'png'].includes(normalized)) {
+    return normalized.toUpperCase()
+  }
+  if (normalized === 'md') return 'Markdown'
   return format
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
@@ -303,6 +314,9 @@ export function ArtifactRail({
     || approveWorkflowRun.isPending
   )
   const selectedMarkdown = artifactMarkdown(selectedArtifact?.output_payload)
+  const selectedDocument = selectedArtifact?.output_payload.document
+  const selectedSlideDeck = isSlideDeckDocument(selectedDocument) ? selectedDocument : null
+  const selectedInfographic = isInfographicDocument(selectedDocument) ? selectedDocument : null
   const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
   const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
   const selectedExportEntries = artifactExportEntries(selectedArtifact)
@@ -757,7 +771,11 @@ export function ArtifactRail({
                         </div>
                       </div>
                     )}
-                    {selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
+                    {selectedSlideDeck ? (
+                      <SlideDeckViewer document={selectedSlideDeck} />
+                    ) : selectedInfographic ? (
+                      <InfographicViewer document={selectedInfographic} />
+                    ) : selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
                       <FlashcardDeck
                         markdown={selectedMarkdown}
                         progress={selectedStudyProgress?.flashcards}
