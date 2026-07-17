@@ -56,7 +56,7 @@ No database migration is required because migration 23 defines `output_payload` 
 - Create: `open_notebook/studio/schemas/registry.py`
 - Test: `tests/test_studio_artifact_schemas.py`
 
-- [ ] **Step 1: Write failing schema registry tests**
+- [x] **Step 1: Write failing schema registry tests**
 
 ```python
 import pytest
@@ -96,13 +96,13 @@ def test_parse_artifact_document_rejects_type_mismatch():
         parse_artifact_document("flashcards", payload)
 ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
 Run: `uv run pytest tests/test_studio_artifact_schemas.py -q`
 
 Expected: collection fails because `open_notebook.studio.schemas` does not exist.
 
-- [ ] **Step 3: Implement strict Pydantic document models**
+- [x] **Step 3: Implement strict Pydantic document models**
 
 Use `ConfigDict(extra="forbid")` on generated document models. Define reusable `CitedText`, `ArtifactSection`, and the following typed documents:
 
@@ -201,19 +201,19 @@ Citation markers use `Field(pattern=r"^\[S[1-9]\d*\]$")`. Quiz options carry sta
 
 Create a registry mapping existing `StudioArtifactType` strings to these schemas. Map `training_guide` and `course_pack` to `CoursePackDocument`; exclude `podcast_audio` because audio records are produced by the podcast pipeline rather than this text artifact generator.
 
-- [ ] **Step 4: Run the schema tests and confirm GREEN**
+- [x] **Step 4: Run the schema tests and confirm GREEN**
 
 Run: `uv run pytest tests/test_studio_artifact_schemas.py -q`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Run lint for the new package**
+- [x] **Step 5: Run lint for the new package**
 
 Run: `uv run ruff check open_notebook/studio/schemas tests/test_studio_artifact_schemas.py`
 
 Expected: no errors.
 
-- [ ] **Step 6: Commit the schema contract**
+- [x] **Step 6: Commit the schema contract**
 
 ```bash
 git add open_notebook/studio/schemas tests/test_studio_artifact_schemas.py
@@ -229,7 +229,7 @@ git commit -m "feat(studio): define versioned artifact schemas"
 - Create: `open_notebook/studio/payloads.py`
 - Test: `tests/test_studio_artifact_payloads.py`
 
-- [ ] **Step 1: Write failing payload compatibility tests**
+- [x] **Step 1: Write failing payload compatibility tests**
 
 ```python
 from open_notebook.studio.payloads import (
@@ -256,13 +256,13 @@ def test_parse_payload_document_returns_none_for_legacy_payload():
     assert parse_payload_document("report", {"content": "# Legacy"}) is None
 ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
 Run: `uv run pytest tests/test_studio_artifact_payloads.py -q`
 
 Expected: import failure for `open_notebook.studio.payloads`.
 
-- [ ] **Step 3: Implement the envelope helpers**
+- [x] **Step 3: Implement the envelope helpers**
 
 ```python
 def build_structured_payload(
@@ -306,7 +306,7 @@ def parse_payload_document(
 
 `study_progress` and artifact-specific metadata remain sibling keys and are never discarded when the artifact is patched.
 
-- [ ] **Step 4: Run tests and lint**
+- [x] **Step 4: Run tests and lint**
 
 Run: `uv run pytest tests/test_studio_artifact_payloads.py -q`
 
@@ -314,7 +314,7 @@ Run: `uv run ruff check open_notebook/studio/payloads.py tests/test_studio_artif
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit the compatibility layer**
+- [x] **Step 5: Commit the compatibility layer**
 
 ```bash
 git add open_notebook/studio/payloads.py tests/test_studio_artifact_payloads.py
@@ -331,7 +331,7 @@ git commit -m "feat(studio): add structured payload envelope"
 - Create: `open_notebook/studio/renderers/markdown.py`
 - Test: `tests/test_studio_markdown_renderer.py`
 
-- [ ] **Step 1: Write failing golden renderer tests**
+- [x] **Step 1: Write failing golden renderer tests**
 
 Cover generic sections, flashcards, quizzes, data tables, mind maps, slides with speaker notes, infographics, Course Packs, podcast outlines, and Research Runs.
 
@@ -353,13 +353,13 @@ def test_quiz_renderer_matches_existing_viewer_labels():
     assert "Explanation:" in markdown
 ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
 Run: `uv run pytest tests/test_studio_markdown_renderer.py -q`
 
 Expected: import failure for the renderer package.
 
-- [ ] **Step 3: Implement a `singledispatch` renderer**
+- [x] **Step 3: Implement a `singledispatch` renderer**
 
 Use `functools.singledispatch` so each document type has one focused renderer and future exporters can reuse the same schemas. Preserve the existing markdown labels consumed by `StudyArtifactViewers.tsx`:
 
@@ -386,7 +386,7 @@ def _(document: FlashcardsDocument) -> str:
 
 Escape pipe characters and line breaks in data-table cells. Render recursive mind-map nodes with indentation and a depth guard. Do not insert unsupported citation markers.
 
-- [ ] **Step 4: Run renderer and existing viewer parser tests**
+- [x] **Step 4: Run renderer and existing viewer parser tests**
 
 Run: `uv run pytest tests/test_studio_markdown_renderer.py -q`
 
@@ -394,7 +394,7 @@ Run: `cd frontend && npm test -- --run src/components/onp/ArtifactRail.test.tsx`
 
 Expected: renderer tests pass and existing frontend parser tests remain green.
 
-- [ ] **Step 5: Commit the renderer**
+- [x] **Step 5: Commit the renderer**
 
 ```bash
 git add open_notebook/studio/renderers tests/test_studio_markdown_renderer.py
@@ -410,7 +410,7 @@ git commit -m "feat(studio): render typed artifacts to markdown"
 - Create: `open_notebook/studio/structured_generation.py`
 - Test: `tests/test_studio_structured_generation.py`
 
-- [ ] **Step 1: Write failing model adapter tests**
+- [x] **Step 1: Write failing model adapter tests**
 
 Use small fake async models, not provider mocks. Cover native structured success, unsupported structured output with JSON fallback, fenced JSON extraction, one repair success, and repair exhaustion.
 
@@ -437,13 +437,13 @@ async def test_invalid_json_gets_exactly_one_repair_attempt():
     assert len(model.calls) == 2
 ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
 Run: `uv run pytest tests/test_studio_structured_generation.py -q`
 
 Expected: import failure for `structured_generation`.
 
-- [ ] **Step 3: Implement native and fallback paths**
+- [x] **Step 3: Implement native and fallback paths**
 
 ```python
 @dataclass(frozen=True)
@@ -479,7 +479,7 @@ async def generate_structured_document(*, model, schema, messages, timeout_secon
 
 The fallback appends the exact `schema.model_json_schema()` and asks for one JSON object. Parse plain JSON or a fenced `json` block. On JSON or Pydantic validation failure, call the model once more with the bounded original output, compact `ValidationError.errors(include_url=False)`, and schema. A second failure raises `StructuredArtifactGenerationError` containing a redacted, size-limited receipt; it does not loop.
 
-- [ ] **Step 4: Run tests and lint**
+- [x] **Step 4: Run tests and lint**
 
 Run: `uv run pytest tests/test_studio_structured_generation.py -q`
 
@@ -487,7 +487,7 @@ Run: `uv run ruff check open_notebook/studio/structured_generation.py tests/test
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit the model adapter**
+- [x] **Step 5: Commit the model adapter**
 
 ```bash
 git add open_notebook/studio/structured_generation.py tests/test_studio_structured_generation.py
@@ -503,7 +503,7 @@ git commit -m "feat(studio): validate structured model output"
 - Modify: `open_notebook/studio/artifact_generation.py`
 - Modify: `tests/test_evidence_studio_artifact_api.py`
 
-- [ ] **Step 1: Add failing artifact-generation tests**
+- [x] **Step 1: Add failing artifact-generation tests**
 
 Add tests proving:
 
@@ -520,13 +520,13 @@ assert artifact.output_payload["markdown"] == artifact.output_payload["content"]
 assert artifact.output_payload["validation"]["status"] == "valid"
 ```
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run focused tests and confirm RED**
 
 Run: `uv run pytest tests/test_evidence_studio_artifact_api.py -q`
 
 Expected: new envelope assertions fail against `{content: markdown}`.
 
-- [ ] **Step 3: Replace the markdown-only generation call**
+- [x] **Step 3: Replace the markdown-only generation call**
 
 Resolve the schema before model provisioning, revise the system prompt to require source markers in typed citation fields, call `generate_structured_document`, render the document, and build the envelope:
 
@@ -572,13 +572,13 @@ On `StructuredArtifactGenerationError`, set `status="failed"` and store only:
 
 Do not retain source context or unbounded raw model output.
 
-- [ ] **Step 4: Run backend Studio tests**
+- [x] **Step 4: Run backend Studio tests**
 
 Run: `uv run pytest tests/test_evidence_studio_foundation.py tests/test_evidence_studio_artifact_api.py tests/test_studio_router.py tests/test_studio_e2e_multipage.py -q`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit the generation integration**
+- [x] **Step 5: Commit the generation integration**
 
 ```bash
 git add open_notebook/studio/artifact_generation.py tests/test_evidence_studio_artifact_api.py
@@ -594,7 +594,7 @@ git commit -m "feat(studio): persist validated artifact documents"
 - Modify: `api/routers/studio.py`
 - Modify: `tests/test_evidence_studio_artifact_api.py`
 
-- [ ] **Step 1: Write failing PATCH validation tests**
+- [x] **Step 1: Write failing PATCH validation tests**
 
 ```python
 def test_patch_rejects_invalid_structured_document(client, artifact):
@@ -636,13 +636,13 @@ def test_patch_rejects_unknown_schema_version(client, artifact):
     assert response.json()["detail"]["code"] == "unsupported_artifact_schema"
 ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
 Run: `uv run pytest tests/test_evidence_studio_artifact_api.py -q`
 
 Expected: invalid structured payload is currently accepted.
 
-- [ ] **Step 3: Validate only versioned payloads before save**
+- [x] **Step 3: Validate only versioned payloads before save**
 
 In the existing artifact PATCH handler, fetch the artifact first and call
 `parse_payload_document(artifact.artifact_type, update.output_payload)` when
@@ -652,13 +652,15 @@ envelope this app cannot validate. Convert `ValidationError` and
 rewrite legacy payloads.
 
 For a valid v1 document, render canonical markdown on the server and rebuild
-the envelope before saving. Preserve sibling keys such as `study_progress`,
-`data_table_rows`, and future exporter metadata, but replace client-provided
-`markdown` and `content` with the deterministic renderer output. This keeps the
-structured document authoritative and ensures the existing markdown content
-fingerprint invalidates stale study progress whenever the document changes.
+the envelope before saving. Preserve owner state such as `study_progress` and
+future exporter metadata, recompute derived viewer metadata such as
+`data_table_rows`, `research_stages`, and `citation_warnings`, and replace
+client-provided `markdown` and `content` with the deterministic renderer output.
+This keeps the structured document authoritative and ensures the existing
+markdown content fingerprint invalidates stale study progress whenever the
+document changes.
 
-- [ ] **Step 4: Run API tests and lint**
+- [x] **Step 4: Run API tests and lint**
 
 Run: `uv run pytest tests/test_evidence_studio_artifact_api.py -q`
 
@@ -666,7 +668,7 @@ Run: `uv run ruff check api/routers/studio.py tests/test_evidence_studio_artifac
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit API validation**
+- [x] **Step 5: Commit API validation**
 
 ```bash
 git add api/routers/studio.py tests/test_evidence_studio_artifact_api.py
@@ -685,7 +687,7 @@ git commit -m "fix(studio): reject invalid artifact document edits"
 - Modify: `frontend/src/components/onp/ArtifactRail.tsx`
 - Modify: `frontend/src/components/onp/ArtifactRail.test.tsx`
 
-- [ ] **Step 1: Write failing frontend helper tests**
+- [x] **Step 1: Write failing frontend helper tests**
 
 ```typescript
 import { artifactMarkdown, structuredArtifactMeta } from './studio-artifacts'
@@ -707,13 +709,13 @@ it('prefers structured markdown and exposes validation state', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and confirm RED**
+- [x] **Step 2: Run tests and confirm RED**
 
 Run: `cd frontend && npm test -- --run src/lib/studio-artifacts.test.ts`
 
 Expected: module import failure.
 
-- [ ] **Step 3: Implement narrow TypeScript types and guards**
+- [x] **Step 3: Implement narrow TypeScript types and guards**
 
 ```typescript
 export interface StructuredArtifactValidation {
@@ -746,7 +748,7 @@ helper introduces no runtime dependency cycle.
 
 Keep `StudioArtifact.output_payload` as `Record<string, unknown>` intersected with optional known fields so older plugins and artifact metadata remain valid.
 
-- [ ] **Step 4: Update ArtifactRail and tests**
+- [x] **Step 4: Update ArtifactRail and tests**
 
 Replace direct `output_payload.content` access with `artifactMarkdown`. Add
 tests proving a recognized v1 envelope renders its `markdown`, unknown or
@@ -756,7 +758,7 @@ revision's envelope, and study-progress updates preserve `document`,
 foundation slice; validation display and its localization belong to the next
 evidence-quality plan.
 
-- [ ] **Step 5: Run frontend verification**
+- [x] **Step 5: Run frontend verification**
 
 Run: `cd frontend && npm test -- --run src/lib/studio-artifacts.test.ts src/components/onp/ArtifactRail.test.tsx`
 
@@ -766,7 +768,7 @@ Run: `cd frontend && npm run lint`
 
 Expected: all pass with zero errors.
 
-- [ ] **Step 6: Commit the frontend compatibility layer**
+- [x] **Step 6: Commit the frontend compatibility layer**
 
 ```bash
 git add frontend/src/lib/studio-artifacts.ts frontend/src/lib/studio-artifacts.test.ts frontend/src/lib/api/studio.ts frontend/src/components/onp/ArtifactRail.tsx frontend/src/components/onp/ArtifactRail.test.tsx
@@ -782,11 +784,11 @@ git commit -m "feat(studio): display structured artifact status"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-07-17-structured-artifact-foundation.md`
 
-- [ ] **Step 1: Update README architecture and Evidence Studio sections**
+- [x] **Step 1: Update README architecture and Evidence Studio sections**
 
 Document that new artifacts use validated typed documents, retain deterministic markdown, support one bounded repair attempt, and preserve legacy markdown artifacts without migration.
 
-- [ ] **Step 2: Run all focused backend tests**
+- [x] **Step 2: Run all focused backend tests**
 
 Run:
 
@@ -804,7 +806,7 @@ uv run pytest \
 
 Expected: all pass.
 
-- [ ] **Step 3: Run full frontend gates**
+- [x] **Step 3: Run full frontend gates**
 
 Run: `cd frontend && npm test`
 
@@ -816,13 +818,13 @@ Run: `cd frontend && npm run build`
 
 Expected: all pass.
 
-- [ ] **Step 4: Run the full backend suite**
+- [x] **Step 4: Run the full backend suite**
 
 Run: `uv run pytest -q`
 
 Expected: all tests pass, with only documented skips.
 
-- [ ] **Step 5: Inspect the final diff and repository state**
+- [x] **Step 5: Inspect the final diff and repository state**
 
 Run: `git diff --check`
 
@@ -830,14 +832,14 @@ Run: `git status --short`
 
 Expected: only intended foundation files and the pre-existing unrelated `desktop/build/__pycache__/` and `docker-compose.yml.bak` entries are present.
 
-- [ ] **Step 6: Commit documentation and plan completion**
+- [x] **Step 6: Commit documentation and plan completion**
 
 ```bash
 git add README.md docs/superpowers/plans/2026-07-17-structured-artifact-foundation.md
 git commit -m "docs: explain structured Evidence Studio artifacts"
 ```
 
-- [ ] **Step 7: Fresh-context verification**
+- [x] **Step 7: Fresh-context verification**
 
 Ask a verifier to inspect the full diff, rerun the focused tests, and specifically challenge:
 
@@ -863,3 +865,23 @@ Address any verified findings with test-first follow-up commits.
 - No database migration or destructive backfill is introduced.
 - Focused backend tests, full backend tests, frontend tests, typecheck, lint, and production build pass.
 - The repository remains single-user; no account, role, sharing, or collaboration code is added.
+
+## Completion Receipt
+
+Completed on 2026-07-17 on `feature/structured-artifacts-v1` and reviewed
+against `desktop-app` before integration.
+
+- Focused Studio backend verification: 116 tests passed before review; the
+  reviewer independently reran 77 focused tests successfully.
+- Final backend verification after review fixes: 2,510 passed, 9 skipped, with
+  8 pre-existing dependency deprecation warnings.
+- Frontend verification: 122 suites and 359 tests passed; TypeScript typecheck
+  and the Next.js production build passed. ESLint reported zero errors and two
+  pre-existing warnings outside this change.
+- Ruff and `git diff --check` passed.
+- Fresh-context review found two correctness issues: citations could disappear
+  when a Data Table already had a `Source` column, and structured PATCH edits
+  could preserve stale derived viewer metadata. Both were fixed test-first in
+  commit `a3dcf9f` and the complete backend suite was rerun afterward.
+- No SurrealDB migration, account system, sharing model, or collaboration code
+  was introduced.

@@ -58,6 +58,8 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 
 ### Evidence Studio and Course Packs
 - **Evidence Studio** turns a selected notebook, upload batch, link set, or mixed source bundle into reusable artifacts: reports, study guides, Course Packs, briefings, FAQs, timelines, flashcards, quizzes, data tables, mind maps, slide-deck outlines, infographic briefs, podcast outlines, and research runs.
+- **Validated artifact documents:** newly generated text artifacts are model-independent, versioned Pydantic documents rather than unverified free-form Markdown. Provider-native structured output is preferred; local and other plain-chat models receive the exact JSON Schema and get at most one bounded repair attempt when their first response is invalid. The server deterministically renders the validated document to Markdown for the current viewers and exports.
+- **Backward-compatible storage:** each new `output_payload` stores `schema_version`, the typed `document`, canonical `markdown`, the legacy `content` alias, and a compact validation receipt. Existing `{content: markdown}` artifacts continue to open, revise, export, and retain study progress without a migration. Structured PATCH edits are revalidated and re-rendered server-side so stale client Markdown cannot disagree with the document.
 - **Course Pack** is the richer successor to the old "training guide" label. It treats videos and audio as lesson segments, PDFs and docs as readings/reference modules, and links as external resources. The generated markdown includes audience, learning outcomes, prerequisite knowledge, source-readiness notes, module roadmap, timed lessons, hands-on exercises, facilitator notes, learner handouts, knowledge checks, final assessment, follow-up resources, and citation markers.
 - **Workflow approval gates** track context building, privacy review, model routing, and artifact generation. If selected sources are still processing, generation fails with a structured `sources_not_ready` response instead of producing thin material.
 
@@ -155,7 +157,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 
 **Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 10 locales.
 
-**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
+**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic renderers, and a backward-compatible payload envelope under `open_notebook/studio/`; the flexible existing SurrealDB field holds that envelope, so no database migration is required. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
 
 **Database (SurrealDB v2)** — A single engine providing graph relationships, document storage, vector search, and key-value storage. Domain records (Notebook, Source, Note, ChatSession, PodcastEpisode, Credential, memory tables) and their edges (`reference`, `artifact`, `refers_to`) all live here. Schema migrations run automatically on API startup via `AsyncMigrationManager`.
 
@@ -239,6 +241,16 @@ Select sources + episode/speaker profiles → /podcasts (job)
   → staged podcast graph: outline → [optional outline review/edit] →
                           transcript → audio (TTS) → combine → playable MP3
   → per-stage progress written to the episode; Cancel polled every ~5s
+```
+
+**5. Generate an Evidence Studio artifact**
+```
+Selected ready sources → citation-marked context + artifact schema
+  → provider-native structured output, or JSON Schema fallback
+  → validate response → [one bounded repair when invalid] → fail closed
+  → deterministic Markdown renderer
+  → save v1 document + Markdown/content alias + validation receipt
+  → write Markdown/JSON and artifact-specific sidecar exports
 ```
 
 ---
@@ -411,6 +423,8 @@ open-notebook-Plus/
 │   ├── tools/                # web_search, add_web_source, opencode_run
 │   ├── prompt_optimizer/     # SkillOpt adapter + runner + vendored prompts
 │   ├── podcasts/             # podcast domain logic
+│   ├── studio/               # typed artifact schemas, payload envelope,
+│   │                         #   structured generation, renderers, exports
 │   ├── mcp/                  # MCP client integration
 │   ├── digest/               # Gmail digest scheduling
 │   └── config.py             # DATA_FOLDER, paths, app config
