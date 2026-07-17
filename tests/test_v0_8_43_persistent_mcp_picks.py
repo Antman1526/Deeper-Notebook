@@ -99,10 +99,15 @@ def test_v0_8_43_migration_files_exist_and_define_field():
     """Cheap migration sanity test — verify the up + down files exist
     and reference `disabled_mcp_servers ON chat_session`. A typo here
     would propagate silently on every install."""
-    base = Path(
-        "/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus/"
-        "open_notebook/database/migrations"
+    repository_root = Path(__file__).resolve().parent.parent
+    base = repository_root / "open_notebook" / "database" / "migrations"
+    expected_base = (
+        Path(__file__).resolve().parent.parent
+        / "open_notebook"
+        / "database"
+        / "migrations"
     )
+    assert base == expected_base
     up = base / "20.surrealql"
     down = base / "20_down.surrealql"
 
