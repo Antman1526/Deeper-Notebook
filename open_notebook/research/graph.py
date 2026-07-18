@@ -95,6 +95,12 @@ class ResearchWorkflow:
                 return run
             stage = run.stage
             result = await handler(run)
+            if stage == "validate":
+                # Completion is only reachable with a deterministic receipt
+                # produced after every compared claim passed citation checks.
+                from open_notebook.research.comparison import require_strict_comparison
+
+                require_strict_comparison(result.checkpoint)
             run = await self.repository.save_stage_result(run, stage, result)
 
     async def _refresh_cancellation(self, run: ResearchRun) -> ResearchRun:

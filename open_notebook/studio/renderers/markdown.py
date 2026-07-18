@@ -105,9 +105,7 @@ def _(document: QuizDocument) -> str:
 
 
 def _escape_table_cell(value: str) -> str:
-    return value.replace("|", r"\|").replace("\r\n", "<br>").replace(
-        "\n", "<br>"
-    )
+    return value.replace("|", r"\|").replace("\r\n", "<br>").replace("\n", "<br>")
 
 
 def _append_missing_citations(value: str, markers: list[str]) -> str:
@@ -214,9 +212,7 @@ def _(document: CoursePackDocument) -> str:
             if lesson.exercise:
                 parts.append(f"Exercise: {lesson.exercise}")
             if lesson.facilitator_notes:
-                parts.extend(
-                    ["#### Facilitator notes", lesson.facilitator_notes]
-                )
+                parts.extend(["#### Facilitator notes", lesson.facilitator_notes])
             source = _source(lesson.citations)
             if source:
                 parts.append(source)
@@ -269,6 +265,31 @@ def _(document: ResearchRunDocument) -> str:
                     [
                         _cited_text(finding.text, finding.citations)
                         for finding in stage.findings
+                    ]
+                )
+            )
+    if document.agreements:
+        parts.append("## Agreements")
+        for agreement in document.agreements:
+            parts.append(f"### {agreement.subject}: {agreement.predicate}")
+            parts.append(
+                _bullets(
+                    [
+                        _cited_text(position.claim, position.citations)
+                        for position in agreement.positions
+                    ]
+                )
+            )
+    if document.contradictions:
+        parts.append("## Contradictions")
+        for contradiction in document.contradictions:
+            parts.append(f"### {contradiction.subject}: {contradiction.predicate}")
+            parts.append(f"Conflicting values: {', '.join(contradiction.values)}")
+            parts.append(
+                _bullets(
+                    [
+                        _cited_text(position.claim, position.citations)
+                        for position in contradiction.positions
                     ]
                 )
             )
