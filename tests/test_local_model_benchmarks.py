@@ -1,4 +1,5 @@
 """Local model benchmark job foundation tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,12 +14,14 @@ from open_notebook.local_models import benchmarks as benchmarks_mod
 from open_notebook.local_models.benchmarks import (
     BenchmarkMeasurement,
     BenchmarkResult,
+    QualityMeasurement,
     clear_benchmark_jobs,
     get_benchmark_job,
     list_benchmark_jobs,
     load_benchmark_history,
     resolve_measured_model_id,
     save_benchmark_history,
+    score_benchmark_measurement,
     start_benchmark,
 )
 from open_notebook.local_models.gguf_metadata import GGUFMetadata
@@ -93,6 +96,101 @@ async def test_benchmark_job_measures_registered_role_models(tmp_path):
     history = load_benchmark_history(tmp_path)
     assert [item.role for item in history] == ["source_synthesis", "study_fast"]
     assert history[0].model_id == "model:qwen-coder"
+
+
+def test_quality_score_uses_role_weights_and_persists_raw_and_normalized_metrics(
+    tmp_path,
+):
+    measurement = BenchmarkMeasurement(
+        latency_ms=200,
+        tokens_per_second=50,
+        quality=QualityMeasurement(
+            schema_valid=True,
+            citation_fidelity=True,
+            instruction_following=True,
+            tool_calling=True,
+            context_recall=True,
+            answer_correctness=True,
+            refusal_when_evidence_absent=True,
+        ),
+    )
+
+    assert score_benchmark_measurement("source_synthesis", measurement) == 100.0
+
+    result = BenchmarkResult(
+        role="source_synthesis",
+        label="Source synthesis",
+        status="completed",
+        latency_ms=measurement.latency_ms,
+        tokens_per_second=measurement.tokens_per_second,
+        quality=measurement.quality,
+        normalized_metrics=measurement.normalized_metrics(),
+        score=score_benchmark_measurement("source_synthesis", measurement),
+    )
+    save_benchmark_history(tmp_path, [result])
+
+    restored = load_benchmark_history(tmp_path)[0]
+    assert restored.quality == measurement.quality
+    assert restored.normalized_metrics == {
+        "latency": 100.0,
+        "throughput": 100.0,
+        "schema": 100.0,
+        "citation": 100.0,
+        "instruction": 100.0,
+        "tool": 100.0,
+        "context": 100.0,
+        "correctness": 100.0,
+        "refusal": 100.0,
+    }
+
+
+def test_legacy_speed_only_history_rows_remain_readable_as_performance_only(tmp_path):
+    history_path = benchmarks_mod.benchmark_history_path(tmp_path)
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        """{"results": [{"role": "chat", "label": "Chat", "status": "completed", "latency_ms": 500, "tokens_per_second": 25, "score": 24.5}]}""",
+        encoding="utf-8",
+    )
+
+    restored = load_benchmark_history(tmp_path)
+
+    assert len(restored) == 1
+    assert restored[0].quality is None
+    assert restored[0].normalized_metrics == {"latency": 100.0, "throughput": 50.0}
+    assert restored[0].score == 24.5
+
+
+@pytest.mark.asyncio
+async def test_benchmark_skips_role_when_context_or_structured_output_gate_fails(
+    tmp_path,
+):
+    _make_gguf(tmp_path, "Qwen3-Coder-30B-A3B-Q4_K_M.gguf")
+
+    async def _registered_models():
+        return [
+            SimpleNamespace(
+                id="model:qwen-coder",
+                name="Qwen3-Coder-30B-A3B-Q4_K_M",
+                provider="openai_compatible",
+                supports_structured_output=False,
+            )
+        ]
+
+    async def _runner(_role, _registered_model, _local_model):
+        raise AssertionError("runner should not run when a task gate fails")
+
+    clear_benchmark_jobs()
+    job = await start_benchmark(
+        tmp_path,
+        roles=["source_synthesis"],
+        registered_models_loader=_registered_models,
+        benchmark_runner=_runner,
+        run_inline=True,
+    )
+
+    result = job.results[0]
+    assert result.status == "skipped"
+    assert "structured output" in (result.error or "").lower()
 
 
 @pytest.mark.asyncio
@@ -188,25 +286,30 @@ def test_role_routing_prefers_persisted_benchmark_winner_over_heuristic():
     assert "measured" in by_role["source_synthesis"].reason.lower()
 
 
-def test_role_routing_endpoint_uses_persisted_benchmark_history(app, monkeypatch, tmp_path):
+def test_role_routing_endpoint_uses_persisted_benchmark_history(
+    app, monkeypatch, tmp_path
+):
     _make_gguf(tmp_path, "Qwen3-Coder-30B-A3B-Q4_K_M.gguf")
     gemma_path = _make_gguf(tmp_path, "gemma-3-4b-it-Q4_K_M.gguf")
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
-    save_benchmark_history(tmp_path, [
-        BenchmarkResult(
-            role="source_synthesis",
-            label="Source synthesis",
-            status="completed",
-            model_name="gemma-3-4b-it-Q4_K_M",
-            model_path=str(gemma_path),
-            model_runtime="gguf",
-            model_id="model:gemma",
-            provider="openai_compatible",
-            latency_ms=200,
-            tokens_per_second=96,
-            score=95.8,
-        )
-    ])
+    save_benchmark_history(
+        tmp_path,
+        [
+            BenchmarkResult(
+                role="source_synthesis",
+                label="Source synthesis",
+                status="completed",
+                model_name="gemma-3-4b-it-Q4_K_M",
+                model_path=str(gemma_path),
+                model_runtime="gguf",
+                model_id="model:gemma",
+                provider="openai_compatible",
+                latency_ms=200,
+                tokens_per_second=96,
+                score=95.8,
+            )
+        ],
+    )
     assert load_benchmark_history(tmp_path)[0].model_path == str(gemma_path)
 
     with TestClient(app) as client:
@@ -220,28 +323,31 @@ def test_role_routing_endpoint_uses_persisted_benchmark_history(app, monkeypatch
 
 @pytest.mark.asyncio
 async def test_resolve_measured_model_id_uses_best_registered_benchmark_match(tmp_path):
-    save_benchmark_history(tmp_path, [
-        BenchmarkResult(
-            role="chat",
-            label="Chat",
-            status="completed",
-            model_name="Qwen3-Coder-30B-A3B-Q4_K_M",
-            model_path="/models/qwen.gguf",
-            model_id="model:qwen",
-            provider="openai_compatible",
-            score=42.0,
-        ),
-        BenchmarkResult(
-            role="chat",
-            label="Chat",
-            status="completed",
-            model_name="gemma-3-4b-it-Q4_K_M",
-            model_path="/models/gemma.gguf",
-            model_id="model:stale-gemma-id",
-            provider="openai_compatible",
-            score=95.0,
-        ),
-    ])
+    save_benchmark_history(
+        tmp_path,
+        [
+            BenchmarkResult(
+                role="chat",
+                label="Chat",
+                status="completed",
+                model_name="Qwen3-Coder-30B-A3B-Q4_K_M",
+                model_path="/models/qwen.gguf",
+                model_id="model:qwen",
+                provider="openai_compatible",
+                score=42.0,
+            ),
+            BenchmarkResult(
+                role="chat",
+                label="Chat",
+                status="completed",
+                model_name="gemma-3-4b-it-Q4_K_M",
+                model_path="/models/gemma.gguf",
+                model_id="model:stale-gemma-id",
+                provider="openai_compatible",
+                score=95.0,
+            ),
+        ],
+    )
 
     async def _registered_models():
         return [
@@ -257,25 +363,33 @@ async def test_resolve_measured_model_id_uses_best_registered_benchmark_match(tm
             ),
         ]
 
-    assert await resolve_measured_model_id(
-        tmp_path,
-        "chat",
-        registered_models_loader=_registered_models,
-    ) == "model:gemma"
+    assert (
+        await resolve_measured_model_id(
+            tmp_path,
+            "chat",
+            registered_models_loader=_registered_models,
+        )
+        == "model:gemma"
+    )
 
 
 @pytest.mark.asyncio
-async def test_resolve_measured_model_id_returns_none_without_completed_history(tmp_path):
-    save_benchmark_history(tmp_path, [
-        BenchmarkResult(
-            role="chat",
-            label="Chat",
-            status="failed",
-            model_name="gemma-3-4b-it-Q4_K_M",
-            model_id="model:gemma",
-            score=99.0,
-        )
-    ])
+async def test_resolve_measured_model_id_returns_none_without_completed_history(
+    tmp_path,
+):
+    save_benchmark_history(
+        tmp_path,
+        [
+            BenchmarkResult(
+                role="chat",
+                label="Chat",
+                status="failed",
+                model_name="gemma-3-4b-it-Q4_K_M",
+                model_id="model:gemma",
+                score=99.0,
+            )
+        ],
+    )
 
     async def _registered_models():
         return [
@@ -286,11 +400,14 @@ async def test_resolve_measured_model_id_returns_none_without_completed_history(
             )
         ]
 
-    assert await resolve_measured_model_id(
-        tmp_path,
-        "chat",
-        registered_models_loader=_registered_models,
-    ) is None
+    assert (
+        await resolve_measured_model_id(
+            tmp_path,
+            "chat",
+            registered_models_loader=_registered_models,
+        )
+        is None
+    )
 
 
 @pytest.fixture
