@@ -1,4 +1,19 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import {
+  cancelBenchmark,
+  getBenchmarkJobs,
+  getLocalModelInventory,
+  getRoleRouting,
+  getRouteReceipts,
+  resetBenchmarks,
+  startBenchmark,
+  type BenchmarkJob,
+  type BenchmarkListResponse,
+  type InventoryResponse,
+  type RoleRoutingResponse,
+  type RouteReceiptResponse,
+} from '@/lib/api/local-models'
 import apiClient from '@/lib/api/client'
 
 export interface LocalModelHealth {
@@ -16,24 +31,80 @@ export interface LocalModelsHealthPayload {
   models: LocalModelHealth[]
 }
 
-/**
- * Phase 1 — Poll the v0.8.0 backend `/api/local-models/health`
- * endpoint every 30 seconds + on window focus. Drives the
- * `LocalModelHealthBadges` component in the sidebar so users
- * see at a glance which local models are reachable.
- */
 export function useLocalModelsHealth() {
   return useQuery<LocalModelsHealthPayload>({
     queryKey: ['local-models', 'health'],
-    queryFn: async () => {
-      const r = await apiClient.get('/local-models/health')
-      return r.data
-    },
+    queryFn: async () => (await apiClient.get('/local-models/health')).data,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
-    // The endpoint is auth-exempted on the backend, so the
-    // launcher splash can hit it pre-login. No retry on failure
-    // since the badges go "unknown" gracefully if the call fails.
     retry: 1,
   })
 }
+
+export function useLocalModelInventory() {
+  return useQuery<InventoryResponse>({
+    queryKey: ['local-models', 'inventory'],
+    queryFn: getLocalModelInventory,
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+  })
+}
+
+export function useLocalModelRoleRouting(enabled = true) {
+  return useQuery<RoleRoutingResponse>({
+    queryKey: ['local-models', 'role-routing'],
+    queryFn: getRoleRouting,
+    enabled,
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+  })
+}
+
+export function useLocalModelBenchmarks(enabled = true) {
+  return useQuery<BenchmarkListResponse>({
+    queryKey: ['local-models', 'benchmarks'],
+    queryFn: getBenchmarkJobs,
+    enabled,
+    refetchInterval: query => query.state.data?.benchmarks.some(job =>
+      job.status === 'queued' || job.status === 'running',
+    ) ? 1_500 : false,
+  })
+}
+
+export function useStartLocalBenchmark() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (roles?: string[]) => startBenchmark(roles),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] })
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'role-routing'] })
+    },
+  })
+}
+
+export function useCancelLocalBenchmark() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) => cancelBenchmark(jobId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+}
+
+export function useResetLocalBenchmarks() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: resetBenchmarks,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+}
+
+export function useLocalModelRouteReceipts(enabled = true) {
+  return useQuery<RouteReceiptResponse>({
+    queryKey: ['local-models', 'route-receipts'],
+    queryFn: getRouteReceipts,
+    enabled,
+    staleTime: 10_000,
+  })
+}
+
+export type { BenchmarkJob }
