@@ -24,19 +24,42 @@ def test_discovers_only_non_integration_test_files(tmp_path):
 
 def test_runs_sorted_batches_with_timeout(monkeypatch, tmp_path):
     test_files = [tmp_path / f"test_{index}.py" for index in range(3)]
+    report_dir = tmp_path / "test-results"
     calls: list[dict[str, object]] = []
 
     def fake_run(command, **kwargs):
         calls.append({"command": command, **kwargs})
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    run_batches(test_files, project_root=tmp_path, batch_size=2, timeout_seconds=45)
+    run_batches(
+        test_files,
+        project_root=tmp_path,
+        batch_size=2,
+        timeout_seconds=45,
+        junit_output_dir=report_dir,
+    )
 
     assert [call["command"] for call in calls] == [
-        [sys.executable, "-m", "pytest", str(test_files[0]), str(test_files[1]), "-q"],
-        [sys.executable, "-m", "pytest", str(test_files[2]), "-q"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(test_files[0]),
+            str(test_files[1]),
+            "-q",
+            f"--junitxml={report_dir / 'backend-001-002.xml'}",
+        ],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(test_files[2]),
+            "-q",
+            f"--junitxml={report_dir / 'backend-003-003.xml'}",
+        ],
     ]
     assert all(call["timeout"] == 45 for call in calls)
+    assert report_dir.is_dir()
 
 
 def test_turns_a_timed_out_batch_into_clear_release_failure(monkeypatch, tmp_path):
@@ -50,4 +73,5 @@ def test_turns_a_timed_out_batch_into_clear_release_failure(monkeypatch, tmp_pat
             project_root=tmp_path,
             batch_size=1,
             timeout_seconds=10,
+            junit_output_dir=tmp_path / "test-results",
         )
