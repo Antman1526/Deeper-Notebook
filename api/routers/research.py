@@ -17,6 +17,12 @@ from api.schemas.research import (
     ResearchRunResponse,
 )
 from open_notebook.domain.notebook import Notebook
+from open_notebook.research.analysis import (
+    compare_research_evidence,
+    extract_research_evidence,
+    synthesize_research_evidence,
+    validate_research_evidence,
+)
 from open_notebook.research.discovery import (
     candidate_domain,
     discover_sources,
@@ -49,6 +55,10 @@ def _workflow(repository: ResearchRunRepository) -> ResearchWorkflow:
             "plan": plan,
             "discover": discover_sources,
             "ingest": ingest_approved_sources,
+            "extract": extract_research_evidence,
+            "compare": compare_research_evidence,
+            "synthesize": synthesize_research_evidence,
+            "validate": validate_research_evidence,
         },
     )
 

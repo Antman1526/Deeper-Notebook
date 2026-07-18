@@ -55,9 +55,11 @@ class ResearchComparisonResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: int = 1
     agreements: list[dict[str, Any]] = Field(default_factory=list)
     contradictions: list[dict[str, Any]] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
+    verdicts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ResearchRunResponse(BaseModel):
