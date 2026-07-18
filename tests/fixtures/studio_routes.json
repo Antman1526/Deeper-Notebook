@@ -1,0 +1,101 @@
+[
+  {
+    "path": "/studio/artifacts",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "create_studio_artifact",
+    "response_model": "api.schemas.studio.StudioArtifactResponse",
+    "status_code": 201
+  },
+  {
+    "path": "/studio/notebooks/{notebook_id}/artifacts",
+    "methods": [
+      "GET"
+    ],
+    "endpoint_name": "list_studio_artifacts",
+    "response_model": "builtins.list[api.schemas.studio.StudioArtifactResponse]",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/revisions",
+    "methods": [
+      "GET"
+    ],
+    "endpoint_name": "list_studio_artifact_revisions",
+    "response_model": "builtins.list[api.schemas.studio.StudioArtifactResponse]",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/workflow-runs",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "create_studio_workflow_run",
+    "response_model": "api.schemas.studio.StudioWorkflowRunResponse",
+    "status_code": 201
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/workflow-runs",
+    "methods": [
+      "GET"
+    ],
+    "endpoint_name": "list_studio_workflow_runs",
+    "response_model": "builtins.list[api.schemas.studio.StudioWorkflowRunResponse]",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/workflow-runs/{run_id}/approve",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "approve_studio_workflow_run",
+    "response_model": "api.schemas.studio.StudioWorkflowRunResponse",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}",
+    "methods": [
+      "GET"
+    ],
+    "endpoint_name": "get_studio_artifact",
+    "response_model": "api.schemas.studio.StudioArtifactResponse",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "endpoint_name": "update_studio_artifact",
+    "response_model": "api.schemas.studio.StudioArtifactResponse",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/generate",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "generate_studio_artifact",
+    "response_model": "api.schemas.studio.StudioArtifactResponse",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "endpoint_name": "delete_studio_artifact",
+    "response_model": "builtins.dict[builtins.str, builtins.object]",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/generate",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "studio_generate",
+    "response_model": "api.routers.studio.StudioGenerateResponse",
+    "status_code": 200
+  }
+]
