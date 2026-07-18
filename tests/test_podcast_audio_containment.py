@@ -17,10 +17,12 @@ covered implicitly by the existing API tests.
 """
 from __future__ import annotations
 
+import nturl2path
 from pathlib import Path
 
 import pytest
 
+import open_notebook.podcasts as podcast_paths
 from api.routers import podcasts as podcasts_mod
 
 
@@ -53,9 +55,22 @@ def test_resolve_audio_path_accepts_file_uri_inside_root(patched_root):
     audio = ep_dir / "episode.mp3"
     audio.write_bytes(b"id3v2")
 
-    result = podcasts_mod._resolve_audio_path(f"file://{audio}")
+    result = podcasts_mod._resolve_audio_path(audio.resolve().as_uri())
     assert result is not None
     assert result.resolve() == audio.resolve()
+
+
+def test_file_uri_to_local_path_converts_windows_drive_uri():
+    """A standard Windows file URI must become a native drive path first."""
+    convert = getattr(podcast_paths, "file_uri_to_local_path", None)
+    assert convert is not None, "podcast paths must expose file URI conversion"
+    assert (
+        convert(
+            "file:///C:/Podcast%20Audio/episode.mp3",
+            pathname_converter=nturl2path.url2pathname,
+        )
+        == r"C:\Podcast Audio\episode.mp3"
+    )
 
 
 def test_resolve_audio_path_rejects_outside_root(patched_root, tmp_path):
