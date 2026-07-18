@@ -400,6 +400,13 @@ Seven workflow files:
 
 ### 6.1 `build-desktop.yml` — the desktop matrix
 
+Each macOS and Windows job has a 90-minute whole-job cap. Before frontend build
+and PyInstaller packaging it runs `desktop/tests/` and then
+`desktop/build/run_backend_tests.py`: sorted non-integration backend files are
+run 30 at a time, each subprocess has a 900-second cap, and the log prints the
+current file range. This shared Python runner replaces platform-specific inline
+test loops, so a stuck test produces an actionable failed batch on all runners.
+
 Three parallel jobs, then a tag-gated release. Each mirrors the Makefile stages
 using plain `pip`/`pyinstaller` (CI installs on top of the upstream pyproject):
 

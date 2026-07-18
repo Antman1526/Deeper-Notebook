@@ -150,6 +150,7 @@ open_notebook/
 ├── podcasts/           models.py (Podcast, Episode, Outline, Transcript, SpeakerInfo), migration.py
 ├── prompt_optimizer/   adapter.py, runner.py, skillopt_prompts/ (SkillOpt integration)
 ├── studio/             artifact_generation.py (Evidence Studio CSV/JSON/ZIP export)
+├── video/              contracts.py + captions.py + composer.py (local MP4/WebVTT only)
 └── tools/              add_web_source.py, web_search.py, opencode.py
 ```
 
@@ -175,6 +176,10 @@ commands/
 ├── studio_commands.py             Evidence Studio artifact jobs
 └── example_commands.py            test fixtures (process_text, analyze_data)
 ```
+
+`api/routers/video_overviews.py` is the record-ID-only local slide/audio
+composition router; its request/response models live in
+`api/schemas/video_overviews.py`.
 
 `desktop/memory/memory_commands.py` is copied into this dir at boot (`_phase_register_memory_commands`) so the worker discovers the memory handlers.
 

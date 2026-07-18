@@ -35,6 +35,7 @@ app.include_router(insights.router,        prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(podcasts.router,        prefix="/api", tags=["podcasts"])
 app.include_router(studio.router,          prefix="/api", tags=["studio"])
+app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])
 app.include_router(episode_profiles.router,prefix="/api", tags=["episode-profiles"])
 app.include_router(speaker_profiles.router,prefix="/api", tags=["speaker-profiles"])
 app.include_router(chat.router,            prefix="/api", tags=["chat"])
@@ -376,6 +377,16 @@ Episode/speaker profile CRUD lives in `episode_profiles.py` /
 `speaker_profiles.py` (`GET/POST/PUT/DELETE /api/episode-profiles`,
 `/api/speaker-profiles`).
 
+### 3.7a `video_overviews.py` (local-only visual playback)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/video-overviews` | `VideoOverviewComposeRequest` | `VideoOverviewResponse` | Requires a completed `slide_deck` artifact and completed podcast audio with monotonic transcript segments. Re-renders the typed deck to local PNGs, composes a 1920x1080 H.264/AAC MP4 plus WebVTT through bundled FFmpeg, performs a decode validation pass, then atomically promotes both files under `{DATA_FOLDER}/video-overviews/`. |
+| GET | `/api/video-overviews/{artifact_id}/media` | — | `video/mp4` | Streams only the MP4 path saved on that artifact after strict suffix, existence, and containment checks under the Video Overview root. |
+| GET | `/api/video-overviews/{artifact_id}/captions` | — | `text/vtt` | Streams the paired caption file under the same containment rule. |
+
+The request never accepts raw filesystem paths. Its only inputs are durable record IDs, so a browser cannot ask the API to read arbitrary local files. A per-artifact asyncio lock prevents two compose requests from racing to update one artifact receipt.
+
 ### 3.8 `transformations.py`
 
 | Method | Path | Body | Response | Logic |
@@ -476,6 +487,7 @@ Episode/speaker profile CRUD lives in `episode_profiles.py` /
 - `languages.py` — `GET /api/languages` (podcast languages via pycountry+babel).
 - `onp.py` / `gmail.py` — ONP desktop-wrapper + Gmail digest endpoints.
 - `studio.py` — Evidence Studio generation + upload (`/api/studio/*`).
+- `video_overviews.py` — contained local MP4/WebVTT composition from completed slide-deck and podcast records (`/api/video-overviews/*`).
 - `mcp.py` — MCP server registry CRUD (`GET/POST/PUT/DELETE/PATCH /api/mcp/*`,
   `POST /api/mcp/{id}/test`; URL fields SSRF-validated). See doc 08.
 - `local_models.py` — local sidecar health + GGUF inventory + role routing +

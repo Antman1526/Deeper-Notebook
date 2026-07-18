@@ -136,6 +136,40 @@ webview.start(private_mode=False, storage_path=str(data_home / "webview_data"))
 
 pywebview defaults to an **ephemeral** `WKWebsiteDataStore` wiped on close, which broke the `wizard_completed` cookie (Setup Wizard re-fired every launch). Persisting to a stable path under `~/.open-notebook-plus`, combined with a **stable self-signed code-signing identity** (so the macOS data container survives rebuilds), makes the wizard/intro show exactly once.
 
+### 2.8 Local Video Overview (`api/routers/video_overviews.py`)
+
+Video Overview deliberately reuses two reviewed artifacts instead of asking a
+model to invent a new audiovisual explanation: a completed typed `slide_deck`
+and a completed podcast episode with persisted timestamped transcript segments.
+The route accepts record IDs, renders the same deterministic slide images used
+by the slide export, and calls the local FFmpeg composer in a worker thread.
+
+```python
+# api/routers/video_overviews.py — composition core (excerpt)
+output = await asyncio.to_thread(
+    compose_local_video_overview,
+    VideoOverviewDocument(
+        slide_image_paths=slides,            # renderer-owned PNGs, not client paths
+        narration_audio_path=audio_path,     # resolved inside podcast output root
+        narration_segments=narration_segments,
+        caption_language=payload.caption_language,
+    ),
+    artifact_dir,                             # {DATA_FOLDER}/video-overviews/<artifact>/
+)
+artifact.export_paths = {
+    **artifact.export_paths,
+    "video_mp4": str(output.mp4_path),
+    "video_captions": str(output.vtt_path),
+}
+await artifact.save()                         # UI refetches the owning slide deck
+```
+
+The composer writes to a temporary directory, runs a decode validation pass,
+then promotes the MP4 and VTT atomically. Streaming routes reject any stored
+path outside the Video Overview root. The trade-off is intentional: this is a
+local composition capability, not a general arbitrary-file video editor; it
+requires an Audio Overview with timestamps and does not synthesize narration.
+
 ---
 
 ## 3. Data Flow & Dependencies
@@ -154,6 +188,13 @@ DEFINE TABLE refers_to  TYPE RELATION FROM chat_session  TO notebook;   -- sessi
 
 **External services.** All cloud AI providers (via Esperanto) are opt-in by key presence. Web search is opt-in too: `web_search` tool only exists when `SERPER_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_BASE_URL` is set. MCP servers (`open_notebook/mcp/`) can add external tools. Local sidecars (llama.cpp, MLX, whisper, piper, mem0) are the offline defaults.
 
+**Video Overview → local media.** The Artifact Rail fetches completed podcast
+episodes only while a slide deck is open. It posts the selected episode ID and
+slide-deck artifact ID to `/api/video-overviews`; the API never accepts a path
+from the browser. It records relative media/caption URLs in the slide-deck
+artifact, and the rail resolves those URLs through the API-base helper for the
+HTML video and caption track.
+
 ---
 
 ## 4. Current Pain Points / Known Limitations
@@ -166,6 +207,11 @@ DEFINE TABLE refers_to  TYPE RELATION FROM chat_session  TO notebook;   -- sessi
 - **LLM-dependent features unverifiable headlessly.** Chat, insights, podcasts, transcription, and smart routing all require live models/sidecars, so they can't be exercised in plain CI/pytest; `integration_surreal`-marked tests need a real SurrealDB (`SURREAL_INTEGRATION=1`).
 - **Large single files.** `open_notebook/domain/notebook.py` is ~1520 lines (Notebook/Source/Note/SourceInsight + delete cascades + mind map + search). `open_notebook/graphs/chat.py` is ~48 KB. `ChatPanel.tsx` is 688 lines and `useNotebookChat.ts` 771 — monolithic components mixing streaming, scroll, MCP picker, sessions, and citation viewer.
 - **Blocking graph invocations.** Chat/podcast graphs can run minutes with no HTTP-level timeout (transformations added an `ONP_TRANSFORMATION_TIMEOUT_SEC` bound; chat did not).
+- **Video Overview is intentionally narrow.** It only composes an existing
+  slide deck with an already-generated, timestamped Audio Overview. It does not
+  yet create original B-roll, extract clips from source video, or offer an
+  editable timeline. That preserves source fidelity and local safety, but is
+  less flexible than a full video editor.
 
 ---
 
@@ -202,3 +248,6 @@ DEFINE TABLE refers_to  TYPE RELATION FROM chat_session  TO notebook;   -- sessi
 10. **SSE robustness.** Beyond `reader.cancel()` before `releaseLock`, does the backend `astream_events` handler check `request.is_disconnected()` and stop generating on client abort, or does an aborted chat keep burning tokens server-side?
 11. **Blocking chat graph.** Should chat get the same `asyncio.wait_for` timeout treatment transformations got (`ONP_TRANSFORMATION_TIMEOUT_SEC`) to bound a hung local model?
 12. **Token sizing vs local n_ctx.** Is text-only `token_count` an accurate enough proxy for the local/cloud routing cutoff, and does history-trim interact correctly with the sized payload (no double counting after trim)?
+13. **Video Overview scope.** Should the next iteration add a local timeline
+editor and source-video clip extraction, or keep the current slide-plus-audio
+constraint so every rendered visual remains a reviewed, cited Studio artifact?

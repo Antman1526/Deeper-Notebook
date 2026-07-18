@@ -59,10 +59,21 @@ uv run pytest tests/ -v --ignore=tests/integration   # hermetic backend (what CI
 uv run pytest tests/test_citation_offsets.py -v
 uv run pytest tests/test_domain.py::TestNotebookDomain::test_notebook_name_validation
 
+# Release workflow backend gate: sorted non-integration files, 30 per batch,
+# 900-second timeout per batch. This is cross-platform and gives CI a useful
+# failing batch rather than one unbounded pytest process.
+uv run python desktop/build/run_backend_tests.py
+
 # Real-SurrealDB integration suite (opt-in, needs a live DB on :8000)
 make database                                    # docker compose up -d surrealdb
 SURREAL_INTEGRATION=1 uv run --env-file .env pytest tests/integration/ -v -m integration_surreal
 ```
+
+`tests/test_release_test_runner.py` verifies discovery excludes `tests/integration/`,
+batch ordering is deterministic, and a subprocess timeout becomes a clear release
+failure. `tests/test_video_overview.py` and `tests/test_video_overview_router.py`
+cover caption timing, FFmpeg output validation, route containment, and the refusal
+to render an Audio Overview with no timestamped transcript.
 
 Makefile aliases (from `Makefile`):
 
