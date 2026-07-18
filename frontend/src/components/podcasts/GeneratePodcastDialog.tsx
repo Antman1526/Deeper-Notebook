@@ -1140,7 +1140,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
 
                    <div className="space-y-2">
                     <Label htmlFor="instructions">
-                      {t('podcasts.customPrompt', { defaultValue: 'Custom prompt' })}
+                      {t('podcasts.additionalInstructions')}
                     </Label>
                     <Textarea
                       id="instructions"

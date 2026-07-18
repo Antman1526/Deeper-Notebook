@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any, get_args, get_origin
@@ -90,3 +91,14 @@ def test_studio_router_contract_accepts_crlf_fixture(tmp_path: Path) -> None:
     crlf_fixture.write_bytes(FIXTURE_PATH.read_bytes().replace(b"\n", b"\r\n"))
 
     _assert_route_contract_matches_fixture(crlf_fixture)
+
+
+def test_studio_router_contract_survives_compatibility_module_reload() -> None:
+    """Reloading the legacy facade must not duplicate child endpoints."""
+    import api.routers.studio as studio
+
+    importlib.reload(studio)
+
+    assert _serialize_route_contract(_route_contract()) == _serialize_route_contract(
+        json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    )
