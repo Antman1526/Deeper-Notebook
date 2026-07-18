@@ -1,7 +1,6 @@
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional
-from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -17,6 +16,7 @@ from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import repo_query
 from open_notebook.exceptions import InvalidInputError, NotFoundError
+from open_notebook.podcasts import file_uri_to_local_path
 from open_notebook.podcasts.models import EpisodeProfile
 
 router = APIRouter()
@@ -89,12 +89,12 @@ def _resolve_audio_path(audio_file: str) -> Optional[Path]:
     Callers must now handle None — serving sites should 404, cleanup
     sites should skip the unlink with a log warning.
     """
-    if audio_file.startswith("file://"):
-        parsed = urlparse(audio_file)
-        raw = Path(unquote(parsed.path))
-    else:
-        raw = Path(audio_file)
     try:
+        raw = (
+            Path(file_uri_to_local_path(audio_file))
+            if audio_file.startswith("file:")
+            else Path(audio_file)
+        )
         resolved = raw.resolve()
     except (OSError, ValueError):
         return None
