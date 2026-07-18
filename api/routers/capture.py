@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from math import sqrt
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +18,12 @@ from api.schemas.capture import (
     CaptureScanResponse,
     RegisterCaptureRootRequest,
 )
-from open_notebook.ai.models import model_manager
+from open_notebook.ai.models import Model, model_manager
+from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
 from open_notebook.capture.routing import (
     CaptureNotebook,
+    CaptureNotebookSuggestion,
+    CaptureRouteSource,
     CaptureRoutingError,
     CaptureRoutingService,
 )
@@ -32,6 +36,54 @@ from open_notebook.capture.watcher import (
 from open_notebook.domain.notebook import Notebook
 
 router = APIRouter(prefix="/capture", tags=["capture"])
+
+
+async def _local_semantic_suggestions(
+    transcript: str,
+    source: CaptureRouteSource,
+    notebooks: tuple[CaptureNotebook, ...],
+) -> list[CaptureNotebookSuggestion]:
+    """Rank capture targets with local embeddings only; never call a cloud model."""
+    if not notebooks:
+        return []
+    defaults = await model_manager.get_defaults()
+    model_id = defaults.default_embedding_model
+    if not model_id:
+        return []
+    record = await Model.get(model_id)
+    if (record.provider or "").lower() not in LOCAL_PROVIDERS:
+        return []
+    model = await model_manager.get_embedding_model()
+    if model is None:
+        return []
+    embeddings = await model.aembed(
+        [f"{transcript}\n{source.relative_path}", *[f"{item.name}" for item in notebooks]]
+    )
+    if len(embeddings) != len(notebooks) + 1:
+        return []
+    query = embeddings[0]
+    query_norm = sqrt(sum(value * value for value in query))
+    if not query_norm:
+        return []
+    scored: list[CaptureNotebookSuggestion] = []
+    for notebook, vector in zip(notebooks, embeddings[1:], strict=True):
+        if len(vector) != len(query):
+            continue
+        norm = sqrt(sum(value * value for value in vector))
+        if not norm:
+            continue
+        score = sum(left * right for left, right in zip(query, vector, strict=True)) / (
+            query_norm * norm
+        )
+        if score > 0:
+            scored.append(
+                CaptureNotebookSuggestion(
+                    **notebook.model_dump(),
+                    score=round(score, 3),
+                    reason="Local semantic match",
+                )
+            )
+    return sorted(scored, key=lambda item: (-item.score, item.name.lower()))[:3]
 
 
 async def _approved_roots(repository: SurrealCaptureRepository) -> list[Path]:
@@ -112,6 +164,7 @@ async def _route_capture_media(
     repository: Any,
     get_speech_to_text: Callable[[], Awaitable[Any | None]],
     load_notebooks: Callable[[], Awaitable[list[Any]]],
+    semantic_suggester: Callable[..., Awaitable[list[CaptureNotebookSuggestion]]] | None = None,
 ) -> CaptureRouteResponse:
     roots = [_resolved_root(path) for path in await repository.list_roots()]
     notebooks = [
@@ -124,6 +177,7 @@ async def _route_capture_media(
         capture_items=await repository.list_items(limit=500),
         notebooks=notebooks,
         get_speech_to_text=get_speech_to_text,
+        semantic_suggester=semantic_suggester or _local_semantic_suggestions,
     ).route(payload.path)
     return CaptureRouteResponse(**result.model_dump())
 
