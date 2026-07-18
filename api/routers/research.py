@@ -12,6 +12,7 @@ from api.schemas.research import (
     ApproveResearchSourcesRequest,
     CreateResearchRunRequest,
     ResearchCandidateResponse,
+    ResearchComparisonResponse,
     ResearchEventResponse,
     ResearchRunResponse,
 )
@@ -90,15 +91,21 @@ def _response(run: ResearchRun) -> ResearchRunResponse:
                 decision=decision,
             )
         )
+    comparison_data = run.checkpoints.get("compare", {}).get("comparison", {})
+    if not isinstance(comparison_data, dict):
+        comparison_data = {}
     return ResearchRunResponse(
         id=str(run.id),
         notebook_id=str(run.notebook_id),
         objective=run.objective,
         stage=run.stage,
+        plan=run.plan,
+        hypotheses=run.hypotheses,
         search_query=query,
         candidates=candidates,
         source_ids=run.source_ids,
         errors=run.errors,
+        comparison=ResearchComparisonResponse.model_validate(comparison_data),
         cancelled=run.cancelled,
     )
 
