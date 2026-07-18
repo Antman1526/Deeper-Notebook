@@ -9,6 +9,7 @@ on:
 jobs:
   build-mac-arm64:
     runs-on: macos-14
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -18,7 +19,8 @@ jobs:
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
       - run: python -m pytest desktop/tests -q
-      - run: python -m pytest tests -q --ignore=tests/integration
+      - name: Run backend tests in bounded batches
+        run: python desktop/build/run_backend_tests.py
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
@@ -35,6 +37,7 @@ jobs:
 
   build-mac-x86_64:
     runs-on: macos-13
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -44,7 +47,8 @@ jobs:
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
       - run: python -m pytest desktop/tests -q
-      - run: python -m pytest tests -q --ignore=tests/integration
+      - name: Run backend tests in bounded batches
+        run: python desktop/build/run_backend_tests.py
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
@@ -61,7 +65,7 @@ jobs:
 
   build-windows-x64:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       PYTHONUTF8: "1"  # v0.8.68 — belt-and-suspenders for non-ASCII console output on cp1252
     steps:
@@ -73,23 +77,8 @@ jobs:
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
       - run: python -m pytest desktop/tests -q
-      - name: Run backend tests in Windows-safe batches
-        shell: pwsh
-        run: |
-          $testFiles = @(
-            Get-ChildItem -Path tests -Filter test_*.py -File -Recurse |
-              Where-Object { $_.FullName -notmatch '[\\/]integration[\\/]' } |
-              Sort-Object FullName
-          )
-          if ($testFiles.Count -eq 0) { throw "No backend test files were found." }
-          $batchSize = 30
-          for ($start = 0; $start -lt $testFiles.Count; $start += $batchSize) {
-            $end = [Math]::Min($start + $batchSize, $testFiles.Count)
-            $batch = @($testFiles[$start..($end - 1)] | ForEach-Object FullName)
-            Write-Host "Running Windows backend test batch $($start + 1)-$end of $($testFiles.Count)."
-            python -m pytest @batch -q
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      - name: Run backend tests in bounded batches
+        run: python desktop/build/run_backend_tests.py
       - run: cd frontend; npm ci; npm run lint; npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
