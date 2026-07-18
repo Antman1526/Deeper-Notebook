@@ -18,6 +18,7 @@ the OS check works. Hermetic via pytest's `tmp_path` fixture.
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -34,6 +35,7 @@ class TestIsPidAlive:
         from desktop.singleton import _is_pid_alive
         assert _is_pid_alive(os.getpid()) is True
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX init PID")
     def test_init_process_is_alive(self):
         """PID 1 is always alive on POSIX systems."""
         from desktop.singleton import _is_pid_alive
