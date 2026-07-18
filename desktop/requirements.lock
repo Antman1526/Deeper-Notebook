@@ -833,6 +833,10 @@ uvicorn==0.46.0
     #   mcp
 validators==0.35.0
     # via content-core
+watchdog==6.0.0
+    # via
+    #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
 watchfiles==1.1.1
     # via fastmcp
 websockets==16.0

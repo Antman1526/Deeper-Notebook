@@ -41,3 +41,18 @@ def test_locked_office_dependencies_import_in_the_runtime_environment() -> None:
     )
 
     assert missing == []
+
+
+def test_capture_watcher_dependency_is_direct_locked_and_importable() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    desktop = (ROOT / "desktop" / "requirements.txt").read_text(encoding="utf-8")
+
+    assert '"watchdog>=6.0.0,<7.0"' in project
+    assert "watchdog>=6.0.0,<7.0" in desktop
+    assert _locked_version("watchdog").startswith("6.")
+    assert (
+        _verify_critical_imports(
+            Path(importlib.import_module("sys").executable), ["watchdog"]
+        )
+        == []
+    )
