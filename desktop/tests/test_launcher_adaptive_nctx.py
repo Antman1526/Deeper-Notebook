@@ -39,7 +39,9 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
             return page
         raise ValueError(name)
 
-    monkeypatch.setattr("desktop.launcher.os.sysconf", fake_sysconf)
+    monkeypatch.setattr(
+        "desktop.launcher.os.sysconf", fake_sysconf, raising=False
+    )
     # v0.8.67l — report ample AVAILABLE RAM so the pressure backoff is a no-op
     # here; the backoff itself is covered by the _pressure_adjusted_ctx_max
     # tests below. Keeps the total-RAM-tier assertions deterministic.
@@ -95,12 +97,13 @@ def test_sysconf_raises_falls_back(monkeypatch):
     monkeypatch.setattr(
         "desktop.launcher.os.sysconf_names",
         {"SC_PHYS_PAGES": 1, "SC_PAGE_SIZE": 2},
+        raising=False,
     )
 
     def boom(_name):
         raise OSError("sysconf unavailable")
 
-    monkeypatch.setattr("desktop.launcher.os.sysconf", boom)
+    monkeypatch.setattr("desktop.launcher.os.sysconf", boom, raising=False)
     assert Supervisor._default_ctx_max() == 32768
 
 
