@@ -45,9 +45,25 @@ def _route_contract() -> list[dict[str, Any]]:
     ]
 
 
-def test_studio_router_contract_matches_committed_fixture() -> None:
-    actual = (
-        json.dumps(_route_contract(), indent=2, ensure_ascii=True).encode("utf-8") + b"\n"
+def _serialize_route_contract(contract: list[dict[str, Any]]) -> str:
+    return json.dumps(contract, indent=2, ensure_ascii=True) + "\n"
+
+
+def _assert_route_contract_matches_fixture(fixture_path: Path) -> None:
+    actual = _serialize_route_contract(_route_contract())
+    expected = _serialize_route_contract(
+        json.loads(fixture_path.read_text(encoding="utf-8"))
     )
 
-    assert actual == FIXTURE_PATH.read_bytes()
+    assert actual == expected
+
+
+def test_studio_router_contract_matches_committed_fixture() -> None:
+    _assert_route_contract_matches_fixture(FIXTURE_PATH)
+
+
+def test_studio_router_contract_accepts_crlf_fixture(tmp_path: Path) -> None:
+    crlf_fixture = tmp_path / FIXTURE_PATH.name
+    crlf_fixture.write_bytes(FIXTURE_PATH.read_bytes().replace(b"\n", b"\r\n"))
+
+    _assert_route_contract_matches_fixture(crlf_fixture)
