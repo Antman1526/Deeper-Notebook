@@ -21,8 +21,14 @@ def _safe_file(path: Path, suffixes: set[str]) -> Path:
     try:
         resolved = path.resolve(strict=True)
     except OSError as exc:
-        raise VideoOverviewError(f"required local media is unavailable: {path}") from exc
-    if path.is_symlink() or not resolved.is_file() or resolved.suffix.lower() not in suffixes:
+        raise VideoOverviewError(
+            f"required local media is unavailable: {path}"
+        ) from exc
+    if (
+        path.is_symlink()
+        or not resolved.is_file()
+        or resolved.suffix.lower() not in suffixes
+    ):
         raise VideoOverviewError(f"unsupported local media input: {path}")
     return resolved
 
@@ -44,10 +50,17 @@ def _video_filter(slide_count: int) -> str:
     return ";".join(prepared)
 
 
-def compose_video_overview(document: VideoOverviewDocument, output_dir: Path) -> VideoOverviewOutput:
+def compose_video_overview(
+    document: VideoOverviewDocument, output_dir: Path
+) -> VideoOverviewOutput:
     """Create MP4/VTT locally and promote only after an FFmpeg decode pass."""
-    slides = [_safe_file(path, {".png", ".jpg", ".jpeg"}) for path in document.slide_image_paths]
-    narration = _safe_file(document.narration_audio_path, {".aac", ".m4a", ".mp3", ".wav"})
+    slides = [
+        _safe_file(path, {".png", ".jpg", ".jpeg"})
+        for path in document.slide_image_paths
+    ]
+    narration = _safe_file(
+        document.narration_audio_path, {".aac", ".m4a", ".mp3", ".wav"}
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     total_duration = _duration(document)
@@ -62,7 +75,16 @@ def compose_video_overview(document: VideoOverviewDocument, output_dir: Path) ->
         command = [ffmpeg, "-y"]
         for slide in slides:
             command.extend(
-                ["-loop", "1", "-framerate", "30", "-t", f"{share:.3f}", "-i", str(slide)]
+                [
+                    "-loop",
+                    "1",
+                    "-framerate",
+                    "30",
+                    "-t",
+                    f"{share:.3f}",
+                    "-i",
+                    str(slide),
+                ]
             )
         command.extend(["-i", str(narration)])
         command.extend(
@@ -85,12 +107,32 @@ def compose_video_overview(document: VideoOverviewDocument, output_dir: Path) ->
             ]
         )
         try:
-            subprocess.run(command, check=True, capture_output=True, text=True, timeout=max(60, int(total_duration * 10)))
-            subprocess.run([ffmpeg, "-v", "error", "-i", str(mp4), "-f", "null", "-"], check=True, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            raise VideoOverviewError("local FFmpeg composition or validation failed") from exc
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=max(60, int(total_duration * 10)),
+            )
+            subprocess.run(
+                [ffmpeg, "-v", "error", "-i", str(mp4), "-f", "null", "-"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (
+            OSError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            raise VideoOverviewError(
+                "local FFmpeg composition or validation failed"
+            ) from exc
         stem = f"video-overview-{os.urandom(6).hex()}"
         final_mp4, final_vtt = output_dir / f"{stem}.mp4", output_dir / f"{stem}.vtt"
         os.replace(mp4, final_mp4)
         os.replace(vtt, final_vtt)
-    return VideoOverviewOutput(mp4_path=final_mp4, vtt_path=final_vtt, duration_seconds=total_duration)
+    return VideoOverviewOutput(
+        mp4_path=final_mp4, vtt_path=final_vtt, duration_seconds=total_duration
+    )
