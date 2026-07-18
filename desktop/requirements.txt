@@ -89,3 +89,6 @@ openpyxl>=3.1.5,<4.0
 # Capture Inbox filesystem watcher. This is direct so native first-launch
 # installs always include the watcher even when upstream dependency graphs move.
 watchdog>=6.0.0,<7.0
+# Evidence-grounded spaced repetition scheduler. Keep direct so native
+# first-launch installs include the exact study runtime dependency.
+fsrs>=6.3.1,<7.0

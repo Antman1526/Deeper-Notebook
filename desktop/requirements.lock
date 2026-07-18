@@ -173,6 +173,10 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+fsrs==6.3.1
+    # via
+    #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
 fsspec==2026.4.0
     # via huggingface-hub
 google-auth==2.52.0
@@ -784,6 +788,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   exceptiongroup
     #   fastapi
+    #   fsrs
     #   google-genai
     #   groq
     #   grpcio
