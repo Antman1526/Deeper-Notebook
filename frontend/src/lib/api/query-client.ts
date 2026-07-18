@@ -51,6 +51,8 @@ export const QUERY_KEYS = {
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
   studyDue: ['study', 'due'] as const,
+  captureRoots: ['capture', 'roots'] as const,
+  captureItems: ['capture', 'items'] as const,
 }
 
 // v0.8.66 (audit F-2) — the chat hooks stash per-message badge data ad-hoc via
