@@ -802,7 +802,11 @@ export function ArtifactRail({
                         rows={selectedArtifact.output_payload.data_table_rows}
                       />
                     ) : selectedMarkdown && selectedArtifact.artifact_type === 'mind_map' ? (
-                      <MindMapViewer markdown={selectedMarkdown} />
+                      <MindMapViewer
+                        markdown={selectedMarkdown}
+                        artifactId={selectedArtifact.id}
+                        notebookId={notebookId}
+                      />
                     ) : selectedMarkdown && (
                       selectedArtifact.artifact_type === 'course_pack'
                       || selectedArtifact.artifact_type === 'training_guide'
