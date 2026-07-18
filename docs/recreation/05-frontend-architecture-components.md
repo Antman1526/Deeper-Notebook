@@ -232,7 +232,13 @@ Key behaviors:
   `lib/utils/source-context.ts`) initialize AND prune keys as the source/note
   lists change; the whole selection map is reset when `notebookId` changes.
 - **`ArtifactRail`** (from `components/onp`) sits above the panels; a
-  `NotebookHeader` sits above that with a `border-b` divider.
+  `NotebookHeader` sits above that with a `border-b` divider. When a completed
+  structured slide deck is selected, the rail queries completed podcast episodes,
+  opens a native dialog to choose one with timestamped captions, and calls
+  `useComposeVideoOverview()`. The returned local `/api/video-overviews/...`
+  URLs are resolved through the existing API-base helper and rendered with a
+  semantic `<video controls>` plus `<track kind="captions">`; the browser never
+  receives a host filesystem path.
 
 ---
 
