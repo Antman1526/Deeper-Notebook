@@ -64,7 +64,14 @@ def build_add_web_source_tool(
 
             processed_state = None
             if url_engine == "crawl4ai":
-                content = await extract_url_with_crawl4ai(url)
+                # Crawl4AI may spawn browser subrequests. Fetch once through the
+                # policy boundary and give it only the checked local response.
+                from open_notebook.research.safe_fetch import fetch_public_url
+
+                checked_response = await fetch_public_url(url)
+                content = await extract_url_with_crawl4ai(
+                    url, prefetched=checked_response
+                )
                 if content:
                     processed_state = ProcessSourceOutput(
                         title=title or "Imported Web Source (crawl4ai)",

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, ANY
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage
+
 from open_notebook.graphs import chat as chat_mod
+from open_notebook.tools.add_web_source import build_add_web_source_tool
 from open_notebook.tools.opencode import (
     OPENCODE_TOOL_NAME,
     build_opencode_tool,
@@ -15,7 +17,6 @@ from open_notebook.tools.opencode import (
     opencode_enabled,
     run_opencode,
 )
-from open_notebook.tools.add_web_source import build_add_web_source_tool
 
 # ---------------------------------------------------------------- opencode CLI tests
 
@@ -79,9 +80,10 @@ async def test_add_web_source_tool_execution(monkeypatch):
     mock_extracted.content = "Extracted Markdown Content"
     mock_extracted.title = "Page Title"
     
-    # Mock extract_content from content_core
+    # The tool delegates URL work to the same checked source-graph helper as
+    # normal ingestion, so this remains hermetic without a network request.
     mock_extract_fn = AsyncMock(return_value=mock_extracted)
-    monkeypatch.setattr("open_notebook.tools.add_web_source.extract_content", mock_extract_fn)
+    monkeypatch.setattr("open_notebook.graphs.source._extract_checked_url", mock_extract_fn)
     
     # Mock Source object
     mock_source_instance = MagicMock()
