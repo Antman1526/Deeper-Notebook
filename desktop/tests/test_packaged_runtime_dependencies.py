@@ -56,3 +56,18 @@ def test_capture_watcher_dependency_is_direct_locked_and_importable() -> None:
         )
         == []
     )
+
+
+def test_study_scheduler_dependency_is_direct_locked_and_importable() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    desktop = (ROOT / "desktop" / "requirements.txt").read_text(encoding="utf-8")
+
+    assert '"fsrs>=6.3.1,<7.0"' in project
+    assert "fsrs>=6.3.1,<7.0" in desktop
+    assert _locked_version("fsrs").startswith("6.")
+    assert (
+        _verify_critical_imports(
+            Path(importlib.import_module("sys").executable), ["fsrs"]
+        )
+        == []
+    )
