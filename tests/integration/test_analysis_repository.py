@@ -14,7 +14,7 @@ from open_notebook.analysis.contracts import (
     SourceInputHash,
 )
 from open_notebook.analysis.repository import AnalysisRunRepository
-from open_notebook.database.repository import repo_query
+from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook
 
 pytestmark = pytest.mark.integration_surreal
@@ -72,7 +72,7 @@ async def test_repository_persists_hashes_and_output_metadata_without_source_con
 
     rows = await repo_query(
         "SELECT execution_request, output_manifest FROM analysis_run WHERE id = $id",
-        {"id": saved.id},
+        {"id": ensure_record_id(saved.id or "")},
     )
     assert rows[0]["execution_request"]["source_inputs"] == [
         {
@@ -87,7 +87,7 @@ async def test_repository_persists_hashes_and_output_metadata_without_source_con
     outputs = await repo_query(
         "SELECT relative_path, sha256, byte_size, media_type FROM analysis_output "
         "WHERE analysis_run_id = $run",
-        {"run": saved.id},
+        {"run": ensure_record_id(saved.id or "")},
     )
     assert outputs == [
         {
