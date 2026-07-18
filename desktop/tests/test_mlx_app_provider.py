@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from desktop.app import (
     _new_context,
@@ -62,6 +63,7 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
         ctx.extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"]
         == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
     )
+    assert ctx.extra_env["ONP_CHAT_MODEL_NAME"] == "default_model"
     assert ctx.model_provider_runtime is not None
 
     _stop_runtime(ctx)
@@ -94,6 +96,83 @@ def test_phase_select_provider_uses_default_mlx_model_when_config_blank(
     assert FakeMlxProvider.started == ["MLX/default-model"]
     assert ctx.extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] == "MLX/default-model"
     _stop_runtime(ctx)
+
+
+def test_phase_select_provider_falls_back_to_mlx_when_chat_gguf_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    import desktop.app as app_mod
+    import desktop.providers.mlx as mlx_mod
+
+    FakeMlxProvider.started = []
+    FakeMlxProvider.stopped = False
+    monkeypatch.setattr(mlx_mod, "MlxProvider", FakeMlxProvider)
+    monkeypatch.setattr(app_mod, "_scan_chat_llm_with_timeout", lambda _path: None)
+    monkeypatch.setattr(app_mod.sys, "platform", "darwin")
+
+    config_path = tmp_path / "config.toml"
+    ctx = _new_context()
+    ctx.cfg = Config(
+        model_dir=tmp_path / "AI_Models",
+        provider="llamacpp",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
+    ctx._cfg_path = config_path
+    ctx.progress_bus = SimpleNamespace(publish=MagicMock())
+    ctx.log_dir = tmp_path / "logs"
+    ctx.venv_py = Path("/tmp/venv/bin/python")
+
+    _phase_select_provider(ctx)
+
+    assert ctx.cfg.provider == "mlx"
+    assert ctx.cfg.default_model == "MLX/default-model"
+    assert FakeMlxProvider.started == ["MLX/default-model"]
+    assert "provider = 'mlx'" in config_path.read_text()
+    assert "default_model = 'MLX/default-model'" in config_path.read_text()
+    ctx.progress_bus.publish.assert_called_once_with(
+        "provider.mlx",
+        "done",
+        "No chat GGUF was available; using MLX/default-model through MLX.",
+    )
+    _stop_runtime(ctx)
+
+
+def test_phase_select_provider_keeps_llamacpp_when_chat_gguf_exists(
+    monkeypatch,
+    tmp_path,
+):
+    import desktop.app as app_mod
+    import desktop.providers.mlx as mlx_mod
+
+    FakeMlxProvider.started = []
+    monkeypatch.setattr(mlx_mod, "MlxProvider", FakeMlxProvider)
+    monkeypatch.setattr(
+        app_mod,
+        "_scan_chat_llm_with_timeout",
+        lambda _path: tmp_path / "GGUF" / "chat.gguf",
+    )
+    monkeypatch.setattr(app_mod.sys, "platform", "darwin")
+
+    ctx = _new_context()
+    ctx.cfg = Config(
+        model_dir=tmp_path / "AI_Models",
+        provider="llamacpp",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
+    ctx._cfg_path = tmp_path / "config.toml"
+    ctx.log_dir = tmp_path / "logs"
+    ctx.venv_py = Path("/tmp/venv/bin/python")
+
+    _phase_select_provider(ctx)
+
+    assert ctx.cfg.provider == "llamacpp"
+    assert FakeMlxProvider.started == []
+    assert not ctx._cfg_path.exists()
 
 
 def test_phase_auto_register_passes_mlx_runtime_to_auto_register(monkeypatch, tmp_path):

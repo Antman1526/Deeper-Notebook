@@ -20,6 +20,33 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.97 — 2026-07-18 — Automatic MLX chat fallback
+
+- **v0.8.97** Local chat: Apple Silicon installations configured for
+  llama.cpp now fall back to a complete model under `MLX/` when no chat GGUF
+  exists, and persist the working MLX selection after its server starts.
+- Upgraded the desktop runtime to Transformers-5-compatible MLX-LM 0.31.x,
+  moved readiness checks to `/health`, and registered the active server through
+  its required `default_model` alias so chat requests reuse the loaded model.
+- Port reservations now enter listening state before allocation, preventing an
+  MLX sidecar port from being reassigned to the wildcard-bound Next.js server.
+- Domain creates now pass native aware UTC datetimes to SurrealDB instead of
+  ISO strings, restoring automatic local-provider credential registration.
+- The local memory writer now reuses the active MLX endpoint and its
+  `default_model` alias when no chat GGUF is installed, so fact extraction and
+  session summaries remain available without a separate llama.cpp model.
+- Defaults linked to the unavailable legacy llama.cpp credential are migrated
+  to MLX without changing cloud, Ollama, Osaurus, or manual selections, and
+  early startup failures now stop the MLX runtime instead of orphaning it.
+
+## v0.8.96 — 2026-07-18 — Packaged startup recovery
+
+- **v0.8.96** Bug fix: packaged launches now reap orphaned SurrealDB
+  processes from older app bundles when they still lock the shared database.
+  Startup GGUF discovery is also constrained to root-level models and the
+  dedicated `GGUF/` tree, preventing large Hugging Face caches and unrelated
+  model folders from blocking the main window.
+
 ## v0.8.95 — 2026-07-17 — Portable podcast audio paths
 
 - **v0.8.95** Bug fix: podcast episode path tests now assert `Path` structure

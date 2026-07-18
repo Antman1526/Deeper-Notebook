@@ -51,6 +51,10 @@ def _stub_singleton(monkeypatch):
         "desktop.singleton.reap_orphans",
         lambda *a, **kw: [],
     )
+    monkeypatch.setattr(
+        "desktop.singleton.reap_surreal_data_orphans",
+        lambda *a, **kw: [],
+    )
     yield
 
 
@@ -167,30 +171,13 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
-        # v0.8.4 — CRITICAL: OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
-        # in session_env so the API child can probe llama.cpp sidecar
-        # health. Without this, v0.8.0 Phase 3 smart routing's
-        # "prefer local when healthy" branch was dead in production —
-        # `_local_chat_healthy_cached` always saw an empty URL and
-        # returned False, so every routed turn went to cloud. Guards
-        # against silent regression if a future edit drops the key.
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].startswith(
-            "http://127.0.0.1:"
-        ), (
-            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL missing from session_env; "
-            "v0.8.4 fix regressed — smart router's local-prefer branch "
-            "is dead again"
-        )
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].endswith("/v1")
-        # And the port should match the chat_llm_port the launcher
-        # already wires into MEMORY_CHAT_LLM_URL — same source of truth.
+        # With provider="none" and no GGUF, advertise no local chat URL.
+        # Publishing an unused allocated port here made downstream health
+        # checks and diagnostics claim a provider existed when it did not.
         memory_url = sv.session_env["MEMORY_CHAT_LLM_URL"]
         local_url = sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"]
-        assert memory_url == local_url, (
-            f"both env vars must point at the SAME chat_llm_port. "
-            f"MEMORY_CHAT_LLM_URL={memory_url!r}, "
-            f"OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL={local_url!r}"
-        )
+        assert memory_url == ""
+        assert local_url == ""
         # v0.8.7 — OPEN_NOTEBOOK_LOCAL_N_CTX must be in session_env
         # carrying the launcher's resolved n_ctx, so the router's
         # pick_provider() math matches what the chat sidecar actually
@@ -466,6 +453,57 @@ def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
         joined = [" ".join(a) for a in spawned]
         assert not any("llama_cpp.server" in s and "Hermes-3" in s for s in joined)
         assert any("desktop_shims.memory_shim" in s for s in joined)
+    finally:
+        sv.stop_all()
+
+
+def test_supervisor_routes_memory_writer_to_active_mlx(tmp_path, monkeypatch):
+    """An MLX provider replaces the missing llama.cpp URL for local memory."""
+    spawned: list[list[str]] = []
+
+    def fake_popen(args, **kw):
+        spawned.append(list(args))
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports",
+        lambda n: list(range(40001, 40001 + n)),
+    )
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    cfg = Config(
+        model_dir=tmp_path,
+        provider="mlx",
+        default_model="MLX/lmstudio-community__Qwen2.5-Coder-14B-Instruct-MLX-8bit",
+        surreal_user="root",
+        surreal_password="A" * 24,
+    )
+    mlx_url = "http://127.0.0.1:51231/v1"
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        extra_env={
+            "OPENAI_COMPATIBLE_BASE_URL": mlx_url,
+            "ONP_CHAT_MODEL_NAME": "default_model",
+        },
+        chat_llm_path=None,
+    )
+
+    sv.start_all()
+    try:
+        memory_cmd = next(
+            args for args in spawned if "desktop_shims.memory_shim" in args
+        )
+        assert memory_cmd[memory_cmd.index("--llm-url") + 1] == mlx_url
+        assert sv.session_env["MEMORY_CHAT_LLM_URL"] == mlx_url
+        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"] == mlx_url
+        assert sv.chat_llm_port == 0
+        assert not any("llama_cpp.server" in " ".join(args) for args in spawned)
     finally:
         sv.stop_all()
 

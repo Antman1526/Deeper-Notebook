@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from desktop.providers import ProviderEnv
-from desktop.providers.mlx import MlxProvider
+from desktop.providers.mlx import MlxProvider, _http_ready
 
 
 @pytest.fixture
@@ -53,6 +53,20 @@ def test_list_models_uses_forward_slashes_for_windows_public_ids(monkeypatch):
 
     provider = MlxProvider(model_dir=model_dir)
     assert provider.list_models() == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
+
+
+def test_ready_probe_uses_health_endpoint_instead_of_huggingface_cache(monkeypatch):
+    response = MagicMock(status_code=200)
+    get = MagicMock(return_value=response)
+    monkeypatch.setattr("desktop.providers.mlx.httpx.get", get)
+
+    assert _http_ready(51231) is True
+    get.assert_called_once_with("http://127.0.0.1:51231/health", timeout=0.5)
+
+
+def test_desktop_runtime_uses_transformers_5_compatible_mlx_lm():
+    requirements = Path(__file__).parents[1] / "requirements.txt"
+    assert "mlx-lm>=0.30.6,<0.32" in requirements.read_text()
 
 
 def test_start_spawns_mlx_server_and_returns_openai_compatible_env(

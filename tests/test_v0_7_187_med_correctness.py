@@ -10,8 +10,8 @@ Three independent surfaces tightened:
     time" comparisons. Audit finding #4.
 
 2.  `open_notebook/domain/base.py` `created` / `updated` timestamps
-    now serialise as `datetime.now(timezone.utc).isoformat()` —
-    aware UTC ISO 8601. Previously naive local-time with a
+    now use native aware UTC `datetime` values for the SurrealDB driver.
+    Previously naive local-time with a
     non-ISO format string. Cross-machine sync produced off-by-N-
     hour ordering; the v0.7.181 iso() helper couldn't reconstruct
     a TZ that was never stored. Audit finding #6.
@@ -26,7 +26,11 @@ Three independent surfaces tightened:
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import ClassVar
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -87,36 +91,32 @@ def test_config_no_remaining_time_time_for_ttl():
 # ---------------------------------------------------------------------------
 
 
-def test_object_model_save_uses_aware_utc_timestamps():
-    """v0.7.187: ObjectModel.save() must use
-    `datetime.now(timezone.utc).isoformat()` for created/updated.
-    Naive local-time silently broke cross-machine ordering."""
-    src = _read_source("open_notebook/domain/base.py")
-    # The aware-UTC isoformat pattern is present at least twice
-    # (one for updated, one for created on new records).
-    aware_count = src.count("datetime.now(timezone.utc).isoformat()")
-    assert aware_count >= 2, (
-        f"v0.7.187 regression: ObjectModel.save() lost its "
-        f"aware-UTC timestamp serialisation (found {aware_count} "
-        f"occurrences, expected >=2). Cross-machine sync will "
-        f"break again."
-    )
-    # The old naive strftime form must be gone from the save() block
-    # (rationale comments are allowed to reference it).
-    save_idx = src.find("async def save(")
-    assert save_idx != -1
-    next_async_def = src.find("\n    async def ", save_idx + 1)
-    save_region = src[save_idx:next_async_def] if next_async_def != -1 else src[save_idx:save_idx + 3000]
-    # Strip comment lines before checking.
-    code_only = "\n".join(
-        line for line in save_region.splitlines()
-        if not line.lstrip().startswith("#")
-    )
-    bad = 'datetime.now().strftime("%Y-%m-%d %H:%M:%S")'
-    assert bad not in code_only, (
-        f"v0.7.187 regression: naive datetime.now() back in save(). "
-        f"Use datetime.now(timezone.utc).isoformat()."
-    )
+@pytest.mark.asyncio
+async def test_object_model_save_uses_driver_native_aware_utc_timestamps(
+    monkeypatch,
+):
+    """SurrealDB datetime fields must receive aware datetime objects."""
+    import open_notebook.domain.base as base_mod
+
+    class TimestampProbe(base_mod.ObjectModel):
+        table_name: ClassVar[str] = "timestamp_probe"
+        name: str
+
+    captured = {}
+
+    async def fake_repo_create(table, data):
+        captured.update(data)
+        return {**data, "id": f"{table}:created"}
+
+    monkeypatch.setattr(base_mod, "repo_create", fake_repo_create)
+
+    probe = TimestampProbe(name="test")
+    await probe.save()
+
+    for field in ("created", "updated"):
+        value = captured[field]
+        assert isinstance(value, datetime)
+        assert value.tzinfo == timezone.utc
 
 
 def test_base_module_imports_timezone():

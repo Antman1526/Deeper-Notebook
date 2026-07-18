@@ -353,7 +353,71 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # LlamaCppProvider stays in scope for discovery helpers
         # (is_available, pick_default_model, list_models) used by
         # other code paths; just no longer used to spawn.
-        pass
+        # A user can keep a mixed model library where the GGUF tree only
+        # contains the embedding model while complete chat models live under
+        # MLX/. On Apple Silicon, use that working local runtime instead of
+        # opening the app with chat silently disabled. Persist only after the
+        # MLX server has started successfully, so a bad or unsupported model
+        # never replaces the user's previous launcher choice.
+        gguf_dir = Path(cfg.model_dir) / "GGUF"
+        if sys.platform == "darwin" and _scan_chat_llm_with_timeout(gguf_dir) is None:
+            from desktop.providers.mlx import MlxProvider
+
+            provider = MlxProvider(
+                model_dir=Path(cfg.model_dir),
+                python_executable=ctx.venv_py,
+            )
+            if provider.is_available():
+                model = provider.pick_default_model()
+                if model:
+                    try:
+                        extra_env = provider.start(model)
+                    except Exception as exc:
+                        provider.stop()
+                        log.warning(
+                            "MLX fallback model %s failed to start: %s",
+                            model,
+                            exc,
+                        )
+                        if ctx.progress_bus is not None:
+                            ctx.progress_bus.publish(
+                                "provider.mlx",
+                                "warning",
+                                (
+                                    f"MLX fallback model {model} could not start; "
+                                    "continuing without local chat."
+                                ),
+                            )
+                    else:
+                        extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                        # mlx_lm.server exposes the already-loaded model through
+                        # this stable alias. The memory writer must use it too;
+                        # passing the Hugging Face display ref makes MLX-LM try
+                        # to load a second repository instead of reusing memory.
+                        extra_env["ONP_CHAT_MODEL_NAME"] = "default_model"
+                        ctx.model_provider_runtime = provider
+                        cfg = dataclasses.replace(
+                            cfg,
+                            provider="mlx",
+                            default_model=model,
+                        )
+                        ctx.cfg = cfg
+                        cfg_path = getattr(ctx, "_cfg_path", None)
+                        if cfg_path is not None:
+                            try:
+                                cfg.save(cfg_path)
+                            except OSError as exc:
+                                log.warning(
+                                    "Could not persist MLX fallback to %s: %s",
+                                    cfg_path,
+                                    exc,
+                                )
+                        if ctx.progress_bus is not None:
+                            ctx.progress_bus.publish(
+                                "provider.mlx",
+                                "done",
+                                f"No chat GGUF was available; using {model} through MLX.",
+                            )
 
     elif cfg.provider == "mlx":
         from desktop.providers.mlx import MlxProvider
@@ -367,6 +431,7 @@ def _phase_select_provider(ctx: AppContext) -> None:
             if model:
                 extra_env = provider.start(model)
                 extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                extra_env["ONP_CHAT_MODEL_NAME"] = "default_model"
                 ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
@@ -1083,14 +1148,12 @@ def run() -> int:
     _phase_bootstrap_runtime(ctx)
     _phase_download_models(ctx)
     _phase_select_provider(ctx)
-    _phase_detect_openchronicle(ctx)
-    _phase_register_memory_commands(ctx)
-    _phase_start_supervisor(ctx)
-    # From here on the supervisor owns child processes. Any uncaught
-    # exception in the remaining phases MUST clean them up before
-    # propagating, or the user's machine is left with orphaned binaries
-    # holding ports.
     try:
+        # MLX starts before Supervisor, so cleanup must cover every later
+        # phase, including Supervisor.start_all() itself.
+        _phase_detect_openchronicle(ctx)
+        _phase_register_memory_commands(ctx)
+        _phase_start_supervisor(ctx)
         _phase_auto_register(ctx)
         _phase_start_model_manager(ctx)
         _phase_start_memory_dashboard(ctx)

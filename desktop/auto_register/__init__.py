@@ -158,6 +158,90 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
         log.warning("PUT /api/models/defaults failed (non-fatal): %s", exc)
 
 
+def _migrate_stale_llamacpp_defaults_to_mlx(
+    client: httpx.Client,
+) -> dict[str, str]:
+    """Move language defaults off an unavailable bundled GGUF runtime.
+
+    This only targets defaults whose model is linked to the launcher's legacy
+    llama.cpp credential. Cloud, Ollama, Osaurus, and user-managed compatible
+    providers remain untouched.
+    """
+    language_fields = (
+        "default_chat_model",
+        "default_tools_model",
+        "default_transformation_model",
+        "large_context_model",
+        "default_reasoning_model",
+    )
+    stale_credential_names = {
+        "local gguf (llama.cpp)",
+        "llama.cpp (local)",
+    }
+
+    try:
+        defaults_response = client.get("/api/models/defaults")
+        defaults_response.raise_for_status()
+        models_response = client.get("/api/models")
+        models_response.raise_for_status()
+        credentials_response = client.get("/api/credentials")
+        credentials_response.raise_for_status()
+    except Exception as exc:
+        log.warning("could not inspect defaults for MLX migration: %s", exc)
+        return {}
+
+    defaults = defaults_response.json() or {}
+    models = models_response.json() or []
+    credentials = credentials_response.json() or []
+    credential_names = {
+        item.get("id"): (item.get("name") or "").lower()
+        for item in credentials
+    }
+    models_by_id = {item.get("id"): item for item in models}
+    mlx_model = next(
+        (
+            item
+            for item in models
+            if item.get("name") == "default_model"
+            and credential_names.get(item.get("credential")) == "mlx (local)"
+        ),
+        None,
+    )
+    if not mlx_model or not mlx_model.get("id"):
+        return {}
+
+    body: dict[str, str] = {}
+    for field in language_fields:
+        current_model = models_by_id.get(defaults.get(field))
+        if not current_model:
+            continue
+        current_credential_name = credential_names.get(
+            current_model.get("credential"),
+            "",
+        )
+        if current_credential_name in stale_credential_names:
+            body[field] = mlx_model["id"]
+
+    if not body:
+        return {}
+
+    try:
+        response = client.put("/api/models/defaults", json=body)
+        if response.status_code >= 300:
+            log.warning(
+                "MLX default migration returned %s: %s",
+                response.status_code,
+                response.text[:200],
+            )
+            return {}
+    except Exception as exc:
+        log.warning("MLX default migration failed: %s", exc)
+        return {}
+
+    log.info("Migrated stale llama.cpp defaults to active MLX: %s", sorted(body))
+    return body
+
+
 def _prune_orphan_legacy_credentials(
     client: httpx.Client, existing_creds: list[dict],
 ) -> None:
@@ -394,6 +478,8 @@ def _do_register(
         model_ref=mlx_model_ref,
     ):
         registered_any = True
+    if mlx_base_url and llamacpp_port is None:
+        _migrate_stale_llamacpp_defaults_to_mlx(client)
 
     # --- 4b. v0.8.36 — Osaurus (MLX, Apple Silicon) ------------------------
     # If the user is running Osaurus (https://github.com/osaurus-ai/osaurus)

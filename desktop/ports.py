@@ -42,6 +42,7 @@ def _make_probe_socket() -> socket.socket:
 def find_free_port() -> int:
     with _make_probe_socket() as s:
         s.bind(("127.0.0.1", 0))
+        s.listen(1)
         return s.getsockname()[1]
 
 
@@ -75,6 +76,11 @@ def find_free_ports(n: int) -> list[int]:
             ]
             for s in socks:
                 s.bind(("127.0.0.1", 0))
+                # A bound SO_REUSEADDR socket can coexist with an active
+                # listener on macOS. Entering LISTEN makes the reservation
+                # exclusive and prevents us from handing that occupied port
+                # to a wildcard-bound child such as Next.js.
+                s.listen(1)
             ports = [s.getsockname()[1] for s in socks]
             if len(set(ports)) == n:
                 return ports
@@ -101,4 +107,5 @@ def find_free_ports(n: int) -> list[int]:
         ]
         for s in socks:
             s.bind(("127.0.0.1", 0))
+            s.listen(1)
         return [s.getsockname()[1] for s in socks]

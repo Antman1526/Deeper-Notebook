@@ -186,11 +186,23 @@ def _list_ollama_models(base_url: str = "http://127.0.0.1:11434") -> list[str]:
 
 
 def _list_local_ggufs(model_dir: Path, min_bytes: int = 1 * 1024 * 1024) -> list[str]:
-    """Return relative paths of GGUF files >= min_bytes in model_dir."""
+    """Return GGUF paths without recursively scanning unrelated model caches."""
     if not model_dir.exists():
         return []
-    return sorted(
-        str(p.relative_to(model_dir))
-        for p in model_dir.rglob("*.gguf")
-        if p.is_file() and p.stat().st_size >= min_bytes
-    )
+
+    candidates = set(model_dir.glob("*.gguf"))
+    if model_dir.name.casefold() == "gguf":
+        candidates.update(model_dir.rglob("*.gguf"))
+    else:
+        gguf_dir = model_dir / "GGUF"
+        if gguf_dir.is_dir():
+            candidates.update(gguf_dir.rglob("*.gguf"))
+
+    discovered: list[str] = []
+    for path in candidates:
+        try:
+            if path.is_file() and path.stat().st_size >= min_bytes:
+                discovered.append(str(path.relative_to(model_dir)))
+        except OSError:
+            continue
+    return sorted(discovered)

@@ -15,7 +15,7 @@ from desktop.providers import ProviderEnv
 
 def _http_ready(port: int) -> bool:
     try:
-        return httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code == 200
+        return httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.5).status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
         return False
 
