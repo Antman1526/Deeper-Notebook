@@ -13,15 +13,44 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.graphs.agent_fsm import AgentState  # v0.8.53 — Phase 5.3b
 from open_notebook.domain.notebook import vector_search
 from open_notebook.exceptions import (
     ExternalServiceError,
     OpenNotebookError,
 )
+from open_notebook.graphs.agent_fsm import AgentState  # v0.8.53 — Phase 5.3b
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+
+
+async def _evaluate_ask_response(response_text: str) -> None:
+    """Best-effort Ask evaluation.
+
+    Ask currently synthesizes result snippets rather than a durable notebook
+    selection. It therefore has no safe notebook owner to persist against; the
+    extraction call deliberately remains advisory until the router supplies a
+    selected-source snapshot.
+    """
+    if not response_text.strip():
+        return
+    try:
+        from open_notebook.evaluation.claims import extract_material_claims
+
+        # Run extraction now so malformed generated text is visible in local
+        # diagnostics, but do not invent source ownership for persistence.
+        extract_material_claims(response_text)
+    except Exception as exc:
+        logger.warning("Ask evidence evaluation skipped: {}", exc)
+
+
+def _schedule_ask_evaluation(response_text: str) -> None:
+    if not response_text.strip():
+        return
+    task = asyncio.create_task(_evaluate_ask_response(response_text))
+    task.add_done_callback(
+        lambda completed: completed.exception() if not completed.cancelled() else None
+    )
 
 
 # v0.7.138 — Per-node LLM-call timeout for the ask graph (final-sweep
@@ -47,15 +76,17 @@ def _ask_node_timeout_sec() -> float:
         val = float(raw)
         if val <= 0:
             logger.warning(
-                "ONP_ASK_NODE_TIMEOUT_SEC={} must be positive; using "
-                "default {}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+                "ONP_ASK_NODE_TIMEOUT_SEC={} must be positive; using default {}s",
+                raw,
+                _DEFAULT_ASK_NODE_TIMEOUT_SEC,
             )
             return _DEFAULT_ASK_NODE_TIMEOUT_SEC
         return val
     except ValueError:
         logger.warning(
-            "ONP_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default "
-            "{}s", raw, _DEFAULT_ASK_NODE_TIMEOUT_SEC,
+            "ONP_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default {}s",
+            raw,
+            _DEFAULT_ASK_NODE_TIMEOUT_SEC,
         )
         return _DEFAULT_ASK_NODE_TIMEOUT_SEC
 
@@ -82,6 +113,7 @@ async def _ask_invoke(model, payload, *, node: str):
             f"ONP_ASK_NODE_TIMEOUT_SEC, or check that the provider "
             f"is responsive."
         ) from exc
+
 
 # v0.8.53 — Phase 5.3b: optional agent-FSM completion gate for the ask graph.
 # The graph fans out the strategy's searches and then synthesizes a final
@@ -154,9 +186,7 @@ def _truncate_ask_results(results: list) -> list:
     Non-`matches` fields (id, parent_id, title, similarity) are
     untouched — they're tiny and the prompt needs them for citation.
     """
-    max_results = _env_int(
-        "ONP_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1
-    )
+    max_results = _env_int("ONP_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1)
     char_cap = _env_int(
         "ONP_ASK_PER_RESULT_CHAR_CAP",
         _ASK_PER_RESULT_CHAR_CAP_DEFAULT,
@@ -283,7 +313,9 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         payload["results"] = results
         ids = [r["id"] for r in results]
         payload["ids"] = ids
-        system_prompt = Prompter(prompt_template="ask/query_process").render(data=payload)  # type: ignore[arg-type]
+        system_prompt = Prompter(prompt_template="ask/query_process").render(
+            data=payload
+        )  # type: ignore[arg-type]
         model = await provision_langchain_model(
             system_prompt,
             config.get("configurable", {}).get("answer_model"),
@@ -334,7 +366,9 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
         # ONP_ASK_NODE_TIMEOUT_SEC.
         ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
         final_content = extract_text_content(ai_message.content)
-        result: dict = {"final_answer": clean_thinking_content(final_content)}
+        cleaned_answer = clean_thinking_content(final_content)
+        _schedule_ask_evaluation(cleaned_answer)
+        result: dict = {"final_answer": cleaned_answer}
         if _agent_fsm_enabled():
             result["agent_state"] = AgentState.COMPLETE.value
         return result
