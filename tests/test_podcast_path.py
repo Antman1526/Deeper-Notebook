@@ -7,7 +7,7 @@ spaces and special characters (GitHub issue #663).
 """
 
 import uuid
-from pathlib import PurePosixPath
+from pathlib import Path
 
 from commands.podcast_commands import build_episode_output_dir
 
@@ -20,9 +20,9 @@ class TestBuildEpisodeOutputDir:
         parsed = uuid.UUID(dir_name)
         assert str(parsed) == dir_name
 
-    def test_path_structure(self):
-        dir_name, output_dir = build_episode_output_dir("/data")
-        assert str(output_dir) == f"/data/podcasts/episodes/{dir_name}"
+    def test_path_structure_uses_host_separators(self, tmp_path):
+        dir_name, output_dir = build_episode_output_dir(str(tmp_path))
+        assert output_dir == tmp_path / "podcasts" / "episodes" / dir_name
 
     def test_no_collision_between_calls(self):
         dir1, _ = build_episode_output_dir("/data")
@@ -55,10 +55,9 @@ class TestBuildEpisodeOutputDir:
                 f"Unexpected chars in directory name: {dir_component}"
             )
 
-    def test_path_works_on_posix(self):
-        dir_name, output_dir = build_episode_output_dir("/data")
-        posix = PurePosixPath(str(output_dir))
-        assert posix.parts == ("/", "data", "podcasts", "episodes", dir_name)
+    def test_path_parts_are_portable(self, tmp_path):
+        dir_name, output_dir = build_episode_output_dir(str(tmp_path))
+        assert output_dir.parts[-3:] == ("podcasts", "episodes", dir_name)
 
     def test_directory_can_be_created(self, tmp_path):
         """Create the directory on the real filesystem."""
