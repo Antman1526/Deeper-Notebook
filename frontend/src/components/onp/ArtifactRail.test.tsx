@@ -1214,7 +1214,7 @@ describe('ArtifactRail', () => {
     expect(screen.getByText('/tmp/data-table.csv')).toBeInTheDocument()
   })
 
-  it('opens Mind Maps in a native tree viewer', async () => {
+  it('opens Mind Maps in the interactive canvas viewer', async () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
     useStudioArtifacts.mockReturnValue({
       data: [
@@ -1248,9 +1248,10 @@ describe('ArtifactRail', () => {
 
     expect(screen.getAllByText('Mind map').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('5 nodes arranged from the source-grounded outline.')).toBeInTheDocument()
-    expect(screen.getByText('Open Notebook Plus [S1]')).toBeInTheDocument()
-    expect(screen.getByText('Citation drawer [S1]')).toBeInTheDocument()
-    expect(screen.getByText('Local model control [S1]')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Mind map canvas/i)).toBeInTheDocument()
+    expect(screen.getByText('Selected topic')).toBeInTheDocument()
+    expect(screen.getAllByText('Open Notebook Plus').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('button', { name: 'Collapse branch' })).toBeInTheDocument()
   })
 
   it('opens Course Packs in a module checklist viewer', async () => {

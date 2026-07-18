@@ -27,6 +27,16 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+// React Flow observes its viewport before laying out a mind map. JSDOM does
+// not implement this browser API, so provide the smallest no-op test double.
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+
 // Mock @/lib/hooks/use-translation with standard t() function
 vi.mock('../lib/hooks/use-translation', () => {
   return {
