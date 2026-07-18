@@ -331,7 +331,9 @@ def _launcher_model_ref(model, model_dir: Path | None):
     if model_dir is None:
         return model.path
     try:
-        return str(Path(model.path).resolve().relative_to(model_dir.resolve()))
+        # Launcher model references are persisted in config.toml and sent by
+        # the frontend, so they must not inherit Windows' backslash separator.
+        return Path(model.path).resolve().relative_to(model_dir.resolve()).as_posix()
     except (OSError, ValueError):
         return model.path
 
