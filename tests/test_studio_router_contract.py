@@ -1,4 +1,5 @@
 """Characterize the public route metadata exposed by the Studio router."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,6 @@ from typing import Any, get_args, get_origin
 from fastapi.routing import APIRoute
 
 from api.routers.studio import router
-
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "studio_routes.json"
 
@@ -32,16 +32,39 @@ def _qualified_name(value: Any) -> str | None:
 
 
 def _route_contract() -> list[dict[str, Any]]:
+    def routes_from(
+        entries: list[object], child_prefix: str = ""
+    ) -> list[tuple[APIRoute, str]]:
+        routes: list[tuple[APIRoute, str]] = []
+        for route in entries:
+            if isinstance(route, APIRoute):
+                # Direct Studio routes already carry the parent prefix; lazy
+                # child routes do not, so prefix only the latter branch.
+                path = (
+                    route.path
+                    if route.path.startswith(router.prefix)
+                    else f"{child_prefix}{route.path}"
+                )
+                routes.append((route, path))
+                continue
+            # FastAPI 0.116+ stores included routers lazily. The Studio
+            # contract must still see child endpoints, including their paths.
+            child = getattr(route, "original_router", None)
+            if child is not None:
+                routes.extend(routes_from(list(child.routes), router.prefix))
+        return routes
+
     return [
         {
-            "path": route.path,
+            "path": path,
             "methods": sorted(route.methods or ()),
             "endpoint_name": route.name,
             "response_model": _qualified_name(route.response_model),
-            "status_code": int(route.status_code) if route.status_code is not None else 200,
+            "status_code": int(route.status_code)
+            if route.status_code is not None
+            else 200,
         }
-        for route in router.routes
-        if isinstance(route, APIRoute)
+        for route, path in routes_from(list(router.routes))
     ]
 
 
