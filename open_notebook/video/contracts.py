@@ -27,7 +27,9 @@ class VideoOverviewDocument(BaseModel):
 
     slide_image_paths: list[Path] = Field(min_length=1, max_length=60)
     narration_audio_path: Path
-    narration_segments: list[VideoNarrationSegment] = Field(min_length=1, max_length=500)
+    narration_segments: list[VideoNarrationSegment] = Field(
+        min_length=1, max_length=500
+    )
     caption_language: str = Field(pattern=r"^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$")
     width: int = 1920
     height: int = 1080

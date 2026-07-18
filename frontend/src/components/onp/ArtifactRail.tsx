@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2, Video } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
@@ -52,6 +53,8 @@ import {
   useStudioWorkflowRuns,
   useUpdateStudioArtifact,
 } from '@/lib/hooks/use-studio'
+import { useComposeVideoOverview } from '@/lib/hooks/use-video-overviews'
+import { podcastsApi, resolvePodcastAssetUrl } from '@/lib/api/podcasts'
 import { cn } from '@/lib/utils'
 import type { StudioArtifact, StudioArtifactType, StudioWorkflowRun } from '@/lib/api/studio'
 import type { SourceListResponse } from '@/lib/types/api'
@@ -211,6 +214,15 @@ function workflowRunTimestamp(run: StudioWorkflowRun): string {
   return run.updated || run.created || run.id
 }
 
+function videoOverviewPayload(value: unknown): { media_url: string; captions_url: string } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.media_url !== 'string' || typeof candidate.captions_url !== 'string') {
+    return null
+  }
+  return { media_url: candidate.media_url, captions_url: candidate.captions_url }
+}
+
 export function ArtifactRail({
   notebookId,
   sources = [],
@@ -223,6 +235,9 @@ export function ArtifactRail({
   const [selectedArtifact, setSelectedArtifact] = useState<StudioArtifact | null>(null)
   const [selectedCitation, setSelectedCitation] = useState<CitationEvidence | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false)
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState('')
+  const [videoUrls, setVideoUrls] = useState<{ media: string; captions: string } | null>(null)
   const enabled = isEvidenceStudioEnabled()
   const researchRunsEnabled = isResearchRunsEnabled()
   const { data: artifacts = [], isLoading } = useStudioArtifacts(notebookId, {
@@ -233,6 +248,7 @@ export function ArtifactRail({
   const approveWorkflowRun = useApproveStudioWorkflowRun(notebookId)
   const deleteArtifact = useDeleteStudioArtifact(notebookId)
   const updateArtifact = useUpdateStudioArtifact(notebookId)
+  const composeVideoOverview = useComposeVideoOverview(notebookId)
   const artifactIds = artifacts.map((artifact) => artifact.id)
   const { data: workflowRuns = [], isLoading: workflowRunsLoading } = useStudioWorkflowRuns(
     artifactIds,
@@ -250,6 +266,17 @@ export function ArtifactRail({
   const selectedMarkdown = artifactMarkdown(selectedArtifact?.output_payload)
   const selectedDocument = selectedArtifact?.output_payload.document
   const selectedSlideDeck = isSlideDeckDocument(selectedDocument) ? selectedDocument : null
+  const videoOverview = videoOverviewPayload(selectedArtifact?.output_payload.video_overview)
+  const { data: episodes = [] } = useQuery({
+    queryKey: ['podcasts', 'episodes'],
+    queryFn: podcastsApi.listEpisodes,
+    enabled: enabled && Boolean(selectedSlideDeck),
+  })
+  const videoEligibleEpisodes = episodes.filter((episode) => (
+    episode.job_status === 'completed'
+    && Boolean(episode.audio_url)
+    && (episode.transcript_segments?.length ?? 0) > 0
+  ))
   const selectedInfographic = isInfographicDocument(selectedDocument) ? selectedDocument : null
   const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
   const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
@@ -286,6 +313,31 @@ export function ArtifactRail({
       setSelectedSourceIds(nextSelected)
     }
   }, [sources, selectedSourceIds])
+
+  useEffect(() => {
+    if (!videoOverview) {
+      setVideoUrls(null)
+      return
+    }
+    let active = true
+    void Promise.all([
+      resolvePodcastAssetUrl(videoOverview.media_url),
+      resolvePodcastAssetUrl(videoOverview.captions_url),
+    ]).then(([media, captions]) => {
+      if (active && media && captions) setVideoUrls({ media, captions })
+    })
+    return () => { active = false }
+  }, [videoOverview])
+
+  useEffect(() => {
+    if (!videoEligibleEpisodes.length) {
+      setSelectedEpisodeId('')
+      return
+    }
+    if (!videoEligibleEpisodes.some((episode) => episode.id === selectedEpisodeId)) {
+      setSelectedEpisodeId(videoEligibleEpisodes[0].id)
+    }
+  }, [selectedEpisodeId, videoEligibleEpisodes])
 
   function toggleSource(sourceId: string, checked: boolean) {
     setSelectedSourceIds((current) => {
@@ -370,6 +422,15 @@ export function ArtifactRail({
     } catch (error) {
       console.error('Failed to save study progress:', error)
     }
+  }
+
+  async function createVideoOverview() {
+    if (!selectedArtifact || !selectedEpisodeId) return
+    await composeVideoOverview.mutateAsync({
+      slide_deck_artifact_id: selectedArtifact.id,
+      podcast_episode_id: selectedEpisodeId,
+    })
+    setVideoDialogOpen(false)
   }
 
   if (!enabled) return null
@@ -695,7 +756,27 @@ export function ArtifactRail({
                       </div>
                     )}
                     {selectedSlideDeck ? (
-                      <SlideDeckViewer document={selectedSlideDeck} />
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                          <div className="text-sm text-muted-foreground">Local Video Overview</div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setVideoDialogOpen(true)}
+                          >
+                            <Video className="h-4 w-4" aria-hidden="true" />
+                            {videoOverview ? 'Regenerate video' : 'Create video'}
+                          </Button>
+                        </div>
+                        {videoUrls && (
+                          <video className="aspect-video w-full border bg-black" controls preload="metadata">
+                            <source src={videoUrls.media} type="video/mp4" />
+                            <track kind="captions" src={videoUrls.captions} srcLang="en" label="English" default />
+                          </video>
+                        )}
+                        <SlideDeckViewer document={selectedSlideDeck} />
+                      </div>
                     ) : selectedInfographic ? (
                       <InfographicViewer document={selectedInfographic} />
                     ) : selectedMarkdown && selectedArtifact.artifact_type === 'flashcards' && flashcardCount > 0 ? (
@@ -909,6 +990,46 @@ export function ArtifactRail({
                   {regenerateArtifactLabel(selectedArtifact.status)}
                 </Button>
               </DialogFooter>
+
+              <Dialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen}>
+                <DialogContent className="max-w-md bg-card text-card-foreground">
+                  <DialogHeader>
+                    <DialogTitle>Create local Video Overview</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Choose a completed Audio Overview with timestamps. The video stays on this device and uses this slide deck as its visual source.
+                    </p>
+                    {videoEligibleEpisodes.length > 0 ? (
+                      <select
+                        aria-label="Audio Overview for Video Overview"
+                        value={selectedEpisodeId}
+                        onChange={(event) => setSelectedEpisodeId(event.target.value)}
+                        className="h-10 w-full border bg-background px-3 text-sm"
+                      >
+                        {videoEligibleEpisodes.map((episode) => (
+                          <option key={episode.id} value={episode.id}>{episode.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                        Create and finish an Audio Overview with timestamped captions before making a Video Overview.
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setVideoDialogOpen(false)}>Cancel</Button>
+                    <Button
+                      type="button"
+                      disabled={!selectedEpisodeId || composeVideoOverview.isPending}
+                      onClick={() => void createVideoOverview()}
+                    >
+                      {composeVideoOverview.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                      Create video
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </DialogContent>

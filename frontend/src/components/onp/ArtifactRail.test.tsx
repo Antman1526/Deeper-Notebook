@@ -12,6 +12,7 @@ const useStudioWorkflowRuns = vi.fn()
 const useCreateStudioWorkflowRun = vi.fn()
 const useApproveStudioWorkflowRun = vi.fn()
 const useUpdateStudioArtifact = vi.fn()
+const useComposeVideoOverview = vi.fn()
 const isEvidenceStudioEnabled = vi.fn()
 const isResearchRunsEnabled = vi.fn()
 
@@ -30,6 +31,14 @@ vi.mock('@/lib/hooks/use-studio', () => ({
 vi.mock('@/lib/features', () => ({
   isEvidenceStudioEnabled: () => isEvidenceStudioEnabled(),
   isResearchRunsEnabled: () => isResearchRunsEnabled(),
+}))
+
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: [], isLoading: false }),
+}))
+
+vi.mock('@/lib/hooks/use-video-overviews', () => ({
+  useComposeVideoOverview: (...args: unknown[]) => useComposeVideoOverview(...args),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -105,6 +114,10 @@ describe('ArtifactRail', () => {
     })
     useUpdateStudioArtifact.mockReturnValue({
       mutateAsync: updateArtifact,
+      isPending: false,
+    })
+    useComposeVideoOverview.mockReturnValue({
+      mutateAsync: vi.fn(),
       isPending: false,
     })
   })

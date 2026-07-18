@@ -18,5 +18,12 @@ def render_webvtt(segments: list[VideoNarrationSegment]) -> str:
     for index, segment in enumerate(segments, start=1):
         # Plain text VTT: never pass model-controlled markup to a renderer.
         text = segment.text.replace("-->", "→").replace("\x00", "").strip()
-        lines.extend([str(index), f"{_timestamp(segment.start_seconds)} --> {_timestamp(segment.end_seconds)}", text, ""])
+        lines.extend(
+            [
+                str(index),
+                f"{_timestamp(segment.start_seconds)} --> {_timestamp(segment.end_seconds)}",
+                text,
+                "",
+            ]
+        )
     return "\n".join(lines)
