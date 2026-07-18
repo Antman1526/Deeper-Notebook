@@ -171,9 +171,13 @@ async def content_process(state: SourceState) -> dict:
         # v0.8.67u — Integrated crawl4ai scraping with standard content_core fallback.
         from content_core.common.state import ProcessSourceOutput
 
+        from open_notebook.research.safe_fetch import fetch_public_url
         from open_notebook.utils.crawler import extract_url_with_crawl4ai
 
-        content = await extract_url_with_crawl4ai(url)
+        # Do not allow the optional renderer to own network access. It receives
+        # a response already checked at connection time by the URL policy.
+        checked_response = await fetch_public_url(url)
+        content = await extract_url_with_crawl4ai(url, prefetched=checked_response)
         if content:
             processed_state = ProcessSourceOutput(
                 title=content_state.get("title") or "Imported Web Source (crawl4ai)",
