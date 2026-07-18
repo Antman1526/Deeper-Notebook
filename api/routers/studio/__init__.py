@@ -76,6 +76,24 @@ _ROUTE_ORDER = (
     "delete_studio_artifact",
     "studio_generate",
 )
+
+
+def _is_mind_map_child_route(route: object) -> bool:
+    """Identify routes added by the child router across FastAPI versions."""
+    if getattr(route, "original_router", None) is mind_maps.router:
+        return True
+    return (
+        isinstance(route, APIRoute)
+        and getattr(route.endpoint, "__module__", None) == mind_maps.__name__
+    )
+
+
+# This module is intentionally reloadable: compatibility tests and local
+# development use package-level patches. FastAPI appends included child routes
+# on every reload, so remove the prior mind-map group before adding it back.
+router.routes[:] = [
+    route for route in router.routes if not _is_mind_map_child_route(route)
+]
 router.include_router(mind_maps.router)
 # FastAPI 0.116 keeps child routers lazy as an internal route group. Preserve
 # that group after the legacy direct-route order instead of assuming every

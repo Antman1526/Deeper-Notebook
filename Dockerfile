@@ -105,7 +105,7 @@ ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 
 # v0.8.67u — Set Playwright browsers path and pre-install Chromium + OS dependencies for crawl4ai.
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/playwright-browsers
-RUN .venv/bin/playwright install chromium --with-deps
+RUN uv run --with playwright playwright install chromium --with-deps
 
 # Bind Next.js to all interfaces (required for Docker networking and reverse proxies)
 ENV HOSTNAME=0.0.0.0
