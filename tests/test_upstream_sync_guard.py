@@ -4,7 +4,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="upstream sync guard is a POSIX Bash workflow",
+)
 
 
 _REPO = Path(__file__).resolve().parents[1]
