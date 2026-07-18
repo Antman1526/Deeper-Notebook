@@ -41,6 +41,7 @@ from api.routers import (
     notes,
     onp,
     podcasts,
+    research,
     search,
     settings,
     source_chat,
@@ -958,6 +959,7 @@ app.include_router(languages.router, prefix="/api", tags=["languages"])
 app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
 app.include_router(exports.router, prefix="/api", tags=["exports"])
 app.include_router(evaluations.router, prefix="/api", tags=["evaluations"])
+app.include_router(research.router, prefix="/api", tags=["research"])
 app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
 app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
 app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
