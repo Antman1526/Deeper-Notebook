@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -117,8 +118,16 @@ def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
     async def imported(run: ResearchRun):
         return research_router.ResearchStageResult(source_ids=["source:one"])
 
+    async def source_get(source_id: str):
+        assert source_id == "source:one"
+        return SimpleNamespace(
+            id=source_id,
+            full_text="The archive retains audit receipts.",
+        )
+
     monkeypatch.setattr(research_router, "validate_outbound_url", validated)
     monkeypatch.setattr(research_router, "ingest_approved_sources", imported)
+    monkeypatch.setattr("open_notebook.research.analysis.Source.get", source_get)
     with _client(monkeypatch, store) as client:
         response = client.post(
             "/api/notebooks/notebook:one/research-runs/research_run:one/approve",
@@ -126,10 +135,11 @@ def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["stage"] == "extract"
+    assert response.json()["stage"] == "complete"
     assert store.run is not None
     assert store.run.approval_decisions == {"candidate:ok": True}
     assert store.run.source_ids == ["source:one"]
+    assert store.run.checkpoints["validate"]["comparison"]["verdicts"]
 
 
 def test_rejects_cross_notebook_access_and_streams_current_status(monkeypatch) -> None:

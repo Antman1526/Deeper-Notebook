@@ -25,10 +25,21 @@ export interface ResearchRun {
   errors: string[]
   cancelled: boolean
   comparison: {
+    schema_version?: number
     agreements: Array<Record<string, unknown>>
     contradictions: Array<Record<string, unknown>>
     gaps: string[]
+    verdicts?: ResearchClaimVerdict[]
   }
+}
+
+export interface ResearchClaimVerdict {
+  claim: string
+  status: 'supported' | 'partial' | 'contradicted' | 'unsupported' | 'uncited'
+  confidence: number
+  citation_markers: string[]
+  evidence: Array<{ source_id: string; quote: string; source_state: 'current' | 'source_changed' }>
+  explanation: string
 }
 
 export const researchApi = {
