@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import video_overviews as video_mod
@@ -144,3 +144,29 @@ def test_rejects_audio_overview_without_timestamped_transcript(monkeypatch, tmp_
 
     assert response.status_code == 422
     assert "timestamped transcript" in response.json()["detail"]
+
+
+def test_preserves_typed_podcast_errors(monkeypatch, tmp_path):
+    artifact = _Artifact(tmp_path)
+
+    class FakeArtifactModel:
+        @classmethod
+        async def get(cls, _artifact_id):
+            return artifact
+
+    async def unavailable_episode(_episode_id):
+        raise HTTPException(status_code=409, detail="Audio Overview is still running")
+
+    monkeypatch.setattr(video_mod, "StudioArtifact", FakeArtifactModel)
+    monkeypatch.setattr(video_mod.PodcastService, "get_episode", unavailable_episode)
+
+    response = _client().post(
+        "/api/video-overviews",
+        json={
+            "slide_deck_artifact_id": artifact.id,
+            "podcast_episode_id": "episode:running",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Audio Overview is still running"
