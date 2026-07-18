@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDialog } from './SourceDialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -39,6 +39,7 @@ import { RunTimeline } from '@/components/onp'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import type { MindMapChatContext } from '@/components/onp/MindMapArtifactViewer'
 
 interface NotebookContextStats {
   sourcesInsights: number
@@ -145,6 +146,10 @@ export function ChatPanel({
   // Batch 2). Kept separate from the global modal so it can carry the citing
   // sentence as the highlight query.
   const [citationSource, setCitationSource] = useState<{ id: string; query: string } | null>(null)
+  // Mind-map viewers publish this browser-local event only after the server has
+  // re-resolved the stable path and citation source subset. The chip remains
+  // visible until removed, rather than hiding important scope in prompt text.
+  const [mindMapContext, setMindMapContext] = useState<MindMapChatContext | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   // v0.8.67 (F5) — true while the user is at/near the bottom; gates auto-scroll
@@ -154,6 +159,17 @@ export function ChatPanel({
   // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
+
+  useEffect(() => {
+    const receiveContext = (event: Event) => {
+      const context = (event as CustomEvent<MindMapChatContext>).detail
+      if (!context?.artifact_id || !context.label || !Array.isArray(context.source_ids)) return
+      setMindMapContext(context)
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+    window.addEventListener('onp:mind-map-context', receiveContext)
+    return () => window.removeEventListener('onp:mind-map-context', receiveContext)
+  }, [])
 
   // v0.8.65g — "Edit" a message: load its text into the chat input + focus so
   // the user can tweak and resend it (reuse a prompt / refine an answer).
@@ -210,7 +226,10 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
-      onSendMessage(input.trim(), modelOverride)
+      const scopedMessage = mindMapContext
+        ? `${mindMapContext.prompt_context}\n\nQuestion: ${input.trim()}`
+        : input.trim()
+      onSendMessage(scopedMessage, modelOverride)
       setInput('')
     }
   }
@@ -487,6 +506,19 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
+          {mindMapContext && (
+            <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+              <div className="min-w-0">
+                <div className="font-medium">Mind-map context: {mindMapContext.label}</div>
+                <div className="mt-0.5 break-words text-muted-foreground">
+                  {mindMapContext.relationship || 'No relationship specified'} · {mindMapContext.citations.join(' ') || 'No citations'} · artifact {mindMapContext.artifact_id}
+                </div>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label="Remove mind-map context" onClick={() => setMindMapContext(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
           {/* Model selector + v0.8.46 MCP tool picker on one row.
               The picker self-hides when there are no enabled MCP
               servers, so the row collapses to just the model selector
