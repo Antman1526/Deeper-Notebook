@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
-import { InfoIcon, ListChecks, RefreshCcw, Square, Trash2 } from 'lucide-react'
+import { Headphones, InfoIcon, ListChecks, RefreshCcw, Square, Trash2 } from 'lucide-react'
 
 import { resolvePodcastAssetUrl } from '@/lib/api/podcasts'
 import {
@@ -45,6 +45,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useAudioPlayerStore } from '@/lib/stores/audio-player-store'
 import type { TFunction } from 'i18next'
 
 interface EpisodeCardProps {
@@ -356,6 +357,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   const { t, language } = useTranslation()
   // v0.8.68 — cancel an in-flight generation.
   const cancelEpisode = useCancelPodcastEpisode()
+  const setPlayingEpisode = useAudioPlayerStore((state) => state.setEpisode)
   const [audioSrc, setAudioSrc] = useState<string | undefined>()
   const [audioError, setAudioError] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -547,6 +549,23 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
             )}
           </div>
           <div className="flex items-center gap-2">
+            {episode.audio_url || episode.audio_file ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPlayingEpisode({
+                    id: episode.id,
+                    title: episode.name,
+                    sourcePath: episode.audio_url ?? episode.audio_file ?? '',
+                    transcriptSegments: episode.transcript_segments ?? [],
+                  })
+                }
+              >
+                <Headphones className="mr-2 h-4 w-4" />
+                Listen
+              </Button>
+            ) : null}
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm">
