@@ -71,6 +71,30 @@ export type StudioArtifactOutputPayload = Record<string, unknown> & {
   study_progress?: unknown
 }
 
+/**
+ * Studio keeps exports extensible because artifact generators can add a
+ * validated format without requiring a frontend API migration.
+ */
+export type StudioArtifactExportFormat =
+  | 'markdown'
+  | 'md'
+  | 'json'
+  | 'docx'
+  | 'xlsx'
+  | 'pptx'
+  | 'pdf'
+  | 'png'
+  | 'svg'
+  | 'csv'
+  | 'research_bundle'
+  | 'scorm_package'
+  | 'xapi_package'
+  | (string & {})
+
+export type StudioArtifactExportPaths = Partial<
+  Record<StudioArtifactExportFormat, string>
+>
+
 export interface StudioArtifact {
   id: string
   notebook_id: string
@@ -84,7 +108,7 @@ export interface StudioArtifact {
   output_format?: string | null
   output_payload: StudioArtifactOutputPayload
   citations: Array<Record<string, unknown>>
-  export_paths: Record<string, string>
+  export_paths: StudioArtifactExportPaths
   revision_of_id?: string | null
   created?: string | null
   updated?: string | null
@@ -112,7 +136,7 @@ export interface StudioArtifactUpdate {
   output_format?: string | null
   output_payload?: StudioArtifactOutputPayload
   citations?: Array<Record<string, unknown>>
-  export_paths?: Record<string, string>
+  export_paths?: StudioArtifactExportPaths
   revision_of_id?: string | null
 }
 

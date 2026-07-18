@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Copy, Cpu, Download, ExternalLink, FileJson, FileQuestion, FolderOpen, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { CitationDrawer, citationEvidenceFromRecord, type CitationEvidence } from '@/components/onp/CitationDrawer'
 import { CitationCoverageBadge } from '@/components/onp/CitationCoverageBadge'
+import { ArtifactExportMenu } from '@/components/onp/ArtifactExportMenu'
 import {
   Dialog,
   DialogContent,
@@ -162,72 +163,6 @@ function readStudyProgress(
   return candidate as StudyProgress
 }
 
-function artifactFileName(artifact: StudioArtifact): string {
-  const slug = artifact.title
-    .trim()
-    .replace(/[^A-Za-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return `${slug || 'artifact'}.md`
-}
-
-function artifactJsonFileName(artifact: StudioArtifact): string {
-  return artifactFileName(artifact).replace(/\.md$/, '.json')
-}
-
-function markdownHref(markdown: string): string {
-  return `data:text/markdown;charset=utf-8,${encodeURIComponent(markdown)}`
-}
-
-function jsonHref(artifact: StudioArtifact): string {
-  return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(artifact, null, 2))}`
-}
-
-function filePathHref(path: string): string {
-  const normalized = path.replace(/\\/g, '/')
-  const withPrefix = normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`
-  return encodeURI(withPrefix)
-}
-
-function parentFilePath(path: string): string | null {
-  const normalized = path.replace(/\\/g, '/')
-  const lastSlash = normalized.lastIndexOf('/')
-  if (lastSlash <= 0) return null
-  return normalized.slice(0, lastSlash)
-}
-
-function artifactExportEntries(artifact: StudioArtifact | null): Array<[string, string]> {
-  if (!artifact) return []
-  const exportPaths = artifact.export_paths ?? {}
-  const entries = Object.entries(exportPaths).filter((entry): entry is [string, string] => {
-    return typeof entry[1] === 'string' && entry[1].trim().length > 0
-  })
-  const priority: Record<string, number> = {
-    pptx: 0,
-    pdf: 1,
-    png: 2,
-    markdown: 3,
-    md: 3,
-    json: 4,
-  }
-  return entries.sort(([left], [right]) => {
-    const leftPriority = priority[left.toLowerCase()] ?? 10
-    const rightPriority = priority[right.toLowerCase()] ?? 10
-    if (leftPriority !== rightPriority) return leftPriority - rightPriority
-    return left.localeCompare(right)
-  })
-}
-
-function exportLabel(format: string): string {
-  const normalized = format.toLowerCase()
-  if (['json', 'csv', 'pptx', 'pdf', 'png'].includes(normalized)) {
-    return normalized.toUpperCase()
-  }
-  if (normalized === 'md') return 'Markdown'
-  return format
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
-
 function sourceTitle(source: SourceListResponse): string {
   return source.title || source.asset?.file_path || source.asset?.url || source.id
 }
@@ -288,7 +223,6 @@ export function ArtifactRail({
   const [selectedArtifact, setSelectedArtifact] = useState<StudioArtifact | null>(null)
   const [selectedCitation, setSelectedCitation] = useState<CitationEvidence | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [copiedExportKey, setCopiedExportKey] = useState<string | null>(null)
   const enabled = isEvidenceStudioEnabled()
   const researchRunsEnabled = isResearchRunsEnabled()
   const { data: artifacts = [], isLoading } = useStudioArtifacts(notebookId, {
@@ -319,7 +253,6 @@ export function ArtifactRail({
   const selectedInfographic = isInfographicDocument(selectedDocument) ? selectedDocument : null
   const selectedUnsupportedCitationMarkers = unsupportedCitationMarkers(selectedArtifact)
   const selectedStudyProgress = readStudyProgress(selectedArtifact, selectedMarkdown)
-  const selectedExportEntries = artifactExportEntries(selectedArtifact)
   const flashcardCount = selectedArtifact?.artifact_type === 'flashcards'
     ? parseFlashcards(selectedMarkdown).length
     : 0
@@ -344,16 +277,6 @@ export function ArtifactRail({
   const quickArtifacts = researchRunsEnabled
     ? [...QUICK_ARTIFACTS, RESEARCH_RUN_ARTIFACT]
     : QUICK_ARTIFACTS
-
-  async function copyExportPath(key: string, path: string) {
-    try {
-      await navigator.clipboard?.writeText(path)
-      setCopiedExportKey(key)
-      window.setTimeout(() => setCopiedExportKey(null), 1600)
-    } catch {
-      setCopiedExportKey(null)
-    }
-  }
 
   useEffect(() => {
     if (sources.length === 0 || selectedSourceIds.length === 0) return
@@ -849,61 +772,7 @@ export function ArtifactRail({
                       )}
                     </div>
                   )}
-                  {selectedExportEntries.length > 0 && (
-                    <div className="mb-4 rounded-md border bg-background px-2 py-2">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <Download className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                        Saved exports
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {selectedExportEntries.map(([format, path]) => {
-                          const exportKey = `${format}-${path}`
-                          const folderPath = parentFilePath(path)
-                          return (
-                            <div key={exportKey} className="rounded-md border bg-muted/30 px-2 py-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-[0.68rem] font-medium uppercase tracking-normal text-muted-foreground">
-                                  {exportLabel(format)}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                                    <a href={filePathHref(path)} target="_blank" rel="noreferrer">
-                                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                                      Open
-                                    </a>
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 px-2 text-xs"
-                                    onClick={() => void copyExportPath(exportKey, path)}
-                                  >
-                                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                                    {copiedExportKey === exportKey ? 'Copied' : 'Copy'}
-                                  </Button>
-                                  {folderPath && (
-                                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                                      <a href={filePathHref(folderPath)} target="_blank" rel="noreferrer">
-                                        <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Folder
-                                      </a>
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                              <div
-                                title={path}
-                                className="mt-1 break-all font-mono text-[0.68rem] leading-4 text-muted-foreground"
-                              >
-                                {path}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  <ArtifactExportMenu artifact={selectedArtifact} markdown={selectedMarkdown} />
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium">Citations</div>
                     <CitationCoverageBadge citationCount={selectedArtifact.citations.length} />
@@ -1038,27 +907,6 @@ export function ArtifactRail({
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                   )}
                   {regenerateArtifactLabel(selectedArtifact.status)}
-                </Button>
-                <Button asChild variant="outline">
-                  <a
-                    href={markdownHref(selectedMarkdown)}
-                    download={artifactFileName(selectedArtifact)}
-                    aria-disabled={!selectedMarkdown}
-                    tabIndex={selectedMarkdown ? undefined : -1}
-                    className={cn(!selectedMarkdown && 'pointer-events-none opacity-50')}
-                  >
-                    <Download className="h-4 w-4" aria-hidden="true" />
-                    Download Markdown
-                  </a>
-                </Button>
-                <Button asChild variant="outline">
-                  <a
-                    href={jsonHref(selectedArtifact)}
-                    download={artifactJsonFileName(selectedArtifact)}
-                  >
-                    <FileJson className="h-4 w-4" aria-hidden="true" />
-                    Download JSON
-                  </a>
                 </Button>
               </DialogFooter>
             </>
