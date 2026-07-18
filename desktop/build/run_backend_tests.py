@@ -22,9 +22,11 @@ def run_batches(
     project_root: Path,
     batch_size: int,
     timeout_seconds: int,
+    junit_output_dir: Path,
 ) -> None:
     if not test_files:
         raise RuntimeError("No non-integration backend test files were found")
+    junit_output_dir.mkdir(parents=True, exist_ok=True)
     for start in range(0, len(test_files), batch_size):
         batch = test_files[start : start + batch_size]
         end = start + len(batch)
@@ -33,8 +35,16 @@ def run_batches(
             flush=True,
         )
         try:
+            junit_report = junit_output_dir / f"backend-{start + 1:03d}-{end:03d}.xml"
             subprocess.run(
-                [sys.executable, "-m", "pytest", *map(str, batch), "-q"],
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    *map(str, batch),
+                    "-q",
+                    f"--junitxml={junit_report}",
+                ],
                 cwd=project_root,
                 check=True,
                 timeout=timeout_seconds,
@@ -49,6 +59,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=30)
     parser.add_argument("--timeout-seconds", type=int, default=900)
+    parser.add_argument(
+        "--junit-output-dir",
+        type=Path,
+        default=Path("test-results/backend"),
+        help="Directory for per-batch JUnit reports retained by release CI.",
+    )
     return parser.parse_args()
 
 
@@ -62,6 +78,7 @@ def main() -> int:
         project_root=project_root,
         batch_size=args.batch_size,
         timeout_seconds=args.timeout_seconds,
+        junit_output_dir=(project_root / args.junit_output_dir).resolve(),
     )
     return 0
 
