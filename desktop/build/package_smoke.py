@@ -14,9 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, build_opener
 
 RECEIPT_SCHEMA_VERSION = 1
+_LOCAL_OPENER = build_opener(ProxyHandler({}))
 
 
 class SmokeFailure(RuntimeError):
@@ -79,7 +80,10 @@ def wait_for_url(url: str, timeout_seconds: float, marker: str | None = None) ->
     last_error = "not attempted"
     while time.monotonic() < deadline:
         try:
-            with urlopen(url, timeout=min(2.0, timeout_seconds)) as response:
+            # Package probes target a loopback service launched by this
+            # process. Bypass CI/user proxy settings so localhost can never
+            # be routed through an unavailable external proxy.
+            with _LOCAL_OPENER.open(url, timeout=min(2.0, timeout_seconds)) as response:
                 body = response.read().decode("utf-8", errors="replace")
                 if not 200 <= response.status < 300:
                     last_error = f"received HTTP {response.status}"
