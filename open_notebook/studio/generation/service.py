@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
@@ -21,6 +22,133 @@ from open_notebook.studio.structured_generation import (
 
 from . import context, persistence
 from .prompts import artifact_instruction
+
+_PUBLISHABLE_ARTIFACT_TYPES = {
+    "report",
+    "study_guide",
+    "course_pack",
+    "training_guide",
+    "briefing",
+    "faq",
+    "timeline",
+    "infographic",
+    "slide_deck",
+    "podcast_outline",
+    "research_run",
+}
+
+
+def _strict_evidence_required(artifact: StudioArtifact) -> bool:
+    """Default strict verification on only for publishable Studio exports."""
+    if artifact.artifact_type not in _PUBLISHABLE_ARTIFACT_TYPES:
+        return False
+    raw = os.environ.get("ONP_STUDIO_STRICT_EVIDENCE", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _citation_source_map(
+    sources: list[object],
+) -> tuple[dict[str, object], dict[str, str]]:
+    """Bind verifier input to the exact source text supplied to Studio."""
+    from open_notebook.evaluation.verifier import CitationSource
+
+    markers: dict[str, object] = {}
+    snapshots: dict[str, str] = {}
+    for index, source in enumerate(sources, start=1):
+        source_id = str(getattr(source, "id", ""))
+        text = (getattr(source, "full_text", None) or "").strip()
+        if not source_id or not text:
+            continue
+        # The verifier must assess the same bounded context that the model saw.
+        snapshot = text[: context.MAX_EXTRACT_CHARS_PER_FILE]
+        citation_source = CitationSource(source_id=source_id, text=snapshot)
+        markers[f"[S{index}]"] = citation_source
+        snapshots[source_id] = snapshot
+    return markers, snapshots
+
+
+def _critical_verdicts(content: str, sources: list[object]) -> list[object]:
+    from open_notebook.evaluation.verifier import verify_response_claims
+
+    markers, _ = _citation_source_map(sources)
+    return [
+        verdict
+        for verdict in verify_response_claims(content, markers)
+        if verdict.status in {"contradicted", "unsupported"}
+    ]
+
+
+def _store_generated_output(
+    artifact: StudioArtifact, result: object, content: str, citations: list[dict[str, str]]
+) -> None:
+    """Update only existing artifact fields so evaluation stays out of payloads."""
+    artifact.output_format = "markdown"
+    artifact.citations = citations
+    legacy_extras = persistence._artifact_output_payload(artifact, content, citations)
+    legacy_extras.pop("content", None)
+    artifact.output_payload = build_structured_payload(
+        result.document,
+        content,
+        validation={
+            "status": "valid",
+            "errors": [],
+            "strategy": result.strategy,
+            "attempts": result.attempts,
+        },
+        extras=legacy_extras,
+    )
+    artifact.source_ids = [citation["source_id"] for citation in citations]
+
+
+async def _persist_artifact_evaluation(
+    *, artifact: StudioArtifact, content: str, sources: list[object]
+) -> None:
+    """Persist evaluation after completion without touching artifact payloads."""
+    from open_notebook.evaluation.repository import EvaluationRepository
+    from open_notebook.evaluation.verifier import verify_response_claims
+
+    try:
+        markers, snapshots = _citation_source_map(sources)
+        verdicts = verify_response_claims(content, markers)
+        counts = {
+            status: 0
+            for status in (
+                "supported",
+                "partial",
+                "contradicted",
+                "unsupported",
+                "uncited",
+            )
+        }
+        for verdict in verdicts:
+            counts[verdict.status] += 1
+        await EvaluationRepository().create_run(
+            notebook_id=str(artifact.notebook_id),
+            artifact_id=str(artifact.id),
+            evaluator_version="deterministic-v1",
+            model_id=artifact.model_id,
+            source_snapshots=snapshots,
+            verdicts=verdicts,
+            metrics={"status": "completed", "surface": "studio", "counts": counts},
+        )
+    except Exception as exc:
+        # Artifact output is already durable. Evaluation must remain a sidecar.
+        logger.warning(
+            "Studio evidence evaluation skipped for {}: {}", artifact.id, exc
+        )
+
+
+def _schedule_artifact_evaluation(
+    *, artifact: StudioArtifact, content: str, sources: list[object]
+) -> None:
+    task = asyncio.create_task(
+        _persist_artifact_evaluation(
+            artifact=artifact, content=content, sources=sources
+        )
+    )
+    task.add_done_callback(
+        lambda completed: completed.exception() if not completed.cancelled() else None
+    )
 
 
 @dataclass(frozen=True)
@@ -167,25 +295,55 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
             timeout_seconds=context.env_int("ONP_STUDIO_PAGE_TIMEOUT_SEC", 180),
         )
         content = render_artifact_markdown(result.document)
+        _store_generated_output(artifact, result, content, citations)
+        if _strict_evidence_required(artifact):
+            critical = _critical_verdicts(content, sources)
+            if critical:
+                try:
+                    repaired = await generate_structured_document(
+                        model=chain,
+                        schema=schema,
+                        messages=[
+                            SystemMessage(
+                                content=(
+                                    _system_prompt(artifact)
+                                    + "\n\nThis is the one permitted evidence repair. "
+                                    "Rewrite every contradicted or unsupported material "
+                                    "claim so it is exactly supported by the selected [S#] "
+                                    "source markers, or remove the claim."
+                                )
+                            ),
+                            HumanMessage(content=combined_context),
+                        ],
+                        timeout_seconds=context.env_int(
+                            "ONP_STUDIO_PAGE_TIMEOUT_SEC", 180
+                        ),
+                    )
+                    result = repaired
+                    content = render_artifact_markdown(repaired.document)
+                    _store_generated_output(artifact, repaired, content, citations)
+                    critical = _critical_verdicts(content, sources)
+                except Exception as repair_exc:
+                    # Retain the original structured output for review. A repair
+                    # failure must not turn a generated artifact into an error blob.
+                    logger.warning("Studio strict evidence repair failed: {}", repair_exc)
+                # Keep the generated document reviewable, but do not publish it
+                # while a material claim remains contradicted or unsupported.
+                if critical:
+                    artifact.status = "failed"
+                    await artifact.save()
+                    _schedule_artifact_evaluation(
+                        artifact=artifact, content=content, sources=sources
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail={
+                            "code": "strict_evidence_failed",
+                            "message": "Publishable output contains contradicted or unsupported claims.",
+                            "critical_claim_count": len(critical),
+                        },
+                    )
         artifact.status = "completed"
-        artifact.output_format = "markdown"
-        artifact.citations = citations
-        legacy_extras = persistence._artifact_output_payload(
-            artifact, content, citations
-        )
-        legacy_extras.pop("content", None)
-        artifact.output_payload = build_structured_payload(
-            result.document,
-            content,
-            validation={
-                "status": "valid",
-                "errors": [],
-                "strategy": result.strategy,
-                "attempts": result.attempts,
-            },
-            extras=legacy_extras,
-        )
-        artifact.source_ids = [citation["source_id"] for citation in citations]
         try:
             artifact.export_paths = await asyncio.to_thread(
                 persistence.persist_artifact_exports, artifact, content
@@ -200,6 +358,9 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 workflow_run, {"model_route", "artifact_generation"}, "completed"
             )
             await workflow_run.save()
+        _schedule_artifact_evaluation(
+            artifact=artifact, content=content, sources=sources
+        )
         return artifact
     except HTTPException as exc:
         if (

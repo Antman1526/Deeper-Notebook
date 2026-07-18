@@ -16,12 +16,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from api.auth import PasswordAuthMiddleware
-from api.rate_limit import RateLimitMiddleware
 
 # v0.7.120 — cross-cutting middlewares split into api/middleware/.
 from api.middleware.metrics import PrometheusMetricsMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 from api.middleware.security_headers import SecurityHeadersMiddleware
+from api.rate_limit import RateLimitMiddleware
 from api.routers import (
     auth,
     chat,
@@ -31,6 +31,7 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
+    evaluations,
     exports,  # v0.7.90 — notebook/note export to host filesystem
     filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
@@ -52,9 +53,9 @@ from api.routers import commands as commands_router
 from api.routers import (
     gmail as gmail_router,
 )
+from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
 from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
-from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
 from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
 from api.routers import updates as _updates_router  # v0.8.70 — in-app update notifier
 from open_notebook.database.async_migrate import AsyncMigrationManager
@@ -956,6 +957,7 @@ app.include_router(languages.router, prefix="/api", tags=["languages"])
 # contents out to disk as markdown (folder or .zip).
 app.include_router(filesystem.router, prefix="/api", tags=["filesystem"])
 app.include_router(exports.router, prefix="/api", tags=["exports"])
+app.include_router(evaluations.router, prefix="/api", tags=["evaluations"])
 app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
 app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
 app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
