@@ -111,9 +111,7 @@ def _add_title_slide(presentation: Presentation, document: SlideDeckDocument) ->
         color="#B7C8D8",
         bold=True,
     )
-    slide.notes_slide.notes_text_frame.text = (
-        f"Deck title: {document.title}\nAudience: {document.audience or 'Not specified'}"
-    )
+    slide.notes_slide.notes_text_frame.text = f"Deck title: {document.title}\nAudience: {document.audience or 'Not specified'}"
 
 
 def _add_content_slide(
@@ -315,6 +313,34 @@ def _render_content_page(item: Slide, index: int, total: int) -> Image.Image:
     return image
 
 
+def render_slide_deck_images(
+    document: SlideDeckDocument, output_dir: Path
+) -> list[Path]:
+    """Render deterministic 16:9 PNGs for private local media composition.
+
+    The same renderer drives PDF export, so a Video Overview represents the
+    reviewed slide artifact rather than a second, model-generated rendition.
+    """
+    if not isinstance(document, SlideDeckDocument):
+        raise TypeError("render_slide_deck_images requires SlideDeckDocument")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pages = [_render_title_page(document)]
+    pages.extend(
+        _render_content_page(item, index, len(document.slides))
+        for index, item in enumerate(document.slides, start=1)
+    )
+    paths: list[Path] = []
+    try:
+        for index, page in enumerate(pages, start=1):
+            path = output_dir / f"slide-{index:03d}.png"
+            page.save(path, "PNG", optimize=True)
+            paths.append(path)
+    finally:
+        for page in pages:
+            page.close()
+    return paths
+
+
 def export_slide_deck(
     document: SlideDeckDocument,
     pptx_path: Path,
@@ -352,4 +378,4 @@ def export_slide_deck(
         page.close()
 
 
-__all__ = ["export_slide_deck"]
+__all__ = ["export_slide_deck", "render_slide_deck_images"]
