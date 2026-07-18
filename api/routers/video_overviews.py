@@ -109,6 +109,8 @@ async def compose_video_overview(
     artifact = await _slide_deck(payload.slide_deck_artifact_id)
     try:
         episode = await PodcastService.get_episode(payload.podcast_episode_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning(
             "Video Overview requested unknown episode {}", payload.podcast_episode_id
