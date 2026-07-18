@@ -98,6 +98,14 @@ class CommandService:
         """
         try:
             status = await get_command_status(job_id)
+            # v0.8.70 — BUG FIX: surreal_commands.get_command_status raises
+            # ValueError("Command <id> not found") for unknown/expired ids;
+            # it never returns None. So the `status is None` branch below was
+            # dead and the not-found ValueError fell through to the generic
+            # `except` → re-raised → HTTP 500. Polling a stale job_id (common
+            # after a restart or the lifespan stale-command reaper runs) now
+            # returns None so the router can emit a real 404. Kept as a guard
+            # in case a future upstream version returns None instead.
             if status is None:
                 return None
             return {
@@ -115,6 +123,15 @@ class CommandService:
                 else None,
                 "progress": getattr(status, "progress", None),
             }
+        except ValueError as e:
+            # v0.8.70 — a "not found" ValueError means the job id is unknown
+            # or expired; map it to None so the HTTP layer returns 404 rather
+            # than 500. Any other ValueError is a real error and re-raised.
+            if "not found" in str(e).lower():
+                logger.info(f"Command status: job {job_id} not found")
+                return None
+            logger.error(f"Failed to get command status: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to get command status: {e}")
             raise

@@ -120,6 +120,76 @@ _THEMES = {
         "accent": "#5E81AC", "accent_fg": "#ECEFF4",
         "border": "#4C566A", "destructive": "#BF616A",
     },
+    # --- v0.8.72: premium theme pack ---------------------------------------
+    # Eight popular, hand-tuned palettes. Each fg/bg clears WCAG AAA (7:1) and
+    # each muted_fg/bg clears AA (4.5:1) — enforced by desktop/tests/test_window.py
+    # (parametrized over every key here), so a future tweak can't silently
+    # regress legibility. "midnight-aurora" is the signature theme: its
+    # indigo→violet palette matches the launch splash + Aurora Reveal intro.
+    "midnight-aurora": {  # dark · signature (matches splash/intro)
+        "is_dark": True,
+        "bg": "#0D0E1D", "fg": "#EEF0FF",
+        "card": "#181A33", "muted": "#20223F", "muted_fg": "#B9BEE0",
+        "primary": "#6C7BFF", "primary_fg": "#FFFFFF",
+        "accent": "#B96CFF", "accent_fg": "#FFFFFF",
+        "border": "#2A2D52", "destructive": "#FF6B8B",
+    },
+    "tokyo-night": {  # dark
+        "is_dark": True,
+        "bg": "#1A1B26", "fg": "#C0CAF5",
+        "card": "#24283B", "muted": "#2F334D", "muted_fg": "#A9B1D6",
+        "primary": "#7AA2F7", "primary_fg": "#1A1B26",
+        "accent": "#BB9AF7", "accent_fg": "#1A1B26",
+        "border": "#3B4261", "destructive": "#F7768E",
+    },
+    "catppuccin-mocha": {  # dark
+        "is_dark": True,
+        "bg": "#1E1E2E", "fg": "#CDD6F4",
+        "card": "#313244", "muted": "#45475A", "muted_fg": "#A6ADC8",
+        "primary": "#CBA6F7", "primary_fg": "#1E1E2E",
+        "accent": "#F5C2E7", "accent_fg": "#1E1E2E",
+        "border": "#45475A", "destructive": "#F38BA8",
+    },
+    "rose-pine": {  # dark
+        "is_dark": True,
+        "bg": "#191724", "fg": "#E0DEF4",
+        "card": "#1F1D2E", "muted": "#26233A", "muted_fg": "#908CAA",
+        "primary": "#C4A7E7", "primary_fg": "#191724",
+        "accent": "#EBBCBA", "accent_fg": "#191724",
+        "border": "#403D52", "destructive": "#EB6F92",
+    },
+    "gruvbox-dark": {  # dark
+        "is_dark": True,
+        "bg": "#282828", "fg": "#EBDBB2",
+        "card": "#3C3836", "muted": "#504945", "muted_fg": "#BDAE93",
+        "primary": "#FABD2F", "primary_fg": "#282828",
+        "accent": "#FE8019", "accent_fg": "#282828",
+        "border": "#504945", "destructive": "#FB4934",
+    },
+    "one-dark": {  # dark
+        "is_dark": True,
+        "bg": "#282C34", "fg": "#C5CCD6",
+        "card": "#21252B", "muted": "#3B4048", "muted_fg": "#9AA2AF",
+        "primary": "#61AFEF", "primary_fg": "#282C34",
+        "accent": "#C678DD", "accent_fg": "#282C34",
+        "border": "#3E4451", "destructive": "#E06C75",
+    },
+    "catppuccin-latte": {  # light
+        "is_dark": False,
+        "bg": "#EFF1F5", "fg": "#4C4F69",
+        "card": "#FFFFFF", "muted": "#CCD0DA", "muted_fg": "#5C5F74",
+        "primary": "#8839EF", "primary_fg": "#FFFFFF",
+        "accent": "#1E66F5", "accent_fg": "#FFFFFF",
+        "border": "#BCC0CC", "destructive": "#D20F39",
+    },
+    "rose-pine-dawn": {  # light
+        "is_dark": False,
+        "bg": "#FAF4ED", "fg": "#4B4661",
+        "card": "#FFFAF3", "muted": "#F2E9E1", "muted_fg": "#6A6580",
+        "primary": "#907AA9", "primary_fg": "#FAF4ED",
+        "accent": "#D7827E", "accent_fg": "#FAF4ED",
+        "border": "#DFDAD9", "destructive": "#B4637A",
+    },
 }
 
 
@@ -182,7 +252,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
                         remind_openchronicle: bool = False,
                         stt_url: str | None = None,
                         tts_url: str | None = None) -> str:
-    """Inject ALL 9 themes' tokens up front, keyed by [data-theme="X"]
+    """Inject ALL themes' tokens up front, keyed by [data-theme="X"]
     attribute selectors. The active theme is set by `dataset.theme` on
     <html>. The onp/ThemeSwitcher React component (and `window.ONP.setTheme`
     that we expose below) can switch themes live — instant, no reload.
@@ -210,7 +280,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     base_js = f"""
     (function() {{
       var INITIAL_THEME = "{initial}";
-      // ONP v0.5.7 — all 9 themes live in CSS; live-switch via data-theme attr.
+      // ONP v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
       // The same <style id="onp-theme-injection"> is reused across Next.js soft
       // navigations because the CSS block is theme-independent.
       if (!document.getElementById('onp-theme-injection')) {{
@@ -269,6 +339,18 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
         }} catch (e) {{}}
       }};
       window.ONP.themes = Object.keys(IS_DARK);
+      // v0.8.81 — one-click relaunch for the DB repair banner. Bridges to the
+      // pywebview js_api; returns false in a plain browser (dev) so callers can
+      // fall back. The native side reopens the app after this process exits.
+      window.ONP.relaunch = function() {{
+        try {{
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.relaunch) {{
+            window.pywebview.api.relaunch();
+            return true;
+          }}
+        }} catch (e) {{}}
+        return false;
+      }};
     }})();
     """
     voice_js = _voice_injection_js()
@@ -384,12 +466,29 @@ def _frontend_server_ready(url: str) -> bool:
     not-found page (HTTP 200!) for valid routes, reads as not-ready.
     """
     import httpx
+    import re
 
     try:
         r = httpx.get(url, timeout=2.0, follow_redirects=True)
     except Exception:
         return False
-    return r.status_code < 400 and b"next-error-h1" not in r.content
+    if r.status_code >= 400:
+        return False
+    # v0.8.70 — Next.js 16 streams the global `notFound` boundary (including
+    # its `.next-error-h1` style block) into the RSC payload of EVERY page, so
+    # the old `b"next-error-h1" not in content` test was permanently False —
+    # `_frontend_server_ready` never returned True, the splash→app handoff
+    # never navigated the window, and the splash hung forever. Detect Next's
+    # ACTUAL not-found page by its <title> ("404: This page could not be
+    # found") instead, mirroring the JS sentinel (which checks that
+    # document.title doesn't start with "404"). This still catches Next's
+    # warm-up window, where valid routes briefly serve the 404 page at HTTP
+    # 200. Require the Next runtime marker so a stray page can't false-pass.
+    m = re.search(rb"<title>([^<]*)</title>", r.content)
+    title = m.group(1).strip() if m else b""
+    if title.startswith(b"404"):
+        return False
+    return b"__next_f" in r.content
 
 
 def _start_handoff_controller(
@@ -402,12 +501,27 @@ def _start_handoff_controller(
     min_splash_sec: float = 3.0,
     consecutive: int = 2,
     poll_sec: float = 0.4,
-    attempt_timeout_sec: float = 12.0,
-    max_attempts: int = 10,
+    attempt_timeout_sec: float = 6.0,
+    max_attempts: int = 40,
     sleep=None,
     clock=None,
 ) -> "threading.Thread":
     """v0.8.68 — python-driven splash→app handoff with failure recovery.
+
+    v0.8.72 — retry budget widened from 10×12s (~2 min) to 40×6s (~4 min).
+    Live finding: on a slow ad-hoc cold boot WKWebView's `load_url` keeps
+    failing ("This page couldn't load") for *minutes* even though the frontend
+    server is provably serving (an httpx probe AND a manual webview Reload both
+    succeed) — a known WebKit quirk where the probe passes but the real
+    navigation races/fails. The old 10-attempt budget exhausted long before
+    WKWebView became willing, so the controller gave up and the error page
+    became the resting state; only a manual Reload recovered it. The wider
+    budget keeps re-issuing the navigation (restoring the splash between tries,
+    never the error page) until WKWebView finally loads the app — which a
+    manual reload proves always eventually works. The shorter per-attempt
+    timeout also shrinks how long a failed attempt's error page flashes before
+    the splash is restored. (A stable code-signing identity keeps boots ~30s,
+    where the very first attempt succeeds; this covers the ad-hoc slow path.)
 
     The first cut had the splash navigate itself after in-page no-cors
     probes; a probe can succeed and the subsequent real navigation still
@@ -470,6 +584,62 @@ def _start_handoff_controller(
     return t
 
 
+class _OnpJsApi:
+    """v0.8.81 — pywebview js_api bridge, exposed to the page as
+    `window.pywebview.api`. Currently just `relaunch()`, called by the DB
+    repair banner's one-click "Repair & restart".
+
+    relaunch() spawns a DETACHED helper that terminates THIS process and then
+    reopens the .app bundle; it also closes the window for immediate feedback.
+    On the next boot the launcher's auto-repair (db_repair.auto_repair,
+    backup-first) runs and clears the flag. It reopens exactly once (no relaunch
+    loop). In dev (no .app bundle on the path) it just closes the window.
+
+    v0.8.84 — FIX: the helper now ACTIVELY terminates the process (SIGTERM, then
+    SIGKILL fallback) instead of passively waiting for it to exit. `window
+    .destroy()` closes the webview window but does NOT make the launcher process
+    exit (a non-daemon thread keeps it alive), so the old "wait for the pid to
+    die, then open" helper waited forever and the app never reopened. SIGTERM
+    lets the launcher's signal handler tear down its children first; the
+    SIGKILL after a grace period is the backstop, and the reopened instance
+    frees any stale ports on boot regardless.
+    """
+
+    def __init__(self) -> None:
+        self._window = None  # set by open_window after create_window
+
+    def relaunch(self) -> bool:  # pragma: no cover - exercised in-app only
+        import os
+        import subprocess
+        import sys
+
+        try:
+            exe = Path(sys.executable)
+            app_bundle = next((p for p in exe.parents if p.suffix == ".app"), None)
+            if app_bundle is not None:
+                pid = os.getpid()
+                # Give the window a beat to close, SIGTERM for a clean child
+                # teardown, wait up to ~6s, SIGKILL as a backstop, then reopen.
+                sh = (
+                    f"/bin/sleep 1; "
+                    f"/bin/kill {pid} 2>/dev/null; "
+                    f"n=0; while /bin/kill -0 {pid} 2>/dev/null && [ $n -lt 20 ]; do "
+                    f"/bin/sleep 0.3; n=$((n+1)); done; "
+                    f"/bin/kill -9 {pid} 2>/dev/null; "
+                    f"/bin/sleep 0.5; "
+                    f'/usr/bin/open "{app_bundle}"'
+                )
+                subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
+        except Exception:
+            pass
+        try:
+            if self._window is not None:
+                self._window.destroy()
+        except Exception:
+            pass
+        return True
+
+
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Open notebook+",
                 width: int = 1280, height: int = 800,
@@ -521,9 +691,13 @@ def open_window(url: str, on_close: Callable[[], None],
     from desktop.splash import build_splash_html
 
     splash_html = build_splash_html(url)
+    # v0.8.81 — js_api bridge for window.pywebview.api.relaunch (DB repair
+    # banner's "Repair & restart"). Window ref is set right after creation.
+    _onp_api = _OnpJsApi()
     window = webview.create_window(
-        title, html=splash_html, width=win_w, height=win_h
+        title, html=splash_html, width=win_w, height=win_h, js_api=_onp_api
     )
+    _onp_api._window = window
 
     # Track live size via the resize event when available (defensive: the event
     # name has varied across pywebview versions, so never let its absence break
@@ -586,4 +760,28 @@ def open_window(url: str, on_close: Callable[[], None],
             pass  # best-effort; never crash on theme injection
     window.events.loaded += _on_loaded
     _start_handoff_controller(window, url, _page_loaded, splash_html)
-    webview.start()  # noqa: F821 — already imported above
+    # v0.8.73 — PERSIST the webview's cookie/localStorage store across launches.
+    # pywebview defaults to private_mode=True: an EPHEMERAL WKWebsiteDataStore
+    # that is wiped on every app close. That silently broke every persisted
+    # web-storage feature — most importantly the `wizard_completed` cookie never
+    # survived a restart, so the first-launch Setup Wizard redirect fired on
+    # EVERY launch (`/` → 307 → /setup-wizard), and the wizard's client-side
+    # auto-skip (router.replace('/')) raced a cold boot straight into WebKit's
+    # "This page couldn't load" — the exact reload-screen-every-launch the user
+    # hit. (The same ephemeral wipe also reset the "show the intro once"
+    # cookie.) Persisting to a stable path under ~/.open-notebook-plus means the
+    # wizard shows ONCE, the intro shows ONCE, and they stay dismissed across
+    # launches AND across rebuilds (the stable code-signing identity keeps the
+    # same data container).
+    import os as _os
+    _storage_path = str(data_home / "webview_data")
+    try:
+        _os.makedirs(_storage_path, exist_ok=True)
+    except Exception:
+        _storage_path = None
+    try:
+        webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
+    except TypeError:
+        # Defensive: if a future pywebview drops these kwargs, fall back so the
+        # app still launches (persistence degrades, but it won't crash).
+        webview.start()  # noqa: F821

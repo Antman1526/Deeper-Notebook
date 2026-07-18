@@ -1,449 +1,382 @@
-# 15. File Structure & Code Organization
+# 15 — File Structure & Code Organization
 
-Exhaustive map of how **Open Notebook Plus** is laid out, what each module owns,
-how modules depend on one another, and the two house conventions that hold it
-together: **a `CLAUDE.md` in every module** and **version-stamped inline
-comments** (`# v0.8.NN — ...`).
-
-> **Version baseline**: app `v1.8.5` (`pyproject.toml`). Three-tier:
-> FastAPI (`api/` @ 5055) + LangGraph/domain (`open_notebook/`) + SurrealDB
-> (@ 8000), with a Next.js 16 frontend (`frontend/` @ 3000) and a native
-> PyObjC/aiohttp desktop launcher (`desktop/`).
-
-The tree below was produced with `find` / `ls` (excluding `node_modules`,
-`.venv*`, `.build-venv`, `dist`, `build`, `__pycache__`).
+> The complete annotated directory tree for **Open Notebook Plus**, naming conventions, module-dependency relationships, and where each concern lives.
+> Paths are relative to the repo root `/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus/` unless noted.
 
 ---
 
-## 15.1 Repository Root
+## 1. Top-level layout
 
 ```
 open-notebook-Plus/
-├── api/                     # FastAPI app: routers + the 4 real services + middleware
-├── open_notebook/           # Backend core: domain, AI, graphs, database, utils, ...
-├── frontend/                # Next.js 16 / React 19 UI (TanStack Query + Zustand)
-├── desktop/                 # Native macOS/Windows launcher (PyObjC + aiohttp webview)
-├── commands/                # surreal_commands async job handlers (embeddings, podcasts, ...)
-├── tests/                   # 204 pytest files + tests/integration/ (live-SurrealDB)
-├── prompts/                 # AI-Prompter / Jinja2 prompt templates
-├── scripts/                 # ralph.sh, backup_restore.py, benchmark_models.py, export_docs.py, ...
-├── docs/                    # User + recreation documentation (this file lives in docs/recreation/)
-├── examples/                # Example configs / sample content
-├── deploy/                  # Deployment assets
-├── data/                    # Runtime data folder (sqlite-db/, uploads/, tiktoken-cache/) — gitignored
-├── build/  dist/            # PyInstaller build + .dmg output — gitignored
-│
-├── pyproject.toml           # Python deps + version (1.8.5); uv.lock pins them
-├── Makefile                 # 23KB task runner (build, test, docker, dmg, ...)
-├── Dockerfile / Dockerfile.single   # multi-service + single-container images
-├── docker-compose.yml       # SurrealDB + API + frontend stack
-├── supervisord*.conf        # process supervision for the container images
-├── run_api.py               # uvicorn entrypoint for the API
-├── dev-init.sh              # local dev bootstrap
-├── mypy.ini / .pre-commit-config.yaml / .ruff_cache   # type + lint config
-├── CLAUDE.md                # root architectural guide + Standing Workflow
-├── CHANGELOG.md / README.md / README.dev.md / README.upstream.md
-├── CONFIGURATION.md / CONTRIBUTING.md / MAINTAINER_GUIDE.md / MEMORY.md
-└── .env / .env.example      # env config (.env is gitignored; contains secrets)
+├── api/                  FastAPI backend: routers + 4 real services + schemas + middleware
+├── open_notebook/        Backend core: domain models, LangGraph graphs, DB, AI, utils
+├── commands/             surreal-commands async job handlers (podcasts, embeddings, insights…)
+├── desktop/              Desktop wrapper: launcher/supervisor, pywebview window, build, sidecars
+├── frontend/             Next.js 16 / React 19 UI (src/ App Router, components, hooks, stores)
+├── prompts/              Jinja2 prompt templates (ask, chat, podcast, source_chat)
+├── migrations/           (upstream) top-level SurrealQL migration mirror; canonical set lives under open_notebook/database/migrations/
+├── tests/                Backend + integration test suite (pytest)
+├── scripts/              Ops scripts: ralph.sh, backup_restore.py, benchmark_models.py, repair_desktop_db.sh, create-signing-identity.sh, export_docs.py
+├── docs/                 User + deployment documentation (mkdocs)
+├── deploy/               Deployment assets
+├── examples/             Example content / notebooks
+├── data/, surreal_data/, output/, build/, dist/   Runtime + build artifacts (gitignored)
+├── run_api.py            Dev entry point: `uv run --env-file .env run_api.py` → uvicorn api.main:app
+├── pyproject.toml        Backend deps + tool config (version 1.8.5 = server/Docker track)
+├── uv.lock               Backend lockfile
+├── Makefile              All dev + macOS build targets
+├── Dockerfile / Dockerfile.single / docker-compose.yml   Server/Docker track
+├── supervisord.conf / supervisord.single.conf            Server process config
+├── CLAUDE.md             Root architecture guide (authoritative)
+├── CONFIGURATION.md, CONTRIBUTING.md, MAINTAINER_GUIDE.md, SECURITY.md
+├── README.md / README.dev.md / README.upstream.md
+└── CHANGELOG.md          (desktop changelog is desktop/CHANGELOG.md)
 ```
 
-Top-level docs of note: `README.upstream.md` preserves the original
-`lfnovo/open-notebook` README; `README.md` is the Plus fork's. `MEMORY.md` is the
-project's long-form engineering log.
+**Two version tracks:** `pyproject.toml version = "1.8.5"` = upstream/Docker image; `desktop/__init__.py __version__ = "0.8.5"` = desktop app (window, `/api/version`, macOS `CFBundleShortVersionString`). They intentionally version different artifacts.
 
 ---
 
-## 15.2 `open_notebook/` — Backend Core
-
-The heart of the application: domain models, AI provisioning, LangGraph
-workflows, the SurrealDB layer, and cross-cutting utilities.
-
-```
-open_notebook/
-├── CLAUDE.md                # backend architecture overview
-├── __init__.py
-├── config.py                # DATA_FOLDER, sqlite checkpoint path, uploads, tiktoken cache
-├── exceptions.py            # OpenNotebookError hierarchy (Auth/Config/RateLimit/Network/...)
-├── logging.py               # loguru configure_logging("api"/"worker")
-│
-├── ai/                      # Model lifecycle + provisioning + routing  (CLAUDE.md)
-│   ├── models.py            #   Model / DefaultModels records + ModelManager factory
-│   ├── provision.py         #   provision_langchain_model (105k-token upgrade) + auto-route wrapper
-│   ├── router.py            #   pick_provider() pure local-vs-cloud router (ModelChoice)
-│   ├── offline_gate.py      #   gate_language_model_id — offline → local substitution (v0.8.68)
-│   ├── privacy_gate.py      #   fail-closed structured-secret detector (Phase 5.2a)
-│   ├── privacy_classifier.py#   local PII classifier scaffolding (Phase 5.2b)
-│   ├── key_provider.py      #   DB-credential → env-var provisioning for Esperanto
-│   ├── connection_tester.py #   /credentials/.../test minimal-call validation (TEST_MODELS)
-│   └── model_discovery.py   #   list a provider's available models
-│
-├── domain/                  # Pydantic data models + repository persistence  (CLAUDE.md)
-│   ├── base.py              #   ObjectModel / RecordModel base classes (get/save/delete)
-│   ├── notebook.py          #   Notebook, Source, Note, SourceInsight, ChatSession + vector_search
-│   ├── credential.py        #   Credential record (Fernet-encrypted api_key)
-│   ├── provider_config.py   #   legacy ProviderConfig (SecretStr api_key)
-│   ├── content_settings.py  #   ContentSettings singleton (incl. offline_mode toggle)
-│   ├── transformation.py    #   Transformation prompt records
-│   └── gmail.py             #   Gmail integration model
-│
-├── graphs/                  # LangGraph state machines  (CLAUDE.md)
-│   ├── chat.py              #   conversational agent (message history, provider threading)
-│   ├── ask.py               #   retrieve + synthesize (SSE multi-stage)
-│   ├── source.py            #   ingestion: extract → embed → save
-│   ├── source_chat.py       #   chat scoped to a single source
-│   ├── transformation.py    #   run a Transformation prompt over content
-│   ├── agent_fsm.py         #   agent finite-state-machine helpers
-│   ├── tools.py             #   tool bindings for the agent
-│   └── prompt.py            #   shared prompt assembly
-│
-├── database/                # SurrealDB layer  (CLAUDE.md)
-│   ├── repository.py        #   repo_query/create/update/delete/relate + pooled db_connection()
-│   ├── async_migrate.py     #   AsyncMigrationManager (auto-discovers + runs migrations)
-│   ├── migrate.py           #   sync wrapper (back-compat)
-│   ├── dedup_edges.py       #   edge-table de-duplication maintenance
-│   └── migrations/          #   1.surrealql .. 22.surrealql (+ N_down.surrealql rollbacks)
-│
-├── utils/                   # Cross-cutting helpers  (CLAUDE.md, README.md)
-│   ├── embedding.py         #   generate_embeddings (batches of 50) + mean pooling
-│   ├── chunking.py          #   content-type aware token chunking (CHUNK_SIZE=400)
-│   ├── context_builder.py   #   token-budgeted LLM context assembly
-│   ├── token_utils.py       #   token_count (o200k_base) + token_cost
-│   ├── encryption.py        #   Fernet encrypt/decrypt + KDF + rotation (MultiFernet)
-│   ├── memory_recall.py     #   mem0-style fact/preference/episode recall
-│   ├── message_history.py   #   chat message history persistence
-│   ├── sqlite_checkpoint.py #   LangGraph SQLite checkpoint helpers
-│   ├── checkpoint_prune.py  #   prune old LangGraph checkpoints
-│   ├── error_classifier.py  #   classify_error() raw-exception → typed exception
-│   ├── text_utils.py        #   thinking-tag parsing, ASCII/printable cleaning
-│   ├── crawler.py / graph_utils.py / version_utils.py
-│
-├── digest/                  # scheduler.py — Gmail digest scheduler (defers when offline)
-├── health/                  # network.py (TTL net-state cache) + local_models.py health
-├── local_models/            # downloader.py, gguf_metadata.py, inventory.py (GGUF management)
-├── mcp/                      # client.py, registry.py, recommendations.py (MCP servers)
-├── podcasts/                # models.py (PodcastEpisode) + migration.py (legacy→registry)
-├── prompt_optimizer/        # runner.py + adapter.py (SkillOpt) + skillopt_prompts/, skillopt_base.yaml
-└── tools/                   # web_search.py, add_web_source.py, opencode.py
-```
-
-Only four root-level `.py` files (`config.py`, `exceptions.py`, `logging.py`,
-plus `__init__.py`) — everything else is a package, keeping responsibilities
-namespaced.
-
----
-
-## 15.3 `api/` — FastAPI Layer
-
-Two real layers (per `api/CLAUDE.md`): **routers** (where most business logic
-lives) and **models** (Pydantic schemas). Only four `*_service.py` files survive
-(a v0.7.21 cleanup deleted the never-imported service indirection layer).
+## 2. `api/` — FastAPI backend
 
 ```
 api/
-├── CLAUDE.md
-├── main.py                  # app init, CORS, PasswordAuthMiddleware, lifespan (migrations), router registration
-├── models.py                # Pydantic request/response schemas (validation boundary)
-├── auth.py                  # PasswordAuthMiddleware + constant-time _password_matches (v0.6.7)
-├── rate_limit.py            # rate-limit helpers
-├── metrics.py               # app metrics
+├── main.py                  App init: load_dotenv → CORS → auth/rate-limit/metrics/request-id/
+│                            security-headers middleware → lifespan (configure_logging,
+│                            AsyncMigrationManager, podcast profile migration, digest scheduler,
+│                            DB pool drain) → global exception handlers → include_router(...)
+│                            Exposes /health (back-compat), /livez, /readyz.
+├── models.py                Pydantic request/response schemas (ChatRequest, NoteResponse, …)
+├── auth.py                  PasswordAuthMiddleware (Authorization: Bearer <password>)
+├── rate_limit.py            RateLimitMiddleware
+├── metrics.py               Prometheus metric definitions
 │
-├── chat_service.py          # invokes chat graph with messages + context
-├── podcast_service.py       # outline + transcript orchestration; fire-and-forget job submit
-├── command_service.py       # wraps surreal_commands submission + status polling
-├── credentials_service.py   # encrypted credential CRUD + validate_url() SSRF guard
+├── chat_service.py          Invoke chat graph with messages + context      ┐
+├── podcast_service.py       Orchestrate outline + transcript generation     │ the ONLY 4
+├── command_service.py       Wrap surreal_commands submit + status polling   │ real services
+├── credentials_service.py   Encrypted credential CRUD + connection testing  ┘ (rest deleted v0.7.21)
 │
-├── middleware/
-│   ├── request_id.py        # per-request id propagation
-│   ├── security_headers.py  # security response headers
-│   └── metrics.py           # request metrics middleware
-│
-├── utils/
-│   ├── iso.py               # ISO date helpers
-│   └── session_locks.py     # per-session async locks
-│
-└── routers/                 # 30 routers — one file per resource
-    ├── notebooks.py  sources.py  notes.py  insights.py  search.py
-    ├── chat.py  source_chat.py  context.py            # chat + retrieval surfaces
-    ├── podcasts.py  episode_profiles.py  speaker_profiles.py  studio.py
-    ├── models.py  credentials.py  embedding.py  embedding_rebuild.py  local_models.py
-    ├── transformations.py  commands.py  settings.py  config.py  languages.py
-    ├── mcp.py        # MCP registry CRUD (record-id hardening, v0.8.68)
-    ├── system.py     # /system/network-status + health
-    ├── gmail.py  filesystem.py  exports.py
-    ├── onp.py  launcher_prefs.py                       # desktop-launcher config bridge
-    └── auth.py
+├── routers/                 One module per resource; MOST business logic lives here inline
+│   ├── notebooks.py notes.py sources.py source_chat.py chat.py search.py
+│   ├── podcasts.py episode_profiles.py speaker_profiles.py studio.py
+│   ├── credentials.py models.py local_models.py embedding.py embedding_rebuild.py
+│   ├── transformations.py insights.py context.py commands.py
+│   ├── config.py settings.py languages.py exports.py filesystem.py
+│   ├── auth.py system.py updates.py launcher_prefs.py onp.py mcp.py gmail.py
+├── schemas/                 __init__.py, studio.py (extra request/response schemas)
+├── middleware/              metrics.py, request_id.py, security_headers.py
+└── utils/                   iso.py (ISO datetime helper), session_locks.py
 ```
 
-`main.py` registers every router and exposes `/health` (back-compat), `/livez`,
-`/readyz`. The lifespan handler runs `AsyncMigrationManager` then the podcast
-profile data-migration, and starts the digest scheduler; on shutdown it drains
-the DB pool.
+**Router-registration** (`main.py`): every router in `api/routers/` is imported and `include_router`-ed. Adding an endpoint = new `routers/*.py` + register in `main.py` + schema in `models.py`.
+
+**Error handling:** global FastAPI exception handlers map `open_notebook.exceptions` types → HTTP codes (NotFound 404, InvalidInput 400, Auth 401, RateLimit 429, Configuration 422, Network/ExternalService 502, base 500).
 
 ---
 
-## 15.4 `frontend/` — Next.js 16 / React 19
-
-Three layers: **pages** (App Router), **components** (feature UI), **lib** (data
-+ state). Multiple `CLAUDE.md` files document the lib sub-modules.
+## 3. `open_notebook/` — backend core (75 `.py` modules)
 
 ```
-frontend/
-├── package.json             # next ^16.2.3, react ^19.2.3, @tanstack/react-query ^5.83.0
-├── src/
-│   ├── CLAUDE.md            # frontend architecture overview
-│   ├── proxy.ts            # Next 16 proxy (renamed from middleware.ts) — first-run wizard redirect
-│   ├── app/                # App Router routes
-│   │   ├── (auth)/         #   login (route group, no URL segment)
-│   │   ├── (dashboard)/    #   protected: notebooks, sources, search, models, podcasts, settings
-│   │   └── config/         #   runtime config endpoint
-│   ├── components/
-│   │   ├── layout/         #   AppShell, AppSidebar
-│   │   ├── providers/      #   ThemeProvider, QueryProvider, ModalProvider, I18nProvider
-│   │   ├── chat/           #   ChatColumn, ChatMessageProviderBadge, PrivacyBadge, CitationPill
-│   │   ├── notebooks/  sources/  source/  search/  podcasts/  settings/  onp/
-│   │   ├── common/         #   CommandPalette, ErrorBoundary, ContextToggle, ModelSelector
-│   │   ├── errors/  auth/
-│   │   └── ui/             #   Radix UI primitives (CLAUDE.md)
-│   ├── lib/
-│   │   ├── api/            #   client.ts (axios, auth interceptor), query-client.ts, 1 file per resource (CLAUDE.md)
-│   │   ├── hooks/          #   36 TanStack Query + SSE hooks (useNotebookChat, useAsk, ...) (CLAUDE.md)
-│   │   ├── stores/         #   Zustand auth/modal stores w/ persist (CLAUDE.md)
-│   │   ├── types/          #   shared TS request/response types
-│   │   ├── locales/        #   en-US, pt-BR, zh-CN, zh-TW, ja-JP + i18n.ts (CLAUDE.md)
-│   │   └── utils/          #   error-handler.ts (getApiErrorMessage), helpers
-│   └── test/               # vitest setup
+open_notebook/
+├── config.py            DATA_FOLDER / UPLOADS_FOLDER / LANGGRAPH_CHECKPOINT_FILE paths (DATA_FOLDER env)
+├── exceptions.py        OpenNotebookError hierarchy (DatabaseOperationError, NotFoundError,
+│                        InvalidInputError, ConfigurationError, AuthenticationError,
+│                        RateLimitError, ExternalServiceError, NetworkError, …)
+├── logging.py           Central loguru config (rotated file sinks in ~/.open-notebook-plus/logs)
+├── feature_flags.py     Experimental feature toggles
+│
+├── domain/              DATA MODELS (async SurrealDB persistence)
+│   ├── base.py          ObjectModel (mutable, auto-id: save/delete/relate/get/get_all) +
+│   │                    RecordModel (singleton config, fixed id)
+│   ├── notebook.py      Notebook, Source, Note, ChatSession, SourceInsight, SourceEmbedding,
+│   │                    Asset, StudioArtifact, StudioWorkflowRun; text_search(), vector_search()
+│   ├── credential.py    Credential (Fernet-encrypted API keys, SecretStr, to_esperanto_config)
+│   ├── transformation.py Transformation + DefaultPrompts singleton
+│   ├── content_settings.py ContentSettings singleton (engines, embedding strategy, deletion)
+│   ├── gmail.py         GmailIntegration (digest schedule)
+│   └── provider_config.py  LEGACY ProviderConfig (migration-only; superseded by Credential)
+│
+├── graphs/              LANGGRAPH WORKFLOWS (StateGraph state machines)
+│   ├── chat.py          Conversational agent + history + notebook context; SQLite checkpoints
+│   ├── source_chat.py   Chat scoped to one source (ContextBuilder injects insights/content)
+│   ├── ask.py           RAG: generate search terms → vector/text search → synthesize; per-node timeout
+│   ├── source.py        Ingestion pipeline: extract (content-core) → save → transform
+│   ├── transformation.py Single-node LLM transform (Jinja2 template)
+│   ├── prompt.py        Generic prompt→model→parse chain
+│   ├── agent_fsm.py     Agent finite-state machine (tool-loop orchestration)
+│   └── tools.py         LLM tool helpers (e.g. get_current_timestamp)
+│
+├── ai/                  AI PROVISIONING & ROUTING
+│   ├── models.py        Model (LLM/embed/STT/TTS record + credential link) + DefaultModels singleton + ModelManager
+│   ├── provision.py     provision_langchain_model() factory (smart selection, fallback, override)
+│   ├── router.py        Pure local-vs-cloud routing (size, health, context headroom)
+│   ├── key_provider.py  API-key resolution: DB (decrypted) first, env fallback → Esperanto
+│   ├── connection_tester.py  Minimal-call credential validation (TEST_MODELS)
+│   ├── model_discovery.py    Discover available models per provider
+│   ├── privacy_gate.py / privacy_classifier.py  Fail-closed PII/secret filter before cloud routing
+│   └── offline_gate.py  Block cloud selection when offline / privacy-preferred
+│
+├── database/            SURREALDB LAYER
+│   ├── repository.py    Async CRUD + pool: repo_create/update/query/delete/relate; RecordID parsing
+│   ├── async_migrate.py AsyncMigrationManager (loads N.surrealql, tracks version, runs on startup)
+│   ├── migrate.py       Sync wrapper for back-compat
+│   ├── dedup_edges.py   Edge-table dedup cleanup
+│   └── migrations/      1.surrealql … 25.surrealql + matching N_down.surrealql (50 files)
+│                        11-12 credential system · 13 model↔credential link · 14 podcast registry
+│                        · 15 flexible credential config · 16-25 refinements/indexes/studio
+│
+├── utils/               CROSS-CUTTING HELPERS
+│   ├── context_builder.py  Assemble LLM context (token budgeting, priority)
+│   ├── embedding.py     generate_embedding/embeddings (chunk + batch + mean-pool)
+│   ├── chunking.py      Content-type detection + smart splitters (HTML/MD/plain)
+│   ├── token_utils.py   tiktoken counting (o200k_base)
+│   ├── text_utils.py    Cleaning + parse/clean thinking-content
+│   ├── encryption.py    Fernet encrypt_value/decrypt_value (Docker secrets, legacy fallback)
+│   ├── error_classifier.py classify_error() raw provider err → typed exception
+│   ├── citation_offsets.py  Map citations back to source positions
+│   ├── memory_recall.py memory recall from chat history
+│   ├── message_history.py   store/retrieve chat messages
+│   ├── graph_utils.py   LangGraph state/edge helpers
+│   ├── checkpoint_prune.py + sqlite_checkpoint.py  LangGraph SQLite checkpoint mgmt
+│   ├── crawler.py       crawl4ai URL scraping (lazy-loaded)
+│   └── version_utils.py version compare / GitHub check
+│
+├── local_models/        Local GGUF lifecycle: manifest, inventory, role_routing, downloader,
+│                        gguf_metadata, benchmarks, snapshot_installer
+├── mcp/                 client.py (streamable-http wrapper), registry.py, recommendations.py
+├── health/             local_models.py (sidecar probes), network.py (connectivity)
+├── digest/             scheduler.py (Gmail digest background scheduler, 5-min wake)
+├── podcasts/           models.py (Podcast, Episode, Outline, Transcript, SpeakerInfo), migration.py
+├── prompt_optimizer/   adapter.py, runner.py, skillopt_prompts/ (SkillOpt integration)
+├── studio/             artifact_generation.py (Evidence Studio CSV/JSON/ZIP export)
+├── video/              contracts.py + captions.py + composer.py (local MP4/WebVTT only)
+└── tools/              add_web_source.py, web_search.py, opencode.py
 ```
 
-Provider nesting (`app/layout.tsx`): `ErrorBoundary → ThemeProvider →
-QueryProvider → I18nProvider → ConnectionGuard → Toaster`.
+Per-subsystem `CLAUDE.md` guides exist at: `open_notebook/`, `open_notebook/ai/`, `open_notebook/domain/`, `open_notebook/graphs/`, `open_notebook/database/`, `open_notebook/utils/`, `open_notebook/podcasts/`.
+
+### Domain persistence base classes
+- **`ObjectModel`** — mutable records (Notebook, Source, Note, …); polymorphic `get(id)` resolves subclass from the `table:id` prefix; auto-embedding via ModelManager; `relate(rel, target)` for edges `reference`/`artifact`/`refers_to`.
+- **`RecordModel`** — singleton config (ContentSettings, DefaultPrompts, DefaultModels); fixed record id; `__new__` returns existing instance (call `clear_instance()` in tests).
 
 ---
 
-## 15.5 `desktop/` — Native Launcher
-
-The desktop app runs natively (PyObjC + aiohttp webview), never in Docker. It
-spawns SurrealDB, the API, and the Next.js server as child processes and renders
-the UI in a native window.
-
-```
-desktop/
-├── CHANGELOG.md             # the canonical "Unreleased" changelog (Standing Workflow target)
-├── __main__.py / app.py     # entrypoint + app object
-├── launcher.py / launcher_control.py / launcher_prefs.py   # process orchestration + prefs
-├── bootstrap.py             # dependency/venv bootstrap on first launch
-├── config.py                # config.toml load/save with 0600/0700 perms (v0.6.8)
-├── window.py / aiohttp_window.py / window_state.py         # native webview window
-├── splash.py / tray.py / progress.py                       # UX chrome
-├── paths.py / ports.py / singleton.py                      # path resolution, port mgmt, single-instance
-├── db_repair.py             # SurrealDB repair helpers
-├── model_downloads.py       # GGUF download UI flow
-├── next_rewrites_patcher.py # patches Next standalone output for desktop
-├── auto_register/           # registers the llama.cpp sidecar as openai_compatible
-├── first_run/               # first-run wizard assets
-├── model_manager/  providers/  dl_scripts/                 # local-model management
-├── memory/  memory_dashboard/                              # memory-layer UI
-├── desktop_shims/  resources/  bin/                        # shims, icons, bundled binaries
-└── tests/                   # desktop-specific tests
-```
-
----
-
-## 15.6 `commands/`, `tests/`, `migrations/`, `scripts/`
-
-### `commands/` — async job handlers (surreal_commands)
+## 4. `commands/` — async job handlers
 
 ```
 commands/
-├── CLAUDE.md
-├── embedding_commands.py        # background embedding / rebuild jobs
-├── source_commands.py           # source ingestion jobs
-├── podcast_commands.py          # podcast generation job
-├── podcast_staged.py            # staged generation + cancel + outline-review (v0.8.68)
-├── prompt_optimizer_commands.py # SkillOpt training job
-└── example_commands.py          # reference template
+├── __init__.py                    imports all command modules for worker discovery
+├── source_commands.py             process_source_command, run_transformation_command
+├── embedding_commands.py          embed_note/insight/source_command, create_insight_command,
+│                                  rebuild_embeddings_command
+├── podcast_commands.py            generate_podcast_command
+├── podcast_staged.py              staged podcast generation helpers
+├── prompt_optimizer_commands.py   prompt-optimization jobs
+├── studio_commands.py             Evidence Studio artifact jobs
+└── example_commands.py            test fixtures (process_text, analyze_data)
 ```
 
-These are fire-and-forget jobs submitted via `surreal_commands.submit_command`
-(the sync primitive that **must** be wrapped in `asyncio.to_thread` from async
-code — a recurring gotcha called out in root `CLAUDE.md`).
+`api/routers/video_overviews.py` is the record-ID-only local slide/audio
+composition router; its request/response models live in
+`api/schemas/video_overviews.py`.
 
-### `tests/` — 204 test files + integration
+`desktop/memory/memory_commands.py` is copied into this dir at boot (`_phase_register_memory_commands`) so the worker discovers the memory handlers.
 
-```
-tests/
-├── test_domain.py  test_models_api.py  test_graphs.py
-├── test_utils.py  test_chunking.py  test_embedding.py     # + ~200 more
-└── integration/
-    ├── conftest.py
-    ├── test_memory_recall.py
-    └── test_notebook_lifecycle.py    # gated on SURREAL_INTEGRATION=1 (live SurrealDB)
-```
+**Conventions:** every command is `@command("name", app="open_notebook", retry={...})`; Pydantic `CommandInput`/`CommandOutput`; retry uses `stop_on: [ValueError]` (blocklist — retries everything except validation errors). Domain models submit these fire-and-forget via `submit_command()`.
 
-Run with `uv run pytest tests/`. Integration tests requiring a live DB are
-marked `integration_surreal` and skipped unless `SURREAL_INTEGRATION=1`.
+---
 
-### `open_notebook/database/migrations/` — SurrealQL schema
+## 5. `desktop/` — desktop wrapper
 
 ```
-migrations/
-├── 1.surrealql ... 22.surrealql      # forward migrations (auto-discovered, contiguous 1..N)
-└── 1_down.surrealql ... 22_down.surrealql   # optional rollbacks
-```
-
-Highlights: `1` defines `fn::text_search`/`fn::vector_search`; `5` core content
-tables; `15` memory-layer tables (HNSW 768); `21` HNSW indexes + KNN
-`fn::vector_search`; `22` staged-podcast fields. `AsyncMigrationManager`
-auto-discovers files and enforces contiguous numbering.
-
-### `scripts/` — operational tooling
-
-```
-scripts/
-├── ralph.sh                 # autonomous dev loop (.ralph/)
-├── backup_restore.py        # DB backup/restore
-├── benchmark_models.py      # model latency benchmarking
-├── export_docs.py           # docs export
-├── repair_desktop_db.sh / wait-for-api.sh / verify-chat-platform.sh
-└── create-signing-identity.sh   # macOS code-signing
+desktop/
+├── __init__.py            __version__ = "0.8.5" (desktop app version)
+├── __main__.py            `python -m desktop` entry
+├── app.py                 run(): ordered boot phases over an AppContext (see doc 01 §7)
+├── launcher.py            Supervisor: spawns/monitors surreal, api, worker, next, sidecars;
+│                          find_free_ports(9); session_env; process-group teardown; DB repair;
+│                          periodic export; control-plane callbacks (restart/hot-swap)
+├── window.py              open_window(): pywebview splash→app handoff controller, theme +
+│                          voice + memory JS injection, persistent storage, _OnpJsApi.relaunch
+├── window_state.py        save/load/clamp remembered window size
+├── splash.py              build_splash_html() inline welcome splash
+├── config.py              Config dataclass + config.toml load/save (0600); default_model_dir()
+├── paths.py               user_home() etc.
+├── ports.py               find_free_port(s) with SO_REUSEADDR + de-dup re-probe
+├── progress.py            ProgressBus (progress.jsonl) for splash/status
+├── bootstrap.py           extract_python_runtime + ensure_venv (uv install from requirements.lock)
+├── model_downloads.py     auto-download embedding/STT/TTS models; FASTER_WHISPER_* constants
+├── singleton.py           PID-file lock + orphan reaper (AlreadyRunning)
+├── db_repair.py           needs_repair / auto_repair / looks_like_lq_corruption (backup-first)
+├── next_rewrites_patcher.py  patch Next.js standalone rewrites → dynamic api_port
+├── launcher_control.py    ControlServer (in-launcher HTTP control plane)
+├── launcher_prefs.py      file-backed launcher.env preference layer
+├── aiohttp_window.py      start_aiohttp_server_thread (model-manager / memory-dashboard windows)
+├── tray.py                install_tray (Open Main / Models / Memory / Quit)
+├── requirements.txt       desktop-only pinned deps (pywebview, pyinstaller, llama-cpp-python[server]…)
+├── requirements.lock      compiled union of pyproject + requirements.txt (built by make build-mac-lock)
+│
+├── auto_register/         Register discovered local models/creds with the API (assigner.py:
+│                          pick_chat_llm_file, capability-aware selection)
+├── providers/             ollama.py, llamacpp.py, mlx.py (ModelProvider protocol: is_available/start)
+├── first_run/             server.py (wizard), static/ (voice_injection.js, memory_injection.js)
+├── model_manager/         server.py (build_app) — models window backend
+├── memory_dashboard/      server.py (build_app) — memory dashboard backend
+├── memory/                mem0 integration + memory_commands.py template + tests/
+├── desktop_shims/         openchronicle_shim.py + whisper/piper/memory shim entry points
+├── dl_scripts/            model download helper scripts
+├── build/                 fetch_runtimes.py, pyinstaller.spec, post_build_mac.sh
+├── bin/                   BUNDLED RUNTIMES (fetched): surreal-<arch>, node, uv, python-<arch>.tar.gz
+├── resources/             icons, plists, splash assets
+├── CHANGELOG.md           desktop-app changelog (source of truth for __version__)
+└── tests/                 desktop pytest suite (test_launcher, test_window, test_bootstrap, …)
 ```
 
 ---
 
-## 15.7 The `CLAUDE.md`-per-Module Convention
-
-Every significant module carries its own `CLAUDE.md` — a living architectural
-spec read by both humans and AI assistants. Files present:
+## 6. `frontend/` — Next.js 16 / React 19
 
 ```
-CLAUDE.md                                   # root: architecture + Standing Workflow
-open_notebook/CLAUDE.md                     # backend overview
-open_notebook/ai/CLAUDE.md                  # ModelManager, provisioning, key_provider
-open_notebook/domain/CLAUDE.md              # data models, repository pattern
-open_notebook/graphs/CLAUDE.md              # LangGraph workflow design
-open_notebook/database/CLAUDE.md            # SurrealDB ops, migrations, pooling
-open_notebook/utils/CLAUDE.md               # context/chunking/embedding/encryption
-open_notebook/podcasts/CLAUDE.md            # podcast pipeline
-api/CLAUDE.md                               # FastAPI structure, services, error handling
-commands/CLAUDE.md                          # job-handler patterns
-frontend/src/CLAUDE.md                      # frontend architecture
-frontend/src/lib/api/CLAUDE.md              # axios client, query-client
-frontend/src/lib/hooks/CLAUDE.md            # TanStack Query + SSE hooks
-frontend/src/lib/stores/CLAUDE.md           # Zustand state
-frontend/src/lib/locales/CLAUDE.md          # i18n
-frontend/src/components/ui/CLAUDE.md        # Radix UI primitives
+frontend/
+├── next.config.ts          Next config (rewrites /api/* → API, standalone output, bundle analyzer)
+├── tsconfig.json           TS compiler + path aliases
+├── tailwind.config.ts      Tailwind v4 theme/plugins
+├── components.json         shadcn/ui registry (aliases)
+├── vitest.config.ts        Vitest config
+├── eslint.config.mjs       ESLint 9 flat config (eslint-config-next)
+├── postcss.config.mjs      PostCSS (Tailwind)
+├── start-server.js / start-server-utils.js   standalone server bootstrap (npm start)
+├── package.json / package-lock.json
+└── src/
+    ├── app/                        NEXT.JS APP ROUTER
+    │   ├── (auth)/login/           login page
+    │   ├── (dashboard)/            protected route group:
+    │   │   ├── notebooks/ notebooks/[id]/     notebook list + detail/chat
+    │   │   ├── sources/ sources/[id]/         source list + detail
+    │   │   ├── search/ podcasts/ studio/ transformations/ advanced/
+    │   │   ├── setup-wizard/                   first-launch wizard
+    │   │   └── settings/                       hub +
+    │   │       ├── api-keys/ (credentials) launcher-prefs/ local-models/ mcp/
+    │   ├── api/                    Next.js route handlers (SSE proxy):
+    │   │   ├── search/ask/                     ask streaming
+    │   │   └── sources/[sourceId]/chat/…       chat message streaming
+    │   └── config/                 runtime config route (reads API_URL env)
+    │
+    ├── components/
+    │   ├── ui/                shadcn/Radix primitives (Button, Dialog, Input, Select, …)
+    │   ├── layout/            AppShell, AppSidebar, navigation
+    │   ├── providers/         ThemeProvider, QueryProvider, ModalProvider, I18nProvider, ConnectionGuard
+    │   ├── common/            CommandPalette, ErrorBoundary, ModelSelector, ContextToggle, Toaster
+    │   ├── auth/ errors/ intro/ onp/
+    │   └── chat/ notebooks/ sources/ source/ search/ podcasts/ podcasts/forms/ settings/
+    │
+    └── lib/
+        ├── api/              Axios CLIENT + resource modules
+        │   ├── client.ts     Axios instance + auth interceptor + configurable timeout (10 min;
+        │   │                  NEXT_PUBLIC_API_TIMEOUT_MS); auto FormData Content-Type handling
+        │   ├── query-client.ts  TanStack Query client
+        │   └── sources.ts notebooks.ts chat.ts search.ts podcasts.ts credentials.ts
+        │       models.ts notes.ts embeddings.ts settings.ts
+        ├── hooks/            40+ React Query + custom hooks
+        │   ├── use-sources.ts use-notebooks.ts use-credentials.ts use-models.ts use-auth.ts
+        │   ├── useNotebookChat.ts useSourceChat.ts use-ask.ts (SSE streaming)
+        │   └── use-translation.ts (i18n wrapper + language switching)
+        ├── stores/           Zustand: auth-store (30s check cache + persist), navigation-store,
+        │                     theme-store, notebook-view-store, notebook-columns-store, sidebar-store
+        ├── locales/          i18next: index.ts, i18n.ts, i18n-events.ts + 14 language folders
+        │                     (en-US, pt-BR, zh-CN, zh-TW, ja-JP, ru-RU, de-DE, es-ES, fr-FR,
+        │                      it-IT, ca-ES, pl-PL, tr-TR, bn-IN)
+        ├── types/            api.ts (request/response shapes)
+        └── utils/            error-handler.ts (getApiErrorMessage), citations.ts,
+                              source-context.ts, source-references.tsx, date-locale.ts
 ```
 
-Each documents: Purpose, Component Catalog, Common Patterns, Key Dependencies,
-"Important Quirks & Gotchas," and "How to Extend." The root `CLAUDE.md` also
-defines the **Standing Workflow** (audit → fix → improve → report) and points to
-the per-module files via a Component References map. Convention when adding a
-module: drop a sibling `CLAUDE.md` mirroring this shape.
+`CLAUDE.md` guides: `frontend/src/`, `frontend/src/lib/api/`, `frontend/src/lib/stores/`, `frontend/src/lib/hooks/`, `frontend/src/lib/locales/`.
+
+**Frontend 3-layer split:** `app/` (routes) → `components/` (UI) → `lib/` (data + state + i18n). Data flows: component → `hooks/use-*` → `lib/api/*` (axios) → API. Server state lives in TanStack Query; UI/auth state in Zustand.
 
 ---
 
-## 15.8 Naming Conventions
-
-### Version-stamped inline comments (`# v0.8.NN — ...`)
-
-The dominant convention: when code is changed to fix a bug or harden behavior,
-the change is annotated with the **release version** that introduced it, a dash,
-and an explanation of what was broken and why the new code is correct. There are
-**~1,118** such comment lines across the backend/api/desktop; the most prolific
-tags:
+## 7. `prompts/` — Jinja2 templates
 
 ```
-  90  # v0.7.108
-  65  # v0.8.68
-  65  # v0.8.66
-  38  # v0.7.181
-  30  # v0.7.182
-  26  # v0.7.183
-  20  # v0.8.1
+prompts/
+├── ask/     entry.jinja, query_process.jinja, final_answer.jinja
+├── chat/    system.jinja
+├── podcast/ outline.jinja, transcript.jinja
+└── source_chat/ system.jinja
 ```
-
-Representative examples seen elsewhere in these docs:
-
-- `# v0.8.65g — MUST be BaseException, not Exception ...`
-  (`database/repository.py` — pooled-connection cancellation fix)
-- `# v0.8.66 (audit S-5) — log the detail ... but do NOT embed str(e) ...`
-  (`utils/encryption.py` — secret-leak prevention)
-- `# v0.7.24 — no caching. Previously this was a process-lifetime singleton ...`
-  (`utils/encryption.py` — rotation correctness)
-
-Some are tied to audit findings (`(audit S-5)`, `(audit A-6/A-7)`,
-`(audit F-2)`), giving a stable cross-reference between code and review history.
-
-### Other conventions
-
-- **Modules / files**: `snake_case.py` (`offline_gate.py`, `query-client.ts` on
-  the TS side uses kebab-case per Next conventions).
-- **Migrations**: integer-numbered `N.surrealql` + `N_down.surrealql`,
-  contiguous from 1.
-- **Stored DB functions**: `fn::<name>` (`fn::vector_search`, `fn::text_search`).
-- **Singleton DB records**: `open_notebook:default_models`,
-  `open_notebook:content_settings`.
-- **Env vars**: `OPEN_NOTEBOOK_*` (app-wide) and `ONP_*` (newer Plus-specific
-  knobs, e.g. `ONP_ENCRYPTION_KDF`, `ONP_NETWORK_STATE_TTL_SEC`,
-  `ONP_PRIVACY_GATE`).
-- **Frontend query keys**: hierarchical arrays via `QUERY_KEYS`
-  (`['notebooks', id]`).
-- **Services**: `*_service.py` (only the four imported ones survive).
+Rendered via **ai-prompter** (Jinja2). Graphs reference these by path. Transformation prompts additionally come from the `Transformation` domain model / `DefaultPrompts`.
 
 ---
 
-## 15.9 Module Dependency Relationships
+## 8. `tests/` and `desktop/tests/`
 
-High-level dependency direction (arrows point from dependent to dependency):
+- **`tests/`** — backend + integration. Two flavors:
+  - Feature/regression tests named by version (`test_v0_7_*`, `test_v0_8_*`) — one file per release fixing specific bugs.
+  - Subsystem tests: `test_domain.py`, `test_graphs.py`, `test_models_api.py`, `test_embedding.py`, `test_chunking.py`, `test_credentials_*`, `test_chat_*`, `test_podcast_*`, `test_memory_*`, `test_search_api.py`, `test_notebook_delete_cascade.py`, `test_encryption_*`, health/router tests, etc.
+  - `tests/integration/` — SurrealDB-backed (`integration_surreal` marker, skipped unless `SURREAL_INTEGRATION=1`).
+- **`desktop/tests/`** — launcher/window/bootstrap/provider tests (`test_launcher*.py`, `test_window*.py`, `test_bootstrap.py`, `test_ollama_provider.py`, `test_mlx_provider.py`, `test_auto_register*.py`, `test_db_repair.py`, `test_v0_8_68_*`, …).
 
-```
-frontend/  ──HTTP REST──▶  api/  ──▶  open_notebook/graphs/  ──▶  open_notebook/ai/
-                            │                 │                        │
-                            │                 ├──▶ open_notebook/domain/ ──▶ database/repository.py ──▶ SurrealDB
-                            │                 └──▶ open_notebook/utils/ (context_builder, embedding, token_utils)
-                            │
-                            ├──▶ commands/ (surreal_commands jobs) ──▶ domain/ + utils/
-                            └──▶ open_notebook/health/, digest/, mcp/, tools/
-
-desktop/  spawns  ▶  SurrealDB + api/ (uvicorn) + frontend (Next server)  and renders the UI
-```
-
-Layering rules enforced in practice:
-
-- **`domain/` must not import `utils/`** — `context_builder` (in `utils/`)
-  imports from `domain.notebook`; the reverse would create a cycle (called out
-  in `utils/CLAUDE.md`).
-- **`ai/` uses lazy imports** to avoid the
-  `utils → embedding → models → key_provider → provider_config → utils` cycle
-  (the lazy `model_manager` import inside `embedding.generate_embeddings`).
-- **`api/routers/*` mostly bypass services** and call `domain/` + `graphs/`
-  directly; the four `*_service.py` files exist only where orchestration is too
-  heavy to inline.
-- **`graphs/` is the orchestration tier** — every workflow provisions models via
-  `ai/provision.provision_langchain_model`, which is where the 105k-token
-  upgrade, the offline gate, and the privacy/auto-route hooks all converge.
+`pytest` config (`pyproject.toml`): `asyncio_mode="auto"`, `testpaths=["desktop/tests","tests"]`.
 
 ---
 
-## 15.10 Where Each Responsibility Lives (Quick Index)
+## 9. Naming conventions
 
-| Responsibility | Location |
+- **Version-tagged code comments & tests:** fixes carry `# v0.7.NN — …` / `# v0.8.NN — …` inline comments naming what was broken; regression tests are `tests/test_v0_7_NN_*.py`. The desktop `__version__` must equal the newest `## vX.Y.Z` header in `desktop/CHANGELOG.md` (enforced by a test).
+- **Backend Python:** snake_case files/functions; `PascalCase` domain/Pydantic classes; commands `<verb>_<noun>_command`; env vars `OPEN_NOTEBOOK_*` / `ONP_*` / `SURREAL_*` / `MEMORY_*`.
+- **API:** `routers/<resource>.py`, `<resource>_service.py` (only 4 exist), schemas in `models.py`.
+- **Frontend:** hooks `use-<thing>.ts` (a few legacy camelCase like `useNotebookChat.ts`); Zustand stores `<name>-store.ts`; api resource modules `<resource>.ts`; components `PascalCase.tsx`; shadcn primitives in `components/ui/`.
+- **Migrations:** `N.surrealql` + `N_down.surrealql` (monotonic integer version).
+- **Prompts:** `<graph>/<step>.jinja`.
+
+---
+
+## 10. Module-dependency relationships (who imports whom)
+
+```
+frontend (app → components → lib/api axios) ──HTTP──▶ api/routers/*
+api/routers/* ──▶ api/*_service.py (4)                    ──▶ open_notebook.graphs.*
+             └──▶ open_notebook.domain.*  (models)        ──▶ open_notebook.database.repository
+open_notebook.graphs.* ──▶ open_notebook.ai.provision ──▶ open_notebook.ai.key_provider
+                                                       └──▶ esperanto (LLM/embed/TTS clients)
+open_notebook.graphs.* ──▶ prompts/*.jinja (via ai-prompter)
+open_notebook.domain.* ──▶ commands/* (submit_command, fire-and-forget) ──▶ surreal-commands worker
+commands/* ──▶ open_notebook.utils.{chunking,embedding} + open_notebook.database.repository
+api/main.py ──▶ open_notebook.database.async_migrate.AsyncMigrationManager ──▶ migrations/*.surrealql
+desktop.app ──▶ desktop.launcher.Supervisor ──▶ (surreal | uvicorn api.main:app | worker | next | sidecars)
+desktop.launcher ──▶ desktop.{ports,config,singleton,db_repair,next_rewrites_patcher,launcher_control}
+desktop.app ──▶ desktop.{bootstrap,model_downloads,auto_register,providers,first_run,tray,window}
+```
+
+**Import direction rules:** `api/` and `commands/` depend on `open_notebook/` (never the reverse). `desktop/` depends on nothing in `api/`/`open_notebook/` at import time except through the venv it provisions and the subprocesses it spawns (it runs the API as `uvicorn api.main:app` in a child process with `cwd=upstream_root`). The frontend depends on the API only over HTTP.
+
+---
+
+## 11. Where each concern lives (quick index)
+
+| Concern | Location |
 |---|---|
-| HTTP endpoints / validation | `api/routers/*`, `api/models.py` |
-| Auth (dev password middleware) | `api/auth.py` |
-| Heavy orchestration | `api/{chat,podcast,command,credentials}_service.py` |
-| LLM provisioning / routing | `open_notebook/ai/{provision,router,offline_gate,privacy_gate}.py` |
-| Model registry + credentials | `open_notebook/ai/models.py`, `open_notebook/domain/credential.py` |
-| Workflows (chat/ask/source/...) | `open_notebook/graphs/*` |
-| Data models + persistence | `open_notebook/domain/*` ↔ `open_notebook/database/repository.py` |
-| Schema / migrations / vector fns | `open_notebook/database/migrations/*.surrealql` |
-| Embeddings / chunking / tokens | `open_notebook/utils/{embedding,chunking,token_utils,context_builder}.py` |
-| Encryption / secrets | `open_notebook/utils/encryption.py`, `desktop/config.py` |
-| Network state / offline | `open_notebook/health/network.py`, `digest/scheduler.py` |
-| Memory layer (mem0-style) | `open_notebook/utils/memory_recall.py` + migration 15 tables |
-| Podcasts | `open_notebook/podcasts/*`, `commands/podcast_*.py`, `api/podcast_service.py` |
-| Prompt optimization (SkillOpt) | `open_notebook/prompt_optimizer/*`, `commands/prompt_optimizer_commands.py` |
-| Async jobs | `commands/*` (surreal_commands) |
-| UI / state / data fetching | `frontend/src/{app,components,lib}/*` |
-| Native app shell | `desktop/*` |
-| Tests | `tests/*` (+ `tests/integration/`, `desktop/tests/`) |
-| Ops tooling | `scripts/*`, `Makefile`, `Dockerfile*`, `docker-compose.yml` |
+| HTTP endpoints | `api/routers/*.py` |
+| Request/response schemas | `api/models.py`, `api/schemas/` |
+| Auth / rate-limit / metrics / headers | `api/auth.py`, `api/rate_limit.py`, `api/middleware/` |
+| Data models & persistence | `open_notebook/domain/`, base classes `domain/base.py` |
+| DB access + migrations | `open_notebook/database/` (+ `migrations/`) |
+| AI provider selection / keys | `open_notebook/ai/` |
+| LLM workflows | `open_notebook/graphs/` + `prompts/` |
+| Async jobs | `commands/` (executed by surreal-commands worker) |
+| Embeddings / chunking / tokens | `open_notebook/utils/` |
+| Podcasts | `open_notebook/podcasts/` + `commands/podcast_commands.py` |
+| Local model lifecycle | `open_notebook/local_models/` + `desktop/model_downloads.py` + `desktop/providers/` |
+| Memory | `desktop/memory/` + `open_notebook/utils/memory_recall.py` |
+| Desktop boot / process supervision | `desktop/app.py`, `desktop/launcher.py` |
+| Native window / theming | `desktop/window.py` |
+| Packaging / build | `desktop/build/`, `Makefile` (`build-mac*`) |
+| Frontend routes | `frontend/src/app/` |
+| Frontend UI | `frontend/src/components/` |
+| Frontend data/state/i18n | `frontend/src/lib/` |
+| Config (desktop) | `~/.open-notebook-plus/config.toml` (via `desktop/config.py`) |
+| Config (backend paths) | `open_notebook/config.py` |
+| Tests | `tests/`, `tests/integration/`, `desktop/tests/` |

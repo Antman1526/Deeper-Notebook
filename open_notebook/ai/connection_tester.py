@@ -272,6 +272,14 @@ async def test_provider_connection(
         api_version: Optional[str] = None
         model_name: Optional[str] = None
 
+        # v0.8.70 — track the env var we (may) mutate below so the finally
+        # block can restore it. Declared up front (before any throwing code)
+        # so the finally never hits an unbound name. See the restore logic at
+        # the end of the function for the bug this fixes.
+        _env_key_name: Optional[str] = None
+        _env_key_prev: Optional[str] = None
+        _env_key_set = False
+
         if config_id:
             # Load specific credential from database
             try:
@@ -325,9 +333,13 @@ async def test_provider_connection(
             else:
                 return False, f"No test model configured for {provider}"
 
-        # If we have a specific API key, set it in environment for this test
+        # If we have a specific API key, set it in environment for this test.
+        # v0.8.70 — remember the prior value; the finally block restores it.
         if api_key:
-            os.environ[f"{provider.upper()}_API_KEY"] = api_key
+            _env_key_name = f"{provider.upper()}_API_KEY"
+            _env_key_prev = os.environ.get(_env_key_name)
+            os.environ[_env_key_name] = api_key
+            _env_key_set = True
 
         # Try to create the model and make a minimal call
         # v0.7.100 — wrap in wait_for so a misconfigured slow provider
@@ -409,6 +421,20 @@ async def test_provider_connection(
             # Truncate long error messages
             truncated = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
             return False, f"Error: {truncated}"
+    finally:
+        # v0.8.70 — BUG FIX: restore the process environment after the test.
+        # Previously the `os.environ[PROVIDER_API_KEY] = api_key` above was
+        # never undone, so clicking "Test connection" in Settings left that
+        # key set for the lifetime of the API process. It then shadowed every
+        # later env-fallback provisioning of that provider — overriding the
+        # intended default/other credentials until the app was restarted.
+        # Runs on every return/exception path, so the mutation is scoped to
+        # exactly this call.
+        if _env_key_set and _env_key_name is not None:
+            if _env_key_prev is None:
+                os.environ.pop(_env_key_name, None)
+            else:
+                os.environ[_env_key_name] = _env_key_prev
 
 
 # Default voices for TTS testing per provider

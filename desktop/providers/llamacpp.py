@@ -60,7 +60,7 @@ class LlamaCppProvider:
         model_dir: Path,
         ready_probe: Callable[[int], bool] = _http_ready,
         max_wait: float = 60.0,
-        python_executable: Path | None = None,
+        python_executable: str | Path | None = None,
         log_dir: Path | None = None,
         draft_model_path: Path | None = None,
         draft_n_predict: int | None = None,
@@ -71,7 +71,9 @@ class LlamaCppProvider:
         # python_executable: interpreter used to spawn llama_cpp.server.
         # Defaults to sys.executable (unfrozen/dev); pass the venv python when
         # running inside the frozen .app so llama_cpp is importable.
-        self._python_executable: Path = python_executable or Path(sys.executable)
+        self._python_executable: str | Path = (
+            sys.executable if python_executable is None else python_executable
+        )
         # v0.8.2 Item A — optional path to a smaller "draft" GGUF for
         # llama.cpp speculative decoding. When set, --model_draft <path>
         # is appended to the spawned argv and llama_cpp.server uses the
@@ -107,7 +109,7 @@ class LlamaCppProvider:
         return any(True for _ in self._iter_ggufs())
 
     def list_models(self) -> list[str]:
-        return sorted(str(p.relative_to(self.model_dir)) for p in self._iter_ggufs())
+        return sorted(p.relative_to(self.model_dir).as_posix() for p in self._iter_ggufs())
 
     def start(self, model: str) -> ProviderEnv:
         path = self.model_dir / model

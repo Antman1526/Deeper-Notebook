@@ -1,352 +1,163 @@
 'use client'
 
-/**
- * Settings → Local Models page (v0.8.39 Phase 4a — read-only inventory).
- *
- * Lists every GGUF in the configured model directory with metadata
- * (architecture, parameter count, quant, context length, file size).
- * Empty state guides the user to drop GGUFs into the configured path.
- *
- * Future (deferred to v0.8.39b / v0.8.39c):
- *   - "Download" panel with curated HuggingFace recommendations.
- *   - "Set Active" button to hot-swap the chat sidecar's GGUF without
- *     relaunching.
- */
-
 import React from 'react'
-import Link from 'next/link'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  FolderOpen,
-  Cpu,
-  Hash,
-  HardDrive,
-  RefreshCw,
-  AlertCircle,
-  Sparkles,
-  Power,
-  Loader2,
-} from 'lucide-react'
+import { AlertCircle, Cpu, Loader2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AppShell } from '@/components/layout/AppShell'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+
+import { DownloadPanel } from './DownloadPanel'
+import { ModelInventory } from '@/components/local-models/ModelInventory'
+import { RoleBenchmarkPanel } from '@/components/local-models/RoleBenchmarkPanel'
+import { RouteReceiptPanel } from '@/components/local-models/RouteReceiptPanel'
+import { SidecarLogPopover, sidecarKindFromName } from '@/components/chat/SidecarLogPopover'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AppShell } from '@/components/layout/AppShell'
+import type {
+  BenchmarkJob,
+  BenchmarkListResponse,
+  InventoryResponse,
+  LocalModel,
+  RoleRoutingResponse,
+  RouteReceiptResponse,
+} from '@/lib/api/local-models'
 import apiClient from '@/lib/api/client'
-import { useTranslation } from '@/lib/hooks/use-translation'
-// v0.8.39b — curated HuggingFace recommendations + one-click download
-import { DownloadPanel } from './DownloadPanel'
+import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 
-type LocalModel = {
-  name: string
-  path: string
-  architecture: string | null
-  context_length: number | null
-  quant: string | null
-  parameter_count_b: number | null
-  file_size_bytes: number
+const BENCHMARK_ROLES = ['chat', 'source_synthesis', 'coding_research', 'study_fast']
+
+function ConnectionChecks() {
+  const health = useLocalModelsHealth()
+  const checks = health.data?.models ?? []
+  if (!checks.length) return null
+
+  return (
+    <Card data-testid="local-model-connection-checks">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Connection checks</CardTitle>
+        <CardDescription>Live status from registered local runtimes.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Badge variant={health.data?.overall === 'healthy' ? 'secondary' : 'outline'}>{health.data?.overall ?? 'checking'}</Badge>
+        {checks.map(check => <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs" key={`${check.runtime}-${check.name}`}>
+          <div><span className="font-medium">{check.name}</span>{check.runtime && <span className="ml-2 text-muted-foreground">{check.runtime}</span>}<div className="mt-1 break-all text-muted-foreground">{check.endpoint} {check.probe_path}</div>{check.detail && <div className="mt-1 text-muted-foreground">{check.detail}</div>}</div>
+          {check.status !== 'healthy' && sidecarKindFromName(check.name) && <SidecarLogPopover kind={sidecarKindFromName(check.name)!}><Button aria-label={`View log and restart ${check.name}`} size="sm" variant="outline">View log / Restart</Button></SidecarLogPopover>}
+        </div>)}
+      </CardContent>
+    </Card>
+  )
 }
 
-type InventoryResponse = {
-  model_dir: string
-  available: boolean
-  models: LocalModel[]
-}
-
-function fmtBytes(n: number): string {
-  if (!n) return '—'
-  const gb = n / (1024 * 1024 * 1024)
-  if (gb >= 1) return `${gb.toFixed(2)} GB`
-  const mb = n / (1024 * 1024)
-  return `${mb.toFixed(0)} MB`
-}
-
-function fmtNCtx(n: number | null): string {
-  if (!n) return '—'
-  if (n >= 1024) return `${Math.round(n / 1024)}k`
-  return String(n)
-}
-
-function fmtParams(n: number | null): string {
-  if (!n) return '—'
-  return `${n}B`
-}
-
-export default function LocalModelsPage() {
-  const { t } = useTranslation()
+function LocalModelsWorkspace() {
   const queryClient = useQueryClient()
-  const { data, isLoading, isError, refetch } = useQuery<InventoryResponse>({
+  const inventory = useQuery<InventoryResponse>({
     queryKey: ['local-models', 'inventory'],
-    queryFn: async () => {
-      const resp = await apiClient.get<InventoryResponse>('/local-models/inventory')
-      return resp.data
-    },
-    // Inventory is cheap — re-poll on focus so a user who drops a new
-    // file in via Finder sees it without manual refresh.
+    queryFn: async () => (await apiClient.get<InventoryResponse>('/local-models/inventory')).data,
     refetchOnWindowFocus: true,
     staleTime: 30_000,
   })
-
-  // v0.8.40b — hot-swap chat GGUF via the launcher control plane.
-  // Tracks the path currently being swapped (for button-state UX)
-  // so the user sees which card is in-flight even if they click
-  // multiple in quick succession.
-  const [activatingPath, setActivatingPath] = React.useState<string | null>(null)
-  const setActive = useMutation({
-    mutationFn: async (path: string) => {
-      setActivatingPath(path)
-      try {
-        const resp = await apiClient.post<{
-          ok: boolean; path: string; detail: string
-        }>('/local-models/set-active', { path })
-        return resp.data
-      } finally {
-        setActivatingPath(null)
-      }
-    },
-    onSuccess: res => {
-      if (res.ok) {
-        toast.success(
-          t('localModels.setActiveSuccess', {
-            defaultValue: 'Active chat model switched: {{detail}}',
-            detail: res.detail,
-          }),
-        )
-        // Health badges may flip red briefly while the new sidecar
-        // mmaps the GGUF — invalidate so the polling picks up the
-        // transition.
-        queryClient.invalidateQueries({ queryKey: ['local-models', 'health'] })
-      } else {
-        toast.error(
-          t('localModels.setActiveFailed', {
-            defaultValue: 'Could not switch chat model: {{detail}}',
-            detail: res.detail,
-          }),
-        )
-      }
-    },
-    onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      toast.error(
-        t('localModels.setActiveFailed', {
-          defaultValue: 'Could not switch chat model: {{detail}}',
-          detail: msg,
-        }),
-      )
-    },
+  const health = useLocalModelsHealth()
+  const hasRunnableModels = inventory.data?.models.some(model => model.runnable ?? ['gguf', 'mlx'].includes(model.runtime ?? '')) ?? false
+  const routing = useQuery<RoleRoutingResponse>({
+    queryKey: ['local-models', 'role-routing'],
+    queryFn: async () => (await apiClient.get<RoleRoutingResponse>('/local-models/role-routing')).data,
+    enabled: hasRunnableModels,
   })
+  const benchmarks = useQuery<BenchmarkListResponse>({
+    queryKey: ['local-models', 'benchmarks'],
+    queryFn: async () => (await apiClient.get<BenchmarkListResponse>('/local-models/benchmarks')).data,
+    enabled: hasRunnableModels,
+  })
+  const receipts = useQuery<RouteReceiptResponse>({
+    queryKey: ['local-models', 'route-receipts'],
+    queryFn: async () => (await apiClient.get<RouteReceiptResponse>('/local-models/route-receipts')).data,
+    enabled: hasRunnableModels,
+    retry: false,
+  })
+  const benchmark = useMutation({
+    mutationFn: async (roles: string[]) => (await apiClient.post<BenchmarkJob>('/local-models/benchmarks', { roles })).data,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+  const cancel = useMutation({
+    mutationFn: async (jobId: string) => (await apiClient.post<BenchmarkJob>(`/local-models/benchmarks/${jobId}/cancel`)).data,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+  const reset = useMutation({
+    mutationFn: async () => apiClient.delete('/local-models/benchmarks'),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+  const [activatingPath, setActivatingPath] = React.useState<string | null>(null)
+  const [launchDefaultRef, setLaunchDefaultRef] = React.useState<string | null>(null)
+  const currentBenchmark = benchmark.data ?? benchmarks.data?.benchmarks?.[0]
 
-  return (
-    <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8 space-y-8 max-w-4xl">
-          {/* Header */}
-          <header className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3">
-              <Cpu className="h-7 w-7" />
-              {t('localModels.title', { defaultValue: 'Local models' })}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('localModels.description', {
-                defaultValue:
-                  'GGUF files in your configured model directory. The smart router can pick from these when chatting; drop new files in to add them.',
-              })}
-            </p>
-          </header>
+  const setActive = async (model: LocalModel) => {
+    setActivatingPath(model.path)
+    try {
+      const response = await apiClient.post<{ ok: boolean; detail: string }>('/local-models/set-active', { path: model.path })
+      if (response.data.ok) {
+        toast.success(`Active chat model switched: ${response.data.detail}`)
+        await inventory.refetch()
+      } else toast.error(`Could not switch chat model: ${response.data.detail}`)
+    } catch (error) {
+      toast.error(`Could not switch chat model: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setActivatingPath(null)
+    }
+  }
 
-          {/* Refresh control */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs text-muted-foreground">
-              {data && (
-                <span className="flex items-center gap-1.5">
-                  <FolderOpen className="h-3 w-3" />
-                  <code className="bg-muted px-1.5 py-0.5 rounded">{data.model_dir || '—'}</code>
-                </span>
-              )}
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => refetch()}
-              disabled={isLoading}
-              className="gap-1"
-            >
-              <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-              {t('common.refresh', { defaultValue: 'Refresh' })}
-            </Button>
-          </div>
+  const setLaunchDefault = async (model: LocalModel) => {
+    if (!model.launcher_model_ref) return
+    setLaunchDefaultRef(model.launcher_model_ref)
+    try {
+      const response = await apiClient.post<{ ok: boolean; detail: string }>('/local-models/launch-default', { launcher_model_ref: model.launcher_model_ref })
+      if (response.data.ok) {
+        toast.success('Native launcher default saved. Restart Open Notebook Plus to apply it.')
+        await inventory.refetch()
+      } else toast.error(response.data.detail)
+    } catch (error) {
+      toast.error(`Could not set launch default: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setLaunchDefaultRef(null)
+    }
+  }
 
-          {/* Error state */}
-          {isError && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('localModels.errorTitle', { defaultValue: 'Could not load inventory' })}
-              </AlertTitle>
-              <AlertDescription>
-                {t('localModels.errorDesc', {
-                  defaultValue: 'The API returned an error. Check the API logs and try again.',
-                })}
-              </AlertDescription>
-            </Alert>
-          )}
+  return <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div className="max-w-3xl space-y-2"><h1 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />Local model roles</h1><p className="text-muted-foreground">Inspect installed models, measure them for the work they do, and keep every routing decision local and explainable.</p></div>
+      {inventory.isFetching && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Refreshing</span>}
+    </header>
 
-          {/* Empty / unavailable states */}
-          {data && !data.available && (
-            <Alert>
-              <FolderOpen className="h-4 w-4" />
-              <AlertTitle>
-                {t('localModels.dirMissingTitle', {
-                  defaultValue: 'Model directory not found',
-                })}
-              </AlertTitle>
-              <AlertDescription>
-                {t('localModels.dirMissingDesc', {
-                  defaultValue:
-                    'The configured directory does not exist. Create it and drop .gguf files in, then refresh.',
-                })}
-                {data.model_dir && (
-                  <>
-                    {' '}
-                    <code className="bg-muted px-1 py-0.5 rounded">{data.model_dir}</code>
-                  </>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+    <ConnectionChecks />
+    {routing.isError && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Role recommendations are unavailable</AlertTitle><AlertDescription>The inventory remains available. Benchmarking will resume when the local routing service is reachable.</AlertDescription></Alert>}
+    <RoleBenchmarkPanel
+      benchmark={currentBenchmark}
+      isCancelling={cancel.isPending}
+      isResetting={reset.isPending}
+      isStarting={benchmark.isPending}
+      onBenchmarkAll={() => benchmark.mutate(BENCHMARK_ROLES)}
+      onBenchmarkRole={role => benchmark.mutate([role])}
+      onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id, { onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.') })}
+      onReset={() => reset.mutate(undefined, { onError: () => toast.error('This desktop runtime cannot reset benchmark history.') })}
+      routes={routing.data?.routes}
+    />
+    <RouteReceiptPanel isError={receipts.isError} isLoading={receipts.isLoading} receipts={receipts.data?.receipts ?? []} />
+    <ModelInventory
+      activatingPath={activatingPath}
+      health={health.data?.models ?? []}
+      inventory={inventory.data}
+      isError={inventory.isError}
+      isLoading={inventory.isLoading}
+      onRefresh={() => void inventory.refetch()}
+      onSetActive={setActive}
+      onSetLaunchDefault={setLaunchDefault}
+      settingLaunchDefaultRef={launchDefaultRef}
+    />
+    <DownloadPanel />
+  </div>
+}
 
-          {data && data.available && data.models.length === 0 && (
-            <Alert>
-              <Sparkles className="h-4 w-4" />
-              <AlertTitle>
-                {t('localModels.emptyTitle', {
-                  defaultValue: 'No models installed yet',
-                })}
-              </AlertTitle>
-              <AlertDescription>
-                {t('localModels.emptyDesc', {
-                  defaultValue:
-                    'Drop a .gguf file into the directory above, then click Refresh. We recommend Qwen2.5-7B-Instruct-Q4_K_M from HuggingFace as a starting point.',
-                })}
-                {' '}
-                <Link
-                  href="https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  {t('localModels.emptyLink', { defaultValue: 'Browse on HuggingFace →' })}
-                </Link>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* v0.8.39b — Recommendations + downloader.
-              Shown whenever the model dir is reachable (even when
-              empty — that's actually the most useful place for it:
-              brand-new install, nothing installed yet, here are some
-              good first picks). Hidden on dir-missing/error states
-              since downloads need a real dest dir. */}
-          {data && data.available && <DownloadPanel />}
-
-          {/* Inventory list */}
-          {data && data.available && data.models.length > 0 && (
-            <div className="space-y-3" data-testid="local-models-list">
-              {data.models.map(m => (
-                <Card key={m.path} data-testid={`local-model-${m.name}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="space-y-1">
-                        <CardTitle className="text-base font-medium break-all">
-                          {m.name}
-                        </CardTitle>
-                        <CardDescription className="text-xs break-all">
-                          {m.path}
-                        </CardDescription>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {m.quant && (
-                          <Badge variant="secondary" className="text-xs">
-                            <Hash className="h-3 w-3 mr-1" />
-                            {m.quant}
-                          </Badge>
-                        )}
-                        {m.architecture && (
-                          <Badge variant="outline" className="text-xs">
-                            {m.architecture}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0 space-y-3">
-                    <dl className="grid grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <dt className="text-muted-foreground">
-                          {t('localModels.colParams', { defaultValue: 'Parameters' })}
-                        </dt>
-                        <dd className="font-mono">{fmtParams(m.parameter_count_b)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">
-                          {t('localModels.colContext', { defaultValue: 'Context' })}
-                        </dt>
-                        <dd className="font-mono">{fmtNCtx(m.context_length)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground flex items-center gap-1">
-                          <HardDrive className="h-3 w-3" />
-                          {t('localModels.colSize', { defaultValue: 'Size' })}
-                        </dt>
-                        <dd className="font-mono">{fmtBytes(m.file_size_bytes)}</dd>
-                      </div>
-                    </dl>
-                    {/* v0.8.40b — Set Active button hot-swaps the chat
-                        sidecar's GGUF without quitting the app. Only
-                        meaningful for chat-shaped GGUFs (filename has
-                        no 'embed' marker); we render the button
-                        unconditionally here and let the launcher's
-                        own validation reject embedding GGUFs with a
-                        clear message via the 400 path. */}
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 h-7 text-xs"
-                        disabled={
-                          setActive.isPending || activatingPath === m.path
-                        }
-                        onClick={() => setActive.mutate(m.path)}
-                        data-testid={`set-active-${m.name}`}
-                      >
-                        {activatingPath === m.path ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Power className="h-3 w-3" />
-                        )}
-                        {activatingPath === m.path
-                          ? t('localModels.activating', {
-                              defaultValue: 'Switching…',
-                            })
-                          : t('localModels.setActive', {
-                              defaultValue: 'Set as active chat model',
-                            })}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </AppShell>
-  )
+export default function LocalModelsPage() {
+  return <AppShell><div className="flex-1 overflow-y-auto"><LocalModelsWorkspace /></div></AppShell>
 }

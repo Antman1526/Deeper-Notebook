@@ -18,6 +18,7 @@ the OS check works. Hermetic via pytest's `tmp_path` fixture.
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -34,6 +35,7 @@ class TestIsPidAlive:
         from desktop.singleton import _is_pid_alive
         assert _is_pid_alive(os.getpid()) is True
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX init PID")
     def test_init_process_is_alive(self):
         """PID 1 is always alive on POSIX systems."""
         from desktop.singleton import _is_pid_alive
@@ -49,6 +51,21 @@ class TestIsPidAlive:
         from desktop.singleton import _is_pid_alive
         # PID space on macOS is 0-99998 by default; 9_999_999 is safe.
         assert _is_pid_alive(9_999_999) is False
+
+    def test_windows_uses_non_destructive_process_query(self, monkeypatch):
+        """Windows must not use ``os.kill(pid, 0)`` as a liveness probe."""
+        import desktop.singleton as singleton
+
+        queried: list[int] = []
+        monkeypatch.setattr(singleton.sys, "platform", "win32")
+        monkeypatch.setattr(
+            singleton,
+            "_is_windows_pid_alive",
+            lambda pid: queried.append(pid) or True,
+        )
+
+        assert singleton._is_pid_alive(1) is True
+        assert queried == [1]
 
 
 # ---------------------------------------------------------------------- #

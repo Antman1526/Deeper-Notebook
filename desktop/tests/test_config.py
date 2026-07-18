@@ -54,6 +54,20 @@ def test_save_round_trips(tmp_path):
     assert loaded == cfg
 
 
+def test_load_or_create_accepts_mlx_provider(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        'model_dir = "/tmp/foo"\n'
+        'provider = "mlx"\n'
+        'default_model = "MLX/mlx-community__North-Mini-Code-1.0-6bit"\n'
+        'surreal_user = "root"\n'
+        'surreal_password = "supersecretsupersecret"\n'
+    )
+    cfg = load_or_create(cfg_path)
+    assert cfg.provider == "mlx"
+    assert cfg.default_model == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
+
+
 def test_invalid_provider_raises(tmp_path):
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text('model_dir = "/tmp"\nprovider = "bogus"\n'

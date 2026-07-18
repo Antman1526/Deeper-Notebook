@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDetailContent } from './SourceDetailContent'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -8,16 +9,20 @@ interface SourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sourceId: string | null
+  // v0.8.79 — citing sentence to highlight when opened from a citation
+  // (improvement roadmap, Batch 2). Forwarded to SourceDetailContent.
+  highlightQuery?: string
 }
 
 /**
  * Source Dialog Component
  *
  * Displays source details in a modal dialog.
- * Includes a "Chat with source" button that opens the full source page in a new tab.
+ * Includes a "Chat with source" button that navigates to the full source page in-app.
  */
-export function SourceDialog({ open, onOpenChange, sourceId }: SourceDialogProps) {
+export function SourceDialog({ open, onOpenChange, sourceId, highlightQuery }: SourceDialogProps) {
   const { t } = useTranslation()
+  const router = useRouter()
   // Ensure source ID has 'source:' prefix for API calls and routing
   const sourceIdWithPrefix = sourceId
     ? (sourceId.includes(':') ? sourceId : `source:${sourceId}`)
@@ -25,8 +30,8 @@ export function SourceDialog({ open, onOpenChange, sourceId }: SourceDialogProps
 
   const handleChatClick = () => {
     if (sourceIdWithPrefix) {
-      window.open(`/sources/${sourceIdWithPrefix}`, '_blank')
-      // Modal stays open after opening chat
+      onOpenChange(false)
+      router.push(`/sources/${sourceIdWithPrefix}`)
     }
   }
 
@@ -51,6 +56,7 @@ export function SourceDialog({ open, onOpenChange, sourceId }: SourceDialogProps
             showChatButton={true}
             onChatClick={handleChatClick}
             onClose={handleClose}
+            highlightQuery={highlightQuery}
           />
         </div>
       </DialogContent>

@@ -56,7 +56,17 @@ def test_patch_resolves_symlinked_bundle_to_real_files(tmp_path, monkeypatch):
     fw = _make_symlinked_bundle(tmp_path / "app")
     home = tmp_path / "home"
     home.mkdir()
+    windows_profile = tmp_path / "windows-profile"
+    windows_profile.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(windows_profile))
+    # On Windows, Path.home() can prefer USERPROFILE even when HOME is set.
+    # The runtime-copy location must honor the explicit HOME override instead.
+    monkeypatch.setattr(
+        nrp.Path,
+        "home",
+        classmethod(lambda cls: windows_profile),
+    )
     # Force the read-only-bundle path (copy to a writable per-user location),
     # which is where the dangling-symlink bug bit in production.
     monkeypatch.setattr(nrp, "_is_writable", lambda d: False)

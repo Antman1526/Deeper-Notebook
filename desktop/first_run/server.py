@@ -20,7 +20,7 @@ from desktop.config import Config
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
 
-_VALID_PROVIDERS = {"ollama", "llamacpp", "none"}
+_VALID_PROVIDERS = {"ollama", "llamacpp", "mlx", "none"}
 STATIC_DIR = Path(__file__).parent / "static"
 
 

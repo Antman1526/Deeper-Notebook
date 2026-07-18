@@ -13,6 +13,37 @@ import {
   NotebookVectorizeResponse,
 } from '@/lib/types/api'
 
+// v0.8.83 — mind-map graph types (improvement roadmap, Batch 3)
+export interface NotebookGraphNode {
+  id: string
+  type: 'notebook' | 'source' | 'note'
+  label: string
+}
+
+export interface NotebookGraphEdge {
+  source: string
+  target: string
+  kind: 'reference' | 'artifact'
+}
+
+export interface NotebookGraph {
+  nodes: NotebookGraphNode[]
+  edges: NotebookGraphEdge[]
+}
+
+// v0.8.87 — Discover sources (improvement roadmap, Batch 3)
+export interface DiscoverResult {
+  title: string
+  url: string
+  snippet: string
+}
+
+export interface DiscoverSourcesResponse {
+  enabled: boolean
+  provider: string | null
+  results: DiscoverResult[]
+}
+
 export const notebooksApi = {
   list: async (params?: { archived?: boolean; order_by?: string }) => {
     const response = await apiClient.get<NotebookResponse[]>('/notebooks', { params })
@@ -21,6 +52,38 @@ export const notebooksApi = {
 
   get: async (id: string) => {
     const response = await apiClient.get<NotebookResponse>(`/notebooks/${id}`)
+    return response.data
+  },
+
+  // v0.8.74 — corpus-grounded starter questions for the empty chat state
+  // (improvement roadmap, Batch 1). Best-effort on the backend: returns [] on
+  // any failure, so callers never need to special-case errors.
+  suggestedQuestions: async (id: string, limit = 4): Promise<string[]> => {
+    const response = await apiClient.get<{ questions: string[] }>(
+      `/notebooks/${id}/suggested-questions`,
+      { params: { limit } }
+    )
+    return response.data.questions ?? []
+  },
+
+  // v0.8.83 — mind-map graph (improvement roadmap, Batch 3): the notebook hub
+  // plus its sources/notes as nodes, grounded in the reference/artifact edges.
+  getGraph: async (id: string): Promise<NotebookGraph> => {
+    const response = await apiClient.get<NotebookGraph>(`/notebooks/${id}/graph`)
+    return response.data
+  },
+
+  // v0.8.87 — Discover sources: guarded web search (search-only; the caller
+  // adds chosen results as link sources). enabled=false → no provider key set.
+  discoverSources: async (
+    id: string,
+    query: string,
+    limit?: number
+  ): Promise<DiscoverSourcesResponse> => {
+    const response = await apiClient.post<DiscoverSourcesResponse>(
+      `/notebooks/${id}/discover-sources`,
+      { query, limit }
+    )
     return response.data
   },
 

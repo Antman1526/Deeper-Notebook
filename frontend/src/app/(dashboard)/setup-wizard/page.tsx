@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/card'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
+import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import type { SubsystemKey, SubsystemCheck } from '@/lib/api/health'
 
 const SUBSYSTEM_ORDER: SubsystemKey[] = [
@@ -157,20 +158,39 @@ export default function SetupWizardPage() {
   const overallStatus = data?.status ?? 'not_ready'
   const canContinue = overallStatus === 'healthy' || overallStatus === 'degraded'
 
+  // v0.8.70 — returning-user signal. Existing notebooks mean this is NOT a
+  // fresh install, so the first-launch wizard should be skipped even when the
+  // wizard_completed cookie is missing (see the auto-advance effect below).
+  const { data: notebooks } = useNotebooks()
+  const hasExistingNotebooks = (notebooks?.length ?? 0) > 0
+
   // v0.7.119 — Auto-advance: when the first /healthz/deep response comes
   // back healthy, skip the wizard entirely. Guard with a ref so we only
   // fire once per mount — otherwise a user who manually navigates back
   // to /setup-wizard would be redirected away again before they could
   // re-check anything.
+  //
+  // v0.8.70 — ALSO auto-skip for a returning user (existing notebooks) whenever
+  // the backend is reachable (healthy OR degraded), not only on a perfectly
+  // healthy first launch. The wizard_completed cookie lives in the webview's
+  // cookie store, which macOS recreates from scratch whenever the app's ad-hoc
+  // code-signing identity changes — which happens on every rebuild. Gating
+  // solely on the cookie therefore forced returning users back through the
+  // wizard after each new build, often stuck behind a transiently `degraded`
+  // subsystem during startup. Genuine first-launch users (no notebooks) still
+  // see the guided wizard.
   const autoAdvancedRef = useRef(false)
   useEffect(() => {
     if (autoAdvancedRef.current) return
     if (!data) return
-    if (data.status !== 'healthy') return
+    const reachable = data.status === 'healthy' || data.status === 'degraded'
+    const shouldSkip =
+      data.status === 'healthy' || (reachable && hasExistingNotebooks)
+    if (!shouldSkip) return
     autoAdvancedRef.current = true
     markWizardCompleted()
     router.replace('/')
-  }, [data, router])
+  }, [data, hasExistingNotebooks, router])
 
   const handleContinue = () => {
     markWizardCompleted()

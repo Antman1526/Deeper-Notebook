@@ -4,14 +4,31 @@ from __future__ import annotations
 
 import sys
 import types
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from open_notebook.utils.crawler import extract_url_with_crawl4ai
-from open_notebook.tools.add_web_source import build_add_web_source_tool
-from open_notebook.graphs import source as source_graph
+import pytest
+
 from open_notebook.domain.content_settings import ContentSettings
+from open_notebook.graphs import source as source_graph
+from open_notebook.research.safe_fetch import SafeFetchResponse
+from open_notebook.security.outbound_url import ValidatedOutboundURL
+from open_notebook.tools.add_web_source import build_add_web_source_tool
+from open_notebook.utils.crawler import extract_url_with_crawl4ai
+
+
+def _checked_response(url: str) -> SafeFetchResponse:
+    return SafeFetchResponse(
+        url=url,
+        content_type="text/html",
+        body=b"<title>Checked</title><p>Checked response</p>",
+        checked_hops=(
+            ValidatedOutboundURL(
+                url=url,
+                hostname="example.com",
+                addresses=("93.184.216.34",),
+            ),
+        ),
+    )
 
 
 # v0.8.68 — crawl4ai is an OPTIONAL heavy dependency (pulls Playwright);
@@ -88,6 +105,10 @@ async def test_add_web_source_tool_uses_crawl4ai(monkeypatch):
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped by Crawl4AI")
     monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr(
+        "open_notebook.research.safe_fetch.fetch_public_url",
+        AsyncMock(return_value=_checked_response("https://test.crawl")),
+    )
     
     # Mock Source saving
     mock_source = MagicMock()
@@ -102,7 +123,9 @@ async def test_add_web_source_tool_uses_crawl4ai(monkeypatch):
     
     assert "Successfully imported" in res
     assert "Crawl Test" in res
-    mock_extract.assert_called_once_with("https://test.crawl")
+    mock_extract.assert_called_once_with(
+        "https://test.crawl", prefetched=_checked_response("https://test.crawl")
+    )
 
 @pytest.mark.asyncio
 async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
@@ -114,11 +137,18 @@ async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
     # Mock extract_url_with_crawl4ai to fail
     monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", AsyncMock(return_value=None))
     
-    # Mock content_core extract_content fallback
+    # The fallback remains checked URL ingestion, not content-core URL fetches.
     mock_fallback_res = MagicMock()
     mock_fallback_res.content = "Simple Scraped Content"
     mock_fallback_res.title = "Fallback Title"
-    monkeypatch.setattr("open_notebook.tools.add_web_source.extract_content", AsyncMock(return_value=mock_fallback_res))
+    monkeypatch.setattr(
+        "open_notebook.graphs.source._extract_checked_url",
+        AsyncMock(return_value=mock_fallback_res),
+    )
+    monkeypatch.setattr(
+        "open_notebook.research.safe_fetch.fetch_public_url",
+        AsyncMock(return_value=_checked_response("https://test.crawl")),
+    )
     
     mock_source = MagicMock()
     mock_source.id = "src:999"
@@ -145,6 +175,10 @@ async def test_source_graph_node_uses_crawl4ai(monkeypatch):
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped inside graph")
     monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr(
+        "open_notebook.research.safe_fetch.fetch_public_url",
+        AsyncMock(return_value=_checked_response("https://test.graph.url")),
+    )
     
     state = {
         "content_state": {"url": "https://test.graph.url"},
@@ -154,4 +188,6 @@ async def test_source_graph_node_uses_crawl4ai(monkeypatch):
     
     res = await source_graph.content_process(state)
     assert res["content_state"].content == "Scraped inside graph"
-    mock_extract.assert_called_once_with("https://test.graph.url")
+    mock_extract.assert_called_once_with(
+        "https://test.graph.url", prefetched=_checked_response("https://test.graph.url")
+    )

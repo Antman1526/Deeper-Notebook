@@ -66,11 +66,18 @@ class SomeProvider:
 ```
 
 `ProviderEnv` is a typed dict (see `providers/__init__.py`) whose keys are
-environment variables forwarded to the Supervisor's child processes.
+environment variables forwarded to the Supervisor's child processes. Use the
+names the upstream provider actually reads: Ollama uses `OLLAMA_API_BASE`, while
+local OpenAI-compatible servers such as llama.cpp and MLX use
+`OPENAI_COMPATIBLE_BASE_URL` plus `OPENAI_COMPATIBLE_API_KEY`.
 
 **Worked example:** `providers/ollama.py` — discovers a running Ollama daemon
-and returns `OPENAI_API_BASE` + `OPENAI_API_KEY` so the upstream API can talk
-to it.
+and returns `OLLAMA_API_BASE` so the upstream API can talk to it.
+
+**Worked examples:** `providers/llamacpp.py` and `providers/mlx.py` — discover
+local model files, start a local OpenAI-compatible server, return
+`OPENAI_COMPATIBLE_BASE_URL` + `OPENAI_COMPATIBLE_API_KEY`, and clean up the
+owned process in `stop()`.
 
 **How to add a new provider:**
 
@@ -78,6 +85,8 @@ to it.
 2. Add a test in `tests/test_myprovider_provider.py` — mock `subprocess.Popen`
    and the ready-probe, cover `is_available`, `start`, `stop`.
 3. Wire it up in `app.py:_phase_select_provider`: add an `elif cfg.provider == "myprovider"` branch.
+4. If the provider owns a process outside the Supervisor tree, store the provider
+   on `AppContext` so app shutdown and startup failures call `stop()`.
 
 ---
 

@@ -1,0 +1,32 @@
+-- v0.8.96 -- Approval-gated local analysis metadata. Source bodies are never stored.
+DEFINE TABLE IF NOT EXISTS analysis_run SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE analysis_run TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS notebook_id ON TABLE analysis_run TYPE option<record<notebook>>;
+DEFINE FIELD IF NOT EXISTS objective ON TABLE analysis_run TYPE string;
+DEFINE FIELD IF NOT EXISTS state ON TABLE analysis_run TYPE string DEFAULT "awaiting_approval";
+DEFINE FIELD IF NOT EXISTS execution_request ON TABLE analysis_run FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS resource_limits ON TABLE analysis_run FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS approval_receipt ON TABLE analysis_run FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS route_receipt ON TABLE analysis_run FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS output_manifest ON TABLE analysis_run FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS failure ON TABLE analysis_run FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE analysis_run DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE analysis_run DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_analysis_run_notebook ON TABLE analysis_run COLUMNS notebook_id;
+DEFINE INDEX IF NOT EXISTS idx_analysis_run_state ON TABLE analysis_run COLUMNS state;
+
+DEFINE TABLE IF NOT EXISTS analysis_output SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS analysis_run_id ON TABLE analysis_output TYPE record<analysis_run>;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE analysis_output TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS relative_path ON TABLE analysis_output TYPE string;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE analysis_output TYPE string;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE analysis_output TYPE int;
+DEFINE FIELD IF NOT EXISTS media_type ON TABLE analysis_output TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE analysis_output DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE analysis_output DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_analysis_output_run ON TABLE analysis_output COLUMNS analysis_run_id;
+DEFINE INDEX IF NOT EXISTS idx_analysis_output_path ON TABLE analysis_output COLUMNS analysis_run_id, relative_path UNIQUE;

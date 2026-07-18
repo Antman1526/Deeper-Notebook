@@ -8,6 +8,8 @@
    * states, subtle highlights. Works on both light and dark themes. */
   --onp-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
   --onp-accent-strong: color-mix(in oklab, var(--primary) 22%, transparent);
+  --onp-surface-raised: color-mix(in oklab, var(--card) 92%, var(--primary) 8%);
+  --onp-border-strong: color-mix(in oklab, var(--border) 72%, var(--primary) 28%);
 
   /* Status colors not present in shadcn defaults */
   --onp-success: oklch(0.65 0.18 145);
@@ -16,6 +18,9 @@
   --onp-warning-soft: color-mix(in oklab, var(--onp-warning) 18%, transparent);
   --onp-info: var(--primary);
   --onp-info-soft: var(--onp-accent-soft);
+  --onp-evidence: oklch(0.58 0.17 285);
+  --onp-model-gguf: oklch(0.57 0.18 245);
+  --onp-model-mlx: oklch(0.62 0.16 175);
 
   /* Elevation — subtle border + soft shadow that reads as a card without
    * fighting the body background. */
@@ -34,4 +39,83 @@
   --onp-space-3: 0.75rem;
   --onp-space-4: 1rem;
   --onp-space-6: 1.5rem;
+
+  /* ── Aurora-glass system (v0.8.70) ──────────────────────────────────────
+   * v0.8.72 — the in-app aurora is now THEME-AWARE: it derives from the live
+   * theme's --primary / --accent (set per [data-theme] by the desktop theme
+   * injection), so every theme gets a cohesive hero/glow in its own palette.
+   * The "Midnight Aurora" theme's primary/accent ARE indigo (#6c7bff) / violet
+   * (#b96cff), so under it the visuals stay pixel-identical to the brand splash
+   * → app → Aurora Reveal flow. The hardcoded brand hues live as a final
+   * fallback if a theme somehow leaves --primary/--accent unset. aurora-3 is a
+   * harmonious blend of the two so the third gradient stop always fits.
+   * All motion uses GPU-composited transform/opacity/filter only. */
+  --onp-aurora-1: var(--primary, #6c7bff); /* theme primary (brand: indigo) */
+  --onp-aurora-2: var(--accent, #b96cff);  /* theme accent  (brand: violet) */
+  --onp-aurora-3: color-mix(in oklab, var(--accent, #b96cff) 55%, var(--primary, #36c9b0)); /* blend */
+
+  /* Soft outer glow keyed to the live theme primary. */
+  --onp-glow-accent:
+    0 0 0 1px color-mix(in oklab, var(--primary) 26%, transparent),
+    0 10px 34px -8px color-mix(in oklab, var(--primary) 48%, transparent);
+
+  /* Frosted-glass panel tokens. */
+  --onp-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
+  --onp-glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --onp-glass-blur: 14px;
+}
+
+.dark {
+  --onp-glass-bg: color-mix(in oklab, var(--card) 52%, transparent);
+  --onp-glass-border: color-mix(in oklab, var(--primary) 24%, var(--border));
+}
+
+/* Frosted-glass surface for cards/headers that float above content. */
+.onp-glass {
+  background: var(--onp-glass-bg);
+  -webkit-backdrop-filter: blur(var(--onp-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--onp-glass-blur)) saturate(1.4);
+  border: 1px solid var(--onp-glass-border);
+  box-shadow:
+    var(--shadow-lg),
+    inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
+}
+
+/* Full-bleed aurora background — layered drifting radial gradients. The drift
+ * keyframe is auto-zeroed under prefers-reduced-motion by the global rule in
+ * globals.css, settling to a static offset (no jank, no spin). */
+.onp-aurora-bg {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(60% 60% at 18% 12%, color-mix(in oklab, var(--onp-aurora-1) 36%, transparent), transparent 70%),
+    radial-gradient(55% 55% at 82% 22%, color-mix(in oklab, var(--onp-aurora-2) 32%, transparent), transparent 68%),
+    radial-gradient(72% 72% at 50% 104%, color-mix(in oklab, var(--onp-aurora-3) 20%, transparent), transparent 72%),
+    var(--background);
+}
+.onp-aurora-bg::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 40% at 30% 28%, color-mix(in oklab, var(--onp-aurora-1) 28%, transparent), transparent 60%),
+    radial-gradient(42% 42% at 72% 64%, color-mix(in oklab, var(--onp-aurora-2) 26%, transparent), transparent 60%);
+  filter: blur(46px);
+  opacity: 0.7;
+  animation: onp-aurora-drift 26s ease-in-out infinite alternate;
+}
+@keyframes onp-aurora-drift {
+  0%   { transform: translate3d(-4%, -2%, 0) scale(1.06); }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.16); }
+}
+
+/* Gradient-clipped text (wordmark "+", accents) — matches the splash. */
+.onp-aurora-text {
+  background: linear-gradient(90deg, var(--onp-aurora-1), var(--onp-aurora-2), var(--onp-aurora-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }

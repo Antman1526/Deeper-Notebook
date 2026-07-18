@@ -68,6 +68,11 @@ These are endpoints, not env vars — listed here for discoverability.
 |---|---|---|
 | `ONP_SOURCE_UPLOAD_MAX_BYTES` | `524288000` (500 MB) | Hard cap on POST /api/sources upload size. Returns 413 if exceeded. Minimum 1 MB (typo guard). |
 
+Browser uploads pass through the Next.js rewrite proxy first. The bundled
+frontend defaults `proxyClientMaxBodySize` to `500mb` so the UI path matches the
+backend default. If you rebuild the frontend with a larger backend cap, make
+sure the Next.js proxy and any external reverse proxy are raised too.
+
 ---
 
 ## SurrealDB connection pool (v0.7.18)

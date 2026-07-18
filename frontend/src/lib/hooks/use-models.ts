@@ -3,13 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi } from '@/lib/api/models'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
-// v0.7.196 — use the translating variant (getApiErrorMessage) so toast
-// descriptions show the localised message string, not the raw i18n key.
-// getApiErrorKey returns "apiErrors.notebookNotFound" as a literal —
-// when passed straight into a toast description without an outer t(),
-// the user sees the key string rendered as text. v0.7.196 swept this
-// across the hook layer.
-import { getApiErrorKey, getApiErrorMessage } from '@/lib/utils/error-handler'
+// v0.7.196 — use the translating variant so toast descriptions show the
+// localised message string, not the raw i18n key.
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { CreateModelRequest, ModelDefaults, ModelTestResult } from '@/lib/types/models'
 
 export const MODEL_QUERY_KEYS = {

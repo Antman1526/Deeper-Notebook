@@ -7,7 +7,7 @@ import { SidecarLogPopover, sidecarKindFromName } from './SidecarLogPopover'
 
 // Phase 1 — traffic-light dots so the user can see at-a-glance
 // which sidecars are reachable. Mapped to Tailwind tokens so
-// the colors adapt to the active theme (light / dark / 9 ONP
+// the colors adapt to the active theme (light / dark / ONP
 // custom palettes).
 //
 // v0.8.0 — Status keys for i18n (used via template literal in render).

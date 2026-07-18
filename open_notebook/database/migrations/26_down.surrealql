@@ -1,0 +1,5 @@
+-- v0.8.72 rollback — Versioned evidence-evaluation runs and claim verdicts.
+REMOVE INDEX IF EXISTS idx_claim_verdict_run ON TABLE claim_verdict;
+REMOVE INDEX IF EXISTS idx_claim_verdict_status ON TABLE claim_verdict;
+REMOVE TABLE IF EXISTS claim_verdict;
+REMOVE TABLE IF EXISTS evaluation_run;

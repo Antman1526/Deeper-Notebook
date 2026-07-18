@@ -17,6 +17,9 @@ export const sourcesApi = {
     offset?: number
     sort_by?: 'created' | 'updated'
     sort_order?: 'asc' | 'desc'
+    label?: string
+    source_type?: string
+    origin?: string
   }) => {
     const response = await apiClient.get<SourceListResponse[]>('/sources', { params })
     return response.data
@@ -25,6 +28,19 @@ export const sourcesApi = {
   get: async (id: string) => {
     const response = await apiClient.get<SourceDetailResponse>(`/sources/${id}`)
     return response.data
+  },
+
+  // v0.8.78 — locate the passage in a source's text best matching a citing
+  // sentence, for citation jump-to-highlight (improvement roadmap, Batch 2).
+  // Best-effort backend: returns null when there's no text / no decent match.
+  locatePassage: async (
+    id: string,
+    query: string
+  ): Promise<{ start: number; end: number; score: number; snippet: string } | null> => {
+    const response = await apiClient.post<{
+      match: { start: number; end: number; score: number; snippet: string } | null
+    }>(`/sources/${id}/locate-passage`, { query })
+    return response.data.match ?? null
   },
 
   create: async (data: CreateSourceRequest & { file?: File }) => {
@@ -43,6 +59,15 @@ export const sourcesApi = {
     if (data.title) {
       formData.append('title', data.title)
     }
+    if (data.topics !== undefined) {
+      formData.append('topics', JSON.stringify(data.topics))
+    }
+    if (data.provenance !== undefined) {
+      formData.append('provenance', JSON.stringify(data.provenance))
+    }
+    if (data.source_type) {
+      formData.append('source_type', data.source_type)
+    }
     if (data.url) {
       formData.append('url', data.url)
     }
@@ -58,9 +83,9 @@ export const sourcesApi = {
       formData.append('file', dataWithFile.file)
     }
     
-    formData.append('embed', String(data.embed ?? false))
+    formData.append('embed', String(data.embed ?? true))
     formData.append('delete_source', String(data.delete_source ?? false))
-    formData.append('async_processing', String(data.async_processing ?? false))
+    formData.append('async_processing', String(data.async_processing ?? true))
     
     const response = await apiClient.post<SourceResponse>('/sources', formData)
     return response.data
@@ -83,8 +108,11 @@ export const sourcesApi = {
   upload: async (file: File, notebook_id: string) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('notebooks', JSON.stringify([notebook_id]))
     formData.append('notebook_id', notebook_id)
     formData.append('type', 'upload')
+    formData.append('embed', 'true')
+    formData.append('delete_source', 'false')
     formData.append('async_processing', 'true')
     
     const response = await apiClient.post<SourceResponse>('/sources', formData, {

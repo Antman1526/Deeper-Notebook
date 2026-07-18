@@ -5,6 +5,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import dynamic from 'next/dynamic'
 import { sourcesApi } from '@/lib/api/sources'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
@@ -54,6 +57,7 @@ import {
   Youtube,
   MoreVertical,
   Trash2,
+  RefreshCw,
   Sparkles,
   Plus,
   Lightbulb,
@@ -73,17 +77,99 @@ interface SourceDetailContentProps {
   showChatButton?: boolean
   onChatClick?: () => void
   onClose?: () => void
+  // v0.8.78 — citation jump-to-highlight (improvement roadmap, Batch 2). When a
+  // user opens this source from a citation, the citing sentence is passed here;
+  // we locate the grounded passage (POST /sources/{id}/locate-passage) and show
+  // it as a highlighted "Cited passage" callout at the top. Best-effort: no
+  // match → no callout.
+  highlightQuery?: string
 }
+
+function formatProvenanceEntries(provenance: Record<string, unknown> | undefined) {
+  if (!provenance) return []
+
+  const values: Array<[string, string]> = []
+  const push = (label: string, value: unknown) => {
+    if (typeof value === 'string' && value.trim()) {
+      values.push([label, value.trim()])
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      values.push([label, value.toLocaleString()])
+    }
+  }
+
+  push('Origin', provenance.origin)
+  push('Domain', provenance.domain)
+  push('Original file', provenance.original_filename)
+  push('File name', provenance.file_name)
+  push('Size', provenance.size_bytes)
+
+  const extraction = provenance.extraction
+  if (extraction && typeof extraction === 'object' && !Array.isArray(extraction)) {
+    const extractionMap = extraction as Record<string, unknown>
+    push('Extractor', extractionMap.extractor)
+    push('Detected type', extractionMap.identified_type)
+  }
+
+  return values
+}
+
+// v0.8.82 — inline PDF viewer, dynamically imported with ssr:false (react-pdf
+// needs the DOM + the pdfjs worker; it cannot server-render). On any load
+// failure the viewer reports up and we fall back to the extracted-text view.
+const PdfSourceViewer = dynamic(() => import('./PdfSourceViewer'), {
+  ssr: false,
+  loading: () => null,
+})
 
 export function SourceDetailContent({
   sourceId,
   showChatButton = false,
   onChatClick,
-  onClose
+  onClose,
+  highlightQuery,
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
   const [source, setSource] = useState<SourceDetailResponse | null>(null)
+  // v0.8.78 — located cited passage (from highlightQuery). Best-effort.
+  const [citedPassage, setCitedPassage] = useState<{ snippet: string; score: number } | null>(null)
+  const citedPassageRef = useRef<HTMLDivElement | null>(null)
+
+  // v0.8.82 — inline PDF rendering: render the original PDF above the extracted
+  // text for uploaded .pdf sources. `pdfUnavailable` hides the viewer (and we
+  // keep showing the extracted text) if the fetch/render fails.
+  const [pdfUnavailable, setPdfUnavailable] = useState(false)
+  const handlePdfUnavailable = useCallback(() => setPdfUnavailable(true), [])
+
+  // v0.8.78 — when opened from a citation, locate the grounded passage. Runs
+  // once the source text is loaded so the backend has full_text to match
+  // against. Never throws (best-effort); clears when there's no query/match.
+  useEffect(() => {
+    let cancelled = false
+    if (!highlightQuery || !highlightQuery.trim() || !source?.full_text) {
+      setCitedPassage(null)
+      return
+    }
+    sourcesApi
+      .locatePassage(sourceId, highlightQuery)
+      .then((m) => {
+        if (!cancelled) setCitedPassage(m ? { snippet: m.snippet, score: m.score } : null)
+      })
+      .catch(() => {
+        if (!cancelled) setCitedPassage(null)
+      })
+    return () => {
+      cancelled = true
+    }
+    // depend on full_text presence (not value) so we fetch once it's loaded
+  }, [sourceId, highlightQuery, source?.full_text])
+
+  // v0.8.78 — scroll the cited-passage callout into view once it's resolved.
+  useEffect(() => {
+    if (citedPassage && citedPassageRef.current) {
+      citedPassageRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [citedPassage])
   const [insights, setInsights] = useState<SourceInsightResponse[]>([])
   const [transformations, setTransformations] = useState<Transformation[]>([])
   const [selectedTransformation, setSelectedTransformation] = useState<string>('')
@@ -130,7 +216,9 @@ export function SourceDetailContent({
     }
   }, [])
   const [isEmbedding, setIsEmbedding] = useState(false)
+  const [isRetryingSource, setIsRetryingSource] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
+  const provenanceEntries = formatProvenanceEntries(source?.provenance)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
@@ -305,6 +393,27 @@ export function SourceDetailContent({
     }
   }
 
+  const canRetryProcessing = !(source?.asset?.file_path && fileAvailable === false)
+
+  const handleRetryProcessing = async () => {
+    if (!source || isRetryingSource) return
+    if (!canRetryProcessing) return
+
+    try {
+      setIsRetryingSource(true)
+      const retriedSource = await sourcesApi.retry(source.id)
+      setSource(retriedSource)
+      toast.success(t('common.success'))
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      await fetchSource()
+    } catch (err) {
+      console.error('Failed to retry source processing:', err)
+      toast.error(t('common.error'))
+    } finally {
+      setIsRetryingSource(false)
+    }
+  }
+
   const extractFilename = (pathOrUrl: string | undefined, fallback: string) => {
     if (!pathOrUrl) {
       return fallback
@@ -454,6 +563,9 @@ export function SourceDetailContent({
     )
   }
 
+  const hasNoExtractedText = source.extraction_quality === 'no_text'
+  const hasLowExtractedText = source.extraction_quality === 'low_text'
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -542,6 +654,42 @@ export function SourceDetailContent({
         </div>
       </div>
 
+      {(hasNoExtractedText || hasLowExtractedText) && (
+        <div className="px-2 pb-4">
+          <Alert
+            variant={hasNoExtractedText ? 'destructive' : 'default'}
+            className={
+              hasLowExtractedText
+                ? 'border-amber-500/60 text-amber-700 dark:text-amber-300 [&>svg]:text-amber-600'
+                : undefined
+            }
+          >
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>
+              {hasNoExtractedText
+                ? t('sources.noExtractedText')
+                : t('sources.lowExtractedText')}
+            </AlertTitle>
+            <AlertDescription>
+              {hasNoExtractedText
+                ? t('sources.noExtractedTextDesc')
+                : t('sources.lowExtractedTextDesc')}
+              <div className="mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetryProcessing}
+                  disabled={isRetryingSource || !canRetryProcessing}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${isRetryingSource ? 'animate-spin' : ''}`} />
+                  {t('sources.retryProcessing')}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
       {/* Tabs Content */}
       <div className="flex-1 overflow-y-auto px-2">
         <Tabs defaultValue="content" className="w-full">
@@ -601,9 +749,42 @@ export function SourceDetailContent({
                     )}
                   </div>
                 )}
+                {/* v0.8.82 — inline PDF render for uploaded .pdf sources, shown
+                    above the extracted text. Falls back to text on any failure. */}
+                {source.asset?.file_path &&
+                  /\.pdf$/i.test(source.asset.file_path) &&
+                  fileAvailable !== false &&
+                  !pdfUnavailable && (
+                    <div className="mb-4">
+                      <PdfSourceViewer
+                        sourceId={sourceId}
+                        onUnavailable={handlePdfUnavailable}
+                      />
+                    </div>
+                  )}
+                {/* v0.8.78 — cited-passage callout (citation jump-to-highlight).
+                    Shows the grounded passage located from the citing sentence;
+                    reliably highlights the cited text without fighting markdown
+                    char-offset mapping. Scrolls into view on resolve. */}
+                {citedPassage && (
+                  <div
+                    ref={citedPassageRef}
+                    className="mb-4 rounded-lg border-l-4 border-primary bg-primary/10 p-3"
+                  >
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                      {t('sources.citedPassage', { defaultValue: 'Cited passage' })}
+                    </p>
+                    <p className="text-sm leading-6 text-foreground/90">
+                      <mark className="rounded bg-primary/20 px-0.5 text-foreground">
+                        {citedPassage.snippet}
+                      </mark>
+                    </p>
+                  </div>
+                )}
                 <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
                     components={{
                       p: ({ children }) => <p className="mb-4">{children}</p>,
                       // v0.7.183 — h1/h2 font-bold → font-semibold so
@@ -897,6 +1078,22 @@ export function SourceDetailContent({
                         {formatDateTime(source.updated, language)}
                       </p>
                     </div>
+                    {source.notebook_count !== undefined && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Notebook use</p>
+                        <p className="text-sm">
+                          {source.is_shared || source.notebook_count > 1
+                            ? `Shared with ${source.notebook_count} notebooks`
+                            : 'Used in one notebook'}
+                        </p>
+                      </div>
+                    )}
+                    {provenanceEntries.map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="break-all text-sm">{value}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </CardContent>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { motion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -24,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 // ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
-// shadow-layer ThemeSwitcher that supports all 9 ONP themes + live-switch.
+// shadow-layer ThemeSwitcher that supports all ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
 import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
@@ -50,6 +51,8 @@ import {
   Wrench,
   Command,
   Sparkles,
+  GraduationCap,
+  Inbox,
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
@@ -58,6 +61,7 @@ const getNavigation = (t: TFunction) => [
     title: t('navigation.collect'),
     items: [
       { name: t('navigation.sources'), href: '/sources', icon: FileText },
+      { name: 'Capture', href: '/capture', icon: Inbox },
     ],
   },
   {
@@ -75,6 +79,7 @@ const getNavigation = (t: TFunction) => [
       // a new notebook or podcast from uploaded docs).
       { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
+      { name: 'Study', href: '/study', icon: GraduationCap },
     ],
   },
   {
@@ -310,24 +315,25 @@ export function AppSidebar() {
                     <Button
                       variant={isActive ? 'secondary' : 'ghost'}
                       className={cn(
-                        // v0.7.28 — refined active-state treatment:
-                        // - relative + before pseudo for a left-edge
-                        //   accent bar that doesn't affect layout
-                        //   (the old scale-[1.02] in globals.css was
-                        //   removed in v0.7.25 for overflow reasons;
-                        //   this fills that need without the bug).
-                        // - subtle font-weight bump on active.
-                        // - smoother transition via the new motion
-                        //   token (still falls back to duration-200
-                        //   for any reduced-motion edge).
+                        // v0.8.70 — active state is now a Framer Motion
+                        // `layoutId` accent pill that SLIDES between items on
+                        // route change (replacing the per-button before: bar).
+                        // No scale (the v0.7.25 overflow lesson) and the pill's
+                        // position uses top offset instead of a transform so it
+                        // can't conflict with Framer's layout transform.
                         'relative w-full gap-3 text-sidebar-foreground sidebar-menu-item',
-                        'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
-                        'before:h-0 before:w-[3px] before:rounded-r before:bg-primary',
-                        'before:transition-[height] before:duration-200 before:ease-out',
-                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium before:h-6',
+                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                         isCollapsed ? 'justify-center px-2' : 'justify-start'
                       )}
                     >
+                      {isActive && (
+                        <motion.span
+                          layoutId="onp-sidebar-active"
+                          className="absolute left-0 h-6 w-[3px] rounded-r bg-primary"
+                          style={{ top: 'calc(50% - 0.75rem)' }}
+                          transition={{ type: 'spring', stiffness: 520, damping: 40 }}
+                        />
+                      )}
                       <item.icon className={cn('h-4 w-4', isActive && 'text-primary')} />
                       {!isCollapsed && <span>{item.name}</span>}
                     </Button>

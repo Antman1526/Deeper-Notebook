@@ -12,7 +12,7 @@ import {
 // are mocked so JSDOM renders content unconditionally.
 
 vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children, open: _o, onOpenChange }: {
+  Popover: ({ children, onOpenChange }: {
     children: React.ReactNode; open?: boolean; onOpenChange?: (v: boolean) => void
   }) => {
     // Auto-open immediately so the content fetch fires in tests.
@@ -59,11 +59,14 @@ vi.mock('sonner', () => ({
   },
 }))
 
-function renderPopover(kind: 'chat' | 'embed' | 'whisper' | 'piper' | 'memory') {
+function renderPopover(
+  kind: 'chat' | 'embed' | 'whisper' | 'piper' | 'memory',
+  props: Partial<React.ComponentProps<typeof SidecarLogPopover>> = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <SidecarLogPopover kind={kind}>
+      <SidecarLogPopover kind={kind} {...props}>
         <span data-testid="trigger">trigger</span>
       </SidecarLogPopover>
     </QueryClientProvider>,
@@ -99,6 +102,7 @@ describe('sidecarKindFromName', () => {
 
   it('returns null for unknown names', () => {
     expect(sidecarKindFromName('OpenAI gpt-4o')).toBe(null)
+    expect(sidecarKindFromName('Ollama')).toBe(null)
     expect(sidecarKindFromName('')).toBe(null)
   })
 })
@@ -111,6 +115,22 @@ describe('SidecarLogPopover', () => {
     renderPopover('chat')
     // findBy* waits for the query to resolve AND React to re-render.
     expect(await screen.findByText(/No log captured/i)).toBeInTheDocument()
+  })
+
+  it('can show restart when the log file is unavailable', async () => {
+    apiGet.mockResolvedValue({
+      data: { kind: 'chat', log: '', hint: null, available: false },
+    })
+    apiPost.mockResolvedValue({
+      data: { kind: 'chat', ok: true, detail: 'Restart requested' },
+    })
+
+    renderPopover('chat', { showRestartWhenLogUnavailable: true })
+
+    expect(await screen.findByText(/No log captured/i)).toBeInTheDocument()
+    const button = screen.getByTestId('sidecar-restart-chat')
+    button.click()
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/healthz/sidecars/chat/restart'))
   })
 
   it('renders the raw log + hint when available', async () => {

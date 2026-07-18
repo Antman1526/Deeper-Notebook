@@ -1,15 +1,15 @@
 # Open Notebook Plus
 
-**A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, and **170+ production-hardening commits** on top of upstream.
+**A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts and instructor-ready Course Packs — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama / MLX model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, Evidence Studio artifact generation, and a downstream-friendly update strategy on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
 ![React 19](https://img.shields.io/badge/React-19-149eca)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136.3%2B-009688)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0-ff6f00)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-1712%20backend%20%2B%20195%20frontend-success)
+![Tests](https://img.shields.io/badge/tests-2033%20backend%20%2B%20477%20frontend-success)
 
 > GitHub: **https://github.com/Antman1526/open-notebook-Plus** — a downstream fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
 
@@ -28,6 +28,7 @@
   - [From source (development)](#from-source-development)
 - [Configuration](#configuration)
 - [Running tests](#running-tests)
+- [Reconstruction documentation](#reconstruction-documentation)
 - [Project structure](#project-structure)
 - [Privacy & local-first stance](#privacy--local-first-stance)
 - [Contributing](#contributing)
@@ -55,6 +56,16 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - Generate AI notes and structured **insights** from any source. **Transformations** are reusable, named prompt templates (summaries, key-point extraction, topic lists, custom analyses) that you run over sources to produce new notes.
 - **Prompt optimizer (SkillOpt, MIT):** every transformation card has an **Optimize** action that *trains* the prompt against real sources from a notebook of your choice. Each round runs the prompt over example sources, an LLM judge scores the outputs against your plain-English criteria, the optimizer proposes bounded edits, and only edits that improve a held-out validation split are kept. The result is shown side-by-side and applied only when you click **Apply**. It runs against any OpenAI-compatible endpoint, so the local llama.cpp sidecar (or Ollama) can fill both the target and judge roles with zero data leaving the machine.
 
+### Evidence Studio and Course Packs
+- **Evidence Studio** turns a selected notebook, upload batch, link set, or mixed source bundle into reusable artifacts: reports, study guides, Course Packs, briefings, FAQs, timelines, flashcards, quizzes, data tables, mind maps, editable slide decks, rendered infographics, podcast outlines, and research runs.
+- **Validated artifact documents:** newly generated text artifacts are model-independent, versioned Pydantic documents rather than unverified free-form Markdown. Provider-native structured output is preferred; local and other plain-chat models receive the exact JSON Schema and get at most one bounded repair attempt when their first response is invalid. The server deterministically renders the validated document to Markdown for the current viewers and exports.
+- **Backward-compatible storage:** each new `output_payload` stores `schema_version`, the typed `document`, canonical `markdown`, the legacy `content` alias, and a compact validation receipt. Existing `{content: markdown}` artifacts continue to open, revise, export, and retain study progress without a migration. Structured PATCH edits are revalidated and re-rendered server-side so stale client Markdown cannot disagree with the document.
+- **Visual deliverables:** completed slide decks save an editable 16:9 `.pptx` plus a deterministic multipage `.pdf`; completed infographics save a `.png` plus a one-page `.pdf` in portrait, landscape, or square orientation. The PPTX keeps titles, bullets, speaker notes, visual direction, and citation markers as editable content. Visual files appear beside Markdown and JSON in the artifact viewer and are refreshed after a valid structured edit.
+- **Local Video Overview:** pair a completed Evidence Studio slide deck with a completed, timestamped Audio Overview to make a captioned 1920x1080 `.mp4`. The app re-renders the reviewed slide document locally, composes it with bundled FFmpeg, verifies the result before promotion, saves `.mp4` and `.vtt` beneath the app data folder, and streams them only through path-contained API routes. It never sends slides, narration, or captions to a hosted video service.
+- **Local, failure-isolated exports:** artifacts save beneath `~/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/` by default, or `OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR` when set. Rendering uses local Python libraries only, with no hosted office or image service. If an optional PPTX/PDF/PNG renderer fails, the validated artifact remains completed with its Markdown/JSON exports and a bounded warning; incomplete visual files are removed.
+- **Course Pack** is the richer successor to the old "training guide" label. It treats videos and audio as lesson segments, PDFs and docs as readings/reference modules, and links as external resources. The generated markdown includes audience, learning outcomes, prerequisite knowledge, source-readiness notes, module roadmap, timed lessons, hands-on exercises, facilitator notes, learner handouts, knowledge checks, final assessment, follow-up resources, and citation markers.
+- **Workflow approval gates** track context building, privacy review, model routing, and artifact generation. If selected sources are still processing, generation fails with a structured `sources_not_ready` response instead of producing thin material.
+
 ### Chat grounded in your sources
 - Converse with an AI that answers from your notebook's sources, with **interactive citation pills** linking every grounded claim back to the originating document.
 - **MCP tool support:** plug in any Model Context Protocol server (web search, fetch, custom tools) per conversation; the chat graph wires them into the LLM's tool surface automatically.
@@ -75,14 +86,29 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - **Smart routing (opt-in):** per-turn local-vs-cloud routing picks the best provider for each turn based on context size and sidecar health, so you don't switch manually.
 
 ### Local-AI-first, multi-provider
-- Bundled `llama-cpp-python` chat + embedding servers, Ollama auto-detection, and a **GGUF Manager** for downloading models from HuggingFace and hot-swapping them at runtime.
-- Drop any `.gguf` file into your model directory and it appears in the picker on next launch; `ollama pull <name>` makes Ollama models available too.
+- Bundled `llama-cpp-python` chat + embedding servers, Ollama auto-detection, Apple-Silicon MLX server support, and a **GGUF Manager** for downloading models from HuggingFace and hot-swapping them at runtime.
+- Drop any `.gguf` file into `~/Desktop/AI_Models/GGUF/` and it appears in the picker on next launch; place complete MLX repos under `~/Desktop/AI_Models/MLX/`; `ollama pull <name>` makes Ollama models available too.
 - Cloud providers are available through the **Esperanto** unified model layer (14+ providers) and are entirely opt-in via encrypted credentials you add in Settings.
 
 ### Production-grade operations
 - **Closed observability:** every response carries an `X-Request-ID`, every log line is request-correlated, and a Prometheus `/metrics` endpoint exposes request latency, DB query latency, slow-query counts, memory-recall fall-through reasons, checkpoint-prune cycles, and privacy-gate / tool-loop counters.
 - **Backup & restore** with atomic writes, an embedded SHA-256 manifest, and versioned bundle format; the desktop app also auto-exports the database on an interval.
-- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch.
+- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch. A **"Repair & restart"** button in the banner relaunches the app in one click (via a `window.ONP.relaunch` pywebview `js_api` bridge) so the boot-time repair runs without a manual quit-and-reopen.
+
+### NotebookLM-parity research UX (v0.8.x)
+A focused improvement cycle (benchmarked against Google NotebookLM and local-first rivals) added, verified, and shipped the following — each behind automated gates (backend pytest + `tsc` + `npm run build`), several confirmed live in the packaged app:
+
+- **Citation jump-to-highlight** — clicking a `[source]` citation opens the source reading pane and scrolls to + highlights the exact grounding passage (on-demand token-containment offset matching via `open_notebook/utils/citation_offsets.py`; `POST /sources/{id}/locate-passage`), turning citations from "reference" into "verify in one click."
+- **Inline PDF rendering** — PDF sources render inline (react-pdf 10) with a **locally-bundled, offline pdfjs worker** (no CDN) and a graceful fall-back to extracted text.
+- **Interactive mind map** — a React Flow (`@xyflow/react`) radial graph of the notebook hub + its sources and notes, grounded in the existing `reference`/`artifact` edges (no schema change; `GET /notebooks/{id}/graph`); clicking a source node opens it.
+- **Discover sources** — an opt-in, privacy-preserving web-search-to-source dialog in the Sources panel: type a topic → review candidate URLs → add chosen results as link sources. Search only reaches the network when a provider key (`SERPER`/`TAVILY`/`SEARXNG`) is configured; otherwise the dialog shows a setup hint.
+- **Resizable 3-pane workspace** — draggable `sources │ notes │ chat` panes with widths remembered across sessions (shadcn `resizable` on `react-resizable-panels@2`), preserving the per-column collapse toggles.
+- **Podcast depth** — a per-episode **Length** selector (short / medium / long → segment-count override) in the Generate dialog, alongside the existing focus/instructions field.
+- **Opt-in source enrichment on ingest** — Settings → Sources toggles (both default OFF) to **auto-summarize** a source (a Summary insight + one-line card preview) and **extract key topics** (parsed into the source's `topics` tags) when it's added, each reusing the existing transform→insight pipeline.
+- **Per-source chat filtering + context transparency** — the off/insights/full source toggles already scope the chat context; the chat bar now shows **"Using X of Y sources"** with a popover listing the in-context sources.
+- **First-run onboarding** — a one-click **"Explore a sample notebook"** seeds an example notebook + source so first use shows value instead of a blank screen; corpus-grounded **suggested questions** greet an empty chat.
+- **Source-grounding guardrail** — chat/ask prompts instruct the model to answer only from the provided sources (or say so plainly), and the Ask workflow declares CLARIFY rather than emit an ungrounded synthesis.
+- **Accessibility & theming** — ARIA labels on icon-only controls, Radix-managed dialog focus-trap/restore, 17 WCAG-AA/AAA themes with theme-aware aurora visuals, list virtualization, and rAF-batched streaming for a smoother WKWebView experience.
 
 ---
 
@@ -134,7 +160,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 
 **Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 10 locales.
 
-**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
+**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic Markdown and visual renderers, and a backward-compatible payload envelope under `open_notebook/studio/`; `python-pptx` writes editable decks and Pillow writes self-contained slide/infographic PDF and PNG files. The flexible existing SurrealDB field holds the envelope, so no database migration is required. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
 
 **Database (SurrealDB v2)** — A single engine providing graph relationships, document storage, vector search, and key-value storage. Domain records (Notebook, Source, Note, ChatSession, PodcastEpisode, Credential, memory tables) and their edges (`reference`, `artifact`, `refers_to`) all live here. Schema migrations run automatically on API startup via `AsyncMigrationManager`.
 
@@ -154,7 +180,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | UI components | Shadcn/ui (Radix UI) + Tailwind CSS | Radix 1.x / Tailwind 4 |
 | Markdown/editor | `@uiw/react-md-editor`, `react-markdown`, `remark-gfm` | — |
 | i18n | i18next / react-i18next | 25 / 16 |
-| API framework | FastAPI | 0.104+ |
+| API framework | FastAPI | 0.136.3+ |
 | Language (backend) | Python | 3.11–3.12 (3.12 runtime) |
 | Workflow engine | LangGraph | 1.0.10+ |
 | LLM glue | LangChain + provider packages | 1.x |
@@ -167,7 +193,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | Content extraction | content-core | 1.14+ |
 | Prompt templating | ai-prompter (Jinja2) | 0.4+ |
 | Podcast generation | podcast-creator | 0.12+ |
-| Local LLM runtime | llama-cpp-python | 0.3.23 |
+| Local LLM runtime | llama-cpp-python / MLX / Ollama | llama-cpp-python 0.3.x / mlx-lm 0.26.x |
 | Local embeddings | nomic-embed-text-v1.5 (GGUF) | — |
 | Local STT | faster-whisper (CTranslate2) | — |
 | Local TTS | Piper | — |
@@ -178,7 +204,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 | Metrics | prometheus-client | 0.20+ |
 | MCP | `mcp` client | 1.0+ |
 | Desktop shell | pywebview + PyInstaller | — |
-| Package managers | `uv` (Python), `pnpm`/`npm` (JS) | — |
+| Package managers | `uv` (Python), `npm` (JS) | — |
 
 ---
 
@@ -220,6 +246,19 @@ Select sources + episode/speaker profiles → /podcasts (job)
   → per-stage progress written to the episode; Cancel polled every ~5s
 ```
 
+**5. Generate an Evidence Studio artifact**
+```
+Selected ready sources → citation-marked context + artifact schema
+  → provider-native structured output, or JSON Schema fallback
+  → validate response → [one bounded repair when invalid] → fail closed
+  → deterministic Markdown renderer
+  → save v1 document + Markdown/content alias + validation receipt
+  → write Markdown/JSON and artifact-specific sidecar exports
+      slide_deck: editable PPTX + multipage PDF
+      infographic: PNG + one-page PDF
+  → valid structured edits retain a revision and refresh every export
+```
+
 ---
 
 ## Installation
@@ -233,11 +272,11 @@ The recommended way to run Open Notebook Plus — no Docker, no terminal, with a
 3. The build is unsigned, so the first launch needs **Right-click → Open** to clear macOS Gatekeeper.
 4. On first run the app boots its bundled SurrealDB + Node runtime, downloads the local model files it needs, and opens on a welcome splash before handing off to the main UI.
 
-> **Windows:** desktop builds are produced on a Windows host (PyInstaller is not a cross-compiler). See [`desktop/CHANGELOG.md`](desktop/CHANGELOG.md) and the build scripts under `desktop/build/`.
+> **Windows:** desktop builds are produced on a Windows host through GitHub Actions because PyInstaller is not a cross-compiler. The workflow packages `dist/Open-Notebook-Plus-windows-x64.zip`, containing `Open Notebook Plus.exe` and its bundled runtime folder. See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml) and [`desktop/build/post_build_windows.ps1`](desktop/build/post_build_windows.ps1).
 
 ### From source (development)
 
-Requirements: **Python 3.12**, [`uv`](https://github.com/astral-sh/uv), **Node 22+** with `pnpm` (or `npm`), and **SurrealDB v2**.
+Requirements: **Python 3.12**, [`uv`](https://github.com/astral-sh/uv), **Node 22+** with `npm`, and **SurrealDB v2**.
 
 ```bash
 git clone https://github.com/Antman1526/open-notebook-Plus
@@ -248,7 +287,7 @@ uv sync                          # creates .venv and installs Python deps
 cp .env.example .env             # then fill in the values below
 
 # --- Frontend ---
-cd frontend && pnpm install      # or: npm ci
+cd frontend && npm ci
 cd ..
 ```
 
@@ -278,7 +317,7 @@ make build-mac      # test → lockfile → build venv → Next.js build →
 
 Configuration is supplied through **environment variables** (a `.env` file in development, copied from `.env.example`) and through an optional **`config.toml`** for non-secret application settings. Application data — the SurrealDB store, uploads, SQLite checkpoints, and the tiktoken cache — lives under the directory named by `DATA_FOLDER` (default `./data` in dev; a per-user app-data directory in the desktop build).
 
-**Local models** are read from a GGUF model directory (by convention `~/Desktop/AI_Models/GGUF/` on macOS); any `.gguf` file dropped there is picked up on the next launch, and Ollama models are auto-detected. Encrypted cloud-provider credentials are added in-app under **Settings → Models** rather than via env vars.
+**Local models** are read from the model root `~/Desktop/AI_Models` on macOS by default. GGUF files live under `~/Desktop/AI_Models/GGUF/`; complete MLX repositories live under `~/Desktop/AI_Models/MLX/`; Ollama models are auto-detected from the running Ollama service. Encrypted cloud-provider credentials are added in-app under **Settings → Models** rather than via env vars.
 
 The full reference lives in [`docs/5-CONFIGURATION/`](docs/5-CONFIGURATION/index.md). The minimum set (names only — never commit real secret values):
 
@@ -345,10 +384,22 @@ make test                         # or: uv run pytest tests/ --ignore=tests/inte
 make test-integration
 
 # Frontend — Vitest
-cd frontend && pnpm test          # or: npm test
+cd frontend && npm test
 ```
 
-Current suites: **1712 backend tests + 195 frontend Vitest tests**, plus SurrealDB integration tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
+Current suites include backend, desktop-launcher, and frontend Vitest coverage, plus opt-in SurrealDB integration tests. Desktop packaging runs the launcher suite, all non-integration backend files through a bounded cross-platform batch runner, and frontend lint/build before packaging. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml); the release runner is [`desktop/build/run_backend_tests.py`](desktop/build/run_backend_tests.py).
+
+---
+
+## Reconstruction documentation
+
+The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or a senior engineer to recreate the project from scratch without guessing — real code snippets, exact versions, config specs, and step-by-step instructions:
+
+- **`01`–`15`** — (1) project overview & architecture, (2) environment setup & dependencies, (3) database schema & data models, (4) backend API specifications, (5) frontend architecture & components, (6) authentication & authorization, (7) business logic & core algorithms, (8) integration points & external services, (9) configuration & environment variables, (10) testing strategy & test cases, (11) build & deployment pipeline, (12) error handling & logging, (13) performance optimization & caching, (14) security implementation, (15) file structure & code organization.
+- [`PROJECT-DEEP-DIVE.md`](docs/recreation/PROJECT-DEEP-DIVE.md) — a dense AI-review brief: key code walkthrough, data flow, pain points, design trade-offs, and an **"Areas for Review"** prompt for an AI reviewer.
+- [`TECHNOLOGY-AUDIT.md`](docs/recreation/TECHNOLOGY-AUDIT.md) — an exhaustive technology inventory with each tool's specific role in this repo.
+
+These files are also mirrored to `~/Desktop/OpenNotebook/project-docs/` for loading into Open Notebook Plus itself as source material.
 
 ---
 
@@ -378,6 +429,9 @@ open-notebook-Plus/
 │   ├── tools/                # web_search, add_web_source, opencode_run
 │   ├── prompt_optimizer/     # SkillOpt adapter + runner + vendored prompts
 │   ├── podcasts/             # podcast domain logic
+│   ├── studio/               # typed artifact schemas, payload envelope,
+│   │                         #   structured generation, renderers, exports
+│   │   └── exporters/        #   PPTX/PDF/PNG visual artifact writers
 │   ├── mcp/                  # MCP client integration
 │   ├── digest/               # Gmail digest scheduling
 │   └── config.py             # DATA_FOLDER, paths, app config

@@ -52,6 +52,40 @@ def _make_fake_data_dir(root: Path) -> dict[str, bytes]:
     return contents
 
 
+def _rewrite_with_windows_manifest_paths(bundle: Path, output: Path, *,
+                                         corrupt_member: str | None = None) -> None:
+    """Write a bundle whose manifest uses Windows path separators.
+
+    Python's tar implementation stores portable slash-separated member names,
+    while older Windows backups recorded ``Path`` strings in the manifest.
+    This fixture reproduces that cross-platform shape on every test runner.
+    """
+    with tarfile.open(bundle, "r:gz") as src_tar:
+        with tarfile.open(output, "w:gz") as dst_tar:
+            for member in src_tar.getmembers():
+                if member.name == "manifest.json":
+                    manifest = json.loads(src_tar.extractfile(member).read())
+                    for entry in manifest["files"]:
+                        entry["path"] = entry["path"].replace("/", chr(92))
+                    blob = json.dumps(manifest).encode()
+                    info = tarfile.TarInfo(name="manifest.json")
+                    info.size = len(blob)
+                    info.mtime = member.mtime
+                    dst_tar.addfile(info, fileobj=br._BytesIO(blob))
+                elif member.name == corrupt_member:
+                    fake = b"X" * member.size
+                    info = tarfile.TarInfo(name=member.name)
+                    info.size = len(fake)
+                    info.mtime = member.mtime
+                    dst_tar.addfile(info, fileobj=br._BytesIO(fake))
+                else:
+                    src_file = src_tar.extractfile(member)
+                    if src_file is None:
+                        dst_tar.addfile(member)
+                    else:
+                        dst_tar.addfile(member, fileobj=src_file)
+
+
 def test_backup_creates_tarball_with_manifest(tmp_path):
     """v0.7.126 — backup() produces a gzipped tar with a manifest.json
     listing every backed-up file + its SHA-256."""
@@ -125,6 +159,28 @@ def test_backup_restore_round_trip(tmp_path):
         assert restored.read_bytes() == payload, f"{rel} content mismatch"
 
 
+def test_backup_replaces_existing_bundle_when_windows_blocks_rename(tmp_path, monkeypatch):
+    """A repeated backup replaces its prior bundle even when the filesystem
+    forbids rename-overwrite, as Windows does."""
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+    _make_fake_data_dir(src_root)
+    bundle = tmp_path / "bundle.tar.gz"
+    br.backup(bundle, data_root=src_root)
+
+    original_rename = Path.rename
+
+    def windows_rename(self, target):
+        if self.suffix == ".tmp" and Path(target).exists():
+            raise FileExistsError("Windows rename cannot replace a file")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", windows_rename)
+    br.backup(bundle, data_root=src_root)
+
+    assert bundle.exists()
+
+
 def test_restore_refuses_non_empty_data_dir(tmp_path):
     """v0.7.126 — Restore refuses to overwrite an existing data dir
     unless --force. Prevents accidental destruction."""
@@ -186,6 +242,25 @@ def test_verify_only_does_not_write(tmp_path):
     assert not target.exists()
 
 
+def test_verify_accepts_windows_style_manifest_paths(tmp_path):
+    """Verification matches portable tar members to Windows manifest paths."""
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+    _make_fake_data_dir(src_root)
+    bundle = tmp_path / "b.tar.gz"
+    br.backup(bundle, data_root=src_root)
+
+    windows_bundle = tmp_path / "windows-paths.tar.gz"
+    _rewrite_with_windows_manifest_paths(bundle, windows_bundle)
+
+    result = br.restore(
+        windows_bundle, data_root=tmp_path / "target", verify_only=True,
+    )
+
+    assert result["integrity_ok"] is True
+    assert result["verified_files"] == result["total_files"]
+
+
 def test_verify_detects_corrupted_bundle(tmp_path):
     """v0.7.126 — A bundle where the content doesn't match the
     manifest's SHA-256 must fail integrity check, NOT silently
@@ -196,29 +271,14 @@ def test_verify_detects_corrupted_bundle(tmp_path):
     bundle = tmp_path / "b.tar.gz"
     br.backup(bundle, data_root=src_root)
 
-    # Corrupt the bundle by re-writing it with a tampered file but
-    # keeping the original manifest (so the SHA-256s don't match).
-    import gzip
-    import shutil
-
-    # Build a tampered tar where one file's bytes are scrambled
+    # Model a Windows-created manifest while keeping portable tar member
+    # names, then tamper one member without updating its original hash.
     tampered = tmp_path / "tampered.tar.gz"
-    with tarfile.open(bundle, "r:gz") as src_tar:
-        with tarfile.open(tampered, "w:gz") as dst_tar:
-            for member in src_tar.getmembers():
-                if member.name == "data/uploads/source-1.pdf":
-                    # Replace with tampered content (same name + size)
-                    fake = b"X" * member.size
-                    info = tarfile.TarInfo(name=member.name)
-                    info.size = len(fake)
-                    info.mtime = member.mtime
-                    dst_tar.addfile(info, fileobj=br._BytesIO(fake))
-                else:
-                    f = src_tar.extractfile(member)
-                    if f is None:
-                        dst_tar.addfile(member)
-                    else:
-                        dst_tar.addfile(member, fileobj=f)
+    _rewrite_with_windows_manifest_paths(
+        bundle,
+        tampered,
+        corrupt_member="data/uploads/source-1.pdf",
+    )
 
     with pytest.raises(RuntimeError) as exc_info:
         br.restore(tampered, data_root=tmp_path / "target",

@@ -36,6 +36,7 @@ export function ModelSelector({
   disabled = false 
 }: ModelSelectorProps) {
   const { t } = useTranslation()
+  const defaultLabel = t('common.default')
   const [open, setOpen] = useState(false)
   const [selectedModel, setSelectedModel] = useState(currentModel || 'default')
   const { data: models, isLoading } = useModels()
@@ -67,8 +68,8 @@ export function ModelSelector({
     if (defaultModel) {
       return defaultModel.name
     }
-    return t('common.default')
-  }, [currentModel, languageModels, defaultModel, t('common.default')])
+    return defaultLabel
+  }, [currentModel, languageModels, defaultModel, defaultLabel])
 
   const handleSave = () => {
     onModelChange(selectedModel === 'default' ? undefined : selectedModel)

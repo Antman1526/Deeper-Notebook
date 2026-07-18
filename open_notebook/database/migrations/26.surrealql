@@ -1,0 +1,30 @@
+-- v0.8.72 — Versioned evidence-evaluation runs and claim verdicts.
+DEFINE TABLE IF NOT EXISTS evaluation_run SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS notebook_id ON TABLE evaluation_run TYPE record<notebook>;
+DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE evaluation_run TYPE option<record<studio_artifact>>;
+DEFINE FIELD IF NOT EXISTS message_id ON TABLE evaluation_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS evaluator_version ON TABLE evaluation_run TYPE string;
+DEFINE FIELD IF NOT EXISTS model_id ON TABLE evaluation_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS source_content_hashes ON TABLE evaluation_run FLEXIBLE TYPE array<object> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS metrics ON TABLE evaluation_run FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS error ON TABLE evaluation_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE evaluation_run DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE evaluation_run DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS claim_verdict SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS evaluation_run_id ON TABLE claim_verdict TYPE record<evaluation_run>;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE claim_verdict TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS claim ON TABLE claim_verdict TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE claim_verdict TYPE string;
+DEFINE FIELD IF NOT EXISTS confidence ON TABLE claim_verdict TYPE number;
+DEFINE FIELD IF NOT EXISTS citation_markers ON TABLE claim_verdict TYPE array<string> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS evidence ON TABLE claim_verdict FLEXIBLE TYPE array<object> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS source_state ON TABLE claim_verdict TYPE string DEFAULT "current";
+DEFINE FIELD IF NOT EXISTS explanation ON TABLE claim_verdict TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE claim_verdict DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE claim_verdict DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_claim_verdict_run ON TABLE claim_verdict COLUMNS evaluation_run_id;
+DEFINE INDEX IF NOT EXISTS idx_claim_verdict_status ON TABLE claim_verdict COLUMNS status;

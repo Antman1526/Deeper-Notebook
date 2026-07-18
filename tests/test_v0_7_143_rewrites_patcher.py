@@ -24,7 +24,6 @@ This file pins:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -231,26 +230,24 @@ class TestWritabilityDetection:
         """If the bundle is read-only (e.g., installed under
         /Applications by another user), patcher copies to
         ~/.open-notebook-plus/frontend-runtime/ and patches there."""
-        from desktop.next_rewrites_patcher import (
-            patch_rewrites_for_api_port,
-            WRITABLE_COPY_NAME,
-        )
+        import desktop.next_rewrites_patcher as patcher
+
         # Build the source bundle
         src = tmp_path / "bundle"
         _build_fake_frontend(src)
-        # Make it read-only — remove write permission from the dir
-        # itself. Files inside still appear writable to os.access but
-        # creating new files (the sentinel + .orig) fails.
-        original_mode = src.stat().st_mode
-        try:
-            os.chmod(src, 0o555)
-            # Use a fake HOME pointing into our tmp_path so the
-            # writable copy doesn't pollute the real ~/.open-notebook-plus/
-            monkeypatch.setenv("HOME", str(tmp_path / "fake-home"))
-            result = patch_rewrites_for_api_port(src, 55555)
-        finally:
-            os.chmod(src, original_mode)  # always restore for cleanup
-        expected = tmp_path / "fake-home" / ".open-notebook-plus" / WRITABLE_COPY_NAME
+        # ACLs on Windows do not treat POSIX chmod as a reliable way to make
+        # a directory unwritable, so force the patcher's write-probe outcome.
+        monkeypatch.setattr(patcher, "_is_writable", lambda _path: False)
+        # Use a fake HOME pointing into our tmp_path so the writable copy
+        # doesn't pollute the real ~/.open-notebook-plus/.
+        monkeypatch.setenv("HOME", str(tmp_path / "fake-home"))
+        result = patcher.patch_rewrites_for_api_port(src, 55555)
+        expected = (
+            tmp_path
+            / "fake-home"
+            / ".open-notebook-plus"
+            / patcher.WRITABLE_COPY_NAME
+        )
         assert result == expected
         # The writable copy should have the patched content
         patched_server = result / "server.js"

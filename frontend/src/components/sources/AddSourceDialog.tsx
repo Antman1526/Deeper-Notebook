@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { LoaderIcon, CheckCircleIcon, XCircleIcon } from 'lucide-react'
@@ -15,7 +15,12 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { WizardContainer, WizardStep } from '@/components/ui/wizard-container'
-import { SourceTypeStep, parseAndValidateUrls } from './steps/SourceTypeStep'
+import {
+  SourceTypeStep,
+  filesFromInput,
+  getOversizedFiles,
+  parseAndValidateUrls,
+} from './steps/SourceTypeStep'
 import { NotebooksStep } from './steps/NotebooksStep'
 import { ProcessingStep } from './steps/ProcessingStep'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
@@ -24,6 +29,7 @@ import { useCreateSource } from '@/lib/hooks/use-sources'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { CreateSourceRequest } from '@/lib/types/api'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { getConfig } from '@/lib/config'
 
 const MAX_BATCH_SIZE = 50
 
@@ -71,6 +77,11 @@ interface AddSourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultNotebookId?: string
+  onSourceCreated?: () => void
+  // v0.8.77 — files handed in by drag-drop (improvement roadmap, Batch 1).
+  // When present and the dialog opens, the upload tab is preselected and these
+  // files prefill the file input. Best-effort (see the prefill effect).
+  initialFiles?: File[]
 }
 
 interface ProcessingState {
@@ -85,10 +96,12 @@ interface BatchProgress {
   currentItem?: string
 }
 
-export function AddSourceDialog({ 
-  open, 
-  onOpenChange, 
-  defaultNotebookId 
+export function AddSourceDialog({
+  open,
+  onOpenChange,
+  defaultNotebookId,
+  onSourceCreated,
+  initialFiles,
 }: AddSourceDialogProps) {
   const { t } = useTranslation()
 
@@ -106,6 +119,7 @@ export function AddSourceDialog({
     defaultNotebookId ? [defaultNotebookId] : []
   )
   const [selectedTransformations, setSelectedTransformations] = useState<string[]>([])
+  const [sourceUploadMaxBytes, setSourceUploadMaxBytes] = useState<number | null>(null)
 
   // Batch-specific state
   const [urlValidationErrors, setUrlValidationErrors] = useState<{ url: string; line: number }[]>([])
@@ -125,7 +139,6 @@ export function AddSourceDialog({
     register,
     handleSubmit,
     control,
-    watch,
     setValue,
     formState: { errors },
     reset,
@@ -161,6 +174,28 @@ export function AddSourceDialog({
     }
   }, [settings, transformations, defaultNotebookId, reset])
 
+  // v0.8.77 — drag-drop prefill (improvement roadmap, Batch 1). When opened
+  // with dropped files, preselect the upload tab and prefill the file input via
+  // a DataTransfer-built FileList (the only programmatic way to set an
+  // <input type=file>). Graceful: any failure still leaves the dialog on the
+  // upload tab for a manual pick. NOTE: this FileList prefill needs a real
+  // in-app file-drag test — jsdom/vitest can't fully exercise DataTransfer.
+  useEffect(() => {
+    if (!open || !initialFiles || initialFiles.length === 0) return
+    try {
+      setValue('type', 'upload')
+      const dt = new DataTransfer()
+      for (const f of initialFiles) dt.items.add(f)
+      setValue('file', dt.files, { shouldValidate: true })
+    } catch {
+      try {
+        setValue('type', 'upload')
+      } catch {
+        /* noop — dialog still opens for a manual pick */
+      }
+    }
+  }, [open, initialFiles, setValue])
+
   // Cleanup effect
   useEffect(() => {
     return () => {
@@ -170,11 +205,29 @@ export function AddSourceDialog({
     }
   }, [])
 
-  const selectedType = watch('type')
-  const watchedUrl = watch('url')
-  const watchedContent = watch('content')
-  const watchedFile = watch('file')
-  const watchedTitle = watch('title')
+  useEffect(() => {
+    let cancelled = false
+
+    getConfig()
+      .then(config => {
+        if (!cancelled) {
+          setSourceUploadMaxBytes(config.sourceUploadMaxBytes ?? null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSourceUploadMaxBytes(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const selectedType = useWatch({ control, name: 'type' })
+  const watchedUrl = useWatch({ control, name: 'url' })
+  const watchedContent = useWatch({ control, name: 'content' })
+  const watchedFile = useWatch({ control, name: 'file' })
+  const watchedTitle = useWatch({ control, name: 'title' })
 
   // Batch mode detection
   const { isBatchMode, itemCount, parsedUrls, parsedFiles } = useMemo(() => {
@@ -190,9 +243,8 @@ export function AddSourceDialog({
     }
 
     if (selectedType === 'upload' && watchedFile) {
-      const fileList = watchedFile as FileList
-      if (fileList?.length) {
-        parsedFiles = Array.from(fileList)
+      parsedFiles = filesFromInput(watchedFile as FileList | File | undefined)
+      if (parsedFiles.length > 0) {
         fileCount = parsedFiles.length
       }
     }
@@ -205,6 +257,10 @@ export function AddSourceDialog({
 
   // Check for batch size limit
   const isOverLimit = itemCount > MAX_BATCH_SIZE
+  const oversizedFiles = useMemo(
+    () => getOversizedFiles(watchedFile as FileList | File | undefined, sourceUploadMaxBytes),
+    [watchedFile, sourceUploadMaxBytes],
+  )
 
   // Step validation - now reactive with watched values
   const isStepValid = (step: number): boolean => {
@@ -228,10 +284,9 @@ export function AddSourceDialog({
                  !!watchedTitle && watchedTitle.trim() !== ''
         }
         if (selectedType === 'upload') {
-          if (watchedFile instanceof FileList) {
-            return watchedFile.length > 0 && watchedFile.length <= MAX_BATCH_SIZE
-          }
-          return !!watchedFile
+          if (oversizedFiles.length > 0) return false
+          const files = filesFromInput(watchedFile as FileList | File | undefined)
+          return files.length > 0 && files.length <= MAX_BATCH_SIZE
         }
         return true
       case 2:
@@ -401,11 +456,15 @@ export function AddSourceDialog({
           toast.warning(t('sources.batchPartial').replace('{success}', results.success.toString()).replace('{failed}', results.failed.toString()))
         }
 
+        if (results.success > 0) {
+          onSourceCreated?.()
+        }
         handleClose()
       } else {
         // Single source submission
         setProcessingStatus({ message: t('sources.submittingSource') })
         await submitSingleSource(data)
+        onSourceCreated?.()
         handleClose()
       }
     } catch (error) {
@@ -419,6 +478,10 @@ export function AddSourceDialog({
         setBatchProgress(null)
       }, 3000)
     }
+  }
+
+  const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    void handleSubmit(onSubmit)(event)
   }
 
   // Dialog management
@@ -548,7 +611,7 @@ export function AddSourceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 flex-1 overflow-y-auto">
+        <form onSubmit={handleFormSubmit} className="min-w-0 flex-1 overflow-y-auto">
           <WizardContainer
             currentStep={currentStep}
             steps={WIZARD_STEPS}
@@ -565,6 +628,7 @@ export function AddSourceDialog({
                 errors={errors}
                 urlValidationErrors={urlValidationErrors}
                 onClearUrlErrors={handleClearUrlErrors}
+                sourceUploadMaxBytes={sourceUploadMaxBytes}
               />
             )}
             

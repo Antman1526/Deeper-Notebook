@@ -50,6 +50,50 @@ def test_api_version_excluded_from_auth():
     assert "v0.7.210 — launch splash polls before auth" in src
 
 
+def test_version_matches_latest_changelog_release():
+    """v0.8.70 — drift guard.
+
+    The v0.7.210 doc comment in ``desktop/__init__.py`` promised that
+    ``__version__`` is kept "in step with the latest ``## vN`` header in
+    desktop/CHANGELOG.md so future bumps can't drift" — but no test actually
+    enforced it, which is exactly how the string sat stale before. This pins
+    it: ``__version__`` must equal the newest *released* ``## vX.Y.Z`` header.
+
+    Note the model: in-progress work accumulates under the ``## Unreleased``
+    section as ``**... vN ...**`` bullets; ``__version__`` only advances when a
+    real release header is cut. So this asserts against ``## v`` headers, NOT
+    the Unreleased bullets.
+    """
+    import re
+
+    init_src = _src("desktop/__init__.py")
+    m = re.search(r'__version__\s*=\s*"([^"]+)"', init_src)
+    assert m, "could not find __version__ in desktop/__init__.py"
+    version = m.group(1)
+
+    changelog = _src("desktop/CHANGELOG.md")
+    # First markdown header of the form `## vX.Y.Z[suffix] — ...`.
+    header = re.search(r"(?m)^##\s+v(\d+\.\d+\.\d+[a-z]*)\b", changelog)
+    assert header, "no released `## vX.Y.Z` header found in desktop/CHANGELOG.md"
+    latest_release = header.group(1)
+
+    assert version == latest_release, (
+        f"desktop/__init__.py __version__={version!r} but the latest released "
+        f"CHANGELOG header is v{latest_release}. Bump __version__ when you cut "
+        f"a new `## v` release (or fix the header)."
+    )
+
+
+def test_pyinstaller_spec_uses_real_version():
+    """v0.8.70 — the macOS bundle version must derive from __version__, not the
+    old hardcoded "0.1.0" that made every built .app report 0.1.0 in Finder."""
+    src = _src("desktop/build/pyinstaller.spec")
+    assert '"CFBundleShortVersionString": "0.1.0"' not in src
+    assert "APP_VERSION = _read_app_version()" in src
+    assert '"CFBundleShortVersionString": APP_VERSION' in src
+    assert '"CFBundleVersion": APP_VERSION' in src
+
+
 def test_window_injects_onp_version_global():
     """v0.7.210 — desktop/window.py must inject window.ONP_VERSION
     alongside the existing theme / memory / voice globals so the

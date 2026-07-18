@@ -36,11 +36,50 @@ class NotebookResponse(BaseModel):
     note_count: int
 
 
+# v0.8.83 — mind-map graph (improvement roadmap, Batch 3)
+class GraphNode(BaseModel):
+    id: str
+    type: str  # "notebook" | "source" | "note"
+    label: str
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    kind: str  # "reference" | "artifact"
+
+
+class NotebookGraphResponse(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+# v0.8.87 — Discover sources (improvement roadmap, Batch 3): guarded web search
+# over the existing env-keyed web_search tool. Search-only; the user picks which
+# results to add (as link sources via the existing pipeline).
+class DiscoverSourcesRequest(BaseModel):
+    query: str
+    limit: Optional[int] = None
+
+
+class DiscoverResult(BaseModel):
+    title: str
+    url: str
+    snippet: str
+
+
+class DiscoverSourcesResponse(BaseModel):
+    # enabled=False → no provider key configured; the UI shows a setup hint.
+    enabled: bool
+    provider: Optional[str] = None
+    results: list[DiscoverResult]
+
+
 # Search models
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     type: Literal["text", "vector"] = Field("text", description="Search type")
-    limit: int = Field(100, description="Maximum number of results", le=1000)
+    limit: int = Field(100, description="Maximum number of results", ge=1, le=1000)
     search_sources: bool = Field(True, description="Include sources in search")
     search_notes: bool = Field(True, description="Include notes in search")
     minimum_score: float = Field(
@@ -310,6 +349,10 @@ class SettingsResponse(BaseModel):
     youtube_preferred_languages: Optional[list[str]] = None
     # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
     offline_mode: Optional[bool] = None
+    # v0.8.88 — opt-in source auto-summary on ingest (default off).
+    auto_summarize_on_ingest: Optional[bool] = None
+    # v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+    auto_extract_topics_on_ingest: Optional[bool] = None
 
 
 # v0.7.130 — tightened the literal fields from Optional[str] to
@@ -336,6 +379,10 @@ class SettingsUpdate(BaseModel):
     youtube_preferred_languages: Optional[list[str]] = None
     # v0.8.68 — forced offline mode toggle (spec 2026-06-11).
     offline_mode: Optional[bool] = None
+    # v0.8.88 — opt-in source auto-summary on ingest (default off).
+    auto_summarize_on_ingest: Optional[bool] = None
+    # v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+    auto_extract_topics_on_ingest: Optional[bool] = None
 
 
 # Sources API models
@@ -359,16 +406,25 @@ class SourceCreate(BaseModel):
     file_path: Optional[str] = Field(None, description="File path for upload type")
     content: Optional[str] = Field(None, description="Text content for text type")
     title: Optional[str] = Field(None, description="Source title")
+    topics: Optional[list[str]] = Field(
+        default_factory=list, description="User-visible labels for the source"
+    )
+    provenance: Optional[dict[str, Any]] = Field(
+        default_factory=dict, description="Source origin and ingest details"
+    )
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = Field(None, description="Normalized source type for filtering and display")
     transformations: Optional[list[str]] = Field(
         default_factory=list, description="Transformation IDs to apply"
     )
-    embed: bool = Field(False, description="Whether to embed content for vector search")
+    embed: bool = Field(True, description="Whether to embed content for vector search")
     delete_source: bool = Field(
         False, description="Whether to delete uploaded file after processing"
     )
     # New async processing support
     async_processing: bool = Field(
-        False, description="Whether to process source asynchronously"
+        True, description="Whether to process source asynchronously"
     )
 
     @model_validator(mode="after")
@@ -394,6 +450,10 @@ class SourceCreate(BaseModel):
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[list[str]] = Field(None, description="Source topics")
+    provenance: Optional[dict[str, Any]] = Field(None, description="Source provenance")
+    source_type: Optional[
+        Literal["link", "upload", "text", "web_import", "deep_research_report"]
+    ] = Field(None, description="Normalized source type")
 
 
 # v0.7.181 — SourceResponse / SourceListResponse shape reconciliation.
@@ -423,12 +483,18 @@ class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
     topics: Optional[list[str]]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    source_type: Optional[str] = None
+    notebook_count: int = 0
+    is_shared: bool = False
     asset: Optional[AssetModel]
     full_text: Optional[str]
     embedded: bool
     embedded_chunks: int
     insights_count: int = 0  # v0.7.181 — parity with SourceListResponse
     file_available: Optional[bool] = None
+    extracted_char_count: Optional[int] = None
+    extraction_quality: Optional[Literal["pending", "no_text", "low_text", "ok"]] = None
     # v0.7.181 — created/updated are now Optional[str]. Previously they
     # were required `str`, which combined with the natural `str(model.created)`
     # serialisation pattern silently returned the literal string `"None"`
@@ -452,10 +518,16 @@ class SourceListResponse(BaseModel):
     id: str
     title: Optional[str]
     topics: Optional[list[str]]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    source_type: Optional[str] = None
+    notebook_count: int = 0
+    is_shared: bool = False
     asset: Optional[AssetModel]
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
     insights_count: int
+    # v0.8.88 — one-line preview of the auto-summary insight (None if absent).
+    summary_preview: Optional[str] = None
     # v0.7.181 — same Optional[str] treatment as SourceResponse for
     # consistency. List rows always come from persisted records so in
     # practice these are never None, but the type widening keeps the
@@ -464,6 +536,8 @@ class SourceListResponse(BaseModel):
     created: Optional[str] = None
     updated: Optional[str] = None
     file_available: Optional[bool] = None
+    extracted_char_count: Optional[int] = None
+    extraction_quality: Optional[Literal["pending", "no_text", "low_text", "ok"]] = None
     # Status fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
@@ -688,6 +762,9 @@ class CreateCredentialRequest(BaseModel):
     credentials_path: Optional[str] = Field(
         None, description="Credentials file path (Vertex)"
     )
+    num_ctx: Optional[int] = Field(
+        None, description="Context window size (Ollama only; defaults to 8192)"
+    )
 
 
 class UpdateCredentialRequest(BaseModel):
@@ -706,6 +783,9 @@ class UpdateCredentialRequest(BaseModel):
     project: Optional[str] = Field(None, description="Project ID")
     location: Optional[str] = Field(None, description="Location")
     credentials_path: Optional[str] = Field(None, description="Credentials path")
+    num_ctx: Optional[int] = Field(
+        None, description="Context window size (Ollama only; defaults to 8192)"
+    )
 
 
 class CredentialResponse(BaseModel):
@@ -725,6 +805,7 @@ class CredentialResponse(BaseModel):
     project: Optional[str] = None
     location: Optional[str] = None
     credentials_path: Optional[str] = None
+    num_ctx: Optional[int] = None
     has_api_key: bool = False
     # v0.7.182 — Optional[str] (was required `str`). Combined with
     # the new iso() helper that returns None for None input, this
@@ -803,4 +884,27 @@ class NotebookDeleteResponse(BaseModel):
     deleted_sources: int = Field(..., description="Number of exclusive sources deleted")
     unlinked_sources: int = Field(
         ..., description="Number of sources unlinked from notebook"
+    )
+
+
+# v0.8.78 — citation passage location (improvement roadmap, Batch 2). The
+# frontend posts the citing sentence; the backend returns the char-offset range
+# of the best-matching passage in the source's full_text so the source viewer
+# can scroll to + highlight it.
+class LocatePassageRequest(BaseModel):
+    query: str = Field(
+        ..., description="The citing sentence / claim text to locate in the source"
+    )
+
+
+class PassageMatchResponse(BaseModel):
+    start: int = Field(..., description="Start char offset in the source full_text")
+    end: int = Field(..., description="End char offset (exclusive)")
+    score: float = Field(..., description="Match confidence 0..1 (token containment)")
+    snippet: str = Field(..., description="The matched passage text")
+
+
+class LocatePassageResponse(BaseModel):
+    match: Optional[PassageMatchResponse] = Field(
+        None, description="Best passage match, or null when there's no decent match"
     )
