@@ -1,4 +1,5 @@
 """Local model benchmark jobs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +11,12 @@ from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
 from open_notebook.local_models.inventory import LocalModelInfo, enumerate_models
+from open_notebook.local_models.quality_tasks import (
+    QualityMeasurement,
+    evaluate_quality_response,
+    gate_quality_task,
+    quality_task_for_role,
+)
 from open_notebook.local_models.role_routing import (
     inventory_model_match_keys,
     model_match_key,
@@ -20,11 +27,64 @@ from open_notebook.utils.text_utils import extract_text_content
 BenchmarkStatus = Literal["queued", "running", "completed", "failed"]
 BenchmarkResultStatus = Literal["completed", "failed", "skipped"]
 
+ROLE_WEIGHTS = {
+    "chat": {
+        "correctness": 0.30,
+        "citation": 0.25,
+        "latency": 0.20,
+        "instruction": 0.15,
+        "context": 0.10,
+    },
+    "source_synthesis": {
+        "correctness": 0.30,
+        "citation": 0.30,
+        "schema": 0.20,
+        "context": 0.15,
+        "latency": 0.05,
+    },
+    "coding_research": {
+        "correctness": 0.30,
+        "tool": 0.25,
+        "schema": 0.15,
+        "context": 0.15,
+        "latency": 0.15,
+    },
+    "study_fast": {
+        "correctness": 0.25,
+        "schema": 0.30,
+        "latency": 0.25,
+        "instruction": 0.20,
+    },
+}
+
 
 @dataclass(frozen=True)
 class BenchmarkMeasurement:
     latency_ms: int
     tokens_per_second: float
+    quality: QualityMeasurement | None = None
+
+    def normalized_metrics(self) -> dict[str, float]:
+        metrics = {
+            "latency": _normalize_latency(self.latency_ms),
+            "throughput": _normalize_throughput(self.tokens_per_second),
+        }
+        if self.quality is None:
+            return metrics
+        metrics.update(
+            {
+                "schema": _normalize_boolean(self.quality.schema_valid),
+                "citation": _normalize_boolean(self.quality.citation_fidelity),
+                "instruction": _normalize_boolean(self.quality.instruction_following),
+                "tool": _normalize_boolean(self.quality.tool_calling),
+                "context": _normalize_boolean(self.quality.context_recall),
+                "correctness": _normalize_boolean(self.quality.answer_correctness),
+                "refusal": _normalize_boolean(
+                    self.quality.refusal_when_evidence_absent
+                ),
+            }
+        )
+        return {key: value for key, value in metrics.items() if value is not None}
 
 
 @dataclass
@@ -39,6 +99,8 @@ class BenchmarkResult:
     provider: str | None = None
     latency_ms: int | None = None
     tokens_per_second: float | None = None
+    quality: QualityMeasurement | None = None
+    normalized_metrics: dict[str, float] = field(default_factory=dict)
     score: float = 0.0
     error: str | None = None
 
@@ -56,7 +118,9 @@ class BenchmarkJob:
 
 
 RegisteredModelsLoader = Callable[[], Awaitable[list[object]]]
-BenchmarkRunner = Callable[[str, object, LocalModelInfo], Awaitable[BenchmarkMeasurement]]
+BenchmarkRunner = Callable[
+    [str, object, LocalModelInfo], Awaitable[BenchmarkMeasurement]
+]
 
 _JOBS: dict[str, BenchmarkJob] = {}
 _HISTORY_FILENAME = "open-notebook-plus-benchmarks.json"
@@ -102,6 +166,31 @@ def load_benchmark_history(model_dir: Path) -> list[BenchmarkResult]:
         if not isinstance(row, dict):
             continue
         data = {key: value for key, value in row.items() if key in allowed}
+        raw_quality = data.get("quality")
+        if isinstance(raw_quality, dict):
+            try:
+                data["quality"] = QualityMeasurement(
+                    **{
+                        key: value
+                        for key, value in raw_quality.items()
+                        if key in QualityMeasurement.__dataclass_fields__
+                    }
+                )
+            except TypeError:
+                data.pop("quality", None)
+        elif raw_quality is not None and not isinstance(
+            raw_quality, QualityMeasurement
+        ):
+            data.pop("quality", None)
+        if "normalized_metrics" not in data:
+            latency = data.get("latency_ms")
+            throughput = data.get("tokens_per_second")
+            if isinstance(latency, int) and isinstance(throughput, (int, float)):
+                data["normalized_metrics"] = BenchmarkMeasurement(
+                    latency_ms=latency,
+                    tokens_per_second=float(throughput),
+                    quality=data.get("quality"),
+                ).normalized_metrics()
         try:
             results.append(BenchmarkResult(**data))
         except TypeError:
@@ -136,8 +225,7 @@ async def resolve_measured_model_id(
     candidates = [
         result
         for result in load_benchmark_history(model_dir)
-        if result.role == role and result.status == "completed"
-        and result.score > 0
+        if result.role == role and result.status == "completed" and result.score > 0
     ]
     if not candidates:
         return None
@@ -217,51 +305,76 @@ async def _run_benchmark_job(
         for role in job.roles:
             route = routes_by_role.get(role)
             if route is None or route.model is None:
-                job.results.append(BenchmarkResult(
-                    role=role,
-                    label=role.replace("_", " ").title(),
-                    status="skipped",
-                    error="No local model recommendation is available for this role.",
-                ))
+                job.results.append(
+                    BenchmarkResult(
+                        role=role,
+                        label=role.replace("_", " ").title(),
+                        status="skipped",
+                        error="No local model recommendation is available for this role.",
+                    )
+                )
                 continue
 
             registered_model = _find_registered_model(route.model, registered_models)
             if registered_model is None:
-                job.results.append(_skipped_result(
-                    role=role,
-                    label=route.label,
-                    local_model=route.model,
-                    error="Recommended local model is not registered as a language model.",
-                ))
+                job.results.append(
+                    _skipped_result(
+                        role=role,
+                        label=route.label,
+                        local_model=route.model,
+                        error="Recommended local model is not registered as a language model.",
+                    )
+                )
+                continue
+
+            task = quality_task_for_role(role)
+            gate = gate_quality_task(task, route.model, registered_model)
+            if not gate.allowed:
+                job.results.append(
+                    _skipped_result(
+                        role=role,
+                        label=route.label,
+                        local_model=route.model,
+                        error=gate.reason or "Benchmark task capability gate failed.",
+                    )
+                )
                 continue
 
             try:
-                measurement = await benchmark_runner(role, registered_model, route.model)
-                job.results.append(BenchmarkResult(
-                    role=role,
-                    label=route.label,
-                    status="completed",
-                    model_name=route.model.name,
-                    model_path=route.model.path,
-                    model_runtime=route.model.runtime,
-                    model_id=str(getattr(registered_model, "id", "") or ""),
-                    provider=getattr(registered_model, "provider", None),
-                    latency_ms=measurement.latency_ms,
-                    tokens_per_second=round(measurement.tokens_per_second, 2),
-                    score=_benchmark_score(measurement),
-                ))
+                measurement = await benchmark_runner(
+                    role, registered_model, route.model
+                )
+                job.results.append(
+                    BenchmarkResult(
+                        role=role,
+                        label=route.label,
+                        status="completed",
+                        model_name=route.model.name,
+                        model_path=route.model.path,
+                        model_runtime=route.model.runtime,
+                        model_id=str(getattr(registered_model, "id", "") or ""),
+                        provider=getattr(registered_model, "provider", None),
+                        latency_ms=measurement.latency_ms,
+                        tokens_per_second=round(measurement.tokens_per_second, 2),
+                        quality=measurement.quality,
+                        normalized_metrics=measurement.normalized_metrics(),
+                        score=score_benchmark_measurement(role, measurement),
+                    )
+                )
             except Exception as exc:
-                job.results.append(BenchmarkResult(
-                    role=role,
-                    label=route.label,
-                    status="failed",
-                    model_name=route.model.name,
-                    model_path=route.model.path,
-                    model_runtime=route.model.runtime,
-                    model_id=str(getattr(registered_model, "id", "") or "") or None,
-                    provider=getattr(registered_model, "provider", None),
-                    error=f"{exc.__class__.__name__}: {exc}",
-                ))
+                job.results.append(
+                    BenchmarkResult(
+                        role=role,
+                        label=route.label,
+                        status="failed",
+                        model_name=route.model.name,
+                        model_path=route.model.path,
+                        model_runtime=route.model.runtime,
+                        model_id=str(getattr(registered_model, "id", "") or "") or None,
+                        provider=getattr(registered_model, "provider", None),
+                        error=f"{exc.__class__.__name__}: {exc}",
+                    )
+                )
 
         job.status = "completed"
     except Exception as exc:
@@ -324,10 +437,29 @@ def _find_registered_benchmark_result(
     return None
 
 
-def _benchmark_score(measurement: BenchmarkMeasurement) -> float:
-    speed = max(0.0, measurement.tokens_per_second)
-    latency_penalty = max(0.0, measurement.latency_ms / 1000.0)
-    return round(max(0.0, speed - latency_penalty), 2)
+def score_benchmark_measurement(role: str, measurement: BenchmarkMeasurement) -> float:
+    """Score a benchmark using the plan-approved, role-specific quality mix."""
+    metrics = measurement.normalized_metrics()
+    weights = ROLE_WEIGHTS.get(role)
+    if weights is None:
+        return metrics.get("latency", 0.0)
+    return round(
+        sum(metrics.get(metric, 0.0) * weight for metric, weight in weights.items()), 2
+    )
+
+
+def _normalize_latency(latency_ms: int) -> float:
+    return round(min(100.0, 100_000.0 / max(1, latency_ms)), 2)
+
+
+def _normalize_throughput(tokens_per_second: float) -> float:
+    return round(min(100.0, max(0.0, tokens_per_second) * 2.0), 2)
+
+
+def _normalize_boolean(value: bool | None) -> float | None:
+    if value is None:
+        return None
+    return 100.0 if value else 0.0
 
 
 async def _load_registered_language_models() -> list[object]:
@@ -343,27 +475,22 @@ async def _invoke_registered_model(
 ) -> BenchmarkMeasurement:
     from open_notebook.ai.models import model_manager
 
-    prompt = _benchmark_prompt(role)
+    task = quality_task_for_role(role)
     model_id = str(getattr(registered_model, "id", "") or "")
     started = time.perf_counter()
     model = await model_manager.get_model(model_id, max_tokens=96)
     if model is None:
         raise RuntimeError(f"Could not load registered model {model_id}")
-    response = await model.to_langchain().ainvoke(prompt)
+    response = await model.to_langchain().ainvoke(task.prompt)
     latency_ms = max(1, int((time.perf_counter() - started) * 1000))
     text = extract_text_content(getattr(response, "content", response))
     token_estimate = max(1, len(text.split()))
     return BenchmarkMeasurement(
         latency_ms=latency_ms,
         tokens_per_second=token_estimate / max(latency_ms / 1000.0, 0.001),
+        quality=evaluate_quality_response(
+            task,
+            text,
+            tool_calls=getattr(response, "tool_calls", None),
+        ),
     )
-
-
-def _benchmark_prompt(role: str) -> str:
-    if role == "study_fast":
-        return "Create three concise flashcards about retrieval augmented generation."
-    if role == "coding_research":
-        return "Explain the tradeoffs of local-first model routing in five bullets."
-    if role == "source_synthesis":
-        return "Summarize two short source notes into an executive briefing."
-    return "Answer briefly: why does local-first AI matter for private notebooks?"
