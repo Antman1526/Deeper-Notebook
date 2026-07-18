@@ -103,12 +103,19 @@ class EvaluationRepository:
         """Return saved verdicts, flagging changed sources without relocation."""
         try:
             rows = await repo_query(
-                "SELECT schema_version, claim, status, confidence, citation_markers, evidence, "
+                "SELECT created, schema_version, claim, status, confidence, citation_markers, evidence, "
                 "explanation FROM claim_verdict WHERE evaluation_run_id = $run "
                 "ORDER BY created ASC",
                 {"run": ensure_record_id(evaluation_run_id)},
             )
-            verdicts = [ClaimVerdict.model_validate(row) for row in rows]
+            # SurrealDB requires the ordering idiom in the selected fields.
+            # Audit metadata is not part of the public verdict contract.
+            verdicts = [
+                ClaimVerdict.model_validate(
+                    {key: value for key, value in row.items() if key != "created"}
+                )
+                for row in rows
+            ]
             if current_source_texts is None:
                 return verdicts
             return [
