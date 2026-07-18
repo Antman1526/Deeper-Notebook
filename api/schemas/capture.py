@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from open_notebook.capture.contracts import CaptureState
+from open_notebook.capture.routing import CaptureRouteResult
 
 
 class RegisterCaptureRootRequest(BaseModel):
@@ -52,3 +53,23 @@ class CaptureScanResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[CaptureItemResponse]
+
+
+class CaptureRouteRequest(BaseModel):
+    """Request a local-only transcription and notebook route preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("path")
+    @classmethod
+    def non_blank_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("path must not be blank")
+        return value
+
+
+class CaptureRouteResponse(CaptureRouteResult):
+    """Route preview only; importing remains a separate approved action."""
