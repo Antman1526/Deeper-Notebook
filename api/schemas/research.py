@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -50,6 +50,16 @@ class ResearchCandidateResponse(BaseModel):
     decision: Literal["accepted", "rejected", "pending"]
 
 
+class ResearchComparisonResponse(BaseModel):
+    """Read-only comparison receipt; payloads remain structured, never HTML."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agreements: list[dict[str, Any]] = Field(default_factory=list)
+    contradictions: list[dict[str, Any]] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+
+
 class ResearchRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -57,10 +67,13 @@ class ResearchRunResponse(BaseModel):
     notebook_id: str
     objective: str
     stage: str
+    plan: dict[str, Any] = Field(default_factory=dict)
+    hypotheses: list[str] = Field(default_factory=list)
     search_query: str | None = None
     candidates: list[ResearchCandidateResponse] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    comparison: ResearchComparisonResponse = Field(default_factory=ResearchComparisonResponse)
     cancelled: bool = False
 
 
