@@ -51,6 +51,7 @@ import {
   Wrench,
   Command,
   Sparkles,
+  GraduationCap,
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
@@ -76,6 +77,7 @@ const getNavigation = (t: TFunction) => [
       // a new notebook or podcast from uploaded docs).
       { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
+      { name: 'Study', href: '/study', icon: GraduationCap },
     ],
   },
   {
