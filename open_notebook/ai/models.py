@@ -1,4 +1,10 @@
-from typing import Any, ClassVar, Optional
+import asyncio
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Lock
+from typing import Any, ClassVar, Mapping, Optional
 
 from esperanto import (
     AIFactory,
@@ -16,6 +22,64 @@ from open_notebook.exceptions import ConfigurationError
 # v0.7.116 — PEP 604 union syntax (Python 3.10+). Was `Union[...]`
 # (PEP 484); equivalent semantics, less import noise.
 ModelType = LanguageModel | EmbeddingModel | SpeechToTextModel | TextToSpeechModel
+
+_ROUTE_RECEIPT_FILENAME = "model-route-receipts.json"
+_ROUTE_RECEIPT_LIMIT = 500
+_ROUTE_RECEIPT_LOCK = Lock()
+_ROUTE_RECEIPT_FIELDS = frozenset(
+    {
+        "selected_model_id",
+        "fallback_model_id",
+        "role",
+        "reason",
+        "benchmark_age_seconds",
+        "outcome",
+    }
+)
+
+
+def route_receipt_path() -> Path:
+    """Return the private local receipt file used by quality-aware routing."""
+    data_folder = os.environ.get("DATA_FOLDER", "").strip() or "./data"
+    return Path(data_folder) / _ROUTE_RECEIPT_FILENAME
+
+
+async def persist_model_route_receipt(receipt: Mapping[str, object]) -> None:
+    """Append a bounded local route receipt without retaining user content.
+
+    Route receipts intentionally live beside other local app data instead of
+    the benchmark file: the benchmark inventory can be rebuilt, while a user
+    needs a durable explanation for why a route or fallback was selected.
+    """
+    safe_receipt = {
+        field: receipt.get(field)
+        for field in _ROUTE_RECEIPT_FIELDS
+        if receipt.get(field) is not None
+    }
+    required = {"selected_model_id", "role", "reason", "outcome"}
+    if not required.issubset(safe_receipt):
+        raise ValueError("Route receipt is missing required routing metadata.")
+    safe_receipt["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    await asyncio.to_thread(
+        _append_model_route_receipt, route_receipt_path(), safe_receipt
+    )
+
+
+def _append_model_route_receipt(path: Path, receipt: dict[str, object]) -> None:
+    with _ROUTE_RECEIPT_LOCK:
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            records = existing if isinstance(existing, list) else []
+        except (OSError, json.JSONDecodeError):
+            records = []
+        records.append(receipt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f"{path.suffix}.tmp")
+        temporary.write_text(
+            json.dumps(records[-_ROUTE_RECEIPT_LIMIT:], indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
 
 
 class Model(ObjectModel):
@@ -57,7 +121,9 @@ class Model(ObjectModel):
         try:
             return await Credential.get(self.credential)
         except Exception:
-            logger.warning(f"Could not load credential {self.credential} for model {self.id}")
+            logger.warning(
+                f"Could not load credential {self.credential} for model {self.id}"
+            )
             return None
 
     async def delete(self) -> bool:
@@ -131,11 +197,11 @@ class Model(ObjectModel):
                     "Model {} deleted while still referenced by episode "
                     "profile {!r} — profile retry/regeneration will 400 "
                     "until the profile is reassigned.",
-                    self.id, name,
+                    self.id,
+                    name,
                 )
             referencing_sps = await repo_query(
-                "SELECT VALUE name FROM speaker_profile "
-                "WHERE voice_model = $mid;",
+                "SELECT VALUE name FROM speaker_profile WHERE voice_model = $mid;",
                 {"mid": model_id},
             )
             for name in referencing_sps or []:
@@ -143,12 +209,14 @@ class Model(ObjectModel):
                     "Model {} deleted while still referenced by speaker "
                     "profile {!r} — profile retry/regeneration will 400 "
                     "until the profile is reassigned.",
-                    self.id, name,
+                    self.id,
+                    name,
                 )
         except Exception as exc:
             logger.debug(
-                "Could not scan podcast profile references for {} "
-                "(non-fatal): {}", self.id, exc,
+                "Could not scan podcast profile references for {} (non-fatal): {}",
+                self.id,
+                exc,
             )
 
         return await super().delete()
@@ -242,6 +310,7 @@ class ModelManager:
                 NotFoundError,
                 OpenNotebookError,
             )
+
             # NotFoundError from Model.get means the ID really doesn't
             # exist in the DB — actionable for the user.
             if isinstance(exc, NotFoundError):
