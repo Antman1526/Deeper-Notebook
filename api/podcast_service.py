@@ -3,16 +3,23 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from surreal_commands import get_command_status, submit_command
 
-from open_notebook.domain.notebook import Notebook
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
     ConfigurationError,
     InvalidInputError,
 )
-from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
+from open_notebook.podcasts.models import (
+    EpisodeProfile,
+    PodcastEpisode,
+    PodcastOverviewMode,
+    SpeakerProfile,
+    get_podcast_mode_spec,
+    normalize_podcast_mode,
+)
 
 
 class PodcastGenerationRequest(BaseModel):
@@ -24,12 +31,36 @@ class PodcastGenerationRequest(BaseModel):
     content: Optional[str] = None
     notebook_id: Optional[str] = None
     briefing_suffix: Optional[str] = None
+    # `briefing_suffix` is the pre-format request field. Keep accepting it for
+    # queued desktop clients, while persisting the user-facing name below.
+    mode: PodcastOverviewMode = PodcastOverviewMode.DEEP_DIVE
+    custom_prompt: Optional[str] = None
     # v0.8.86 — per-episode length: "short" | "medium" | "long" (overrides the
     # profile's num_segments for this episode). None → use the profile default.
     episode_length: Optional[str] = None
     # v0.8.68 — outline-review workflow: stop after the outline so the user
     # can edit it before transcript + audio are generated.
     review_outline: bool = False
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def validate_mode(
+        cls, value: PodcastOverviewMode | str | None
+    ) -> PodcastOverviewMode:
+        return normalize_podcast_mode(value)
+
+    @field_validator("custom_prompt", "briefing_suffix")
+    @classmethod
+    def normalize_prompt(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @property
+    def resolved_custom_prompt(self) -> Optional[str]:
+        """Use the new request field first; old clients keep their behavior."""
+        return self.custom_prompt or self.briefing_suffix
 
 
 class PodcastGenerationResponse(BaseModel):
@@ -40,6 +71,7 @@ class PodcastGenerationResponse(BaseModel):
     message: str
     episode_profile: str
     episode_name: str
+    mode: PodcastOverviewMode = PodcastOverviewMode.DEEP_DIVE
 
 
 class PodcastService:
@@ -73,7 +105,9 @@ class PodcastService:
                     provider, model_name, _cfg = await resolver()
                 except Exception:
                     continue  # unresolvable profile keeps its existing error path
-                if (provider or "").strip().lower().replace("-", "_") not in LOCAL_PROVIDERS:
+                if (provider or "").strip().lower().replace(
+                    "-", "_"
+                ) not in LOCAL_PROVIDERS:
                     cloud_models.append(f"{label}: {model_name} ({provider})")
         except ConfigurationError:
             raise
@@ -82,9 +116,7 @@ class PodcastService:
             return
 
         if cloud_models:
-            reason = (
-                "Offline mode is on" if state.forced_offline else "You're offline"
-            )
+            reason = "Offline mode is on" if state.forced_offline else "You're offline"
             raise ConfigurationError(
                 f"{reason}, and this podcast profile uses cloud models that "
                 f"can't be reached: {'; '.join(cloud_models)}. Reconnect, or "
@@ -99,6 +131,8 @@ class PodcastService:
         notebook_id: Optional[str] = None,
         content: Optional[str] = None,
         briefing_suffix: Optional[str] = None,
+        mode: PodcastOverviewMode | str | None = None,
+        custom_prompt: Optional[str] = None,
         episode_length: Optional[str] = None,
         review_outline: bool = False,
     ) -> str:
@@ -113,6 +147,16 @@ class PodcastService:
             speaker_profile = await SpeakerProfile.get_by_name(speaker_profile_name)
             if not speaker_profile:
                 raise ValueError(f"Speaker profile '{speaker_profile_name}' not found")
+
+            normalized_mode = normalize_podcast_mode(mode)
+            required_speakers = get_podcast_mode_spec(normalized_mode).speaker_count
+            if len(speaker_profile.speakers) < required_speakers:
+                raise ValueError(
+                    f"Audio Overview format '{normalized_mode.value}' requires "
+                    f"{required_speakers} speaker{'s' if required_speakers != 1 else ''}, "
+                    f"but profile '{speaker_profile_name}' has only "
+                    f"{len(speaker_profile.speakers)}."
+                )
 
             # v0.8.68 — offline gate at SUBMIT time (spec §6 follow-up). The
             # podcast worker calls TTS/LLM providers directly (not through
@@ -141,9 +185,8 @@ class PodcastService:
                     # error at submission time.
                     if notebook is None:
                         from open_notebook.exceptions import NotFoundError
-                        raise NotFoundError(
-                            f"Notebook {notebook_id} not found"
-                        )
+
+                        raise NotFoundError(f"Notebook {notebook_id} not found")
                     content = (
                         await notebook.get_context()
                         if hasattr(notebook, "get_context")
@@ -157,6 +200,7 @@ class PodcastService:
                     # path (kept for backward compat with non-fatal
                     # transient DB hiccups).
                     from open_notebook.exceptions import NotFoundError
+
                     if isinstance(e, NotFoundError):
                         raise
                     logger.warning(
@@ -201,13 +245,21 @@ class PodcastService:
                         f"handle it."
                     )
 
-            # Prepare command arguments
+            resolved_custom_prompt = (
+                custom_prompt or briefing_suffix or ""
+            ).strip() or None
+
+            # Prepare command arguments. Keep briefing_suffix for commands
+            # persisted by pre-0.8.95 desktop clients; new workers persist the
+            # same text as custom_prompt so retries can be exact.
             command_args = {
                 "episode_profile": episode_profile_name,
                 "speaker_profile": speaker_profile_name,
                 "episode_name": episode_name,
                 "content": str(content),
                 "briefing_suffix": briefing_suffix,
+                "mode": normalized_mode.value,
+                "custom_prompt": resolved_custom_prompt,
                 # v0.8.86 — per-episode length override (None → profile default).
                 "episode_length": episode_length,
                 # v0.8.68 — outline-review workflow flag.
@@ -233,15 +285,20 @@ class PodcastService:
             # pin the podcast-generation endpoint. Same env knob as
             # CommandService.submit_command_job for consistency.
             import os as _os_for_timeout
+
             _submit_timeout = float(
-                _os_for_timeout.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                _os_for_timeout.environ.get(
+                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
+                ).strip()
                 or 10
             )
             try:
                 job_id = await asyncio.wait_for(
                     asyncio.to_thread(
-                        submit_command, "open_notebook",
-                        "generate_podcast", command_args,
+                        submit_command,
+                        "open_notebook",
+                        "generate_podcast",
+                        command_args,
                     ),
                     timeout=_submit_timeout,
                 )
@@ -323,6 +380,7 @@ class PodcastService:
                 raise ValueError("Podcast commands not available")
 
             import os as _os_for_timeout
+
             _submit_timeout = float(
                 _os_for_timeout.environ.get(
                     "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
@@ -332,8 +390,10 @@ class PodcastService:
             try:
                 job_id = await asyncio.wait_for(
                     asyncio.to_thread(
-                        submit_command, "open_notebook",
-                        "resume_podcast", {"episode_id": str(episode.id)},
+                        submit_command,
+                        "open_notebook",
+                        "resume_podcast",
+                        {"episode_id": str(episode.id)},
                     ),
                     timeout=_submit_timeout,
                 )
@@ -399,9 +459,7 @@ class PodcastService:
             # v0.7.177 — Sanitize 500 detail; logger.error keeps the
             # full exception for ops, the client gets a generic message.
             logger.error(f"Failed to get podcast job status: {e}")
-            raise HTTPException(
-                status_code=500, detail="Failed to get job status"
-            )
+            raise HTTPException(status_code=500, detail="Failed to get job status")
 
     @staticmethod
     async def list_episodes() -> list:
@@ -412,9 +470,7 @@ class PodcastService:
         except Exception as e:
             # v0.7.177 — Sanitize 500 detail (see above).
             logger.error(f"Failed to list podcast episodes: {e}")
-            raise HTTPException(
-                status_code=500, detail="Failed to list episodes"
-            )
+            raise HTTPException(status_code=500, detail="Failed to list episodes")
 
     @staticmethod
     async def get_episode(episode_id: str) -> PodcastEpisode:

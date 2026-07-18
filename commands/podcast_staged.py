@@ -18,6 +18,7 @@ Upgrade guard: tests/test_v0_8_68_podcast_staged.py pins the node names —
 if a podcast-creator upgrade renames them, the suite fails loudly instead
 of stages silently going dark.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,6 +50,9 @@ from open_notebook.podcasts.models import (
     STAGE_COMBINE,
     STAGE_OUTLINE,
     STAGE_TRANSCRIPT,
+    PodcastOverviewMode,
+    get_podcast_mode_spec,
+    normalize_podcast_mode,
 )
 
 # Stage transition map: when node X completes, the run is now in stage Y.
@@ -106,6 +110,39 @@ def segments_for_length(episode_length: Optional[str]) -> Optional[int]:
     return _LENGTH_TO_SEGMENTS.get(episode_length.strip().lower())
 
 
+def segments_for_overview_mode(
+    mode: PodcastOverviewMode | str | None,
+    episode_length: Optional[str],
+    profile_segments: int,
+) -> int:
+    """Apply a requested short/medium/long value inside a mode's bounds.
+
+    The profile remains the user-owned default. A mode never produces an
+    outline outside its own schema contract, even when an older profile was
+    configured with a broader segment count.
+    """
+    spec = get_podcast_mode_spec(mode)
+    requested = segments_for_length(episode_length) or profile_segments
+    return max(spec.min_segments, min(spec.max_segments, requested))
+
+
+def speaker_profile_for_overview_mode(
+    speaker_profile: Any,
+    mode: PodcastOverviewMode | str | None,
+) -> Any:
+    """Use the exact number of voices promised by the selected format."""
+    spec = get_podcast_mode_spec(mode)
+    speakers = list(getattr(speaker_profile, "speakers", []))
+    if len(speakers) < spec.speaker_count:
+        raise ValueError(
+            f"Audio Overview format '{normalize_podcast_mode(mode).value}' requires "
+            f"{spec.speaker_count} speakers, but the selected profile has {len(speakers)}."
+        )
+    if len(speakers) == spec.speaker_count:
+        return speaker_profile
+    return speaker_profile.model_copy(update={"speakers": speakers[: spec.speaker_count]})
+
+
 def build_state_and_config(
     *,
     content: str,
@@ -117,6 +154,8 @@ def build_state_and_config(
     episode_name: str,
     outline: Optional[dict] = None,
     episode_length: Optional[str] = None,
+    mode: PodcastOverviewMode | str | None = None,
+    custom_prompt: Optional[str] = None,
 ) -> tuple[dict, dict]:
     """Mirror of create_podcast()'s setup for OUR call shape (explicit
     briefing + episode_profile, which the upstream function treats as
@@ -128,8 +167,13 @@ def build_state_and_config(
         speaker_profile_name or episode_config.speaker_config
     )
     resolved_language = resolve_language_name(language) if language else None
-    # v0.8.86 — length override (falls back to the profile's num_segments).
-    num_segments = segments_for_length(episode_length) or episode_config.num_segments
+    normalized_mode = normalize_podcast_mode(mode)
+    speaker_profile = speaker_profile_for_overview_mode(speaker_profile, normalized_mode)
+    # The overview mode owns the allowable outline range; the familiar
+    # short/medium/long control remains a bounded preference inside it.
+    num_segments = segments_for_overview_mode(
+        normalized_mode, episode_length, episode_config.num_segments
+    )
 
     state: PodcastState = {
         "content": content,
@@ -145,6 +189,11 @@ def build_state_and_config(
         "output_dir": Path(output_dir),
         "episode_name": episode_name,
         "speaker_profile": speaker_profile,
+        # podcast-creator safely ignores unknown state keys. Keeping this
+        # metadata beside the graph state makes a resumed job auditable and
+        # preserves the exact format request for custom nodes/providers.
+        "overview_mode": normalized_mode.value,
+        "custom_prompt": custom_prompt,
     }
     config = {
         "configurable": {
@@ -215,9 +264,7 @@ async def run_graph_with_stages(
                     try:
                         await episode.save()
                     except Exception as exc:
-                        logger.warning(
-                            f"stage update save failed (non-fatal): {exc}"
-                        )
+                        logger.warning(f"stage update save failed (non-fatal): {exc}")
 
     task = asyncio.create_task(_consume())
     try:
