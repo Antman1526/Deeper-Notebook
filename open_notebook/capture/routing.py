@@ -34,7 +34,7 @@ class CaptureNotebook(BaseModel):
 
 
 class CaptureNotebookSuggestion(CaptureNotebook):
-    score: int = Field(ge=1)
+    score: float = Field(ge=0)
     reason: str = Field(min_length=1)
 
 
@@ -65,6 +65,10 @@ class CaptureRouteResult(BaseModel):
 
 
 SpeechToTextGetter = Callable[[], Awaitable[Any | None]]
+NotebookSuggester = Callable[
+    [str, CaptureRouteSource, tuple[CaptureNotebook, ...]],
+    Awaitable[list[CaptureNotebookSuggestion]],
+]
 
 
 class CaptureRoutingService:
@@ -77,11 +81,13 @@ class CaptureRoutingService:
         capture_items: Iterable[CaptureInboxItem],
         notebooks: Iterable[CaptureNotebook],
         get_speech_to_text: SpeechToTextGetter,
+        semantic_suggester: NotebookSuggester | None = None,
     ) -> None:
         self._roots = tuple(Path(root).expanduser().resolve() for root in approved_roots)
         self._items = tuple(capture_items)
         self._notebooks = tuple(notebooks)
         self._get_speech_to_text = get_speech_to_text
+        self._semantic_suggester = semantic_suggester
 
     async def route(self, media_path: Path | str) -> CaptureRouteResult:
         source = self._validated_source(Path(media_path))
@@ -115,7 +121,7 @@ class CaptureRoutingService:
             state="ready",
             source=source,
             transcript=transcript,
-            notebook_suggestions=self._suggest_notebooks(transcript, source),
+            notebook_suggestions=await self._suggest_notebooks(transcript, source),
         )
 
     def _validated_source(self, requested_path: Path) -> CaptureRouteSource:
@@ -177,9 +183,19 @@ class CaptureRoutingService:
         text = getattr(result, "text", result)
         return str(text).strip()
 
-    def _suggest_notebooks(
+    async def _suggest_notebooks(
         self, transcript: str, source: CaptureRouteSource
     ) -> list[CaptureNotebookSuggestion]:
+        if self._semantic_suggester is not None and transcript:
+            try:
+                suggestions = await self._semantic_suggester(
+                    transcript, source, self._notebooks
+                )
+                if suggestions:
+                    return suggestions[:3]
+            except Exception:
+                logger.warning("Local semantic capture routing was unavailable")
+
         search_terms = set(_WORDS.findall(f"{transcript} {source.relative_path}".lower()))
         scored: list[CaptureNotebookSuggestion] = []
         for notebook in self._notebooks:
@@ -188,7 +204,7 @@ class CaptureRoutingService:
                 scored.append(
                     CaptureNotebookSuggestion(
                         **notebook.model_dump(),
-                        score=len(matches),
+                        score=float(len(matches)),
                         reason=f"Matched {', '.join(matches)}",
                     )
                 )
