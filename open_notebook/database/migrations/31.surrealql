@@ -1,0 +1,34 @@
+-- v0.8.97 -- Evidence-grounded study cards and immutable FSRS reviews.
+DEFINE TABLE IF NOT EXISTS study_card SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_card TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE study_card TYPE string;
+DEFINE FIELD IF NOT EXISTS artifact_card_id ON TABLE study_card TYPE string;
+DEFINE FIELD IF NOT EXISTS version ON TABLE study_card TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS front ON TABLE study_card TYPE string;
+DEFINE FIELD IF NOT EXISTS back ON TABLE study_card TYPE string;
+DEFINE FIELD IF NOT EXISTS citations ON TABLE study_card FLEXIBLE TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS fsrs_state ON TABLE study_card FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS due ON TABLE study_card TYPE datetime;
+DEFINE FIELD IF NOT EXISTS stability ON TABLE study_card TYPE option<float>;
+DEFINE FIELD IF NOT EXISTS difficulty ON TABLE study_card TYPE option<float>;
+DEFINE FIELD IF NOT EXISTS lapse_count ON TABLE study_card TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS current ON TABLE study_card TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS created ON TABLE study_card DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE study_card DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_study_card_version ON TABLE study_card COLUMNS artifact_id, artifact_card_id, version UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_card_current ON TABLE study_card COLUMNS artifact_id, artifact_card_id, current;
+DEFINE INDEX IF NOT EXISTS idx_study_card_due ON TABLE study_card COLUMNS current, due;
+
+DEFINE TABLE IF NOT EXISTS study_review SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_review TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS card_id ON TABLE study_review TYPE record<study_card>;
+DEFINE FIELD IF NOT EXISTS card_version ON TABLE study_review TYPE int;
+DEFINE FIELD IF NOT EXISTS request_id ON TABLE study_review TYPE string;
+DEFINE FIELD IF NOT EXISTS rating ON TABLE study_review TYPE string;
+DEFINE FIELD IF NOT EXISTS reviewed_at ON TABLE study_review TYPE datetime;
+DEFINE FIELD IF NOT EXISTS fsrs_state_before ON TABLE study_review FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS fsrs_state_after ON TABLE study_review FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS lapse_count_after ON TABLE study_review TYPE int;
+DEFINE FIELD IF NOT EXISTS created ON TABLE study_review DEFAULT time::now() VALUE $before OR time::now();
+DEFINE INDEX IF NOT EXISTS idx_study_review_request ON TABLE study_review COLUMNS request_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_review_card ON TABLE study_review COLUMNS card_id, reviewed_at;
