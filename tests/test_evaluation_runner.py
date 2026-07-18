@@ -71,6 +71,16 @@ def test_loader_refuses_a_manifest_checksum_mismatch(tmp_path: Path):
         load_golden_corpus(copied_corpus, copied_manifest)
 
 
+def test_loader_uses_canonical_lf_bytes_for_windows_checkouts(tmp_path: Path):
+    corpus_path, manifest_path, _ = corpus_paths()
+    copied_corpus = tmp_path / "corpus.jsonl"
+    copied_manifest = tmp_path / "manifest.json"
+    copied_corpus.write_bytes(corpus_path.read_bytes().replace(b"\n", b"\r\n"))
+    copied_manifest.write_text(manifest_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assert len(load_golden_corpus(copied_corpus, copied_manifest).cases) == 66
+
+
 def test_loader_refuses_a_rehashed_corpus_that_removes_a_release_denominator(
     tmp_path: Path,
 ):

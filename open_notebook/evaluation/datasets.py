@@ -32,6 +32,13 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _canonicalize_corpus_bytes(raw_bytes: bytes) -> bytes:
+    """Hash JSONL fixtures with LF line endings on every supported platform."""
+    if b"\r" in raw_bytes.replace(b"\r\n", b""):
+        raise DatasetIntegrityError("corpus contains an invalid carriage return")
+    return raw_bytes.replace(b"\r\n", b"\n")
+
+
 def _require_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise DatasetIntegrityError(f"{field} must be a non-empty string")
@@ -211,7 +218,7 @@ def corpus_paths() -> tuple[Path, Path, Path]:
 
 def load_golden_corpus(corpus_path: Path, manifest_path: Path) -> GoldenCorpus:
     """Load v1 only after validating every immutable fixture invariant."""
-    raw_bytes = corpus_path.read_bytes()
+    raw_bytes = _canonicalize_corpus_bytes(corpus_path.read_bytes())
     try:
         manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
