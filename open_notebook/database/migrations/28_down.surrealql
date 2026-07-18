@@ -1,0 +1,3 @@
+-- v0.8.96 rollback -- Remove local analysis metadata only.
+REMOVE TABLE IF EXISTS analysis_output;
+REMOVE TABLE IF EXISTS analysis_run;
