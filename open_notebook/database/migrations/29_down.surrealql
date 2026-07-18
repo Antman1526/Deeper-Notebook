@@ -1,0 +1,4 @@
+-- v0.8.95 rollback -- remove only Audio Overview format fields.
+REMOVE FIELD IF EXISTS mode ON TABLE episode;
+REMOVE FIELD IF EXISTS custom_prompt ON TABLE episode;
+REMOVE FIELD IF EXISTS transcript_segments ON TABLE episode;

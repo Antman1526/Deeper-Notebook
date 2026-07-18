@@ -141,7 +141,12 @@ export const podcastsApi = {
   generatePodcast: async (payload: PodcastGenerationRequest) => {
     const response = await apiClient.post<PodcastGenerationResponse>(
       '/podcasts/generate',
-      payload
+      {
+        // Make the new closed format explicit for callers compiled before
+        // the dialog update; the backend keeps the same deep_dive default.
+        ...payload,
+        mode: payload.mode ?? 'deep_dive',
+      }
     )
     return response.data
   },

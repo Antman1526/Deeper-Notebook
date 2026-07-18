@@ -5,6 +5,7 @@ The runner is tested with a FAKE graph (no live LLM/TTS); the library
 integration is pinned by node-name guards so a podcast-creator upgrade that
 renames nodes fails the suite instead of silently breaking stages.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +23,7 @@ def _run(coro):
 
 
 # ------------------------------------------------------------- library pins
+
 
 def test_podcast_creator_graph_node_names_are_pinned():
     """The staged runner maps these exact node names to stages. If a
@@ -51,6 +53,7 @@ def test_resume_graph_starts_at_transcript():
 
 # ------------------------------------------------------------- staged runner
 
+
 class _FakeEpisode:
     def __init__(self):
         self.id = "episode:test"
@@ -79,28 +82,40 @@ def test_stages_progress_and_results_merge(monkeypatch):
     from commands import podcast_staged as ps
 
     episode = _FakeEpisode()
-    graph = _FakeGraph([
-        {"generate_outline": {"outline": {"segments": []}}},
-        {"generate_transcript": {"transcript": ["d1", "d2"]}},
-        {"generate_all_audio": {"audio_clips": ["a.wav"]}},
-        {"generate_all_audio": {"audio_clips": ["b.wav"]}},  # Send fan-out
-        {"combine_audio": {"final_output_file_path": "/tmp/out.mp3"}},
-    ])
+    graph = _FakeGraph(
+        [
+            {"generate_outline": {"outline": {"segments": []}}},
+            {"generate_transcript": {"transcript": ["d1", "d2"]}},
+            {"generate_all_audio": {"audio_clips": ["a.wav"]}},
+            {"generate_all_audio": {"audio_clips": ["b.wav"]}},  # Send fan-out
+            {"combine_audio": {"final_output_file_path": "/tmp/out.mp3"}},
+        ]
+    )
 
     async def _never_cancelled(episode_id):
         return False
+
     monkeypatch.setattr(ps, "_cancel_requested", _never_cancelled)
 
     import time as _time
-    merged = _run(ps.run_graph_with_stages(
-        graph, {}, {}, episode=episode,
-        deadline=_time.monotonic() + 60, poll_interval=0.05,
-    ))
+
+    merged = _run(
+        ps.run_graph_with_stages(
+            graph,
+            {},
+            {},
+            episode=episode,
+            deadline=_time.monotonic() + 60,
+            poll_interval=0.05,
+        )
+    )
     assert merged["final_output_file_path"] == "/tmp/out.mp3"
     assert merged["transcript"] == ["d1", "d2"]
     # Stage transitions recorded in order, audio fan-out deduped.
     assert episode.saved_stages == [
-        "generating_transcript", "generating_audio", "combining_audio",
+        "generating_transcript",
+        "generating_audio",
+        "combining_audio",
     ]
 
 
@@ -108,20 +123,26 @@ def test_cancel_flag_aborts_generation(monkeypatch):
     from commands import podcast_staged as ps
 
     episode = _FakeEpisode()
-    graph = _FakeGraph(
-        [{"generate_outline": {"outline": {}}}] * 100, delay=0.2
-    )
+    graph = _FakeGraph([{"generate_outline": {"outline": {}}}] * 100, delay=0.2)
 
     async def _cancelled(episode_id):
         return True
+
     monkeypatch.setattr(ps, "_cancel_requested", _cancelled)
 
     import time as _time
+
     with pytest.raises(ps.CancelledByUser):
-        _run(ps.run_graph_with_stages(
-            graph, {}, {}, episode=episode,
-            deadline=_time.monotonic() + 60, poll_interval=0.05,
-        ))
+        _run(
+            ps.run_graph_with_stages(
+                graph,
+                {},
+                {},
+                episode=episode,
+                deadline=_time.monotonic() + 60,
+                poll_interval=0.05,
+            )
+        )
 
 
 def test_deadline_raises_timeout(monkeypatch):
@@ -132,15 +153,22 @@ def test_deadline_raises_timeout(monkeypatch):
 
     async def _never(episode_id):
         return False
+
     monkeypatch.setattr(ps, "_cancel_requested", _never)
 
     import time as _time
+
     with pytest.raises(asyncio.TimeoutError):
-        _run(ps.run_graph_with_stages(
-            graph, {}, {}, episode=episode,
-            deadline=_time.monotonic() - 1,  # already expired
-            poll_interval=0.05,
-        ))
+        _run(
+            ps.run_graph_with_stages(
+                graph,
+                {},
+                {},
+                episode=episode,
+                deadline=_time.monotonic() - 1,  # already expired
+                poll_interval=0.05,
+            )
+        )
 
 
 def test_generation_exception_propagates(monkeypatch):
@@ -153,25 +181,36 @@ def test_generation_exception_propagates(monkeypatch):
 
     async def _never(episode_id):
         return False
+
     monkeypatch.setattr(ps, "_cancel_requested", _never)
 
     import time as _time
+
     with pytest.raises(RuntimeError, match="TTS provider exploded"):
-        _run(ps.run_graph_with_stages(
-            _BoomGraph(), {}, {}, episode=_FakeEpisode(),
-            deadline=_time.monotonic() + 60, poll_interval=0.05,
-        ))
+        _run(
+            ps.run_graph_with_stages(
+                _BoomGraph(),
+                {},
+                {},
+                episode=_FakeEpisode(),
+                deadline=_time.monotonic() + 60,
+                poll_interval=0.05,
+            )
+        )
 
 
 # ------------------------------------------------------------- API schemas
 
+
 def test_outline_update_schema_validates():
     from api.routers.podcasts import OutlineSegmentUpdate, OutlineUpdateRequest
 
-    req = OutlineUpdateRequest(segments=[
-        {"name": "Intro", "description": "Welcome", "size": "short"},
-        {"name": "Deep dive", "description": "The meat", "size": "long"},
-    ])
+    req = OutlineUpdateRequest(
+        segments=[
+            {"name": "Intro", "description": "Welcome", "size": "short"},
+            {"name": "Deep dive", "description": "The meat", "size": "long"},
+        ]
+    )
     assert len(req.segments) == 2
 
     with pytest.raises(Exception):
@@ -184,17 +223,50 @@ def test_generation_request_carries_review_outline():
     from api.podcast_service import PodcastGenerationRequest
 
     req = PodcastGenerationRequest(
-        episode_profile="ep", speaker_profile="sp",
-        episode_name="n", content="c", review_outline=True,
+        episode_profile="ep",
+        speaker_profile="sp",
+        episode_name="n",
+        content="c",
+        review_outline=True,
     )
     assert req.review_outline is True
-    assert PodcastGenerationRequest(
-        episode_profile="ep", speaker_profile="sp",
-        episode_name="n", content="c",
-    ).review_outline is False
+    assert (
+        PodcastGenerationRequest(
+            episode_profile="ep",
+            speaker_profile="sp",
+            episode_name="n",
+            content="c",
+        ).review_outline
+        is False
+    )
+
+
+def test_overview_mode_bounds_keep_length_control_inside_its_format_contract():
+    from commands.podcast_staged import segments_for_overview_mode
+
+    assert segments_for_overview_mode("brief", "long", profile_segments=8) == 4
+    assert segments_for_overview_mode("debate", "short", profile_segments=3) == 4
+    assert segments_for_overview_mode("deep_dive", None, profile_segments=99) == 8
+
+
+def test_overview_mode_uses_its_exact_speaker_count():
+    from commands.podcast_staged import speaker_profile_for_overview_mode
+
+    class FakeProfile:
+        def __init__(self, speakers):
+            self.speakers = speakers
+
+        def model_copy(self, *, update):
+            return FakeProfile(update["speakers"])
+
+    assert len(speaker_profile_for_overview_mode(FakeProfile(["a", "b"]), "brief").speakers) == 1
+    assert len(speaker_profile_for_overview_mode(FakeProfile(["a", "b", "c"]), "debate").speakers) == 2
+    with pytest.raises(ValueError, match="requires 2 speakers"):
+        speaker_profile_for_overview_mode(FakeProfile(["a"]), "critique")
 
 
 # ------------------------------------------------------------- wiring guards
+
 
 def test_worker_wiring_anchors():
     src = (_REPO / "commands" / "podcast_commands.py").read_text()
@@ -204,6 +276,9 @@ def test_worker_wiring_anchors():
     assert "resume_podcast" in src
     assert "STAGE_AWAITING_REVIEW" in src
     assert "except CancelledByUser:" in src
+    assert "mode=mode" in src
+    assert "custom_prompt=custom_prompt" in src
+    assert "transcript_segments_from_payload" in src
 
 
 def test_router_exposes_new_endpoints():
