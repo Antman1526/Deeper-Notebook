@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -118,6 +119,26 @@ def test_directories_auto_created(tmp_path):
     conn = ckpt.get_checkpoint_connection(str(nested))
     assert nested.exists()
     conn.execute("CREATE TABLE t (x INTEGER);")  # smoke
+
+
+def test_tuning_failure_closes_connection_before_corruption_recovery(tmp_path):
+    """Windows cannot rename a corrupt DB while its failed tuning connection
+    remains open, so _open_tuned must release that handle before re-raising."""
+    class FailingConnection:
+        closed = False
+
+        def execute(self, _statement):
+            raise sqlite3.DatabaseError("file is not a database")
+
+        def close(self):
+            self.closed = True
+
+    conn = FailingConnection()
+    with patch.object(ckpt.sqlite3, "connect", return_value=conn):
+        with pytest.raises(sqlite3.DatabaseError):
+            ckpt._open_tuned(str(tmp_path / "corrupt.db"))
+
+    assert conn.closed is True
 
 
 # ---------------------------------------------------------------------------
