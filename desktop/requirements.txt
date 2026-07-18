@@ -92,3 +92,6 @@ watchdog>=6.0.0,<7.0
 # Evidence-grounded spaced repetition scheduler. Keep direct so native
 # first-launch installs include the exact study runtime dependency.
 fsrs>=6.3.1,<7.0
+# Package-managed FFmpeg used by local Video Overview composition. The desktop
+# bootstrap installs this into its private venv, so a host FFmpeg is never used.
+imageio-ffmpeg>=0.6.0,<1.0

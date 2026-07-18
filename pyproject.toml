@@ -79,6 +79,9 @@ dependencies = [
     "openpyxl>=3.1.5,<4.0",
     "watchdog>=6.0.0,<7.0",
     "fsrs>=6.3.1,<7.0",
+    # Deterministic local Video Overview composition uses the package-managed
+    # FFmpeg executable; no system FFmpeg installation is assumed.
+    "imageio-ffmpeg>=0.6.0,<1.0",
     # NOTE: pillow upgrade BLOCKED by podcast-creator 0.12.0 pinning
     # pillow<12.0. The 6 pillow CVEs (CVE-2026-25990/40192/42308/
     # 42309/42310/42311) all require pillow>=12.1.1 to fix. Lower
