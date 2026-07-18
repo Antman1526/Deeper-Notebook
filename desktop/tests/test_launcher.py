@@ -295,7 +295,7 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
         )
         # MUST point under the user's per-app dir so subsequent makedirs succeed.
         assert ".open-notebook-plus" in data_folder
-        assert data_folder.endswith("/data")
+        assert Path(data_folder).name == "data"
         # MUST already exist (we mkdir it before populating session_env).
         assert Path(data_folder).is_dir(), (
             f"DATA_FOLDER must exist on disk, got: {data_folder!r}"
