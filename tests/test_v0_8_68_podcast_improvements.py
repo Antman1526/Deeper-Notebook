@@ -72,7 +72,11 @@ def test_submit_rejects_oversized_content(monkeypatch):
         )
 
     async def _fake_sp(name):
-        return SimpleNamespace(name=name, resolve_tts_config=_local_resolver)
+        return SimpleNamespace(
+            name=name,
+            speakers=["Host", "Guest"],
+            resolve_tts_config=_local_resolver,
+        )
 
     async def _local_resolver():
         return ("openai_compatible", "m", {})
@@ -105,7 +109,11 @@ def test_budget_disabled_with_zero(monkeypatch):
         )
 
     async def _fake_sp(name):
-        return SimpleNamespace(name=name, resolve_tts_config=_local_resolver)
+        return SimpleNamespace(
+            name=name,
+            speakers=["Host", "Guest"],
+            resolve_tts_config=_local_resolver,
+        )
 
     async def _local_resolver():
         return ("openai_compatible", "m", {})

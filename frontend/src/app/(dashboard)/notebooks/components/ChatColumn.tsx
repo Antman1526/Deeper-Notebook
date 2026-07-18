@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { notebooksApi } from '@/lib/api/notebooks'
 import { useNotebookChat } from '@/lib/hooks/useNotebookChat'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { ChatPanel } from '@/components/source/ChatPanel'
@@ -31,19 +33,38 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
     contextSelections
   })
 
+  // v0.8.74 — corpus-grounded starter questions for the empty chat state
+  // (improvement roadmap, Batch 1). Only fetched when there are sources and no
+  // messages yet; the endpoint is best-effort (returns [] on any failure), so a
+  // failed query simply shows no chips. retry:false keeps it cheap/quiet.
+  const showSuggestions = sources.length > 0 && chat.messages.length === 0
+  const { data: suggestedQuestions = [] } = useQuery({
+    queryKey: ['suggested-questions', notebookId],
+    queryFn: () => notebooksApi.suggestedQuestions(notebookId, 4),
+    enabled: showSuggestions,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+
   // Calculate context stats for indicator
   const contextStats = useMemo(() => {
     let sourcesInsights = 0
     let sourcesFull = 0
     let notesCount = 0
+    // v0.8.89 — names of the sources currently in context, for the chat
+    // "Using X of Y sources" indicator + its popover (per-source filtering
+    // is the off/insights/full toggle; this just makes it visible).
+    const contextSourceTitles: string[] = []
 
     // Count sources by mode
     sources.forEach(source => {
       const mode = contextSelections.sources[source.id]
       if (mode === 'insights') {
         sourcesInsights++
+        contextSourceTitles.push(source.title || '(untitled)')
       } else if (mode === 'full') {
         sourcesFull++
+        contextSourceTitles.push(source.title || '(untitled)')
       }
     })
 
@@ -59,6 +80,8 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       sourcesInsights,
       sourcesFull,
       notesCount,
+      totalSources: sources.length,
+      contextSourceTitles,
       tokenCount: chat.tokenCount,
       charCount: chat.charCount
     }
@@ -91,6 +114,9 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       isStreaming={chat.isSending}
       contextIndicators={null}
       onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
+      suggestedQuestions={showSuggestions ? suggestedQuestions : undefined}
+      onSuggestedQuestionClick={(question) => chat.sendMessage(question)}
+      onCancelStreaming={chat.cancelStreaming}
       // v0.8.63 — privacy review sheet "Re-ask allowing cloud": re-send the
       // question with the fail-closed gate bypassed (explicit user consent).
       onReaskAllowCloud={(message) => chat.sendMessage(message, undefined, true)}

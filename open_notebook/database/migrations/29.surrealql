@@ -1,0 +1,7 @@
+-- v0.8.95 -- Durable Audio Overview formats and transcript metadata.
+-- `episode` is SCHEMAFULL, so these fields must be declared before the
+-- domain model can retain mode, the exact custom prompt, or segment data.
+DEFINE FIELD IF NOT EXISTS mode ON TABLE episode TYPE string DEFAULT "deep_dive"
+    ASSERT $value INSIDE ["deep_dive", "brief", "critique", "debate"];
+DEFINE FIELD IF NOT EXISTS custom_prompt ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS transcript_segments ON TABLE episode FLEXIBLE TYPE array<object> DEFAULT [];

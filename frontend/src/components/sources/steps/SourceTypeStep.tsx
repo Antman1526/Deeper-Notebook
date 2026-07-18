@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Control, FieldErrors, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-form"
+import type { TFunction } from 'i18next'
 import { FileIcon, LinkIcon, FileTextIcon } from "lucide-react"
 import { useTranslation } from "@/lib/hooks/use-translation"
 import { FormSection } from "@/components/ui/form-section"
@@ -63,7 +64,38 @@ export function parseAndValidateUrls(text: string): {
   return { valid, invalid }
 }
 
-import type { TFunction } from 'i18next'
+export function filesFromInput(input?: FileList | File | null): File[] {
+  if (!input) return []
+  if (typeof File !== 'undefined' && input instanceof File) return [input]
+  if (typeof FileList !== 'undefined' && input instanceof FileList) {
+    return Array.from(input)
+  }
+  if (typeof input === 'object' && 'length' in input) {
+    return Array.from(input as ArrayLike<File>)
+  }
+  return []
+}
+
+export function getOversizedFiles(
+  input: FileList | File | undefined | null,
+  maxBytes?: number | null,
+): File[] {
+  if (!maxBytes || maxBytes <= 0) return []
+  return filesFromInput(input).filter(file => file.size > maxBytes)
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round(bytes / (1024 * 1024))} MB`
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`
+  }
+  return `${bytes} B`
+}
 
 const getSourceTypes = (t: TFunction) => [
   {
@@ -93,16 +125,30 @@ interface SourceTypeStepProps {
   errors: FieldErrors<CreateSourceFormData>
   urlValidationErrors?: { url: string; line: number }[]
   onClearUrlErrors?: () => void
+  sourceUploadMaxBytes?: number | null
 }
 
 const MAX_BATCH_SIZE = 50
 
-export function SourceTypeStep({ control, register, setValue, errors, urlValidationErrors, onClearUrlErrors }: SourceTypeStepProps) {
+export function SourceTypeStep({
+  control,
+  register,
+  setValue,
+  errors,
+  urlValidationErrors,
+  onClearUrlErrors,
+  sourceUploadMaxBytes,
+}: SourceTypeStepProps) {
   const { t } = useTranslation()
   // Watch the selected type and inputs to detect batch mode
   const selectedType = useWatch({ control, name: 'type' })
   const urlInput = useWatch({ control, name: 'url' })
   const fileInput = useWatch({ control, name: 'file' })
+  const selectedFiles = useMemo(() => filesFromInput(fileInput as FileList | File | undefined), [fileInput])
+  const oversizedFiles = useMemo(
+    () => getOversizedFiles(fileInput as FileList | File | undefined, sourceUploadMaxBytes),
+    [fileInput, sourceUploadMaxBytes],
+  )
 
   // Track if HTML content was pasted
   const [hasHtmlContent, setHasHtmlContent] = useState(false)
@@ -140,16 +186,15 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
       urlCount = urls.length
     }
 
-    if (selectedType === 'upload' && fileInput) {
-      const fileList = fileInput as FileList
-      fileCount = fileList?.length || 0
+    if (selectedType === 'upload' && selectedFiles.length > 0) {
+      fileCount = selectedFiles.length
     }
 
     const isBatchMode = urlCount > 1 || fileCount > 1
     const itemCount = selectedType === 'link' ? urlCount : fileCount
 
     return { isBatchMode, itemCount, urlCount, fileCount }
-  }, [selectedType, urlInput, fileInput])
+  }, [selectedType, urlInput, selectedFiles])
 
   // Check for batch size limit
   const isOverLimit = itemCount > MAX_BATCH_SIZE
@@ -255,16 +300,16 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
                       <p className="text-xs text-muted-foreground mt-1">
                         {t('sources.selectMultipleFilesHint')}
                       </p>
-                      {fileCount > 1 && fileInput instanceof FileList && (
+                      {fileCount > 0 && (
                         <div className="mt-2 p-3 bg-muted rounded-md">
                           <p className="text-xs font-medium mb-2">{t('sources.selectedFiles')}</p>
                           <ul className="space-y-1 max-h-32 overflow-y-auto">
-                            {Array.from(fileInput).map((file, idx) => (
+                            {selectedFiles.map((file, idx) => (
                               <li key={idx} className="text-xs text-muted-foreground flex items-center gap-2">
                                 <FileIcon className="h-3 w-3" />
                                 <span className="truncate">{file.name}</span>
                                 <span className="text-muted-foreground/50">
-                                  ({(file.size / 1024).toFixed(1)} KB)
+                                  ({formatBytes(file.size)})
                                 </span>
                               </li>
                             ))}
@@ -278,6 +323,22 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
                         <p className="text-sm text-destructive mt-1">
                           {t('sources.maxFilesAllowed').replace('{count}', MAX_BATCH_SIZE.toString())}
                         </p>
+                      )}
+                      {oversizedFiles.length > 0 && sourceUploadMaxBytes && (
+                        <div className="mt-2 p-3 bg-destructive/10 rounded-md border border-destructive/20">
+                          <p className="text-sm font-medium text-destructive">
+                            {t('sources.filesTooLarge').replace('{limit}', formatBytes(sourceUploadMaxBytes))}
+                          </p>
+                          <ul className="mt-2 space-y-1">
+                            {oversizedFiles.map((file, idx) => (
+                              <li key={idx} className="text-xs text-destructive flex items-center gap-2">
+                                <FileIcon className="h-3 w-3" />
+                                <span className="truncate">{file.name}</span>
+                                <span>({formatBytes(file.size)})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
                   )}

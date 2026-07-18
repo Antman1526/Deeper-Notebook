@@ -11,6 +11,7 @@ import { ExportNotebookDialog } from './ExportNotebookDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
+import { MindMapButton } from '@/components/notebooks/MindMapButton'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface NotebookHeaderProps {
@@ -54,8 +55,8 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
     <>
       <div className="border-b pb-6">
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <InlineEdit
                 id="notebook-name"
                 name="notebook-name"
@@ -64,7 +65,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 // v0.7.180 — font-bold → font-semibold so the editable
                 // notebook title matches the v0.7.153 H1 weight standard
                 // and doesn't outweigh the dashboard H1s above it.
-                className="text-2xl font-semibold"
+                className="min-w-0 break-words text-2xl font-semibold"
                 inputClassName="text-2xl font-semibold"
                 placeholder={t('notebooks.namePlaceholder')}
               />
@@ -72,7 +73,8 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 <Badge variant="secondary">{t('notebooks.archived')}</Badge>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+              <MindMapButton notebookId={notebook.id} />
               <Button
                 variant="outline"
                 size="sm"

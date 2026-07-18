@@ -2,6 +2,7 @@ import asyncio
 import os
 from pathlib import Path
 from typing import Any, List, Optional
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -17,11 +18,12 @@ from loguru import logger
 from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
-from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
     InsightCreationResponse,
+    LocatePassageRequest,
+    LocatePassageResponse,
     SourceCreate,
     SourceInsightResponse,
     SourceListResponse,
@@ -29,6 +31,7 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
+from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -52,6 +55,7 @@ router = APIRouter()
 # values like "100" that would reject every legitimate upload.
 _SOURCE_UPLOAD_MAX_BYTES_DEFAULT = 500 * 1024 * 1024
 _SOURCE_UPLOAD_MIN_BYTES = 1024 * 1024
+_LOW_EXTRACTED_TEXT_CHARS = 200
 
 
 def _source_upload_max_bytes() -> int:
@@ -79,6 +83,118 @@ def _source_upload_max_bytes() -> int:
             f"default {_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
         )
         return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
+
+
+_SUMMARY_PREVIEW_CHARS = 140
+
+
+def _summary_preview(content: Optional[str]) -> Optional[str]:
+    """v0.8.88 — collapse the auto-summary insight to a one-line card preview."""
+    if not content:
+        return None
+    text = " ".join(str(content).split())
+    if not text:
+        return None
+    if len(text) <= _SUMMARY_PREVIEW_CHARS:
+        return text
+    return text[: _SUMMARY_PREVIEW_CHARS - 1].rstrip() + "…"
+
+
+def _extraction_quality(
+    extracted_char_count: int | None,
+    *,
+    status: str | None = None,
+) -> str | None:
+    if status in {"new", "queued", "running"}:
+        return "pending"
+    if extracted_char_count is None:
+        return None
+    if extracted_char_count <= 0:
+        return "no_text"
+    if extracted_char_count < _LOW_EXTRACTED_TEXT_CHARS:
+        return "low_text"
+    return "ok"
+
+
+def _dedupe_strings(values: list[str] | None) -> list[str]:
+    deduped: list[str] = []
+    for value in values or []:
+        normalized = value.strip()
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return deduped
+
+
+def _normalized_source_type(source_type: str | None) -> str | None:
+    if source_type in {"link", "upload", "text", "web_import", "deep_research_report"}:
+        return source_type
+    return None
+
+
+def get_source_type_from_asset(asset: dict[str, Any] | None) -> str:
+    if asset and asset.get("url"):
+        return "link"
+    if asset and asset.get("file_path"):
+        return "upload"
+    return "text"
+
+
+def _default_origin_for_type(source_type: str) -> str:
+    return {
+        "link": "manual_link",
+        "upload": "manual_upload",
+        "text": "manual_text",
+    }.get(source_type, "manual")
+
+
+def _source_provenance_for_create(
+    source_data: SourceCreate,
+    *,
+    file_path: str | None = None,
+    upload_file: UploadFile | None = None,
+) -> dict[str, Any]:
+    provenance: dict[str, Any] = dict(source_data.provenance or {})
+    provenance.setdefault("origin", _default_origin_for_type(source_data.type))
+
+    if source_data.type == "link" and source_data.url:
+        parsed = urlparse(source_data.url)
+        provenance.setdefault("url", source_data.url)
+        if parsed.netloc:
+            provenance.setdefault("domain", parsed.netloc)
+    elif source_data.type == "upload":
+        final_file_path = file_path or source_data.file_path
+        if upload_file and upload_file.filename:
+            provenance.setdefault("original_filename", upload_file.filename)
+        if upload_file and upload_file.content_type:
+            provenance.setdefault("content_type", upload_file.content_type)
+        if final_file_path:
+            provenance.setdefault("file_name", Path(final_file_path).name)
+            try:
+                provenance.setdefault("size_bytes", Path(final_file_path).stat().st_size)
+            except OSError:
+                pass
+    elif source_data.type == "text":
+        if source_data.content:
+            provenance.setdefault("character_count", len(source_data.content))
+
+    return provenance
+
+
+async def _source_notebook_count(source_id: str) -> int:
+    try:
+        rows = await repo_query(
+            "SELECT VALUE count() FROM reference WHERE in = $source_id GROUP ALL",
+            {"source_id": ensure_record_id(source_id)},
+        )
+        if not rows:
+            return 0
+        first = rows[0]
+        if isinstance(first, dict):
+            return int(first.get("count") or 0)
+        return int(first or 0)
+    except Exception as exc:
+        logger.warning("Failed to count notebooks for source {}: {}", source_id, exc)
+        return 0
 
 
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
@@ -141,10 +257,20 @@ async def save_uploaded_file(
     if not upload_file.filename:
         raise ValueError("No filename provided")
 
-    # Generate unique filename
-    file_path = generate_unique_filename(upload_file.filename, UPLOADS_FOLDER)
-
     _CHUNK = 1024 * 1024  # 1 MiB
+
+    def reserve_upload_path() -> tuple[str, Any]:
+        while True:
+            candidate = generate_unique_filename(upload_file.filename, UPLOADS_FOLDER)
+            try:
+                return candidate, open(candidate, "xb")
+            except FileExistsError:
+                logger.warning(
+                    "Upload filename collision while reserving {}; retrying",
+                    candidate,
+                )
+
+    file_path, f = reserve_upload_path()
 
     try:
         # Stream chunks straight to disk. The sync open()/write() is fine
@@ -152,7 +278,7 @@ async def save_uploaded_file(
         # await on upload_file.read() yields control back to the loop
         # between chunks.
         written = 0
-        with open(file_path, "wb") as f:
+        with f:
             while True:
                 chunk = await upload_file.read(_CHUNK)
                 if not chunk:
@@ -189,6 +315,9 @@ def parse_source_form_data(
     url: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
+    topics: Optional[str] = Form(None),  # JSON string of source labels
+    provenance: Optional[str] = Form(None),  # JSON object with source provenance
+    source_type: Optional[str] = Form(None),
     transformations: Optional[str] = Form(None),  # JSON string of transformation IDs
     # v0.7.208 — was Form("false"). A user-visible asymmetry:
     # the frontend's AddSourceDialog defaults `embed=true` (when
@@ -205,7 +334,10 @@ def parse_source_form_data(
     # rare ingest-only flow.
     embed: str = Form("true"),  # Accept as string, convert to bool
     delete_source: str = Form("false"),  # Accept as string, convert to bool
-    async_processing: str = Form("false"),  # Accept as string, convert to bool
+    # Match the Add Source wizard and frontend helper: imports should queue
+    # background processing unless the caller explicitly opts into the legacy
+    # synchronous path with `async_processing=false`.
+    async_processing: str = Form("true"),  # Accept as string, convert to bool
     file: Optional[UploadFile] = File(None),
 ) -> tuple[SourceCreate, Optional[UploadFile]]:
     """Parse form data into SourceCreate model and return upload file separately."""
@@ -219,32 +351,75 @@ def parse_source_form_data(
     delete_source_bool = str_to_bool(delete_source)
     async_processing_bool = str_to_bool(async_processing)
 
-    # Parse JSON strings
-    notebooks_list = None
-    if notebooks:
+    def parse_json_string_list(raw: Optional[str], field_name: str) -> list[str]:
+        if not raw:
+            return []
         try:
-            notebooks_list = json.loads(notebooks)
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON in notebooks field: {notebooks}")
-            raise ValueError("Invalid JSON in notebooks field")
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.error(f"Invalid JSON in {field_name} field: {raw}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must be a JSON array of strings",
+            ) from exc
+        if not isinstance(parsed, list) or not all(
+            isinstance(item, str) and item.strip() for item in parsed
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must be a JSON array of strings",
+            )
+        return parsed
 
-    transformations_list = []
-    if transformations:
+    def dedupe_strings(values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        for value in values:
+            if value not in deduped:
+                deduped.append(value)
+        return deduped
+
+    notebooks_list = parse_json_string_list(notebooks, "notebooks")
+    transformations_list = parse_json_string_list(
+        transformations,
+        "transformations",
+    )
+    topics_list = parse_json_string_list(topics, "topics")
+
+    def parse_json_object(raw: Optional[str], field_name: str) -> dict[str, Any]:
+        if not raw:
+            return {}
         try:
-            transformations_list = json.loads(transformations)
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON in transformations field: {transformations}")
-            raise ValueError("Invalid JSON in transformations field")
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.error(f"Invalid JSON in {field_name} field: {raw}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must be a JSON object",
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must be a JSON object",
+            )
+        return parsed
+
+    provenance_obj = parse_json_object(provenance, "provenance")
+    normalized_notebooks = dedupe_strings(
+        ([notebook_id] if notebook_id else []) + notebooks_list
+    )
 
     # Create SourceCreate instance
     try:
         source_data = SourceCreate(
             type=type,
-            notebook_id=notebook_id,
-            notebooks=notebooks_list,
+            notebook_id=None,
+            notebooks=normalized_notebooks,
             url=url,
             content=content,
             title=title,
+            topics=_dedupe_strings(topics_list),
+            provenance=provenance_obj,
+            source_type=_normalized_source_type(source_type),
             file_path=None,  # Will be set later if file is uploaded
             transformations=transformations_list,
             embed=embed_bool,
@@ -263,9 +438,26 @@ def parse_source_form_data(
     return source_data, file
 
 
+def _source_notebook_ids(source_data: SourceCreate) -> list[str]:
+    """Normalize legacy notebook_id and multi-notebook form fields."""
+    notebook_ids: list[str] = []
+
+    if source_data.notebook_id:
+        notebook_ids.append(source_data.notebook_id)
+
+    for notebook_id in source_data.notebooks or []:
+        if notebook_id not in notebook_ids:
+            notebook_ids.append(notebook_id)
+
+    return notebook_ids
+
+
 @router.get("/sources", response_model=list[SourceListResponse])
 async def get_sources(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    label: Optional[str] = Query(None, description="Filter by source label"),
+    source_type: Optional[str] = Query(None, description="Filter by normalized source type"),
+    origin: Optional[str] = Query(None, description="Filter by source provenance origin"),
     limit: int = Query(
         50, ge=1, le=100, description="Number of sources to return (1-100)"
     ),
@@ -286,6 +478,15 @@ async def get_sources(
             raise HTTPException(
                 status_code=400, detail="sort_order must be 'asc' or 'desc'"
             )
+        normalized_filter_type = _normalized_source_type(source_type)
+        if source_type and not normalized_filter_type:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "source_type must be one of link, upload, text, "
+                    "web_import, or deep_research_report"
+                ),
+            )
 
         # Build ORDER BY clause
         order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
@@ -293,15 +494,22 @@ async def get_sources(
         # Build the query
         if notebook_id:
             # Verify notebook exists first
-            notebook = await Notebook.get(notebook_id)
+            try:
+                notebook = await Notebook.get(notebook_id)
+            except NotFoundError:
+                raise HTTPException(status_code=404, detail="Notebook not found")
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
 
             # Query sources for specific notebook - include command field with FETCH
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
+                SELECT id, asset, created, title, updated, topics, provenance,
+                source_type, command,
+                string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
+                (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
+                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM (select value in from reference where out=$notebook_id)
                 {order_clause}
                 LIMIT $limit START $offset
@@ -318,9 +526,13 @@ async def get_sources(
         else:
             # Query all sources - include command field with FETCH
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
+                SELECT id, asset, created, title, updated, topics, provenance,
+                source_type, command,
+                string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
+                (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
+                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM source
                 {order_clause}
                 LIMIT $limit START $offset
@@ -332,10 +544,31 @@ async def get_sources(
         # Command data is already fetched via FETCH command clause
         response_list = []
         for row in result:
+            row_topics = row.get("topics") or []
+            row_provenance = row.get("provenance") or {}
+            row_source_type = row.get("source_type") or get_source_type_from_asset(row.get("asset"))
+            if label and label not in row_topics:
+                continue
+            if normalized_filter_type and row_source_type != normalized_filter_type:
+                continue
+            if origin and row_provenance.get("origin") != origin:
+                continue
+            notebook_count = row.get("notebook_count", 0) or 0
+
             command = row.get("command")
             command_id = None
             status = None
             processing_info = None
+            row_asset = row.get("asset")
+            asset_file_path = row_asset.get("file_path") if row_asset else None
+            asset_url = row_asset.get("url") if row_asset else None
+            file_available = (
+                _is_source_file_available(
+                    Source(asset=Asset(file_path=asset_file_path, url=asset_url))
+                )
+                if asset_file_path
+                else None
+            )
 
             # Extract status from fetched command object (already resolved by FETCH)
             if command and isinstance(command, dict):
@@ -349,33 +582,48 @@ async def get_sources(
                     else {}
                 )
                 processing_info = {
+                    "status": status,
                     "started_at": execution_metadata.get("started_at"),
                     "completed_at": execution_metadata.get("completed_at"),
                     "error": command.get("error_message"),
+                    "progress": command.get("progress"),
+                    "result": result_data,
                 }
             elif command:
                 # Command exists but FETCH failed to resolve it (broken reference)
                 command_id = str(command)
                 status = "unknown"
 
+            extracted_char_count = row.get("extracted_char_count")
+
             response_list.append(
                 SourceListResponse(
                     id=row["id"],
                     title=row.get("title"),
-                    topics=row.get("topics") or [],
+                    topics=row_topics,
+                    provenance=row_provenance,
+                    source_type=row_source_type,
+                    notebook_count=notebook_count,
+                    is_shared=notebook_count > 1,
                     asset=AssetModel(
-                        file_path=row["asset"].get("file_path")
-                        if row.get("asset")
-                        else None,
-                        url=row["asset"].get("url") if row.get("asset") else None,
+                        file_path=asset_file_path,
+                        url=asset_url,
                     )
-                    if row.get("asset")
+                    if row_asset
                     else None,
                     embedded=row.get("embedded", False),
                     embedded_chunks=0,  # Not needed in list view
                     insights_count=row.get("insights_count", 0),
+                    # v0.8.88 — one-line preview of the auto-summary insight.
+                    summary_preview=_summary_preview(row.get("summary_preview")),
                     created=str(row["created"]),
                     updated=str(row["updated"]),
+                    file_available=file_available,
+                    extracted_char_count=extracted_char_count,
+                    extraction_quality=_extraction_quality(
+                        extracted_char_count,
+                        status=status,
+                    ),
                     # Status fields from fetched command
                     command_id=command_id,
                     status=status,
@@ -404,9 +652,16 @@ async def create_source(
     file_path = None
 
     try:
+        notebook_ids = _source_notebook_ids(source_data)
+
         # Verify all specified notebooks exist (backward compatibility support)
-        for notebook_id in source_data.notebooks or []:
-            notebook = await Notebook.get(notebook_id)
+        for notebook_id in notebook_ids:
+            try:
+                notebook = await Notebook.get(notebook_id)
+            except NotFoundError:
+                raise HTTPException(
+                    status_code=404, detail=f"Notebook {notebook_id} not found"
+                )
             if not notebook:
                 raise HTTPException(
                     status_code=404, detail=f"Notebook {notebook_id} not found"
@@ -492,6 +747,14 @@ async def create_source(
                     status_code=404, detail=f"Transformation {trans_id} not found"
                 )
 
+        source_topics = _dedupe_strings(source_data.topics)
+        normalized_source_type = source_data.source_type or source_data.type
+        source_provenance = _source_provenance_for_create(
+            source_data,
+            file_path=file_path or source_data.file_path,
+            upload_file=upload_file,
+        )
+
         # Branch based on processing mode
         if source_data.async_processing:
             # ASYNC PATH: Create source record first, then queue command
@@ -508,14 +771,16 @@ async def create_source(
 
             source = Source(
                 title=source_data.title or "Processing...",
-                topics=[],
+                topics=source_topics,
+                provenance=source_provenance,
+                source_type=normalized_source_type,
                 asset=source_asset,
             )
             await source.save()
 
             # Add source to notebooks immediately so it appears in the UI
             # The source_graph will skip adding duplicates
-            for notebook_id in source_data.notebooks or []:
+            for notebook_id in notebook_ids:
                 await source.add_to_notebook(notebook_id)
 
             try:
@@ -526,7 +791,7 @@ async def create_source(
                 command_input = SourceProcessingInput(
                     source_id=str(source.id),
                     content_state=content_state,
-                    notebook_ids=source_data.notebooks,
+                    notebook_ids=notebook_ids,
                     transformations=transformation_ids,
                     embed=source_data.embed,
                 )
@@ -545,11 +810,23 @@ async def create_source(
                 await source.save()
 
                 # Return source with command info
+                response_asset = (
+                    AssetModel(
+                        file_path=source_asset.file_path,
+                        url=source_asset.url,
+                    )
+                    if source_asset
+                    else None
+                )
                 return SourceResponse(
                     id=source.id or "",
                     title=source.title,
                     topics=source.topics or [],
-                    asset=None,  # Will be populated after processing
+                    provenance=_source_provenance_value(source),
+                    source_type=_source_type_value(source),
+                    notebook_count=len(notebook_ids),
+                    is_shared=len(notebook_ids) > 1,
+                    asset=response_asset,
                     full_text=None,  # Will be populated after processing
                     embedded=False,  # Will be updated after processing
                     embedded_chunks=0,
@@ -600,20 +877,22 @@ async def create_source(
                 # Create source record - let SurrealDB generate the ID
                 source = Source(
                     title=source_data.title or "Processing...",
-                    topics=[],
+                    topics=source_topics,
+                    provenance=source_provenance,
+                    source_type=normalized_source_type,
                 )
                 await source.save()
 
                 # Add source to notebooks immediately so it appears in the UI
                 # The source_graph will skip adding duplicates
-                for notebook_id in source_data.notebooks or []:
+                for notebook_id in notebook_ids:
                     await source.add_to_notebook(notebook_id)
 
                 # Execute command synchronously
                 command_input = SourceProcessingInput(
                     source_id=str(source.id),
                     content_state=content_state,
-                    notebook_ids=source_data.notebooks,
+                    notebook_ids=notebook_ids,
                     transformations=transformation_ids,
                     embed=source_data.embed,
                 )
@@ -679,6 +958,10 @@ async def create_source(
                     id=processed_source.id or "",
                     title=processed_source.title,
                     topics=processed_source.topics or [],
+                    provenance=processed_source.provenance or {},
+                    source_type=processed_source.source_type,
+                    notebook_count=len(notebook_ids),
+                    is_shared=len(notebook_ids) > 1,
                     asset=AssetModel(
                         file_path=processed_source.asset.file_path
                         if processed_source.asset
@@ -824,6 +1107,53 @@ def _is_source_file_available(source: Source) -> Optional[bool]:
     return resolved_path.exists()
 
 
+def _resolve_retry_upload_file_path(file_path: str, source_id: str) -> str:
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    try:
+        resolved_path = Path(file_path).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="Original uploaded file is not available for retry",
+        )
+
+    if not resolved_path.is_relative_to(safe_root):
+        logger.warning(
+            f"Blocked retry outside uploads directory for source "
+            f"{source_id}: {resolved_path}"
+        )
+        raise HTTPException(status_code=403, detail="Access to source file denied")
+
+    if not resolved_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Original uploaded file is not available for retry",
+        )
+
+    return str(resolved_path)
+
+
+def _asset_payload(asset: Any | None) -> dict[str, Any] | None:
+    if asset is None:
+        return None
+    return {
+        "file_path": getattr(asset, "file_path", None),
+        "url": getattr(asset, "url", None),
+    }
+
+
+def _source_type_value(source: Source) -> str | None:
+    raw = getattr(source, "source_type", None)
+    if isinstance(raw, str):
+        return raw
+    return get_source_type_from_asset(_asset_payload(getattr(source, "asset", None)))
+
+
+def _source_provenance_value(source: Source) -> dict[str, Any]:
+    raw = getattr(source, "provenance", None)
+    return raw if isinstance(raw, dict) else {}
+
+
 @router.get("/sources/{source_id}", response_model=SourceResponse)
 async def get_source(source_id: str):
     """Get a specific source by ID."""
@@ -857,6 +1187,7 @@ async def get_source(source_id: str):
         notebook_ids = (
             [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
         )
+        notebook_count = len(notebook_ids)
 
         # v0.7.181 — Fast insights_count via aggregate query. Same
         # SurrealQL shape the /sources list endpoint uses (sources.py:289)
@@ -873,10 +1204,20 @@ async def get_source(source_id: str):
             else 0
         )
 
+        extracted_char_count = (
+            len(source.full_text)
+            if source.full_text is not None
+            else None
+        )
+
         return SourceResponse(
             id=source.id or "",
             title=source.title,
             topics=source.topics or [],
+            provenance=_source_provenance_value(source),
+            source_type=_source_type_value(source),
+            notebook_count=notebook_count,
+            is_shared=notebook_count > 1,
             asset=AssetModel(
                 file_path=source.asset.file_path if source.asset else None,
                 url=source.asset.url if source.asset else None,
@@ -888,6 +1229,11 @@ async def get_source(source_id: str):
             embedded_chunks=embedded_chunks,
             insights_count=insights_count,  # v0.7.181 — parity with list endpoint
             file_available=_is_source_file_available(source),
+            extracted_char_count=extracted_char_count,
+            extraction_quality=_extraction_quality(
+                extracted_char_count,
+                status=status,
+            ),
             # v0.7.181 — iso() instead of str() for Safari new Date() compat.
             created=iso(source.created),
             updated=iso(source.updated),
@@ -900,6 +1246,8 @@ async def get_source(source_id: str):
         )
     except HTTPException:
         raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Source not found")
     except Exception as e:
         logger.error(f"Error fetching source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching source")
@@ -933,6 +1281,36 @@ async def download_source_file(source_id: str):
     except Exception as e:
         logger.error(f"Error downloading file for source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to download source file")
+
+
+@router.post(
+    "/sources/{source_id}/locate-passage", response_model=LocatePassageResponse
+)
+async def locate_source_passage(source_id: str, body: LocatePassageRequest):
+    """v0.8.78 — locate the passage in a source's extracted text that best
+    matches `query` (the citing sentence), for citation jump-to-highlight in the
+    source viewer (improvement roadmap, Batch 2).
+
+    Best-effort: returns ``{"match": null}`` when the source has no text or there
+    is no decent match, so the frontend can simply open the source at the top.
+    """
+    from open_notebook.utils.citation_offsets import locate_passage
+
+    try:
+        source = await Source.get(source_id)
+    except HTTPException:
+        raise
+    except (NotFoundError, InvalidInputError):
+        raise
+    except Exception as e:
+        logger.error(f"locate-passage: source fetch failed {source_id}: {e}")
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    text = (getattr(source, "full_text", None) or "")
+    if not text.strip() or not body.query.strip():
+        return LocatePassageResponse(match=None)
+    match = locate_passage(text, body.query)
+    return LocatePassageResponse(match=match)  # type: ignore[arg-type]
 
 
 @router.get("/sources/{source_id}/status", response_model=SourceStatusResponse)
@@ -1013,15 +1391,24 @@ async def update_source(source_id: str, source_update: SourceUpdate):
         if source_update.title is not None:
             source.title = source_update.title
         if source_update.topics is not None:
-            source.topics = source_update.topics
+            source.topics = _dedupe_strings(source_update.topics)
+        if source_update.provenance is not None:
+            source.provenance = source_update.provenance
+        if source_update.source_type is not None:
+            source.source_type = source_update.source_type
 
         await source.save()
 
         embedded_chunks = await source.get_embedded_chunks()
+        notebook_count = await _source_notebook_count(source.id or source_id)
         return SourceResponse(
             id=source.id or "",
             title=source.title,
             topics=source.topics or [],
+            provenance=_source_provenance_value(source),
+            source_type=_source_type_value(source),
+            notebook_count=notebook_count,
+            is_shared=notebook_count > 1,
             asset=AssetModel(
                 file_path=source.asset.file_path if source.asset else None,
                 url=source.asset.url if source.asset else None,
@@ -1094,8 +1481,12 @@ async def retry_source_processing(source_id: str):
         content_state = {}
         if source.asset:
             if source.asset.file_path:
+                retry_file_path = _resolve_retry_upload_file_path(
+                    source.asset.file_path,
+                    source_id,
+                )
                 content_state = {
-                    "file_path": source.asset.file_path,
+                    "file_path": retry_file_path,
                     "delete_source": False,  # Don't delete on retry
                 }
             elif source.asset.url:
@@ -1152,12 +1543,20 @@ async def retry_source_processing(source_id: str):
 
             # Get current embedded chunks count
             embedded_chunks = await source.get_embedded_chunks()
+            extracted_char_count = (
+                len(source.full_text) if source.full_text is not None else None
+            )
+            notebook_count = len(notebook_ids)
 
             # Return updated source response
             return SourceResponse(
                 id=source.id or "",
                 title=source.title,
                 topics=source.topics or [],
+                provenance=_source_provenance_value(source),
+                source_type=_source_type_value(source),
+                notebook_count=notebook_count,
+                is_shared=notebook_count > 1,
                 asset=AssetModel(
                     file_path=source.asset.file_path if source.asset else None,
                     url=source.asset.url if source.asset else None,
@@ -1172,6 +1571,11 @@ async def retry_source_processing(source_id: str):
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
+                extracted_char_count=extracted_char_count,
+                extraction_quality=_extraction_quality(
+                    extracted_char_count,
+                    status="queued",
+                ),
             )
 
         except HTTPException:
@@ -1188,6 +1592,8 @@ async def retry_source_processing(source_id: str):
 
     except HTTPException:
         raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Source not found")
     except Exception as e:
         logger.error(f"Error retrying source processing for {source_id}: {str(e)}")
         raise HTTPException(

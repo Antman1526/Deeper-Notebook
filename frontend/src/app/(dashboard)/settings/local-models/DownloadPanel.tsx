@@ -49,10 +49,23 @@ export type Recommendation = {
   label: string
   description: string
   repo_id: string
-  filename: string
-  approx_size_gb: number
+  filename?: string | null
+  runtime_type?: string
+  target_path?: string
+  status?: string
+  setup_task?: {
+    action_type: string
+    label: string
+    description: string
+    repo_id?: string | null
+    filename?: string | null
+    target_path?: string | null
+    command?: string | null
+    setup_href?: string | null
+  } | null
+  approx_size_gb?: number
   tags: string[]
-  context_length: number
+  context_length?: number
 }
 
 type RecommendationsResponse = {
@@ -73,9 +86,28 @@ type DownloadJob = {
 
 type StartDownloadResponse = Omit<DownloadJob, 'repo_id' | 'filename' | 'error'>
 
+type SnapshotInstallResponse = {
+  job_id: string
+  repo_id: string
+  target_path: string
+  status: string
+  error: string | null
+  log_tail: string[]
+}
+
 function fmtGb(n: number): string {
+  if (!n) return '—'
   if (n < 1) return `${Math.round(n * 1000)} MB`
   return `${n.toFixed(1)} GB`
+}
+
+function recommendationJobKey(rec: Recommendation): string {
+  return `${rec.repo_id}::${rec.filename ?? rec.target_path ?? rec.id}`
+}
+
+function recommendationAction(rec: Recommendation): string {
+  if (rec.setup_task?.action_type) return rec.setup_task.action_type
+  return rec.filename ? 'download_gguf' : ''
 }
 
 function pct(job: DownloadJob): number | null {
@@ -95,10 +127,11 @@ function RecommendationCard({
   onCancel: (job: DownloadJob) => void
 }) {
   const { t } = useTranslation()
-  const key = `${rec.repo_id}::${rec.filename}`
+  const key = recommendationJobKey(rec)
   const job = jobByKey[key]
   const isActive = job && (job.status === 'queued' || job.status === 'downloading')
-  const isDone = job?.status === 'completed'
+  const isInstalled = rec.status === 'matched'
+  const isDone = isInstalled || job?.status === 'completed'
   const isFailed = job?.status === 'failed'
   // v0.8.39e — surface cancelled as a distinct state so the user sees
   // "Resume" instead of "Retry" (semantically meaningful since the
@@ -134,16 +167,16 @@ function RecommendationCard({
             <dt className="text-muted-foreground">
               {t('localModels.colSize', { defaultValue: 'Size' })}
             </dt>
-            <dd className="font-mono">~{fmtGb(rec.approx_size_gb)}</dd>
+            <dd className="font-mono">~{fmtGb(rec.approx_size_gb ?? 0)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">
               {t('localModels.colContext', { defaultValue: 'Context' })}
             </dt>
             <dd className="font-mono">
-              {rec.context_length >= 1024
-                ? `${Math.round(rec.context_length / 1024)}k`
-                : rec.context_length}
+              {(rec.context_length ?? 0) >= 1024
+                ? `${Math.round((rec.context_length ?? 0) / 1024)}k`
+                : rec.context_length || '—'}
             </dd>
           </div>
           <div>
@@ -227,7 +260,9 @@ function RecommendationCard({
               ? t('localModels.resume', { defaultValue: 'Resume' })
               : isFailed
                 ? t('localModels.retry', { defaultValue: 'Retry' })
-                : t('localModels.download', { defaultValue: 'Download' })}
+                : recommendationAction(rec) === 'download_snapshot'
+                  ? t('localModels.installSnapshot', { defaultValue: 'Install snapshot' })
+                  : t('localModels.download', { defaultValue: 'Download' })}
           </Button>
         )}
       </CardContent>
@@ -316,24 +351,53 @@ export function DownloadPanel() {
 
   const startMutation = useMutation({
     mutationFn: async (rec: Recommendation) => {
+      const action = recommendationAction(rec)
+      const task = rec.setup_task
+      if (action === 'download_snapshot') {
+        const resp = await apiClient.post<SnapshotInstallResponse>(
+          '/local-models/snapshot-installs',
+          {
+            repo_id: task?.repo_id ?? rec.repo_id,
+            target_path: task?.target_path ?? rec.target_path,
+          },
+        )
+        return { rec, snapshot: resp.data }
+      }
+
+      const filename = task?.filename ?? rec.filename
+      if (!filename) {
+        throw new Error('Recommendation is missing a downloadable filename')
+      }
+      const body: { repo_id: string; filename: string; target_path?: string } = {
+        repo_id: task?.repo_id ?? rec.repo_id,
+        filename,
+      }
+      const targetPath = task?.target_path ?? rec.target_path
+      if (targetPath) body.target_path = targetPath
       const resp = await apiClient.post<StartDownloadResponse>(
         '/local-models/download',
-        { repo_id: rec.repo_id, filename: rec.filename },
+        body,
       )
-      return { rec, ...resp.data }
+      return { rec, download: resp.data }
     },
     onSuccess: data => {
-      const key = `${data.rec.repo_id}::${data.rec.filename}`
+      if ('snapshot' in data) {
+        queryClient.invalidateQueries({ queryKey: ['local-models', 'snapshot-installs'] })
+        return
+      }
+      const filename = data.rec.setup_task?.filename ?? data.rec.filename
+      if (!filename) return
+      const key = recommendationJobKey(data.rec)
       setJobByKey(prev => ({
         ...prev,
         [key]: {
-          job_id: data.job_id,
-          status: data.status,
+          job_id: data.download.job_id,
+          status: data.download.status,
           repo_id: data.rec.repo_id,
-          filename: data.rec.filename,
-          target_path: data.target_path,
-          bytes_downloaded: data.bytes_downloaded,
-          bytes_total: data.bytes_total,
+          filename,
+          target_path: data.download.target_path,
+          bytes_downloaded: data.download.bytes_downloaded,
+          bytes_total: data.download.bytes_total,
           error: null,
         },
       }))
@@ -366,7 +430,7 @@ export function DownloadPanel() {
         <p className="text-xs text-muted-foreground">
           {t('localModels.downloadSubheader', {
             defaultValue:
-              'Curated, known-good GGUFs from HuggingFace. One-click install into the local model directory.',
+              'MLX-first manifest picks when available, with GGUF fallback downloads for fresh installs.',
           })}
         </p>
       </header>

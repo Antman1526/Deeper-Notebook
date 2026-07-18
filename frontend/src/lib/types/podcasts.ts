@@ -55,15 +55,29 @@ export interface PodcastEpisode {
   episode_profile: EpisodeProfile
   speaker_profile: SpeakerProfile
   briefing: string
+  // v0.8.95 -- closed Audio Overview formats. Older episodes read as deep_dive.
+  mode?: PodcastOverviewMode
+  custom_prompt?: string | null
   audio_file?: string | null
   audio_url?: string | null
   transcript?: Record<string, unknown> | null
   outline?: Record<string, unknown> | null
+  transcript_segments?: TranscriptSegment[]
   created?: string | null
   job_status?: EpisodeStatus | null
   error_message?: string | null
   // v0.8.68 — per-stage progress / outline-review state.
   generation_stage?: string | null
+}
+
+export type PodcastOverviewMode = 'deep_dive' | 'brief' | 'critique' | 'debate'
+
+export interface TranscriptSegment {
+  start_seconds: number
+  end_seconds: number
+  speaker: string
+  text: string
+  citation_ids: string[]
 }
 
 // v0.8.68 — outline shape for the review editor (mirrors podcast-creator).
@@ -80,6 +94,10 @@ export interface PodcastGenerationRequest {
   content?: string
   notebook_id?: string
   briefing_suffix?: string | null
+  mode?: PodcastOverviewMode
+  custom_prompt?: string | null
+  // v0.8.86 — per-episode length (overrides the profile's segment count).
+  episode_length?: 'short' | 'medium' | 'long'
   // v0.8.68 — stop after the outline for user review before audio.
   review_outline?: boolean
 }
@@ -90,6 +108,7 @@ export interface PodcastGenerationResponse {
   message: string
   episode_profile: string
   episode_name: string
+  mode: PodcastOverviewMode
 }
 
 export type EpisodeStatusGroup = 'running' | 'completed' | 'failed' | 'pending'

@@ -18,8 +18,12 @@ from open_notebook.podcasts.models import (
     STAGE_TRANSCRIPT,
     EpisodeProfile,
     PodcastEpisode,
+    PodcastOverviewMode,
     SpeakerProfile,
     _resolve_model_config,
+    mode_prompt_contract,
+    normalize_podcast_mode,
+    transcript_segments_from_payload,
 )
 
 try:
@@ -71,6 +75,11 @@ class PodcastGenerationInput(CommandInput):
     episode_name: str
     content: str
     briefing_suffix: Optional[str] = None
+    mode: PodcastOverviewMode = PodcastOverviewMode.DEEP_DIVE
+    custom_prompt: Optional[str] = None
+    # v0.8.86 — per-episode length: "short" | "medium" | "long" (overrides the
+    # profile's num_segments for this episode). None → use the profile default.
+    episode_length: Optional[str] = None
     # v0.8.68 — outline-review workflow: when True, generation stops after
     # the outline stage; the user reviews/edits it in the UI and approval
     # submits a resume_podcast command for the remaining stages.
@@ -83,9 +92,7 @@ class PodcastResumeInput(CommandInput):
     episode_id: str
 
 
-async def _load_and_configure_all_profiles(
-    episode_profile, speaker_profile
-) -> None:
+async def _load_and_configure_all_profiles(episode_profile, speaker_profile) -> None:
     """v0.8.68 — extracted from generate_podcast_command so the resume
     command shares it. Loads every profile, resolves model-registry
     references to provider/model/config triples, drops UNRELATED profiles
@@ -101,7 +108,8 @@ async def _load_and_configure_all_profiles(
             "Hit LIMIT 1000 on podcast profile load — extending the "
             "cap is safe but suggests the profile tables grew "
             "unexpectedly large (episode={}, speaker={}).",
-            len(episode_profiles), len(speaker_profiles),
+            len(episode_profiles),
+            len(speaker_profiles),
         )
 
     episode_profiles_dict = {p["name"]: p for p in episode_profiles}
@@ -247,15 +255,21 @@ async def generate_podcast_command(
             )
 
         # 3. Resolve model configs with credentials
-        outline_provider, outline_model_name, outline_config = (
-            await episode_profile.resolve_outline_config()
-        )
-        transcript_provider, transcript_model_name, transcript_config = (
-            await episode_profile.resolve_transcript_config()
-        )
-        tts_provider, tts_model_name, tts_config = (
-            await speaker_profile.resolve_tts_config()
-        )
+        (
+            outline_provider,
+            outline_model_name,
+            outline_config,
+        ) = await episode_profile.resolve_outline_config()
+        (
+            transcript_provider,
+            transcript_model_name,
+            transcript_config,
+        ) = await episode_profile.resolve_transcript_config()
+        (
+            tts_provider,
+            tts_model_name,
+            tts_config,
+        ) = await speaker_profile.resolve_tts_config()
 
         logger.info(
             f"Resolved models - outline: {outline_provider}/{outline_model_name}, "
@@ -268,10 +282,19 @@ async def generate_podcast_command(
         # resume_podcast_command; includes the selected-profile guard).
         await _load_and_configure_all_profiles(episode_profile, speaker_profile)
 
-        # 6. Generate briefing
+        # 6. Generate briefing. The closed overview format supplies the
+        # non-negotiable editorial contract; the custom prompt is preserved
+        # separately and is applied after it so retries reproduce the request.
+        mode = normalize_podcast_mode(input_data.mode)
+        custom_prompt = (
+            input_data.custom_prompt or input_data.briefing_suffix or ""
+        ).strip() or None
         briefing = episode_profile.default_briefing
-        if input_data.briefing_suffix:
-            briefing += f"\n\nAdditional instructions: {input_data.briefing_suffix}"
+        briefing += (
+            f"\n\nAudio Overview format ({mode.value}): {mode_prompt_contract(mode)}"
+        )
+        if custom_prompt:
+            briefing += f"\n\nAdditional instructions: {custom_prompt}"
         # v0.8.68 — pass the profile's language through to generation. The
         # EpisodeProfile.language field (BCP 47) existed since the model
         # registry rework and create_podcast() accepts language=, but the two
@@ -289,10 +312,13 @@ async def generate_podcast_command(
             briefing=briefing,
             # v0.8.68 — stored separately so retry can replay it verbatim.
             briefing_suffix=input_data.briefing_suffix,
+            mode=mode,
+            custom_prompt=custom_prompt,
             content=input_data.content,
             audio_file=None,
             transcript=None,
             outline=None,
+            transcript_segments=[],
         )
         await episode.save()
 
@@ -315,6 +341,10 @@ async def generate_podcast_command(
             language=_episode_language,
             output_dir=str(output_dir),
             episode_name=episode_dir_name,
+            # v0.8.86 — per-episode length override (None → profile default).
+            episode_length=input_data.episode_length,
+            mode=mode,
+            custom_prompt=custom_prompt,
         )
 
         # Outline-review phase 1: outline only, then stop for user review.
@@ -377,8 +407,7 @@ async def generate_podcast_command(
         # marks the episode as failed → episode.delete() cleanup
         # path below fires, including the empty-output-dir sweep.
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
-            or 1800
+            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         episode.generation_stage = STAGE_OUTLINE
         await episode.save()
@@ -445,7 +474,8 @@ async def generate_podcast_command(
             except Exception as cleanup_exc:
                 logger.warning(
                     "Could not clean up output dir {} after failure: {}",
-                    output_dir, cleanup_exc,
+                    output_dir,
+                    cleanup_exc,
                 )
             raise
         episode.generation_stage = None
@@ -464,6 +494,10 @@ async def generate_podcast_command(
             if result and result.get("transcript") is not None
             else None
         }
+        episode.transcript_segments = transcript_segments_from_payload(
+            result.get("transcript") if result else None,
+            mode=episode.mode,
+        )
         episode.outline = (
             full_model_dump(result.get("outline"))
             if result and result.get("outline") is not None
@@ -549,9 +583,7 @@ async def resume_podcast_command(
                 f"(stage: {episode.generation_stage})"
             )
         if not episode.outline or not episode.outline.get("segments"):
-            raise ValueError(
-                f"Episode '{episode.name}' has no outline to resume from"
-            )
+            raise ValueError(f"Episode '{episode.name}' has no outline to resume from")
 
         ep_name = (episode.episode_profile or {}).get("name")
         sp_name = (episode.speaker_profile or {}).get("name")
@@ -561,9 +593,7 @@ async def resume_podcast_command(
                 f"Episode profile '{ep_name}' no longer exists — restore it "
                 f"(or recreate it with the same name) and approve again."
             )
-        speaker_profile = (
-            await SpeakerProfile.get_by_name(sp_name) if sp_name else None
-        )
+        speaker_profile = await SpeakerProfile.get_by_name(sp_name) if sp_name else None
         if not speaker_profile:
             raise ValueError(
                 f"Speaker profile '{sp_name}' no longer exists — restore it "
@@ -585,9 +615,7 @@ async def resume_podcast_command(
         episode_dir_name, output_dir = build_episode_output_dir(DATA_FOLDER)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        _language = (
-            (episode_profile.language or "").strip() or None
-        )
+        _language = (episode_profile.language or "").strip() or None
         state, graph_config = build_state_and_config(
             content=episode.content,
             briefing=episode.briefing,
@@ -597,11 +625,15 @@ async def resume_podcast_command(
             output_dir=str(output_dir),
             episode_name=episode_dir_name,
             outline=episode.outline,  # the user-reviewed outline drives TTS
+            mode=getattr(episode, "mode", PodcastOverviewMode.DEEP_DIVE),
+            custom_prompt=(
+                getattr(episode, "custom_prompt", None)
+                or getattr(episode, "briefing_suffix", None)
+            ),
         )
 
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
-            or 1800
+            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         try:
             result = await run_graph_with_stages(
@@ -651,12 +683,14 @@ async def resume_podcast_command(
         episode.transcript = (
             {"transcript": full_model_dump(t)} if t is not None else None
         )
+        episode.transcript_segments = transcript_segments_from_payload(
+            t, mode=getattr(episode, "mode", PodcastOverviewMode.DEEP_DIVE)
+        )
         await episode.save()
 
         processing_time = time.time() - start_time
         logger.info(
-            f"Resumed podcast episode {episode.id} completed in "
-            f"{processing_time:.2f}s"
+            f"Resumed podcast episode {episode.id} completed in {processing_time:.2f}s"
         )
         return PodcastGenerationOutput(
             success=True,

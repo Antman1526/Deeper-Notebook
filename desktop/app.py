@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from desktop.config import Config
     from desktop.launcher import Supervisor
     from desktop.progress import ProgressBus
+    from desktop.providers import ModelProvider
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
     hanging forever. A wedged scan thread leaks, but it's a daemon so it never
     blocks process exit."""
     import threading
+
     from desktop.auto_register.assigner import pick_chat_llm_file
     try:
         timeout = float(os.environ.get("ONP_MODEL_SCAN_TIMEOUT", "20") or 20)
@@ -156,6 +158,7 @@ class AppContext:
     log_dir: "Path | None" = None
     venv_py: "Path | None" = None
     extra_env: dict[str, str] = dataclasses.field(default_factory=dict)
+    model_provider_runtime: "ModelProvider | None" = None
     sv: "Supervisor | None" = None
     mm_port: int = 0
     # v0.4 memory additions
@@ -309,7 +312,7 @@ def _phase_download_models(ctx: AppContext) -> None:
 
 
 def _phase_select_provider(ctx: AppContext) -> None:
-    """Start Ollama or llama.cpp server; populate ctx.extra_env."""
+    """Start or connect to the configured model provider; populate ctx.extra_env."""
     from desktop.providers.ollama import OllamaProvider
     # v0.8.3 — LlamaCppProvider no longer needed in this phase since
     # we stopped calling .start() here (the Supervisor handles the
@@ -352,7 +355,34 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # other code paths; just no longer used to spawn.
         pass
 
+    elif cfg.provider == "mlx":
+        from desktop.providers.mlx import MlxProvider
+
+        provider = MlxProvider(
+            model_dir=Path(cfg.model_dir),
+            python_executable=ctx.venv_py,
+        )
+        if provider.is_available():
+            model = cfg.default_model or provider.pick_default_model()
+            if model:
+                extra_env = provider.start(model)
+                extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                ctx.model_provider_runtime = provider
+
     ctx.extra_env = extra_env
+
+
+def _stop_runtime(ctx: AppContext) -> None:
+    """Stop any provider process owned outside the Supervisor tree."""
+    provider = ctx.model_provider_runtime
+    if provider is None:
+        return
+    try:
+        provider.stop()
+    except Exception as exc:
+        log.debug("model provider runtime stop failed: %s", exc)
+    finally:
+        ctx.model_provider_runtime = None
 
 
 def _phase_detect_openchronicle(ctx: AppContext) -> None:
@@ -621,6 +651,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         except Exception:
             pass  # if logging itself fails, don't mask the original error
         sv.stop_all()
+        _stop_runtime(ctx)
         raise exc
 
     ctx.sv = sv
@@ -811,8 +842,15 @@ def _phase_auto_register(ctx: AppContext) -> None:
             if url:
                 llamacpp_port = urllib.parse.urlparse(url).port
 
+        mlx_base_url = None
+        mlx_model_ref = None
+        if cfg.provider == "mlx":
+            mlx_base_url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL")
+            mlx_model_ref = ctx.extra_env.get("OPEN_NOTEBOOK_ACTIVE_MLX_MODEL") or cfg.default_model
+
         auto_register(
             api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
+            mlx_base_url=mlx_base_url, mlx_model_ref=mlx_model_ref,
             whisper_port=getattr(sv, "whisper_port", None) or None,
             piper_port=getattr(sv, "piper_port", None) or None,
             embed_port=getattr(sv, "embed_port", None) or None,
@@ -1007,12 +1045,17 @@ def _phase_open_window(ctx: AppContext) -> None:
     )
 
     try:
-        open_window(ctx.sv.frontend_url, on_close=ctx.sv.stop_all,
+        def _close_runtime() -> None:
+            ctx.sv.stop_all()
+            _stop_runtime(ctx)
+
+        open_window(ctx.sv.frontend_url, on_close=_close_runtime,
                     theme=ctx.cfg.theme,
                     memory_url=memory_url, remind_openchronicle=remind,
                     stt_url=stt_url, tts_url=tts_url)
     finally:
         ctx.sv.stop_all()
+        _stop_runtime(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1059,5 +1102,6 @@ def run() -> int:
                 ctx.sv.stop_all()
             except Exception:
                 pass  # don't mask the original error
+        _stop_runtime(ctx)
         raise
     return 0

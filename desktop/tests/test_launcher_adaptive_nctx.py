@@ -29,6 +29,7 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
     monkeypatch.setattr(
         "desktop.launcher.os.sysconf_names",
         {"SC_PHYS_PAGES": 1, "SC_PAGE_SIZE": 2},
+        raising=False,
     )
 
     def fake_sysconf(name):
@@ -38,7 +39,9 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
             return page
         raise ValueError(name)
 
-    monkeypatch.setattr("desktop.launcher.os.sysconf", fake_sysconf)
+    monkeypatch.setattr(
+        "desktop.launcher.os.sysconf", fake_sysconf, raising=False
+    )
     # v0.8.67l — report ample AVAILABLE RAM so the pressure backoff is a no-op
     # here; the backoff itself is covered by the _pressure_adjusted_ctx_max
     # tests below. Keeps the total-RAM-tier assertions deterministic.
@@ -75,9 +78,17 @@ def test_non_darwin_uses_floor(monkeypatch):
     assert Supervisor._default_ctx_max() == 32768
 
 
+def test_windows_without_sysconf_names_uses_floor(monkeypatch):
+    # Windows does not define os.sysconf_names. The shared test helper must
+    # still be able to simulate its RAM without assuming POSIX APIs exist.
+    monkeypatch.delattr("desktop.launcher.os.sysconf_names", raising=False)
+    _patch_ram(monkeypatch, 128, platform="win32")
+    assert Supervisor._default_ctx_max() == 32768
+
+
 def test_sysconf_names_missing_falls_back(monkeypatch):
     monkeypatch.setattr("desktop.launcher.sys.platform", "darwin")
-    monkeypatch.setattr("desktop.launcher.os.sysconf_names", {})
+    monkeypatch.delattr("desktop.launcher.os.sysconf_names", raising=False)
     assert Supervisor._default_ctx_max() == 32768
 
 
@@ -86,12 +97,13 @@ def test_sysconf_raises_falls_back(monkeypatch):
     monkeypatch.setattr(
         "desktop.launcher.os.sysconf_names",
         {"SC_PHYS_PAGES": 1, "SC_PAGE_SIZE": 2},
+        raising=False,
     )
 
     def boom(_name):
         raise OSError("sysconf unavailable")
 
-    monkeypatch.setattr("desktop.launcher.os.sysconf", boom)
+    monkeypatch.setattr("desktop.launcher.os.sysconf", boom, raising=False)
     assert Supervisor._default_ctx_max() == 32768
 
 

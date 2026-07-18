@@ -51,7 +51,8 @@ Sources are the raw materials of your research. This guide covers how to add dif
 - **Markdown** (.md, .txt) — Plain text formats
 - **HTML** (.html, .htm) — Web page files
 
-**File size limits:** Up to ~100MB (varies by system)
+**File size limits:** Default cap is 500 MB per upload. Your admin can lower or
+raise this with `OPEN_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES`.
 
 **Processing time:** 10 seconds - 2 minutes (depending on length and file type)
 
@@ -75,7 +76,7 @@ Sources are the raw materials of your research. This guide covers how to add dif
 - Paywalled content (WSJ, FT, etc.) — Can't extract
 - Password-protected PDFs — Can't open
 - Pure image files (.jpg, .png) — Except scanned PDFs which have OCR
-- Very large files (>100MB) — Timeout
+- Very large files over the configured upload cap — Default cap is 500 MB; split very large books, archives, or media into chapters/sections for better search quality
 
 ---
 
@@ -360,7 +361,7 @@ Example: "Keep this in notebook but don't use in this conversation"
 - Solution: Convert to supported format (PDF for documents, MP3 for audio)
 
 **"Processing timeout"**
-- Very large file (>100MB) or very long audio
+- Very large file near the configured upload cap or very long audio/video
 - Solution: Split into smaller pieces or try uploading again
 
 **"Transcription failed"**
@@ -419,7 +420,7 @@ Once you've added sources, you can:
 Before adding sources, confirm:
 
 - [ ] File is in supported format
-- [ ] File is under 100MB (or splitting large ones)
+- [ ] File is under the configured upload cap; split very large files for better extraction and search
 - [ ] Web links are full URLs (not shortened)
 - [ ] Audio files have clear speech (if transcription-dependent)
 - [ ] You've named source clearly

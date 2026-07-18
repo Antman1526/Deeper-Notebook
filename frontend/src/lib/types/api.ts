@@ -22,6 +22,10 @@ export interface SourceListResponse {
   id: string
   title: string | null
   topics?: string[]                  // Make optional to match Python API
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report' | string | null
+  notebook_count?: number
+  is_shared?: boolean
   asset: {
     file_path?: string
     url?: string
@@ -29,9 +33,13 @@ export interface SourceListResponse {
   embedded: boolean
   embedded_chunks: number            // ADD: From Python API
   insights_count: number
+  // v0.8.88 — one-line preview of the auto-summary insight (opt-in feature).
+  summary_preview?: string | null
   created: string
   updated: string
   file_available?: boolean
+  extracted_char_count?: number | null
+  extraction_quality?: 'pending' | 'no_text' | 'low_text' | 'ok' | null
   // ADD: Async processing fields from Python API
   command_id?: string
   status?: string
@@ -60,6 +68,10 @@ export interface SettingsResponse {
   youtube_preferred_languages?: string[]
   // v0.8.68 — forced offline mode toggle.
   offline_mode?: boolean
+  // v0.8.88 — opt-in source auto-summary on ingest (default off).
+  auto_summarize_on_ingest?: boolean
+  // v0.8.91 — opt-in source key-topics extraction on ingest (default off).
+  auto_extract_topics_on_ingest?: boolean
 }
 
 // v0.7.136 — Read-only observability config from GET /settings/observability
@@ -120,6 +132,9 @@ export interface CreateSourceRequest {
   file_path?: string
   content?: string
   title?: string
+  topics?: string[]
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report'
   transformations?: string[]
   embed?: boolean
   delete_source?: boolean
@@ -135,9 +150,9 @@ export interface UpdateNoteRequest {
 
 export interface UpdateSourceRequest {
   title?: string
-  type?: 'link' | 'upload' | 'text'
-  url?: string
-  content?: string
+  topics?: string[]
+  provenance?: Record<string, unknown>
+  source_type?: 'link' | 'upload' | 'text' | 'web_import' | 'deep_research_report'
 }
 
 export interface APIError {

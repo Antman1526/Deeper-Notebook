@@ -1,11 +1,218 @@
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from surrealdb import RecordID
 
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
+
+
+class PodcastOverviewMode(str, Enum):
+    """The complete Audio Overview format set.
+
+    Keep this intentionally closed. Episode profiles choose providers and
+    voices; the overview mode defines the durable editorial contract that a
+    retry or resumed outline review must preserve.
+    """
+
+    DEEP_DIVE = "deep_dive"
+    BRIEF = "brief"
+    CRITIQUE = "critique"
+    DEBATE = "debate"
+
+
+@dataclass(frozen=True)
+class PodcastModeSpec:
+    speaker_count: int
+    min_segments: int
+    max_segments: int
+    min_duration_minutes: int
+    max_duration_minutes: int
+    outline_schema: tuple[str, ...]
+    prompt_contract: str
+
+
+PODCAST_MODE_SPECS: dict[PodcastOverviewMode, PodcastModeSpec] = {
+    PodcastOverviewMode.DEEP_DIVE: PodcastModeSpec(
+        speaker_count=2,
+        min_segments=5,
+        max_segments=8,
+        min_duration_minutes=10,
+        max_duration_minutes=20,
+        outline_schema=("framing", "concepts", "evidence", "implications", "recap"),
+        prompt_contract=(
+            "Create a two-speaker deep dive. Build a five-part or longer outline "
+            "that explains concepts, weighs source evidence, and closes with a "
+            "grounded recap. Do not introduce claims absent from the source material."
+        ),
+    ),
+    PodcastOverviewMode.BRIEF: PodcastModeSpec(
+        speaker_count=1,
+        min_segments=3,
+        max_segments=4,
+        min_duration_minutes=3,
+        max_duration_minutes=6,
+        outline_schema=("context", "key_findings", "next_steps"),
+        prompt_contract=(
+            "Create a concise one-speaker brief. Use three or four compact segments "
+            "covering context, the highest-value findings, and source-grounded next "
+            "steps. Prefer precision and omit conversational filler."
+        ),
+    ),
+    PodcastOverviewMode.CRITIQUE: PodcastModeSpec(
+        speaker_count=2,
+        min_segments=4,
+        max_segments=6,
+        min_duration_minutes=8,
+        max_duration_minutes=14,
+        outline_schema=(
+            "thesis",
+            "strengths",
+            "limitations",
+            "evidence_check",
+            "verdict",
+        ),
+        prompt_contract=(
+            "Create a two-speaker critique. Separate the source's thesis, strengths, "
+            "limitations, evidence quality, and a qualified verdict. Attribute every "
+            "assessment to the supplied source material and state uncertainty plainly."
+        ),
+    ),
+    PodcastOverviewMode.DEBATE: PodcastModeSpec(
+        speaker_count=2,
+        min_segments=4,
+        max_segments=6,
+        min_duration_minutes=10,
+        max_duration_minutes=16,
+        outline_schema=(
+            "question",
+            "case_for",
+            "case_against",
+            "rebuttals",
+            "synthesis",
+        ),
+        prompt_contract=(
+            "Create a two-speaker evidence debate. Present the strongest source-grounded "
+            "case for and against the central question, include fair rebuttals, and end "
+            "with a synthesis that distinguishes evidence from unresolved judgment."
+        ),
+    ),
+}
+
+
+def normalize_podcast_mode(
+    value: PodcastOverviewMode | str | None,
+) -> PodcastOverviewMode:
+    """Read legacy missing values as deep_dive and reject invented formats."""
+    if value is None or value == "":
+        return PodcastOverviewMode.DEEP_DIVE
+    if isinstance(value, PodcastOverviewMode):
+        return value
+    try:
+        return PodcastOverviewMode(str(value).strip().lower())
+    except ValueError as exc:
+        raise ValueError(f"Unsupported podcast overview mode: {value!r}") from exc
+
+
+def get_podcast_mode_spec(
+    mode: PodcastOverviewMode | str | None,
+) -> PodcastModeSpec:
+    return PODCAST_MODE_SPECS[normalize_podcast_mode(mode)]
+
+
+def mode_prompt_contract(mode: PodcastOverviewMode | str | None) -> str:
+    """Stable mode instructions appended to the user-selected profile briefing."""
+    return get_podcast_mode_spec(mode).prompt_contract
+
+
+class TranscriptSegment(BaseModel):
+    """Timestamp-ready transcript metadata persisted with an episode.
+
+    Existing podcast-creator backends do not always emit clip timings. The
+    command therefore records monotonic estimated bounds until a provider
+    supplies exact timings; later playback can safely refine them in place.
+    """
+
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+    speaker: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=20_000)
+    citation_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "TranscriptSegment":
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("end_seconds must be greater than start_seconds")
+        return self
+
+
+def transcript_segments_from_payload(
+    payload: Any,
+    *,
+    mode: PodcastOverviewMode | str | None,
+) -> list[TranscriptSegment]:
+    """Normalize podcast-creator dialogue into durable, typed metadata.
+
+    Providers have used both ``text`` and ``content`` for dialogue and may
+    omit timing entirely. We never fabricate citations; unknown citations stay
+    empty until a source-aware transcription provider can supply them.
+    """
+    if isinstance(payload, dict):
+        payload = payload.get("segments", payload.get("transcript", []))
+    if not isinstance(payload, list):
+        return []
+
+    spec = get_podcast_mode_spec(mode)
+    usable: list[dict[str, Any]] = []
+    for item in payload:
+        if isinstance(item, BaseModel):
+            item = item.model_dump()
+        elif not isinstance(item, dict):
+            item = {
+                "speaker": getattr(item, "speaker", None),
+                "text": getattr(item, "text", getattr(item, "content", None)),
+            }
+        text = str(
+            item.get("text") or item.get("content") or item.get("dialogue") or ""
+        ).strip()
+        if text:
+            usable.append({**item, "text": text})
+
+    if not usable:
+        return []
+
+    estimated_duration = spec.min_duration_minutes * 60 / len(usable)
+    cursor = 0.0
+    segments: list[TranscriptSegment] = []
+    for index, item in enumerate(usable, start=1):
+        start = float(item.get("start_seconds", item.get("start_time", cursor)) or 0)
+        end = float(
+            item.get("end_seconds", item.get("end_time", start + estimated_duration))
+            or 0
+        )
+        if end <= start:
+            end = start + estimated_duration
+        citations = item.get("citation_ids", item.get("citations", []))
+        if not isinstance(citations, list):
+            citations = []
+        segments.append(
+            TranscriptSegment(
+                start_seconds=start,
+                end_seconds=end,
+                speaker=str(
+                    item.get("speaker")
+                    or item.get("speaker_name")
+                    or f"Speaker {index}"
+                ),
+                text=item["text"],
+                citation_ids=[str(value) for value in citations if value],
+            )
+        )
+        cursor = max(cursor, end)
+    return segments
 
 
 async def _resolve_model_config(model_id: str) -> tuple[str, str, dict]:
@@ -147,9 +354,7 @@ class SpeakerProfile(ObjectModel):
     tts_model: Optional[str] = Field(None, description="[Legacy] TTS model name")
 
     # New field: Model registry reference
-    voice_model: Optional[str] = Field(
-        None, description="Model record ID for TTS"
-    )
+    voice_model: Optional[str] = Field(None, description="Model record ID for TTS")
 
     speakers: list[dict[str, Any]] = Field(
         ..., description="Array of speaker configurations"
@@ -228,7 +433,7 @@ class PodcastEpisode(ObjectModel):
     # field is listed here, so the workers' `generation_stage = None` on
     # success never reached the DB and the last stage ("combining_audio")
     # stuck on completed episodes forever (caught by the live smoke test).
-    nullable_fields: ClassVar[set[str]] = {"generation_stage"}
+    nullable_fields: ClassVar[set[str]] = {"generation_stage", "custom_prompt"}
 
     name: str = Field(..., description="Episode name")
     episode_profile: dict[str, Any] = Field(
@@ -244,6 +449,15 @@ class PodcastEpisode(ObjectModel):
     briefing_suffix: Optional[str] = Field(
         default=None, description="User-provided extra instructions, if any"
     )
+    mode: PodcastOverviewMode = Field(
+        default=PodcastOverviewMode.DEEP_DIVE,
+        description="Closed Audio Overview format; legacy episodes are deep_dive",
+    )
+    custom_prompt: Optional[str] = Field(
+        default=None,
+        max_length=5000,
+        description="Exact user customization applied to this overview",
+    )
     content: str = Field(..., description="Source content")
     audio_file: Optional[str] = Field(
         default=None, description="Path to generated audio file"
@@ -253,6 +467,10 @@ class PodcastEpisode(ObjectModel):
     )
     outline: Optional[dict[str, Any]] = Field(
         default_factory=dict, description="Generated outline"
+    )
+    transcript_segments: list[TranscriptSegment] = Field(
+        default_factory=list,
+        description="Typed timestamp-ready transcript segment metadata",
     )
     command: Optional[str | RecordID] = Field(
         default=None, description="Link to surreal-commands job"
@@ -270,6 +488,13 @@ class PodcastEpisode(ObjectModel):
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(
+        cls, value: PodcastOverviewMode | str | None
+    ) -> PodcastOverviewMode:
+        return normalize_podcast_mode(value)
 
     async def get_job_status(self) -> Optional[str]:
         """Get the status of the associated command"""
@@ -324,5 +549,6 @@ class PodcastEpisode(ObjectModel):
         # Ensure command field is RecordID format if not None
         if data.get("command") is not None:
             data["command"] = ensure_record_id(data["command"])
+        data["mode"] = normalize_podcast_mode(data.get("mode")).value
 
         return data

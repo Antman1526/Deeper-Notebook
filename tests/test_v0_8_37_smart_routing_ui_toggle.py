@@ -216,3 +216,58 @@ class TestProviderPrefField:
 
         # Auto + healthy local + small content → local pick.
         assert captured[0]["model_id"] == "model:hermes"
+
+
+class TestMeasuredBenchmarkChatRouting:
+    """Measured local benchmark winners can fill the smart-router local slot."""
+
+    def test_measured_chat_winner_used_when_env_local_model_missing(self, monkeypatch):
+        """UI smart routing + no OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID should still
+        have a local candidate when the local benchmark history has a measured
+        chat winner."""
+        import open_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(
+            provision_mod,
+            "_measured_local_chat_model_id",
+            AsyncMock(return_value="model:bench-chat"),
+        )
+        _stub_defaults(monkeypatch, _FakeDefaults(enabled=True, pref="auto"))
+        captured = _stub_provision_inner(monkeypatch)
+
+        _run(provision_mod.provision_langchain_chat_model("hi"))
+
+        assert captured[0]["model_id"] == "model:bench-chat"
+
+    def test_env_local_model_still_overrides_measured_winner(self, monkeypatch):
+        """Explicit operator/user local model choice keeps precedence over
+        benchmark automation."""
+        import open_notebook.ai.provision as provision_mod
+        measured_lookup = AsyncMock(return_value="model:bench-chat")
+        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached",
+            AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(
+            provision_mod,
+            "_measured_local_chat_model_id",
+            measured_lookup,
+        )
+        _stub_defaults(monkeypatch, _FakeDefaults(enabled=True, pref="auto"))
+        captured = _stub_provision_inner(monkeypatch)
+
+        _run(provision_mod.provision_langchain_chat_model("hi"))
+
+        assert captured[0]["model_id"] == "model:hermes"
+        measured_lookup.assert_not_called()

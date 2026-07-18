@@ -1,7 +1,7 @@
 # desktop/tests/test_llamacpp_provider.py
 import subprocess
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,6 +34,15 @@ def test_list_models_returns_relative_paths_sorted(gguf_dir):
     assert p.list_models() == ["a/nested/model_a.gguf", "model_b.gguf"]
 
 
+def test_list_models_uses_forward_slashes_for_windows_public_ids(monkeypatch):
+    model_dir = PureWindowsPath(r"C:\models")
+    nested_model = model_dir / "a" / "nested" / "model_a.gguf"
+    provider = LlamaCppProvider(model_dir=model_dir)
+    monkeypatch.setattr(provider, "_iter_ggufs", lambda: iter([nested_model]))
+
+    assert provider.list_models() == ["a/nested/model_a.gguf"]
+
+
 def test_list_models_skips_stub_files(gguf_dir):
     (gguf_dir / "stub.gguf").write_bytes(b"x" * 100)  # < 1 MB
     p = LlamaCppProvider(model_dir=gguf_dir)
@@ -56,6 +65,31 @@ def test_start_spawns_server_and_returns_env(gguf_dir, monkeypatch):
     assert env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     p.stop()
     fake_proc.terminate.assert_called_once()
+
+
+def test_start_preserves_configured_posix_python_executable(gguf_dir, monkeypatch):
+    captured: list[list[str]] = []
+    fake_proc = MagicMock(spec=subprocess.Popen)
+    fake_proc.poll.return_value = None
+
+    def fake_popen(args, **kwargs):
+        captured.append(list(args))
+        return fake_proc
+
+    configured_python = "/opt/open-notebook/.venv/bin/python"
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51117)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    provider = LlamaCppProvider(
+        model_dir=gguf_dir,
+        ready_probe=lambda port: True,
+        python_executable=configured_python,
+    )
+    provider.start("model_b.gguf")
+    provider.stop()
+
+    assert captured[0][0] == configured_python
 
 
 def test_start_raises_if_model_missing(tmp_path):

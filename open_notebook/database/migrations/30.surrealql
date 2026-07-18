@@ -1,0 +1,28 @@
+-- v0.8.95 -- Private local Capture Inbox roots, observations, and fingerprints.
+DEFINE TABLE IF NOT EXISTS capture_inbox_root SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS path ON TABLE capture_inbox_root TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE capture_inbox_root DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE capture_inbox_root DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_capture_inbox_root_path ON TABLE capture_inbox_root COLUMNS path UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS capture_fingerprint SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE capture_fingerprint TYPE string;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE capture_fingerprint TYPE int;
+DEFINE FIELD IF NOT EXISTS created ON TABLE capture_fingerprint DEFAULT time::now() VALUE $before OR time::now();
+DEFINE INDEX IF NOT EXISTS idx_capture_fingerprint_content ON TABLE capture_fingerprint COLUMNS sha256, byte_size UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS capture_inbox_item SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE capture_inbox_item TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS root_path ON TABLE capture_inbox_item TYPE string;
+DEFINE FIELD IF NOT EXISTS relative_path ON TABLE capture_inbox_item TYPE string;
+DEFINE FIELD IF NOT EXISTS filename ON TABLE capture_inbox_item TYPE string;
+DEFINE FIELD IF NOT EXISTS extension ON TABLE capture_inbox_item TYPE string;
+DEFINE FIELD IF NOT EXISTS state ON TABLE capture_inbox_item TYPE string;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE capture_inbox_item TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE capture_inbox_item TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS modified_ns ON TABLE capture_inbox_item TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS reason ON TABLE capture_inbox_item TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE capture_inbox_item DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE capture_inbox_item DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_capture_item_path ON TABLE capture_inbox_item COLUMNS root_path, relative_path UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_capture_item_state ON TABLE capture_inbox_item COLUMNS state;

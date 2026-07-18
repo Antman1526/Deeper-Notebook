@@ -64,12 +64,13 @@ def patched_pipeline(monkeypatch):
 
     # content_core.extract_content — return parsed text matching the filename
     async def _extract(state):
-        fake_content = f"[parsed content of {state.file_path}]"
+        source_ref = getattr(state, "file_path", None) or getattr(state, "url", None)
+        fake_content = f"[parsed content of {source_ref}]"
         return SimpleNamespace(
             content=fake_content,
             title=None,
-            url=None,
-            file_path=state.file_path,
+            url=getattr(state, "url", None),
+            file_path=getattr(state, "file_path", None),
         )
 
     # Patch the LAZY import that happens inside studio_generate. Insert a
@@ -97,16 +98,29 @@ def patched_pipeline(monkeypatch):
             created_notebooks.append({"id": self.id, "name": self.name})
 
     class _SourceMock:
-        def __init__(self, *, title=None, asset=None, topics=None):
+        def __init__(
+            self,
+            *,
+            title=None,
+            asset=None,
+            topics=None,
+            provenance=None,
+            source_type=None,
+        ):
             self.title = title
             self.asset = asset
             self.topics = topics or []
+            self.provenance = provenance or {}
+            self.source_type = source_type
             self.full_text = None
             self.id = f"source:{len(created_sources)}"
 
         async def save(self):
             created_sources.append({"id": self.id, "title": self.title,
-                                    "full_text": self.full_text})
+                                    "full_text": self.full_text,
+                                    "source_type": self.source_type,
+                                    "provenance": self.provenance,
+                                    "asset": self.asset})
 
         async def add_to_notebook(self, _id):
             pass
@@ -158,8 +172,17 @@ def test_rejects_invalid_mode(client, patched_pipeline):
 
 def test_rejects_no_files(client, patched_pipeline):
     r = client.post("/api/studio/generate", data={"mode": "notebook"})
-    # FastAPI returns 422 when files required field missing
-    assert r.status_code in (400, 422)
+    assert r.status_code == 400
+    assert "file or link" in r.json()["detail"]
+
+
+def test_rejects_invalid_link(client, patched_pipeline):
+    r = client.post(
+        "/api/studio/generate",
+        data={"mode": "notebook", "links": "ftp://example.com/video"},
+    )
+    assert r.status_code == 400
+    assert "http(s)" in r.json()["detail"]
 
 
 def test_rejects_unsupported_file_type(client, patched_pipeline):
@@ -254,6 +277,49 @@ def test_notebook_mode_generates_and_saves_note(client, patched_pipeline, monkey
     assert "Page B" in overview_note["content"]
     for page_note in patched_pipeline["notes"][1:]:
         assert "💡 AI Suggestions" in page_note["content"]
+
+
+def test_notebook_mode_accepts_link_only_sources(client, patched_pipeline, monkeypatch):
+    outline_json = (
+        '{"headline": "link headline", "summary": "link summary.", '
+        '"pages": ['
+        '  {"title": "Link Page", "focus": "Web source", "key_questions": ["q1"]}'
+        '], "top_suggestions": ["check source"]}'
+    )
+    fake_chain = MagicMock()
+    fake_chain.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content=outline_json),
+        MagicMock(content="# Link Page\n\n## 💡 AI Suggestions for this page\n- act"),
+    ])
+    monkeypatch.setattr(
+        studio_mod,
+        "provision_langchain_model",
+        AsyncMock(return_value=fake_chain),
+    )
+
+    r = client.post(
+        "/api/studio/generate",
+        data={
+            "mode": "notebook",
+            "title": "Link Training",
+            "links": "https://example.com/training/video",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "notebook"
+    assert len(body["source_ids"]) == 1
+    assert body["title"] == "Link Training"
+    last_source = patched_pipeline["sources"][-1]
+    assert last_source["source_type"] == "link"
+    assert last_source["asset"].url == "https://example.com/training/video"
+    assert last_source["provenance"]["origin"] == "studio_generate"
+    assert "https://example.com/training/video" in last_source["full_text"]
+
+    first_call_messages = fake_chain.ainvoke.call_args_list[0][0][0]
+    combined = first_call_messages[1].content
+    assert "https://example.com/training/video" in combined
 
 
 def test_notebook_mode_falls_back_to_single_note_when_outline_unparseable(

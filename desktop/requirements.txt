@@ -26,6 +26,13 @@ aiohttp>=3.11.18,<4
 # ~/.open-notebook-plus/logs/llamacpp_embed.log and llamacpp.log.
 llama-cpp-python[server]>=0.3.16,<0.4
 
+# v0.8.69 — MLX local model server support for Apple Silicon. The
+# provider launches `python -m mlx_lm.server` against repos under
+# ~/Desktop/AI_Models/MLX and exposes the same OpenAI-compatible API
+# shape used by llama.cpp. MLX is macOS/Apple-Silicon only, so keep
+# the marker tight to avoid breaking Windows packages.
+mlx-lm>=0.26,<0.27; sys_platform == "darwin" and platform_machine == "arm64"
+
 # v0.7.195 — Bundle the local-server shim dependencies. These have
 # been REQUIRED since the v0.4 local-server feature shipped, but
 # they were never pinned in desktop/requirements.txt. Every .app
@@ -74,3 +81,17 @@ tomli==2.2.1; python_version < "3.11"
 pytest==8.3.4
 pytest-asyncio==0.24.0
 skillopt>=0.1.0,<0.2  # v0.8.68 — prompt optimizer (microsoft/SkillOpt, MIT)
+
+# Trusted, editable Evidence Studio Office exports. Keep these direct: first
+# launch installs desktop/requirements.lock independently of the source tree.
+python-docx>=1.2.0,<2.0
+openpyxl>=3.1.5,<4.0
+# Capture Inbox filesystem watcher. This is direct so native first-launch
+# installs always include the watcher even when upstream dependency graphs move.
+watchdog>=6.0.0,<7.0
+# Evidence-grounded spaced repetition scheduler. Keep direct so native
+# first-launch installs include the exact study runtime dependency.
+fsrs>=6.3.1,<7.0
+# Package-managed FFmpeg used by local Video Overview composition. The desktop
+# bootstrap installs this into its private venv, so a host FFmpeg is never used.
+imageio-ffmpeg>=0.6.0,<1.0

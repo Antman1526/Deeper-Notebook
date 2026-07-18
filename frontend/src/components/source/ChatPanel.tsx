@@ -7,9 +7,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { SourceDialog } from './SourceDialog'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
@@ -32,9 +35,11 @@ import { CitationPill } from '@/components/chat/CitationPill'
 import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
 import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
 import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
+import { RunTimeline } from '@/components/onp'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import type { MindMapChatContext } from '@/components/onp/MindMapArtifactViewer'
 
 interface NotebookContextStats {
   sourcesInsights: number
@@ -42,6 +47,10 @@ interface NotebookContextStats {
   notesCount: number
   tokenCount?: number
   charCount?: number
+  // v0.8.89 — total sources in the notebook + names of the in-context ones,
+  // for the "Using X of Y sources" indicator + popover.
+  totalSources?: number
+  contextSourceTitles?: string[]
 }
 
 // v0.8.67 (audit F5) — pure, testable predicate: is the scroll viewport within
@@ -92,6 +101,16 @@ interface ChatPanelProps {
   // chat omits it (no privacy badge there), so the review popover is
   // review-only in that case.
   onReaskAllowCloud?: (message: string) => void
+  // v0.8.69 — public stop control for notebook streaming. The hook
+  // already had AbortController plumbing; ChatPanel now exposes it as
+  // a visible action so long local generations are user-controllable.
+  onCancelStreaming?: () => void
+  // v0.8.74 — optional starter-question chips shown in the empty chat state
+  // (improvement roadmap, Batch 1). Notebook chat passes corpus-grounded
+  // questions from GET /notebooks/{id}/suggested-questions; clicking one sends
+  // it. Omitted by source chat → no chips, no behavior change.
+  suggestedQuestions?: string[]
+  onSuggestedQuestionClick?: (question: string) => void
 }
 
 export function ChatPanel({
@@ -115,11 +134,22 @@ export function ChatPanel({
   disabledMcpServers,
   onToggleMcpServer,
   onReaskAllowCloud,
+  onCancelStreaming,
+  suggestedQuestions,
+  onSuggestedQuestionClick,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
   const [input, setInput] = useState('')
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
+  // v0.8.79 — local source viewer opened from a citation (improvement roadmap,
+  // Batch 2). Kept separate from the global modal so it can carry the citing
+  // sentence as the highlight query.
+  const [citationSource, setCitationSource] = useState<{ id: string; query: string } | null>(null)
+  // Mind-map viewers publish this browser-local event only after the server has
+  // re-resolved the stable path and citation source subset. The chip remains
+  // visible until removed, rather than hiding important scope in prompt text.
+  const [mindMapContext, setMindMapContext] = useState<MindMapChatContext | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   // v0.8.67 (F5) — true while the user is at/near the bottom; gates auto-scroll
@@ -129,6 +159,17 @@ export function ChatPanel({
   // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
+
+  useEffect(() => {
+    const receiveContext = (event: Event) => {
+      const context = (event as CustomEvent<MindMapChatContext>).detail
+      if (!context?.artifact_id || !context.label || !Array.isArray(context.source_ids)) return
+      setMindMapContext(context)
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+    window.addEventListener('onp:mind-map-context', receiveContext)
+    return () => window.removeEventListener('onp:mind-map-context', receiveContext)
+  }, [])
 
   // v0.8.65g — "Edit" a message: load its text into the chat input + focus so
   // the user can tweak and resend it (reuse a prompt / refine an answer).
@@ -185,7 +226,10 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
-      onSendMessage(input.trim(), modelOverride)
+      const scopedMessage = mindMapContext
+        ? `${mindMapContext.prompt_context}\n\nQuestion: ${input.trim()}`
+        : input.trim()
+      onSendMessage(scopedMessage, modelOverride)
       setInput('')
     }
   }
@@ -246,6 +290,13 @@ export function ChatPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
+        <RunTimeline
+          messages={messages}
+          isStreaming={isStreaming}
+          contextStats={notebookContextStats}
+          currentModel={modelOverride}
+          disabledMcpServers={disabledMcpServers}
+        />
         <ScrollArea className="flex-1 min-h-0 px-4" ref={scrollAreaRef}>
           <div className="space-y-4 py-4">
             {messages.length === 0 ? (
@@ -255,6 +306,28 @@ export function ChatPanel({
                   {t('chat.startConversation').replace('{type}', contextType === 'source' ? t('navigation.sources') : t('common.notebook'))}
                 </p>
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
+                {/* v0.8.74 — corpus-grounded starter questions (roadmap Batch 1).
+                    Removes the blank-slate problem; clicking a chip sends it. */}
+                {suggestedQuestions && suggestedQuestions.length > 0 && (
+                  <div className="mx-auto mt-5 max-w-md">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground/80">
+                      {t('chat.tryAsking', { defaultValue: 'Try asking' })}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {suggestedQuestions.map((q) => (
+                        <button
+                          key={q}
+                          type="button"
+                          onClick={() => onSuggestedQuestionClick?.(q)}
+                          disabled={isStreaming || !onSuggestedQuestionClick}
+                          className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-left text-xs text-foreground/90 shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               messages.map((message, idx) => (
@@ -273,10 +346,14 @@ export function ChatPanel({
                   )}
                   <div className="flex flex-col gap-2 max-w-[80%]">
                     <div
-                      className={`rounded-lg px-4 py-2 ${
+                      className={`rounded-2xl px-4 py-2.5 shadow-sm ${
+                        // v0.8.70 — softer, deeper bubbles: a subtle gradient on
+                        // the user's messages and a bordered card surface for the
+                        // assistant. No backdrop-blur per bubble (GPU cost in a
+                        // long thread); depth comes from the gradient + shadow.
                         message.type === 'human'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
+                          ? 'bg-gradient-to-br from-primary to-primary/85 text-primary-foreground'
+                          : 'border border-border/60 bg-card'
                       }`}
                     >
                       {message.type === 'ai' ? (
@@ -284,6 +361,9 @@ export function ChatPanel({
                           content={message.content}
                           onReferenceClick={handleReferenceClick}
                           messageId={message.id}
+                          onViewSource={(sourceId, query) =>
+                            setCitationSource({ id: sourceId, query })
+                          }
                         />
                       ) : (
                         // v0.7.25 — `break-all` breaks between any two
@@ -370,8 +450,14 @@ export function ChatPanel({
                     <Bot className="h-4 w-4" />
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-muted">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {/* v0.8.70 — a "typing" dot wave reads more alive than a
+                    spinner; the global reduced-motion rule freezes it. */}
+                <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
+                  </div>
                 </div>
               </div>
             )}
@@ -413,11 +499,26 @@ export function ChatPanel({
             notesCount={notebookContextStats.notesCount}
             tokenCount={notebookContextStats.tokenCount}
             charCount={notebookContextStats.charCount}
+            totalSources={notebookContextStats.totalSources}
+            contextSourceTitles={notebookContextStats.contextSourceTitles}
           />
         )}
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
+          {mindMapContext && (
+            <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+              <div className="min-w-0">
+                <div className="font-medium">Mind-map context: {mindMapContext.label}</div>
+                <div className="mt-0.5 break-words text-muted-foreground">
+                  {mindMapContext.relationship || 'No relationship specified'} · {mindMapContext.citations.join(' ') || 'No citations'} · artifact {mindMapContext.artifact_id}
+                </div>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label="Remove mind-map context" onClick={() => setMindMapContext(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
           {/* Model selector + v0.8.46 MCP tool picker on one row.
               The picker self-hides when there are no enabled MCP
               servers, so the row collapses to just the model selector
@@ -457,10 +558,24 @@ export function ChatPanel({
               className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
               rows={1}
             />
+            {isStreaming && onCancelStreaming && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Stop generating"
+                title="Stop generating"
+                onClick={onCancelStreaming}
+                className="h-[40px] w-[40px] flex-shrink-0"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               onClick={handleSend}
               disabled={!input.trim() || isStreaming}
               size="icon"
+              aria-label={t('chat.send', { defaultValue: 'Send message' })}
               className="h-[40px] w-[40px] flex-shrink-0"
             >
               {isStreaming ? (
@@ -474,6 +589,18 @@ export function ChatPanel({
       </CardContent>
     </Card>
 
+      {/* v0.8.79 — citation jump-to-highlight: a source viewer opened from a
+          [source:ID] citation, scrolled to + highlighting the cited passage.
+          Kept local (not the global modal) so it can carry the highlight query. */}
+      <SourceDialog
+        open={!!citationSource}
+        onOpenChange={(o) => {
+          if (!o) setCitationSource(null)
+        }}
+        sourceId={citationSource?.id ?? null}
+        highlightQuery={citationSource?.query}
+      />
+
     </>
   )
 }
@@ -484,14 +611,28 @@ export function ChatPanel({
 // markers within text segments are handled by the existing compact-reference system.
 // v0.8.1 Item 3 — messageId passed through to CitationPill so the MCP
 // popover can look up tool-call payloads from the TanStack Query cache.
+// v0.8.79 — the "citing sentence" for a citation is the last sentence of the
+// text immediately preceding the marker — i.e. the claim the citation grounds.
+// Used as the query to locate + highlight the cited passage in the source.
+function lastSentence(text: string): string {
+  const trimmed = (text || '').trim()
+  if (!trimmed) return ''
+  const parts = trimmed.split(/(?<=[.!?])\s+/)
+  return (parts[parts.length - 1] || trimmed).slice(-400)
+}
+
 function AIMessageContent({
   content,
   onReferenceClick,
   messageId,
+  onViewSource,
 }: {
   content: string
   onReferenceClick: (type: string, id: string) => void
   messageId?: string
+  // v0.8.79 — open the source reading view for a [source:ID] citation,
+  // passing the citing sentence so it can highlight the grounded passage.
+  onViewSource?: (sourceId: string, query: string) => void
 }) {
   const { t } = useTranslation()
 
@@ -544,7 +685,8 @@ function AIMessageContent({
           return (
             <ReactMarkdown
               key={idx}
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={mdComponents}
             >
               {markdownWithCompactRefs}
@@ -554,8 +696,23 @@ function AIMessageContent({
         // Citation segment → render as an inline pill.
         // v0.8.1 Item 3 — pass messageId so MCP pills can look up
         // tool-call payloads from the TanStack Query cache.
+        // v0.8.79 — for source citations, wire "View source" to open the
+        // reading view highlighting the cited passage (citing sentence = the
+        // last sentence of the preceding text segment).
+        const prev = idx > 0 ? segments[idx - 1] : undefined
+        const citingSentence = prev && prev.kind === 'text' ? lastSentence(prev.value) : ''
         return (
-          <CitationPill key={`${seg.kind}-${idx}`} kind={seg.kind} value={seg.value} messageId={messageId} />
+          <CitationPill
+            key={`${seg.kind}-${idx}`}
+            kind={seg.kind}
+            value={seg.value}
+            messageId={messageId}
+            onViewSource={
+              seg.kind === 'source' && onViewSource
+                ? () => onViewSource(`source:${seg.value}`, citingSentence)
+                : undefined
+            }
+          />
         )
       })}
     </div>

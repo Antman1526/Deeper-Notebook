@@ -129,7 +129,7 @@ def _collect_paths(data_root: Path) -> list[tuple[Path, str]]:
             continue
         # Relative path under data_root so the archive is portable
         rel = p.relative_to(data_root)
-        pairs.append((p, str(Path("data") / rel)))
+        pairs.append((p, f"data/{rel.as_posix()}"))
     return pairs
 
 
@@ -216,7 +216,9 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
 
             for abs_p, arc_p in pairs:
                 tar.add(abs_p, arcname=arc_p)
-        tmp_path.rename(output_path)
+        # os.replace atomically overwrites a prior bundle on both POSIX and
+        # Windows. Path.rename cannot replace an existing destination there.
+        os.replace(tmp_path, output_path)
     except Exception:
         if tmp_path.exists():
             tmp_path.unlink()
@@ -294,13 +296,20 @@ def restore(
         # Verify integrity by hash. For verify_only mode we read each
         # archived file out of the tar and SHA-256 the bytes without
         # writing to disk.
-        expected_hashes = {e["path"]: e["sha256"] for e in manifest["files"]}
+        # Tar member names are portable POSIX paths, but older backups made
+        # on Windows recorded Path strings with backslashes in the manifest.
+        # Canonicalize both sides so those bundles remain verifiable.
+        expected_hashes = {
+            e["path"].replace("\\", "/"): e["sha256"]
+            for e in manifest["files"]
+        }
         verified = 0
         mismatched: list[str] = []
         for member in tar.getmembers():
             if member.name == "manifest.json":
                 continue
-            if member.name not in expected_hashes:
+            member_path = member.name.replace("\\", "/")
+            if member_path not in expected_hashes:
                 continue
             f = tar.extractfile(member)
             if f is None:
@@ -311,10 +320,10 @@ def restore(
                 if not chunk:
                     break
                 h.update(chunk)
-            if h.hexdigest() == expected_hashes[member.name]:
+            if h.hexdigest() == expected_hashes[member_path]:
                 verified += 1
             else:
-                mismatched.append(member.name)
+                mismatched.append(member_path)
 
         if mismatched:
             raise RuntimeError(

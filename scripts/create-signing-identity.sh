@@ -48,14 +48,27 @@ extendedKeyUsage = critical, codeSigning
 basicConstraints = critical, CA:false
 EOF
 
+# v0.8.70 — use the SYSTEM openssl (/usr/bin/openssl = LibreSSL), not whatever
+# `openssl` resolves to on PATH. Homebrew's OpenSSL 3 exports a PKCS#12 whose
+# MAC algorithm Apple's `security import` can't verify ("MAC verification failed
+# during PKCS12 import"), so the import silently failed and no identity was
+# created. LibreSSL produces a macOS-importable p12 with no extra flags.
+OPENSSL="/usr/bin/openssl"
+[ -x "$OPENSSL" ] || OPENSSL="openssl"  # fall back to PATH if system one is gone
+
 echo "🔑 Generating self-signed code-signing cert '$IDENTITY' (valid 10 years)…"
-openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+"$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$TMP/key.pem" -out "$TMP/cert.pem" -config "$CONF" >/dev/null 2>&1
-openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-  -name "$IDENTITY" -out "$TMP/identity.p12" -passout pass: >/dev/null 2>&1
+# v0.8.70 — the p12 MUST carry a non-empty password. An empty-password p12
+# fails `security import` with "MAC verification failed" (the importer can't
+# verify the MAC over an empty passphrase). It's a throwaway that only protects
+# this transient temp file, so a fixed constant is fine.
+P12_PASS="onp-local-signing"
+"$OPENSSL" pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+  -name "$IDENTITY" -out "$TMP/identity.p12" -passout "pass:${P12_PASS}" >/dev/null 2>&1
 
 echo "📥 Importing into login keychain…"
-security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "" \
+security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "${P12_PASS}" \
   -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1
 
 # Trust for code signing (best-effort; may prompt for your login password).

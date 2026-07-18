@@ -1,0 +1,84 @@
+"""Contract tests for the Evidence Studio generation service boundary."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from open_notebook.studio import artifact_generation
+from open_notebook.studio.generation import ArtifactGenerationRequest
+from open_notebook.studio.generation.context import (
+    artifact_context,
+    artifact_not_ready_sources,
+)
+from open_notebook.studio.generation.prompts import (
+    artifact_instruction,
+    artifact_model_role,
+)
+
+
+def test_prompt_helpers_preserve_artifact_steering_and_model_roles() -> None:
+    artifact = SimpleNamespace(
+        artifact_type="flashcards",
+        prompt="Keep each answer compact.",
+    )
+
+    assert artifact_model_role("flashcards") == "study_fast"
+    assert "source-grounded flashcards" in artifact_instruction(artifact)
+    assert "Keep each answer compact." in artifact_instruction(artifact)
+
+
+def test_context_helpers_keep_stable_citation_markers_and_readiness_shape() -> None:
+    ready = SimpleNamespace(
+        id="source:ready",
+        title="Ready source",
+        full_text="Evidence that is ready to cite.",
+        command=None,
+    )
+    waiting = SimpleNamespace(
+        id="source:waiting",
+        title="Waiting source",
+        full_text="",
+        command="command:extract",
+    )
+
+    context, citations = artifact_context([ready])
+
+    assert "## Source [S1]: Ready source" in context
+    assert citations == [
+        {
+            "source_id": "source:ready",
+            "title": "Ready source",
+            "marker": "[S1]",
+            "location": "Source [S1]",
+            "preview": "Evidence that is ready to cite.",
+        }
+    ]
+    assert artifact_not_ready_sources([ready, waiting]) == [
+        {
+            "source_id": "source:waiting",
+            "title": "Waiting source",
+            "command_id": "command:extract",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_legacy_adapter_delegates_to_the_request_service(monkeypatch) -> None:
+    generated = SimpleNamespace(id="studio_artifact:report")
+    generate = AsyncMock(return_value=generated)
+    monkeypatch.setattr(artifact_generation, "generate_artifact", generate)
+
+    result = await artifact_generation.generate_studio_artifact(
+        "studio_artifact:report"
+    )
+
+    assert result is generated
+    assert generate.await_args.args == (
+        ArtifactGenerationRequest(
+            artifact_id="studio_artifact:report",
+            source_ids=[],
+        ),
+    )

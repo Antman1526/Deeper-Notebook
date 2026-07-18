@@ -1,0 +1,245 @@
+"""v0.8.70 — In-app update notifier service.
+
+Checks the project's GitHub Releases for a newer version than the running
+build and exposes the result to the frontend (which renders a dismissible
+banner). This is intentionally a *notifier only* — it never downloads or
+installs anything. The desktop app ships unsigned today, so silently
+fetching/replacing binaries would be both unsafe and blocked by
+Gatekeeper/SmartScreen; the banner just links to the release page.
+
+Design notes
+------------
+- **Privacy:** the GitHub request only fires when checking is enabled (default
+  on, user-togglable). When disabled, ``check()`` returns the cached/empty
+  result without any network call. Open Notebook is privacy-first, so the one
+  outbound call is gated and disclosed in the UI.
+- **Resilience:** any failure (offline, rate-limited, malformed JSON, no
+  releases yet) resolves to ``update_available = False``. The notifier must
+  never block startup or surface an error to the user.
+- **Caching:** results are cached in ``~/.open-notebook-plus/update_state.json``
+  for ``CHECK_TTL_SECONDS`` so reopening the app within the window doesn't
+  re-ping GitHub.
+- **State:** the same file persists the user's enabled toggle and the version
+  they chose to skip.
+"""
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import httpx
+from loguru import logger
+
+# Public GitHub repo that publishes the desktop releases.
+GITHUB_OWNER = "Antman1526"
+GITHUB_REPO = "open-notebook-Plus"
+RELEASES_LATEST_URL = (
+    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+)
+
+# How long a check result is reused before we ping GitHub again.
+CHECK_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+# Hard cap on the GitHub request so a hung connection can't stall the endpoint.
+REQUEST_TIMEOUT_SECONDS = 8.0
+
+
+def _state_path() -> Path:
+    """Path to the persisted update-notifier state file.
+
+    Shares the ``~/.open-notebook-plus`` directory used by launcher prefs so
+    all desktop-side state lives in one place.
+    """
+    return Path.home() / ".open-notebook-plus" / "update_state.json"
+
+
+def app_version() -> str:
+    """Return the running application version.
+
+    Single source for "what version am I" — the desktop window shows the same
+    ``desktop.__version__`` string, so comparing against the latest GitHub tag
+    is consistent with what the user sees. Falls back to installed package
+    metadata when the desktop package isn't importable (e.g. bare API runs),
+    and finally to ``0.0.0`` so a missing version degrades to "no update" math
+    rather than crashing.
+    """
+    try:
+        from desktop import __version__  # type: ignore
+
+        if __version__:
+            return str(__version__)
+    except Exception:  # pragma: no cover - desktop not always importable
+        pass
+    try:
+        from importlib.metadata import version
+
+        return version("open-notebook")
+    except Exception:  # pragma: no cover
+        return "0.0.0"
+
+
+def _parse_version(raw: Optional[str]) -> tuple[int, ...]:
+    """Parse a version/tag string into a comparable numeric tuple.
+
+    Handles a leading ``v`` (``v0.8.70`` → ``0.8.70``) and ignores any
+    pre-release/build suffix (``0.8.70-rc1`` → ``(0, 8, 70)``). Unparseable
+    input yields ``(0,)`` so it always compares as "oldest" rather than
+    raising.
+    """
+    if not raw:
+        return (0,)
+    cleaned = raw.strip().lstrip("vV")
+    # Take the leading dotted-number run; drop any -rc1 / +build tail.
+    match = re.match(r"\d+(?:\.\d+)*", cleaned)
+    if not match:
+        return (0,)
+    return tuple(int(part) for part in match.group(0).split("."))
+
+
+def _is_newer(latest: Optional[str], current: str) -> bool:
+    """True when ``latest`` is a strictly greater version than ``current``."""
+    if not latest:
+        return False
+    return _parse_version(latest) > _parse_version(current)
+
+
+def _read_state() -> dict[str, Any]:
+    """Load persisted state, tolerating a missing/corrupt file."""
+    path = _state_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError) as exc:
+        logger.warning(f"update_state.json unreadable ({exc}); ignoring")
+        return {}
+
+
+def _write_state(state: dict[str, Any]) -> None:
+    """Persist state atomically; never raise into the caller."""
+    path = _state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except OSError as exc:
+        logger.warning(f"Could not persist update_state.json ({exc})")
+
+
+def is_enabled() -> bool:
+    """Whether automatic update checks are enabled (default: True)."""
+    return bool(_read_state().get("enabled", True))
+
+
+def set_enabled(enabled: bool) -> dict[str, Any]:
+    """Persist the enabled toggle and return the resulting status."""
+    state = _read_state()
+    state["enabled"] = bool(enabled)
+    _write_state(state)
+    return _status_from_state(state)
+
+
+def skip_version(version: str) -> dict[str, Any]:
+    """Persist a version the user chose to skip; return the new status."""
+    state = _read_state()
+    state["skipped_version"] = str(version)
+    _write_state(state)
+    return _status_from_state(state)
+
+
+def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Build the API status payload from a (possibly cached) state dict."""
+    current = app_version()
+    cache = state.get("cache") or {}
+    latest = cache.get("latest")
+    skipped = state.get("skipped_version")
+    available = _is_newer(latest, current)
+    return {
+        "current": current,
+        "latest": latest,
+        # The banner hides itself for a skipped version; expose both the raw
+        # availability and the skip so the client doesn't re-implement the math.
+        "update_available": available,
+        "skipped": available and skipped == latest,
+        "skipped_version": skipped,
+        "html_url": cache.get("html_url"),
+        "published_at": cache.get("published_at"),
+        "enabled": bool(state.get("enabled", True)),
+        "last_check": state.get("last_check"),
+    }
+
+
+def _cache_fresh(state: dict[str, Any]) -> bool:
+    """True when the last check is within the TTL window."""
+    last = state.get("last_check")
+    if not last:
+        return False
+    try:
+        ts = datetime.fromisoformat(last)
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - ts).total_seconds()
+    return age < CHECK_TTL_SECONDS
+
+
+async def _fetch_latest_release() -> Optional[dict[str, Any]]:
+    """Query GitHub for the latest release. Returns None on any failure.
+
+    A 404 here is normal and expected when the repo has no published releases
+    yet — treated as "no update", not an error.
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"{GITHUB_REPO}-update-notifier",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            resp = await client.get(RELEASES_LATEST_URL, headers=headers)
+        if resp.status_code != 200:
+            logger.info(
+                f"Update check: GitHub returned {resp.status_code} "
+                "(no published release or rate limited)"
+            )
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.info(f"Update check failed (non-fatal): {exc}")
+        return None
+
+
+async def check(force: bool = False) -> dict[str, Any]:
+    """Return the current update status, refreshing from GitHub when due.
+
+    Honors the enabled toggle (no network call when disabled) and the TTL
+    cache (no network call when the last check is still fresh, unless
+    ``force``). Always returns a status payload — never raises.
+    """
+    state = _read_state()
+
+    # Disabled → never touch the network; report current version only.
+    if not state.get("enabled", True):
+        return _status_from_state(state)
+
+    # Fresh cache → reuse it.
+    if not force and _cache_fresh(state):
+        return _status_from_state(state)
+
+    release = await _fetch_latest_release()
+    state["last_check"] = datetime.now(timezone.utc).isoformat()
+    if release is not None:
+        state["cache"] = {
+            "latest": release.get("tag_name") or release.get("name"),
+            "html_url": release.get("html_url"),
+            "published_at": release.get("published_at"),
+        }
+    # On failure we still stamp last_check so we back off for the TTL window
+    # rather than hammering GitHub on every page load while offline.
+    _write_state(state)
+    return _status_from_state(state)

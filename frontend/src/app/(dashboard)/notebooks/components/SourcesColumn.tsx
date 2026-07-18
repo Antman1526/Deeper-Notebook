@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, type UIEvent } from 'react'
+import { useState, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,11 +10,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, ChevronDown, Loader2 } from 'lucide-react'
+import { Plus, FileText, Link2, ChevronDown, Loader2, ListChecks, Compass } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
+import { DiscoverSourcesDialog } from '@/components/sources/DiscoverSourcesDialog'
 import { SourceCard } from '@/components/sources/SourceCard'
 import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
 
@@ -30,6 +31,7 @@ import { useDeleteSource, useRetrySource, useRemoveSourceFromNotebook } from '@/
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { ContextMode } from '../[id]/page'
+import type { SourceBulkAction } from '@/lib/utils/source-context'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -45,6 +47,7 @@ interface SourcesColumnProps {
   onRefresh?: () => void
   contextSelections?: Record<string, ContextMode>
   onContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkContextModeChange?: (action: SourceBulkAction) => void
   // Pagination props
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
@@ -58,18 +61,49 @@ export function SourcesColumn({
   onRefresh,
   contextSelections,
   onContextModeChange,
+  onBulkContextModeChange,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
 }: SourcesColumnProps) {
   const { t } = useTranslation()
+  const sourcesLabel = t('navigation.sources')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
+  // v0.8.87 — Discover sources (guarded web search) dialog.
+  const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [sourceToRemove, setSourceToRemove] = useState<string | null>(null)
+  // v0.8.77 — drag-drop-anywhere (improvement roadmap, Batch 1). Drop files
+  // onto the sources panel to open AddSourceDialog prefilled with them. The
+  // file prefill is best-effort (AddSourceDialog degrades to a manual pick).
+  // NOTE: needs a real in-app file-drag test to confirm the prefill lands.
+  const [droppedFiles, setDroppedFiles] = useState<File[] | undefined>(undefined)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault()
+      setIsDragging(true)
+    }
+  }, [])
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    // Ignore leaves into child elements (avoids overlay flicker).
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setIsDragging(false)
+  }, [])
+  const handleDrop = useCallback((e: DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return
+    e.preventDefault()
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length === 0) return
+    setDroppedFiles(files)
+    setAddDialogOpen(true)
+  }, [])
 
   const { openModal } = useModalManager()
   const deleteSource = useDeleteSource()
@@ -79,8 +113,8 @@ export function SourcesColumn({
   // Collapsible column state
   const { sourcesCollapsed, toggleSources } = useNotebookColumnsStore()
   const collapseButton = useMemo(
-    () => createCollapseButton(toggleSources, t('navigation.sources')),
-    [toggleSources, t('navigation.sources')]
+    () => createCollapseButton(toggleSources, sourcesLabel),
+    [toggleSources, sourcesLabel]
   )
 
   // v0.7.51 — read scroll metrics from `event.currentTarget`, NOT from a
@@ -164,11 +198,44 @@ export function SourcesColumn({
         collapsedIcon={FileText}
         collapsedLabel={t('navigation.sources')}
       >
-        <Card className="h-full flex flex-col flex-1 overflow-hidden">
+        <Card
+          className="relative h-full flex flex-col flex-1 overflow-hidden"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragging && (
+            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm">
+              <p className="text-sm font-medium text-primary">
+                {t('sources.dropToAdd', { defaultValue: 'Drop files to add as sources' })}
+              </p>
+            </div>
+          )}
           <CardHeader className="pb-3 flex-shrink-0">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
               <div className="flex items-center gap-2">
+                {onBulkContextModeChange && sources && sources.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
+                        <ListChecks className="h-4 w-4" />
+                        <ChevronDown className="h-4 w-4 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
+                        {t('sources.includeAllInsights')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
+                        {t('sources.includeAllFull')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                        {t('sources.excludeAllFromContext')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 <BulkVectorizeButton notebookId={notebookId} />
                 <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
@@ -186,6 +253,11 @@ export function SourcesColumn({
                     <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddExistingDialogOpen(true); }}>
                       <Link2 className="h-4 w-4 mr-2" />
                       {t('sources.addExistingTitle')}
+                    </DropdownMenuItem>
+                    {/* v0.8.87 — Discover: guarded web search → add link sources. */}
+                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
+                      <Compass className="h-4 w-4 mr-2" />
+                      {t('sources.discover', { defaultValue: 'Discover sources' })}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -213,6 +285,15 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
+                action={
+                  // v0.8.75 — actionable empty state (improvement roadmap,
+                  // Batch 1): a clear CTA to add the first source instead of a
+                  // dead-end message. Opens the existing AddSourceDialog.
+                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('sources.addSource')}
+                  </Button>
+                }
               />
             ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
               <VirtualizedListAuto
@@ -278,8 +359,15 @@ export function SourcesColumn({
 
       <AddSourceDialog
         open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
+        onOpenChange={(o) => {
+          setAddDialogOpen(o)
+          // Clear dropped files when the dialog closes so a later manual "Add
+          // source" click doesn't re-prefill stale drag-drop files.
+          if (!o) setDroppedFiles(undefined)
+        }}
         defaultNotebookId={notebookId}
+        onSourceCreated={onRefresh}
+        initialFiles={droppedFiles}
       />
 
       <AddExistingSourceDialog
@@ -287,6 +375,13 @@ export function SourcesColumn({
         onOpenChange={setAddExistingDialogOpen}
         notebookId={notebookId}
         onSuccess={onRefresh}
+      />
+
+      {/* v0.8.87 — Discover sources (guarded web search). */}
+      <DiscoverSourcesDialog
+        open={discoverDialogOpen}
+        onOpenChange={setDiscoverDialogOpen}
+        notebookId={notebookId}
       />
 
       <ConfirmDialog

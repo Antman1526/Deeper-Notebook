@@ -430,6 +430,30 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       // tells us the canonical message IDs.
       let pendingMcpCalls: import('@/lib/types/api').McpToolCall[] | null = null
 
+      // v0.8.70 — batch streamed tokens with requestAnimationFrame instead of
+      // a setMessages() per token. At 50–150 tokens/sec the per-token version
+      // re-rendered (and re-laid-out) the whole message list 50–100×/sec,
+      // visibly janky in WKWebView. rAF coalesces to ≤1 render per paint frame.
+      let tokenBuffer = ''
+      let rafId: number | null = null
+      const flushTokens = () => {
+        rafId = null
+        if (!tokenBuffer || !mountedRef.current) {
+          tokenBuffer = ''
+          return
+        }
+        const chunk = tokenBuffer
+        tokenBuffer = ''
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === streamingAiId ? { ...m, content: m.content + chunk } : m,
+          ),
+        )
+      }
+      const scheduleFlush = () => {
+        if (rafId == null) rafId = requestAnimationFrame(flushTokens)
+      }
+
       for await (const event of chatApi.streamMessage({
         session_id: sessionId,
         message,
@@ -451,14 +475,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         if (!mountedRef.current) break
 
         if (event.type === 'token') {
-          // Append token text to the placeholder AI message in-place.
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === streamingAiId
-                ? { ...m, content: m.content + event.content }
-                : m,
-            ),
-          )
+          // v0.8.70 — buffer + rAF-flush rather than setMessages per token.
+          tokenBuffer += event.content
+          scheduleFlush()
         } else if (event.type === 'mcp_tool_calls') {
           // v0.8.1 Item 3 — stash MCP call payloads until we know the
           // canonical AI message ID (arrives in the 'done' event next).
@@ -518,6 +537,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         // 'start' event acknowledged but not surfaced — UI already
         // shows the placeholder.
       }
+
+      // v0.8.70 — drain any tokens still buffered when the stream closed, so
+      // the streamed reply is complete before the canonical/error branch runs.
+      if (rafId != null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      flushTokens()
 
       if (streamError) {
         // Error path — clean up the streamed placeholder + the user

@@ -6,6 +6,7 @@ export const ERROR_MAP: Record<string, string> = {
   "Source not found": "apiErrors.sourceNotFound",
   "Transformation not found": "apiErrors.transformationNotFound",
   "File upload failed": "apiErrors.fileUploadFailed",
+  "Upload exceeds size limit": "apiErrors.uploadTooLarge",
   "URL is required for link type": "apiErrors.urlRequired",
   "Content is required for text type": "apiErrors.contentRequired",
   "Invalid source type": "apiErrors.invalidSourceType",

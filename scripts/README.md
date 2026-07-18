@@ -1,5 +1,33 @@
 # Scripts Documentation
 
+## upstream_sync_guard.sh
+
+Creates a safe path for importing updates from `lfnovo/open-notebook` without
+overwriting Open Notebook Plus work.
+
+### What It Does
+
+- Disables accidental pushes to the `upstream` remote.
+- Fetches upstream updates read-only.
+- Writes a safety snapshot under `output/upstream-sync/` before any merge work.
+- Refuses to start an integration merge while the current worktree is dirty.
+- Creates a separate integration worktree when the checkout is clean.
+
+### Usage
+
+```bash
+# Snapshot current state and prepare an integration worktree if clean
+scripts/upstream_sync_guard.sh prepare
+
+# Only create a local safety snapshot, even when upstream/network is unavailable
+scripts/upstream_sync_guard.sh snapshot
+
+# Only compare branch divergence and upstream file churn
+scripts/upstream_sync_guard.sh compare
+```
+
+See `docs/7-DEVELOPMENT/upstream-sync.md` for the full process.
+
 ## export_docs.py
 
 Consolidates markdown documentation files for use with ChatGPT or other platforms with file upload limits.

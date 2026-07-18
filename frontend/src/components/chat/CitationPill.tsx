@@ -20,7 +20,7 @@
  *   that predate this feature.
  */
 
-import React from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, Lightbulb, StickyNote, Wrench } from 'lucide-react'
 import {
   Popover,
@@ -51,6 +51,14 @@ interface CitationPillProps {
    * rendered without messageId fall back to the placeholder).
    */
   messageId?: string
+  /**
+   * v0.8.79 — citation jump-to-highlight (improvement roadmap, Batch 2). When
+   * provided (notebook chat passes it for `source` citations), the popover
+   * shows a "View source" action that opens the source reading view scrolled
+   * to + highlighting the cited passage. Omitted → no action (e.g. source chat,
+   * or note/insight pills).
+   */
+  onViewSource?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -256,9 +264,39 @@ const KIND_ICONS: Record<CitationKind, React.ElementType> = {
  * Accessibility: the trigger is a focusable button; Radix Popover handles
  * keyboard navigation (Enter/Space to open, Escape to close, focus-trap).
  */
-export function CitationPill({ kind, value, messageId }: CitationPillProps) {
+export function CitationPill({ kind, value, messageId, onViewSource }: CitationPillProps) {
   const { t } = useTranslation()
   const Icon = KIND_ICONS[kind]
+
+  // v0.8.76 — citation hover-preview (improvement roadmap, Batch 1). The
+  // Popover already shows the cited document's title + snippet on click; this
+  // makes it ALSO open on hover (and keyboard focus) so users can skim the
+  // grounding without leaving the answer. We control the Popover's open state
+  // with small open/close delays and a grace window, so moving the cursor from
+  // the pill into the popover doesn't close it. Click still toggles via Radix's
+  // own onOpenChange — so if the hover timing ever misbehaves, click-to-open
+  // keeps working exactly as before.
+  const [open, setOpen] = useState(false)
+  const openTimer = useRef<number | null>(null)
+  const closeTimer = useRef<number | null>(null)
+
+  const clearTimers = useCallback(() => {
+    if (openTimer.current) { window.clearTimeout(openTimer.current); openTimer.current = null }
+    if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null }
+  }, [])
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null }
+  }, [])
+  const hoverOpen = useCallback(() => {
+    cancelClose()
+    if (open || openTimer.current) return
+    openTimer.current = window.setTimeout(() => setOpen(true), 280)
+  }, [open, cancelClose])
+  const hoverClose = useCallback(() => {
+    if (openTimer.current) { window.clearTimeout(openTimer.current); openTimer.current = null }
+    closeTimer.current = window.setTimeout(() => setOpen(false), 140)
+  }, [])
+  useEffect(() => () => clearTimers(), [clearTimers])
 
   // Visible badge label
   const label =
@@ -273,7 +311,7 @@ export function CitationPill({ kind, value, messageId }: CitationPillProps) {
       : `${kind} ${value}`
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -287,7 +325,12 @@ export function CitationPill({ kind, value, messageId }: CitationPillProps) {
             'relative z-10',
             BADGE_STYLES[kind],
           ].join(' ')}
-          // Prevent any parent link from intercepting the click
+          onMouseEnter={hoverOpen}
+          onMouseLeave={hoverClose}
+          onFocus={() => { clearTimers(); setOpen(true) }}
+          onBlur={hoverClose}
+          // Prevent any parent link from intercepting the click; Radix's own
+          // controlled onOpenChange still toggles the popover on click.
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -297,11 +340,34 @@ export function CitationPill({ kind, value, messageId }: CitationPillProps) {
           <span>{label}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 text-sm" side="top" align="center">
+      <PopoverContent
+        className="w-72 text-sm"
+        side="top"
+        align="center"
+        onMouseEnter={cancelClose}
+        onMouseLeave={hoverClose}
+        // Don't steal focus when opened by hover (jarring mid-read); Escape and
+        // outside-click still close via Radix, keyboard users can Tab in.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         {kind === 'mcp' && <McpPopoverContent index={value} messageId={messageId} />}
         {kind === 'source' && <SourcePopoverContent id={value} />}
         {kind === 'note' && <NotePopoverContent id={value} />}
         {kind === 'insight' && <InsightPopoverContent id={value} />}
+        {/* v0.8.79 — citation jump-to-highlight: open the source reading view
+            scrolled to + highlighting the cited passage. */}
+        {kind === 'source' && onViewSource && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              onViewSource()
+            }}
+            className="mt-2 w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   )
