@@ -86,3 +86,6 @@ skillopt>=0.1.0,<0.2  # v0.8.68 — prompt optimizer (microsoft/SkillOpt, MIT)
 # launch installs desktop/requirements.lock independently of the source tree.
 python-docx>=1.2.0,<2.0
 openpyxl>=3.1.5,<4.0
+# Capture Inbox filesystem watcher. This is direct so native first-launch
+# installs always include the watcher even when upstream dependency graphs move.
+watchdog>=6.0.0,<7.0

@@ -1,0 +1,4 @@
+-- v0.8.95 rollback -- Private local Capture Inbox.
+REMOVE TABLE IF EXISTS capture_inbox_item;
+REMOVE TABLE IF EXISTS capture_fingerprint;
+REMOVE TABLE IF EXISTS capture_inbox_root;
