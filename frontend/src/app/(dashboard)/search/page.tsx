@@ -147,7 +147,6 @@ export default function SearchPage() {
     // v0.7.204 — intentionally narrow deps. handleSearch/handleAsk
     // accessed via refs above so they're always current without
     // re-running the trigger logic.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlQuery, urlMode, modelsLoading, modelDefaults?.default_chat_model])
 
   // Handle URL param changes while on page (e.g., from command palette again)

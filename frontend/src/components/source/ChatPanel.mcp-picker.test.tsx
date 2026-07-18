@@ -53,6 +53,10 @@ vi.mock('@/components/chat/ChatMessageProviderBadge', () => ({
   ChatMessageProviderBadge: () => <span data-testid="provider-badge" />,
 }))
 
+vi.mock('@/components/onp', () => ({
+  RunTimeline: () => <div data-testid="run-timeline" />,
+}))
+
 // The component under observation: capture the props it receives so we
 // can assert the disable list + toggle handler were forwarded.
 const pickerProps = vi.fn()

@@ -44,6 +44,8 @@ async def get_settings():
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
             offline_mode=settings.offline_mode,
+            auto_summarize_on_ingest=settings.auto_summarize_on_ingest,
+            auto_extract_topics_on_ingest=settings.auto_extract_topics_on_ingest,
         )
     except HTTPException:
         # v0.7.135 — re-raise typed HTTPExceptions so the generic
@@ -95,6 +97,14 @@ async def update_settings(settings_update: SettingsUpdate):
             # effect on the next chat turn, not after the 30s accessor TTL.
             from open_notebook.health.network import invalidate_forced_offline_cache
             invalidate_forced_offline_cache()
+        # v0.8.88 — opt-in source auto-summary on ingest.
+        if settings_update.auto_summarize_on_ingest is not None:
+            settings.auto_summarize_on_ingest = settings_update.auto_summarize_on_ingest
+        # v0.8.91 — opt-in source key-topics extraction on ingest.
+        if settings_update.auto_extract_topics_on_ingest is not None:
+            settings.auto_extract_topics_on_ingest = (
+                settings_update.auto_extract_topics_on_ingest
+            )
 
         await settings.update()
 
@@ -105,6 +115,8 @@ async def update_settings(settings_update: SettingsUpdate):
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
             offline_mode=settings.offline_mode,
+            auto_summarize_on_ingest=settings.auto_summarize_on_ingest,
+            auto_extract_topics_on_ingest=settings.auto_extract_topics_on_ingest,
         )
     except HTTPException:
         raise

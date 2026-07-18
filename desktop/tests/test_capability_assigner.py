@@ -264,10 +264,12 @@ def test_ram_probe_falls_back_to_sysconf_when_psutil_missing(monkeypatch):
 
 def test_ram_probe_returns_none_when_everything_fails(monkeypatch):
     """Caller (_get_chat_ram_ceiling_gb) relies on None → 4.0 fallback."""
+    import os
     import sys
 
     from desktop.auto_register import assigner
 
     monkeypatch.setitem(sys.modules, "psutil", None)
-    monkeypatch.setattr("os.sysconf", lambda *_a: (_ for _ in ()).throw(OSError("nope")))
+    monkeypatch.delattr(os, "sysconf", raising=False)
+    assert not hasattr(os, "sysconf")  # Windows condition this test covers
     assert assigner._probe_total_ram_gb() is None

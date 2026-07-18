@@ -122,10 +122,17 @@ def _open_tuned(path: str) -> sqlite3.Connection:
         # one, which conflicts with explicit BEGIN).
         isolation_level=None,
     )
-    # PRAGMAs are SET on the connection; survive only for its lifetime.
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=5000;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    try:
+        # PRAGMAs are SET on the connection; survive only for its lifetime.
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        # A corrupt DB can fail while applying the first PRAGMA. Close this
+        # handle before the caller quarantines the file; Windows rejects a
+        # rename while the failed connection still has it open.
+        conn.close()
+        raise
     return conn
 
 

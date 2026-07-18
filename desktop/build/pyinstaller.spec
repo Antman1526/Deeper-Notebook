@@ -17,6 +17,27 @@ from pathlib import Path
 ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
 
+# v0.8.70 — derive the app version from desktop/__init__.py instead of the old
+# hardcoded "0.1.0" in the Info.plist (which left every built .app reporting
+# 0.1.0 in Finder regardless of the real build). Read the string directly
+# rather than importing `desktop` so the spec interpreter doesn't need the
+# package's runtime deps on sys.path.
+import re as _re
+
+
+def _read_app_version() -> str:
+    try:
+        txt = (ROOT / "__init__.py").read_text(encoding="utf-8")
+        m = _re.search(r'__version__\s*=\s*"([^"]+)"', txt)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return "0.0.0"
+
+
+APP_VERSION = _read_app_version()
+
 is_mac = sys.platform == "darwin"
 is_win = sys.platform == "win32"
 
@@ -157,6 +178,13 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# v0.8.70 — Windows VERSIONINFO is intentionally NOT wired here yet. The .exe
+# therefore has no FileVersion/ProductVersion resource (the build audit's M1).
+# Adding it requires a PyInstaller VSVersionInfo/version file built from
+# APP_VERSION and must be validated on a real Windows build host (the version
+# struct + API can't be exercised from macOS), so it's deferred to avoid
+# shipping unverifiable build code into the Windows job. When done, pass
+# `version=<version_file>` to this EXE() under an `is_win` guard.
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
@@ -177,7 +205,9 @@ if is_mac:
         icon=str(ROOT / "resources" / "icon.icns"),
         bundle_identifier="com.antman1526.open-notebook-plus",
         info_plist={
-            "CFBundleShortVersionString": "0.1.0",
+            # v0.8.70 — was hardcoded "0.1.0". Now tracks desktop/__init__.py.
+            "CFBundleShortVersionString": APP_VERSION,
+            "CFBundleVersion": APP_VERSION,
             # v0.8.65f — user-facing display name. The .app filename + bundle
             # identifier stay (filesystem/identity), but Finder/Dock/menu bar
             # use these, so the app shows as "Open notebook+".

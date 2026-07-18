@@ -123,6 +123,47 @@ def test_gives_up_to_frontend_url_after_max_attempts():
     ]
 
 
+def test_recovers_after_many_failed_navigations_before_giving_up():
+    """v0.8.72 regression — the live bug: on a slow ad-hoc cold boot WKWebView
+    refuses to load for minutes (probe + manual Reload both succeed, but the
+    controller's load_url keeps failing), so the OLD 10-attempt budget gave up
+    and rested on the error page. The widened budget must keep retrying past 10
+    and succeed once the navigation finally takes — without ever resting on the
+    error page. Here the 15th navigation is the first to 'load'."""
+    loaded = threading.Event()
+    win = _FakeWindow()
+    attempts = {"n": 0}
+    orig = win.load_url
+
+    def _load(url):
+        orig(url)
+        attempts["n"] += 1
+        if attempts["n"] >= 15:  # WKWebView finally willing on the 15th try
+            loaded.set()
+
+    win.load_url = _load
+    # Production default is 40; 15 > the old give-up bound of 10.
+    calls = _run_controller(win, loaded, server_ready=lambda: True, max_attempts=40)
+    # It navigated successfully and STOPPED (didn't burn all 40 or rest on error).
+    assert loaded.is_set()
+    assert attempts["n"] == 15
+    assert calls[-1] == ("load_url", "http://x/")  # ended on a successful nav
+    assert calls.count(("load_url", "http://x/")) == 15
+
+
+def test_production_retry_budget_outlasts_a_slow_cold_boot():
+    """Lock in the widened defaults so a future tweak can't silently shrink the
+    budget back below a realistic slow-boot window (~minutes)."""
+    import inspect
+    from desktop.window import _start_handoff_controller
+
+    sig = inspect.signature(_start_handoff_controller)
+    max_attempts = sig.parameters["max_attempts"].default
+    attempt_timeout = sig.parameters["attempt_timeout_sec"].default
+    # ≥ ~3 min of total retry headroom before giving up to the manual-Reload page.
+    assert max_attempts * attempt_timeout >= 180
+
+
 def test_load_url_exception_is_retried():
     loaded = threading.Event()
     win = _FakeWindow()
@@ -152,13 +193,19 @@ class _Resp:
 def test_server_ready_rejects_next_warmup_404(monkeypatch):
     """Next 16 standalone briefly serves its not-found page (HTTP 200!) for
     valid routes while route manifests lazy-load — seen live. Status alone
-    cannot catch it; the body check must."""
+    cannot catch it; the <title> ("404: …") must. The real warm-up page DOES
+    carry the Next runtime (__next_f) — the title is the discriminator."""
     import desktop.window as w
 
     class _Httpx:
         @staticmethod
         def get(url, timeout=None, follow_redirects=False):
-            return _Resp(200, b'<h1 class="next-error-h1">404</h1>')
+            return _Resp(
+                200,
+                b"<html><head><title>404: This page could not be found.</title>"
+                b'</head><body><script>self.__next_f=[]</script>'
+                b'<h1 class="next-error-h1">404</h1></body></html>',
+            )
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
     assert w._frontend_server_ready("http://x/") is False
@@ -171,7 +218,34 @@ def test_server_ready_accepts_real_page(monkeypatch):
         @staticmethod
         def get(url, timeout=None, follow_redirects=False):
             assert follow_redirects is True  # must probe the FINAL page
-            return _Resp(200, b"<html>app</html>")
+            return _Resp(
+                200,
+                b"<html><head><title>Open notebook+</title></head>"
+                b"<body><script>self.__next_f=[]</script>app</body></html>",
+            )
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
+    assert w._frontend_server_ready("http://x/") is True
+
+
+def test_server_ready_accepts_page_with_embedded_next_error_styles(monkeypatch):
+    """v0.8.70 regression — Next 16 streams the global notFound boundary
+    (including its `.next-error-h1` style block) into EVERY page's RSC payload.
+    The old `b"next-error-h1" not in content` check therefore returned False
+    for real pages too, so `_frontend_server_ready` never passed and the
+    splash→app handoff hung forever. A real app page (title != 404, Next
+    runtime present) must read READY even though it contains `next-error-h1`."""
+    import desktop.window as w
+
+    class _Httpx:
+        @staticmethod
+        def get(url, timeout=None, follow_redirects=False):
+            return _Resp(
+                200,
+                b"<html><head><title>Open notebook+</title></head><body>"
+                b"<style>.next-error-h1{border-right:1px solid}</style>"
+                b"<script>self.__next_f=[]</script></body></html>",
+            )
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", _Httpx)
     assert w._frontend_server_ready("http://x/") is True

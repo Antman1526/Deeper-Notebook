@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "threshold_version": "v1",
+  "corpus_version": "v1",
+  "metrics": {
+    "supported_precision": {
+      "operator": ">=",
+      "value": 0.95,
+      "formula": "correctly predicted supported claims / all predicted supported claims"
+    },
+    "supported_recall": {
+      "operator": ">=",
+      "value": 0.95,
+      "formula": "expected supported claims predicted supported / all expected supported claims"
+    },
+    "unsupported_escape_rate": {
+      "operator": "<=",
+      "value": 0.02,
+      "formula": "expected non-supported claims predicted supported / all expected non-supported claims"
+    },
+    "citation_location_rate": {
+      "operator": ">=",
+      "value": 0.95,
+      "formula": "correctly matched expected spans / all expected spans"
+    },
+    "schema_success_rate": {
+      "operator": ">=",
+      "value": 0.99,
+      "formula": "valid outputs after zero or one repair / all generation attempts"
+    }
+  },
+  "scoring_rules": {
+    "supported_only": "Only status=supported counts as supported. partial, contradicted, unsupported, uncited, and abstained never count as supported.",
+    "abstention": "An abstention for an expected supported claim is a recall false negative.",
+    "zero_denominator": "Emit JSON null, label not_applicable, and exclude from macro aggregation."
+  }
+}

@@ -1,440 +1,593 @@
 # 11 — Build & Deployment Pipeline
 
-Recreation reference for how Open Notebook Plus is built, packaged, launched,
-and supervised. Two deployment targets exist today: the **native macOS .app/.dmg**
-(the documented Plus target) and the **Docker images** (upstream's server
-deployment). A **Windows path is scaffolded but not wired into a one-shot
-build** (see §8).
+Exhaustive recreation reference for how Open Notebook Plus is built, packaged, and
+deployed. Two artifact tracks, versioned independently and intentionally:
 
-All paths repo-relative to `/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus`.
+| Artifact | Version source | Consumed by |
+|---|---|---|
+| **Desktop app** (`.app` / `.dmg` / `.zip`) | `desktop/__init__.py` → `__version__` (0.8.x fork line) | `pyinstaller.spec`, window title, `/api/version`, update notifier |
+| **Server container** (Docker image) | `pyproject.toml` → `version = "1.8.5"` (upstream track) | `.github/workflows/build-and-release.yml`, `make docker-*` |
 
-> **Secrets note:** SurrealDB credentials are generated per-install
-> (`secrets.token_urlsafe`) and never hardcoded; codesign identities,
-> registry tokens, and `.env` values are placeholders (`<...>`) here.
+The `pyproject.toml` header explicitly warns: *"Do not reconcile the two — they
+intentionally version different artifacts."*
 
----
-
-## 1. Architecture of the desktop bundle
-
-The build pivoted to a **frozen-launcher + user-venv** design (documented at the
-top of `desktop/build/pyinstaller.spec`):
-
-- The **frozen launcher** (PyInstaller) bundles only its own light deps:
-  `pywebview`, `aiohttp`, `httpx`, stdlib. It does **not** freeze FastAPI /
-  LangChain / SurrealDB / llama-cpp.
-- Upstream Python (`api/`, `open_notebook/`, `commands/`, `prompts/`) ships as
-  **data files** under `<MEIPASS>/upstream/…` and is executed by a
-  **user-provisioned venv** at `~/.open-notebook-plus/venv`.
-- A bundled **uv** binary + a **python-build-standalone** tarball let the
-  launcher create that venv on first launch.
-- `desktop/requirements.lock` is bundled so bootstrap knows exactly what to
-  install.
-
-This keeps the .app small, lets the heavy native deps (llama-cpp-python with
-Metal) install correctly for the user's machine, and avoids re-freezing on every
-dependency bump.
+All snippets below are transcribed from the repo at
+`/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus` (branch `desktop-app`).
 
 ---
 
-## 2. macOS build: `make build-mac`
+## 1. Desktop build architecture (the "uv-bootstrap pivot")
 
-`Makefile` defines a staged pipeline. The top-level target chains six stages
-plus a precondition:
+The frozen PyInstaller launcher is **thin**. It bundles only its own light deps
+(pywebview, aiohttp, httpx, stdlib). All heavy upstream Python (`api/`,
+`open_notebook/`, `commands/`) ships as **data** and is executed by a
+user-provisioned venv, not the frozen binary. This is stated at the top of
+`desktop/build/pyinstaller.spec`:
 
-```makefile
-build-mac: build-mac-test build-mac-lock build-mac-venv \
-           build-mac-frontend build-mac-runtimes \
-           build-mac-pyinstaller build-mac-dmg
-```
+> - The frozen launcher only bundles its OWN light deps ...
+> - Upstream Python code (api/, open_notebook/, commands/) ships as DATA and is
+>   run by the user-venv python, not the frozen binary.
+> - uv binary + python-build-standalone are bundled in `desktop/bin/` so the
+>   launcher can provision `~/.open-notebook-plus/venv` on first launch.
+> - `requirements.lock` is bundled so bootstrap knows what to install.
 
-Order: **test → lock → venv → frontend → runtimes → pyinstaller → dmg**.
+On **first launch** the app: unpacks `python-<arch>.tar.gz`, uses the bundled
+`uv` to create `~/.open-notebook-plus/venv`, `uv pip install`s from the bundled
+`desktop/requirements.lock`, then spawns the bundled `surreal` binary, the API
+(uvicorn), the surreal-commands worker, and the Next.js standalone server — all
+as child processes behind a pywebview WKWebView window.
 
-Key variables:
+---
 
-```makefile
+## 2. Makefile — desktop targets
+
+### 2.1 The one-shot chain
+
+```make
 BUILD_PYTHON ?= python3.12
-BUILD_VENV   := .build-venv          # separate from .venv (tests) and .venv-py312 (runtime)
-BUILD_ARCH   := $(shell uname -m)    # arm64 vs x86_64 → drives DMG filename
-ONP_CODESIGN_IDENTITY ?= -           # ad-hoc by default; stable identity avoids TCC resets
+BUILD_VENV   := .build-venv
+BUILD_PIP    := $(BUILD_VENV)/bin/pip
+BUILD_PY     := $(BUILD_VENV)/bin/python
+BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
+BUILD_ARCH := $(shell uname -m)           # drives the DMG filename (arm64 / x86_64)
+
+# v0.8.67k — codesigning identity for the bundle re-seal. Defaults to '-'
+# (ad-hoc). A STABLE identity fixes TCC-reset-on-rebuild:
+#   bash scripts/create-signing-identity.sh
+#   make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+ONP_CODESIGN_IDENTITY ?= -
+
+build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
+	@echo "✅ macOS build complete:"
+	@echo "    dist/Open Notebook Plus.app"
+	@echo "    dist/Open-Notebook-Plus-mac-$(BUILD_ARCH).dmg"
 ```
 
-### Stage 0 — `build-mac-test` (precondition)
+`make build-mac` runs seven stages **in order**; any failure aborts the build:
 
-Runs the fast suites first so a 15-minute build is never DOA. Critically it does
-**not** pipe pytest to `tail` (a piped recipe's exit status is `tail`'s, always
-0 — which once made the gate toothless):
+| Stage | Target | What it does |
+|---|---|---|
+| 0 | `build-mac-test` | Full unit-test gate (precondition — see doc 10 §10). Runs `desktop/tests/` + `desktop/memory/tests/` on the 3.14 test venv AND `uv run pytest tests/` on 3.12. |
+| 0.5 | `build-mac-lock` | Regenerate `desktop/requirements.lock` from `pyproject.toml` + `desktop/requirements.txt`. |
+| 1 | `build-mac-venv` | Create `.build-venv` (py3.12), install `desktop/requirements.txt` + editable `-e .`. |
+| 2 | `build-mac-frontend` | `npm ci` (if needed) + `npm run build` (Next standalone). |
+| 3 | `build-mac-runtimes` | `fetch_runtimes.py` — download surreal/node/uv/python-standalone into `desktop/bin/`. |
+| 4 | `build-mac-pyinstaller` | Run the spec → `dist/Open Notebook Plus.app`, then re-seal with codesign. |
+| 5 | `build-mac-dmg` | `post_build_mac.sh` → `.dmg`. |
 
-```makefile
-build-mac-test:
-	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q
-	@uv run pytest tests/ -q --ignore=tests/integration
-```
+Override the interpreter: `make build-mac BUILD_PYTHON=/opt/homebrew/bin/python3.12`.
 
-The desktop suite uses the `.venv` (py3.14) interpreter; the backend suite uses
-the repo venv via `uv run` (py3.12). Integration tests are excluded.
+### 2.2 Stage 0.5 — the lockfile regen (why it exists)
 
-### Stage 0.5 — `build-mac-lock`
-
-Regenerates `desktop/requirements.lock` from **both** `pyproject.toml` and
-`desktop/requirements.txt` so no dependency declared in only one of them is
-silently dropped from the bundle (the historical `prometheus-client` and
-`llama-cpp-python` casualties):
-
-```makefile
+```make
 build-mac-lock:
+	@echo "🔒 Regenerating desktop/requirements.lock from pyproject.toml + desktop/requirements.txt..."
 	@uv pip compile pyproject.toml desktop/requirements.txt --python-version 3.12 \
 		-o desktop/requirements.lock --quiet
+	@echo "   Lockfile: $$(wc -l < desktop/requirements.lock) pinned packages"
 ```
 
-### Stage 1 — `build-mac-venv`
+Recreation-critical history (from the Makefile comment): before v0.7.141 the
+lockfile was hand-maintained, so any dep added to `pyproject.toml` was silently
+dropped from the bundle. v0.7.124 added `prometheus-client` but the lock was never
+refreshed → bundled venv installed without it → API crashed at import
+(`ModuleNotFoundError: No module named 'prometheus_client'`) → launcher timed out
+on `/readyz` → the `.app` opened, showed a splash, then silently quit after ~3
+min. v0.7.154 added `desktop/requirements.txt` as a **second** compile input
+because compiling from `pyproject.toml` alone dropped
+`llama-cpp-python>=0.3.16,<0.4` (declared only in `requirements.txt`). Passing
+BOTH files merges the dep sets exactly the way `pip install -r requirements.txt`
+would at runtime.
 
-Creates the isolated `.build-venv` with `BUILD_PYTHON`, installs
-`desktop/requirements.txt`, and `pip install -e .`.
+### 2.3 Stage 1 — build venv (separate from test venv)
 
-### Stage 2 — `build-mac-frontend`
+```make
+build-mac-venv:
+	@if [ ! -d "$(BUILD_VENV)" ]; then $(BUILD_PYTHON) -m venv $(BUILD_VENV); fi
+	@$(BUILD_PIP) install --upgrade pip > /dev/null
+	@$(BUILD_PIP) install -r desktop/requirements.txt
+	@$(BUILD_PIP) install -e .
+```
 
-`npm ci` (if needed) then `npm run build`. Next.js produces the **standalone**
-output (`frontend/.next/standalone` + `.next/static`) consumed by the
-PyInstaller spec.
+### 2.4 Stage 2 — frontend
 
-### Stage 3 — `build-mac-runtimes`
+```make
+build-mac-frontend:
+	@if [ ! -d "frontend/node_modules" ]; then cd frontend && npm ci; fi
+	@cd frontend && npm run build
+```
 
-`desktop/build/fetch_runtimes.py` downloads the `surreal` binary, Node,
-`uv`, and the python-build-standalone tarball into `desktop/bin/`. Idempotent —
-skips files already present (config in `desktop/build/runtimes.toml`).
+Produces `frontend/.next/standalone`, `frontend/.next/static`,
+`frontend/public` — all three consumed by the spec's `datas`.
 
-### Stage 4 — `build-mac-pyinstaller`
+### 2.5 Stage 3 — runtimes (`fetch_runtimes.py` + `runtimes.toml`)
 
-Runs the spec, then **re-seals** the bundle with codesign (see §3.3):
+```make
+build-mac-runtimes:
+	@$(BUILD_PY) desktop/build/fetch_runtimes.py     # idempotent — skips files already present
+```
 
-```makefile
+Pinned versions (`desktop/build/runtimes.toml`):
+
+| Runtime | Version | Purpose |
+|---|---|---|
+| SurrealDB | 2.1.0 | bundled DB binary (`surreal-<arch>`) |
+| Node.js | 20.18.0 | runs the Next.js standalone server |
+| uv | 0.5.11 | provisions the user venv on first launch |
+| python-build-standalone | cpython 3.12.8 (20241206) | the interpreter that runs the user venv |
+
+`fetch_runtimes.py` reads the toml, resolves `host_arch()` (`darwin-arm64` /
+`darwin-x86_64` / `windows-x86_64`), downloads + extracts each into
+`desktop/bin/`, and forces UTF-8 stdout so the `->` status arrows don't crash on
+Windows cp1252 (v0.8.68).
+
+### 2.6 Stage 4 — PyInstaller + codesign re-seal
+
+```make
 build-mac-pyinstaller:
 	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
+	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign $(ONP_CODESIGN_IDENTITY))..."
 	@codesign --force --deep --sign "$(ONP_CODESIGN_IDENTITY)" "dist/Open Notebook Plus.app"
-	@spctl -a -vvv "dist/Open Notebook Plus.app" ...
-	@codesign -v "dist/Open Notebook Plus.app" ...
+	@spctl -a -vvv "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || \
+		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);"
+	@codesign -v "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || true
 ```
 
-### Stage 5 — `build-mac-dmg`
+**Why the explicit final re-seal (v0.7.146):** macOS auto-applies an ad-hoc
+signature to arm64 Mach-O binaries on first write. PyInstaller writes the `.app`
+in multiple phases (COLLECT then BUNDLE), and *any* later modification —
+including Spotlight writing xattrs — invalidates the seal. A broken Gatekeeper
+seal makes macOS **silently kill** the binary at launch (no dialog, no crash
+report). The fix: one explicit `codesign` at the very end reflecting the bundle's
+true final contents. `--deep` re-signs every nested Mach-O; `--force` overwrites;
+`--sign -` is ad-hoc (no cert).
 
-`bash desktop/build/post_build_mac.sh` wraps the `.app` into
-`dist/Open-Notebook-Plus-mac-<arch>.dmg` via `hdiutil`. Unsigned for
-distribution → first launch needs right-click → Open or
-`xattr -dr com.apple.quarantine`.
+### 2.7 Stage 5 — dmg
 
-### Iterative + teardown targets
-
+```make
+build-mac-dmg:
+	@bash desktop/build/post_build_mac.sh
 ```
-build-mac-venv / -frontend / -runtimes / -pyinstaller / -dmg   # re-run a stage
-build-mac-clean         # remove dist/ build/ .build-venv/ (keeps fetched runtimes)
-build-mac-distclean     # also wipe desktop/bin/ (~500 MB re-download)
-build-mac-install       # quit running app, kill sidecars, cp .app → /Applications
+
+### 2.8 Convenience & teardown targets
+
+```make
+build-mac-install:      # copy dist/*.app → /Applications (quit running instance first, then cp + strip quarantine)
+build-mac-clean:        # rm -rf dist build .build-venv  (keeps desktop/bin/ runtimes)
+build-mac-distclean:    # build-mac-clean + rm -rf desktop/bin  (forces ~500 MB re-download)
 ```
 
-`build-mac-install` is defensive: it `osascript` quits a running instance, waits
-up to 20s, then `pkill -9`s stragglers (`surreal-darwin`, `llama_cpp.server`,
-`surreal_commands.cli.worker`) before `cp -R` so the copy lands on a clean slate.
+`build-mac-install` is careful: it `osascript quit`s a running app, waits up to
+20 s, then `pkill -9`s any straggler `surreal-darwin` / `llama_cpp.server` /
+`surreal_commands.cli.worker` sidecars **before** `rm -rf`ing the old bundle —
+because deleting the `.app` while running orphaned those sidecars and left zombie
+Next.js servers on stale ports (v0.8.67e).
 
 ---
 
-## 3. PyInstaller spec (`desktop/build/pyinstaller.spec`)
+## 3. The PyInstaller spec (`desktop/build/pyinstaller.spec`)
 
-### 3.1 Inputs and data layout
+### 3.1 Version derivation
 
-Entry point: `desktop/__main__.py`. Arch resolves to `darwin-arm64`,
-`darwin-x86_64`, or `windows-x86_64`.
+```python
+def _read_app_version() -> str:
+    txt = (ROOT / "__init__.py").read_text(encoding="utf-8")   # ROOT = desktop/
+    m = _re.search(r'__version__\s*=\s*"([^"]+)"', txt)
+    return m.group(1) if m else "0.0.0"
 
-`datas` ships upstream source + runtimes + frontend (abbreviated):
+APP_VERSION = _read_app_version()   # v0.8.70 — was hardcoded "0.1.0" in Info.plist
+```
+
+### 3.2 What it bundles as DATA (`datas`)
 
 ```python
 datas = [
-    (PROJECT_ROOT/"api",           "upstream/api"),
-    (PROJECT_ROOT/"open_notebook", "upstream/open_notebook"),
-    (PROJECT_ROOT/"commands",      "upstream/commands"),
-    (PROJECT_ROOT/"prompts",       "upstream/prompts"),
-    (PROJECT_ROOT/"pyproject.toml","upstream"),
-    (ROOT/"requirements.lock",     "desktop"),             # bootstrap reads this
-    (surreal_bin,                  "desktop/bin"),
-    (node_dir,                     f"desktop/bin/node-{arch}"),
-    (uv_bin,                       "desktop/bin"),
-    (python_standalone_tarball,    "desktop/bin"),
-    (frontend_dir/".next"/"standalone", "frontend"),
-    (frontend_dir/".next"/"static",     "frontend/.next/static"),
-    (frontend_dir/"public",             "frontend/public"),
-    # desktop shims, model_manager catalog/static, memory pkg, etc.
+    # Upstream Python source — shipped as data, executed by venv python.
+    (str(PROJECT_ROOT / "api"),           "upstream/api"),
+    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
+    (str(PROJECT_ROOT / "commands"),      "upstream/commands"),
+    (str(PROJECT_ROOT / "prompts"),       "upstream/prompts"),
+    (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
+
+    # Pinned lockfile — bootstrap reads this to provision the venv.
+    (str(ROOT / "requirements.lock"), "desktop"),
+
+    # Wizard static assets.
+    (str(ROOT / "first_run" / "static"), "desktop/first_run/static"),
+
+    # Bundled runtime binaries (from fetch_runtimes.py → desktop/bin/).
+    (str(surreal_bin),               "desktop/bin"),
+    (str(node_dir),                  f"desktop/bin/node-{arch}"),
+    (str(uv_bin),                    "desktop/bin"),
+    (str(python_standalone_tarball), "desktop/bin"),
+
+    # Frontend standalone build.
+    (str(frontend_dir / ".next" / "standalone"), "frontend"),
+    (str(frontend_dir / ".next" / "static"),     "frontend/.next/static"),
+    (str(frontend_dir / "public"),               "frontend/public"),
+
+    # Shims, model manager, voice JS.
+    (str(PROJECT_ROOT / "desktop" / "desktop_shims"), "upstream/desktop_shims"),
+    (str(ROOT / "model_manager" / "static"),   "desktop/model_manager/static"),
+    (str(ROOT / "model_manager" / "catalog.json"), "desktop/model_manager"),
+
+    # Memory package + dashboard (bundled into upstream/ so the worker subprocess,
+    # cwd=upstream_dir, imports `desktop.memory.*` cleanly).
+    (str(PROJECT_ROOT / "desktop" / "memory"),      "upstream/desktop/memory"),
+    (str(ROOT / "memory_dashboard" / "static"),     "desktop/memory_dashboard/static"),
+    (str(PROJECT_ROOT / "desktop" / "__init__.py"), "upstream/desktop"),
+
+    # Desktop modules upstream routers import (missing → HTTP 500 in the built app):
+    (str(PROJECT_ROOT / "desktop" / "config.py"),         "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "launcher_prefs.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "auto_register"),     "upstream/desktop/auto_register"),
 ]
 ```
 
-A subtle correctness fix lives here: the python-build-standalone artifact is
-**always `.tar.gz`** even on Windows (the old `.zip` name caused
-`BadZipFile` on first launch).
+Path layout inside the bundle: `<MEIPASS>/upstream/{api,open_notebook,commands,prompts}`,
+`<MEIPASS>/desktop/bin/{surreal-<arch>, node-<arch>, uv, python-<arch>.tar.gz}`,
+`<MEIPASS>/frontend/{standalone, .next/static, public}`.
 
-### 3.2 Excludes — heavy deps NOT frozen
+The python-standalone tarball is **always `.tar.gz`** on every platform (v0.8.66,
+audit H7) — the old Windows `.zip` name caused `BadZipFile` on first launch.
+
+### 3.3 Hidden imports & excludes
 
 ```python
-excludes = [
-    "fastapi","starlette","uvicorn",
-    "langchain","langchain_core","langgraph","langgraph_checkpoint",
-    "esperanto","content_core","ai_prompter","podcast_creator",
-    "surreal_commands","surrealdb",
-    "loguru","tiktoken","numpy","pydantic","pydantic_core",
-    "llama_cpp",
-    "streamlit","pytest","ipykernel",   # dev/test noise
+hiddenimports = [
+    "webview.platforms.cocoa", "webview.platforms.winforms", "webview.platforms.gtk",
+    "aiohttp._helpers", "aiohttp._http_parser",
+    # v0.7.146 — launcher uses function-scoped tuple imports PyInstaller can miss.
+    "desktop.singleton", "desktop.next_rewrites_patcher",
 ]
+
+a = Analysis(
+    [str(PROJECT_ROOT / "desktop" / "__main__.py")],
+    pathex=[str(PROJECT_ROOT)],
+    datas=datas, hiddenimports=hiddenimports,
+    excludes=[
+        # Upstream heavy deps — installed into the USER venv, not frozen.
+        "fastapi", "starlette", "uvicorn",
+        "langchain", "langchain_core", "langchain_community",
+        "langchain_openai", "langchain_anthropic", "langchain_ollama",
+        "langgraph", "langgraph_checkpoint", "langgraph_checkpoint_sqlite",
+        "esperanto", "content_core", "ai_prompter", "podcast_creator",
+        "surreal_commands", "surrealdb",
+        "loguru", "tiktoken", "numpy", "pydantic", "pydantic_core",
+        "llama_cpp",
+        "streamlit", "pytest", "ipykernel",   # dev/test noise
+    ],
+)
 ```
 
-These all install into the **user venv** instead. `hiddenimports` only hints the
-launcher's own dynamic imports (pywebview backends, `desktop.singleton`,
-`desktop.next_rewrites_patcher`).
+Excluding the heavy deps is the whole point of the pivot: they live in the user
+venv, so freezing them would double the bundle size and pin them.
 
-### 3.3 Bundle + codesign
+### 3.4 EXE + BUNDLE (macOS)
 
 ```python
-exe  = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Open Notebook Plus",
-           console=False, icon=...icon.icns)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True,
+          name="Open Notebook Plus", console=False,
+          icon=str(ROOT / "resources" / ("icon.icns" if is_mac else "icon.ico")))
+
 coll = COLLECT(exe, a.binaries, a.datas, name="Open Notebook Plus")
-app  = BUNDLE(coll, name="Open Notebook Plus.app",
-              bundle_identifier="com.antman1526.open-notebook-plus",
-              info_plist={
-                  "CFBundleShortVersionString": "0.1.0",
-                  "CFBundleName": "Open notebook+",
-                  "CFBundleDisplayName": "Open notebook+",
-                  "NSHighResolutionCapable": True,
-                  "NSMicrophoneUsageDescription": "...Whisper STT, runs locally...",
-              })
+
+if is_mac:
+    app = BUNDLE(coll,
+        name="Open Notebook Plus.app",
+        icon=str(ROOT / "resources" / "icon.icns"),
+        bundle_identifier="com.antman1526.open-notebook-plus",
+        info_plist={
+            "CFBundleShortVersionString": APP_VERSION,   # tracks desktop/__init__.py
+            "CFBundleVersion": APP_VERSION,
+            "CFBundleName": "Open notebook+",            # Finder/Dock display name
+            "CFBundleDisplayName": "Open notebook+",
+            "NSHighResolutionCapable": True,
+            "NSMicrophoneUsageDescription":
+                "Open notebook+ uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
+        })
 ```
 
-The Makefile's post-PyInstaller `codesign --force --deep --sign -` matters
-because macOS auto-seals arm64 Mach-O binaries, and PyInstaller's multi-pass
-writes invalidate that seal — a broken Gatekeeper seal kills the binary at
-launch silently. A **stable** identity (vs ad-hoc `-`) also stops macOS resetting
-TCC Files-&-Folders permissions on every rebuild.
+Windows note (v0.8.70): the `.exe` intentionally has **no** VERSIONINFO resource
+yet — wiring it needs a real Windows host to validate the version struct, so it's
+deferred rather than shipping unverifiable code.
 
 ---
 
-## 4. Runtime venv bootstrap (`desktop/bootstrap.py`)
+## 4. Codesign flow & the stable self-signed identity
 
-On first launch (or whenever the lock changes), the launcher provisions
-`~/.open-notebook-plus/venv`.
+Default builds re-seal ad-hoc (`--sign -`), which gives the app a **new
+cryptographic identity every rebuild**. macOS ties TCC grants (Files & Folders /
+Automation) and the WKWebView persistent store to that identity, so every ad-hoc
+rebuild **resets** those grants — the root cause of the iCloud/Desktop
+`os.scandir` boot-wedge and the loss of Full Disk Access across rebuilds.
 
-### 4.1 Lock-hash currency check
+`scripts/create-signing-identity.sh` (run once) fixes this by adding a stable
+self-signed code-signing cert to the login keychain:
 
-```python
-def _lock_hash(lock_path: Path) -> str:
-    return hashlib.sha256(lock_path.read_bytes()).hexdigest()
-
-def is_venv_current(lock_path: Path) -> bool:
-    if not venv_python().exists():       return False
-    marker = venv_marker()               # ~/.open-notebook-plus/venv-marker
-    if not marker.exists():              return False
-    return marker.read_text().strip() == _lock_hash(lock_path)
+```bash
+bash scripts/create-signing-identity.sh                       # default identity "Open Notebook Plus Local"
+make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
 ```
 
-If the marker hash matches the bundled lock, the existing venv is reused. Any
-mismatch → wipe and reinstall.
+Properties (from the script header):
 
-### 4.2 Python runtime extraction with partial-extraction recovery
+- **Idempotent** — no-op if `security find-identity` already lists the identity.
+- **Safe** — only ADDS a self-signed cert to *your* login keychain; touches
+  nothing else.
+- Generates an RSA-2048 x509 cert (10-year validity, `codeSigning` EKU) via the
+  **system** `/usr/bin/openssl` (LibreSSL) — Homebrew's OpenSSL 3 exports a
+  PKCS#12 whose MAC Apple's `security import` can't verify (v0.8.70).
+- This is **local-dev convenience, NOT notarization.** The app is still
+  un-notarized; first launch may need right-click → Open.
 
-`extract_python_runtime()` unpacks the python-build-standalone tarball into
-`~/.open-notebook-plus/python-runtime/`. If the interpreter exists it is
-**health-checked** before reuse — a `python -c "import sys, encodings"` probe
-with a 5s timeout — and the runtime dir is wiped + re-extracted if the probe
-fails (recovers from interrupted extractions / Time Machine partials).
-
-### 4.3 ensure_venv
-
-```python
-def ensure_venv(standalone_python, uv_binary, lock_path, upstream_dir, progress=None):
-    if is_venv_current(lock_path):
-        progress(f"Environment is up to date (delete {venv_dir()} to force reinstall…)")
-        return venv_python()
-    if venv_dir().exists():
-        shutil.rmtree(venv_dir())                         # wipe partial state
-    _run_logged([str(standalone_python), "-m", "venv", str(venv_dir())], "venv-create")
-    _run_logged([str(uv_binary), "pip", "install",
-                 "--python", str(venv_python()), "-r", str(lock_path)], "uv-install")
-    # make upstream importable from the venv:
-    (site_packages/"open_notebook_upstream.pth").write_text(str(upstream_dir) + "\n")
-    # belt-and-suspenders: verify imports that would crash api.main at import time
-    missing = _verify_critical_imports(venv_python(),
-        ["prometheus_client","surrealdb","fastapi","langgraph","loguru","pydantic"])
-    if missing:
-        raise RuntimeError("...venv missing critical packages: ...recover with rm -rf ...")
-    venv_marker().write_text(_lock_hash(lock_path))       # commit currency marker
-    return venv_python()
-```
-
-### 4.4 Logged subprocesses (`_run_logged`)
-
-Because Finder-launched apps have no terminal, every bootstrap subprocess is
-captured to `~/.open-notebook-plus/logs/bootstrap-subprocess.log` (rotated at
-5 MB), and a non-zero exit raises a `RuntimeError` carrying the **last 25 lines**
-of that log. `shlex.join` writes a copy-pasteable command header; `os.fsync`
-flushes before the tail is read.
+With a stable identity, TCC grants and the WKWebView store **persist across
+rebuilds** — the whole reason it exists.
 
 ---
 
-## 5. Launcher orchestration
+## 5. DMG creation — `desktop/build/post_build_mac.sh`
 
-### 5.1 Boot phases (`desktop/app.py`)
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+APP_NAME="Open Notebook Plus"
+APP_PATH="dist/${APP_NAME}.app"
+DMG_PATH="dist/Open-Notebook-Plus-mac-$(uname -m).dmg"
 
-The boot sequence is broken into named phases operating on a shared `AppContext`
-dataclass (docstring at `desktop/app.py:8`):
+# v0.8.67k — detach any stale mount of a prior ONP .dmg (else `hdiutil create`
+# fails "Resource busy" even though the .app is already complete).
+for _dev in $(hdiutil info 2>/dev/null | grep -iE 'Open Notebook' | grep -oE '/dev/disk[0-9]+' | sort -u); do
+  hdiutil detach "${_dev}" -force >/dev/null 2>&1 || true
+done
+rm -f "${DMG_PATH}"
 
-```
-1.  _phase_load_config          locate config.toml; set log dir + ProgressBus
-2.  _phase_wizard_if_first_run  run first-run wizard on first launch
-3.  _phase_bootstrap_runtime    bootstrap.ensure_venv (provision the venv)
-4.  _phase_download_models      auto-download embedding + voice models
-5.  _phase_select_provider      start Ollama / llama.cpp; populate extra_env
-6.  _phase_start_supervisor     build & start the Supervisor process tree
-7.  _phase_auto_register        register discovered models with the API
-8.  _phase_start_model_manager  start the aiohttp model-manager window server
-9.  _phase_install_tray         system tray icon + menu
-10. _phase_open_window          open PyWebView main window (blocks until closed)
-```
+# v0.8.70 — stage the .app next to an /Applications symlink so the mounted DMG
+# shows a "drag to Applications" target. Guides users to install onto the local
+# SSD (cached Gatekeeper assessment) instead of running off the slow, compressed,
+# read-only UDZO mount (every bundled dylib decompresses on read + re-scans).
+STAGE="$(mktemp -d)"
+trap 'rm -rf "${STAGE}"' EXIT
+cp -R "${APP_PATH}" "${STAGE}/"
+ln -s /Applications "${STAGE}/Applications"
 
-Each phase publishes structured events to the `ProgressBus` so the splash/wizard
-SSE feed and `progress.jsonl` reflect startup state.
-
-### 5.2 Supervisor (`desktop/launcher.py`)
-
-`Supervisor.start_all()` does, in order:
-
-1. **Singleton enforcement** — `acquire_singleton(default_pid_file())` raises
-   `AlreadyRunning` if a live instance holds the PID-file lock (the app shows a
-   friendly dialog instead of spawning a second port-grabbing process tree).
-2. **Orphan reap** — `reap_orphans(bundle_paths=[~/.open-notebook-plus/venv, bin_dir])`
-   kills leftover children from a crashed prior launch, then sleeps 0.5s so the
-   OS frees their ports.
-3. **Merge `launcher.env`** into `os.environ` (env wins over file).
-4. **Allocate dynamic ports** (§6).
-5. Spawn children with health gates and per-kind progress events.
-
-Child spawns (all via the venv python, `cwd=upstream_root`):
-
-```python
-# SurrealDB — Path.as_uri() for cross-platform file:// correctness
-[surreal, "start", f"--user={user}", f"--pass={pass}",
- f"--bind=127.0.0.1:{port}", data_dir.as_uri()]
-
-# API
-[venv_python, "-m", "uvicorn", "api.main:app", "--host","127.0.0.1","--port",str(port)]
-
-# Worker (surreal-commands) — concurrency pinned/tunable
-[venv_python, "-m", "surreal_commands.cli.worker",
- "--import-modules", "commands", "--max-tasks", str(max_tasks)]  # ONP_WORKER_MAX_TASKS, default 5, clamp 1..32
+hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGE}" -ov -format UDZO "${DMG_PATH}"
+echo "Built ${DMG_PATH} (with /Applications drag target)"
 ```
 
-Optional sidecars are spawned through `_try_spawn` (failures are logged + emitted
-as a non-fatal progress event, never aborting the supervisor):
-`llamacpp_embed`, `whisper`, `piper`, `llamacpp_chat`, `memory_retriever`,
-`openchronicle`.
+Output: `dist/Open-Notebook-Plus-mac-arm64.dmg` (or `-x86_64`). UDZO = compressed,
+read-only. Unsigned/un-notarized: first launch needs right-click → Open or
+`xattr -dr com.apple.quarantine`.
 
-### 5.3 Sidecar supervision & health gates
-
-- **Process groups** — every child is spawned with `start_new_session=True`
-  (POSIX) / `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` (Windows) so
-  `stop_all` can `os.killpg` the **whole subtree** (fixes orphaned `next-server`
-  zombies).
-- **Health gates** — `_wait_tcp` / `_wait_http` poll the child's port AND
-  `proc.poll()`; a dead child raises immediately (rc in the message) instead of
-  waiting out the full timeout. The frontend gate additionally requires
-  `consecutive=N` `<500` hits with `follow_redirects=True` to defeat the
-  launch-race "This page couldn't load".
-- **Per-child logs** — in debug mode `_start_drainers` writes full
-  `{name}.log`; in normal mode `_start_tail_drainer` keeps a
-  `deque(maxlen=50)` of stderr and atomically rewrites `{name}.tail`. Both
-  scrub secrets (`--pass=`, `password=`, `encryption_key=` → `[REDACTED]`).
-  The API surfaces these via `GET /healthz/sidecars/{kind}/log`, with
-  `classify_sidecar_error()` rendering a one-line hint above the raw tail.
-- **Startup-timeout ceiling** — `_startup_timeout(env_key, default)` lets slow
-  cold starts (first-run model load) extend the gate without a rebuild.
-
-### 5.4 Launcher control plane
-
-`launcher_control.py` registers callbacks (e.g. `restart_sidecar`) so the API
-can hot-restart a specific sidecar Popen (tracked in
-`self._sidecar_procs[kind]`) without quitting the app.
+Windows equivalent: `desktop/build/post_build_windows.ps1` → `.zip`
+(`Open-Notebook-Plus-windows-x64.zip`).
 
 ---
 
-## 6. Dynamic ports (`desktop/ports.py`)
+## 6. CI workflows (`.github/workflows/`)
 
-`start_all` allocates **nine** ports atomically up front:
+Seven workflow files:
 
-```python
-(surreal_port, api_port, frontend_port,
- embed_port, whisper_port, piper_port,
- chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
+| File | Trigger | Purpose |
+|---|---|---|
+| `test.yml` | push/PR to `main`,`desktop-app` | backend + integration-surreal + frontend gates (see doc 10 §9) |
+| `build-desktop.yml` | push to `main`/`desktop-app`, tags `v*`, manual | full mac(arm64+x86_64)+windows build → release on tag |
+| `build-windows.yml` | `workflow_dispatch` only | fast Windows-only `.zip` build |
+| `build-and-release.yml` | release published / manual | Docker multi-platform image → GHCR + Docker Hub |
+| `build-dev.yml` | (dev image builds) | dev Docker images |
+| `claude.yml` | `@claude` in issue/PR comments | Claude Code agent |
+| `claude-code-review.yml` | PR opened/synchronized | automated Claude PR review |
+
+### 6.1 `build-desktop.yml` — the desktop matrix
+
+Each macOS and Windows job has a 90-minute whole-job cap. Before frontend build
+and PyInstaller packaging it runs `desktop/tests/` and then
+`desktop/build/run_backend_tests.py`: sorted non-integration backend files are
+run 30 at a time, each subprocess has a 900-second cap, and the log prints the
+current file range. This shared Python runner replaces platform-specific inline
+test loops, so a stuck test produces an actionable failed batch on all runners.
+
+Three parallel jobs, then a tag-gated release. Each mirrors the Makefile stages
+using plain `pip`/`pyinstaller` (CI installs on top of the upstream pyproject):
+
+```yaml
+on:
+  push: { branches: [main, desktop-app], tags: ['v*'] }
+  workflow_dispatch:            # v0.8.68 — manual full builds
+
+jobs:
+  build-mac-arm64:              # runs-on: macos-14
+    steps:
+      - uses: actions/setup-python@v5   # python 3.12
+      - uses: actions/setup-node@v5     # node 20
+      - run: pip install -r desktop/requirements.txt
+      - run: pip install -e .
+      - run: cd frontend && npm ci && npm run build
+      - run: python desktop/build/fetch_runtimes.py
+      - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: bash desktop/build/post_build_mac.sh
+      - uses: actions/upload-artifact@v5
+        with: { name: Open-Notebook-Plus-mac-arm64, path: dist/Open-Notebook-Plus-mac-arm64.dmg }
+
+  build-mac-x86_64:             # identical, runs-on: macos-13
+  build-windows-x64:            # runs-on: windows-latest, PYTHONUTF8=1, post_build_windows.ps1 → .zip
+
+  release:
+    needs: [build-mac-arm64, build-mac-x86_64, build-windows-x64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v5
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Open-Notebook-Plus-mac-arm64/*.dmg
+            dist/Open-Notebook-Plus-mac-x86_64/*.dmg
+            dist/Open-Notebook-Plus-windows-x64/*.zip
 ```
 
-`find_free_ports(n)` binds `n` probe sockets to `127.0.0.1:0` simultaneously
-(holding them until return) so the OS hands out distinct ephemeral ports, sets
-`SO_REUSEADDR` to shrink the close→bind race window, **de-duplicates** the
-result, and re-probes up to `_MAX_REPROBE_ATTEMPTS = 5` times on the rare
-allocator-quirk duplicate. The `api_url` is then `http://127.0.0.1:{api_port}`,
-and `PORT` is only injected into the Next.js child's env (per-child `extra_env`)
-so it doesn't leak into uvicorn-based sidecars and override their `--port`.
+Note CI does **not** run the codesign re-seal or the stable-identity flow — those
+are local-dev only (the artifacts are ad-hoc/unsigned).
+
+### 6.2 `build-and-release.yml` — Docker server image
+
+`workflow_dispatch` (with a `push_latest` boolean input) or on `release:
+published`. Extracts version from `pyproject.toml`, checks for Docker Hub
+secrets, and builds/pushes multi-platform images to both `ghcr.io/lfnovo/open-notebook`
+and `lfnovo/open_notebook`.
+
+```yaml
+env:
+  GHCR_IMAGE: ghcr.io/lfnovo/open-notebook
+  DOCKERHUB_IMAGE: lfnovo/open_notebook
+jobs:
+  extract-version:
+    steps:
+      - run: |
+          VERSION=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+```
+
+### 6.3 `test.yml` (summary; full detail in doc 10)
+
+Three jobs on `ubuntu-latest`: **backend** (`uv sync` → `uv run pytest tests/ -v
+--ignore=tests/integration`), **integration-surreal** (`docker run -d
+surrealdb/surrealdb:v2 start --user root --pass root --log info memory`, poll
+`/health`, then `uv run pytest tests/integration/ -v -m integration_surreal`),
+and **frontend** (Node 22, `npm ci` → `npm test`). `paths-ignore` skips `**.md`,
+`docs/**`, and the `claude*.yml` workflows.
+
+### 6.4 Claude workflows
+
+`claude.yml` fires when a comment/issue contains `@claude`; `claude-code-review.yml`
+runs on every PR (fork PRs via `pull_request_target`, same-repo via
+`pull_request`). Both grant `contents:read`, `pull-requests:write`, `issues:write`,
+`id-token:write`.
 
 ---
 
-## 7. Docker (server deployment)
+## 7. Docker server deployment (non-desktop)
 
-`make docker-release` is the full multi-platform release:
+The desktop app never uses Docker. The server profile is a separate distribution.
 
-```makefile
-PLATFORMS := linux/amd64,linux/arm64
+### 7.1 `docker-compose.yml`
+
+```yaml
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    command: start --log info --user ${SURREAL_USER:-root} --pass ${SURREAL_PASSWORD:-root} rocksdb:/mydata/mydatabase.db
+    user: root
+    ports: ["127.0.0.1:8000:8000"]
+    volumes: ["./surreal_data:/mydata"]
+    environment: [SURREAL_EXPERIMENTAL_GRAPHQL=true]
+    restart: always
+    pull_policy: always
+
+  open_notebook:
+    image: lfnovo/open_notebook:v1-latest
+    ports: ["8502:8502", "5055:5055"]        # Web UI + REST API
+    environment:
+      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string   # encrypts API keys in DB
+      - SURREAL_URL=ws://surrealdb:8000/rpc
+      - SURREAL_USER=${SURREAL_USER:-root}
+      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
+      - SURREAL_NAMESPACE=open_notebook
+      - SURREAL_DATABASE=open_notebook
+    volumes: ["./notebook_data:/app/data"]
+    depends_on: [surrealdb]
+    restart: always
+    pull_policy: always
+```
+
+SurrealDB is bound to `127.0.0.1` (loopback only); credentials default to
+`root:root` for zero-config local use and must be overridden via `.env` before
+network exposure. The compose file uses `rocksdb:` persistence (the CI integration
+runner uses `memory` for a clean per-run DB — a deliberate difference).
+
+`deploy/searxng-private/` ships an optional self-hosted SearXNG (its own
+`docker-compose.yml` + `searxng/settings.yml`) for private web-search backing the
+Discover Sources / web_search tool.
+
+### 7.2 Docker make targets
+
+```make
+VERSION := $(shell grep -m1 version pyproject.toml | cut -d'"' -f2)   # 1.8.5
 DOCKERHUB_IMAGE := lfnovo/open_notebook
-GHCR_IMAGE      := ghcr.io/lfnovo/open-notebook
+GHCR_IMAGE := ghcr.io/lfnovo/open-notebook
+PLATFORMS := linux/amd64,linux/arm64
 
-docker-push:         # version tags only (no latest), both registries, both Dockerfiles
-docker-push-latest:  # also moves v1-latest / v1-latest-single
-docker-release: docker-push-latest
-docker-build-local:  # single-platform local build, no push
+database:              # docker compose up -d surrealdb
+docker-buildx-prepare: # create/use a docker-container buildx builder (multi-platform)
+docker-buildx-clean:   # rm the builder + dangling buildkit containers
+docker-buildx-reset:   # clean + prepare
+
+docker-build-local:    # docker build -t $(DOCKERHUB_IMAGE):$(VERSION) -t :local (host platform, no push)
+docker-push:           # buildx build --platform linux/amd64,linux/arm64 → version tags only (regular + -single), --push
+docker-push-latest:    # also tag v1-latest / v1-latest-single
+docker-release:        # docker-push-latest + "release complete"
+
+dev:                   # docker compose -f docker-compose.yml up --build
+full:                  # alias of dev (docker-compose.dev.yml / .full.yml never shipped — v0.7.140 note)
+tag:                   # git tag v$(VERSION) + push
 ```
 
-Two image variants: the standard multi-container `Dockerfile`, and the
-single-container `Dockerfile.single` (supervisord-managed). The single image's
-`supervisord.single.conf` runs all tiers in one container with priorities:
+`docker-push` builds two images from two Dockerfiles — the regular multi-service
+image (default `Dockerfile`) and a single-container image (`Dockerfile.single`,
+tagged `<version>-single`) — for both registries.
 
-```ini
-[program:surrealdb]  priority=5   command=surreal start --log trace --user root --pass <pass> rocksdb:/mydata/...
-[program:api]        priority=10  command=uv run uvicorn api.main:app --host 0.0.0.0 --port 5055
-[program:worker]                  command=uv run surreal-commands-worker --import-modules commands
-```
+### 7.3 Service management (local dev, no Docker for the app tier)
 
-`make dev` / `make full` both alias `docker compose -f docker-compose.yml up --build`
-(the `.dev`/`.full` compose variants referenced historically don't ship — this
-was fixed to avoid the "no such file or directory" error). `make start-all`
-polls SurrealDB `/health` for up to 30s before bringing up the API + worker +
-frontend, and passes `--env-file .env` so encryption keys/credentials are
-visible.
+`make start-all` orchestrates the full local stack: brings up SurrealDB via
+compose, **polls `http://localhost:8000/health` for up to 30 s** (not a flat
+sleep — v0.7.140), then launches the API with `--env-file .env` (needed so
+`run_api.py` sees `OPEN_NOTEBOOK_ENCRYPTION_KEY` + `SURREAL_*`), the
+surreal-commands worker, and the Next.js dev server. `make stop-all` pkills each
+tier and `docker compose down`. `make status` reports each tier's up/down.
+
+Backup/restore: `make backup [OUT=...]`, `make verify-backup BUNDLE=...`,
+`make restore BUNDLE=... [FORCE=1]` (refuses a non-empty data dir without
+`FORCE=1`) — all honor `ONP_DATA_DIR` and shell out to
+`scripts/backup_restore.py`.
 
 ---
 
-## 8. Windows path (currently missing)
+## 8. Reproduction checklist (macOS desktop)
 
-The build is **scaffolded for Windows but not a one-shot target**:
+```bash
+# One-time: stable signing identity (persistent TCC / WKWebView store across rebuilds)
+bash scripts/create-signing-identity.sh
 
-- `pyinstaller.spec` handles `windows-x86_64` arch, `.exe` binary names, the
-  `webview.platforms.winforms` backend, and `CREATE_NEW_PROCESS_GROUP |
-  CREATE_NO_WINDOW`.
-- `bootstrap.py` and `ports.py` have Windows branches
-  (`Scripts/python.exe`, `SO_REUSEADDR` fallback, etc.).
-- `desktop/build/post_build_windows.ps1` exists and wraps
-  `dist/Open Notebook Plus` into `Open-Notebook-Plus-windows-x64.zip` via
-  `Compress-Archive`.
+# Full build (runs the test gate first; ~15 min + ~500 MB runtime download on first run)
+make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+# → dist/Open Notebook Plus.app
+# → dist/Open-Notebook-Plus-mac-arm64.dmg   (or -x86_64)
 
-What's **not** present:
+make build-mac-install        # copy to /Applications (quits running instance, strips quarantine)
+open "/Applications/Open Notebook Plus.app"
+tail -F ~/.open-notebook-plus/logs/*.log
+```
 
-- No `make build-win` chain mirroring `build-mac` (no Windows test/lock/venv/
-  frontend/runtimes/pyinstaller orchestration target in the `Makefile`).
-- `_spawn` notes Windows process-group teardown is "future-work"; only POSIX
-  `killpg` subtree kill is exercised in the launcher today.
-- No signed/notarized Windows installer (MSI/NSIS) — only the `.zip` wrapper.
-
-Recreating Windows support means adding the `build-win` Make target chain,
-fetching Windows runtimes in `fetch_runtimes.py`, verifying `stop_all` uses
-`taskkill /T` against the process group, and producing an installer rather than
-a bare zip.
+Iterate on a single stage with `make build-mac-{lock,venv,frontend,runtimes,pyinstaller,dmg}`.
+Tear down with `make build-mac-clean` (keeps runtimes) or `build-mac-distclean`
+(wipes `desktop/bin/` too).
+```

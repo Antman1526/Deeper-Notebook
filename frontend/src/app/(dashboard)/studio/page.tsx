@@ -21,17 +21,18 @@
  */
 'use client'
 
-import { useState, useCallback, useRef, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
+import { useState, useCallback, useRef, useMemo, DragEvent, ChangeEvent, KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft } from 'lucide-react'
+import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2, GraduationCap } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -40,7 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/lib/hooks/use-toast'
-import { useStudioGenerate } from '@/lib/hooks/use-studio'
+import { useStudioCoursePack, useStudioGenerate } from '@/lib/hooks/use-studio'
 import { StudioMode } from '@/lib/api/studio'
 import apiClient from '@/lib/api/client'
 // v0.7.1 — use existing QUERY_KEYS so Studio's profile fetches share
@@ -58,10 +59,12 @@ import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 // Must match api/routers/studio.py:_ALLOWED_EXTENSIONS
 const ALLOWED_EXTS = new Set([
-  '.pdf', '.docx', '.txt', '.md', '.markdown',
-  '.pptx', '.html', '.htm',
+  '.pdf', '.doc', '.docx', '.txt', '.md', '.markdown',
+  '.ppt', '.pptx', '.html', '.htm',
+  '.mp3', '.mp4', '.m4a', '.wav', '.mov',
 ])
 const MAX_FILE_MB = 50
+type StudioOutputMode = StudioMode | 'course_pack'
 
 interface ProfileSummary {
   name: string
@@ -71,6 +74,18 @@ interface ProfileSummary {
 function fileExt(name: string): string {
   const i = name.lastIndexOf('.')
   return i < 0 ? '' : name.slice(i).toLowerCase()
+}
+
+function parseLinks(raw: string): string[] {
+  const seen = new Set<string>()
+  return raw
+    .split(/[\n,]+/)
+    .map((value) => value.trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
 }
 
 // v0.7.203 — isAllowed returns a key + interpolation map so the
@@ -112,11 +127,13 @@ export default function StudioPage() {
   const { toast } = useToast()
   const { t } = useTranslation()
   const mutation = useStudioGenerate()
+  const coursePackMutation = useStudioCoursePack()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [files, setFiles] = useState<File[]>([])
-  const [mode, setMode] = useState<StudioMode>('notebook')
+  const [mode, setMode] = useState<StudioOutputMode>('notebook')
   const [title, setTitle] = useState('')
+  const [linkText, setLinkText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [episodeProfile, setEpisodeProfile] = useState('')
   const [speakerProfile, setSpeakerProfile] = useState('')
@@ -126,12 +143,12 @@ export default function StudioPage() {
   const { data: episodeProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.episodeProfiles,
     queryFn: async () => (await apiClient.get('/episode-profiles')).data,
-    enabled: mode === 'podcast',
+    enabled: mode === 'podcast' || mode === 'both',
   })
   const { data: speakerProfiles = [] } = useQuery<ProfileSummary[]>({
     queryKey: QUERY_KEYS.speakerProfiles,
     queryFn: async () => (await apiClient.get('/speaker-profiles')).data,
-    enabled: mode === 'podcast',
+    enabled: mode === 'podcast' || mode === 'both',
   })
 
   // ----- File handling -----
@@ -216,18 +233,77 @@ export default function StudioPage() {
   }
 
   // ----- Submit -----
-  const canSubmit = files.length > 0 && !mutation.isPending && (
-    mode === 'notebook' || (episodeProfile && speakerProfile)
+  const parsedLinks = useMemo(() => parseLinks(linkText), [linkText])
+  const hasSourceInputs = files.length > 0 || parsedLinks.length > 0
+  const isPending = mutation.isPending || coursePackMutation.isPending
+  const canSubmit = hasSourceInputs && !isPending && (
+    mode === 'notebook' || mode === 'course_pack' || (episodeProfile && speakerProfile)
   )
+  const requiresPodcastProfiles = mode === 'podcast' || mode === 'both'
+
+  const successTitleKey = mode === 'course_pack'
+    ? 'studio.coursePackQueued'
+    : mode === 'notebook'
+      ? 'studio.notebookGenerated'
+      : mode === 'both'
+        ? 'studio.bothJobStarted'
+        : 'studio.podcastJobStarted'
+  const successDescriptionKey = mode === 'course_pack'
+    ? 'studio.coursePackQueuedDescription'
+    : mode === 'notebook'
+      ? 'studio.notebookGeneratedDescription'
+      : mode === 'both'
+        ? 'studio.bothJobStartedDescription'
+        : 'studio.podcastJobStartedDescription'
+  const generatingText = mode === 'course_pack'
+    ? t('studio.queuingCoursePack')
+    : mode === 'notebook'
+      ? t('studio.generatingNotebook')
+      : mode === 'both'
+        ? t('studio.generatingBoth')
+        : t('studio.generatingPodcast')
+  const generateText = mode === 'course_pack'
+    ? t('studio.generateCoursePack')
+    : mode === 'notebook'
+      ? t('studio.generateNotebook')
+      : mode === 'both'
+        ? t('studio.generateBoth')
+        : t('studio.generatePodcast')
 
   const onGenerate = async () => {
     try {
+      if (mode === 'course_pack') {
+        const result = await coursePackMutation.mutateAsync({
+          files,
+          links: parsedLinks,
+          title: title.trim() || undefined,
+        })
+        if (result.warnings.length > 0) {
+          toast({
+            title: t('studio.generatedWithWarnings'),
+            description: result.warnings.join('; '),
+          })
+        } else {
+          toast({
+            title: result.generationStatus === 'queued'
+              ? t('studio.coursePackQueued')
+              : t(successTitleKey),
+            description: result.generationStatus === 'queued'
+              ? t('studio.coursePackQueuedDescription').replace('{count}', String(result.sources.length))
+              : t(successDescriptionKey).replace('{count}', String(result.sources.length)),
+          })
+        }
+        router.push(`/notebooks/${encodeURIComponent(result.notebook.id)}`)
+        return
+      }
+
       const result = await mutation.mutateAsync({
         files,
+        links: parsedLinks,
         mode,
         title: title.trim() || undefined,
-        episode_profile_name: mode === 'podcast' ? episodeProfile : undefined,
-        speaker_profile_name: mode === 'podcast' ? speakerProfile : undefined,
+        episode_profile_name: requiresPodcastProfiles ? episodeProfile : undefined,
+        speaker_profile_name: requiresPodcastProfiles ? speakerProfile : undefined,
       })
       // Warnings, if any
       if (result.warnings.length > 0) {
@@ -238,13 +314,8 @@ export default function StudioPage() {
         })
       } else {
         toast({
-          title: mode === 'notebook'
-            ? t('studio.notebookGenerated')
-            : t('studio.podcastJobStarted'),
-          description:
-            mode === 'notebook'
-              ? t('studio.notebookGeneratedDescription')
-              : t('studio.podcastJobStartedDescription').replace('{jobId}', result.job_id ?? ''),
+          title: t(successTitleKey),
+          description: t(successDescriptionKey).replace('{jobId}', result.job_id ?? ''),
         })
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
@@ -272,7 +343,7 @@ export default function StudioPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-6 max-w-3xl">
+        <div className="container mx-auto p-6 max-w-5xl">
           <div className="mb-4">
             <Link href="/notebooks">
               <Button variant="ghost" size="sm">
@@ -364,6 +435,25 @@ export default function StudioPage() {
               ))}
             </ul>
           )}
+
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="studio-links" className="text-sm font-medium">
+              {t('studio.linksLabel')}
+            </Label>
+            <div className="relative">
+              <Link2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Textarea
+                id="studio-links"
+                value={linkText}
+                onChange={(e) => setLinkText(e.target.value)}
+                placeholder={t('studio.linksPlaceholder')}
+                className="min-h-24 pl-9 text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('studio.linksHelp').replace('{count}', String(parsedLinks.length))}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -383,7 +473,7 @@ export default function StudioPage() {
             glance). Inner card spacing bumped to `space-y-6` so the
             dropdowns below don't crowd the tiles. */}
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={() => setMode('notebook')}
@@ -417,9 +507,43 @@ export default function StudioPage() {
                 {t('studio.podcastModeDescription')}
               </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('both')}
+              className={`
+                border rounded-lg p-6 text-left transition-colors
+                ${mode === 'both'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
+              `}
+            >
+              <Sparkles className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">{t('studio.bothModeTitle')}</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {t('studio.bothModeDescription')}
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('course_pack')}
+              className={`
+                border rounded-lg p-6 text-left transition-colors
+                ${mode === 'course_pack'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/20 hover:border-muted-foreground/40'}
+              `}
+            >
+              <GraduationCap className="h-6 w-6 mb-3 text-primary" />
+              <div className="text-base font-semibold">{t('studio.coursePackModeTitle')}</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {t('studio.coursePackModeDescription')}
+              </div>
+            </button>
           </div>
 
-          {mode === 'podcast' && (
+          {requiresPodcastProfiles && (
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="space-y-1.5">
                 <Label htmlFor="ep-profile" className="text-xs">{t('studio.episodeProfileLabel')}</Label>
@@ -465,31 +589,31 @@ export default function StudioPage() {
         </CardContent>
       </Card>
 
-      {mutation.isError && (
+      {(mutation.isError || coursePackMutation.isError) && (
         <div className="mb-4 p-3 rounded border border-destructive/50 bg-destructive/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="text-sm text-destructive">
             {/* v0.7.196 — same helper as the catch-branch toast. Was
                 an inline unwrap that could surface raw axios + FastAPI
                 500-default text. */}
-            {getApiErrorMessage(mutation.error, t, 'apiErrors.genericError')}
+            {getApiErrorMessage(
+              mutation.error ?? coursePackMutation.error,
+              t,
+              'apiErrors.genericError',
+            )}
           </div>
         </div>
       )}
 
           <div className="flex justify-end">
             <Button onClick={onGenerate} disabled={!canSubmit} size="lg">
-              {mutation.isPending ? (
+              {isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {mode === 'notebook'
-                    ? t('studio.generatingNotebook')
-                    : t('studio.generatingPodcast')}
+                  {generatingText}
                 </>
               ) : (
-                <>{mode === 'notebook'
-                  ? t('studio.generateNotebook')
-                  : t('studio.generatePodcast')}</>
+                <>{generateText}</>
               )}
             </Button>
           </div>

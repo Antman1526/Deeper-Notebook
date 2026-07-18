@@ -7,7 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from open_notebook.config import UPLOADS_FOLDER
-from open_notebook.domain.notebook import Source
+from open_notebook.domain.notebook import Asset, Source
+from open_notebook.exceptions import NotFoundError
 
 
 @pytest.fixture
@@ -56,12 +57,133 @@ class TestAsyncSourceAssetPersistence:
             )
 
         assert response.status_code == 200
+        response_body = response.json()
+        assert response_body["asset"] == {
+            "file_path": None,
+            "url": "https://example.com/article",
+        }
         assert len(saved_sources) >= 1
 
         source = saved_sources[0]
         assert source.asset is not None
         assert source.asset.url == "https://example.com/article"
         assert source.asset.file_path is None
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_async_source_persists_labels_and_provenance(
+        self, mock_nb_get, mock_add_nb, mock_submit, client
+    ):
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        saved_sources = []
+
+        async def capture_save(self_source):
+            saved_sources.append(self_source)
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with patch.object(Source, "save", autospec=True, side_effect=capture_save):
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "link",
+                    "url": "https://academy.example.com/lesson",
+                    "notebooks": '["notebook:1", "notebook:2"]',
+                    "topics": '["training", "policy", "training"]',
+                    "provenance": '{"origin": "training_builder"}',
+                    "async_processing": "true",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["topics"] == ["training", "policy"]
+        assert body["provenance"]["origin"] == "training_builder"
+        assert body["provenance"]["domain"] == "academy.example.com"
+        assert body["notebook_count"] == 2
+        assert body["is_shared"] is True
+
+        source = saved_sources[0]
+        assert source.topics == ["training", "policy"]
+        assert source.provenance["origin"] == "training_builder"
+        assert source.source_type == "link"
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_async_legacy_notebook_id_links_and_queues_source(
+        self, mock_nb_get, mock_add_nb, mock_submit, client
+    ):
+        """Legacy notebook_id form field must not create orphaned sources."""
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        async def capture_save(self_source):
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with patch.object(Source, "save", autospec=True, side_effect=capture_save):
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "link",
+                    "url": "https://example.com/article",
+                    "notebook_id": "notebook:legacy",
+                    "async_processing": "true",
+                },
+            )
+
+        assert response.status_code == 200
+        mock_nb_get.assert_awaited_once_with("notebook:legacy")
+        mock_add_nb.assert_awaited_once_with("notebook:legacy")
+
+        command_payload = mock_submit.await_args.args[2]
+        assert command_payload["notebook_ids"] == ["notebook:legacy"]
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_async_upload_accepts_frontend_notebook_id_and_notebooks_pair(
+        self, mock_nb_get, mock_add_nb, mock_submit, client
+    ):
+        """Quick uploads send both fields; backend must merge and dedupe them."""
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        async def capture_save(self_source):
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with (
+            patch.object(Source, "save", autospec=True, side_effect=capture_save),
+            patch("api.routers.sources.save_uploaded_file", new_callable=AsyncMock) as mock_upload,
+        ):
+            mock_upload.return_value = os.path.join(
+                os.path.abspath(UPLOADS_FOLDER),
+                "quick-upload.pdf",
+            )
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "upload",
+                    "notebook_id": "notebook:quick",
+                    "notebooks": '["notebook:quick"]',
+                    "async_processing": "true",
+                },
+                files={"file": ("quick-upload.pdf", b"fake pdf", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        mock_nb_get.assert_awaited_once_with("notebook:quick")
+        mock_add_nb.assert_awaited_once_with("notebook:quick")
+        command_payload = mock_submit.await_args.args[2]
+        assert command_payload["notebook_ids"] == ["notebook:quick"]
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
@@ -95,6 +217,11 @@ class TestAsyncSourceAssetPersistence:
             )
 
         assert response.status_code == 200
+        response_body = response.json()
+        assert response_body["asset"] == {
+            "file_path": os.path.join(os.path.abspath(UPLOADS_FOLDER), "video.mp4"),
+            "url": None,
+        }
         assert len(saved_sources) >= 1
 
         source = saved_sources[0]
@@ -136,6 +263,445 @@ class TestAsyncSourceAssetPersistence:
 
         source = saved_sources[0]
         assert source.asset is None
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.execute_command_sync")
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_source_create_defaults_to_searchable_queued_processing(
+        self, mock_nb_get, mock_add_nb, mock_execute_sync, mock_submit, client
+    ):
+        """Omitted processing flags should match the UI's searchable queued default."""
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        async def capture_save(self_source):
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with patch.object(Source, "save", autospec=True, side_effect=capture_save):
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "link",
+                    "url": "https://example.com/defaults",
+                    "notebooks": '["notebook:1"]',
+                },
+            )
+
+        assert response.status_code == 200
+        mock_execute_sync.assert_not_called()
+        mock_submit.assert_awaited_once()
+        command_payload = mock_submit.await_args.args[2]
+        assert command_payload["embed"] is True
+
+
+class TestSourceListingErrors:
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    def test_get_sources_for_missing_notebook_returns_404(
+        self, mock_nb_get, mock_repo_query, client
+    ):
+        mock_nb_get.side_effect = NotFoundError("notebook with id notebook:gone not found")
+
+        response = client.get("/api/sources", params={"notebook_id": "notebook:gone"})
+
+        assert response.status_code == 404
+        assert "Notebook not found" in response.json()["detail"]
+        mock_repo_query.assert_not_called()
+
+
+class TestSourceListingProcessingInfo:
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_sources_includes_fetched_command_progress_and_result(
+        self, mock_repo_query, client
+    ):
+        mock_repo_query.return_value = [
+            {
+                "id": "source:running",
+                "title": "Running import",
+                "topics": [],
+                "asset": None,
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": False,
+                "insights_count": 0,
+                "command": {
+                    "id": "command:running",
+                    "status": "running",
+                    "progress": {"processed": 1, "total": 4, "percentage": 25},
+                    "error_message": None,
+                    "result": {
+                        "execution_metadata": {
+                            "started_at": "2026-06-23T10:00:30Z",
+                            "completed_at": None,
+                        },
+                        "source_id": "source:running",
+                    },
+                },
+            }
+        ]
+
+        response = client.get("/api/sources")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["status"] == "running"
+        assert body[0]["command_id"] == "command:running"
+        assert body[0]["processing_info"] == {
+            "status": "running",
+            "started_at": "2026-06-23T10:00:30Z",
+            "completed_at": None,
+            "error": None,
+            "progress": {"processed": 1, "total": 4, "percentage": 25},
+            "result": {
+                "execution_metadata": {
+                    "started_at": "2026-06-23T10:00:30Z",
+                    "completed_at": None,
+                },
+                "source_id": "source:running",
+            },
+        }
+
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_sources_reports_missing_uploaded_file_availability(
+        self, mock_repo_query, client, monkeypatch, tmp_path
+    ):
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        monkeypatch.setattr("api.routers.sources.UPLOADS_FOLDER", str(uploads))
+
+        mock_repo_query.return_value = [
+            {
+                "id": "source:missing-upload",
+                "title": "Missing upload",
+                "topics": [],
+                "asset": {"file_path": str(uploads / "missing.pdf"), "url": None},
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": True,
+                "insights_count": 0,
+                "command": None,
+            }
+        ]
+
+        response = client.get("/api/sources")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["asset"]["file_path"] == str(uploads / "missing.pdf")
+        assert body[0]["file_available"] is False
+
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_sources_reports_extracted_text_metrics(self, mock_repo_query, client):
+        mock_repo_query.return_value = [
+            {
+                "id": "source:thin-extract",
+                "title": "Scanned PDF",
+                "topics": [],
+                "asset": {"file_path": "/uploads/scanned.pdf", "url": None},
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": False,
+                "insights_count": 0,
+                "command": None,
+                "extracted_char_count": 42,
+            },
+            {
+                "id": "source:healthy-extract",
+                "title": "Research paper",
+                "topics": [],
+                "asset": {"file_path": "/uploads/paper.pdf", "url": None},
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": True,
+                "insights_count": 0,
+                "command": None,
+                "extracted_char_count": 4096,
+            },
+        ]
+
+        response = client.get("/api/sources")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["extracted_char_count"] == 42
+        assert body[0]["extraction_quality"] == "low_text"
+        assert body[1]["extracted_char_count"] == 4096
+        assert body[1]["extraction_quality"] == "ok"
+
+
+class TestSourceDetailExtractionMetrics:
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_source_reports_extracted_text_metrics(
+        self, mock_repo_query, mock_embedded_chunks, mock_get, client
+    ):
+        mock_get.return_value = Source(
+            id="source:detail",
+            title="Scanned PDF",
+            topics=[],
+            asset=None,
+            full_text="Short OCR text.",
+        )
+        mock_embedded_chunks.return_value = 0
+        mock_repo_query.side_effect = [
+            ["notebook:1"],
+            [0],
+        ]
+
+        response = client.get("/api/sources/source:detail")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["full_text"] == "Short OCR text."
+        assert body["extracted_char_count"] == len("Short OCR text.")
+        assert body["extraction_quality"] == "low_text"
+
+
+class TestSourceCreationErrors:
+    def test_create_source_rejects_non_array_notebooks_form_field(self, client):
+        response = client.post(
+            "/api/sources",
+            data={
+                "type": "link",
+                "url": "https://example.com/article",
+                "notebooks": '{"id": "notebook:bad"}',
+                "async_processing": "true",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "notebooks must be a JSON array of strings"
+
+    def test_create_source_rejects_non_array_transformations_form_field(self, client):
+        response = client.post(
+            "/api/sources",
+            data={
+                "type": "link",
+                "url": "https://example.com/article",
+                "transformations": '"transformation:bad"',
+                "async_processing": "true",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "transformations must be a JSON array of strings"
+        )
+
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    def test_create_source_for_missing_notebook_returns_404(self, mock_nb_get, client):
+        mock_nb_get.side_effect = NotFoundError("notebook with id notebook:gone not found")
+
+        response = client.post(
+            "/api/sources",
+            data={
+                "type": "link",
+                "url": "https://example.com/article",
+                "notebooks": '["notebook:gone"]',
+                "async_processing": "true",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Notebook notebook:gone not found"
+
+    @patch("api.routers.sources.Source.save", new_callable=AsyncMock)
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    def test_oversized_upload_returns_413_and_leaves_no_partial_file(
+        self, mock_nb_get, mock_submit, mock_save, client, monkeypatch, tmp_path
+    ):
+        mock_nb_get.return_value = MagicMock()
+        monkeypatch.setattr("api.routers.sources.UPLOADS_FOLDER", str(tmp_path))
+        monkeypatch.setattr("api.routers.sources._source_upload_max_bytes", lambda: 3)
+
+        response = client.post(
+            "/api/sources",
+            data={
+                "type": "upload",
+                "notebooks": '["notebook:1"]',
+                "async_processing": "true",
+            },
+            files={"file": ("too-large.txt", b"abcdef", "text/plain")},
+        )
+
+        assert response.status_code == 413
+        assert "Upload exceeds size limit" in response.json()["detail"]
+        assert list(tmp_path.iterdir()) == []
+        mock_save.assert_not_called()
+        mock_submit.assert_not_called()
+
+
+class TestSourceRetryUploadPreflight:
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    def test_retry_upload_source_rejects_missing_original_file(
+        self, mock_get, mock_repo_query, mock_submit, client, monkeypatch, tmp_path
+    ):
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        monkeypatch.setattr("api.routers.sources.UPLOADS_FOLDER", str(uploads))
+        missing_file = uploads / "missing.pdf"
+
+        mock_get.return_value = Source(
+            id="source:missing-file",
+            title="Missing file",
+            asset=Asset(file_path=str(missing_file)),
+        )
+        mock_repo_query.return_value = ["notebook:1"]
+
+        response = client.post("/api/sources/source:missing-file/retry")
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Original uploaded file is not available for retry"
+        )
+        mock_submit.assert_not_called()
+
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    def test_retry_upload_source_rejects_file_outside_uploads_folder(
+        self, mock_get, mock_repo_query, mock_submit, client, monkeypatch, tmp_path
+    ):
+        uploads = tmp_path / "uploads"
+        outside = tmp_path / "outside"
+        uploads.mkdir()
+        outside.mkdir()
+        outside_file = outside / "private.pdf"
+        outside_file.write_bytes(b"private")
+        monkeypatch.setattr("api.routers.sources.UPLOADS_FOLDER", str(uploads))
+
+        mock_get.return_value = Source(
+            id="source:outside-file",
+            title="Outside file",
+            asset=Asset(file_path=str(outside_file)),
+        )
+        mock_repo_query.return_value = ["notebook:1"]
+
+        response = client.post("/api/sources/source:outside-file/retry")
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Access to source file denied"
+        mock_submit.assert_not_called()
+
+
+class TestSourceRetryResponseMetrics:
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.save", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    def test_retry_response_marks_extraction_quality_pending(
+        self,
+        mock_get,
+        mock_repo_query,
+        mock_embedded_chunks,
+        mock_save,
+        mock_submit,
+        client,
+    ):
+        mock_get.return_value = Source(
+            id="source:thin-extract",
+            title="Scanned PDF",
+            topics=[],
+            asset=Asset(url="https://example.com/scanned"),
+            full_text="",
+        )
+        mock_repo_query.return_value = ["notebook:1"]
+        mock_embedded_chunks.return_value = 0
+        mock_submit.return_value = "command:retry"
+
+        response = client.post("/api/sources/source:thin-extract/retry")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "queued"
+        assert body["command_id"] == "command:retry"
+        assert body["extracted_char_count"] == 0
+        assert body["extraction_quality"] == "pending"
+        mock_save.assert_awaited_once()
+
+
+class TestRetrySourceProcessing:
+    """POST /sources/{id}/retry must find a source's notebooks via the reference
+    edge's in/out columns, not a non-existent `source` column (#861)."""
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_retry_finds_notebooks_and_requeues(
+        self, mock_get, mock_repo_query, mock_submit, client
+    ):
+        source = MagicMock()
+        source.id = "source:1"
+        source.command = None
+        source.title = "My source"
+        source.topics = []
+        source.full_text = None
+        source.asset = MagicMock(file_path=None, url="https://example.com/post")
+        source.save = AsyncMock()
+        source.get_embedded_chunks = AsyncMock(return_value=0)
+        mock_get.return_value = source
+
+        # The corrected query returns the linked notebook(s)
+        mock_repo_query.return_value = ["notebook:1"]
+        # submit_command_job returns str(RecordID), which already includes the
+        # "command:" table prefix.
+        mock_submit.return_value = "command:123"
+
+        response = client.post("/api/sources/source:1/retry")
+
+        assert response.status_code == 200
+        # Regression guard: must query the reference edge by its `in` column
+        called_query = mock_repo_query.await_args.args[0]
+        assert "WHERE in = $source_id" in called_query
+        assert "SELECT VALUE out FROM reference" in called_query
+        # Regression guard: command_id must not be double-prefixed
+        # (`command:command:…`), which previously raised a 500 on save.
+        assert "command:command" not in str(source.command)
+        assert str(source.command).count("command:") == 1
+        assert str(source.command).startswith("command:")
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_retry_400_only_when_truly_unlinked(
+        self, mock_get, mock_repo_query, client
+    ):
+        source = MagicMock()
+        source.id = "source:1"
+        source.command = None
+        mock_get.return_value = source
+        mock_repo_query.return_value = []  # genuinely no notebooks
+
+        response = client.post("/api/sources/source:1/retry")
+
+        assert response.status_code == 400
+        assert "not associated with any notebooks" in response.json()["detail"]
+
+
+class TestGetSourceNotFound:
+    """GET /sources/{id} must return 404 (not 500) for a missing/deleted source.
+    `Source.get()` raises NotFoundError rather than returning None, so the handler
+    must map it to 404 instead of catching it in its generic `except`."""
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_get_missing_source_returns_404(self, mock_get, client):
+        from open_notebook.exceptions import NotFoundError
+
+        mock_get.side_effect = NotFoundError("source with id source:gone not found")
+
+        response = client.get("/api/sources/source:gone")
+
+        assert response.status_code == 404
 
 
 if __name__ == "__main__":

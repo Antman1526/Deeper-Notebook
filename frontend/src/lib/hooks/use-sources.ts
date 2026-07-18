@@ -13,20 +13,16 @@ import {
   SourceListResponse
 } from '@/lib/types/api'
 
-// v0.7.191 — Predicate for "all source LIST queries" that excludes
-// the per-source polling status keys `['sources', sourceId, 'status']`.
+// Predicate for "all source LIST queries" that excludes per-source
+// detail/status caches. The explicit key families avoid the old ambiguity
+// where `['sources', notebookId]` and `['sources', sourceId]` looked alike.
 // Broad `invalidateQueries({ queryKey: ['sources'] })` matched those
 // status polls too — every mutation triggered a status refetch for
 // every source the user had open, even completed ones. On a notebook
 // with 30+ sources this was a measurable hit.
-//
-// Any list-shape key (`['sources']`, `['sources', notebookId]`,
-// `['sources', 'infinite', notebookId]`) doesn't include 'status';
-// per-source status polls do. The substring check is robust to
-// future key extensions as long as they keep the convention.
-const _isSourcesListQuery = (queryKey: readonly unknown[]): boolean => {
+export const _isSourcesListQuery = (queryKey: readonly unknown[]): boolean => {
   if (queryKey[0] !== 'sources') return false
-  return !queryKey.includes('status')
+  return queryKey[1] === 'list' || queryKey[1] === 'infinite'
 }
 
 const NOTEBOOK_SOURCES_PAGE_SIZE = 30
@@ -160,8 +156,10 @@ export function useCreateSource() {
       // every source-add.
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebooks })
 
-      // Show different messages based on processing mode
-      if (variables.async_processing) {
+      // Show different messages based on the effective processing mode.
+      // sourcesApi.create defaults omitted async_processing to true, so
+      // the toast should match the queued request users actually sent.
+      if (variables.async_processing ?? true) {
         toast({
           title: t('sources.sourceQueued'),
           description: t('sources.sourceQueuedDesc'),
@@ -275,7 +273,7 @@ export function useFileUpload() {
 
 export function useSourceStatus(sourceId: string, enabled = true) {
   return useQuery({
-    queryKey: ['sources', sourceId, 'status'],
+    queryKey: QUERY_KEYS.sourceStatus(sourceId),
     queryFn: () => sourcesApi.status(sourceId),
     enabled: !!sourceId && enabled,
     refetchInterval: (query) => {
@@ -330,7 +328,7 @@ export function useRetrySource() {
     onSuccess: (result, sourceId) => {
       // Invalidate status query to refetch latest status
       queryClient.invalidateQueries({
-        queryKey: ['sources', sourceId, 'status']
+        queryKey: QUERY_KEYS.sourceStatus(sourceId)
       })
       // Invalidate ALL sources queries to refresh the UI
       queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery(q.queryKey) })

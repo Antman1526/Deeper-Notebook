@@ -1,516 +1,645 @@
 # 07 — Business Logic & Core Algorithms
 
-Exhaustive recreation reference for the core algorithmic surface of **Open Notebook
-Plus** (a privacy-first NotebookLM alternative: FastAPI + LangGraph + SurrealDB +
-Esperanto multi-provider AI + podcast-creator + local llama.cpp). All file paths are
-relative to the repo root unless noted. Secrets are redacted with `<REDACTED>`
-placeholders.
+> Exhaustive recreation reference for the core "brain" of **Open Notebook Plus**
+> (branch `desktop-app`). Package version `1.8.5` (`pyproject.toml`), desktop
+> shell version `0.8.5` (`desktop/__init__.py`). Python 3.11+, LangGraph
+> `>=1.0.10`, Pydantic `>=2.9.2`, FastAPI `>=0.136.3`, SurrealDB driver
+> `>=1.0.4`, Esperanto `>=2.20.0,<3`.
 
-Key library versions (`pyproject.toml`):
+The application's business logic is split between:
 
-| Library | Constraint |
+- **LangGraph graphs** (`open_notebook/graphs/`) — deterministic state machines that
+  orchestrate LLM calls (`source.py`, `chat.py`, `ask.py`, `transformation.py`,
+  `source_chat.py`).
+- **surreal-commands handlers** (`commands/`) — async, retriable job-queue workers
+  that wrap the graphs plus embedding/insight/podcast work.
+- **Domain models** (`open_notebook/domain/`) — SurrealDB-backed records that own
+  their own fire-and-forget side-effects (embedding, insight creation).
+- **Pure utilities** (`open_notebook/utils/`) — chunking, embedding, citation
+  location, token sizing.
+
+Everything is async-first; SurrealDB, graph invocation, and LLM calls are all `await`ed.
+
+---
+
+## 1. Source-ingest pipeline (`open_notebook/graphs/source.py`)
+
+The ingest graph is a `StateGraph(SourceState)` with three nodes and one
+conditional fan-out. Topology:
+
+```
+START → content_process → save_source → (trigger_transformations) → transform_content → END
+```
+
+### 1.1 State shape
+
+```python
+class SourceState(TypedDict):
+    content_state: ProcessSourceState          # content-core input/output
+    apply_transformations: list[Transformation]
+    source_id: str
+    notebook_ids: list[str]
+    source: Source
+    transformation: Annotated[list, operator.add]   # reducer: current + returned
+    embed: bool
+```
+
+The `Annotated[list, operator.add]` reducer is load-bearing: every fan-out branch
+returns a `{"transformation": [...]}` and LangGraph merges via `current + returned`.
+A node that returns `None` here caused `[] + None → TypeError` and half-saved sources
+(v0.7.61 fix — nodes must always return a list-shaped dict).
+
+### 1.2 Node `content_process` — extract
+
+Loads the **persisted** `ContentSettings` singleton (`open_notebook:content_settings`)
+rather than hardcoding literals (v0.7.209 fix), then drives extraction:
+
+```python
+async def content_process(state: SourceState) -> dict:
+    try:
+        content_settings = await ContentSettings.get_instance()
+    except Exception as exc:
+        # cold cache / fresh install / transient pool error → safe defaults
+        content_settings = ContentSettings(
+            default_content_processing_engine_doc="auto",
+            default_content_processing_engine_url="auto",
+            default_embedding_option="ask",
+            auto_delete_files="yes",
+            youtube_preferred_languages=["en","pt","es","de","nl","en-GB","fr","hi","ja"],
+        )
+    content_state = state["content_state"]
+    content_state["url_engine"]    = content_settings.default_content_processing_engine_url or "auto"
+    content_state["document_engine"] = content_settings.default_content_processing_engine_doc or "auto"
+    content_state["output_format"] = "markdown"
+    # STT model injected from DefaultModels for audio/video sources
+    ...
+    if content_state.get("url_engine") == "crawl4ai" and url:
+        content = await extract_url_with_crawl4ai(url)     # v0.8.67u
+        ...
+    if processed_state is None:
+        processed_state = await extract_content(content_state)   # content-core
+```
+
+**Soft-failure detection** (content-core returns `title="Error"` + a body prefixed
+`"Failed to extract content:"` instead of raising). The node converts that sentinel
+into a `ValueError` so the job is marked *failed* and the source becomes retryable —
+rather than saving an "error string" as the source body:
+
+```python
+    if processed_state.title == "Error" and (processed_state.content or "").startswith("Failed to extract content:"):
+        raise ValueError("Could not extract content from this source. ...")
+    if not processed_state.content or not processed_state.content.strip():
+        if url and ("youtube.com" in url or "youtu.be" in url):
+            raise ValueError("Could not extract content from this YouTube video. No transcript... Try configuring a Speech-to-Text model...")
+        raise ValueError("Could not extract any text content from this source. ...")
+    return {"content_state": processed_state}
+```
+
+`ValueError` is significant: the `process_source` command's retry config has
+`stop_on=[ValueError, ConfigurationError]`, so these are **permanent** failures.
+
+### 1.3 Node `save_source` — save (+ fire-and-forget embed)
+
+```python
+async def save_source(state: SourceState) -> dict:
+    content_state = state["content_state"]
+    source = await Source.get(state["source_id"])
+    if not source:
+        raise ValueError(f"Source with ID {state['source_id']} not found")
+    source.asset = Asset(url=content_state.url, file_path=content_state.file_path)
+    source.full_text = content_state.content
+    # extraction provenance recorded (source_type, identified_type, extractor, url, file_path, metadata)
+    source.provenance = {**(getattr(source,"provenance",None) or {}), "extraction": extraction_provenance}
+    # preserve user title; overwrite only placeholder/empty
+    if content_state.title and (not source.title or source.title == "Processing..."):
+        source.title = content_state.title
+    await source.save()
+    if state["embed"]:
+        if source.full_text and source.full_text.strip():
+            await source.vectorize()      # returns a command_id; NOT awaited (fire-and-forget)
+    return {"source": source}
+```
+
+Notebook associations are intentionally **not** created here — the API creates them
+immediately for UI responsiveness (avoids duplicate edges).
+
+### 1.4 Fan-out `trigger_transformations` — parallel transforms
+
+Uses LangGraph `Send` to fan out one `transform_content` invocation per transformation:
+
+```python
+def trigger_transformations(state, config) -> list[Send]:
+    if len(state["apply_transformations"]) == 0:
+        return []
+    return [Send("transform_content", {"source": state["source"], "transformation": t})
+            for t in state["apply_transformations"]]
+```
+
+### 1.5 Node `transform_content` → `SourceInsight`
+
+Each branch runs the transformation sub-graph and records the result as an insight:
+
+```python
+async def transform_content(state: TransformationState) -> dict:
+    source = state["source"]
+    content = source.full_text
+    if not content:
+        return {"transformation": []}      # v0.7.61 — must be list-shaped, not None
+    transformation = state["transformation"]
+    result = await transform_graph.ainvoke(dict(input_text=content, transformation=transformation))
+    # v0.7.165 — dual-path state-shape guard (dict subscript OR attr access)
+    output_text = (result["output"] if isinstance(result, dict)
+                   else (getattr(result, "output", "") or ""))
+    await source.add_insight(transformation.title, output_text)   # fire-and-forget insight + embed
+    return {"transformation": [{"output": output_text, "transformation_name": transformation.name}]}
+```
+
+### 1.6 Job wrapper `process_source_command` (`commands/source_commands.py`)
+
+```python
+@command("process_source", app="open_notebook", retry={
+    "max_attempts": 15,                       # deep queues / SurrealDB v2 tx conflicts
+    "wait_strategy": "exponential_jitter",
+    "wait_min": 1, "wait_max": 120,
+    "stop_on": [ValueError, ConfigurationError],   # validation/config = permanent
+    "retry_log_level": "debug",
+})
+async def process_source_command(input_data: SourceProcessingInput) -> SourceProcessingOutput:
+    transformations = [await Transformation.get(t) for t in input_data.transformations]
+    # v0.8.88/v0.8.91 opt-in auto-summary + key-topics appended here (see §7)
+    source = await Source.get(input_data.source_id)
+    source.command = ensure_record_id(input_data.execution_context.command_id)
+    await source.save()
+    result = await source_graph.ainvoke({
+        "content_state": input_data.content_state,
+        "notebook_ids": input_data.notebook_ids,
+        "apply_transformations": transformations,
+        "embed": input_data.embed,
+        "source_id": input_data.source_id,
+    })
+    insights_list = await result["source"].get_insights()
+    # topics populated from Key Topics insight if enabled (see §7)
+    return SourceProcessingOutput(success=True, source_id=..., insights_created=len(insights_list), ...)
+```
+
+Embedding counts cannot be returned here because embedding is a separate fire-and-forget
+job that hasn't finished; `embed_source_command` logs the true count when done.
+
+---
+
+## 2. Chat graph (`open_notebook/graphs/chat.py`)
+
+Single node graph, `StateGraph(ThreadState)`, node `agent` → `call_model_with_messages`.
+It is checkpointed with SQLite (dual sync/async savers over one file).
+
+### 2.1 Checkpointing (dual saver)
+
+```python
+conn = get_checkpoint_connection(LANGGRAPH_CHECKPOINT_FILE)  # WAL-tuned, integrity-checked
+memory = SqliteSaver(conn)
+graph = agent_state.compile(checkpointer=memory)             # SYNC — for get_state() reads
+
+# async twin, lazily constructed (aiosqlite needs a running loop):
+async def get_async_graph():   # AsyncSqliteSaver over the SAME file
+    ...
+```
+
+The sync `SqliteSaver` backs `graph.get_state(...)` reads (wrapped in
+`asyncio.to_thread`); `AsyncSqliteSaver` backs `astream_events`/`ainvoke` writes.
+Both point at the same on-disk file — WAL keeps them consistent (v0.7.192).
+
+### 2.2 Node flow
+
+1. Extract the last human message, then `recall_memory(query=last_user_text)` and
+   `render_memory_block(...)` — semantic-or-recency mem0 recall injected into the
+   system prompt (`ONP_MEMORY_RECALL_MODE = recent|semantic|auto`).
+2. Render `chat/system` prompt via `ai_prompter.Prompter`.
+3. **Trim history** (`_trim_message_history` → `trim_message_history`, env
+   `ONP_CHAT_HISTORY_CHAR_CAP`, default `12_000` chars ≈ 3k tokens) — the
+   `add_messages` reducer is append-only, so untrimmed sessions would overflow a
+   16k-context local server.
+4. **Size against real text** (v0.7.65): `content_for_sizing = "\n".join(extract_text_content(m.content) for m in payload)` — never `str(payload)` (repr wrapper inflates the 105k large-context cutoff).
+5. Provision the model. If `model_id` override present → `provision_langchain_model(...)`;
+   else → `provision_langchain_chat_model(...)` (smart router, populates `selection_out`).
+6. Run the MCP/tool loop via `bind_mcp_and_run_tool_loop`.
+7. Clean `<think>` blocks (`clean_thinking_content`) and return the updated message
+   plus routing/privacy/agent-FSM telemetry.
+
+### 2.3 Tool loop `bind_mcp_and_run_tool_loop`
+
+Both chat graphs share this helper (single-node graphs, no LangGraph `ToolNode`):
+
+1. **MCP tools** — `_resolve_chat_tools` (TTL-cached discovery, 30s per server URL);
+   fail-soft to `[]` on any registry/DB error.
+2. **Native `web_search`** tool (env-keyed, DB-independent — see doc 14 §5).
+3. **Native `opencode_run`**, **`add_web_source_to_notebook`** tools (opt-in).
+4. `model.bind_tools(...)` — fail-soft for local providers lacking tool calling.
+5. Invoke, bounded by `ONP_CHAT_MODEL_TIMEOUT_SEC` (default 300s).
+6. While the model emits `tool_calls` and `tool_iters < max_iterations`
+   (`ONP_AGENT_MAX_ITERATIONS`, default 4): execute each tool (per-call
+   `ONP_MCP_TOOL_TIMEOUT_SEC`, default 30s), **fence output as untrusted**
+   (`_fence_untrusted_tool_output` — prompt-injection defense, doc 14 §5), feed
+   `ToolMessage`s back, re-invoke.
+7. Emit `truncated`/`complete` outcome to metrics; classify agent-FSM `<state>` if
+   `ONP_AGENT_FSM` is on.
+
+### 2.4 Mid-turn offline retry
+
+If the tool loop raises and `classify_error(e)` is `NetworkError` **and** the turn
+wasn't already local, `report_network_failure()` flips network state and retries once
+on the gated (now-local) model (v0.8.68).
+
+---
+
+## 3. Ask graph — strategy → search → synthesize (`open_notebook/graphs/ask.py`)
+
+`StateGraph(ThreadState)`, three nodes:
+
+```
+START → agent (strategy) → (trigger_queries fan-out) → provide_answer → write_final_answer → END
+```
+
+### 3.1 Strategy node `call_model_with_messages`
+
+Produces a structured `Strategy` (up to 5 `Search` terms) via a
+`PydanticOutputParser` and the `ask/entry` prompt:
+
+```python
+class Search(BaseModel):
+    term: str
+    instructions: str = Field(description="Tell the answering LLM what info to extract")
+
+class Strategy(BaseModel):
+    reasoning: str
+    searches: list[Search] = Field(default_factory=list, description="up to five searches")
+```
+
+Model provisioned with `structured=dict(type="json")`, `max_tokens=2000`. Every node
+wraps `model.ainvoke` in `_ask_invoke(...)` which applies a **per-node timeout**
+(`ONP_ASK_NODE_TIMEOUT_SEC`, default 120s) and converts `asyncio.TimeoutError` →
+`ExternalServiceError` (HTTP 502) naming the node.
+
+### 3.2 Fan-out and `provide_answer`
+
+```python
+async def trigger_queries(state, config):
+    return [Send("provide_answer", {"question": state["question"],
+                                    "instructions": s.instructions, "term": s.term})
+            for s in state["strategy"].searches]
+
+async def provide_answer(state, config) -> dict:
+    results = await vector_search(state["term"], 10, True, True)   # hard-coded vector search
+    if len(results) == 0:
+        return {"answers": []}
+    results = _truncate_ask_results(results)      # cap count + per-result chars
+    payload["results"] = results; payload["ids"] = [r["id"] for r in results]
+    system_prompt = Prompter(prompt_template="ask/query_process").render(data=payload)
+    ai_message = await _ask_invoke(model, system_prompt, node="provide_answer")
+    return {"answers": [clean_thinking_content(extract_text_content(ai_message.content))]}
+```
+
+`_truncate_ask_results` protects local 16k-context models: caps result count
+(`ONP_ASK_MAX_RESULTS`, default 10) and joins/truncates each result's `matches`
+(`ONP_ASK_PER_RESULT_CHAR_CAP`, default 1500 chars) with a `[...truncated for context budget...]`
+marker. Only the large `matches` field is capped; ids/titles/similarity stay for citation.
+
+### 3.3 Synthesis + grounding guardrail + CLARIFY
+
+The `answers` field uses `Annotated[list, operator.add]`, so all sub-answers merge.
+`write_final_answer` synthesizes them — **unless** the agent-FSM grounding gate fires:
+
+```python
+async def write_final_answer(state, config) -> dict:
+    if _agent_fsm_enabled():                      # ONP_AGENT_FSM on/1/true/yes
+        answers = state.get("answers") or []
+        if not any(isinstance(a, str) and a.strip() for a in answers):
+            # NO search produced grounded content → don't hallucinate from empty context
+            return {"final_answer": _AGENT_FSM_CLARIFY_MESSAGE,
+                    "agent_state": AgentState.CLARIFY.value}
+    system_prompt = Prompter(prompt_template="ask/final_answer").render(data=state)
+    ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
+    result = {"final_answer": clean_thinking_content(extract_text_content(ai_message.content))}
+    if _agent_fsm_enabled():
+        result["agent_state"] = AgentState.COMPLETE.value
+    return result
+```
+
+`_AGENT_FSM_CLARIFY_MESSAGE` = *"I couldn't find anything relevant to that question in
+your sources. Try rephrasing it, using different keywords, or adding sources..."* This
+is the **grounding guardrail**: when the retrieval context is empty, the graph declares
+`CLARIFY` rather than letting a weak local model confidently hallucinate. Default OFF →
+behaviour unchanged. Streaming-safe: `search.py` captures `final_answer` from the node's
+`on_chain_end` terminal event, so it is delivered even without token deltas.
+
+---
+
+## 4. Transformation execution → `SourceInsight` (`open_notebook/graphs/transformation.py`)
+
+Single node graph, `StateGraph(TransformationState)`, node `agent` → `run_transformation`.
+
+```python
+async def run_transformation(state, config) -> dict:
+    source = state.get("source") if isinstance(state.get("source"), Source) else None
+    content = state.get("input_text")
+    assert source or content, "No content to transform"       # accepts either
+    transformation = state["transformation"]
+    if not content:
+        content = source.full_text                            # fall back to source body
+    template = transformation.prompt
+    if DefaultPrompts(...).transformation_instructions:
+        template = f"{instructions}\n\n{template}"
+    template = f"{template}\n\n# INPUT"
+    system_prompt = Prompter(template_text=template).render(data=state)
+    content_str = _truncate_transformation_input(str(content or ""))   # ONP_TRANSFORMATION_INPUT_CAP=12_000
+    payload = [SystemMessage(content=system_prompt), HumanMessage(content=content_str)]
+    content_for_sizing = "\n".join(extract_text_content(m.content) for m in payload)  # v0.7.75
+    chain = await provision_langchain_model(content_for_sizing, config...model_id, "transformation", max_tokens=8192)
+    # v0.8.26 per-node timeout ONP_TRANSFORM_NODE_TIMEOUT_SEC=180s → ExternalServiceError on hang
+    response = await asyncio.wait_for(chain.ainvoke(payload), timeout=_transform_node_timeout_sec())
+    cleaned = clean_thinking_content(extract_text_content(response.content))
+    if source:
+        await source.add_insight(transformation.title, cleaned)   # → create_insight_command
+    return {"output": cleaned}
+```
+
+`Transformation` (domain): `name`, `title`, `description`, `prompt`, `apply_default`.
+`Source.add_insight(insight_type, content)` submits `create_insight_command`
+(fire-and-forget) which creates the `SourceInsight` DB record then submits
+`embed_insight` — all non-blocking. `run_transformation_command`
+(`commands/source_commands.py`, retry 5×/exp-jitter 1-60s) is the API-facing wrapper
+for `POST /sources/{id}/insights`.
+
+---
+
+## 5. Citation `locate_passage` — token-containment sliding window (`open_notebook/utils/citation_offsets.py`)
+
+ONP citations are bare record IDs (`[source:ID]`) with no offsets. Rather than change
+the citation format, the passage is located **on demand**: given the source's
+`full_text` and the citing sentence, find the best-matching window's char range so the
+frontend can scroll-to/highlight. Deterministic, no embeddings/LLM.
+
+```python
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_STOPWORDS = frozenset("the a an of to in and or is are ... our".split())
+
+def _content_tokens(s: str) -> set[str]:
+    return {t for t in _TOKEN_RE.findall(s.lower()) if t not in _STOPWORDS and len(t) > 1}
+
+def locate_passage(text, query, *, window=280, stride=120, min_score=0.2):
+    if not text or not query: return None
+    qset = _content_tokens(query)
+    if not qset: return None
+    n = len(text); best_start = -1; best_score = 0.0; i = 0
+    while i < n:
+        chunk = text[i:i+window]
+        cset = _content_tokens(chunk)
+        if cset:
+            score = len(qset & cset) / len(qset)          # containment of query words
+            if score > best_score:
+                best_score, best_start = score, i
+        if i + window >= n: break
+        i += stride
+    if best_start < 0 or best_score < min_score:
+        return None
+    start, end = best_start, min(best_start + window, n)
+    while start > 0 and not text[start-1].isspace(): start -= 1   # snap outward
+    while end < n and not text[end].isspace(): end += 1
+    return PassageMatch(start=start, end=end, score=round(best_score,3), snippet=text[start:end].strip())
+```
+
+**Algorithm:** slide a 280-char window with stride 120 over `full_text`; score each
+window by the fraction of the query's *content* tokens (stopwords removed, single-char
+dropped) contained in it; keep the best; require `score >= 0.2` else return `None` (so
+the caller opens the source at the top). Boundaries are snapped outward to whitespace so
+highlights never split a word. Returns `{start, end, score, snippet}`.
+
+---
+
+## 6. Suggested-questions generation (`api/routers/notebooks.py`, `get_suggested_questions`)
+
+`GET /notebooks/{notebook_id}/suggested-questions?limit=4` (`ge=1, le=8`). Best-effort:
+any failure returns `{"questions": []}`; NotFound/InvalidInput still surface as 404/400.
+
+```python
+notebook = await Notebook.get(notebook_id)      # 4xx re-raised (meta-test convention)
+sources = await notebook.get_sources()
+if not sources: return {"questions": []}
+# compact corpus digest: titles + topics, capped at 40 sources
+lines = [f"- {title}" + (f" — {topics}" if topics else "") for s in sources[:40]]
+corpus = f"Notebook: {notebook.name}\nDescription: {notebook.description}\n\nSources:\n" + "\n".join(lines)
+system = _SUGGESTED_QUESTIONS_SYSTEM.format(n=limit)
+chain = await provision_langchain_model(system + "\n" + corpus, None, "transformation", max_tokens=400)
+response = await asyncio.wait_for(chain.ainvoke([SystemMessage(system), HumanMessage(corpus)]), timeout=30.0)
+text = clean_thinking_content(extract_text_content(response.content))
+# lines parsed into a list of questions
+```
+
+The corpus is a *digest* (titles + up to 6 `topics` each), not full text — keeps the
+prompt small on large notebooks and reuses the key-topics output from ingest.
+
+---
+
+## 7. Auto-summary + key-topics on ingest (`parse_topics`)
+
+Opt-in flags on `ContentSettings`: `auto_summarize_on_ingest`,
+`auto_extract_topics_on_ingest`. In `process_source_command`, before running the graph,
+the built-in transformations are appended (idempotent get-or-create, best-effort):
+
+```python
+if getattr(content_settings, "auto_summarize_on_ingest", False):
+    summarize = await get_or_create_summarize_transformation()      # name="summarize", title="Summary"
+    if not any(str(t.id) == str(summarize.id) for t in transformations):
+        transformations.append(summarize)
+if getattr(content_settings, "auto_extract_topics_on_ingest", False):
+    key_topics = await get_or_create_key_topics_transformation()    # name="key_topics", title="Key Topics"
+    if not any(str(t.id) == str(key_topics.id) for t in transformations):
+        transformations.append(key_topics)
+    extract_topics = True
+```
+
+Both transformations are seeded lazily in `open_notebook/domain/transformation.py`
+(`get_or_create_*`, `SELECT ... WHERE name=$name LIMIT 1`, else create with a canned
+prompt). After the graph runs, the Key Topics insight is parsed into `source.topics`:
+
+```python
+def parse_topics(text: Optional[str]) -> list[str]:
+    if not text: return []
+    topics, seen = [], set()
+    for raw in str(text).splitlines():
+        line = raw.strip()
+        line = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()   # strip bullet/number marker
+        line = line.strip("*_`\"' ").strip()                           # strip md emphasis/quotes
+        if not line or len(line) > 60:  # _MAX_TOPIC_LEN — drop over-long (model ignored format)
+            continue
+        key = line.lower()
+        if key in seen: continue
+        seen.add(key); topics.append(line)
+        if len(topics) >= 8:            # _MAX_TOPICS
+            break
+    return topics
+```
+
+Post-graph, in `process_source_command`:
+
+```python
+if extract_topics:
+    topic_insight = next((i for i in insights_list
+                          if getattr(i,"insight_type",None) == KEY_TOPICS_TRANSFORMATION_TITLE), None)
+    topics = parse_topics(topic_insight.content) if topic_insight else []
+    if topics:
+        processed_source.topics = topics
+        await processed_source.save()
+```
+
+`parse_topics` is pure and unit-tested; the population step is best-effort (never fails ingest).
+
+---
+
+## 8. Mind-map graph build (`Notebook.get_graph`, `open_notebook/domain/notebook.py`)
+
+Builds a hub-and-spoke graph grounded in existing edges (`reference` = source→notebook,
+`artifact` = note→notebook) — no schema change:
+
+```python
+async def get_graph(self) -> dict[str, Any]:
+    sources = await self.get_sources()
+    notes = await self.get_notes()
+    def _label(text, fallback):
+        cleaned = (text or "").strip() or fallback
+        return cleaned if len(cleaned) <= 80 else cleaned[:79] + "…"
+    nodes = [{"id": str(self.id), "type": "notebook", "label": _label(self.name, "Notebook")}]
+    edges = []
+    for s in sources:
+        nodes.append({"id": str(s.id), "type": "source", "label": _label(s.title, "Untitled source")})
+        edges.append({"source": str(self.id), "target": str(s.id), "kind": "reference"})
+    for n in notes:
+        nodes.append({"id": str(n.id), "type": "note", "label": _label(n.title, "Untitled note")})
+        edges.append({"source": str(self.id), "target": str(n.id), "kind": "artifact"})
+    return {"nodes": nodes, "edges": edges}
+```
+
+Node ids are the raw record ids so the frontend can deep-link; labels are trimmed to
+≤80 chars to keep the payload small.
+
+---
+
+## 9. Podcast outline/transcript staging + length→segments (`commands/podcast_staged.py`)
+
+podcast-creator's `create_podcast()` is a black box; but the library **exports** its
+compiled LangGraph (`podcast_graph`) with four named nodes:
+`generate_outline → generate_transcript → generate_all_audio → combine_audio`. ONP
+re-implements only the thin setup layer and **streams** the graph to get per-stage
+progress, cooperative cancellation, stage-aware timeouts, and outline-review-before-TTS.
+
+### 9.1 Length → segments
+
+```python
+_LENGTH_TO_SEGMENTS = {"short": 3, "medium": 5, "long": 8}
+
+def segments_for_length(episode_length: Optional[str]) -> Optional[int]:
+    if not episode_length: return None
+    return _LENGTH_TO_SEGMENTS.get(episode_length.strip().lower())
+```
+
+Used in `build_state_and_config`: `num_segments = segments_for_length(episode_length) or episode_config.num_segments`.
+Values stay within the profile validator's 3–20 range; unknown/None → profile default.
+
+### 9.2 Stage streaming + cancellation
+
+```python
+NODE_DONE_NEXT_STAGE = {"generate_outline": STAGE_TRANSCRIPT, "generate_transcript": STAGE_AUDIO,
+                        "generate_all_audio": STAGE_COMBINE, "combine_audio": None}
+
+async def run_graph_with_stages(graph_obj, state, config, *, episode, deadline, poll_interval=5.0) -> dict:
+    merged = {}
+    async def _consume():
+        async for update in graph_obj.astream(state, config=config, stream_mode="updates"):
+            for node_name, node_out in update.items():
+                if isinstance(node_out, dict): merged.update(node_out)
+                next_stage = NODE_DONE_NEXT_STAGE.get(node_name)
+                if next_stage and episode.generation_stage != next_stage:   # audio node fires per-line; write once
+                    episode.generation_stage = next_stage
+                    await episode.save()
+    task = asyncio.create_task(_consume())
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=poll_interval)
+        if task in done: task.result(); break              # surface generation exception
+        if time.monotonic() > deadline: task.cancel(); await asyncio.gather(task, return_exceptions=True); raise asyncio.TimeoutError()
+        if await _cancel_requested(episode.id): task.cancel(); ...; raise CancelledByUser()
+    return merged
+```
+
+- **Outline review workflow:** `generate_outline_only` runs just the outline node;
+  `get_resume_graph()` builds a graph starting at `generate_transcript` (reusing the
+  library's own node functions + `route_audio_generation`) so a user-edited outline can
+  resume the tail.
+- **Cancellation:** `_cancel_requested` polls `episode.cancel_requested`, fail-open on DB hiccup.
+- **Node names pinned** by `tests/test_v0_8_68_podcast_staged.py` so a library upgrade
+  that renames them fails loudly.
+
+`generate_podcast_command` uses `max_attempts: 1` (no auto-retry) to prevent duplicate
+episode records; TTS failure marks the episode failed → retry via
+`POST /podcasts/episodes/{id}/retry` (no silent-audio fallback).
+
+---
+
+## 10. Embeddings & insights — fire-and-forget
+
+### 10.1 Domain-level fire-and-forget
+
+- `Source.vectorize()` → submits `embed_source` command, returns command_id, not awaited.
+- `Source.add_insight(type, content)` → `create_insight_command` (DB insert + `embed_insight`), fire-and-forget.
+- `Note.save()` → auto-submits `embed_note`.
+- Submission uses `submit_command()`; when called from `async def` it must be wrapped in
+  `asyncio.to_thread` (recurring codebase gotcha — `submit_command` is sync).
+
+### 10.2 `embed_source_command` (`commands/embedding_commands.py`)
+
+Retry 5×, exp-jitter 1–60s, `stop_on=[ValueError]`. Flow:
+
+```python
+source = await Source.get(input_data.source_id)
+if not source.full_text or not source.full_text.strip(): raise ValueError(...)
+await repo_query("DELETE source_embedding WHERE source = $source_id", ...)   # idempotency
+content_type = detect_content_type(source.full_text, file_path)              # ext primary, heuristics fallback
+chunks = chunk_text(source.full_text, content_type=content_type)
+if total_chunks > MAX_CHUNKS_PER_SOURCE: raise ValueError(...)               # v0.7.178 OOM guard
+embeddings = await generate_embeddings(chunks, command_id=cmd_id)            # batches of 50, per-batch retry
+# bulk INSERT source_embedding {source, order, content, embedding}
+```
+
+### 10.3 `generate_embeddings` batching + mean-pool (`open_notebook/utils/embedding.py`)
+
+- `EMBEDDING_BATCH_SIZE = _get_embedding_batch_size()` — env
+  `OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE` (default **50**); batches split as
+  `(len(texts)+50-1)//50`; each batch retried `EMBEDDING_MAX_RETRIES = 3` with
+  `EMBEDDING_RETRY_DELAY = 2s` on failure.
+- `generate_embedding(text)` — short text (≤ `CHUNK_SIZE` tokens) embeds directly;
+  long text is chunked, batch-embedded, and combined via `mean_pool_embeddings`
+  (normalize each → element-wise mean → normalize result, numpy).
+
+Chunking config (`open_notebook/utils/chunking.py`): token-based
+`OPEN_NOTEBOOK_CHUNK_SIZE` (default **400** tokens, conservative below the 512-token
+BERT-family ceiling), `OPEN_NOTEBOOK_CHUNK_OVERLAP` (default 15% of size),
+`OPEN_NOTEBOOK_MIN_CHUNK_SIZE` (default 5). `chunk_text` picks
+HTML/Markdown/Recursive splitter by detected content type and applies
+`_apply_secondary_chunking` when structural splitters overshoot.
+
+---
+
+## Key files
+
+| Concern | Path |
 |---|---|
-| `langgraph` | `>=1.0.10` |
-| `langgraph-checkpoint-sqlite` | `>=3.0.1` |
-| `langchain` | `>=1.2.0` (`langchain-core>=1.3.3`) |
-| `esperanto` | `>=2.20.0,<3` |
-| `content-core` | `>=1.14.1,<2` |
-| `podcast-creator` | `>=0.12.0,<1` |
-| `surreal-commands` | `>=1.3.1,<2` |
-| `surrealdb` | `>=1.0.4` |
-| `mcp` | `>=1.0.0` |
-| `pydantic` | `>=2.9.2` |
-| `fastapi` | `>=0.104.0` |
-
----
-
-## 1. LangGraph Workflows (`open_notebook/graphs/`)
-
-Every node provisions its model through `provision_langchain_model()` /
-`provision_langchain_chat_model()` (see §2) and wraps raw provider exceptions with
-`classify_error()` (`open_notebook/utils/error_classifier.py`) so they re-raise as
-typed `OpenNotebookError` subclasses. `clean_thinking_content()` strips
-`<think>…</think>` spans from every LLM response.
-
-### 1.1 `chat.py` — conversational agent (48 KB, the largest graph)
-
-**State** (`ThreadState`, `TypedDict`):
-
-```python
-class ThreadState(TypedDict):
-    messages: Annotated[list, add_messages]   # append-only reducer
-    notebook: Optional[Notebook]
-    context: Optional[str]
-    context_config: Optional[dict]
-    model_override: Optional[str]
-    selected_provider: Optional[str]          # "local"/"cloud" routing result
-    selected_model_id: Optional[str]
-    privacy_gated: Optional[bool]             # gate rerouted cloud→local
-    privacy_categories: Optional[list]        # category LABELS only, never values
-    agent_state: Optional[str]                # FSM terminal: complete/clarify/truncated
-    mcp_tool_calls: Optional[list]            # per-turn citation captures
-    disabled_mcp_servers: Optional[list[str]] # per-request tool picker
-    bypass_privacy_gate: Optional[bool]       # explicit user "send to cloud anyway"
-```
-
-**Graph shape:** single async node `call_model_with_messages` (no LangGraph
-`ToolNode`; the tool loop runs *inside* the node). Checkpointed to SQLite via
-`SqliteSaver` (sync read path) + `AsyncSqliteSaver` (async write path) over the same
-file `LANGGRAPH_CHECKPOINT_FILE` (`{DATA_FOLDER}/sqlite-db/checkpoints.sqlite`). The
-dual-saver split exists because newer langgraph raises `NotImplementedError` when the
-sync saver's `aget_tuple()` is called during `astream_events`/`ainvoke`.
-
-**Algorithm of `call_model_with_messages`:**
-
-1. **Memory recall** — find the last human message; call
-   `recall_memory(query=last_user_text)` (see §7), render to a `memory_block`, inject
-   into the `chat/system` Jinja prompt via `ai_prompter.Prompter`.
-2. **History trim** — `_trim_message_history()` → `trim_message_history(messages,
-   env_var_name="ONP_CHAT_HISTORY_CHAR_CAP", default_char_cap=12_000)`. The
-   `add_messages` reducer is append-only, so without trimming every prior turn would
-   concatenate into the prompt.
-3. **Context sizing** — joins only `extract_text_content(m.content)` per message (NOT
-   `str(payload)`, which over-counts ~80–120 chars/message of LangChain repr
-   boilerplate and prematurely trips the 105k large-context cutoff — fix v0.7.65).
-4. **Model provisioning** — if a `model_id` override is present →
-   `provision_langchain_model(..., "chat")`; otherwise →
-   `provision_langchain_chat_model(...)` (smart router). `selection_out` and
-   `offline_fallback_out` dicts capture the routing/offline decisions for the HTTP
-   response. `privacy_gate_bypass=bool(state.get("bypass_privacy_gate"))`.
-5. **Notebook resolution** — from `thread_id` via
-   `SELECT out FROM refers_to WHERE in = $session_id`.
-6. **Tool loop** — `bind_mcp_and_run_tool_loop(...)` (below).
-7. **Mid-turn offline retry (v0.8.68)** — if the call raises a `NetworkError` and the
-   turn wasn't already local: `report_network_failure()`, re-provision via the offline
-   gate, retry ONCE. Any non-network error or a second failure propagates.
-8. **Return** cleaned message plus `selected_provider`, `selected_model_id`,
-   `offline_fallback`, `privacy_gated`, `privacy_categories`, `agent_state`,
-   `mcp_tool_calls`.
-
-**`bind_mcp_and_run_tool_loop()`** — shared by `chat.py` and `source_chat.py`. Steps:
-
-1. **MCP tools** — `_resolve_chat_tools()` discovers each enabled server's full tool
-   surface (`list_tools_full()`), 30 s TTL-cached per server URL
-   (`_TOOL_DISCOVERY_TTL_S`), wraps each as a `StructuredTool` named `mcp_<name>` with
-   an args schema synthesized from the JSON Schema via
-   `_json_schema_to_pydantic_model()` (handles nullable `["string","null"]` shapes).
-   Binds tools from **all** enabled servers (v0.8.66), de-duping names by
-   higher-priority server.
-2. **Native tools, each independent / fail-soft:**
-   - `web_search` — when `web_search_enabled()` (a provider key/URL is set) and not
-     excluded (§ doc 08, `tools/web_search.py`).
-   - `opencode_run` — when `opencode_enabled()` (the `opencode` CLI is on PATH).
-   - `add_web_source_to_notebook` — when a `notebook_id` is in scope.
-3. **`model.bind_tools(...)`** — fail-soft: local providers without tool-calling reset
-   the tool list to empty rather than crash.
-4. **Generate** — `await asyncio.wait_for(model.ainvoke(payload), timeout=
-   _chat_model_timeout_sec())` (default 300 s, `ONP_CHAT_MODEL_TIMEOUT_SEC`).
-5. **Tool execution loop** — while the model emits `tool_calls` and
-   `tool_iters < max_iterations` (default 4, `ONP_AGENT_MAX_ITERATIONS`): execute each
-   call with `asyncio.wait_for(tool.coroutine(**args),
-   timeout=_mcp_tool_timeout_sec())` (default 30 s, `ONP_MCP_TOOL_TIMEOUT_SEC`); a
-   timeout becomes a `ToolMessage` error string the model can adapt to.
-6. **Prompt-injection fencing (v0.8.66)** — every tool result is wrapped by
-   `_fence_untrusted_tool_output()` with `[BEGIN/END UNTRUSTED TOOL OUTPUT …]`
-   delimiters (and forged end-delimiters are escaped) so external content is treated
-   as DATA, not instructions.
-7. **Agent-FSM (v0.8.60, `ONP_AGENT_FSM`)** — optionally append an instruction telling
-   the model it MAY end with `<state>complete</state>` / `<state>clarify</state>`;
-   classify the terminal state via `agent_fsm.parse_state()` and surface it. A loop
-   that hits `max_iterations` while still requesting tools → `truncated`.
-
-### 1.2 `source_chat.py` — source-grounded chat
-
-Single async node `call_model_with_source_context` →
-`_call_model_with_source_context_inner`. Builds context with
-`ContextBuilder` (`utils/context_builder.py`) from the selected source's
-`full_text` + insights, capped by:
-`ONP_SOURCE_CHAT_SOURCE_CHAR_CAP` (4000), `ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP` (1000),
-`ONP_SOURCE_CHAT_MAX_INSIGHTS` (10), `ONP_SOURCE_CHAT_HISTORY_CHAR_CAP` (8000). Reuses
-`bind_mcp_and_run_tool_loop`. Compiled with `checkpointer=memory`; an async variant is
-lazily built via `get_async_source_chat_graph()`.
-
-### 1.3 `ask.py` — multi-search synthesis (map-reduce)
-
-**Graph:** `agent` → conditional fan-out `trigger_queries` → N× `provide_answer`
-(parallel via `langgraph.types.Send`) → `write_final_answer` → END.
-
-- **`call_model_with_messages` (agent)** — renders `ask/entry` with a
-  `PydanticOutputParser(Strategy)`. `Strategy` = `{reasoning, searches: list[Search]}`,
-  up to five `Search{term, instructions}`. Provisions `"tools"` type,
-  `structured=dict(type="json")`, `max_tokens=2000`. Parses cleaned JSON.
-- **`trigger_queries`** — emits one `Send("provide_answer", {...})` per search term.
-- **`provide_answer`** — `await vector_search(term, 10, True, True)`;
-  `_truncate_ask_results()` caps to `ONP_ASK_MAX_RESULTS` (10) results, each `matches`
-  field joined and truncated to `ONP_ASK_PER_RESULT_CHAR_CAP` (1500) chars with a
-  truncation marker (protects 16k-context local models). Renders `ask/query_process`.
-  `answers` accumulates via `Annotated[list, operator.add]`.
-- **`write_final_answer`** — renders `ask/final_answer`. **Agent-FSM gate
-  (v0.8.53):** when `ONP_AGENT_FSM` is on and no search produced grounded content,
-  returns `_AGENT_FSM_CLARIFY_MESSAGE` + `agent_state=CLARIFY` instead of asking the
-  LLM to synthesize from an empty context (the hallucination case for weak local
-  models).
-- **Per-node timeout** — every node call goes through `_ask_invoke()` →
-  `asyncio.wait_for(model.ainvoke(payload), timeout=_ask_node_timeout_sec())`
-  (default 120 s, `ONP_ASK_NODE_TIMEOUT_SEC`). `TimeoutError` → `ExternalServiceError`
-  (HTTP 502) naming the failing node.
-
-### 1.4 `source.py` — content ingestion pipeline
-
-**Graph:** START → `content_process` → `save_source` → conditional fan-out
-`trigger_transformations` → N× `transform_content` → END.
-
-- **`content_process`** — loads the `ContentSettings` singleton
-  (`open_notebook:content_settings`) for engine prefs (`default_content_processing_
-  engine_doc/_url`, default `"auto"`), falling back to hardcoded defaults on DB error.
-  Sets `output_format="markdown"`. If a default speech-to-text model is configured,
-  injects `audio_provider`/`audio_model` for transcription. **crawl4ai branch
-  (v0.8.67u):** if `url_engine == "crawl4ai"` and a URL is present, calls
-  `extract_url_with_crawl4ai(url)`; otherwise `await extract_content(content_state)`
-  from content-core. Raises a specific message for YouTube videos lacking
-  transcripts.
-- **`save_source`** — updates `Source.asset` + `full_text`; preserves a user-set title
-  (only overwrites empty/`"Processing..."`); if `state["embed"]`, calls
-  `source.vectorize()`.
-- **`trigger_transformations`** — `Send("transform_content", {...})` per
-  transformation; empty list short-circuits.
-- **`transform_content`** — invokes the transformation graph; normalizes the
-  ainvoke output via `result["output"] if isinstance(result, dict) else getattr(...)`
-  (LangGraph state-shape dual-path guard, v0.7.165); returns
-  `{"transformation": [{output, transformation_name}]}` (reducer
-  `Annotated[list, operator.add]`; must return a list, never `None` — v0.7.61).
-
-### 1.5 `transformation.py` — single-node transform executor
-
-START → `agent` (`run_transformation`) → END. Builds the prompt from
-`transformation.prompt` (+ optional `DefaultPrompts.transformation_instructions`) and
-a `# INPUT` section, capping input via `_truncate_transformation_input()`
-(`ONP_TRANSFORMATION_INPUT_CAP`, 12000 chars). Provisions `"transformation"` type,
-`max_tokens=8192`. Bounded by `asyncio.wait_for(chain.ainvoke(payload),
-timeout=_transform_node_timeout_sec())` (default 180 s,
-`ONP_TRANSFORM_NODE_TIMEOUT_SEC`) → `ExternalServiceError` on timeout. On success,
-`await source.add_insight(transformation.title, cleaned_content)`.
-
----
-
-## 2. Offline / Online Smart-Switching
-
-Three cooperating layers feed `provision_langchain_model()`, the funnel every
-workflow uses.
-
-### 2.1 Network-state service (`open_notebook/health/network.py`, v0.8.68)
-
-```python
-_DEFAULT_PROBE_TARGETS = [("1.1.1.1", 443), ("8.8.8.8", 443)]
-_PROBE_TIMEOUT_S = 2.0
-_DEFAULT_TTL_S = 20.0
-```
-
-- `get_network_state(forced_offline_lookup=…)` — forced-offline check (no probe) →
-  20 s TTL cache (`ONP_NETWORK_STATE_TTL_SEC`) → single-flight probe under
-  `_probe_lock`. The probe (`_probe_once`) opens a 2 s TCP connection to each target
-  (override: `ONP_NET_PROBE_HOSTS`, `host:port` CSV) via
-  `asyncio.to_thread()` so the event loop never blocks.
-- **Passive updates** — `report_network_failure()` / `report_network_success()` flip
-  the cache immediately when a real cloud call fails/succeeds (covers captive portals
-  where the TCP probe lies).
-- **`"unknown"`** (probe exception) is treated as ONLINE by consumers — a flaky probe
-  must never block cloud access.
-- `forced_offline_enabled()` reads `ContentSettings.offline_mode` (30 s cache,
-  invalidated by the settings PUT handler). `get_network_state_with_settings()`
-  combines both.
-
-### 2.2 Offline gate (`open_notebook/ai/offline_gate.py`, v0.8.68)
-
-```python
-LOCAL_PROVIDERS = frozenset({"ollama", "openai_compatible"})  # never gated
-```
-
-`gate_language_model_id(candidate_id, fallback_out=…)`:
-
-1. Load the `Model` record *before* consulting network state (local candidates pay
-   zero probe cost).
-2. Pass through if: no candidate, record missing, `type != "language"`, or provider is
-   local.
-3. `get_network_state_with_settings()`; if `status != "offline"` → pass through
-   (online AND unknown both pass).
-4. Else `find_local_language_model()` — prefer `DefaultModels.default_chat_model` when
-   it's a local provider, else the first local language model name-sorted for
-   determinism.
-5. If no local model exists → raise `ConfigurationError` (fail fast with an actionable
-   message instead of a 300 s provider-timeout hang). Otherwise substitute and record
-   `{offline_fallback, from_model_id, to_model_id, to_model_name, reason}` into
-   `fallback_out`. **Fail-open by design:** any internal error returns the original
-   candidate.
-
-### 2.3 Provisioning + router (`open_notebook/ai/provision.py`, `ai/router.py`)
-
-`provision_langchain_model(content, model_id, default_type, fallback_out, **kwargs)`:
-
-1. `tokens = token_count(content)`. If `tokens > 105_000` → `large_context` model;
-   elif `model_id` → explicit; else default for `default_type`.
-2. **Offline gate** — `candidate_id = await gate_language_model_id(candidate_id,
-   fallback_out=fallback_out)`.
-3. `model_manager.get_model(candidate_id, **kwargs)`; raise `ConfigurationError` if
-   None or not a `LanguageModel`. Returns `model.to_langchain()`.
-
-`provision_langchain_chat_model(...)` adds **smart routing**:
-
-- Enabled when `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` is truthy (`1/true/yes/on`); if the env
-  var is unset, falls back to `DefaultModels.auto_route_enabled` (UI toggle). Off →
-  plain default-chat path.
-- Reads `OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID`, `OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID`
-  (falls back to `DefaultModels.auto_route_cloud`, NOT `default_chat_model`), local
-  `n_ctx` from `OPEN_NOTEBOOK_LOCAL_N_CTX` → `ONP_CHAT_LLM_CTX` → `32768`, and
-  provider preference from `OPEN_NOTEBOOK_CHAT_PROVIDER` →
-  `DefaultModels.auto_route_provider_pref` → `"auto"`.
-- **Health probe** — `_local_chat_healthy_cached()` hits the sidecar's
-  `{OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL}/models`, 30 s TTL
-  (`_HEALTH_CACHE_TTL_S`), single-flight under `_health_cache_lock`, run on a worker
-  thread (`asyncio.to_thread`) so the blocking httpx call never stalls the event loop.
-- **Reply headroom (v0.8.66)** — reserves `ONP_LOCAL_REPLY_HEADROOM_TOKENS` (8192) +
-  1024 for system prompt/tool schemas before deciding local fits.
-
-**`router.pick_provider(...)`** — pure function, `ModelChoice(model_id, reason)`:
-
-1. `default_provider=="cloud"` → cloud if configured.
-2. `default_provider=="local"` → local if configured, else raise.
-3. Auto: local **iff** `local_chat_healthy and local_model_id and content_tokens <=
-   local_chat_n_ctx - reply_headroom_tokens`.
-4. Else cloud if configured (reason names the size/health cause).
-5. Else best-effort local (the llama.cpp server returns its own 400 on true overflow).
-6. Else `ValueError("No model available")`.
-
-A privacy gate (`ai/privacy_gate.py`, `ai/privacy_classifier.py`, `ONP_PRIVACY_GATE`)
-can re-route a cloud pick back to local when structured PII is detected — labels only
-are surfaced, never the matched values; `bypass_privacy_gate` skips it with logged
-consent.
-
-### 2.4 Local-model health probes (`open_notebook/health/local_models.py`)
-
-`probe_local_model()` detects `:0` port placeholders → `not_configured`; for
-`openai_compatible` kind, `_probe_openai_compatible()` GETs `{base_url}/models` with a
-structured `httpx.Timeout(connect=2, read=5, write=2, pool=2)` and returns
-`healthy/unhealthy` + latency + first 3 model ids. `probe_all_local_models(creds)`
-probes sequentially.
-
----
-
-## 3. Embedding / Chunking Pipeline
-
-### 3.1 Chunking (`open_notebook/utils/chunking.py`)
-
-- **Config** — `OPEN_NOTEBOOK_CHUNK_SIZE` (token-based, default **400**, min 100,
-  warn >8192) and `OPEN_NOTEBOOK_CHUNK_OVERLAP` (default **15 %** of chunk size,
-  clamped `0 <= overlap < chunk_size`). Computed once at import (`CHUNK_SIZE`,
-  `CHUNK_OVERLAP`). The 400 default leaves ~20 % headroom below the 512-token ceiling
-  of BERT-family embedders, absorbing the `o200k_base`-measured vs WordPiece tokenizer
-  mismatch.
-- **Content-type detection** — `detect_content_type(text, file_path)`: extension map
-  is primary (`_EXTENSION_TO_CONTENT_TYPE`, HTML/Markdown/plain + code-as-plain);
-  heuristics (`_calculate_html_score` / `_calculate_markdown_score`, scored 0–1 over
-  the first 5000 chars) are the fallback and may override a `.txt`-style PLAIN
-  extension only at `HIGH_CONFIDENCE_THRESHOLD = 0.8`.
-- **`chunk_text()`** — text ≤ `CHUNK_SIZE` tokens returns `[text]`. Otherwise selects a
-  LangChain splitter by type:
-  - HTML → `HTMLHeaderTextSplitter` (h1/h2/h3)
-  - Markdown → `MarkdownHeaderTextSplitter` (#/##/###, `strip_headers=False`)
-  - Plain → `RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE,
-    chunk_overlap=CHUNK_OVERLAP, length_function=token_count,
-    separators=["\n\n","\n",". ",", "," ",""])`
-  HTML/Markdown outputs pass through `_apply_secondary_chunking()` (re-splits any chunk
-  > `CHUNK_SIZE` tokens with the plain splitter). Empty chunks are filtered.
-
-### 3.2 Embedding (`open_notebook/utils/embedding.py`)
-
-- **Config** — `OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE` (default **50**),
-  `EMBEDDING_MAX_RETRIES = 3`, `EMBEDDING_RETRY_DELAY = 2 s`.
-- **`generate_embeddings(texts)`** — splits into batches of `EMBEDDING_BATCH_SIZE`;
-  each batch `await embedding_model.aembed(batch)` with up to 3 retries
-  (`asyncio.sleep(2)` between); final failure → `RuntimeError`. Model from
-  `model_manager.get_embedding_model()`.
-- **`generate_embedding(text, content_type, file_path)`** — text ≤ `CHUNK_SIZE`
-  tokens → embed directly; otherwise `chunk_text()` → `generate_embeddings(chunks)` →
-  `mean_pool_embeddings()`.
-- **`mean_pool_embeddings(embeddings)`** — algorithm: normalize each vector to unit
-  length (numpy, axis-1, divide-by-zero guarded) → element-wise mean → normalize the
-  result to unit length. Single-vector input is just normalized.
-
-These are driven by the fire-and-forget `embed_*` commands in
-`commands/embedding_commands.py` (5 retries, exponential jitter 1–60 s; ValueError =
-permanent).
-
----
-
-## 4. Staged Podcast Generation (`commands/podcast_commands.py`, `podcast_staged.py`)
-
-podcast-creator's `create_podcast()` is a black box, but it **exports its compiled
-LangGraph** `podcast_graph` with four named nodes:
-`generate_outline → generate_transcript → generate_all_audio → combine_audio`.
-`podcast_staged.py` re-implements only the thin setup layer and streams the library's
-own graph (`graph_obj.astream(..., stream_mode="updates")`), unlocking per-stage
-progress, cancellation, stage-aware timeouts, and outline review — with zero forking.
-
-**Stage constants** (`open_notebook/podcasts/models.py`):
-`generating_outline`, `generating_transcript`, `generating_audio`, `combining_audio`,
-`awaiting_review`, `cancelled`. `NODE_DONE_NEXT_STAGE` maps each completed node to the
-next stage written onto the episode record.
-
-### 4.1 `generate_podcast_command` (surreal-commands, `retry={"max_attempts": 1}`)
-
-1. Load `EpisodeProfile` + `SpeakerProfile` by name; validate
-   `outline_llm`/`transcript_llm`/`voice_model` are set.
-2. Resolve provider/model/config triples (`resolve_outline_config`,
-   `resolve_transcript_config`, `resolve_tts_config` → `_resolve_model_config`).
-3. `_load_and_configure_all_profiles()` — resolves model-registry references for ALL
-   profiles (podcast-creator validates the whole config), drops profiles that fail to
-   resolve, fail-fasts if the SELECTED profiles didn't survive, then calls
-   `configure("speakers_config"/"episode_config", …)`.
-4. Build the briefing (`default_briefing` + optional `briefing_suffix`); thread
-   `EpisodeProfile.language` (BCP 47) through.
-5. Create + save the `PodcastEpisode` record (links to `command_id`); build a
-   UUID-named output dir under `{DATA_FOLDER}/podcasts/episodes/`.
-6. `build_state_and_config(...)` mirrors `create_podcast`'s setup (loads episode/speaker
-   config, resolves language, builds `PodcastState`).
-7. **Outline-review phase 1** — if `review_outline`: stage→`generating_outline`, run
-   `generate_outline_only()` (the outline node alone), persist `episode.outline`,
-   stage→`awaiting_review`, sweep the empty dir, return early.
-8. **Full generation** — stage→`generating_outline`, then
-   `run_graph_with_stages(get_full_graph(), state, config, episode=…, deadline=
-   time.monotonic()+_podcast_timeout)`. Timeout `ONP_PODCAST_GENERATION_TIMEOUT_SEC`
-   (default **1800 s**).
-9. Persist `audio_file`, `transcript`, `outline` defensively (`.get()`, `result` may
-   be `None`/partial). On `CancelledByUser` → stage `cancelled`; on `TimeoutError` →
-   `RuntimeError` naming the hung stage; both sweep the empty output dir. GPT-5
-   "Invalid json output" errors get an explanatory hint.
-
-### 4.2 `resume_podcast_command` (phase 2 of outline review)
-
-Requires the episode to be in `awaiting_review` with a non-empty outline. Re-resolves
-profiles, resets `cancel_requested=False`, stage→`generating_transcript`, builds state
-with the **user-reviewed outline**, and runs `get_resume_graph()` — a freshly compiled
-`StateGraph(PodcastState)` that starts at `generate_transcript` (reusing the library's
-own `generate_transcript_node`, `generate_all_audio_node`, `combine_audio_node`,
-`route_audio_generation`).
-
-### 4.3 `run_graph_with_stages()` — streaming/cancel/timeout driver
-
-```python
-async def _consume():
-    async for update in graph_obj.astream(state, config=config, stream_mode="updates"):
-        for node_name, node_out in update.items():
-            if isinstance(node_out, dict):
-                merged.update(node_out)
-            next_stage = NODE_DONE_NEXT_STAGE.get(node_name)
-            if next_stage and episode.generation_stage != next_stage:
-                episode.generation_stage = next_stage
-                await episode.save()
-task = asyncio.create_task(_consume())
-while True:
-    done, _ = await asyncio.wait({task}, timeout=poll_interval)  # poll_interval=5.0
-    if task in done: task.result(); break
-    if time.monotonic() > deadline: task.cancel(); raise asyncio.TimeoutError()
-    if await _cancel_requested(episode.id): task.cancel(); raise CancelledByUser()
-```
-
-`_cancel_requested()` polls `SELECT cancel_requested FROM ONLY $id` every 5 s and is
-fail-open (a flaky read never aborts a 20-minute run). The audio node fans out one
-event per dialogue line (via `Send`), so the stage transition is written only once.
-
-> The `desktop/CHANGELOG.md` documents `max_attempts: 1` for podcast jobs (prevents
-> duplicate episode records). TTS/provider failures mark the episode failed; retry via
-> `POST /podcasts/episodes/{id}/retry` (no silent-audio fallback).
-
----
-
-## 5. SkillOpt Prompt Optimizer (`open_notebook/prompt_optimizer/`, v0.8.68)
-
-Wraps **microsoft/SkillOpt** (MIT) to optimize a Transformation's prompt. The prompt
-is SkillOpt's trainable "skill document": rollouts run it over example sources with a
-TARGET model, an LLM judge scores outputs against user criteria, the OPTIMIZER model
-proposes bounded add/delete/replace edits, and a validation gate accepts only edits
-that improve the held-out score. `skillopt` is an **optional** dependency
-(`skillopt_available()`); the API returns an actionable error when missing.
-
-### 5.1 `runner.py`
-
-- `resolve_backend(model_id)` — `_resolve_model_config(model_id)` →
-  `{model_name, endpoint, api_key}`. Both target and optimizer are configured as
-  OpenAI-compatible endpoints (covers local llama.cpp AND cloud OpenAI/Azure). Allowed
-  providers: `{openai, openai_compatible, ollama, azure, deepseek, groq, mistral, xai,
-  openrouter}`. Ollama endpoints get `/v1` appended.
-- `ensure_skillopt_prompts()` — the skillopt 0.1.0 wheel ships the `prompts` package
-  but not its `.md` files; this backfills the vendored copies in
-  `prompt_optimizer/skillopt_prompts/` into the installed package (never overwriting),
-  raising `PromptOptimizerError` if site-packages is read-only.
-- `build_flat_config(...)` — loads the vendored `skillopt_base.yaml`, flattens it, and
-  sets backends to `openai_chat` (`target_backend`/`optimizer_backend`), endpoints,
-  api keys, `..._auth_mode="openai_compatible"`, `num_epochs`, `batch_size`,
-  `edit_budget`, `env="transformation"`, `skill_init`, `out_root`. `_set()` fails
-  LOUDLY if a config key vanishes in a skillopt upgrade.
-- `run_prompt_optimization(...)` — writes `skill_init.md`, builds the config + a
-  `TransformationAdapter`, and runs `ReflACTTrainer(flat, adapter).train()` on a worker
-  thread (`asyncio.to_thread`). Collects `best_skill.md` (deployment artifact) +
-  `history.json`; returns `{optimized_prompt, changed, history, run_dir}`.
-
-### 5.2 `adapter.py` — `TransformationAdapter(EnvAdapter)`
-
-Modeled on skillopt's `searchqa` benchmark.
-
-- `ExamplesDataLoader` — in-memory train/val split (`val_ratio=0.34`, seed 42).
-  **`get_train_size()` is a REQUIRED override** (the `BaseDataLoader` default returns
-  `None`, which aborts training with "Unable to determine train_size").
-- `_run_one(item, skill_content, out_dir)` — `chat_target(system=skill_content,
-  user=input_text, max_completion_tokens=4096)` produces the prediction; the judge
-  (`chat_optimizer`, `_JUDGE_SYSTEM`) returns `{"score": float, "reason": str}`;
-  `parse_judge_score()` regex-extracts and clamps the score to `[0,1]` (0.0 on
-  garbage). `hard = 1 if soft >= judge_threshold (0.7) else 0`.
-- `rollout()` — `ThreadPoolExecutor(max_workers=4)` over items.
-- `reflect()` — delegates to the library's `run_minibatch_reflect(...)` (analyst
-  workers 2, `minibatch_size`, `edit_budget`, patch update mode).
-
-The worker command is `commands/prompt_optimizer_commands.py:optimize_prompt_command`
-(surreal-commands, env-tunable `ONP_PROMPT_OPT_TIMEOUT_SEC`, ValueError = permanent,
-offline gate for cloud models; `_MAX_EXAMPLES=10`, `_MAX_INPUT_CHARS=6000`).
-
----
-
-## 6. Memory Writer / Recall
-
-### 6.1 Writer (`desktop/memory/writer.py` — Hermes 3 agent)
-
-Two entry points, both call `<llm>.complete(system_prompt, user_prompt)` and parse
-`<tool_call>…</tool_call>` blocks (`_TOOL_CALL_RE`), dispatching each via
-`apply_tool_call` to the mem0 client:
-
-- `extract_turn()` — runs after each assistant response, extracts explicit
-  facts/preferences. Inputs capped: `_MAX_TURN_CHARS = 4000` (truncated from the END
-  to keep recent material).
-- `summarize_session()` — runs on session end, produces one `episode` record.
-  `_MAX_TRANSCRIPT_CHARS = 16_000`.
-
-Storage routes by `kind` into SurrealDB tables `memory_fact`, `memory_preference`,
-`memory_episode` (`desktop/memory/surreal_store.py`).
-
-### 6.2 Recall (`open_notebook/utils/memory_recall.py`)
-
-`recall_memory(query)` is a thin orchestrator with caps `_MAX_FACTS=15`,
-`_MAX_PREFERENCES=10`, `_MAX_EPISODES=2`:
-
-- **Mode** — `ONP_MEMORY_RECALL_MODE` ∈ `recent | semantic | auto` (default auto).
-  Below `_SEMANTIC_THRESHOLD = 30` rows, uses recency (saves an embed round trip);
-  above, `recall_relevant_memory(query)` does cosine similarity over the mem0-populated
-  `embedding` column with `_MIN_SCORE = 0.30`. **Any** semantic failure falls through
-  to recency so chat never breaks on a misconfigured embedder.
-- **Episode recall** defaults ON (`ONP_MEMORY_RECALL_EPISODES`, set `0` to suppress) —
-  episodes were previously WRITE-ONLY until v0.8.49 wired the read path.
-- Returns `{text, scope, kind}` dicts the `chat/system` Jinja template iterates via
-  `render_memory_block()`. Tolerant of missing tables (fresh DBs return empty).
-  Recalled memory is flattened/fenced before prompt injection (v0.8.47) and embed calls
-  are bounded by `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC` /
-  `ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC` / `ONP_MEMORY_RECALL_BUDGET_SEC`.
-
-> Several v0.8.19 → v0.8.30 fixes corrected a SurrealDB "Missing order idiom" parse
-> error: `SELECT VALUE <field> … ORDER BY <other>` is rejected — the ORDER BY field
-> must be in the projection — which had silently returned empty memory for many
-> releases.
+| Source ingest graph | `open_notebook/graphs/source.py` |
+| Chat graph + tool loop | `open_notebook/graphs/chat.py` |
+| Ask graph + grounding gate | `open_notebook/graphs/ask.py` |
+| Transformation graph | `open_notebook/graphs/transformation.py` |
+| Citation passage locator | `open_notebook/utils/citation_offsets.py` |
+| Suggested questions | `api/routers/notebooks.py` |
+| Built-in transformations + `parse_topics` | `open_notebook/domain/transformation.py` |
+| Auto-summary/topics wiring | `commands/source_commands.py` |
+| Mind-map graph | `open_notebook/domain/notebook.py` (`Notebook.get_graph`) |
+| Podcast staging | `commands/podcast_staged.py` |
+| Embeddings/chunking | `open_notebook/utils/embedding.py`, `open_notebook/utils/chunking.py` |
+| Model provisioning | `open_notebook/ai/provision.py` |

@@ -61,6 +61,21 @@ describe('error-handler — translating variant', () => {
     expect(out).toBe('T(apiErrors.notebookNotFound)')
   })
 
+  it('getApiErrorMessage maps dynamic upload size-limit errors', () => {
+    const fakeT = (key: string) => `T(${key})`
+    const out = getApiErrorMessage(
+      {
+        response: {
+          data: {
+            detail: 'Upload exceeds size limit (3 bytes); aborted after writing 0 bytes',
+          },
+        },
+      },
+      fakeT,
+    )
+    expect(out).toBe('T(apiErrors.uploadTooLarge)')
+  })
+
   it('getApiErrorMessage returns backend detail when no mapping exists', () => {
     const fakeT = (key: string) => `T(${key})`
     const out = getApiErrorMessage(

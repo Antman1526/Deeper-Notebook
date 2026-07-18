@@ -23,6 +23,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   ArrowRight,
   Book,
@@ -115,23 +116,51 @@ export default function DashboardPage() {
   const recentNotebooks = (notebooks ?? []).slice(0, 5)
   const totalNotebooks = notebooks?.length ?? 0
 
+  // v0.8.70 — gentle staggered entrance (reduced-motion aware).
+  const reduce = useReducedMotion() ?? false
+  const stagger = {
+    hidden: {},
+    show: {
+      transition: {
+        staggerChildren: reduce ? 0 : 0.08,
+        delayChildren: reduce ? 0 : 0.04,
+      },
+    },
+  }
+  const item = {
+    hidden: { opacity: 0, y: reduce ? 0 : 14 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: reduce ? 0.2 : 0.5, ease: [0.22, 1, 0.36, 1] as const },
+    },
+  }
+
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-6 max-w-6xl space-y-6">
-          {/* Header */}
-          <header className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight">
-              Open notebook+
+        <motion.div
+          className="container mx-auto p-6 max-w-6xl space-y-6"
+          variants={stagger}
+          initial="hidden"
+          animate="show"
+        >
+          {/* Aurora hero header */}
+          <motion.header
+            variants={item}
+            className="onp-aurora-bg relative overflow-hidden rounded-2xl border border-[var(--onp-glass-border)] px-6 py-7"
+          >
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Open Notebook<span className="onp-aurora-text">+</span>
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Local-first research and reasoning · {totalNotebooks} notebook
               {totalNotebooks === 1 ? '' : 's'}
             </p>
-          </header>
+          </motion.header>
 
           {/* Two-column row: Quick Actions + System Status */}
-          <div className="grid gap-4 md:grid-cols-3">
+          <motion.div variants={item} className="grid gap-4 md:grid-cols-3">
             <Card className="md:col-span-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Quick actions</CardTitle>
@@ -139,7 +168,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Link href="/studio" className="block">
-                  <Card className="h-full border-primary/20 transition-shadow hover:shadow-md focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="onp-glass h-full border-primary/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--onp-glow-accent)] focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Sparkles className="h-5 w-5 text-primary" />
                       <div>
@@ -156,7 +185,7 @@ export default function DashboardPage() {
                   onClick={() => openNotebookDialog()}
                   className="text-left"
                 >
-                  <Card className="h-full transition-shadow hover:shadow-md focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Book className="h-5 w-5" />
                       <div>
@@ -173,7 +202,7 @@ export default function DashboardPage() {
                   onClick={() => openPodcastDialog()}
                   className="text-left"
                 >
-                  <Card className="h-full transition-shadow hover:shadow-md focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Mic className="h-5 w-5" />
                       <div>
@@ -186,7 +215,7 @@ export default function DashboardPage() {
                   </Card>
                 </button>
                 <Link href="/search" className="block">
-                  <Card className="h-full transition-shadow hover:shadow-md focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Search className="h-5 w-5" />
                       <div>
@@ -244,9 +273,10 @@ export default function DashboardPage() {
                 />
               </CardContent>
             </Card>
-          </div>
+          </motion.div>
 
           {/* Recent notebooks */}
+          <motion.div variants={item}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <div>
@@ -307,9 +337,10 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Hints strip */}
-          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <motion.div variants={item} className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
             <FileText className="mr-1 inline h-3 w-3 align-text-bottom" />
             Tip: hit{' '}
             <kbd className="rounded border bg-background px-1 font-mono">⌘K</kbd>
@@ -320,8 +351,8 @@ export default function DashboardPage() {
             from anywhere to jump to a notebook, source, or action.
             <Database className="ml-3 mr-1 inline h-3 w-3 align-text-bottom" />
             All data lives in <code className="rounded bg-background px-1">~/.open-notebook-plus/</code>.
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </AppShell>
   )

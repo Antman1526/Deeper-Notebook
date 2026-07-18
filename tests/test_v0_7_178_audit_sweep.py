@@ -39,7 +39,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _read_source(rel: str) -> str:
-    return (ROOT / rel).read_text(encoding="utf-8")
+    path = ROOT / rel
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+
+    package = path.with_suffix("")
+    if package.is_dir():
+        return "\n".join(
+            child.read_text(encoding="utf-8")
+            for child in sorted(package.rglob("*.py"))
+        )
+
+    return path.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

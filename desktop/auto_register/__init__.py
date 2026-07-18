@@ -50,6 +50,7 @@ from desktop.auto_register.episode_profile import (
     register_default_episode_profile,  # noqa: F401
 )
 from desktop.auto_register.llamacpp import register_llamacpp_models
+from desktop.auto_register.mlx import register_mlx_models
 from desktop.auto_register.ollama import register_ollama_models
 from desktop.auto_register.osaurus import register_osaurus_models
 from desktop.auto_register.speaker_profile import (
@@ -255,6 +256,8 @@ def auto_register(
     cfg: Config,
     llamacpp_port: int | None = None,
     *,
+    mlx_base_url: str | None = None,
+    mlx_model_ref: str | None = None,
     whisper_port: int | None = None,
     piper_port: int | None = None,
     embed_port: int | None = None,
@@ -279,6 +282,8 @@ def auto_register(
         with httpx.Client(base_url=api_base_url, timeout=15.0) as client:
             _do_register(
                 client, cfg, llamacpp_port,
+                mlx_base_url=mlx_base_url,
+                mlx_model_ref=mlx_model_ref,
                 whisper_port=whisper_port,
                 piper_port=piper_port,
                 embed_port=embed_port,
@@ -293,6 +298,8 @@ def _do_register(
     cfg: Config,
     llamacpp_port: int | None,
     *,
+    mlx_base_url: str | None = None,
+    mlx_model_ref: str | None = None,
     whisper_port: int | None = None,
     piper_port: int | None = None,
     embed_port: int | None = None,
@@ -375,6 +382,16 @@ def _do_register(
         client, existing_cred_names, existing_model_keys,
         model_dir=cfg.model_dir, llamacpp_port=llamacpp_port,
         local_ggufs=local_ggufs,
+    ):
+        registered_any = True
+
+    # --- 4a. Native MLX server launched by Open Notebook Plus ---------------
+    if register_mlx_models(
+        client,
+        existing_cred_names,
+        existing_model_keys,
+        base_url=mlx_base_url,
+        model_ref=mlx_model_ref,
     ):
         registered_any = True
 

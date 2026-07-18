@@ -1,0 +1,2 @@
+-- v0.8.70 rollback — Evidence Studio workflow run history.
+REMOVE TABLE IF EXISTS studio_workflow_run;

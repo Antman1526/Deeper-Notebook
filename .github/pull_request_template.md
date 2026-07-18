@@ -68,6 +68,12 @@ Fixes #<!-- issue number -->
 - [ ] I ran linting: `make ruff` or `ruff check . --fix`
 - [ ] I ran type checking: `make lint` or `uv run python -m mypy .`
 
+### Upstream Sync Safety
+- [ ] This PR is not an upstream-sync PR
+- [ ] If it is an upstream-sync PR, I used `scripts/upstream_sync_guard.sh prepare`
+- [ ] I reviewed `merge-status.txt`, `conflicted-files.txt`, `protected-plus-path-changes.txt`, and `upstream-deletions.txt`
+- [ ] Plus-critical areas were intentionally preserved or updated with tests
+
 ### Documentation
 - [ ] I have updated the relevant documentation in `/docs` (if applicable)
 - [ ] I have added/updated docstrings for new/modified functions

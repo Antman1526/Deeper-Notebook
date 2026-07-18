@@ -1,489 +1,511 @@
 # 04 — Backend API Specifications
 
-> Exhaustive recreation reference for the FastAPI backend of **Open Notebook Plus**
-> (`open-notebook` v1.8.5, FastAPI 0.104+, Python 3.11–3.12, Pydantic v2,
-> LangGraph 1.0.10+, SurrealDB async driver, `surreal-commands` job queue).
-> All snippets are real code; secrets are placeholders.
+> Recreation reference for the **Open Notebook Plus** FastAPI backend
+> (`api/` + `open_notebook/`), `desktop-app` branch. Runs on port **5055**
+> (`uvicorn api.main:app`). FastAPI 0.104+ / Pydantic v2 / Python 3.11+.
+
+The API is a thin HTTP layer over the domain models (`open_notebook.domain.*`,
+`open_notebook.ai.models`, `open_notebook.podcasts.models`) and the LangGraph
+workflows (`open_notebook.graphs.*`). Business logic mostly lives in the routers;
+only four `*_service.py` modules do heavy orchestration
+(`chat_service.py`, `podcast_service.py`, `command_service.py`,
+`credentials_service.py`).
 
 ---
 
-## 1. Application bootstrap (`api/main.py`)
+## 1. Application assembly (`api/main.py`)
 
-The FastAPI app is created with a `lifespan` async context manager and a large
-middleware stack. Server is launched via `uv run uvicorn api.main:app --host 127.0.0.1 --port 5055`
-(the desktop launcher binds to `127.0.0.1` only).
+### 1.1 Router registration — every router carries the `/api` prefix
 
 ```python
-app = FastAPI(
-    title="Open Notebook API",
-    description="API for Open Notebook - Research Assistant",
-    lifespan=lifespan,
-)
+app.include_router(auth.router,            prefix="/api", tags=["auth"])
+app.include_router(config.router,          prefix="/api", tags=["config"])
+app.include_router(notebooks.router,       prefix="/api", tags=["notebooks"])
+app.include_router(search.router,          prefix="/api", tags=["search"])
+app.include_router(models.router,          prefix="/api", tags=["models"])
+app.include_router(transformations.router, prefix="/api", tags=["transformations"])
+app.include_router(notes.router,           prefix="/api", tags=["notes"])
+app.include_router(onp.router,             prefix="/api", tags=["onp"])
+app.include_router(gmail_router.router,    prefix="/api", tags=["onp-gmail"])
+app.include_router(embedding.router,       prefix="/api", tags=["embedding"])
+app.include_router(settings.router,        prefix="/api", tags=["settings"])
+app.include_router(context.router,         prefix="/api", tags=["context"])
+app.include_router(sources.router,         prefix="/api", tags=["sources"])
+app.include_router(insights.router,        prefix="/api", tags=["insights"])
+app.include_router(commands_router.router, prefix="/api", tags=["commands"])
+app.include_router(podcasts.router,        prefix="/api", tags=["podcasts"])
+app.include_router(studio.router,          prefix="/api", tags=["studio"])
+app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])
+app.include_router(episode_profiles.router,prefix="/api", tags=["episode-profiles"])
+app.include_router(speaker_profiles.router,prefix="/api", tags=["speaker-profiles"])
+app.include_router(chat.router,            prefix="/api", tags=["chat"])
+app.include_router(source_chat.router,     prefix="/api", tags=["source-chat"])
+app.include_router(credentials.router,     prefix="/api", tags=["credentials"])
+app.include_router(languages.router,       prefix="/api", tags=["languages"])
+app.include_router(filesystem.router,      prefix="/api", tags=["filesystem"])
+app.include_router(exports.router,         prefix="/api", tags=["exports"])
+# these routers already embed /api in their own paths → registered WITHOUT prefix:
+app.include_router(_local_models_router.router, tags=["health"])
+app.include_router(_mcp_router.router,          tags=["mcp"])
+app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])
+app.include_router(_system_router.router,       tags=["system"])
+app.include_router(_updates_router.router,      tags=["updates"])
 ```
 
-### 1.1 Lifespan startup sequence
+Full router set (`api/routers/`, 32 files):
+`auth, chat, commands, config, context, credentials, embedding,
+embedding_rebuild, episode_profiles, exports, filesystem, gmail, insights,
+languages, launcher_prefs, local_models, mcp, models, notebooks, notes, onp,
+podcasts, search, settings, source_chat, sources, speaker_profiles, studio,
+system, transformations, updates` (+ `__init__.py`).
 
-`lifespan()` (`api/main.py:202`) runs, in order:
+### 1.2 Middleware stack (order matters; CORS is outermost)
 
-1. `configure_logging("api")` — rotated file sink at `~/.open-notebook-plus/logs/api.log` (honors `ONP_LOG_DIR`, `ONP_LOG_LEVEL`, `ONP_LOG_JSON`).
-2. **Encryption-key check** — warns if neither `OPEN_NOTEBOOK_ENCRYPTION_KEY` nor `OPEN_NOTEBOOK_ENCRYPTION_KEYS` is set.
-3. **DB migrations** — `AsyncMigrationManager()`; if `needs_migration()` → `run_migration_up()`. **Fail-fast**: any exception raises `RuntimeError` and the API refuses to start with an outdated schema.
-4. **Podcast profile migration** — `migrate_podcast_profiles()` (non-fatal).
-5. **Legacy edge dedup** — `dedupe_legacy_edges()` (idempotent, non-fatal).
-6. **Stale-command reaper (startup)** — `UPDATE command SET status='failed' … WHERE status IN ['new','queued','running'] AND updated < (time::now() - 30m)`.
-7. **Periodic reaper** — background task on a 5-minute loop, anchored via `_track_task()` into module-level `_BACKGROUND_TASKS`.
-8. **Gmail digest scheduler** — `run_forever()` background task (wakes every 5 min).
-9. **DB pool warmup** — pre-acquires up to 2 connections with retry/backoff (`_WARMUP_RETRY_DELAYS_S = (0.5, 1.0, 2.0)`, each bounded by `asyncio.wait_for(timeout=10)`).
-10. **Checkpoint-prune loop** — trims LangGraph SQLite checkpoints (`ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS`, default 24; keeps 50 newest per thread).
-11. **Gmail TTL-cache prewarm** — `GmailIntegration.get()`.
+Registered inner→outer in `main.py`:
+1. **`PasswordAuthMiddleware`** — checks `Authorization: Bearer {password}`
+   against `OPEN_NOTEBOOK_PASSWORD` (default `open-notebook-change-me`; Docker
+   secret via `OPEN_NOTEBOOK_PASSWORD_FILE`). `excluded_paths` include `/`,
+   `/health`, `/livez`, `/readyz`, `/healthz/deep`, `/api/healthz/deep`,
+   `/api/system/env-refresh` (own launcher-token auth), `/docs`, `/openapi.json`,
+   `/redoc`, `/api/auth/status`, `/api/config`, `/api/version`,
+   `/api/local-models/health`, `/metrics`.
+2. **`SelectiveGZipMiddleware`** (`minimum_size=1000`) — GZip for large JSON,
+   but **bypassed entirely for streaming paths** (`/api/chat/stream`,
+   `/api/search/ask`, and any `POST …/messages`) so token chunks flush in real
+   time (audit H1).
+3. **`SecurityHeadersMiddleware`** — X-Content-Type-Options, X-Frame-Options,
+   Referrer-Policy, CSP (skipped on `/docs`).
+4. **`PrometheusMetricsMiddleware`** — records method/route/status/duration at
+   `/metrics`.
+5. **`RequestIDMiddleware`** — UUID4 per request → `X-Request-ID` + loguru bind.
+6. **`RateLimitMiddleware`** — env-gated (`ONP_RATE_LIMIT_PER_MIN`, default off).
+7. **`CORSMiddleware`** (outermost):
+   ```python
+   app.add_middleware(
+       CORSMiddleware,
+       allow_origins=CORS_ALLOWED_ORIGINS,          # default ["*"]
+       allow_credentials=not CORS_IS_DEFAULT_WILDCARD,  # honest wildcard contract
+       allow_methods=["*"],
+       allow_headers=["*"],
+   )
+   ```
 
-On shutdown: cancels all background tasks, `close_pool()`, and closes the chat / source-chat `AsyncSqliteSaver` connections.
+### 1.3 Lifespan handler (`@asynccontextmanager async def lifespan`)
 
-### 1.2 Middleware stack (registration order matters)
+Startup order:
+1. `configure_logging("api")` → rotated file sink (`~/.open-notebook-plus/logs/api.log`).
+2. Encryption-key check — warn if neither `OPEN_NOTEBOOK_ENCRYPTION_KEY` nor
+   `OPEN_NOTEBOOK_ENCRYPTION_KEYS` is set.
+3. **Run migrations**: `AsyncMigrationManager().run_migration_up()`. **Fail-fast**
+   — a migration error raises `RuntimeError` and the API refuses to start.
+4. Podcast profile data migration (legacy provider/model strings → Model records).
+5. `dedup_edges` sweep; reap stale commands (start + every 5 min).
+6. Pre-warm the DB pool; start the Gmail digest scheduler + checkpoint-prune loop.
 
-Starlette wraps in **reverse** registration order. Request flow:
+Shutdown: cancel background tasks, drain DB pool, close `AsyncSqliteSaver`
+connections.
 
-```
-request → CORS → RateLimit → RequestID → Prometheus → SecurityHeaders → SelectiveGZip → PasswordAuth → handler
-```
+Health routes: `/health` (back-compat), `/livez`, `/readyz`, `/healthz/deep`.
 
-| Middleware | Source | Purpose |
-|---|---|---|
-| `PasswordAuthMiddleware` | `api/auth.py` | Bearer-password gate (registered first → innermost) |
-| `SelectiveGZipMiddleware` | `api/main.py` | GZip ≥ 1000 bytes, **bypassed** for streaming paths |
-| `SecurityHeadersMiddleware` | `api/middleware/security_headers.py` | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, CSP |
-| `PrometheusMetricsMiddleware` | `api/middleware/metrics.py` | request timing → `/metrics` |
-| `RequestIDMiddleware` | `api/middleware/request_id.py` | UUID4 per request, `X-Request-ID` response header |
-| `RateLimitMiddleware` | `api/rate_limit.py` | env-gated (`ONP_RATE_LIMIT_PER_MIN`, default OFF) |
-| `CORSMiddleware` | starlette | registered last → outermost (handles preflight OPTIONS) |
+### 1.4 Global exception handlers + HTTP-status map
 
-**Streaming GZip bypass** (`_NO_GZIP_PREFIXES = ("/api/chat/stream", "/api/search/ask")`, plus any `POST …/messages`) — token streams use `application/x-ndjson` / `text/plain`, so per-chunk GZip would defeat real-time delivery.
-
-**CORS**: `CORS_ALLOWED_ORIGINS` parsed from `CORS_ORIGINS` env (default `["*"]`). When wildcard, `allow_credentials=False` (the Fetch spec forbids `*` + credentials).
-
-### 1.3 The `/api` prefix
-
-Every router is mounted under `/api` via `app.include_router(<router>.router, prefix="/api", tags=[...])`. Four routers (`local_models`, `mcp`, `launcher_prefs`, `system`) already embed `/api` in their own paths and are mounted **without** the prefix.
-
-### 1.4 Health / probe endpoints (root-mounted, auth-exempt)
-
-| Path | Method | Returns | Notes |
-|---|---|---|---|
-| `/` | GET | `{"message": "Open Notebook API is running"}` | |
-| `/health` | GET | `{"status": "healthy"}` | back-compat; same shape as `/livez` |
-| `/livez` | GET | `{"status": "alive"}` | trivial, no DB call, <1ms |
-| `/readyz` | GET | `{"status": "ready"|"not_ready", "checks": {...}}` | **200** ready / **503** not ready; checks DB online + migrations applied |
-| `/healthz/deep` | GET | `{"status": "healthy"|"degraded"|"not_ready", "checks": {...}}` | per-subsystem; `?probe_providers=true` probes each credential |
-| `/api/healthz/deep` | GET | alias of above | added v0.7.148 for the Setup Wizard rewrite path |
-| `/api/version` | GET | `{"version": "...", "name": "Open Notebook Plus"}` | splash badge |
-| `/metrics` | GET | Prometheus exposition | optional `ONP_METRICS_AUTH_TOKEN` bearer gate (constant-time compare) |
-
-`/readyz` example body:
-
-```json
-{
-  "status": "ready",
-  "checks": {
-    "database": "online",
-    "database_error": null,
-    "migrations_applied": true,
-    "migrations_pending": false,
-    "migrations_error": null
-  }
-}
-```
-
-`/healthz/deep` checks: `database`, `migrations` (must-have → 503 on fail), plus optional `embedding_model`, `chat_model`, `command_registry`, and `upstream_providers`. Optional failures yield `"degraded"` (still 200).
-
-### 1.5 Global exception handlers → HTTP status mapping
-
-Typed exceptions from `open_notebook/exceptions.py` are mapped by `@app.exception_handler(...)` registrations. All error responses carry CORS headers via `_cors_headers(request)`.
-
-| Exception (base `OpenNotebookError`) | HTTP | Handler |
-|---|---|---|
-| `NotFoundError` | 404 | `not_found_error_handler` |
-| `InvalidInputError` | 400 | `invalid_input_error_handler` |
-| `AuthenticationError` | 401 | `authentication_error_handler` |
-| `RateLimitError` | 429 | `rate_limit_error_handler` |
-| `ConfigurationError` | 422 | `configuration_error_handler` |
-| `NetworkError` | 502 | `network_error_handler` |
-| `ExternalServiceError` | 502 | `external_service_error_handler` |
-| `OpenNotebookError` (base) | 500 | `open_notebook_error_handler` |
-| `StarletteHTTPException` | passthrough | `custom_http_exception_handler` (preserves status + adds CORS) |
-
-Full hierarchy (`open_notebook/exceptions.py`):
+Custom exceptions from `open_notebook.exceptions` are mapped to HTTP codes; every
+error response re-injects CORS headers (`_cors_headers(request)`):
 
 ```python
-class OpenNotebookError(Exception): ...
-class DatabaseOperationError(OpenNotebookError): ...
-class UnsupportedTypeException(OpenNotebookError): ...
-class InvalidInputError(OpenNotebookError): ...
-class NotFoundError(OpenNotebookError): ...
-class AuthenticationError(OpenNotebookError): ...
-class ConfigurationError(OpenNotebookError): ...
-class ExternalServiceError(OpenNotebookError): ...
-class RateLimitError(OpenNotebookError): ...
-class FileOperationError(OpenNotebookError): ...
-class NetworkError(OpenNotebookError): ...
-class NoTranscriptFound(OpenNotebookError): ...
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request, exc):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail},
+                        headers={**(exc.headers or {}), **_cors_headers(request)})
+
+@app.exception_handler(NotFoundError)        # → 404
+@app.exception_handler(InvalidInputError)    # → 400
+@app.exception_handler(AuthenticationError)  # → 401
+@app.exception_handler(RateLimitError)       # → 429
+@app.exception_handler(ConfigurationError)   # → 422
+@app.exception_handler(NetworkError)         # → 502
+@app.exception_handler(ExternalServiceError) # → 502
+@app.exception_handler(OpenNotebookError)    # → 500 (base)
 ```
+
+| Exception | Status | When |
+|-----------|--------|------|
+| `NotFoundError` | 404 | resource missing |
+| `InvalidInputError` | 400 | bad request data / bad pagination |
+| `AuthenticationError` | 401 | invalid/missing key |
+| `RateLimitError` | 429 | provider rate limit |
+| `ConfigurationError` | 422 | model not found / misconfig |
+| `NetworkError` | 502 | can't reach provider |
+| `ExternalServiceError` | 502 | provider 5xx / context-length |
+| `OpenNotebookError` | 500 | anything else |
+
+LangGraph nodes call `classify_error()` (`open_notebook.utils.error_classifier`)
+to turn raw LLM/Esperanto exceptions into these typed exceptions with
+user-friendly messages before they reach the handlers.
+
+### 1.5 The HTTPException-reraise convention
+
+Every non-trivial endpoint follows this pattern so typed 4xx/5xx are not
+clobbered to 500 by the catch-all. Representative example
+(`api/routers/sources.py`, `GET /sources/{source_id}`):
+
+```python
+@router.get("/sources/{source_id}", response_model=SourceResponse)
+async def get_source(source_id: str):
+    try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+        ...
+        if source.command:
+            try:
+                status = await source.get_status()
+                processing_info = await source.get_processing_progress()
+            except HTTPException:
+                raise                       # re-raise typed HTTP errors
+            except Exception as e:
+                logger.warning(f"Failed to get status for source {source_id}: {e}")
+                status = "unknown"
+        ...
+        return SourceResponse(...)
+    except HTTPException:                    # (1) let 4xx/5xx bubble unchanged
+        raise
+    except NotFoundError:                    # (2) map typed domain error
+        raise HTTPException(status_code=404, detail="Source not found")
+    except Exception as e:                   # (3) everything else → 500
+        logger.error(f"Error fetching source {source_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching source")
+```
+
+Streaming/notebook endpoints add `except (NotFoundError, InvalidInputError): raise`
+before the catch-all (see `GET /notebooks/{id}/suggested-questions`).
 
 ---
 
-## 2. Error classification (`open_notebook/utils/error_classifier.py`)
-
-`classify_error(exception) -> tuple[type[OpenNotebookError], str]` converts raw
-LLM/Esperanto/LangChain errors into a typed exception + a user-friendly message,
-used in graph nodes and SSE handlers.
-
-**Mechanism**: lowercases `"{type_name}: {str(exception)}"` and matches against an
-ordered keyword ruleset. First match wins; `message=None` passes the original
-(truncated to 200 chars) through.
-
-| Keywords (sample) | Exception | Message |
-|---|---|---|
-| `authentication`, `unauthorized`, `invalid api key`, `401` | `AuthenticationError` | "Authentication failed. Please check your API key in Settings -> Credentials." |
-| `rate limit`, `429`, `quota exceeded` | `RateLimitError` | "Rate limit exceeded. Please wait a moment and try again." |
-| `model not found`, `does not exist` | `ConfigurationError` | passthrough |
-| `model not loaded`, `still loading`, `warming up` | `ExternalServiceError` | "The local model is still loading. Please wait a few seconds and try again." |
-| `connection refused`, `timed out`, `connecterror` | `NetworkError` | local-server hint (llama.cpp / Ollama) |
-| `context length`, `token limit`, `max_tokens` | `ExternalServiceError` | "Content too large for the selected model…" |
-| `413`, `payload too large` | `ExternalServiceError` | payload-size hint |
-| `500`, `502`, `503`, `overloaded` | `ExternalServiceError` | "The AI provider is temporarily unavailable…" |
-| (unmatched) | `ExternalServiceError` | `"AI service error: {truncated}"` + warning log |
-
-A companion `classify_sidecar_error(tail_text) -> str | None` (v0.8.38) maps the last
-~50 lines of a local sidecar's stderr to a one-line hint (e.g. `"failed to load model"`
-→ "Model file could not be loaded — check the GGUF path and integrity.").
-
----
-
-## 3. The `surreal-commands` job-submission pattern
-
-Long-running work (source ingest, embeddings, podcast generation, Studio extract) is
-queued to the **`surreal-commands`** worker rather than handled inline.
-
-**Submission** (from `api/routers/sources.py:521`):
+## 2. Representative Pydantic schemas (`api/models.py` + service files)
 
 ```python
-import commands.source_commands  # noqa: F401  — ensures command is registered
-
-command_input = SourceProcessingInput(
-    source_id=str(source.id),
-    content_state=content_state,
-    notebook_ids=source_data.notebooks,
-    transformations=transformation_ids,
-    embed=source_data.embed,
-)
-
-command_id = await CommandService.submit_command_job(
-    "open_notebook",   # app name
-    "process_source",  # command name
-    command_input.model_dump(),
-)
-
-source.command = ensure_record_id(command_id)  # command_id includes 'command:' prefix
-await source.save()
-```
-
-> **Critical quirk**: `surreal_commands.submit_command` is **synchronous**; calling it
-> from `async def` must be wrapped in `asyncio.to_thread`. `CommandService.submit_command_job`
-> is the async wrapper used by routers.
-
-**Status tracking** — `api/routers/commands.py`:
-
-| Method | Path | Request / Query | Response model | Status |
-|---|---|---|---|---|
-| POST | `/api/commands/jobs` | `CommandExecutionRequest{command, app, input}` | `CommandJobResponse{job_id, status, message}` | 200 / 500 |
-| GET | `/api/commands/jobs/{job_id}` | — | `CommandJobStatusResponse` | 200 / **404** if unknown / 500 |
-| GET | `/api/commands/jobs` | `command_filter?, status_filter?, limit=50` | `list[dict]` | 200 / 500 |
-| DELETE | `/api/commands/jobs/{job_id}` | — | `{job_id, cancelled}` | 200 / **404** / **409** (not cancellable) / 500 |
-| GET | `/api/commands/registry/debug` | — | `{total_commands, commands_by_app, command_items}` | 200 |
-
-```python
-class CommandJobStatusResponse(BaseModel):
-    job_id: str
-    status: str
-    result: Optional[dict[str, Any]] = None
-    error_message: Optional[str] = None
-    created: Optional[str] = None
-    updated: Optional[str] = None
-    progress: Optional[dict[str, Any]] = None
-```
-
-Statuses observed: `new`, `queued`, `running`, `completed`, `failed`, `canceled`.
-The frontend polls every 2s while a source/episode status is in `{new, queued, running}`.
-
----
-
-## 4. Router catalog
-
-All routers live in `api/routers/`. Pydantic request/response schemas live in
-`api/models.py` (shared) or inline in the router module.
-
-### 4.1 `notebooks.py`
-
-| Method | Path | Request | Response | Notes |
-|---|---|---|---|---|
-| GET | `/api/notebooks` | `archived?`, `order_by="updated desc"` | `list[NotebookResponse]` | `order_by` validated against allowlist `{name, created, updated}` × `{asc, desc}` to block SurrealQL injection |
-| POST | `/api/notebooks` | `NotebookCreate{name, description}` | `NotebookResponse` | |
-| GET | `/api/notebooks/{id}/delete-preview` | — | `NotebookDeletePreview{note_count, exclusive_source_count, shared_source_count}` | |
-| GET | `/api/notebooks/{id}` | — | `NotebookResponse` | 404 if missing |
-| PUT | `/api/notebooks/{id}` | `NotebookUpdate{name?, description?, archived?}` | `NotebookResponse` | |
-| POST | `/api/notebooks/{nb}/sources/{src}` | — | `{message}` | idempotent link via `RELATE $src->reference->$nb` |
-| DELETE | `/api/notebooks/{nb}/sources/{src}` | — | `{message}` | unlink reference edge |
-| DELETE | `/api/notebooks/{id}` | `delete_exclusive_sources=false` | `NotebookDeleteResponse{deleted_notes, deleted_sources, unlinked_sources}` | cascade; cleans LangGraph checkpoint threads (v0.8.48) |
-
-Counts use SurrealDB edge traversal: `count(<-reference.in) as source_count`, `count(<-artifact.in) as note_count`.
-
-```python
-class NotebookResponse(BaseModel):
-    id: str
+class NotebookCreate(BaseModel):
     name: str
-    description: str
-    archived: bool
-    created: Optional[str] = None
-    updated: Optional[str] = None
-    source_count: int
-    note_count: int
-```
+    description: str = ""
 
-### 4.2 `sources.py`
+class NoteCreate(BaseModel):
+    title: Optional[str] = None
+    content: str                      # required, must be non-blank
+    note_type: Optional[str] = "human"   # "human" | "ai"
+    notebook_id: Optional[str] = None
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/api/sources` | query filters | `list[SourceListResponse]` |
-| POST | `/api/sources` | `SourceCreate` (JSON **or** multipart `UploadFile`) via `Depends(parse_source_form_data)` | `SourceResponse` |
-| POST | `/api/sources/json` | `SourceCreate` | `SourceResponse` |
-| GET | `/api/sources/{id}` | — | `SourceResponse` |
-| GET | `/api/sources/{id}/download` | — | file stream |
-| GET | `/api/sources/{id}/status` | — | `SourceStatusResponse` |
-| PUT | `/api/sources/{id}` | update body | `SourceResponse` |
-| POST | `/api/sources/{id}/retry` | — | `SourceResponse` |
-| DELETE | `/api/sources/{id}` | — | `{message}` |
-| GET | `/api/sources/{id}/insights` | — | `list[SourceInsightResponse]` |
-| POST | `/api/sources/{id}/insights` | transformation body | insight job |
+class SourceCreate(BaseModel):
+    notebook_id: Optional[str] = None    # deprecated single-link
+    notebooks: Optional[list[str]] = None  # multi-notebook
+    type: str                            # "link" | "upload" | "text"
+    url: Optional[str] = None            # link
+    file_path: Optional[str] = None      # upload
+    content: Optional[str] = None        # text
+    title: Optional[str] = None
+    topics: Optional[list[str]] = []
+    provenance: Optional[dict[str, Any]] = {}
+    source_type: Optional[Literal["link","upload","text","web_import","deep_research_report"]] = None
+    transformations: Optional[list[str]] = []
+    embed: bool = True
+    delete_source: bool = False
+    async_processing: bool = True
 
-`type` ∈ `{link, upload, text}`. Upload path enforces `ONP_SOURCE_UPLOAD_MAX_BYTES`
-(default 500 MB → **413** on overflow) and validates the file path is inside `UPLOADS_FOLDER`
-(LFI guard). `async_processing=true` → queues `process_source` command; `false` → sync
-`execute_command_sync`.
+class SearchRequest(BaseModel):
+    query: str
+    type: Literal["text", "vector"] = "text"
+    limit: int = 100                     # 1..1000
+    search_sources: bool = True
+    search_notes: bool = True
+    minimum_score: float = 0.3           # vector floor
 
-### 4.3 `notes.py`
+class AskRequest(BaseModel):
+    question: str
+    strategy_model: str
+    answer_model: str
+    final_answer_model: str
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/api/notes` | filters | `list[NoteResponse]` |
-| POST | `/api/notes` | `NoteCreate{title?, content, note_type="human", notebook_id?}` | `NoteResponse` |
-| GET | `/api/notes/{id}` | — | `NoteResponse` |
-| PUT | `/api/notes/{id}` | `NoteUpdate` | `NoteResponse` |
-| DELETE | `/api/notes/{id}` | — | `{message}` |
-
-`NoteResponse` carries `command_id` (the fire-and-forget `embed_note` job submitted on save).
-
-### 4.4 `chat.py`
-
-Session CRUD + execution + streaming. Key schemas:
-
-```python
+# api/routers/chat.py
 class ExecuteChatRequest(BaseModel):
     session_id: str
     message: str
-    context: dict[str, Any]
+    context: dict[str, Any]              # sources+notes, from /chat/context
     model_override: Optional[str] = None
-    disabled_mcp_servers: Optional[List[str]] = None   # v0.8.42 per-turn MCP picker
-    bypass_privacy_gate: bool = False                  # v0.8.63 explicit cloud consent
+    disabled_mcp_servers: Optional[List[str]] = None
+    bypass_privacy_gate: bool = False
 
 class ExecuteChatResponse(BaseModel):
     session_id: str
     messages: list[ChatMessage]
-    selected_provider: Optional[str] = None     # 'local' | 'cloud' | None (smart router)
-    selected_model_id: Optional[str] = None
-    offline_fallback: Optional[Dict[str, Any]] = None
-    mcp_tool_calls: Optional[List[Dict[str, Any]]] = None
-    privacy_gated: Optional[bool] = None
-    privacy_categories: Optional[List[str]] = None   # labels only, never secret values
-    agent_state: Optional[str] = None            # 'complete' | 'clarify' | 'truncated'
+    selected_provider: Optional[str]     # "local" | "cloud" (smart router)
+    selected_model_id: Optional[str]
+    offline_fallback: Optional[Dict[str, Any]]
+    mcp_tool_calls: Optional[List[Dict[str, Any]]]
+    privacy_gated: Optional[bool]
+    privacy_categories: Optional[List[str]]
+    agent_state: Optional[str]           # FSM terminal state
+
+# api/podcast_service.py
+class PodcastGenerationRequest(BaseModel):
+    episode_profile: str
+    speaker_profile: str
+    episode_name: str
+    content: Optional[str] = None
+    notebook_id: Optional[str] = None
+    briefing_suffix: Optional[str] = None
+    episode_length: Optional[str] = None # "short"|"medium"|"long" overrides profile
+    review_outline: bool = False
+
+# api/models.py — credentials
+class CreateCredentialRequest(BaseModel):
+    name: str
+    provider: str                        # openai/anthropic/.../ollama/azure/vertex/openai_compatible
+    modalities: list[str]                # language/embedding/text_to_speech/speech_to_text
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    endpoint: Optional[str] = None       # azure
+    api_version: Optional[str] = None
+    endpoint_llm / endpoint_embedding / endpoint_stt / endpoint_tts: Optional[str]  # azure
+    project / location / credentials_path: Optional[str]  # vertex
 ```
-
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/api/chat/sessions` | `notebook_id` (req), `limit` (cap 1000) | `list[ChatSessionResponse]` |
-| POST | `/api/chat/sessions` | `CreateSessionRequest` | `ChatSessionResponse` |
-| GET | `/api/chat/sessions/{id}` | — | `ChatSessionResponse` |
-| PUT | `/api/chat/sessions/{id}` | `UpdateSessionRequest` | `ChatSessionResponse` |
-| DELETE | `/api/chat/sessions/{id}` | — | `SuccessResponse` |
-| POST | `/api/chat/execute` | `ExecuteChatRequest` | `ExecuteChatResponse` |
-| POST | `/api/chat/stream` | `ExecuteChatRequest` | **NDJSON stream** |
-| POST | `/api/chat/context` | `BuildContextRequest` | `BuildContextResponse{context, token_count, char_count}` |
-
-**`/api/chat/stream` wire format** — `StreamingResponse(media_type="application/x-ndjson")`
-with headers `X-Accel-Buffering: no`, `Cache-Control: no-cache, no-transform`. The generator
-`_stream_chat_events()` emits newline-delimited JSON objects:
-
-- `{"type":"start","session_id":...}`
-- per-token deltas filtered from LangGraph `astream_events` `on_chat_model_stream`
-- `{"type":"error","detail":...}` on failure (partial-stream safe)
-
-Per-session serialization uses `get_session_lock(full_session_id)` (manual acquire/finally
-release across the multi-yield body) to prevent concurrent turns clobbering the checkpoint.
-Client disconnects are detected between yields and stop the stream (saves local-LLM compute).
-
-### 4.5 `source_chat.py`
-
-Chat scoped to a single source. Routes under `/api/sources/{source_id}/chat/...`:
-
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/sources/{source_id}/chat/sessions` | create source-chat session |
-| GET | `/api/sources/{source_id}/chat/sessions` | list |
-| GET | `/api/sources/{source_id}/chat/sessions/{id}` | get |
-| PUT | `/api/sources/{source_id}/chat/sessions/{id}` | update |
-| DELETE | `/api/sources/{source_id}/chat/sessions/{id}` | delete |
-| POST | `/api/sources/{source_id}/chat/sessions/{id}/messages` | **streaming** (`text/plain`, GZip-bypassed) |
-
-Backed by the `source_chat` LangGraph with its own `AsyncSqliteSaver`.
-
-### 4.6 `podcasts.py`
-
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/api/podcasts/generate` | `PodcastGenerationRequest` | `PodcastGenerationResponse` |
-| GET | `/api/podcasts/jobs/{job_id}` | — | job status |
-| GET | `/api/podcasts/episodes` | filters | `list[PodcastEpisodeResponse]` |
-| GET | `/api/podcasts/episodes/{id}` | — | `PodcastEpisodeResponse` |
-| GET | `/api/podcasts/episodes/{id}/audio` | — | audio stream |
-| POST | `/api/podcasts/episodes/{id}/retry` | — | retry (no silent-audio fallback; TTS failure marks episode failed) |
-| POST | `/api/podcasts/episodes/{id}/cancel` | — | cancel running job |
-| PUT | `/api/podcasts/episodes/{id}/outline` | edited outline | staged-generation outline edit |
-| POST | `/api/podcasts/episodes/{id}/approve-outline` | — | proceed to transcript/audio |
-| DELETE | `/api/podcasts/episodes/{id}` | — | delete |
-| POST | `/api/podcasts/suggest` | suggest body | `SuggestResponse` |
-
-Jobs use `max_attempts: 1` to prevent duplicate episode records. Generation is orchestrated
-by `api/podcast_service.py` (outline → transcript → TTS) via `surreal-commands`.
-
-### 4.7 `transformations.py`
-
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/api/transformations` | — | `list[TransformationResponse]` |
-| POST | `/api/transformations` | `TransformationCreate{name, title, description, prompt, apply_default}` | `TransformationResponse` |
-| POST | `/api/transformations/{id}/optimize` | — | optimized prompt (SkillOpt) |
-| POST | `/api/transformations/execute` | `TransformationExecuteRequest{transformation_id, input_text, model_id}` | `TransformationExecuteResponse{output, transformation_id, model_id}` |
-| GET | `/api/transformations/default-prompt` | — | `DefaultPromptResponse` |
-| PUT | `/api/transformations/default-prompt` | `DefaultPromptUpdate` | `DefaultPromptResponse` |
-| GET | `/api/transformations/{id}` | — | `TransformationResponse` |
-| PUT | `/api/transformations/{id}` | `TransformationUpdate` | `TransformationResponse` |
-| DELETE | `/api/transformations/{id}` | — | `{message}` |
-
-### 4.8 `models.py`
-
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/api/models` | — | `list[ModelResponse]` |
-| POST | `/api/models` | `ModelCreate{name, provider, type, credential?}` | `ModelResponse` |
-| DELETE | `/api/models/{id}` | — | `{message}` |
-| POST | `/api/models/{id}/test` | — | `ModelTestResponse` |
-| GET | `/api/models/defaults` | — | `DefaultModelsResponse` |
-| PUT | `/api/models/defaults` | partial defaults | `DefaultModelsResponse` |
-| GET | `/api/models/providers` | — | `ProviderAvailabilityResponse{available, unavailable, supported_types}` |
-| GET/POST | `/api/models/sync/{provider}` & `/api/models/sync` | — | provider/all sync |
-| GET | `/api/models/count/{provider}` | — | `ProviderModelCountResponse` |
-| GET | `/api/models/by-provider/{provider}` | — | `list[ModelResponse]` |
-| POST | `/api/models/auto-assign` & `/api/models/auto-assign-capability` | — | `AutoAssignResult` |
-
-`DefaultModelsResponse` covers chat / transformation / large-context / TTS / STT /
-embedding / tools / reasoning defaults plus the smart-router knobs (`auto_route_enabled`,
-`auto_route_cloud`, `auto_route_provider_pref`).
-
-### 4.9 `settings.py`
-
-| Method | Path | Response |
-|---|---|---|
-| GET | `/api/settings` | `SettingsResponse` |
-| PUT | `/api/settings` | `SettingsResponse` |
-| GET | `/api/settings/observability` | `ObservabilityResponse` |
-
-### 4.10 `system.py` (mounted without `/api` prefix — paths embed it)
-
-| Method | Path | Auth | Notes |
-|---|---|---|---|
-| POST | `/api/system/env-refresh` | **own bearer** (`OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`) | launcher → API env push (e.g. `n_ctx` after hot-swap); exempt from password middleware |
-| GET | `/api/system/db-repair-needed` | password | |
-| GET | `/api/system/network-status` | password | online/offline state |
-
-### 4.11 `mcp.py` (paths embed `/api`)
-
-| Method | Path | Status |
-|---|---|---|
-| GET | `/api/mcp` | list servers |
-| GET | `/api/mcp/recommendations` | suggested connectors |
-| GET | `/api/mcp/web-search` | web-search MCP config |
-| POST | `/api/mcp` | **201** create |
-| PATCH | `/api/mcp/{server_id}` | update |
-| DELETE | `/api/mcp/{server_id}` | delete |
-| POST | `/api/mcp/{server_id}/test` | connection test |
-
-### 4.12 `gmail.py` (mounted at `/api`, internal prefix per route)
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/gmail/status` | `GmailStatusResponse` |
-| POST | `/api/gmail/credentials` | store OAuth client |
-| POST | `/api/gmail/settings` | digest schedule |
-| POST | `/api/gmail/disconnect` | |
-| DELETE | `/api/gmail/credentials` | |
-| GET | `/api/gmail/connect` | start OAuth flow |
-| GET | `/api/gmail/callback` | OAuth redirect → `HTMLResponse` |
-| POST | `/api/gmail/send-test` | test digest |
-
-### 4.13 `credentials.py` — provider key management
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/credentials` | `?provider=` filter; **never returns api_key values** |
-| GET | `/api/credentials/status` | `{configured, source, encryption_configured}` |
-| GET | `/api/credentials/env-status` | which providers have env vars |
-| GET | `/api/credentials/by-provider/{provider}` | |
-| POST | `/api/credentials` | create (requires `OPEN_NOTEBOOK_ENCRYPTION_KEY`) |
-| GET/PUT/DELETE | `/api/credentials/{id}` | get / update / delete |
-| POST | `/api/credentials/{id}/test` | minimal upstream call via `connection_tester` |
-| POST | `/api/credentials/{id}/discover` | list available models |
-| POST | `/api/credentials/{id}/register-models` | register discovered |
-| POST | `/api/credentials/migrate-from-env` | env → Credential records |
-| POST | `/api/credentials/migrate-from-provider-config` | legacy ProviderConfig → Credential |
-
-13 providers: simple-key (`openai`, `anthropic`, `google`, `groq`, `mistral`, `deepseek`,
-`xai`, `openrouter`, `voyage`, `elevenlabs`), URL (`ollama`), multi-field (`azure`, `vertex`,
-`openai_compatible`). URL fields pass `_validate_url()` SSRF guard (allows localhost/private
-IPs for self-hosted servers).
-
-### 4.14 Other routers
-
-| Router | Representative paths |
-|---|---|
-| `search.py` | POST `/api/search`, POST `/api/search/ask` (NDJSON stream), POST `/api/search/ask/simple` |
-| `studio.py` | POST `/api/generate` (one-shot upload + mode → notebook/podcast) |
-| `insights.py` | GET/DELETE `/api/insights/{id}`, POST `/api/insights/{id}/save-as-note` |
-| `embedding.py` | POST `/api/embed`, POST embedding ops |
-| `embedding_rebuild.py` | mounted at `/api/embeddings` |
-| `context.py` | POST `/api/notebooks/{id}/context` |
-| `config.py` | GET `/api/config` (runtime config for the frontend; auth-exempt) |
-| `episode_profiles.py`, `speaker_profiles.py` | podcast voice/profile CRUD |
-| `exports.py`, `filesystem.py` | host filesystem picker + notebook/note export to disk |
-| `local_models.py` | GET `/api/local-models/health` (auth-exempt splash poll) + sidecar mgmt |
-| `launcher_prefs.py` | launcher env-var preferences UI |
-| `languages.py` | GET `/api/languages` (podcast languages via pycountry+babel) |
-| `onp.py` | desktop-wrapper endpoints |
 
 ---
 
-## 5. Common router patterns
+## 3. Endpoint catalog by router
 
-- **Async throughout**: every DB query, graph invoke, AI call is `await`-ed.
-- **Typed-exception passthrough**: handlers re-raise `HTTPException` and `(NotFoundError, InvalidInputError)` *before* the broad `except Exception` (which returns generic 500), so the global handlers map them correctly (v0.7.179).
-- **Sanitized 500 bodies**: internal errors log full detail but return a generic `detail` string (e.g. `/readyz` migration errors, decryption errors) to avoid leaking driver frames / paths / DSNs.
-- **Repository functions**: `repo_query`, `repo_create`, `repo_upsert`, `ensure_record_id` from `open_notebook.database.repository`; lazy connection pool.
-- **Datetime serialization**: `api/utils/iso.py:iso()` for Safari-safe `new Date()` compatibility.
-- **No per-resource permission checks**: single-user model; all endpoints trust the password middleware (see doc 06).
+Paths below are the **full path including the `/api` prefix**. Method · path ·
+request body · response · logic.
+
+### 3.1 `notebooks.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/notebooks` | — | `list[NotebookResponse]` | List; `?archived=`, `?order_by=` (allowlist name/created/updated). Computes `source_count`/`note_count` via reference/artifact edges. |
+| POST | `/api/notebooks` | `NotebookCreate` | `NotebookResponse` | Create; returns id + ISO timestamps + zero counts. |
+| GET | `/api/notebooks/{id}` | — | `NotebookResponse` | Fetch one w/ counts. |
+| PUT | `/api/notebooks/{id}` | `NotebookUpdate` | `NotebookResponse` | Update name/description/archived. |
+| DELETE | `/api/notebooks/{id}` | — | `NotebookDeleteResponse` | Cascade delete (see doc 03 §5.5); cleans LangGraph checkpoint threads for cascade-deleted sessions. |
+| GET | `/api/notebooks/{id}/delete-preview` | — | `NotebookDeletePreview` | `{note_count, exclusive_source_count, shared_source_count}` for the confirm dialog. |
+| POST | `/api/notebooks/{id}/sources/{source_id}` | — | success | Idempotent `reference` edge link. |
+| DELETE | `/api/notebooks/{id}/sources/{source_id}` | — | success | Unlink; optionally delete source if orphaned. |
+| GET | `/api/notebooks/{id}/suggested-questions` | `?limit=4` (1..8) | `{"questions":[...]}` | LLM starter questions grounded in source titles/topics; **best-effort** — returns `[]` on any generation failure, `NotFound/InvalidInput` still surface. 30s timeout. |
+| GET | `/api/notebooks/{id}/graph` | — | `NotebookGraphResponse` | Mind-map: `Notebook.get_graph()` → hub + source/note nodes + reference/artifact edges. |
+| POST | `/api/notebooks/{id}/discover-sources` | `DiscoverSourcesRequest` | `DiscoverSourcesResponse` | Guarded web search (`open_notebook.tools.web_search`); returns `{enabled, provider, results:[{title,url,snippet}]}`. `enabled=False` (HTTP 200) when no provider configured; search errors degrade to empty, never 500. |
+
+### 3.2 `sources.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/sources` | — | `list[SourceListResponse]` | List; filter by notebook/status; summary preview + insights_count. |
+| POST | `/api/sources` | `SourceCreate` | `SourceResponse` | Ingest link/upload/text; async extract→embed→transform; returns command_id + status. |
+| POST | `/api/sources/json` | `SourceCreate` | `SourceResponse` | JSON variant (testing). |
+| GET | `/api/sources/{id}` | — | `SourceResponse` | Full detail: full_text, embedded_chunks, notebooks list, insights_count, file_available, extraction_quality. |
+| PUT | `/api/sources/{id}` | `SourceUpdate` | `SourceResponse` | Update title/topics/provenance/source_type. |
+| DELETE | `/api/sources/{id}` | — | success | Delete + unlink + file cleanup (see doc 03 §5.2). |
+| POST | `/api/sources/{id}/retry` | — | `SourceResponse` | Re-trigger failed extraction/embed/transform. |
+| GET | `/api/sources/{id}/status` | — | `SourceStatusResponse` | Poll processing status + `processing_info` + `error_message`. |
+| HEAD | `/api/sources/{id}/download` | — | 200/404/500 | File-availability probe. |
+| GET | `/api/sources/{id}/download` | — | `FileResponse` | Stream original file, path-containment checked vs upload root. |
+| POST | `/api/sources/{id}/locate-passage` | `LocatePassageRequest` | `LocatePassageResponse` | (v0.8.78) Find a citation passage's char offsets in `full_text` for jump-to-highlight; returns `{start,end,snippet}`. |
+| GET | `/api/sources/{id}/insights` | — | `list[SourceInsightResponse]` | List insights for the source. |
+| POST | `/api/sources/{id}/insights` | `CreateSourceInsightRequest` | `InsightCreationResponse` | Apply a transformation → insight (async via `create_insight` command). |
+
+### 3.3 `notes.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/notes` | `?notebook_id=` | `list[NoteResponse]` | List (paginated). |
+| POST | `/api/notes` | `NoteCreate` | `NoteResponse` | Create; optional notebook link; type human/ai. `Note.save()` fires `embed_note`. |
+| GET | `/api/notes/{id}` | — | `NoteResponse` | Fetch. |
+| PUT | `/api/notes/{id}` | `NoteUpdate` | `NoteResponse` | Update content/title/type. |
+| DELETE | `/api/notes/{id}` | — | success | Delete + sweep artifact edges. |
+
+### 3.4 `chat.py` (session CRUD + turn execution + SSE)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/chat/sessions` | `?notebook_id&limit=100&offset=0` | `list[ChatSessionResponse]` | Parallel LangGraph checkpoint reads (N+1 fix). |
+| POST | `/api/chat/sessions` | `CreateSessionRequest` | `ChatSessionResponse` | New session, `refers_to` link to notebook; optional title + model_override. |
+| GET | `/api/chat/sessions/{id}` | — | `ChatSessionWithMessagesResponse` | Session + messages from checkpoint. |
+| PUT | `/api/chat/sessions/{id}` | `UpdateSessionRequest` | `ChatSessionResponse` | Update title/model_override/disabled_mcp_servers. |
+| DELETE | `/api/chat/sessions/{id}` | — | success | Delete session; fire `memory_summarize_session` if configured; clean checkpoints. |
+| POST | `/api/chat/execute` | `ExecuteChatRequest` | `ExecuteChatResponse` | One synchronous chat turn; returns messages + `selected_provider` (smart router) + `mcp_tool_calls` + privacy info. |
+| POST | `/api/chat/stream` | `ExecuteChatRequest` | **SSE / NDJSON** | Stream tokens (`application/x-ndjson`); GZip-exempt; per-token `is_disconnected()` check. |
+| POST | `/api/chat/context` | `BuildContextRequest` | `BuildContextResponse` | Build notebook context (sources+notes) + token/char counts. |
+
+**Streaming pattern**: `StreamingResponse` yielding NDJSON lines
+`{"type": ..., "data": ...}` / `{"token": "..."}`. The handler polls
+`request.is_disconnected()` each token and cancels the LangGraph reader with
+`reader.cancel()` before release (recurring bug class per CLAUDE.md).
+
+### 3.5 `source_chat.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/sources/{sid}/chat/sessions` | `CreateSourceChatSessionRequest` | `SourceChatSessionResponse` | Session scoped to ONE source (`refers_to` → source). |
+| GET | `/api/sources/{sid}/chat/sessions` | — | `list[...]` | List source-chat sessions. |
+| GET | `/api/sources/{sid}/chat/sessions/{id}` | — | `...WithMessages` | Session + messages. |
+| PUT | `/api/sources/{sid}/chat/sessions/{id}` | `Update...` | `...Response` | Update title/model_override. |
+| DELETE | `/api/sources/{sid}/chat/sessions/{id}` | — | success | Delete. |
+| POST | `/api/sources/{sid}/chat/sessions/{id}/messages` | `ExecuteSourceChatRequest` | **SSE / NDJSON** | Stream a turn; context = the source's `full_text` only. |
+
+### 3.6 `search.py` (search + /ask)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/search` | `SearchRequest` | `SearchResponse` | Text (BM25 `fn::text_search`) or vector (`fn::vector_search`) search across sources+notes; returns results + total_count + search_type. |
+| POST | `/api/search/ask` | `AskRequest` | **SSE / NDJSON** | Ask graph: strategy → retrieve → synthesize; streams the final answer token-by-token (GZip-exempt). |
+| POST | `/api/search/ask/simple` | `AskRequest` | `AskResponse` | Non-streaming ask. |
+
+### 3.7 `podcasts.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/podcasts/generate` | `PodcastGenerationRequest` | `PodcastGenerationResponse` | Submit async job (outline→transcript→TTS); returns job_id; `review_outline` stops after outline. |
+| GET | `/api/podcasts/jobs/{job_id}` | — | `CommandJobStatusResponse` | Poll generation job. |
+| GET | `/api/podcasts/episodes` | — | `list[PodcastEpisodeResponse]` | List episodes (name, profiles, briefing, audio_file, transcript, outline, generation_stage). |
+| GET | `/api/podcasts/episodes/{id}` | — | `PodcastEpisodeResponse` | Fetch episode. |
+| GET | `/api/podcasts/episodes/{id}/audio` | — | `FileResponse` | Stream audio (path-containment checked). |
+| POST | `/api/podcasts/episodes/{id}/retry` | — | `PodcastEpisodeResponse` | Retry failed episode (per-episode lock; `max_attempts:1` so no dup records). |
+| POST | `/api/podcasts/episodes/{id}/cancel` | — | success | Set `cancel_requested`; worker polls + aborts. |
+| PUT | `/api/podcasts/episodes/{id}/outline` | `OutlineUpdateRequest` | `PodcastEpisodeResponse` | Edit outline in review workflow. |
+| POST | `/api/podcasts/episodes/{id}/approve-outline` | — | `PodcastEpisodeResponse` | Approve outline → resume transcript + TTS. |
+| DELETE | `/api/podcasts/episodes/{id}` | — | success | Delete episode + audio. |
+| POST | `/api/podcasts/suggest` | `SuggestRequest` | `SuggestResponse` | One-shot outline suggestion from content. |
+
+Episode/speaker profile CRUD lives in `episode_profiles.py` /
+`speaker_profiles.py` (`GET/POST/PUT/DELETE /api/episode-profiles`,
+`/api/speaker-profiles`).
+
+### 3.7a `video_overviews.py` (local-only visual playback)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/video-overviews` | `VideoOverviewComposeRequest` | `VideoOverviewResponse` | Requires a completed `slide_deck` artifact and completed podcast audio with monotonic transcript segments. Re-renders the typed deck to local PNGs, composes a 1920x1080 H.264/AAC MP4 plus WebVTT through bundled FFmpeg, performs a decode validation pass, then atomically promotes both files under `{DATA_FOLDER}/video-overviews/`. |
+| GET | `/api/video-overviews/{artifact_id}/media` | — | `video/mp4` | Streams only the MP4 path saved on that artifact after strict suffix, existence, and containment checks under the Video Overview root. |
+| GET | `/api/video-overviews/{artifact_id}/captions` | — | `text/vtt` | Streams the paired caption file under the same containment rule. |
+
+The request never accepts raw filesystem paths. Its only inputs are durable record IDs, so a browser cannot ask the API to read arbitrary local files. A per-artifact asyncio lock prevents two compose requests from racing to update one artifact receipt.
+
+### 3.8 `transformations.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/transformations` | — | `list[TransformationResponse]` | List (user + built-in summarize/key_topics). |
+| POST | `/api/transformations` | `TransformationCreate` | `TransformationResponse` | Create prompt template. |
+| GET | `/api/transformations/{id}` | — | `TransformationResponse` | Fetch. |
+| PUT | `/api/transformations/{id}` | `TransformationUpdate` | `TransformationResponse` | Update. |
+| DELETE | `/api/transformations/{id}` | — | success | Delete. |
+| POST | `/api/transformations/{id}/optimize` | — | `TransformationResponse` | LLM-rewrite the prompt. |
+| POST | `/api/transformations/execute` | `TransformationExecuteRequest` | `TransformationExecuteResponse` | Apply a transformation to input text with a chosen model. |
+| GET/PUT | `/api/transformations/default-prompt` | `DefaultPromptUpdate` | `DefaultPromptResponse` | Read/update `DefaultPrompts.transformation_instructions`. |
+
+### 3.9 `credentials.py` (prefix `/api/credentials`)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/credentials/status` | — | `ApiKeyStatusResponse` | `{configured:{provider:bool}, source:{provider:"database"|"environment"|"none"}, encryption_configured:bool}`. |
+| GET | `/api/credentials/env-status` | — | dict | Which providers have env keys. |
+| GET | `/api/credentials` | `?provider=` | `list[CredentialResponse]` | List; **never returns api_key** (only `has_api_key`). |
+| GET | `/api/credentials/by-provider/{provider}` | — | `list[...]` | Credentials for provider. |
+| POST | `/api/credentials` | `CreateCredentialRequest` | `CredentialResponse` | Create; api_key Fernet-encrypted; URL fields SSRF-validated. |
+| GET | `/api/credentials/{id}` | — | `CredentialResponse` | Metadata (no key). |
+| PUT | `/api/credentials/{id}` | `UpdateCredentialRequest` | `CredentialResponse` | Update; re-validates URLs. |
+| DELETE | `/api/credentials/{id}` | — | `CredentialDeleteResponse` | Delete + cascade linked models. |
+| POST | `/api/credentials/{id}/test` | — | `TestConnectionResponse` | Test via `connection_tester` (cheapest model per provider). |
+| POST | `/api/credentials/{id}/discover` | — | `DiscoverModelsResponse` | Discover provider models. |
+| POST | `/api/credentials/{id}/register-models` | `RegisterModelsRequest` | `RegisterModelsResponse` | Persist discovered models as Model records. |
+| POST | `/api/credentials/migrate-from-provider-config` | — | `MigrationResult` | Legacy ProviderConfig → Credentials. |
+| POST | `/api/credentials/migrate-from-env` | — | `MigrationResult` | Env vars → Credentials. |
+| POST | `/api/credentials/detect-osaurus` | — | dict | Auto-detect local Ollama/LM Studio. |
+
+### 3.10 `models.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/models` | — | `list[ModelResponse]` | List Model records. |
+| POST | `/api/models` | `ModelCreate` | `ModelResponse` | Create (name, provider, type, optional credential_id). |
+| GET | `/api/models/{id}` | — | `ModelResponse` | Fetch. |
+| DELETE | `/api/models/{id}` | — | success | Delete (nulls DefaultModels refs). |
+| POST | `/api/models/{id}/test` | — | `ModelTestResponse` | Single-prompt availability test. |
+| GET/PUT | `/api/models/defaults` | `DefaultModelsResponse` | `DefaultModelsResponse` | Read/set per-capability defaults. |
+| GET | `/api/models/providers` | — | `ProviderAvailabilityResponse` | Providers + supported types. |
+| GET | `/api/models/by-provider/{provider}` | — | `list[ModelResponse]` | Models for provider. |
+| GET | `/api/models/count/{provider}` | — | `ProviderModelCountResponse` | Count per type. |
+| POST | `/api/models/sync/{provider}` · `/api/models/sync` | — | sync responses | Discover + register models. |
+| POST | `/api/models/auto-assign` · `/api/models/auto-assign-capability` | — | `AutoAssignResult` | Auto-pick defaults. |
+
+### 3.11 `settings.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/settings` | — | `SettingsResponse` | `ContentSettings`: doc/url engines, embedding option, auto-delete, YouTube langs, offline_mode, auto_summarize/auto_extract toggles. |
+| PUT | `/api/settings` | `SettingsUpdate` | `SettingsResponse` | Update (engine values validated against ContentSettings allowlists). |
+| GET | `/api/settings/observability` | — | `ObservabilityResponse` | Logging/metrics settings. |
+
+### 3.12 `system.py` (prefix `/api/system`)
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/system/env-refresh` | — | dict | Launcher→API env push (e.g. `n_ctx` after hot-swap); auth via `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` bearer (bypasses password middleware). |
+| GET | `/api/system/db-repair-needed` | — | dict | Corruption/repair-needed detection for the launcher UI. |
+| GET | `/api/system/network-status` | — | dict | online / offline / forced-offline. |
+
+### 3.13 `commands.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| POST | `/api/commands/jobs` | `CommandExecutionRequest` | `CommandJobResponse` | Submit a surreal-commands job (embed/podcast/source). |
+| GET | `/api/commands/jobs/{job_id}` | — | `CommandJobStatusResponse` | Poll status (new/queued/running/completed/failed). |
+| GET | `/api/commands/jobs` | — | `list[dict]` | Recent commands. |
+| DELETE | `/api/commands/jobs/{job_id}` | — | success | Cancel job. |
+| GET | `/api/commands/registry/debug` | — | dict | List registered commands (diagnostics). |
+
+### 3.14 `insights.py`
+
+| Method | Path | Body | Response | Logic |
+|--------|------|------|----------|-------|
+| GET | `/api/insights/{id}` | — | `SourceInsightResponse` | Fetch insight. |
+| DELETE | `/api/insights/{id}` | — | success | Delete. |
+| POST | `/api/insights/{id}/save-as-note` | `SaveAsNoteRequest` | `NoteResponse` | `SourceInsight.save_as_note()` → Note, linked to notebook. |
+
+### 3.15 `context.py` / `config.py`
+
+- `POST /api/notebooks/{id}/context` (`ContextRequest` → `ContextResponse`) —
+  build sources+notes context filtered by inclusion levels; returns lists +
+  `total_tokens`.
+- `GET /api/config` — system config (version, features, DB health); read-only,
+  auth-exempt (Setup Wizard polls it).
+
+### 3.16 Secondary routers (summary)
+
+- `auth.py` — `POST /api/auth/password` (validate), `GET /api/auth/status` (auth-exempt).
+- `embedding.py` / `embedding_rebuild.py` — sync embed + async full rebuild
+  (`POST /api/embeddings/rebuild`, `GET …/rebuild/{job_id}`).
+- `exports.py` — `POST /api/notebooks/{id}/export` (markdown/zip; paperless-ready).
+- `filesystem.py` — host file-picker (`/api/filesystem/list`, `/mkdir`).
+- `languages.py` — `GET /api/languages` (podcast languages via pycountry+babel).
+- `onp.py` / `gmail.py` — ONP desktop-wrapper + Gmail digest endpoints.
+- `studio.py` — Evidence Studio generation + upload (`/api/studio/*`).
+- `video_overviews.py` — contained local MP4/WebVTT composition from completed slide-deck and podcast records (`/api/video-overviews/*`).
+- `mcp.py` — MCP server registry CRUD (`GET/POST/PUT/DELETE/PATCH /api/mcp/*`,
+  `POST /api/mcp/{id}/test`; URL fields SSRF-validated). See doc 08.
+- `local_models.py` — local sidecar health + GGUF inventory + role routing +
+  download/benchmark jobs (`/api/local-models/*`). See doc 08.
+- `launcher_prefs.py` / `updates.py` — launcher env-var prefs; in-app update notifier.
+
+---
+
+## 4. Cross-cutting conventions
+
+- **Async everywhere** — routers `await` domain models / graph `ainvoke`.
+- **Config override** — per-request model override passed via LangGraph
+  `RunnableConfig` to `graph.ainvoke(config=...)`; not persisted.
+- **Fire-and-forget jobs** — long work (embeddings, podcasts, insights) goes to
+  surreal-commands; the router returns a `command_id`/`job_id` and the client
+  polls `/api/commands/jobs/{id}` (or the podcast/source status endpoints).
+- **Streaming** — `/api/chat/stream`, `/api/search/ask`, source-chat `…/messages`
+  return NDJSON; they are exempt from GZip so tokens flush in real time; handlers
+  check `is_disconnected()` and cancel readers on client close.
+- **Interactive docs** — Swagger at `/docs`, OpenAPI at `/openapi.json`
+  (auth-exempt — disable before any non-local deployment).

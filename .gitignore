@@ -155,3 +155,6 @@ desktop/bin/
 # multi-GB; never commit them.
 backups/
 *.tar.gz
+
+# Local recovery snapshots produced by scripts/upstream_sync_guard.sh.
+output/upstream-sync/

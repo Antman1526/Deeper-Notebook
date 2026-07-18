@@ -5,8 +5,10 @@ import { useMemo, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
 import { Button } from '@/components/ui/button'
-import { Download, Plus, RefreshCw } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Download, Plus, RefreshCw, Sparkles, Loader2 } from 'lucide-react'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
+import { useCreateSampleNotebook } from '@/lib/hooks/use-sample-notebook'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
 import { ImportNotebookDialog } from './components/ImportNotebookDialog'
 import { Input } from '@/components/ui/input'
@@ -21,6 +23,15 @@ export default function NotebooksPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const { data: notebooks, isLoading, refetch } = useNotebooks(false)
   const { data: archivedNotebooks } = useNotebooks(true)
+
+  // v0.8.80 — first-run "Explore a sample notebook": seed an example notebook +
+  // source, then open it.
+  const router = useRouter()
+  const sampleNotebook = useCreateSampleNotebook()
+  const handleExploreSample = async () => {
+    const id = await sampleNotebook.create()
+    if (id) router.push(`/notebooks/${id}`)
+  }
 
   const normalizedQuery = searchTerm.trim().toLowerCase()
 
@@ -101,6 +112,25 @@ export default function NotebooksPage() {
             emptyDescription={isSearching ? t('common.tryDifferentSearch') : undefined}
             onAction={!isSearching ? () => setCreateDialogOpen(true) : undefined}
             actionLabel={!isSearching ? t('notebooks.newNotebook') : undefined}
+            extraAction={
+              // v0.8.80 — first-run onboarding: only when there are genuinely no
+              // notebooks (not just a filtered-empty search).
+              !isSearching && (notebooks?.length ?? 0) === 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExploreSample}
+                  disabled={sampleNotebook.pending}
+                >
+                  {sampleNotebook.pending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
+                  {t('notebooks.exploreSample', { defaultValue: 'Explore a sample notebook' })}
+                </Button>
+              ) : undefined
+            }
           />
           
           {hasArchived && (
