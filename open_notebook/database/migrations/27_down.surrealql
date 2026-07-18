@@ -1,0 +1,2 @@
+-- v0.8.73 rollback -- Durable, resumable research runs.
+REMOVE TABLE IF EXISTS research_run;
