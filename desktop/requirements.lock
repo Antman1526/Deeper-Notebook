@@ -245,7 +245,10 @@ idna==3.14
 imageio==2.37.3
     # via moviepy
 imageio-ffmpeg==0.6.0
-    # via moviepy
+    # via
+    #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
+    #   moviepy
 importlib-metadata==8.7.1
     # via opentelemetry-api
 iniconfig==2.3.0

@@ -71,3 +71,18 @@ def test_study_scheduler_dependency_is_direct_locked_and_importable() -> None:
         )
         == []
     )
+
+
+def test_ffmpeg_runtime_dependency_is_direct_locked_and_importable() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    desktop = (ROOT / "desktop" / "requirements.txt").read_text(encoding="utf-8")
+
+    assert '"imageio-ffmpeg>=0.6.0,<1.0"' in project
+    assert "imageio-ffmpeg>=0.6.0,<1.0" in desktop
+    assert _locked_version("imageio-ffmpeg").startswith("0.6.")
+    assert (
+        _verify_critical_imports(
+            Path(importlib.import_module("sys").executable), ["imageio_ffmpeg"]
+        )
+        == []
+    )
