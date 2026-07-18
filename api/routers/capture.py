@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
 from api.schemas.capture import (
     CaptureItemResponse,
     CaptureRootResponse,
+    CaptureRouteRequest,
+    CaptureRouteResponse,
     CaptureScanRequest,
     CaptureScanResponse,
     RegisterCaptureRootRequest,
+)
+from open_notebook.ai.models import model_manager
+from open_notebook.capture.routing import (
+    CaptureNotebook,
+    CaptureRoutingError,
+    CaptureRoutingService,
 )
 from open_notebook.capture.watcher import (
     DEFAULT_CAPTURE_ROOT,
@@ -19,6 +29,7 @@ from open_notebook.capture.watcher import (
     SurrealCaptureRepository,
     _resolved_root,
 )
+from open_notebook.domain.notebook import Notebook
 
 router = APIRouter(prefix="/capture", tags=["capture"])
 
@@ -93,3 +104,39 @@ async def scan_capture_inbox(payload: CaptureScanRequest) -> CaptureScanResponse
     return CaptureScanResponse(
         items=[CaptureItemResponse(**item.model_dump()) for item in items]
     )
+
+
+async def _route_capture_media(
+    payload: CaptureRouteRequest,
+    *,
+    repository: Any,
+    get_speech_to_text: Callable[[], Awaitable[Any | None]],
+    load_notebooks: Callable[[], Awaitable[list[Any]]],
+) -> CaptureRouteResponse:
+    roots = [_resolved_root(path) for path in await repository.list_roots()]
+    notebooks = [
+        CaptureNotebook(id=str(notebook.id), name=notebook.name)
+        for notebook in await load_notebooks()
+        if getattr(notebook, "id", None) and not getattr(notebook, "archived", False)
+    ]
+    result = await CaptureRoutingService(
+        approved_roots=roots,
+        capture_items=await repository.list_items(limit=500),
+        notebooks=notebooks,
+        get_speech_to_text=get_speech_to_text,
+    ).route(payload.path)
+    return CaptureRouteResponse(**result.model_dump())
+
+
+@router.post("/route", response_model=CaptureRouteResponse)
+async def route_capture_media(payload: CaptureRouteRequest) -> CaptureRouteResponse:
+    """Preview a private voice-note route without importing or moving its source."""
+    try:
+        return await _route_capture_media(
+            payload,
+            repository=SurrealCaptureRepository(),
+            get_speech_to_text=model_manager.get_speech_to_text,
+            load_notebooks=Notebook.get_all,
+        )
+    except (CaptureRoutingError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
