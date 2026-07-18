@@ -444,6 +444,8 @@ openapi-pydantic==0.5.1
     # via fastmcp
 openpyxl==3.1.5
     # via
+    #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
     #   content-core
     #   skillopt
 opentelemetry-api==1.41.1
@@ -474,6 +476,7 @@ pathvalidate==3.3.1
     # via piper-tts
 pillow==11.3.0
     # via
+    #   open-notebook (pyproject.toml)
     #   content-core
     #   imageio
     #   moviepy
@@ -600,7 +603,10 @@ pytest-asyncio==0.24.0
 python-dateutil==2.9.0.post0
     # via pandas
 python-docx==1.2.0
-    # via content-core
+    # via
+    #   -r desktop/requirements.txt
+    #   open-notebook (pyproject.toml)
+    #   content-core
 python-dotenv==1.2.2
     # via
     #   open-notebook (pyproject.toml)
@@ -616,7 +622,9 @@ python-multipart==0.0.28
     #   open-notebook (pyproject.toml)
     #   mcp
 python-pptx==1.0.2
-    # via content-core
+    # via
+    #   open-notebook (pyproject.toml)
+    #   content-core
 pytubefix==10.6.1
     # via content-core
 pytz==2026.2

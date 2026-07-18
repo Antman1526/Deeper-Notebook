@@ -15,9 +15,21 @@ from loguru import logger
 
 from open_notebook.domain.notebook import StudioArtifact
 from open_notebook.exceptions import InvalidInputError
-from open_notebook.studio.exporters import export_infographic, export_slide_deck
+from open_notebook.studio.exporters import (
+    export_document,
+    export_infographic,
+    export_slide_deck,
+    export_spreadsheet,
+)
 from open_notebook.studio.payloads import parse_payload_document
-from open_notebook.studio.schemas import InfographicDocument, SlideDeckDocument
+from open_notebook.studio.schemas import (
+    CoursePackDocument,
+    DataTableDocument,
+    GenericDocument,
+    InfographicDocument,
+    ResearchRunDocument,
+    SlideDeckDocument,
+)
 
 _MAX_WARNING_LEN = 200
 _COURSE_PACK_ARTIFACT_TYPES = {"course_pack", "training_guide"}
@@ -612,6 +624,47 @@ def _persist_visual_exports(
     return result
 
 
+def _persist_office_exports(
+    *,
+    artifact: StudioArtifact,
+    export_dir: Path,
+    stem: str,
+) -> dict[str, str]:
+    """Persist editable Office files only from validated structured documents."""
+    try:
+        document = parse_payload_document(
+            artifact.artifact_type, artifact.output_payload
+        )
+    except (InvalidInputError, ValueError):
+        return {}
+    if document is None:
+        return {}
+
+    paths: list[Path] = []
+    try:
+        if isinstance(
+            document, (GenericDocument, CoursePackDocument, ResearchRunDocument)
+        ):
+            docx_path = _artifact_export_path(export_dir, stem, ".docx")
+            paths = [docx_path]
+            export_document(document, docx_path)
+            return {"docx": str(docx_path)}
+        if isinstance(document, DataTableDocument):
+            xlsx_path = _artifact_export_path(export_dir, stem, ".xlsx")
+            paths = [xlsx_path]
+            export_spreadsheet(document, xlsx_path)
+            return {"xlsx": str(xlsx_path)}
+    except Exception as exc:
+        for path in paths:
+            path.unlink(missing_ok=True)
+        logger.warning(
+            "Evidence Studio Office export failed for artifact {} ({})",
+            artifact.id,
+            type(exc).__name__,
+        )
+    return {}
+
+
 def persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str, str]:
     export_dir = _artifact_export_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -699,6 +752,13 @@ def persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str
         )
     export_paths.update(
         _persist_visual_exports(
+            artifact=artifact,
+            export_dir=export_dir,
+            stem=stem,
+        )
+    )
+    export_paths.update(
+        _persist_office_exports(
             artifact=artifact,
             export_dir=export_dir,
             stem=stem,
