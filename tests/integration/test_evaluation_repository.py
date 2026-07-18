@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.database.repository import repo_query
+from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.evaluation.repository import EvaluationRepository
 from open_notebook.evaluation.schemas import (
@@ -56,7 +56,7 @@ async def test_repository_persists_hashed_evidence_and_marks_source_drift(
     persisted_runs = await repo_query(
         "SELECT notebook_id, evaluator_version, model_id, source_content_hashes, metrics "
         "FROM evaluation_run WHERE id = $id",
-        {"id": saved.id},
+        {"id": ensure_record_id(saved.id)},
     )
     assert persisted_runs == [
         {
@@ -94,6 +94,6 @@ async def test_repository_persists_only_a_sanitized_error(clean_namespace):
 
     rows = await repo_query(
         "SELECT error FROM evaluation_run WHERE id = $id",
-        {"id": saved.id},
+        {"id": ensure_record_id(saved.id)},
     )
     assert rows == [{"error": "Evaluation failed. Review local logs for details."}]
