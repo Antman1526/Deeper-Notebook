@@ -21,6 +21,8 @@ from open_notebook.studio.exporters import (
     export_slide_deck,
     export_spreadsheet,
 )
+from open_notebook.studio.exporters.charts import ChartDocument, render_svg_chart
+from open_notebook.studio.exporters.research_bundle import build_research_bundle
 from open_notebook.studio.payloads import parse_payload_document
 from open_notebook.studio.schemas import (
     CoursePackDocument,
@@ -665,6 +667,103 @@ def _persist_office_exports(
     return {}
 
 
+def _persist_trusted_svg_chart(
+    *, artifact: StudioArtifact, export_dir: Path, stem: str
+) -> dict[str, str]:
+    """Export only an explicitly schema-validated chart payload."""
+    payload = artifact.output_payload
+    chart_payload = payload.get("chart") if isinstance(payload, dict) else None
+    if not isinstance(chart_payload, dict):
+        return {}
+    try:
+        chart = ChartDocument.model_validate(chart_payload)
+        svg_path = _artifact_export_path(export_dir, f"{stem}-chart", ".svg")
+        svg_path.write_text(render_svg_chart(chart), encoding="utf-8")
+        return {"svg_chart": str(svg_path)}
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "Evidence Studio SVG export rejected for {} ({})",
+            artifact.id,
+            type(exc).__name__,
+        )
+        return {}
+
+
+def _selected_source_metadata(artifact: StudioArtifact) -> list[dict[str, object]]:
+    """Keep the bundle source-grounded without copying full source bodies."""
+    metadata: list[dict[str, object]] = []
+    citations_by_source = {
+        str(citation.get("source_id")): citation
+        for citation in artifact.citations
+        if isinstance(citation, dict) and citation.get("source_id")
+    }
+    for source_id in artifact.source_ids:
+        citation = citations_by_source.get(str(source_id), {})
+        metadata.append(
+            {
+                "source_id": str(source_id),
+                "title": citation.get("title"),
+                "marker": citation.get("marker"),
+            }
+        )
+    return metadata
+
+
+def _bundle_generated_files(
+    export_paths: dict[str, str], bundle_path: Path
+) -> dict[str, Path]:
+    files: dict[str, Path] = {}
+    for export_type, raw_path in export_paths.items():
+        candidate = Path(raw_path)
+        if candidate == bundle_path or not candidate.is_file():
+            continue
+        files[f"generated/{export_type}/{candidate.name}"] = candidate
+    return files
+
+
+def _persist_research_bundle(
+    *,
+    artifact: StudioArtifact,
+    content: str,
+    export_dir: Path,
+    stem: str,
+    export_paths: dict[str, str],
+) -> dict[str, str]:
+    """Create an immutable integrity bundle after every other export succeeds."""
+    try:
+        # A bundle is a source-of-record export, so only structured artifacts
+        # that pass the existing Studio payload validation are eligible.
+        parse_payload_document(artifact.artifact_type, artifact.output_payload)
+        bundle_path = _artifact_export_path(
+            export_dir, f"{stem}-research-bundle", ".zip"
+        )
+        result = {"research_bundle": str(bundle_path)}
+        artifact.export_paths = {**export_paths, **result}
+        report = artifact.output_payload.get("evaluation_report", {})
+        evaluation_report = report if isinstance(report, dict) else {}
+        build_research_bundle(
+            bundle_path,
+            artifact=_artifact_export_payload(artifact),
+            markdown=_artifact_markdown_export(artifact, content),
+            citations=[
+                citation
+                for citation in artifact.citations
+                if isinstance(citation, dict)
+            ],
+            source_metadata=_selected_source_metadata(artifact),
+            evaluation_report=evaluation_report,
+            generated_files=_bundle_generated_files(export_paths, bundle_path),
+        )
+        return result
+    except (InvalidInputError, TypeError, ValueError) as exc:
+        logger.warning(
+            "Evidence Studio research bundle skipped for {} ({})",
+            artifact.id,
+            type(exc).__name__,
+        )
+        return {}
+
+
 def persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str, str]:
     export_dir = _artifact_export_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -762,6 +861,22 @@ def persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[str
             artifact=artifact,
             export_dir=export_dir,
             stem=stem,
+        )
+    )
+    export_paths.update(
+        _persist_trusted_svg_chart(
+            artifact=artifact,
+            export_dir=export_dir,
+            stem=stem,
+        )
+    )
+    export_paths.update(
+        _persist_research_bundle(
+            artifact=artifact,
+            content=content,
+            export_dir=export_dir,
+            stem=stem,
+            export_paths=export_paths,
         )
     )
     artifact.export_paths = export_paths
