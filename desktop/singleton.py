@@ -38,8 +38,9 @@ SingletonHandle.release(); crashed launchers leave a stale PID
 file that the next acquire cleans up; orphaned children whose
 parent died before reaping them get caught by reap_orphans().
 
-Cross-platform: pure stdlib. `os.kill(pid, 0)` is the universal
-"is this PID alive" check; `psutil` would be cleaner but we don't
+Cross-platform: pure stdlib. POSIX uses `os.kill(pid, 0)`; Windows
+uses its query-only `OpenProcess` API because Windows does not expose
+POSIX signal-zero semantics. `psutil` would be cleaner but we don't
 want a new dep in the bundle just for this.
 """
 from __future__ import annotations
@@ -54,6 +55,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
 from desktop.paths import user_home
 
 log = logging.getLogger(__name__)
@@ -82,15 +84,16 @@ class AlreadyRunning(RuntimeError):
 def _is_pid_alive(pid: int) -> bool:
     """True iff the OS still has a process with this PID.
 
-    `os.kill(pid, 0)` sends NO signal but exercises the same
-    permission/existence check as a real signal. POSIX: returns
-    immediately for live PIDs; raises ESRCH for dead PIDs; raises
-    EPERM if we don't own the PID (which we treat as "alive" — a
-    competing instance from a different UID still counts as live
-    for our purposes).
+    POSIX uses `os.kill(pid, 0)`, which sends no signal and exercises
+    the same permission/existence check as a real signal. Windows uses
+    a query-only process handle because `os.kill(pid, 0)` is not a safe
+    equivalent there. Access denied means the process exists but belongs
+    to another user, which still counts as alive for singleton purposes.
     """
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        return _is_windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
     except OSError as exc:
@@ -102,6 +105,26 @@ def _is_pid_alive(pid: int) -> bool:
             return False
         return True
     return True
+
+
+def _is_windows_pid_alive(pid: int) -> bool:
+    """Query a Windows process without using ``os.kill(pid, 0)``.
+
+    Windows does not implement POSIX signal zero semantics. In particular,
+    probing PID 1 through ``os.kill`` can disrupt the runner's process group.
+    ``OpenProcess`` with query-only access is non-destructive and treats an
+    access-denied result as evidence that the process still exists.
+    """
+    import ctypes
+
+    process_query_limited_information = 0x1000
+    error_access_denied = 5
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    return ctypes.get_last_error() == error_access_denied
 
 
 def _read_pid_file(pid_file: Path) -> int | None:
