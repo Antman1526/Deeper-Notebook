@@ -16,6 +16,7 @@ LLM paraphrases), but it reliably lands the reader in the right area — which i
 the goal. Returns ``None`` when there's no decent match so the caller can fall
 back to just opening the source at the top.
 """
+
 from __future__ import annotations
 
 import re
@@ -45,6 +46,26 @@ def _tokens(s: str) -> list[str]:
 
 def _content_tokens(s: str) -> set[str]:
     return {t for t in _tokens(s) if t not in _STOPWORDS and len(t) > 1}
+
+
+def slice_passage(text: str, start: int, end: int) -> str:
+    """Return an exact Unicode-codepoint source slice after bounds validation.
+
+    Evidence contracts persist codepoint offsets, so malformed or byte-based
+    offsets must fail rather than silently producing a nearby quote.
+    """
+    if not isinstance(text, str):
+        raise ValueError("source text must be a string")
+    if (
+        isinstance(start, bool)
+        or isinstance(end, bool)
+        or not isinstance(start, int)
+        or not isinstance(end, int)
+    ):
+        raise ValueError("citation offsets must be integers")
+    if start < 0 or end <= start or end > len(text):
+        raise ValueError("citation offsets are outside the source text")
+    return text[start:end]
 
 
 def locate_passage(
@@ -96,4 +117,6 @@ def locate_passage(
     while end < n and not text[end].isspace():
         end += 1
     snippet = text[start:end].strip()
-    return PassageMatch(start=start, end=end, score=round(best_score, 3), snippet=snippet)
+    return PassageMatch(
+        start=start, end=end, score=round(best_score, 3), snippet=snippet
+    )
