@@ -50,6 +50,21 @@ class TestIsPidAlive:
         # PID space on macOS is 0-99998 by default; 9_999_999 is safe.
         assert _is_pid_alive(9_999_999) is False
 
+    def test_windows_uses_non_destructive_process_query(self, monkeypatch):
+        """Windows must not use ``os.kill(pid, 0)`` as a liveness probe."""
+        import desktop.singleton as singleton
+
+        queried: list[int] = []
+        monkeypatch.setattr(singleton.sys, "platform", "win32")
+        monkeypatch.setattr(
+            singleton,
+            "_is_windows_pid_alive",
+            lambda pid: queried.append(pid) or True,
+        )
+
+        assert singleton._is_pid_alive(1) is True
+        assert queried == [1]
+
 
 # ---------------------------------------------------------------------- #
 # _read_pid_file — defensive parser
