@@ -38,7 +38,6 @@ import pytest
 import pytest_asyncio
 from surrealdb import AsyncSurreal  # type: ignore[import-untyped]
 
-
 # ---------------------------------------------------------------------------
 # Collection-time skip gate
 #
@@ -205,6 +204,10 @@ async def surreal_db() -> AsyncIterator[dict[str, Any]]:
     # Run all forward migrations against the fresh namespace.
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
+    # pytest-asyncio runs the session fixture and each test fixture on
+    # different event loops by default. The production pool is correctly
+    # loop-bound, so discard the migration loop's pool before test queries.
+    await repo_mod.close_pool()
 
     meta = {
         "url": url,
@@ -353,4 +356,11 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
             # table really is required.
             pass
 
-    yield surreal_db
+    try:
+        yield surreal_db
+    finally:
+        # Do not let a WebSocket or asyncio.Queue created for this test's loop
+        # leak into the next test's loop.
+        from open_notebook.database import repository as repo_mod
+
+        await repo_mod.close_pool()

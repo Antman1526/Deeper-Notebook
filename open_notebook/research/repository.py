@@ -14,6 +14,9 @@ class ResearchRunRepositoryError(RuntimeError):
     """A safe research-run persistence error suitable for API callers."""
 
 
+_DATABASE_METADATA_FIELDS = frozenset({"created", "updated"})
+
+
 def _one_record(result: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
     if isinstance(result, list):
         if len(result) != 1:
@@ -28,6 +31,14 @@ def _one_record(result: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]
     return result
 
 
+def _run_from_record(record: dict[str, Any] | list[dict[str, Any]]) -> ResearchRun:
+    """Deserialize persistence records without leaking database audit fields."""
+    data = _one_record(record)
+    return ResearchRun.model_validate(
+        {key: value for key, value in data.items() if key not in _DATABASE_METADATA_FIELDS}
+    )
+
+
 class ResearchRunRepository:
     """Persist state transitions atomically enough for cooperative restarts."""
 
@@ -37,8 +48,7 @@ class ResearchRunRepository:
             data = run.model_dump(exclude={"id"}, mode="json")
             if run.notebook_id:
                 data["notebook_id"] = ensure_record_id(run.notebook_id)
-            created = _one_record(await repo_create("research_run", data))
-            return ResearchRun.model_validate(created)
+            return _run_from_record(await repo_create("research_run", data))
         except ResearchRunRepositoryError:
             raise
         except Exception as exc:
@@ -52,7 +62,7 @@ class ResearchRunRepository:
             )
             if not rows:
                 return None
-            return ResearchRun.model_validate(rows[0])
+            return _run_from_record(rows[0])
         except Exception as exc:
             logger.exception("Failed to load research run")
             raise ResearchRunRepositoryError("Failed to load research run") from exc
@@ -79,7 +89,7 @@ class ResearchRunRepository:
                 },
             )
             if rows:
-                return ResearchRun.model_validate(rows[0])
+                return _run_from_record(rows[0])
             # Another worker either checkpointed this stage or cancelled. Never
             # replay side effects; read the canonical durable state instead.
             current = await self.get(run.id)
@@ -103,7 +113,7 @@ class ResearchRunRepository:
                 "UPDATE $run SET cancelled = true RETURN AFTER;",
                 {"run": ensure_record_id(run_id)},
             )
-            return ResearchRun.model_validate(rows[0]) if rows else None
+            return _run_from_record(rows[0]) if rows else None
         except Exception as exc:
             logger.exception("Failed to cancel research run")
             raise ResearchRunRepositoryError("Failed to cancel research run") from exc
@@ -129,7 +139,7 @@ class ResearchRunRepository:
                 },
             )
             if rows:
-                return ResearchRun.model_validate(rows[0])
+                return _run_from_record(rows[0])
             current = await self.get(run.id)
             if current is None:
                 raise ResearchRunRepositoryError(
@@ -150,7 +160,7 @@ class ResearchRunRepository:
                 "UPDATE $run SET command_id = $command_id RETURN AFTER;",
                 {"run": ensure_record_id(run_id), "command_id": command_id},
             )
-            return ResearchRun.model_validate(_one_record(rows))
+            return _run_from_record(rows)
         except ResearchRunRepositoryError:
             raise
         except Exception as exc:
@@ -161,7 +171,7 @@ class ResearchRunRepository:
 
     @staticmethod
     def _storage_data(run: ResearchRun) -> dict[str, Any]:
-        data = run.model_dump(exclude={"id"}, mode="json")
+        data = run.model_dump(exclude={"id", "created", "updated"}, mode="json")
         if run.notebook_id:
             data["notebook_id"] = ensure_record_id(run.notebook_id)
         return data
