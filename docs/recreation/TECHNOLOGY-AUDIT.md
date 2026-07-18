@@ -105,6 +105,7 @@ An exhaustive inventory of every language, framework, library, tool, and service
 | **crawl4ai** | via `open_notebook/utils/crawler.py` | Optional local URL scraper (`extract_url_with_crawl4ai`) selected when `url_engine == "crawl4ai"`, with content-core fallback. |
 | **lxml** | `>=6.1.0` (CVE-2026-41066) | HTML/XML parsing under content-core extraction. |
 | **Pillow** | `<12.0` (pinned by podcast-creator; CVEs noted, upgrade blocked) | Image handling for images extracted from PDFs/DOCX by content-core. |
+| **imageio-ffmpeg** | `>=0.6.0,<1.0` (locked `0.6.0`) | Supplies the platform FFmpeg executable used by `open_notebook/video/composer.py` to locally encode and decode-validate source-grounded Video Overview MP4 files; its runtime is bundled in desktop release preparation. |
 | **chunking / embedding utils** | in-repo (`utils/chunking.py`, `utils/embedding.py`) | Content-type-aware splitting (HTML/Markdown/plain, ~1500 char / 225 overlap) and batched embedding (50/batch, per-batch retry, mean-pooling for oversized content). |
 | **tiktoken** | `>=0.12.0` | (Also listed above) token counting for chunk/context sizing. |
 
