@@ -41,7 +41,12 @@ def register_mlx_models(
         return False
 
     existing_cred_names.add(cred_name.lower())
-    model_name = _mlx_model_display_name(model_ref)
+    display_name = _mlx_model_display_name(model_ref)
+    # mlx-lm 0.30+ maps the CLI-selected path behind this reserved alias.
+    # Sending the display name makes the server interpret it as a second Hugging
+    # Face repository and load it on demand, so requests appear to hang instead
+    # of using the model already resident in memory.
+    model_name = "default_model"
     registered = _ensure_model(
         client=client,
         existing_keys=existing_model_keys,
@@ -52,5 +57,10 @@ def register_mlx_models(
     )
     if registered:
         existing_model_keys.add((model_name.lower(), "language"))
-        log.info("Registered MLX model %r against %s", model_name, base_url)
+        log.info(
+            "Registered MLX runtime alias %r for %r against %s",
+            model_name,
+            display_name,
+            base_url,
+        )
     return registered

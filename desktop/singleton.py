@@ -373,6 +373,58 @@ def reap_orphans(
     return orphans
 
 
+def reap_surreal_data_orphans(
+    data_dir: Path,
+    *,
+    dry_run: bool = False,
+) -> list[OrphanProcess]:
+    """Reap orphaned SurrealDB processes that lock this app's data directory.
+
+    A rebuilt or separately installed app has a different bundle path, so the
+    generic bundle-path reaper cannot recognize its SurrealDB child.  The data
+    directory is stable across builds and uniquely identifies the process we
+    own.  Matching also requires a SurrealDB executable marker and an orphaned
+    parent, which prevents unrelated commands that merely mention the path
+    from being targeted.
+    """
+    if sys.platform == "win32":
+        candidates = _list_processes_windows()
+    else:
+        candidates = _list_processes_posix()
+
+    if not candidates:
+        return []
+
+    owned_path = str(data_dir.resolve())
+    own_pid = os.getpid()
+    parent_pid = os.getppid()
+    surreal_markers = (
+        "surreal-darwin",
+        "surreal-windows",
+        "/surreal start",
+        "\\surreal.exe start",
+    )
+    orphans: list[OrphanProcess] = []
+
+    for pid, ppid, cmdline in candidates:
+        if pid in (own_pid, parent_pid):
+            continue
+        lowered = cmdline.lower()
+        if owned_path not in cmdline:
+            continue
+        if not any(marker in lowered for marker in surreal_markers):
+            continue
+        if ppid not in (0, 1) and _is_pid_alive(ppid):
+            continue
+        orphans.append(OrphanProcess(pid=pid, cmdline=cmdline))
+
+    if not dry_run:
+        for orphan in orphans:
+            _kill_orphan(orphan.pid, orphan.cmdline)
+
+    return orphans
+
+
 def _list_processes_posix() -> list[tuple[int, int, str]]:
     """Return [(pid, ppid, cmdline), ...] using `ps -eo`. Empty list on
     any failure (ps not available, parse error, timeout)."""

@@ -31,7 +31,11 @@ llama-cpp-python[server]>=0.3.16,<0.4
 # ~/Desktop/AI_Models/MLX and exposes the same OpenAI-compatible API
 # shape used by llama.cpp. MLX is macOS/Apple-Silicon only, so keep
 # the marker tight to avoid breaking Windows packages.
-mlx-lm>=0.26,<0.27; sys_platform == "darwin" and platform_machine == "arm64"
+# v0.8.97 — 0.26.x predates Transformers 5 and passes BatchEncoding directly
+# to mx.array, so every chat request fails after the server reports healthy.
+# 0.30.6+ carries the upstream Transformers 5 support while avoiding the
+# yanked 0.31.0 release; cap at the current 0.31 line for reproducible APIs.
+mlx-lm>=0.30.6,<0.32; sys_platform == "darwin" and platform_machine == "arm64"
 
 # v0.7.195 — Bundle the local-server shim dependencies. These have
 # been REQUIRED since the v0.4 local-server feature shipped, but

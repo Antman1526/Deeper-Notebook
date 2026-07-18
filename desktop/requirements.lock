@@ -385,7 +385,7 @@ mem0ai==1.0.11
     # via -r desktop/requirements.txt
 mlx==0.31.2
     # via mlx-lm
-mlx-lm==0.26.4
+mlx-lm==0.31.3
     # via -r desktop/requirements.txt
 mlx-metal==0.31.2
     # via mlx
@@ -474,6 +474,7 @@ pathvalidate==3.3.1
     # via piper-tts
 pillow==11.3.0
     # via
+    #   open-notebook (pyproject.toml)
     #   content-core
     #   imageio
     #   moviepy
@@ -616,7 +617,9 @@ python-multipart==0.0.28
     #   open-notebook (pyproject.toml)
     #   mcp
 python-pptx==1.0.2
-    # via content-core
+    # via
+    #   open-notebook (pyproject.toml)
+    #   content-core
 pytubefix==10.6.1
     # via content-core
 pytz==2026.2
@@ -682,6 +685,8 @@ rpds-py==0.30.0
     #   referencing
 safetensors==0.8.0
     # via transformers
+sentencepiece==0.2.2
+    # via mlx-lm
 setuptools==82.0.1
     # via
     #   ctranslate2

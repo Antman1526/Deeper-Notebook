@@ -248,6 +248,10 @@ class Supervisor:
         # New v0.4 ports — initialised to 0 so auto_register can skip cleanly
         # when a server failed to start.
         self.chat_llm_port: int = 0
+        # Full OpenAI-compatible endpoint used by the memory writer. This is
+        # normally the bundled llama.cpp sidecar, but an active native MLX
+        # runtime can provide the same contract without requiring a chat GGUF.
+        self.chat_llm_url: str = ""
         self.memory_port: int = 0
         self.openchronicle_port: int = 0
         # v0.8.7 — resolved chat-LLM n_ctx, computed once at start_all
@@ -288,6 +292,7 @@ class Supervisor:
             acquire_singleton,
             default_pid_file,
             reap_orphans,
+            reap_surreal_data_orphans,
         )
         self._singleton = acquire_singleton(default_pid_file())
         # Best-effort orphan reap. The bundle paths cover the two places
@@ -298,11 +303,18 @@ class Supervisor:
             self.bin_dir,
         ]
         try:
+            data_dir = (
+                Path.home() / ".open-notebook-plus" / "surreal_data"
+            )
+            database_orphans = reap_surreal_data_orphans(data_dir)
+            if database_orphans:
+                time.sleep(0.5)
             orphans = reap_orphans(bundle_paths=bundle_paths)
-            if orphans:
+            reaped_count = len(database_orphans) + len(orphans)
+            if reaped_count:
                 log.warning(
                     "Reaped %d orphaned process(es) from prior launch",
-                    len(orphans),
+                    reaped_count,
                 )
                 # Give the OS a moment to actually free the ports they
                 # were holding so find_free_ports below doesn't race
@@ -317,6 +329,17 @@ class Supervisor:
          chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
 
         api_url = f"http://127.0.0.1:{api_port}"
+        anticipated_llamacpp_url = f"http://127.0.0.1:{chat_llm_port}/v1"
+        external_mlx_url = ""
+        if self.cfg.provider == "mlx":
+            external_mlx_url = (
+                self.extra_env.get("OPENAI_COMPATIBLE_BASE_URL", "").strip().rstrip("/")
+            )
+        self.chat_llm_url = (
+            anticipated_llamacpp_url
+            if self.chat_llm_path is not None and self.chat_llm_path.exists()
+            else external_mlx_url
+        )
         # v0.7.147 — Pin DATA_FOLDER to a per-user, ALWAYS-writable absolute
         # path. open_notebook/config.py used to hardcode "./data" (CWD-
         # relative) and the API subprocess inherits cwd=upstream_root, which
@@ -414,7 +437,7 @@ class Supervisor:
             # (spawned before these servers actually bind) sees them in its env.
             # The real servers come up later in start_all; worker connects
             # lazily on first command invocation.
-            "MEMORY_CHAT_LLM_URL": f"http://127.0.0.1:{chat_llm_port}/v1",
+            "MEMORY_CHAT_LLM_URL": self.chat_llm_url,
             "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
             "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
             # v0.8.4 — CRITICAL fix: the v0.8.0 Phase 3 smart router
@@ -430,9 +453,7 @@ class Supervisor:
             # (since v0.7.193), so threading the same value through
             # here gives provision.py the URL it expected the whole
             # time.
-            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
-                f"http://127.0.0.1:{chat_llm_port}/v1"
-            ),
+            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL": self.chat_llm_url,
             # v0.8.7 — Export the same n_ctx value the sidecar will
             # use, so the router's pick_provider() math matches reality.
             # Pre-v0.8.7 the router defaulted to 32768 regardless of
@@ -1881,6 +1902,14 @@ class Supervisor:
         # distinctly so the user can act on it (drop a GGUF in the
         # configured path vs. download one).
         if self.chat_llm_path is None:
+            if self.chat_llm_url:
+                log.info(
+                    "Skipping bundled llamacpp_chat: active %s provider at %s "
+                    "will serve application chat and the memory writer.",
+                    self.cfg.provider,
+                    self.chat_llm_url,
+                )
+                return
             log.warning(
                 "Skipping llamacpp_chat: no chat GGUF configured "
                 "(chat_llm_path is None). Memory writer (fact "
@@ -2024,7 +2053,7 @@ class Supervisor:
             "--embed-url",
             f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
             "--llm-url",
-            f"http://127.0.0.1:{self.chat_llm_port}/v1" if self.chat_llm_port else "",
+            self.chat_llm_url,
         ]
         self._spawn(args, cwd=self.upstream_root, name="memory")
 

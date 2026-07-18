@@ -128,3 +128,27 @@ def test_run_swallows_stop_all_error_but_reraises_original(monkeypatch):
 
     with pytest.raises(ValueError, match=r"the real reason"):
         app_mod.run()
+
+
+def test_run_stops_mlx_runtime_when_supervisor_start_fails(monkeypatch):
+    """An MLX server starts before Supervisor, so early failure must stop it."""
+    from desktop import app as app_mod
+
+    runtime = MagicMock()
+
+    _patch_pre_phases(monkeypatch)
+
+    def select_provider(ctx):
+        ctx.model_provider_runtime = runtime
+
+    def fail_supervisor(_ctx):
+        raise RuntimeError("supervisor failed")
+
+    monkeypatch.setattr(app_mod, "_phase_select_provider", select_provider)
+    monkeypatch.setattr(app_mod, "_phase_start_supervisor", fail_supervisor)
+    _patch_post_phases(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="supervisor failed"):
+        app_mod.run()
+
+    runtime.stop.assert_called_once()
