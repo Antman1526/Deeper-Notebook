@@ -43,7 +43,7 @@ jobs:
           path: release/
 
   build-mac-x86_64:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
