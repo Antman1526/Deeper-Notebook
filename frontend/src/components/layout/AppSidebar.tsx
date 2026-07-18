@@ -52,6 +52,7 @@ import {
   Command,
   Sparkles,
   GraduationCap,
+  Inbox,
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
@@ -60,6 +61,7 @@ const getNavigation = (t: TFunction) => [
     title: t('navigation.collect'),
     items: [
       { name: t('navigation.sources'), href: '/sources', icon: FileText },
+      { name: 'Capture', href: '/capture', icon: Inbox },
     ],
   },
   {
