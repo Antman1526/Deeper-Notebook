@@ -20,6 +20,13 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.95 — 2026-07-17 — Portable podcast audio paths
+
+- **v0.8.95** Bug fix: podcast episode path tests now assert `Path` structure
+  rather than POSIX-only rendering, and canonical Windows `file:///C:/...`
+  audio URIs are converted to native paths before the existing resolved-path
+  containment gate runs. Remote file URI authorities remain rejected.
+
 ## v0.8.94 — 2026-07-17 — Verified desktop release baseline
 
 - **v0.8.94** 🛠 **Verified desktop release baseline.** Added deterministic
