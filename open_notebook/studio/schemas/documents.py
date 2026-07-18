@@ -194,11 +194,41 @@ class ResearchStage(ArtifactModel):
     status: Literal["complete", "incomplete", "blocked"] = "complete"
 
 
+class ResearchSourcePosition(ArtifactModel):
+    """One source's cited position on a normalized research claim."""
+
+    source_id: str = Field(min_length=1)
+    claim: str = Field(min_length=1, max_length=2000)
+    position: Literal["supports", "contradicts", "unresolved"]
+    citations: list[CitationMarker] = Field(min_length=1)
+
+
+class ResearchAgreement(ArtifactModel):
+    """A claim independently supported by at least two cited sources."""
+
+    subject: str = Field(min_length=1, max_length=500)
+    predicate: str = Field(min_length=1, max_length=1000)
+    positions: list[ResearchSourcePosition] = Field(min_length=2)
+
+
+class ResearchContradiction(ArtifactModel):
+    """Cited source positions whose material values or polarity conflict."""
+
+    subject: str = Field(min_length=1, max_length=500)
+    predicate: str = Field(min_length=1, max_length=1000)
+    values: list[str] = Field(min_length=2, max_length=20)
+    positions: list[ResearchSourcePosition] = Field(min_length=2)
+
+
 class ResearchRunDocument(ArtifactDocumentBase):
     artifact_type: Literal["research_run"] = "research_run"
     objective: str = Field(min_length=1)
     hypotheses: list[str] = Field(default_factory=list)
     stages: list[ResearchStage] = Field(min_length=1)
+    # These additive defaults preserve every schema-v1 Research Run payload
+    # created before source-comparison output existed.
+    agreements: list[ResearchAgreement] = Field(default_factory=list)
+    contradictions: list[ResearchContradiction] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
 
