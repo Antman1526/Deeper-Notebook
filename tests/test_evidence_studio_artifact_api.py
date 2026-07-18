@@ -8,18 +8,30 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pptx import Presentation
 
 from api.routers import studio as studio_mod
 from open_notebook.exceptions import NotFoundError
+from open_notebook.studio.generation import service as artifact_generation_service
 
 
 def _client() -> TestClient:
     app = FastAPI()
     app.include_router(studio_mod.router, prefix="/api")
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_background_evaluation(monkeypatch):
+    """Keep router tests focused on API behavior, not live evaluation persistence."""
+    monkeypatch.setattr(
+        artifact_generation_service,
+        "_schedule_artifact_evaluation",
+        lambda **_kwargs: None,
+    )
 
 
 def _minimal_document(artifact_type: str, title: str | None = None) -> dict:
@@ -2173,7 +2185,7 @@ def test_visual_export_failure_keeps_completed_text_exports(monkeypatch, tmp_pat
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed"
-    assert set(body["export_paths"]) == {"markdown", "json"}
+    assert set(body["export_paths"]) == {"markdown", "json", "research_bundle"}
     warning = body["output_payload"]["export_warnings"]["visual"]
     assert warning["type"] == "RuntimeError"
     assert "PRIVATE SOURCE" not in json.dumps(warning)
