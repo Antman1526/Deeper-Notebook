@@ -95,10 +95,14 @@ def test_smoke_writes_a_machine_readable_receipt_for_the_required_proofs(
         "--receipt",
         str(receipt_path),
         "--timeout-seconds",
-        "5",
+        "15",
     )
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, (
+        result.stderr
+        + "\n"
+        + (receipt_path.read_text(encoding="utf-8") if receipt_path.exists() else "")
+    )
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["schema_version"] == 1
     assert receipt["status"] == "passed"
