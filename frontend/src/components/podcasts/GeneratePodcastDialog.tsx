@@ -12,7 +12,7 @@ import { notesApi } from '@/lib/api/notes'
 import { podcastsApi } from '@/lib/api/podcasts'
 import { BuildContextRequest, NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
 import type { QueryClient } from '@tanstack/react-query'
-import { PodcastGenerationRequest } from '@/lib/types/podcasts'
+import { PodcastGenerationRequest, PodcastOverviewMode } from '@/lib/types/podcasts'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -416,6 +416,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const [episodeProfileId, setEpisodeProfileId] = useState<string>('')
   const [episodeName, setEpisodeName] = useState('')
   const [instructions, setInstructions] = useState('')
+  const [overviewMode, setOverviewMode] = useState<PodcastOverviewMode>('deep_dive')
   // v0.8.86 — per-episode length. 'profile' = use the episode profile's own
   // num_segments (default; preserves existing behavior); short/medium/long
   // override it for this episode only.
@@ -570,6 +571,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     setEpisodeProfileId('')
     setEpisodeName('')
     setInstructions('')
+    setOverviewMode('deep_dive')
     setEpisodeLength('profile')
     setReviewOutline(false)
     setTokenCount(0)
@@ -917,7 +919,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         speaker_profile: selectedEpisodeProfile.speaker_config,
         episode_name: episodeName.trim(),
         content,
-        briefing_suffix: instructions.trim() ? instructions.trim() : undefined,
+        mode: overviewMode,
+        custom_prompt: instructions.trim() ? instructions.trim() : undefined,
         // v0.8.86 — only send a length override when it differs from the
         // profile default ('profile' → omit → backend keeps num_segments).
         episode_length: episodeLength === 'profile' ? undefined : episodeLength,
@@ -959,6 +962,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     episodeName,
     generatePodcast,
     instructions,
+    overviewMode,
     onOpenChange,
     resetState,
     reviewOutline,
@@ -1083,6 +1087,26 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="overview_mode">
+                      {t('podcasts.overviewFormat', { defaultValue: 'Audio overview format' })}
+                    </Label>
+                    <Select
+                      value={overviewMode}
+                      onValueChange={(value) => setOverviewMode(value as PodcastOverviewMode)}
+                    >
+                      <SelectTrigger id="overview_mode" aria-label="Audio overview format">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="deep_dive">Deep Dive</SelectItem>
+                        <SelectItem value="brief">Brief</SelectItem>
+                        <SelectItem value="critique">Critique</SelectItem>
+                        <SelectItem value="debate">Debate</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   {/* v0.8.86 — per-episode length control (roadmap Batch 3). */}
                   <div className="space-y-2">
                     <Label htmlFor="episode_length">
@@ -1115,7 +1139,9 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                   </div>
 
                    <div className="space-y-2">
-                    <Label htmlFor="instructions">{t('podcasts.additionalInstructions')}</Label>
+                    <Label htmlFor="instructions">
+                      {t('podcasts.customPrompt', { defaultValue: 'Custom prompt' })}
+                    </Label>
                     <Textarea
                       id="instructions"
                       name="instructions"

@@ -17,7 +17,12 @@ from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import repo_query
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.podcasts import file_uri_to_local_path
-from open_notebook.podcasts.models import EpisodeProfile
+from open_notebook.podcasts.models import (
+    EpisodeProfile,
+    PodcastOverviewMode,
+    TranscriptSegment,
+    normalize_podcast_mode,
+)
 
 router = APIRouter()
 
@@ -62,10 +67,13 @@ class PodcastEpisodeResponse(BaseModel):
     episode_profile: dict
     speaker_profile: dict
     briefing: str
+    mode: PodcastOverviewMode = PodcastOverviewMode.DEEP_DIVE
+    custom_prompt: Optional[str] = None
     audio_file: Optional[str] = None
     audio_url: Optional[str] = None
     transcript: Optional[dict] = None
     outline: Optional[dict] = None
+    transcript_segments: list[TranscriptSegment] = Field(default_factory=list)
     created: Optional[str] = None
     job_status: Optional[str] = None
     error_message: Optional[str] = None
@@ -104,7 +112,8 @@ def _resolve_audio_path(audio_file: str) -> Optional[Path]:
         logger.warning(
             "Refusing audio_file path outside _AUDIO_ROOT: {} "
             "(expected under {}). DB may be corrupted.",
-            raw, _AUDIO_ROOT,
+            raw,
+            _AUDIO_ROOT,
         )
         return None
     return resolved
@@ -147,6 +156,8 @@ async def generate_podcast(request: PodcastGenerationRequest):
             notebook_id=request.notebook_id,
             content=request.content,
             briefing_suffix=request.briefing_suffix,
+            mode=request.mode,
+            custom_prompt=request.resolved_custom_prompt,
             episode_length=request.episode_length,
             review_outline=request.review_outline,
         )
@@ -157,6 +168,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
             message=f"Podcast generation started for episode '{request.episode_name}'",
             episode_profile=request.episode_profile,
             episode_name=request.episode_name,
+            mode=request.mode,
         )
 
     except HTTPException:
@@ -168,9 +180,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
         raise
     except Exception as e:
         logger.error(f"Error generating podcast: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to generate podcast"
-        )
+        raise HTTPException(status_code=500, detail="Failed to generate podcast")
 
 
 @router.get("/podcasts/jobs/{job_id}")
@@ -189,16 +199,18 @@ async def get_podcast_job_status(job_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching podcast job status: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch job status"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch job status")
 
 
 @router.get("/podcasts/episodes", response_model=list[PodcastEpisodeResponse])
 async def list_podcast_episodes(
     response: Response,
-    offset: int = Query(0, ge=0, description="Skip the first N completed episodes (default 0)"),
-    limit: int = Query(50, ge=1, le=200, description="Return at most N episodes (default 50, max 200)"),
+    offset: int = Query(
+        0, ge=0, description="Skip the first N completed episodes (default 0)"
+    ),
+    limit: int = Query(
+        50, ge=1, le=200, description="Return at most N episodes (default 50, max 200)"
+    ),
 ):
     """List podcast episodes with offset/limit pagination.
 
@@ -258,10 +270,13 @@ async def list_podcast_episodes(
                     episode_profile=episode.episode_profile,
                     speaker_profile=episode.speaker_profile,
                     briefing=episode.briefing,
+                    mode=normalize_podcast_mode(getattr(episode, "mode", None)),
+                    custom_prompt=getattr(episode, "custom_prompt", None),
                     audio_file=episode.audio_file,
                     audio_url=audio_url,
                     transcript=episode.transcript,
                     outline=episode.outline,
+                    transcript_segments=getattr(episode, "transcript_segments", []),
                     created=iso(episode.created) if episode.created else None,
                     job_status=job_status,
                     error_message=error_message,
@@ -292,9 +307,7 @@ async def list_podcast_episodes(
         raise
     except Exception as e:
         logger.error(f"Error listing podcast episodes: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to list podcast episodes"
-        )
+        raise HTTPException(status_code=500, detail="Failed to list podcast episodes")
 
 
 @router.get("/podcasts/episodes/{episode_id}", response_model=PodcastEpisodeResponse)
@@ -333,10 +346,13 @@ async def get_podcast_episode(episode_id: str):
             episode_profile=episode.episode_profile,
             speaker_profile=episode.speaker_profile,
             briefing=episode.briefing,
+            mode=normalize_podcast_mode(getattr(episode, "mode", None)),
+            custom_prompt=getattr(episode, "custom_prompt", None),
             audio_file=episode.audio_file,
             audio_url=audio_url,
             transcript=episode.transcript,
             outline=episode.outline,
+            transcript_segments=getattr(episode, "transcript_segments", []),
             created=iso(episode.created) if episode.created else None,
             job_status=job_status,
             error_message=error_message,
@@ -532,6 +548,11 @@ async def _retry_podcast_episode_locked(episode_id: str):
             episode_name=episode_name,
             content=content,
             briefing_suffix=getattr(episode, "briefing_suffix", None),
+            mode=getattr(episode, "mode", None),
+            custom_prompt=(
+                getattr(episode, "custom_prompt", None)
+                or getattr(episode, "briefing_suffix", None)
+            ),
         )
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}
@@ -546,9 +567,7 @@ async def _retry_podcast_episode_locked(episode_id: str):
         raise
     except Exception as e:
         logger.error(f"Error retrying podcast episode: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to retry episode"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retry episode")
 
 
 class OutlineSegmentUpdate(BaseModel):
@@ -560,7 +579,7 @@ class OutlineSegmentUpdate(BaseModel):
 
 
 class OutlineUpdateRequest(BaseModel):
-    segments: List[OutlineSegmentUpdate] = Field(..., min_length=1, max_length=20)
+    segments: list[OutlineSegmentUpdate] = Field(..., min_length=1, max_length=20)
 
 
 @router.post("/podcasts/episodes/{episode_id}/cancel")
@@ -605,13 +624,10 @@ async def update_episode_outline(episode_id: str, request: OutlineUpdateRequest)
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Outline can only be edited while the episode is "
-                    "awaiting review."
+                    "Outline can only be edited while the episode is awaiting review."
                 ),
             )
-        episode.outline = {
-            "segments": [s.model_dump() for s in request.segments]
-        }
+        episode.outline = {"segments": [s.model_dump() for s in request.segments]}
         await episode.save()
         return {"message": "Outline updated", "outline": episode.outline}
     except HTTPException:
@@ -689,9 +705,7 @@ async def delete_podcast_episode(episode_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting podcast episode: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to delete episode"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete episode")
 
 
 # ---------------------------------------------------------------------------
@@ -735,9 +749,7 @@ class SuggestResponse(BaseModel):
             "on this content's distinguishing features. May be empty."
         ),
     )
-    reasoning: str = Field(
-        ..., description="One-line plain-English why-we-picked-this"
-    )
+    reasoning: str = Field(..., description="One-line plain-English why-we-picked-this")
     matched_signals: dict[str, int] = Field(
         default_factory=dict,
         description=(
@@ -752,34 +764,87 @@ class SuggestResponse(BaseModel):
 # strong, near-unambiguous indicators.
 _SIGNALS: dict[str, list[str]] = {
     "Tutorial": [
-        "how to", "how-to", "tutorial", "guide", "walkthrough", "getting started",
-        "step-by-step", "step by step", "beginners", "intro to", "introduction to",
-        "primer", "lesson", "cookbook", "handbook",
+        "how to",
+        "how-to",
+        "tutorial",
+        "guide",
+        "walkthrough",
+        "getting started",
+        "step-by-step",
+        "step by step",
+        "beginners",
+        "intro to",
+        "introduction to",
+        "primer",
+        "lesson",
+        "cookbook",
+        "handbook",
     ],
     "News Roundup": [
-        "news", "weekly", "daily", "roundup", "digest", "headlines",
-        "this week", "report", "press release", "announcement",
+        "news",
+        "weekly",
+        "daily",
+        "roundup",
+        "digest",
+        "headlines",
+        "this week",
+        "report",
+        "press release",
+        "announcement",
     ],
     "Debate": [
-        "vs", "versus", "debate", "argument", "controversy", "critique",
-        "rebuttal", "for and against", "pros and cons", "case against",
+        "vs",
+        "versus",
+        "debate",
+        "argument",
+        "controversy",
+        "critique",
+        "rebuttal",
+        "for and against",
+        "pros and cons",
+        "case against",
         "case for",
     ],
     "Recap & Review": [
-        "review", "recap", "verdict", "rating", "assessment", "post-mortem",
-        "retrospective", "book", "paper", "thesis", "dissertation",
+        "review",
+        "recap",
+        "verdict",
+        "rating",
+        "assessment",
+        "post-mortem",
+        "retrospective",
+        "book",
+        "paper",
+        "thesis",
+        "dissertation",
     ],
     "Story Mode": [
-        "story", "history of", "the rise of", "the fall of", "biography",
-        "memoir", "chronicle", "narrative", "saga",
+        "story",
+        "history of",
+        "the rise of",
+        "the fall of",
+        "biography",
+        "memoir",
+        "chronicle",
+        "narrative",
+        "saga",
     ],
     "Q&A Interview": [
-        "interview", "q&a", "ask me anything", "ama", "questions",
+        "interview",
+        "q&a",
+        "ask me anything",
+        "ama",
+        "questions",
         "conversation with",
     ],
     "Deep Dive": [
-        "deep dive", "everything you", "in depth", "comprehensive",
-        "complete guide", "definitive guide", "explained",
+        "deep dive",
+        "everything you",
+        "in depth",
+        "comprehensive",
+        "complete guide",
+        "definitive guide",
+        "explained",
     ],
 }
 
@@ -847,8 +912,7 @@ async def suggest_episode(req: SuggestRequest):
         try:
             # Sources are linked via a reference edge (`reference`).
             ref_rows = await repo_query(
-                "SELECT <-reference<-source.id AS source_ids "
-                "FROM ONLY $id;",
+                "SELECT <-reference<-source.id AS source_ids FROM ONLY $id;",
                 {"id": req.notebook_id},
             )
             ids: list[str] = []
@@ -908,9 +972,7 @@ async def suggest_episode(req: SuggestRequest):
         # the user has deleted. Falls back to the v0.7.30 default if
         # this fetch fails.
         prof_rows = await repo_query("SELECT name FROM episode_profile;")
-        available_presets = {
-            r.get("name") for r in prof_rows or [] if r.get("name")
-        }
+        available_presets = {r.get("name") for r in prof_rows or [] if r.get("name")}
     except HTTPException:
         # v0.7.108 — re-raise typed HTTPExceptions so the next
         # `except Exception` doesn't clobber them to 500.
