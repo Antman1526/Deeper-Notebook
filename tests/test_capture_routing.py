@@ -105,6 +105,54 @@ async def test_routes_ready_media_with_context_and_approval_required(
 
 
 @pytest.mark.asyncio
+async def test_prefers_injected_local_semantic_notebook_suggestions(
+    stable_media: tuple[Path, Path, CaptureInboxItem],
+) -> None:
+    root, media, item = stable_media
+
+    async def get_speech_to_text() -> _SpeechToTextModel:
+        return _SpeechToTextModel()
+
+    async def semantic_suggester(transcript, source, notebooks):
+        assert transcript.startswith("Plan the next")
+        assert source.path == str(media)
+        assert [notebook.id for notebook in notebooks] == ["notebook:semantic"]
+        return [
+            CaptureNotebook(
+                id="notebook:semantic", name="Unrelated title"
+            ).model_copy(
+                update={"score": 0.91, "reason": "Local semantic match"}
+            )
+        ]
+
+    # The service contract accepts the stricter suggestion subtype, while this
+    # fixture keeps the test independent of a running embedding provider.
+    async def typed_semantic_suggester(transcript, source, notebooks):
+        await semantic_suggester(transcript, source, notebooks)
+        from open_notebook.capture.routing import CaptureNotebookSuggestion
+
+        return [
+            CaptureNotebookSuggestion(
+                id="notebook:semantic",
+                name="Unrelated title",
+                score=0.91,
+                reason="Local semantic match",
+            )
+        ]
+
+    result = await CaptureRoutingService(
+        approved_roots=[root],
+        capture_items=[item],
+        notebooks=[CaptureNotebook(id="notebook:semantic", name="Unrelated title")],
+        get_speech_to_text=get_speech_to_text,
+        semantic_suggester=typed_semantic_suggester,
+    ).route(media)
+
+    assert result.notebook_suggestions[0].reason == "Local semantic match"
+    assert result.notebook_suggestions[0].score == 0.91
+
+
+@pytest.mark.asyncio
 async def test_returns_typed_no_model_state_without_fallback(
     stable_media: tuple[Path, Path, CaptureInboxItem],
 ) -> None:
