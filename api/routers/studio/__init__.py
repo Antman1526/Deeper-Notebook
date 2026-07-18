@@ -1,13 +1,16 @@
 """Backward-compatible aggregate facade for the split Studio router."""
+
 from __future__ import annotations
 
-from . import artifacts, common, revisions, workflows
+from fastapi.routing import APIRoute
+
+from . import artifacts, common, mind_maps, revisions, workflows
 from .common import router
 
 StudioGenerateResponse = workflows.StudioGenerateResponse
 
 
-_COMPONENTS = (common, artifacts, revisions, workflows)
+_COMPONENTS = (common, artifacts, revisions, workflows, mind_maps)
 
 
 def _export_legacy_symbols() -> set[str]:
@@ -73,5 +76,17 @@ _ROUTE_ORDER = (
     "delete_studio_artifact",
     "studio_generate",
 )
-_ROUTES_BY_NAME = {route.name: route for route in router.routes}
-router.routes[:] = [_ROUTES_BY_NAME[name] for name in _ROUTE_ORDER]
+router.include_router(mind_maps.router)
+# FastAPI 0.116 keeps child routers lazy as an internal route group. Preserve
+# that group after the legacy direct-route order instead of assuming every
+# entry exposes ``name`` like APIRoute did in older FastAPI releases.
+_DIRECT_ROUTES_BY_NAME = {
+    route.name: route for route in router.routes if isinstance(route, APIRoute)
+}
+_CHILD_ROUTE_GROUPS = [
+    route for route in router.routes if not isinstance(route, APIRoute)
+]
+router.routes[:] = [
+    *[_DIRECT_ROUTES_BY_NAME[name] for name in _ROUTE_ORDER],
+    *_CHILD_ROUTE_GROUPS,
+]

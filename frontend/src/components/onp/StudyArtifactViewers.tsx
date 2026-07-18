@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { MindMapArtifactViewer, type MindMapArtifactNode } from './MindMapArtifactViewer'
 
 interface Flashcard {
   front: string
@@ -34,11 +35,7 @@ interface ResearchRunSection {
 
 type DataTableRow = Record<string, string>
 
-interface MindMapNode {
-  id: string
-  label: string
-  children: MindMapNode[]
-}
+export type MindMapNode = MindMapArtifactNode
 
 interface CoursePackModule {
   title: string
@@ -267,24 +264,31 @@ export function normalizeDataTableRows(rows: unknown): DataTableRow[] {
 export function parseMindMap(markdown: string): MindMapNode[] {
   const roots: MindMapNode[] = []
   const stack: Array<{ level: number; node: MindMapNode }> = []
-  let nodeIndex = 0
 
   for (const line of markdown.split(/\r?\n/)) {
     const match = line.match(/^(\s*)[-*]\s+(.+)$/)
     if (!match?.[2]) continue
 
     const level = Math.floor((match[1]?.replace(/\t/g, '  ').length ?? 0) / 2)
-    const node: MindMapNode = {
-      id: `mind-map-node-${nodeIndex++}`,
-      label: stripMarkdown(match[2]),
-      children: [],
-    }
+    const rawLabel = stripMarkdown(match[2])
+    const citations = Array.from(rawLabel.matchAll(/\[S\d+\]/g), (citation) => citation[0])
+    const withoutCitations = rawLabel.replace(/\s*\[S\d+\]/g, '').trim()
+    const relationshipMatch = withoutCitations.match(/^(.*)\s+\(([^()]+)\)$/)
 
     while (stack.length > 0 && stack[stack.length - 1].level >= level) {
       stack.pop()
     }
 
     const parent = stack[stack.length - 1]?.node
+    const siblingIndex = parent ? parent.children.length : roots.length
+    const id = parent ? `${parent.id}/${siblingIndex}` : String(siblingIndex)
+    const node: MindMapNode = {
+      id,
+      label: relationshipMatch?.[1]?.trim() || withoutCitations,
+      relationship: relationshipMatch?.[2]?.trim() || '',
+      citations,
+      children: [],
+    }
     if (parent) parent.children.push(node)
     else roots.push(node)
     stack.push({ level, node })
@@ -596,24 +600,15 @@ export function DataTableViewer({
   )
 }
 
-function MindMapBranch({ node, depth = 0 }: { node: MindMapNode; depth?: number }) {
-  return (
-    <li className={cn('relative', depth > 0 && 'pl-4')}>
-      <div className="rounded-md border bg-background px-3 py-2 shadow-[var(--onp-elevation-low)]">
-        <div className="text-sm font-medium">{node.label}</div>
-      </div>
-      {node.children.length > 0 && (
-        <ul className="ml-3 mt-2 space-y-2 border-l pl-3">
-          {node.children.map((child) => (
-            <MindMapBranch key={child.id} node={child} depth={depth + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
-  )
-}
-
-export function MindMapViewer({ markdown }: { markdown: string }) {
+export function MindMapViewer({
+  markdown,
+  artifactId,
+  notebookId,
+}: {
+  markdown: string
+  artifactId?: string
+  notebookId?: string
+}) {
   const nodes = useMemo(() => parseMindMap(markdown), [markdown])
   const nodeCount = useMemo(() => {
     const countNodes = (items: MindMapNode[]): number =>
@@ -642,13 +637,7 @@ export function MindMapViewer({ markdown }: { markdown: string }) {
           {nodes.length} {nodes.length === 1 ? 'root' : 'roots'}
         </Badge>
       </div>
-      <div className="overflow-x-auto rounded-md border bg-muted/20 p-4">
-        <ul className="min-w-[36rem] space-y-3">
-          {nodes.map((node) => (
-            <MindMapBranch key={node.id} node={node} />
-          ))}
-        </ul>
-      </div>
+      <MindMapArtifactViewer nodes={nodes} artifactId={artifactId} notebookId={notebookId} />
     </section>
   )
 }

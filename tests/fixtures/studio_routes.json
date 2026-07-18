@@ -97,5 +97,32 @@
     "endpoint_name": "studio_generate",
     "response_model": "api.routers.studio.StudioGenerateResponse",
     "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/mind-map/branches/{node_path:path}/context",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "get_mind_map_branch_context",
+    "response_model": "api.routers.studio.mind_maps.MindMapBranchContextResponse",
+    "status_code": 200
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/mind-map/branches/{node_path:path}/artifacts",
+    "methods": [
+      "POST"
+    ],
+    "endpoint_name": "create_mind_map_branch_artifact",
+    "response_model": "api.schemas.studio.StudioArtifactResponse",
+    "status_code": 201
+  },
+  {
+    "path": "/studio/artifacts/{artifact_id}/mind-map.svg",
+    "methods": [
+      "GET"
+    ],
+    "endpoint_name": "export_mind_map_svg",
+    "response_model": null,
+    "status_code": 200
   }
 ]
