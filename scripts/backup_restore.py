@@ -216,7 +216,9 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
 
             for abs_p, arc_p in pairs:
                 tar.add(abs_p, arcname=arc_p)
-        tmp_path.rename(output_path)
+        # os.replace atomically overwrites a prior bundle on both POSIX and
+        # Windows. Path.rename cannot replace an existing destination there.
+        os.replace(tmp_path, output_path)
     except Exception:
         if tmp_path.exists():
             tmp_path.unlink()

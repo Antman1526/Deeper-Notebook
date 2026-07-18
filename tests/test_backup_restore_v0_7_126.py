@@ -125,6 +125,28 @@ def test_backup_restore_round_trip(tmp_path):
         assert restored.read_bytes() == payload, f"{rel} content mismatch"
 
 
+def test_backup_replaces_existing_bundle_when_windows_blocks_rename(tmp_path, monkeypatch):
+    """A repeated backup replaces its prior bundle even when the filesystem
+    forbids rename-overwrite, as Windows does."""
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+    _make_fake_data_dir(src_root)
+    bundle = tmp_path / "bundle.tar.gz"
+    br.backup(bundle, data_root=src_root)
+
+    original_rename = Path.rename
+
+    def windows_rename(self, target):
+        if self.suffix == ".tmp" and Path(target).exists():
+            raise FileExistsError("Windows rename cannot replace a file")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", windows_rename)
+    br.backup(bundle, data_root=src_root)
+
+    assert bundle.exists()
+
+
 def test_restore_refuses_non_empty_data_dir(tmp_path):
     """v0.7.126 — Restore refuses to overwrite an existing data dir
     unless --force. Prevents accidental destruction."""
