@@ -1,4 +1,6 @@
 import operator
+import os
+import tempfile
 from typing import Any, Dict, List
 
 from content_core import extract_content
@@ -14,6 +16,70 @@ from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.graphs.transformation import graph as transform_graph
+from open_notebook.research.safe_fetch import SafeFetchResponse, fetch_public_url
+
+
+def _text_from_safe_response(response: SafeFetchResponse) -> tuple[str, str]:
+    """Extract text locally after the network boundary has accepted a page."""
+    text = response.text
+    if response.content_type != "text/html":
+        return "Imported Web Source", text
+    try:
+        from bs4 import BeautifulSoup
+
+        document = BeautifulSoup(text, "lxml")
+        for element in document(["script", "style", "noscript"]):
+            element.decompose()
+        title = (
+            document.title.get_text(strip=True)
+            if document.title
+            else "Imported Web Source"
+        )
+        return title or "Imported Web Source", document.get_text(" ", strip=True)
+    except Exception:
+        # A malformed but public response is still safe to ingest as plain text.
+        return "Imported Web Source", text
+
+
+async def _extract_checked_url(content_state: dict[str, Any]):
+    """Fetch a URL once, then pass only local data to the extraction library."""
+    response = await fetch_public_url(content_state["url"])
+    if response.content_type.startswith("text/") or response.content_type in {
+        "application/json",
+        "application/xml",
+        "application/xhtml+xml",
+    }:
+        title, content = _text_from_safe_response(response)
+        from content_core.common.state import ProcessSourceOutput
+
+        return ProcessSourceOutput(
+            title=content_state.get("title") or title,
+            content=content,
+            url=response.url,
+            source_type="url",
+            identified_type="text",
+        )
+
+    suffix = os.path.splitext(response.url.split("?", 1)[0])[1]
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary_file:
+        temporary_file.write(response.body)
+        temporary_path = temporary_file.name
+    try:
+        processed = await extract_content(
+            {
+                "file_path": temporary_path,
+                "document_engine": content_state.get("document_engine"),
+                "output_format": content_state.get("output_format"),
+            }
+        )
+        processed.url = response.url
+        processed.file_path = None
+        return processed
+    finally:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
 
 
 class SourceState(TypedDict):
@@ -53,7 +119,8 @@ async def content_process(state: SourceState) -> dict:
     except Exception as exc:
         logger.warning(
             "content_process: failed to load ContentSettings "
-            "singleton (%s); using safe defaults", exc,
+            "singleton (%s); using safe defaults",
+            exc,
         )
         content_settings = ContentSettings(
             default_content_processing_engine_doc="auto",
@@ -61,7 +128,15 @@ async def content_process(state: SourceState) -> dict:
             default_embedding_option="ask",
             auto_delete_files="yes",
             youtube_preferred_languages=[
-                "en", "pt", "es", "de", "nl", "en-GB", "fr", "hi", "ja",
+                "en",
+                "pt",
+                "es",
+                "de",
+                "nl",
+                "en-GB",
+                "fr",
+                "hi",
+                "ja",
             ],
         )
     content_state: dict[str, Any] = state["content_state"]  # type: ignore[assignment]
@@ -109,7 +184,10 @@ async def content_process(state: SourceState) -> dict:
             )
 
     if processed_state is None:
-        processed_state = await extract_content(content_state)
+        if url:
+            processed_state = await _extract_checked_url(content_state)
+        else:
+            processed_state = await extract_content(content_state)
 
     # content-core signals a soft extraction failure (e.g. an unreachable or
     # invalid URL) by returning title="Error" and content prefixed with
@@ -239,7 +317,8 @@ async def transform_content(state: TransformationState) -> dict:
     # LangGraph release that returns a Pydantic state can't crash
     # source ingestion with KeyError / AttributeError mid-transform.
     output_text = (
-        result["output"] if isinstance(result, dict)
+        result["output"]
+        if isinstance(result, dict)
         else (getattr(result, "output", "") or "")
     )
     await source.add_insight(transformation.title, output_text)
