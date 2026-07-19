@@ -388,6 +388,10 @@ class Supervisor:
         self.session_env = {
             **os.environ,
             **self.extra_env,
+            # Packaged Python sources live inside the signed application
+            # bundle. Child interpreters must never refresh adjacent .pyc
+            # files or macOS will reject the bundle after its first launch.
+            "PYTHONDONTWRITEBYTECODE": "1",
             "DATA_FOLDER": str(data_folder),
             # v0.8.40 — expose control plane to the API subprocess.
             # Empty string when the control server failed to start.

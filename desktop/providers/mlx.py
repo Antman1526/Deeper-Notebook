@@ -1,8 +1,10 @@
 """MLX provider: scan local MLX repos and spawn mlx_lm.server."""
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -11,6 +13,9 @@ import httpx
 
 from desktop.ports import find_free_port
 from desktop.providers import ProviderEnv
+
+
+logger = logging.getLogger(__name__)
 
 
 def _http_ready(port: int) -> bool:
@@ -46,11 +51,14 @@ class MlxProvider:
         model_dir: Path,
         ready_probe: Callable[[int], bool] = _http_ready,
         max_wait: float = 60.0,
+        scan_timeout: float = 20.0,
         python_executable: str | Path | None = None,
     ) -> None:
         self.model_dir = model_dir
         self._ready_probe = ready_probe
         self._max_wait = max_wait
+        self._scan_timeout = scan_timeout
+        self._scan_timed_out = False
         self._python_executable: str | Path = (
             sys.executable if python_executable is None else python_executable
         )
@@ -61,6 +69,34 @@ class MlxProvider:
         return bool(self.list_models())
 
     def list_models(self) -> list[str]:
+        if self._scan_timed_out:
+            return []
+
+        result: list[list[str]] = []
+        failure: list[Exception] = []
+
+        def scan() -> None:
+            try:
+                result.append(self._list_models_unbounded())
+            except Exception as exc:
+                failure.append(exc)
+
+        thread = threading.Thread(target=scan, name="mlx-model-scan", daemon=True)
+        thread.start()
+        thread.join(timeout=self._scan_timeout)
+        if thread.is_alive():
+            self._scan_timed_out = True
+            logger.warning(
+                "MLX model scan exceeded %.1fs; skipping MLX for this startup",
+                self._scan_timeout,
+            )
+            return []
+        if failure:
+            logger.warning("MLX model scan failed: %s", failure[0])
+            return []
+        return result[0] if result else []
+
+    def _list_models_unbounded(self) -> list[str]:
         models: list[str] = []
         for root in _mlx_roots(self.model_dir):
             try:

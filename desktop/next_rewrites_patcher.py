@@ -39,11 +39,11 @@ The fix:
   2. A `.orig` backup is created on first patch so the operation
      is round-trippable — every launch reads from `.orig` (pristine
      build) and writes to the live file, never compounding edits.
-  3. If the bundle directory is read-only (e.g., `.app` installed
-     to `/Applications` by another user), the patcher copies the
-     frontend to `~/.open-notebook-plus/frontend-runtime/` and
-     patches there instead, returning that path for the launcher
-     to use as `cwd`.
+  3. If the frontend lives inside a macOS `.app` bundle, or its directory is
+     otherwise read-only, the patcher copies it to
+     `~/.open-notebook-plus/frontend-runtime/` and patches there instead.
+     A user-owned app under `/Applications` can be writable, but modifying it
+     would invalidate its code seal and can prevent the next launch.
 
 Long-term consideration:
 
@@ -130,6 +130,11 @@ def _is_writable(frontend_dir: Path) -> bool:
         return True
     except (PermissionError, OSError):
         return False
+
+
+def _is_inside_app_bundle(path: Path) -> bool:
+    """Return whether *path* is contained by a macOS ``.app`` bundle."""
+    return any(parent.suffix.lower() == ".app" for parent in (path, *path.parents))
 
 
 def _copy_to_writable(frontend_dir: Path) -> Path:
@@ -248,13 +253,17 @@ def patch_rewrites_for_api_port(
         )
         frontend_dir = real_dir
 
-    # First: see if we can write to the bundle. If not, copy to a
-    # per-user writable location and patch there.
+    # Never patch a macOS app bundle in place. Even a user-owned app under
+    # /Applications may be writable, but changing server.js or a manifest
+    # invalidates the code seal and can make the next launch fail before the
+    # webview renders. Other read-only locations use the same runtime copy.
     work_dir = frontend_dir
-    if not _is_writable(frontend_dir):
+    inside_app_bundle = _is_inside_app_bundle(frontend_dir)
+    if inside_app_bundle or not _is_writable(frontend_dir):
         log.info(
-            "Bundle frontend at %s is read-only; using writable copy",
+            "Bundle frontend at %s requires a writable runtime copy (%s)",
             frontend_dir,
+            "signed app bundle" if inside_app_bundle else "read-only source",
         )
         try:
             work_dir = _copy_to_writable(frontend_dir)

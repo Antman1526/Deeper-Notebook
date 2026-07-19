@@ -93,6 +93,29 @@ def test_patch_resolves_symlinked_bundle_to_real_files(tmp_path, monkeypatch):
     assert (work / "node_modules" / "marker.txt").exists()
 
 
+def test_patch_preserves_writable_signed_app_bundle(tmp_path, monkeypatch):
+    """A user-owned .app is writable but must never be patched in place.
+
+    Changing server.js under Contents invalidates the bundle's code seal and
+    can make the next macOS launch fail before the window renders.
+    """
+    app = tmp_path / "Open Notebook Plus.app"
+    fw = _make_symlinked_bundle(app)
+    source = app / "Contents" / "Resources" / "frontend"
+    original_server = (source / "server.js").read_text()
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(nrp, "_is_writable", lambda _path: True)
+
+    work = nrp.patch_rewrites_for_api_port(fw, 53999)
+
+    assert work == home / ".open-notebook-plus" / nrp.WRITABLE_COPY_NAME
+    assert "localhost:53999" in (work / "server.js").read_text()
+    assert (source / "server.js").read_text() == original_server
+    assert not (source / "server.js.orig").exists()
+
+
 def test_patch_real_dir_unchanged_path(tmp_path, monkeypatch):
     """Non-symlinked (dev / Windows) frontend: writable dir is patched in place,
     no resolution/copy. Guards the no-op branch."""

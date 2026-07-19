@@ -1,4 +1,5 @@
 import subprocess
+import threading
 import time
 from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock
@@ -37,6 +38,29 @@ def test_is_available_false_when_no_mlx_repo(tmp_path):
 def test_list_models_returns_complete_mlx_repos(mlx_model_root):
     provider = MlxProvider(model_dir=mlx_model_root)
     assert provider.list_models() == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
+
+
+def test_list_models_times_out_when_model_directory_scan_blocks(monkeypatch, tmp_path):
+    release_scan = threading.Event()
+
+    class BlockingRoot:
+        def iterdir(self):
+            release_scan.wait()
+            return iter(())
+
+    monkeypatch.setattr("desktop.providers.mlx._mlx_roots", lambda _: [BlockingRoot()])
+    provider = MlxProvider(model_dir=tmp_path, scan_timeout=0.01)
+
+    started = time.monotonic()
+    try:
+        assert provider.list_models() == []
+        assert time.monotonic() - started < 0.5
+
+        # A timed-out scan stays disabled for this startup instead of blocking again.
+        assert provider.list_models() == []
+        assert time.monotonic() - started < 0.5
+    finally:
+        release_scan.set()
 
 
 def test_list_models_uses_forward_slashes_for_windows_public_ids(monkeypatch):
