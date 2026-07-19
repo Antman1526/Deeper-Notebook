@@ -5,6 +5,7 @@ import platform
 import shutil
 import sys
 import tarfile
+import time
 import tomllib
 import urllib.request
 import zipfile
@@ -36,11 +37,32 @@ def host_arch() -> str:
     raise RuntimeError(f"Unsupported platform: {sys_plat}/{machine}")
 
 
-def download(url: str, dest: Path) -> None:
-    print(f"  downloading {url}")
+def download(url: str, dest: Path, attempts: int = 4) -> None:
+    """Download atomically, retrying truncated or interrupted transfers."""
+    partial = dest.with_name(f"{dest.name}.part")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url) as r, dest.open("wb") as f:
-        shutil.copyfileobj(r, f)
+    for attempt in range(1, attempts + 1):
+        print(f"  downloading {url} (attempt {attempt}/{attempts})")
+        partial.unlink(missing_ok=True)
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response, partial.open("wb") as output:
+                shutil.copyfileobj(response, output)
+                output.flush()
+
+                expected = response.headers.get("Content-Length")
+                if expected is not None and partial.stat().st_size != int(expected):
+                    raise EOFError(
+                        f"truncated download: expected {expected} bytes, "
+                        f"received {partial.stat().st_size}"
+                    )
+
+            partial.replace(dest)
+            return
+        except Exception:
+            partial.unlink(missing_ok=True)
+            if attempt == attempts:
+                raise
+            time.sleep(2 ** (attempt - 1))
 
 
 def fetch_surreal(version: str, url: str, arch: str) -> None:
