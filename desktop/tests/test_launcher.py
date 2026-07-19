@@ -171,6 +171,7 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
+        assert sv.session_env["PYTHONDONTWRITEBYTECODE"] == "1"
         # With provider="none" and no GGUF, advertise no local chat URL.
         # Publishing an unused allocated port here made downstream health
         # checks and diagnostics claim a provider existed when it did not.

@@ -460,8 +460,15 @@ def _do_register(
         registered_any = True
 
     # --- 3 & 4. llama.cpp / openai_compatible (with or without live server) --
-    # Discover GGUFs here so the call is patchable at desktop.auto_register.
-    local_ggufs = _list_local_ggufs(cfg.model_dir)
+    # Discovery is only useful when a live llama.cpp chat server can serve the
+    # files. In an MLX-only launch, walking a model directory that is being
+    # downloaded or synced can block macOS `scandir` indefinitely and prevent
+    # the main window from opening.
+    local_ggufs = (
+        _list_local_ggufs(cfg.model_dir)
+        if llamacpp_port is not None
+        else []
+    )
     if register_llamacpp_models(
         client, existing_cred_names, existing_model_keys,
         model_dir=cfg.model_dir, llamacpp_port=llamacpp_port,

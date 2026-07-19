@@ -63,8 +63,9 @@ def test_do_register_invokes_mlx_registration(monkeypatch, tmp_path: Path):
     client.put.return_value = MagicMock(status_code=200, text="{}")
 
     register_mlx = MagicMock(return_value=True)
+    gguf_scan = MagicMock(return_value=[])
     monkeypatch.setattr("desktop.auto_register._list_ollama_models", lambda: [])
-    monkeypatch.setattr("desktop.auto_register._list_local_ggufs", lambda _model_dir: [])
+    monkeypatch.setattr("desktop.auto_register._list_local_ggufs", gguf_scan)
     monkeypatch.setattr("desktop.auto_register.register_osaurus_models", lambda **_kwargs: False)
     monkeypatch.setattr("desktop.auto_register.register_mlx_models", register_mlx)
     monkeypatch.setattr(
@@ -89,6 +90,7 @@ def test_do_register_invokes_mlx_registration(monkeypatch, tmp_path: Path):
     )
 
     register_mlx.assert_called_once()
+    gguf_scan.assert_not_called()
     assert register_mlx.call_args.kwargs["base_url"] == "http://127.0.0.1:51231/v1"
     assert (
         register_mlx.call_args.kwargs["model_ref"]
