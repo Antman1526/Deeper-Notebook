@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { AppSidebar } from './AppSidebar'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 
@@ -29,7 +29,30 @@ vi.mock('@/lib/hooks/use-media-query', () => ({
   useIsDesktop: () => true,
 }))
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('AppSidebar', () => {
+  it('does not animate the initial responsive desktop expansion', () => {
+    let enableTransitions: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      enableTransitions = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+    const { container } = render(<AppSidebar />)
+
+    const sidebar = container.querySelector('.app-sidebar')
+    expect(sidebar).not.toBeNull()
+    expect(sidebar?.className).not.toContain('transition-all')
+    expect(sidebar?.className).not.toContain('transition-[width]')
+
+    act(() => enableTransitions?.(0))
+    expect(sidebar.className).toContain('transition-[width]')
+  })
+
   it('renders correctly when expanded', () => {
     render(<AppSidebar />)
 

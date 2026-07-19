@@ -110,6 +110,17 @@ export function AppSidebar() {
   // saved preference (expanded or collapsed) applies normally.
   const isDesktop = useIsDesktop()
   const isCollapsed = isDesktop ? storeCollapsed : true
+  const [widthTransitionsEnabled, setWidthTransitionsEnabled] = useState(false)
+
+  // The SSR-safe media-query hook starts in compact mode, then resolves the
+  // desktop viewport after mount. Enabling the width transition immediately
+  // makes expanded labels render over a 64px rail for the first 300ms.
+  // Wait one frame so the initial responsive correction snaps into place;
+  // later user-triggered collapse/expand actions still animate normally.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setWidthTransitionsEnabled(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   // v0.7.28 — `null` until the effect resolves. The previous `true`
@@ -139,7 +150,8 @@ export function AppSidebar() {
     <TooltipProvider delayDuration={0}>
       <div
         className={cn(
-          'app-sidebar flex h-full flex-col bg-sidebar border-sidebar-border border-r transition-all duration-300',
+          'app-sidebar flex h-full flex-col bg-sidebar border-sidebar-border border-r',
+          widthTransitionsEnabled && 'transition-[width] duration-300',
           isCollapsed ? 'w-16' : 'w-64'
         )}
       >
