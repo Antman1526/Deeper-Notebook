@@ -1,5 +1,9 @@
 # Open Notebook Plus
 
+<p align="center">
+  <img src="docs/assets/open-notebook-plus-icon.png" alt="Open Notebook Plus desktop icon" width="220" />
+</p>
+
 **A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts and instructor-ready Course Packs — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama / MLX model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, Evidence Studio artifact generation, and a downstream-friendly update strategy on top of upstream.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -9,7 +13,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136.3%2B-009688)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0-ff6f00)
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
-![Tests](https://img.shields.io/badge/tests-2033%20backend%20%2B%20477%20frontend-success)
+![Desktop verification](https://img.shields.io/badge/desktop%20tests-456%20passed-success)
 
 > GitHub: **https://github.com/Antman1526/open-notebook-Plus** — a downstream fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
 
@@ -113,13 +117,14 @@ A focused improvement cycle (benchmarked against Google NotebookLM and local-fir
 
 ## Screenshots
 
-> _Screenshots coming soon._ Add images under `docs/assets/` and reference them here, e.g.:
->
-> ```markdown
-> ![Notebook view](docs/assets/notebook.png)
-> ![Source chat with citations](docs/assets/chat-citations.png)
-> ![Podcast outline review](docs/assets/podcast-outline.png)
-> ```
+The desktop icon used by the native macOS and Windows installers is included
+above and tracked at [`docs/assets/open-notebook-plus-icon.png`](docs/assets/open-notebook-plus-icon.png).
+
+The current desktop release was verified in the packaged application: the
+sidebar renders at its final width on first desktop paint, the setup health
+screen reaches a fully healthy state, and MLX can supply local chat when no
+chat GGUF is installed. See the [current reconstruction snapshot](docs/recreation/00-current-snapshot-2026-07-19.md)
+for the exact release checks and known limits.
 
 ---
 
@@ -386,17 +391,26 @@ make test-integration
 cd frontend && npm test
 ```
 
-Current suites: **2033 backend tests + 477 frontend Vitest tests**, plus SurrealDB integration tests. Every macOS desktop build runs the full backend + frontend suite as a Stage-0 precondition, so a green build implies green tests. CI runs them in [`.github/workflows/test.yml`](.github/workflows/test.yml). Desktop launcher behavior is covered separately under `desktop/tests/`.
+The test suite is intentionally split by backend, frontend, desktop launcher,
+and optional live-SurrealDB integration paths. The current macOS release
+verification ran **456 desktop tests** and then verified the signed installed
+application after launch. Run the commands above in your checkout instead of
+treating a README count as a release gate. CI runs the server and frontend
+suites in [`.github/workflows/test.yml`](.github/workflows/test.yml); desktop
+behavior is covered under `desktop/tests/`.
 
 ---
 
 ## Reconstruction documentation
 
-The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or a senior engineer to recreate the project from scratch without guessing — real code snippets, exact versions, config specs, and step-by-step instructions:
+The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is written for another AI or a senior engineer to recreate the project from scratch without guessing: real code snippets, exact versions, configuration specifications, edge cases, and step-by-step build instructions.
+
+Start with [`00-current-snapshot-2026-07-19.md`](docs/recreation/00-current-snapshot-2026-07-19.md), which records the verified desktop release and supersedes any older value that conflicts with the current branch.
 
 - **`01`–`15`** — (1) project overview & architecture, (2) environment setup & dependencies, (3) database schema & data models, (4) backend API specifications, (5) frontend architecture & components, (6) authentication & authorization, (7) business logic & core algorithms, (8) integration points & external services, (9) configuration & environment variables, (10) testing strategy & test cases, (11) build & deployment pipeline, (12) error handling & logging, (13) performance optimization & caching, (14) security implementation, (15) file structure & code organization.
 - [`PROJECT-DEEP-DIVE.md`](docs/recreation/PROJECT-DEEP-DIVE.md) — a dense AI-review brief: key code walkthrough, data flow, pain points, design trade-offs, and an **"Areas for Review"** prompt for an AI reviewer.
 - [`TECHNOLOGY-AUDIT.md`](docs/recreation/TECHNOLOGY-AUDIT.md) — an exhaustive technology inventory with each tool's specific role in this repo.
+- [`AI-REVIEW-01` through `AI-REVIEW-03`](docs/recreation/README.md) — three focused review briefs covering the product/code walkthrough, data flow/dependencies, and risks/trade-offs.
 
 These files are also mirrored to `~/Desktop/OpenNotebook/project-docs/` for loading into Open Notebook Plus itself as source material.
 

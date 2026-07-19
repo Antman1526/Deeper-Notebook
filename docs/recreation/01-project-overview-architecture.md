@@ -3,7 +3,7 @@
 > Exhaustive recreation documentation for **Open Notebook Plus**.
 > Target: an engineer (or AI) rebuilding the system from scratch.
 > Repo: `Antman1526/open-notebook-Plus`, branch `desktop-app`.
-> Desktop app version: **0.8.5** (`desktop/__init__.py` `__version__`).
+> Desktop app version: **0.8.97** (`desktop/__init__.py` `__version__`).
 > Upstream/Docker image version: **1.8.5** (`pyproject.toml` `version` — a *separate* version track; do not conflate).
 
 ---
@@ -133,7 +133,7 @@ Backend dev tools (`[dependency-groups].dev`): `pytest>=9.0.3`, `pytest-asyncio>
 | Native window | pywebview | `==5.4` |
 | Packaging | pyinstaller | `>=6.13.0,<7` |
 | Local chat/embed server | llama-cpp-python[server] | `>=0.3.16,<0.4` |
-| Apple-Silicon LLM server | mlx-lm | `>=0.26,<0.27` (darwin/arm64 only) |
+| Apple-Silicon LLM server | mlx-lm | `>=0.30.6,<0.32` (darwin/arm64 only) |
 | STT | faster-whisper | `>=1.1.0,<2` |
 | TTS | piper-tts | `>=1.2.0,<2` |
 | Memory | mem0ai | `>=0.1.0,<2` |

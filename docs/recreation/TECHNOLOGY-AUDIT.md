@@ -2,7 +2,7 @@
 
 An exhaustive inventory of every language, framework, library, tool, and service used, with each item's **specific role in this project** and version constraints. Sourced from `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`, `Dockerfile*`, `.github/workflows/*`, `Makefile`, `supervisord*.conf`, `desktop/build/pyinstaller.spec`, and real imports.
 
-> Version tracks: desktop app `0.8.5` (`desktop/__init__.py`); upstream/Docker image `1.8.5` (`pyproject.toml`). `requires-python = ">=3.11,<3.13"`.
+> Version tracks: desktop app `0.8.97` (`desktop/__init__.py`); upstream/Docker image `1.8.5` (`pyproject.toml`). `requires-python = ">=3.11,<3.13"`. The dated release details and startup corrections are in `00-current-snapshot-2026-07-19.md`.
 
 ---
 
@@ -65,7 +65,7 @@ An exhaustive inventory of every language, framework, library, tool, and service
 |---|---|---|
 | **Esperanto** | `>=2.20.0,<3` | Unified multi-provider abstraction (`LanguageModel`, `AIFactory`) for LLM / embeddings / TTS across OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI, OpenRouter, Voyage, ElevenLabs, Azure, Vertex, openai_compatible. `provision_langchain_model()` and `ModelManager` build on it. |
 | **llama-cpp-python[server]** | `>=0.3.16,<0.4` (CVE-2024-42479 pin) | Bundled local GGUF inference sidecars. Launcher spawns `python -m llama_cpp.server` twice — a **chat** server and an **embed** (nomic) server — exposing an OpenAI-compatible API on dynamic ports; `--n_gpu_layers=-1` on macOS Metal for full offload. The `[server]` extra pulls in starlette-context/sse-starlette/PyYAML. |
-| **mlx-lm** | `>=0.26,<0.27` (`darwin`+`arm64` only) | Apple-Silicon MLX local model server (`python -m mlx_lm.server`) against `~/Desktop/AI_Models/MLX`, same OpenAI-compatible shape as llama.cpp. |
+| **mlx-lm** | `>=0.30.6,<0.32` (`darwin`+`arm64` only) | Apple-Silicon MLX local model server (`python -m mlx_lm.server`) against the configured `MLX/` directory, normally `~/Desktop/AI_Models/MLX`; it exposes the same OpenAI-compatible shape as llama.cpp. Discovery is time-bounded so an unavailable or slow model volume cannot hang desktop startup. |
 | **Ollama** | via `langchain-ollama` / Esperanto | Local model provider (never gated by the offline gate — treated as machine-local). |
 | **huggingface-hub** | `>=1.3.0` | `snapshot_download` for managed local-model installs (`desktop/model_downloads.py`, first-run model fetch). |
 | **Smart router** | `open_notebook/ai/router.py` (in-repo) | `pick_provider()` chooses local vs cloud by health + token-fit + `default_provider`; gated behind `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` env / UI toggle. |

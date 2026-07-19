@@ -136,7 +136,7 @@ pywebview==5.4
 pyinstaller>=6.13.0,<7
 aiohttp>=3.11.18,<4                 # CVE-2025-37960
 llama-cpp-python[server]>=0.3.16,<0.4   # CVE-2024-42479; [server] extra REQUIRED
-mlx-lm>=0.26,<0.27; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-lm>=0.30.6,<0.32; sys_platform == "darwin" and platform_machine == "arm64"
 faster-whisper>=1.1.0,<2            # STT
 piper-tts>=1.2.0,<2                 # TTS
 mem0ai>=0.1.0,<2                    # in-process memory layer
