@@ -37,6 +37,14 @@ Allowlist = Mapping[tuple[str, str], str]
 _GLOB_PREFIXES = (
     "docs/superpowers/specs/",
     "docs/superpowers/plans/",
+    "docs/0-START-HERE/",
+    "docs/1-INSTALLATION/",
+    "docs/2-CORE-CONCEPTS/",
+    "docs/3-USER-GUIDE/",
+    "docs/4-AI-PROVIDERS/",
+    "docs/5-CONFIGURATION/",
+    "docs/6-TROUBLESHOOTING/",
+    "docs/7-DEVELOPMENT/",
 )
 
 
@@ -152,9 +160,20 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
         if lines is None:
             continue
         for line_number, line in enumerate(lines, start=1):
-            for pattern in patterns:
-                if pattern in line:
-                    record(relative_path, pattern, "content", line_number)
+            found_patterns = [pattern for pattern in patterns if pattern in line]
+            allowed_contexts = [
+                pattern
+                for pattern in found_patterns
+                if classify_match(relative_path, pattern, allowlist)
+                != "unexpected_active_identity"
+            ]
+            for pattern in found_patterns:
+                if any(
+                    pattern != context and pattern in context
+                    for context in allowed_contexts
+                ):
+                    continue
+                record(relative_path, pattern, "content", line_number)
 
     stale = [
         {"path": path, "pattern": pattern, "category": category}
