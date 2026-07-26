@@ -25,6 +25,8 @@ from typing import List, Optional
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 
 def get_secret_from_env(var_name: str) -> Optional[str]:
     """
@@ -81,14 +83,14 @@ def _get_encryption_keys_from_env() -> list[str]:
         ValueError: If no key is configured at all.
     """
     # Plural takes precedence — comma-separated list.
-    multi = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
+    multi = resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env)
     if multi:
         keys = [k.strip() for k in multi.split(",")]
         keys = [k for k in keys if k]
         if keys:
             return keys
 
-    single = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+    single = resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env)
     if single:
         return [single]
 
@@ -205,7 +207,7 @@ def _derive_fernet_key_pbkdf2(
 def _selected_kdf() -> str:
     """Read the configured KDF from env. Defaults to 'sha256' for
     backward compatibility — existing deployments see no change."""
-    return os.environ.get("ONP_ENCRYPTION_KDF", "sha256").strip().lower() or "sha256"
+    return resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "sha256").strip().lower() or "sha256"
 
 
 # Order in which to try KDFs during decryption. Listed in PREFERENCE

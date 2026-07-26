@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.notebook import vector_search
 from open_notebook.exceptions import (
@@ -69,7 +70,7 @@ _DEFAULT_ASK_NODE_TIMEOUT_SEC = 120.0
 
 
 def _ask_node_timeout_sec() -> float:
-    raw = (os.environ.get("ONP_ASK_NODE_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC") or "").strip()
     if not raw:
         return _DEFAULT_ASK_NODE_TIMEOUT_SEC
     try:
@@ -130,7 +131,7 @@ _AGENT_FSM_CLARIFY_MESSAGE = (
 
 
 def _agent_fsm_enabled() -> bool:
-    raw = (os.environ.get("ONP_AGENT_FSM") or "").strip().lower()
+    raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_FSM") or "").strip().lower()
     return raw in ("on", "1", "true", "yes")
 
 
@@ -160,7 +161,7 @@ _TRUNCATION_MARKER = "\n[...truncated for context budget...]"
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
     """Parse a positive integer from env; fall back to default on garbage."""
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None:
         return default
     try:
@@ -186,9 +187,9 @@ def _truncate_ask_results(results: list) -> list:
     Non-`matches` fields (id, parent_id, title, similarity) are
     untouched — they're tiny and the prompt needs them for citation.
     """
-    max_results = _env_int("ONP_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1)
+    max_results = _env_int("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1)
     char_cap = _env_int(
-        "ONP_ASK_PER_RESULT_CHAR_CAP",
+        "DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP",
         _ASK_PER_RESULT_CHAR_CAP_DEFAULT,
         minimum=200,
     )

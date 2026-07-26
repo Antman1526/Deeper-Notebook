@@ -49,6 +49,8 @@ import time
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 __all__ = [
     "WEB_SEARCH_TOOL_NAME",
     "active_provider",
@@ -80,6 +82,8 @@ def _env(name: str) -> str:
     """Read an env var, trimmed; '' when unset. Centralised so empty/whitespace
     values are treated as unset everywhere (a blank key must not "enable" a
     provider that then 401s on every turn)."""
+    if name.startswith("DEEPER_NOTEBOOK_"):
+        return (resolve_env(name) or "").strip()
     return (os.environ.get(name) or "").strip()
 
 
@@ -133,7 +137,7 @@ def _provider_chain() -> list[tuple[str, str | None]]:
             for url in searxng_urls:
                 chain.append(("searxng", url))
 
-    override = _env("ONP_WEB_SEARCH_PROVIDER").lower()
+    override = _env("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER").lower()
     if override in available and available[override]:
         add(override)
     else:
@@ -157,7 +161,7 @@ def web_search_enabled() -> bool:
 
 
 def _max_results() -> int:
-    raw = _env("ONP_WEB_SEARCH_MAX_RESULTS")
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS")
     if not raw:
         return _DEFAULT_MAX_RESULTS
     try:
@@ -168,7 +172,7 @@ def _max_results() -> int:
 
 
 def _timeout_sec() -> float:
-    raw = _env("ONP_WEB_SEARCH_TIMEOUT_SEC")
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC")
     if not raw:
         return _DEFAULT_TIMEOUT_SEC
     try:
@@ -179,7 +183,7 @@ def _timeout_sec() -> float:
 
 
 def _total_budget_sec() -> float:
-    raw = _env("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC")
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_TOTAL_BUDGET_SEC")
     if not raw:
         return _DEFAULT_TOTAL_BUDGET_SEC
     try:

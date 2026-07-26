@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -21,13 +21,15 @@ from typing import IO, TYPE_CHECKING
 
 import httpx
 
+from deeper_notebook.environment import normalize_product_environment, resolve_env
+
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
 
+from desktop import launcher_prefs  # v0.8.6 — file-backed preference layer
 from desktop.config import Config
 from desktop.paths import user_home
 from desktop.ports import find_free_ports
-from desktop import launcher_prefs  # v0.8.6 — file-backed preference layer
 
 # v0.6.5 — debugging supervised-child failures was painful: every optional
 # service had `except Exception: pass`, so a misconfigured Piper voice path
@@ -53,7 +55,7 @@ def _n_gpu_layers(env_key: str, *, mac_default: int = -1) -> str:
     → mac_default=-1. Other OSes default to CPU (0) so a CUDA build with limited
     VRAM can't OOM the box; those users opt in via `env_key`. Any value is
     overridable per sidecar via the env var without a rebuild."""
-    raw = (os.environ.get(env_key) or "").strip()
+    raw = (resolve_env(env_key) or "").strip()
     if raw:
         try:
             return str(int(raw))
@@ -154,7 +156,7 @@ def _startup_timeout(env_key: str, default: float) -> float:
     cold mmap of a large GGUF) — never on a real crash. Operators can override
     per service via env without a rebuild; a non-positive or unparseable value
     falls back to `default`."""
-    raw = (os.environ.get(env_key) or "").strip()
+    raw = (resolve_env(env_key) or "").strip()
     if raw:
         try:
             val = float(raw)
@@ -283,6 +285,7 @@ class Supervisor:
         # (_spawn_llamacpp_chat, _local_chat_healthy_cached, etc.) see
         # the file-backed values transparently without special-casing.
         launcher_prefs.merge_with_env(os.environ)
+        launcher_environment = normalize_product_environment(os.environ)
 
         from desktop.singleton import (
             acquire_singleton,
@@ -362,14 +365,14 @@ class Supervisor:
             log.warning("launcher control server failed to start: %s", exc)
             control_url = ""
             control_token = ""
-        self.session_env = {
-            **os.environ,
+        self.session_env = normalize_product_environment({
+            **launcher_environment,
             **self.extra_env,
             "DATA_FOLDER": str(data_folder),
             # v0.8.40 — expose control plane to the API subprocess.
             # Empty string when the control server failed to start.
-            "OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
-            "OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN": control_token,
+            "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
+            "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN": control_token,
             "SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
             "SURREAL_USER": self.cfg.surreal_user,
             "SURREAL_PASSWORD": self.cfg.surreal_password,
@@ -409,7 +412,7 @@ class Supervisor:
             "INTERNAL_API_URL": api_url,
             "NEXT_PUBLIC_API_URL": api_url,
             "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
-            "OPEN_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
             # v0.4 memory layer: predeclare URLs so the surreal-commands worker
             # (spawned before these servers actually bind) sees them in its env.
             # The real servers come up later in start_all; worker connects
@@ -430,7 +433,7 @@ class Supervisor:
             # (since v0.7.193), so threading the same value through
             # here gives provision.py the URL it expected the whole
             # time.
-            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
                 f"http://127.0.0.1:{chat_llm_port}/v1"
             ),
             # v0.8.7 — Export the same n_ctx value the sidecar will
@@ -443,14 +446,14 @@ class Supervisor:
             # os.environ wins (v0.8.5 precedence chain in provision.py
             # reads it first), so this is the GGUF-autodetect channel
             # rather than an override.
-            "OPEN_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+            "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
             # v0.8.38 — point the API at the launcher's log dir so
             # `GET /healthz/sidecars/{kind}/log` can read the per-
             # sidecar `.tail` files (last ~50 stderr lines) the new
             # _start_tail_drainer writes. Without this the API has
             # no way to surface why a sidecar died.
-            "OPEN_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
-        }
+            "DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
+        })
 
         # v0.8.67l — self-heal a live-query-corrupted DB BEFORE SurrealDB starts
         # (clean slate, nothing connected yet). The flag is set by the worker
@@ -472,7 +475,10 @@ class Supervisor:
             # fails fast on an actual crash, so the bigger ceiling only ever
             # waits on a slow-but-alive start.
             "127.0.0.1", surreal_port,
-            timeout=_startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0),
+            timeout=_startup_timeout(
+                "DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT",
+                90.0,
+            ),
             proc=self._procs[-1] if self._procs else None,
         )
         self._progress("supervisor.surreal", "done")
@@ -508,7 +514,10 @@ class Supervisor:
             # uvicorn crash, so the bigger ceiling only waits on a slow-but-alive
             # cold import (never on a crash).
             f"http://127.0.0.1:{api_port}/readyz",
-            timeout=_startup_timeout("ONP_API_READY_TIMEOUT", 300.0),
+            timeout=_startup_timeout(
+                "DEEPER_NOTEBOOK_API_READY_TIMEOUT",
+                300.0,
+            ),
             proc=self._procs[-1] if self._procs else None,
         )
         self._progress("supervisor.api", "done")
@@ -531,8 +540,8 @@ class Supervisor:
         # status 500" with no API actually broken. See
         # desktop/next_rewrites_patcher.py for the full incident write-up.
         from desktop.next_rewrites_patcher import (
-            patch_rewrites_for_api_port,
             PatchError,
+            patch_rewrites_for_api_port,
         )
         next_cwd = self.repo_root / "frontend"
         try:
@@ -554,7 +563,10 @@ class Supervisor:
             # v0.8.67d — was 120 s; raised + env-tunable for the same post-update
             # cold-start reason as the /readyz gate above.
             f"http://127.0.0.1:{frontend_port}/",
-            timeout=_startup_timeout("ONP_FRONTEND_READY_TIMEOUT", 180.0),
+            timeout=_startup_timeout(
+                "DEEPER_NOTEBOOK_FRONTEND_READY_TIMEOUT",
+                180.0,
+            ),
             proc=self._procs[-1] if self._procs else None,
             # v0.8.68 — the webview navigates exactly once; gate on what it
             # will actually request (final page after the / redirect) and
@@ -639,7 +651,10 @@ class Supervisor:
                     # This gate already LOGS-and-proceeds on timeout (below), so
                     # it never aborts the app — the bump just lets big models be
                     # marked healthy instead of prematurely red.
-                    timeout=_startup_timeout("ONP_SIDECAR_TCP_TIMEOUT", 90.0),
+                    timeout=_startup_timeout(
+                        "DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT",
+                        90.0,
+                    ),
                     proc=self._procs[-1],
                 )
             except (TimeoutError, RuntimeError) as exc:
@@ -767,7 +782,7 @@ class Supervisor:
         # outage that needed a full DB re-import to repair. Default 8 s; raise via
         # ONP_SHUTDOWN_GRACE_SECS for large databases.
         try:
-            _grace = float(os.environ.get("ONP_SHUTDOWN_GRACE_SECS", "8") or 8)
+            _grace = float(resolve_env("DEEPER_NOTEBOOK_SHUTDOWN_GRACE_SECS", "8") or 8)
         except ValueError:
             _grace = 8.0
         if _grace <= 0:
@@ -1057,7 +1072,7 @@ class Supervisor:
         #      Mac running a 14B local model + 5 concurrent
         #      embed/insight/podcast jobs) can lower via
         #      ONP_WORKER_MAX_TASKS env without code edits.
-        max_tasks_raw = os.environ.get("ONP_WORKER_MAX_TASKS", "5")
+        max_tasks_raw = resolve_env("DEEPER_NOTEBOOK_WORKER_MAX_TASKS", "5")
         try:
             max_tasks = max(1, min(int(max_tasks_raw), 32))
         except ValueError:
@@ -1082,7 +1097,7 @@ class Supervisor:
         log pointing at the manual script."""
         # Opt-out hook (set by the test conftest) so unit tests that drive
         # start_all with mocked subprocesses never touch the real data dir.
-        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+        if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
             return
         try:
             from desktop import db_repair
@@ -1095,7 +1110,7 @@ class Supervisor:
                 "running automatic backup-first repair before boot…"
             )
             try:
-                repair_port = int(os.environ.get("ONP_REPAIR_PORT", "18799") or 18799)
+                repair_port = int(resolve_env("DEEPER_NOTEBOOK_REPAIR_PORT", "18799") or 18799)
             except ValueError:
                 repair_port = 18799
             ok = db_repair.auto_repair(
@@ -1125,7 +1140,7 @@ class Supervisor:
         exists" crash. If seen, set the one-shot repair flag so the NEXT boot
         auto-heals — we do NOT repair mid-boot, because the API is already
         connected to the live DB. Runs in a daemon thread; never blocks boot."""
-        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+        if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
             return
         worker_log = self.log_dir / "worker.log"
         data_home = user_home() / ".open-notebook-plus"
@@ -1193,16 +1208,16 @@ class Supervisor:
         (0 disables) and ONP_AUTO_EXPORT_KEEP. Sleeps the interval FIRST, so it
         never adds boot I/O and is inert in fast-finishing tests. Failures log
         and retry next interval — never crash the supervisor."""
-        if os.environ.get("ONP_DISABLE_DB_AUTOREPAIR"):
+        if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
             return
         try:
-            hours = float(os.environ.get("ONP_AUTO_EXPORT_HOURS", "24") or 24)
+            hours = float(resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_HOURS", "24") or 24)
         except ValueError:
             hours = 24.0
         if hours <= 0:
             return
         try:
-            keep = int(os.environ.get("ONP_AUTO_EXPORT_KEEP", "7") or 7)
+            keep = int(resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_KEEP", "7") or 7)
         except ValueError:
             keep = 7
         keep = max(1, keep)
@@ -1212,7 +1227,7 @@ class Supervisor:
         # sessions produced NO backup at all — the protection rarely fired.
         try:
             first_delay = float(
-                os.environ.get("ONP_AUTO_EXPORT_FIRST_DELAY_SECS", "600") or 600
+                resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_FIRST_DELAY_SECS", "600") or 600
             )
         except ValueError:
             first_delay = 600.0
@@ -1544,7 +1559,7 @@ class Supervisor:
         # baseline behaviour, so we're never WORSE off here.
         try:
             self._push_env_to_api({
-                "OPEN_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+                "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
             })
         except Exception as exc:
             log.warning(
@@ -1572,7 +1587,10 @@ class Supervisor:
         import httpx as _httpx
 
         api_port = self.session_env.get("API_PORT")
-        token = self.session_env.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "")
+        token = self.session_env.get(
+            "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN",
+            "",
+        )
         if not api_port or not token:
             raise RuntimeError(
                 "API_PORT / control token unavailable in session_env",
@@ -1607,7 +1625,8 @@ class Supervisor:
             # v0.8.67c — GPU-offload the embedder too (Metal on Apple Silicon).
             # Tiny model, but it keeps source-embedding fast and consistent with
             # the chat sidecar; CPU on non-macOS by default.
-            "--n_gpu_layers", _n_gpu_layers("ONP_EMBED_N_GPU_LAYERS"),
+            "--n_gpu_layers",
+            _n_gpu_layers("DEEPER_NOTEBOOK_EMBED_N_GPU_LAYERS"),
         ]
         self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
 
@@ -1820,14 +1839,14 @@ class Supervisor:
             self._default_ctx_max(), self._available_ram_bytes()
         )
         try:
-            _env_ctx_max = os.environ.get("ONP_CHAT_LLM_CTX_MAX")
+            _env_ctx_max = resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX")
             ctx_max = int(_env_ctx_max) if _env_ctx_max else _fallback
             if ctx_max < 512:
                 ctx_max = _fallback
         except ValueError:
             ctx_max = _fallback
 
-        env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")
+        env_n_ctx = resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_CTX")
         if env_n_ctx:
             # Explicit user override — validate but otherwise trust.
             try:
@@ -1945,7 +1964,8 @@ class Supervisor:
             # Without this, llama_cpp.server defaults to n_gpu_layers=0 and the
             # whole model runs on CPU — so slow the chat never returns a
             # completion (the silent-chatbot bug). -1 = all layers on macOS.
-            "--n_gpu_layers", _n_gpu_layers("ONP_CHAT_LLM_N_GPU_LAYERS"),
+            "--n_gpu_layers",
+            _n_gpu_layers("DEEPER_NOTEBOOK_CHAT_LLM_N_GPU_LAYERS"),
         ]
 
         # v0.8.3 — Speculative decoding via --model_draft. Originally
@@ -1966,8 +1986,8 @@ class Supervisor:
         #   - n_predict knob without a draft path = dropped silently
         #     (llama_cpp.server would reject a bare --n_predict_draft).
         _MIN_GGUF_BYTES = 1 * 1024 * 1024
-        _draft_path_str = os.environ.get(
-            "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", ""
+        _draft_path_str = (
+            resolve_env("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", "") or ""
         ).strip()
         if _draft_path_str:
             from pathlib import Path as _Path
@@ -1980,8 +2000,12 @@ class Supervisor:
                 # Only emit --n_predict_draft when the draft model was
                 # accepted above; bare n_predict without a draft model
                 # would make llama_cpp.server reject the argv at parse.
-                _draft_n_env = os.environ.get(
-                    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", ""
+                _draft_n_env = (
+                    resolve_env(
+                        "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+                        "",
+                    )
+                    or ""
                 ).strip()
                 if _draft_n_env:
                     try:

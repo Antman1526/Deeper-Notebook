@@ -13,6 +13,8 @@ import os
 
 from surreal_commands import command
 
+from deeper_notebook.environment import resolve_env
+
 
 def _build_clients(model_override: str | None = None):
     """Lazily build the LLM + memory clients at command-invocation time.
@@ -71,7 +73,7 @@ def _build_clients(model_override: str | None = None):
     # would have crashed the worker.
     import httpx
 
-    chat_timeout_s = float(os.environ.get("ONP_CHAT_TIMEOUT_S", "30"))
+    chat_timeout_s = float(resolve_env("DEEPER_NOTEBOOK_CHAT_TIMEOUT_S", "30"))
     # v0.7.83 — caller-provided model_override takes precedence over
     # the env-var fallback. The local llama-cpp-python server echoes
     # whatever model name we send back as the active model regardless
@@ -80,7 +82,7 @@ def _build_clients(model_override: str | None = None):
     # that actually route by model name.
     chat_model_name = (
         model_override
-        or os.environ.get("ONP_CHAT_MODEL_NAME")
+        or resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME")
         or "default"
     )
 

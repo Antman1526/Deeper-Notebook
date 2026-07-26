@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 import desktop.memory._register  # noqa: F401 — registers `surreal` provider
+from deeper_notebook.environment import resolve_env
 
 try:
     from mem0 import Memory
@@ -34,7 +35,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     """
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
-    chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")
+    chat_model_name = resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME", "default")
     return Memory.from_config({
         "vector_store": {
             "provider": "surreal",

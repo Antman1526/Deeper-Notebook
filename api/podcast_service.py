@@ -7,6 +7,7 @@ from pydantic import BaseModel, field_validator
 from surreal_commands import get_command_status, submit_command
 
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
     ConfigurationError,
@@ -226,7 +227,7 @@ class PodcastService:
                 from open_notebook.utils import token_count
 
                 _max_tokens = int(
-                    _os.environ.get("ONP_PODCAST_MAX_CONTENT_TOKENS", "100000")
+                    resolve_env("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "100000")
                     or 100000
                 )
             except Exception:
@@ -284,11 +285,13 @@ class PodcastService:
             # v0.7.115 — also wrap in wait_for so a hung pool can't
             # pin the podcast-generation endpoint. Same env knob as
             # CommandService.submit_command_job for consistency.
-            import os as _os_for_timeout
-
             _submit_timeout = float(
-                _os_for_timeout.environ.get(
-                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
+                (
+                    resolve_env(
+                        "DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC",
+                        "10",
+                    )
+                    or "10"
                 ).strip()
                 or 10
             )
@@ -379,11 +382,13 @@ class PodcastService:
                 logger.error(f"Failed to import podcast commands: {import_err}")
                 raise ValueError("Podcast commands not available")
 
-            import os as _os_for_timeout
-
             _submit_timeout = float(
-                _os_for_timeout.environ.get(
-                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10"
+                (
+                    resolve_env(
+                        "DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC",
+                        "10",
+                    )
+                    or "10"
                 ).strip()
                 or 10
             )

@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from deeper_notebook.environment import resolve_env
+
 
 def _rpc_timeout(default: float = 30.0) -> float:
     """v0.8.66 (audit MCP-1) — bound EVERY MCP RPC. Without this, an
@@ -20,7 +22,7 @@ def _rpc_timeout(default: float = 30.0) -> float:
     the `/api/mcp/{id}/test` endpoint) up to the transport's ~300s SSE read
     timeout. Guarded+clamped like the other env knobs: blank/garbage/≤0 →
     default 30s."""
-    raw = (os.environ.get("ONP_MCP_RPC_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MCP_RPC_TIMEOUT_SEC") or "").strip()
     if not raw:
         return default
     try:
@@ -35,7 +37,7 @@ def _env_headers() -> Optional[dict[str, str]]:
     `ONP_MCP_AUTH_HEADER="Authorization: Bearer <token>"` (a single
     `Name: value` pair) makes auth'd streamable-http servers usable without a
     registry-schema change. Returns None when unset."""
-    raw = (os.environ.get("ONP_MCP_AUTH_HEADER") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MCP_AUTH_HEADER") or "").strip()
     if not raw or ":" not in raw:
         return None
     name, _, value = raw.partition(":")

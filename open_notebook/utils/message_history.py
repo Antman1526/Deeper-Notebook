@@ -20,6 +20,8 @@ from typing import Any
 from langchain_core.messages import SystemMessage
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 # A marker injected at the front of the trimmed list so the model
 # sees that earlier turns existed and were elided rather than
 # hallucinating a nonexistent earlier exchange. Same string used for
@@ -31,7 +33,7 @@ HISTORY_TRUNCATION_MARKER = (
 
 
 def _env_int(name: str, default: int, minimum: int) -> int:
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None:
         return default
     try:
@@ -113,10 +115,10 @@ def _truncate_message_content(msg: Any, cap_chars: int) -> Any:
 def trim_message_history(
     messages: list,
     *,
-    env_var_name: str = "ONP_CHAT_HISTORY_CHAR_CAP",
+    env_var_name: str = "DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP",
     default_char_cap: int = 12_000,
     minimum_cap: int = 500,
-    per_message_cap_env: str = "ONP_CHAT_MESSAGE_CHAR_CAP",
+    per_message_cap_env: str = "DEEPER_NOTEBOOK_CHAT_MESSAGE_CHAR_CAP",
     default_per_message_cap: int = 24_000,
 ) -> list:
     """Drop oldest messages until the total fits under the char cap.

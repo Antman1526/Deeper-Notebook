@@ -17,6 +17,7 @@ import re
 import threading
 from typing import Any
 
+from deeper_notebook.environment import resolve_env
 from desktop.memory.prompts import (
     EXTRACT_TURN_SYSTEM_PROMPT,
     SUMMARIZE_SESSION_SYSTEM_PROMPT,
@@ -83,7 +84,7 @@ _MAX_BUFFERED_SESSIONS = 512
 def _batch_turns() -> int:
     """Read ONP_MEMORY_BATCH_TURNS; default 1 (no batching). Invalid / <1
     values fall back to 1 so a typo can't silently disable extraction."""
-    raw = (os.environ.get("ONP_MEMORY_BATCH_TURNS") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS") or "").strip()
     if not raw:
         return 1
     try:
@@ -96,7 +97,7 @@ def _batch_turns() -> int:
 def _keep_per_table() -> int:
     """Read ONP_MEMORY_KEEP_PER_TABLE; fall back to the default on
     missing/invalid/non-positive values."""
-    raw = (os.environ.get("ONP_MEMORY_KEEP_PER_TABLE") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE") or "").strip()
     if not raw:
         return _DEFAULT_KEEP_PER_TABLE
     try:
@@ -199,7 +200,7 @@ _BACKEND_DOWN_EXC_NAMES = frozenset({
 # everything (unchanged); a missing/garbled score is treated as 1.0 so we never
 # silently drop a fact just because the model omitted the number.
 def _confidence_floor() -> float:
-    raw = (os.environ.get("ONP_MEMORY_CONFIDENCE_FLOOR") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR") or "").strip()
     if not raw:
         return 0.0
     try:

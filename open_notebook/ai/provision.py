@@ -7,6 +7,7 @@ from esperanto import LanguageModel
 from langchain_core.language_models.chat_models import BaseChatModel
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import model_manager
 from open_notebook.ai.offline_gate import gate_language_model_id
 from open_notebook.exceptions import ConfigurationError
@@ -38,7 +39,7 @@ def _get_health_cache_lock() -> asyncio.Lock:
 
 def _truthy_env(name: str) -> bool:
     """Return True when env var is set to a truthy value (1/true/yes/on)."""
-    return os.getenv(name, "").lower() in ("1", "true", "yes", "on")
+    return resolve_env(name, "").lower() in ("1", "true", "yes", "on")
 
 
 async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bool:
@@ -91,7 +92,7 @@ async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)")
 
             # Desktop bootstrap writes this env var when the chat sidecar
             # registers its port (see desktop/app.py _phase_auto_register).
-            base_url = os.getenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "")
+            base_url = resolve_env("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "")
             creds: list[dict] = []
             if base_url:
                 creds.append(
@@ -121,8 +122,8 @@ async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)")
 
 def _configured_local_model_dir() -> Path | None:
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -185,9 +186,9 @@ async def provision_langchain_chat_model(
     # Otherwise consult DefaultModels.auto_route_enabled (the new Settings
     # toggle). Net effect: power-users keep their env-driven setup;
     # UI-driven users get a click-to-enable workflow.
-    env_explicit = os.environ.get("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "").strip()
+    env_explicit = resolve_env("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "").strip()
     if env_explicit:
-        smart_routing_on = _truthy_env("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT")
+        smart_routing_on = _truthy_env("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT")
     else:
         try:
             defaults_for_toggle = await model_manager.get_defaults()
@@ -217,10 +218,10 @@ async def provision_langchain_chat_model(
     from open_notebook.ai.router import pick_provider
 
     content_tokens = token_count(content)
-    local_model_id = os.getenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID") or None
+    local_model_id = resolve_env("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID") or None
     if not local_model_id:
         local_model_id = await _measured_local_chat_model_id()
-    cloud_model_id = os.getenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID") or None
+    cloud_model_id = resolve_env("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID") or None
     if not cloud_model_id:
         # v0.8.1 — use the dedicated auto_route_cloud field, NOT
         # default_chat_model. The v0.8.0 code fell back to default_chat_model
@@ -252,8 +253,8 @@ async def provision_langchain_chat_model(
     # session_env is built).
     try:
         local_n_ctx = int(
-            os.getenv("OPEN_NOTEBOOK_LOCAL_N_CTX")
-            or os.getenv("ONP_CHAT_LLM_CTX")
+            resolve_env("DEEPER_NOTEBOOK_LOCAL_N_CTX")
+            or resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_CTX")
             or "32768"
         )
     except ValueError:
@@ -264,7 +265,7 @@ async def provision_langchain_chat_model(
     # v0.8.37 — UI provider preference. Env var still wins for back-compat;
     # if unset, read `auto_route_provider_pref` from DefaultModels (new
     # Settings dropdown). Final fallback: "auto".
-    default_provider = os.getenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "").strip()
+    default_provider = resolve_env("DEEPER_NOTEBOOK_CHAT_PROVIDER", "").strip()
     if not default_provider:
         try:
             defaults_for_pref = await model_manager.get_defaults()
@@ -290,7 +291,7 @@ async def provision_langchain_chat_model(
     # llama.cpp 400. Env-tunable; default 8192 (reply) + 1024 (system/tools).
     try:
         _reply_headroom = int(
-            os.getenv("ONP_LOCAL_REPLY_HEADROOM_TOKENS") or "8192"
+            resolve_env("DEEPER_NOTEBOOK_LOCAL_REPLY_HEADROOM_TOKENS") or "8192"
         )
         if _reply_headroom < 0:
             _reply_headroom = 8192

@@ -6,9 +6,14 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model, model_manager
 from open_notebook.domain.notebook import text_search, vector_search
-from open_notebook.exceptions import DatabaseOperationError, InvalidInputError, NotFoundError
+from open_notebook.exceptions import (
+    DatabaseOperationError,
+    InvalidInputError,
+    NotFoundError,
+)
 from open_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
@@ -27,7 +32,7 @@ async def search_knowledge_base(search_request: SearchRequest):
     import asyncio
     import os
     _search_timeout = float(
-        os.environ.get("ONP_SEARCH_TIMEOUT_SEC", "60").strip() or 60
+        resolve_env("DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC", "60").strip() or 60
     )
     try:
         if search_request.type == "vector":

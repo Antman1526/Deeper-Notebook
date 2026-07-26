@@ -1,10 +1,18 @@
-# Load environment variables
+import os
+
 from dotenv import load_dotenv
 
+from deeper_notebook.environment import (
+    normalize_product_environment,
+    resolve_env,
+)
+
+# Load and normalize product-owned settings before importing authentication,
+# logging, credentials, model routing, or database modules.
 load_dotenv()
+_NORMALIZED_PRODUCT_ENVIRONMENT = normalize_product_environment(os.environ)
 
 import asyncio
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -225,8 +233,8 @@ async def lifespan(app: FastAPI):
     # who has finished rotation and only has OPEN_NOTEBOOK_ENCRYPTION_KEYS
     # set was getting a spurious "encryption will fail" warning pointing
     # at the wrong variable.
-    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
-    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    has_singular = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env))
+    has_plural = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env))
     if not (has_singular or has_plural):
         logger.warning(
             "Neither OPEN_NOTEBOOK_ENCRYPTION_KEY nor "
@@ -667,7 +675,7 @@ else:
 # unset (auth becomes a no-op), so CORS=* + no-password = open API
 # wide open to the world. This is a foot-gun the README warns about
 # but it's worth surfacing at process boot too — operators tail logs.
-_password_is_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+_password_is_set = bool(resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env))
 # v0.7.154 — Severity downgrade: ERROR → WARNING for the desktop fork.
 # The desktop launcher binds the API to 127.0.0.1 ONLY (see
 # desktop/launcher.py:_spawn_api `--host 127.0.0.1`), so "anyone with
@@ -1150,7 +1158,7 @@ async def metrics(request: Request):
     # startup) so operators can rotate the token via .env reload
     # without restarting the API. Cost is a single dict lookup;
     # negligible vs the actual metric rendering.
-    expected_token = os.environ.get("ONP_METRICS_AUTH_TOKEN", "").strip()
+    expected_token = resolve_env("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "").strip()
     if expected_token:
         # Authorization parsing is intentionally strict — no
         # case-insensitive 'bearer ' match, no fallback to a query

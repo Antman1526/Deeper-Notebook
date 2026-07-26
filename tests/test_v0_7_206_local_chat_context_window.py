@@ -109,16 +109,16 @@ def test_gguf_context_detect_handles_corrupt_path():
 
 
 def test_explicit_env_var_still_wins():
-    """v0.7.206 — when ONP_CHAT_LLM_CTX IS set explicitly, the
-    user's choice must win over auto-detection. (Tested via the
+    """v0.7.206 — when DEEPER_NOTEBOOK_CHAT_LLM_CTX or an alias is explicit,
+    the user's choice must win over auto-detection. (Tested via the
     desktop launcher fixture in test_launcher.py:
     test_chat_llm_n_ctx_respects_env_var — pin the source-level
     branch here too so a careless refactor that drops the explicit-
     env branch is caught by the cheap AST test.)"""
     src = _src("desktop/launcher.py")
-    assert 'env_n_ctx = os.environ.get("ONP_CHAT_LLM_CTX")' in src
+    assert 'env_n_ctx = resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_CTX")' in src
     assert "if env_n_ctx:" in src, (
-        "v0.7.206 regression: explicit ONP_CHAT_LLM_CTX env-var "
+        "v0.7.206 regression: explicit chat n_ctx environment setting "
         "branch removed from chat n_ctx resolution. Users would "
         "lose the ability to override the auto-detected cap."
     )

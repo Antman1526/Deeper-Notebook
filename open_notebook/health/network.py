@@ -29,6 +29,8 @@ from typing import Callable, Literal
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 _DEFAULT_PROBE_TARGETS: list[tuple[str, int]] = [("1.1.1.1", 443), ("8.8.8.8", 443)]
 _PROBE_TIMEOUT_S = 2.0
 _DEFAULT_TTL_S = 20.0
@@ -57,14 +59,14 @@ def _get_probe_lock() -> asyncio.Lock:
 
 def _ttl_s() -> float:
     try:
-        v = float(os.environ.get("ONP_NETWORK_STATE_TTL_SEC") or _DEFAULT_TTL_S)
+        v = float(resolve_env("DEEPER_NOTEBOOK_NETWORK_STATE_TTL_SEC") or _DEFAULT_TTL_S)
         return v if v > 0 else _DEFAULT_TTL_S
     except ValueError:
         return _DEFAULT_TTL_S
 
 
 def _probe_targets() -> list[tuple[str, int]]:
-    raw = (os.environ.get("ONP_NET_PROBE_HOSTS") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_NET_PROBE_HOSTS") or "").strip()
     if not raw:
         return _DEFAULT_PROBE_TARGETS
     targets: list[tuple[str, int]] = []

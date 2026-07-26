@@ -5,6 +5,7 @@ Provides endpoints to check authentication status.
 
 from fastapi import APIRouter
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.utils.encryption import get_secret_from_env
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,7 +18,7 @@ async def get_auth_status():
     Returns whether a password is required to access the API.
     Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
     """
-    auth_enabled = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+    auth_enabled = bool(resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env))
 
     return {
         "auth_enabled": auth_enabled,

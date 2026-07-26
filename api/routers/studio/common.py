@@ -29,6 +29,7 @@ from api.schemas.studio import (
     StudioWorkflowRunCreate,
     StudioWorkflowRunResponse,
 )
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -307,7 +308,7 @@ def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | N
 
 
 def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
+    raw = resolve_env(name, "").strip()
     if not raw:
         return default
     try:
@@ -324,8 +325,8 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-_MAX_EXTRACT_CHARS_PER_FILE = _env_int("ONP_STUDIO_MAX_FILE_CHARS", 15_000)
-_MAX_COMBINED_CHARS = _env_int("ONP_STUDIO_MAX_COMBINED_CHARS", 60_000)
+_MAX_EXTRACT_CHARS_PER_FILE = _env_int("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000)
+_MAX_COMBINED_CHARS = _env_int("DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000)
 
 
 async def _notebook_record_exists(notebook_id: str) -> bool:
