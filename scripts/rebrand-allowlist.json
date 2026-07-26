@@ -7,7 +7,7 @@
     },
     {
       "path": "deeper_notebook/identity.py",
-      "pattern": "open_notebook",
+      "pattern": "LEGACY_PYTHON_PACKAGE = \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
@@ -17,67 +17,102 @@
     },
     {
       "path": "desktop/build/open-notebook-plus.iss",
-      "pattern": "open-notebook-plus",
-      "category": "compatibility_alias"
-    },
-    {
-      "path": "desktop/build/open-notebook-plus.iss",
       "pattern": "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}",
       "category": "compatibility_alias"
     },
     {
       "path": "desktop/db_repair.py",
-      "pattern": "open_notebook",
+      "pattern": "namespace: str = \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/db_repair.py",
+      "pattern": "database: str = \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "desktop/launcher.py",
-      "pattern": "open_notebook",
+      "pattern": "\"SURREAL_NAMESPACE\": \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/launcher.py",
+      "pattern": "\"SURREAL_DATABASE\": \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/launcher.py",
+      "pattern": "\"--namespace\", \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/launcher.py",
+      "pattern": "\"--database\", \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "desktop/memory/_register.py",
-      "pattern": "open_notebook",
+      "pattern": "namespace: str = \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/_register.py",
+      "pattern": "database: str = \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "desktop/memory/client.py",
-      "pattern": "open_notebook",
+      "pattern": "\"namespace\": \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/client.py",
+      "pattern": "\"database\": \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "desktop/memory/surreal_store.py",
-      "pattern": "open_notebook",
+      "pattern": "namespace: str = \"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/surreal_store.py",
+      "pattern": "database: str = \"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/embedding_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/embedding_commands.py",
+      "pattern": "\"open_notebook\",",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/example_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/podcast_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/prompt_optimizer_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/source_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
       "path": "commands/studio_commands.py",
-      "pattern": "open_notebook",
+      "pattern": "app=\"open_notebook\"",
       "category": "compatibility_alias"
     },
     {
@@ -258,11 +293,6 @@
     {
       "path": "tests/test_product_identity.py",
       "pattern": ".open-notebook-plus",
-      "category": "compatibility_alias"
-    },
-    {
-      "path": "tests/test_product_identity.py",
-      "pattern": "open_notebook",
       "category": "compatibility_alias"
     },
     {
