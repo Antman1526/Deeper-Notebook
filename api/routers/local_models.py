@@ -19,7 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from deeper_notebook.environment import resolve_env
+from deeper_notebook.environment import normalize_product_environment, resolve_env
 from open_notebook.local_models import (
     cancel_snapshot_install,
     get_snapshot_install,
@@ -1687,7 +1687,11 @@ async def local_models_set_active(body: dict):
                    or f"Launcher returned HTTP {status_code}",
         )
     if lbody.get("ok", False):
-        os.environ["OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL"] = str(resolved)
+        os.environ.update(
+            normalize_product_environment(
+                {"DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL": str(resolved)}
+            )
+        )
     return {
         "ok": lbody.get("ok", False),
         "path": str(resolved),

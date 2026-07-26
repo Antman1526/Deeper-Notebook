@@ -3,14 +3,14 @@ import os
 from dotenv import load_dotenv
 
 from deeper_notebook.environment import (
-    normalize_product_environment,
+    apply_product_environment,
     resolve_env,
 )
 
 # Load and normalize product-owned settings before importing authentication,
 # logging, credentials, model routing, or database modules.
 load_dotenv()
-_NORMALIZED_PRODUCT_ENVIRONMENT = normalize_product_environment(os.environ)
+_NORMALIZED_PRODUCT_ENVIRONMENT = apply_product_environment(os.environ)
 
 import asyncio
 from contextlib import asynccontextmanager
