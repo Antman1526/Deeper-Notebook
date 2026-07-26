@@ -39,21 +39,36 @@ def _clear_aliases(monkeypatch: pytest.MonkeyPatch, canonical: str) -> None:
 def _apply_and_resolve_secret(
     monkeypatch: pytest.MonkeyPatch,
     environment: dict[str, str],
+    canonical: str = "DEEPER_NOTEBOOK_ENCRYPTION_KEY",
 ):
-    canonical = "DEEPER_NOTEBOOK_ENCRYPTION_KEY"
+    product_names = {
+        candidate
+        for name in SETTINGS[canonical].precedence
+        for candidate in (name, f"{name}_FILE")
+    }
+    original_environment = {
+        name: os.environ[name]
+        for name in product_names
+        if name in os.environ
+    }
     _clear_aliases(monkeypatch, canonical)
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        normalized = apply_product_environment(os.environ)
-        value, receipt = resolve_env(
-            canonical,
-            getter=get_secret_from_env,
-            with_receipt=True,
-        )
-    return value, receipt, normalized, caught
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            normalized = apply_product_environment(os.environ)
+            value, receipt = resolve_env(
+                canonical,
+                getter=get_secret_from_env,
+                with_receipt=True,
+            )
+        return value, receipt, normalized, caught
+    finally:
+        for name in product_names:
+            os.environ.pop(name, None)
+        os.environ.update(original_environment)
 
 
 def _assert_secret_values_not_exposed(
@@ -441,6 +456,253 @@ def test_apply_keeps_canonical_direct_ahead_of_lower_legacy_file(
     assert "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
     _assert_secret_values_not_exposed(
         (canonical_secret, legacy_file_secret),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_falls_through_missing_canonical_file_to_usable_legacy_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical_path = tmp_path / "missing-canonical"
+    legacy_path = tmp_path / "usable-legacy"
+    legacy_secret = "legacy-file-after-missing-sentinel"
+    legacy_path.write_text(f"{legacy_secret}\n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(canonical_path),
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_path),
+        },
+    )
+
+    assert value == legacy_secret
+    assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
+        canonical_path
+    )
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
+    _assert_secret_values_not_exposed(
+        (legacy_secret,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_falls_through_unreadable_canonical_file_to_usable_legacy_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical_path = tmp_path / "unreadable-canonical"
+    legacy_path = tmp_path / "usable-legacy"
+    canonical_secret = "unreadable-canonical-file-sentinel"
+    legacy_secret = "legacy-file-after-unreadable-sentinel"
+    canonical_path.write_text(f"{canonical_secret}\n", encoding="utf-8")
+    legacy_path.write_text(f"{legacy_secret}\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def _deny_canonical_read(path, *args, **kwargs):
+        if path == canonical_path:
+            raise PermissionError("portable unreadable-file simulation")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _deny_canonical_read)
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(canonical_path),
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_path),
+        },
+    )
+
+    assert value == legacy_secret
+    assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
+        canonical_path
+    )
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
+    _assert_secret_values_not_exposed(
+        (canonical_secret, legacy_secret),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_falls_through_empty_canonical_file_to_usable_legacy_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical_path = tmp_path / "empty-canonical"
+    legacy_path = tmp_path / "usable-legacy"
+    legacy_secret = "legacy-file-after-empty-sentinel"
+    canonical_path.write_text(" \n", encoding="utf-8")
+    legacy_path.write_text(f"{legacy_secret}\n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(canonical_path),
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_path),
+        },
+    )
+
+    assert value == legacy_secret
+    assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
+        canonical_path
+    )
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
+    _assert_secret_values_not_exposed(
+        (legacy_secret,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_preserves_long_short_file_chain_until_usable_legacy_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical = "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN"
+    canonical_path = tmp_path / "missing-canonical"
+    short_path = tmp_path / "empty-short"
+    legacy_path = tmp_path / "usable-legacy"
+    lower_direct = "lower-direct-behind-file-sentinel"
+    legacy_secret = "usable-legacy-file-chain-sentinel"
+    short_path.write_text(" \n", encoding="utf-8")
+    legacy_path.write_text(f"{legacy_secret}\n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            f"{canonical}_FILE": str(canonical_path),
+            "DN_METRICS_AUTH_TOKEN_FILE": str(short_path),
+            "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE": str(legacy_path),
+            "ONP_METRICS_AUTH_TOKEN": lower_direct,
+        },
+        canonical,
+    )
+
+    assert value == legacy_secret
+    assert receipt.winner == "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN"
+    assert normalized[f"{canonical}_FILE"] == str(canonical_path)
+    assert normalized["DN_METRICS_AUTH_TOKEN_FILE"] == str(short_path)
+    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(
+        legacy_path
+    )
+    _assert_secret_values_not_exposed(
+        (legacy_secret, lower_direct),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_preserves_long_short_file_chain_until_usable_lower_direct(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical = "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN"
+    canonical_path = tmp_path / "missing-canonical"
+    short_path = tmp_path / "empty-short"
+    legacy_path = tmp_path / "missing-legacy"
+    lower_direct = "usable-lower-direct-chain-sentinel"
+    short_path.write_text(" \n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            f"{canonical}_FILE": str(canonical_path),
+            "DN_METRICS_AUTH_TOKEN_FILE": str(short_path),
+            "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE": str(legacy_path),
+            "ONP_METRICS_AUTH_TOKEN": lower_direct,
+        },
+        canonical,
+    )
+
+    assert value == lower_direct
+    assert receipt.winner == "ONP_METRICS_AUTH_TOKEN"
+    assert normalized[f"{canonical}_FILE"] == str(canonical_path)
+    assert normalized["DN_METRICS_AUTH_TOKEN_FILE"] == str(short_path)
+    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(
+        legacy_path
+    )
+    _assert_secret_values_not_exposed(
+        (lower_direct,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_keeps_usable_canonical_file_ahead_of_preserved_lower_chain(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical = "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN"
+    canonical_path = tmp_path / "usable-canonical"
+    short_path = tmp_path / "usable-short"
+    canonical_secret = "usable-canonical-file-chain-sentinel"
+    short_secret = "lower-short-file-chain-sentinel"
+    lower_direct = "lower-legacy-direct-chain-sentinel"
+    canonical_path.write_text(f"{canonical_secret}\n", encoding="utf-8")
+    short_path.write_text(f"{short_secret}\n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            f"{canonical}_FILE": str(canonical_path),
+            "DN_METRICS_AUTH_TOKEN_FILE": str(short_path),
+            "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN": lower_direct,
+        },
+        canonical,
+    )
+
+    assert value == canonical_secret
+    assert receipt.winner == canonical
+    assert normalized[f"{canonical}_FILE"] == str(canonical_path)
+    assert normalized["DN_METRICS_AUTH_TOKEN_FILE"] == str(short_path)
+    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN"] == lower_direct
+    _assert_secret_values_not_exposed(
+        (canonical_secret, short_secret, lower_direct),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_mirrors_single_legacy_file_for_child_compatibility(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    legacy_path = tmp_path / "legacy-only"
+    legacy_secret = "legacy-only-file-sentinel"
+    legacy_path.write_text(f"{legacy_secret}\n", encoding="utf-8")
+
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {"OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_path)},
+    )
+
+    assert value == legacy_secret
+    assert receipt.winner == "DEEPER_NOTEBOOK_ENCRYPTION_KEY"
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
+    _assert_secret_values_not_exposed(
+        (legacy_secret,),
         receipt,
         caught,
         capsys.readouterr(),

@@ -315,11 +315,13 @@ def resolve_env(
 def normalize_product_environment(
     environment: Mapping[str, str],
 ) -> dict[str, str]:
-    """Return a child-process-safe copy with winners mirrored to all aliases.
+    """Return a child-process-safe copy with precedence-safe alias mirrors.
 
     ``*_FILE`` variables are normalized as file paths.  This function never
     opens those paths, so secret file contents cannot be copied into the
-    returned environment or into warnings.
+    returned environment or into warnings.  Distinct assigned file/direct
+    pairs retain their alias positions so file-aware getters can fall through
+    unusable paths without normalization destroying the fallback chain.
     """
     normalized = dict(environment)
     for aliases in SETTINGS.values():
@@ -335,28 +337,43 @@ def normalize_product_environment(
         if winner is None:
             continue
 
-        value = environment[winner]
-        direct_fallback = next(
-            (
-                environment[name]
-                for name in aliases.precedence
-                if environment.get(name) is not None
-            ),
-            None,
-        )
         for name in candidates:
             normalized.pop(name, None)
 
         is_file = winner.endswith("_FILE")
-        mirror_names = tuple(
-            f"{name}_FILE" if is_file else name
-            for name in aliases.precedence
-        )
-        for name in mirror_names:
-            normalized[name] = value
-        if is_file and direct_fallback is not None:
+        if not is_file:
+            value = environment[winner]
             for name in aliases.precedence:
-                normalized[name] = direct_fallback
+                normalized[name] = value
+        else:
+            assigned_pairs = tuple(
+                (
+                    environment.get(f"{name}_FILE"),
+                    environment.get(name),
+                )
+                for name in aliases.precedence
+            )
+            first_pair = next(
+                pair
+                for pair in assigned_pairs
+                if pair[0] is not None or pair[1] is not None
+            )
+            active_pair = first_pair
+            for name, assigned_pair in zip(
+                aliases.precedence,
+                assigned_pairs,
+                strict=True,
+            ):
+                if (
+                    assigned_pair[0] is not None
+                    or assigned_pair[1] is not None
+                ):
+                    active_pair = assigned_pair
+                file_value, direct_value = active_pair
+                if file_value is not None:
+                    normalized[f"{name}_FILE"] = file_value
+                if direct_value is not None:
+                    normalized[name] = direct_value
 
         base_winner = winner.removesuffix("_FILE")
         if base_winner in aliases.legacy_names:
