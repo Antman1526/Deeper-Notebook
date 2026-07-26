@@ -40,6 +40,8 @@ from typing import Optional
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 # Default retention values. Tuned for the desktop-bundle's typical
 # single-user usage pattern (20-50 turns/day). Operators with heavier
 # usage or special requirements can override via env knobs.
@@ -50,7 +52,7 @@ _DEFAULT_PRUNE_INTERVAL_HOURS = 24
 def _keep_per_thread() -> int:
     """How many recent checkpoints to retain per thread_id. Below this
     count, all checkpoints are kept; above, the oldest are pruned."""
-    raw = os.environ.get("ONP_CHECKPOINT_KEEP_PER_THREAD", "").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "").strip()
     if not raw:
         return _DEFAULT_KEEP_PER_THREAD
     try:
@@ -268,8 +270,12 @@ async def run_prune_loop(stop_event, *, interval_hours: Optional[float] = None) 
     from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 
     if interval_hours is None:
-        raw = os.environ.get(
-            "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS", ""
+        raw = (
+            resolve_env(
+                "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS",
+                "",
+            )
+            or ""
         ).strip()
         if raw:
             try:

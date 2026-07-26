@@ -56,6 +56,8 @@ from api.models import (
     RegisterModelsResponse,
     UpdateCredentialRequest,
 )
+from deeper_notebook.environment import resolve_env
+from open_notebook.utils.encryption import get_secret_from_env
 from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
 from open_notebook.domain.credential import Credential
 from open_notebook.exceptions import InvalidInputError, NotFoundError
@@ -439,9 +441,8 @@ async def discover_models_for_credential(credential_id: str):
     # OpenRouter (300+ models) or hang if the base_url is misconfigured.
     # Default 30s aligns with the connection-test timeout (v0.7.100).
     import asyncio
-    import os
     _discover_timeout = float(
-        os.environ.get("ONP_DISCOVER_MODELS_TIMEOUT_SEC", "30").strip() or 30
+        resolve_env("DEEPER_NOTEBOOK_DISCOVER_MODELS_TIMEOUT_SEC", "30").strip() or 30
     )
     try:
         cred = await Credential.get(credential_id)
@@ -549,12 +550,13 @@ async def detect_osaurus():
     refreshes its base_url (in case the port changed) and registers
     any newly-discovered models that aren't already in the catalog.
     """
+    import httpx as _httpx
+
     from desktop.auto_register.osaurus import (
         _osaurus_port,
         _osaurus_running,
         register_osaurus_models,
     )
-    import httpx as _httpx
 
     port = _osaurus_port()
     running, discovered = _osaurus_running(port)
@@ -576,7 +578,10 @@ async def detect_osaurus():
     # it can be idempotent. We fetch those here on the API side.
     base = "http://127.0.0.1:5055"  # self — same FastAPI process
     headers = {}
-    pw = os.environ.get("OPEN_NOTEBOOK_PASSWORD")
+    pw = resolve_env(
+        "DEEPER_NOTEBOOK_PASSWORD",
+        getter=get_secret_from_env,
+    )
     if pw:
         headers["Authorization"] = f"Bearer {pw}"
 

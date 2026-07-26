@@ -25,6 +25,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.models import SettingsResponse, SettingsUpdate
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.exceptions import InvalidInputError
 
@@ -200,7 +201,7 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
     or unparseable value. Unlike `int(os.environ.get(name, default))`
     this doesn't crash if the value is a non-numeric string (a typo
     in .env shouldn't bring down /settings/observability)."""
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None or raw == "":
         return default
     try:
@@ -217,7 +218,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
     """v0.7.130 — Conservative truthy parsing matching the rest of the
     codebase: '1', 'true', 'yes', 'on' (case-insensitive) are truthy.
     Everything else (including missing) is `default`."""
-    raw = os.environ.get(name, "").lower()
+    raw = resolve_env(name, "").lower()
     if not raw:
         return default
     return raw in {"1", "true", "yes", "on"}
@@ -231,15 +232,15 @@ async def get_observability_settings() -> ObservabilityResponse:
     that wrote to env wouldn't survive process restart, so we don't
     pretend the option exists at the API level)."""
     return ObservabilityResponse(
-        slow_query_log_ms=_env_int("ONP_SLOW_QUERY_LOG_MS"),
-        encryption_kdf=os.environ.get("ONP_ENCRYPTION_KDF", "raw").lower(),
+        slow_query_log_ms=_env_int("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS"),
+        encryption_kdf=resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "raw").lower(),
         checkpoint_keep_per_thread=_env_int(
-            "ONP_CHECKPOINT_KEEP_PER_THREAD", 50
+            "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", 50
         ) or 50,
         checkpoint_prune_interval_hours=_env_int(
-            "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS", 24
+            "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS", 24
         ) or 24,
-        db_pool_size=_env_int("ONP_DB_POOL_SIZE", 4) or 4,
-        db_pool_disabled=_env_bool("ONP_DB_POOL_DISABLED"),
+        db_pool_size=_env_int("DEEPER_NOTEBOOK_DB_POOL_SIZE", 4) or 4,
+        db_pool_disabled=_env_bool("DEEPER_NOTEBOOK_DB_POOL_DISABLED"),
         metrics_endpoint_path="/metrics",
     )

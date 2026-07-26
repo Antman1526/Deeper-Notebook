@@ -66,11 +66,11 @@ async def test_put_writes_and_get_reflects(prefs_dir, api_app):
             json={"prefs": {"ONP_CHAT_LLM_CTX": "8192"}},
         )
         assert put_resp.status_code == 200
-        assert put_resp.json()["prefs"]["ONP_CHAT_LLM_CTX"] == "8192"
+        assert put_resp.json()["prefs"]["DN_CHAT_LLM_CTX"] == "8192"
 
         get_resp = await client.get("/api/launcher-prefs")
     assert get_resp.status_code == 200
-    assert get_resp.json()["prefs"]["ONP_CHAT_LLM_CTX"] == "8192"
+    assert get_resp.json()["prefs"]["DN_CHAT_LLM_CTX"] == "8192"
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_put_with_none_removes_key(prefs_dir, api_app):
     assert put_resp.status_code == 200
     result = put_resp.json()["prefs"]
     assert "ONP_CHAT_LLM_CTX_MAX" not in result
-    assert result.get("ONP_CHAT_LLM_CTX") == "8192"
+    assert result.get("DN_CHAT_LLM_CTX") == "8192"
 
 
 @pytest.mark.asyncio

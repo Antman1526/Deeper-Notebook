@@ -30,10 +30,10 @@ _LEGACY_SYMBOLS = _export_legacy_symbols()
 # Preserve that observable behavior even though their implementation now lives
 # in the workflows component.
 workflows._MAX_EXTRACT_CHARS_PER_FILE = workflows._env_int(
-    "ONP_STUDIO_MAX_FILE_CHARS", 15_000
+    "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000
 )
 workflows._MAX_COMBINED_CHARS = workflows._env_int(
-    "ONP_STUDIO_MAX_COMBINED_CHARS", 60_000
+    "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000
 )
 common._MAX_EXTRACT_CHARS_PER_FILE = workflows._MAX_EXTRACT_CHARS_PER_FILE
 common._MAX_COMBINED_CHARS = workflows._MAX_COMBINED_CHARS

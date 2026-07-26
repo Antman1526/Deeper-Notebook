@@ -21,6 +21,7 @@ from langgraph.graph.message import add_messages
 from loguru import logger as _logger
 from typing_extensions import TypedDict
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.provision import (
     provision_langchain_chat_model,
     provision_langchain_model,
@@ -122,7 +123,7 @@ def _trim_message_history(messages: list) -> list:
     name for backward compatibility with v0.7.11 tests."""
     return trim_message_history(
         messages,
-        env_var_name="ONP_CHAT_HISTORY_CHAR_CAP",
+        env_var_name="DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP",
         default_char_cap=12_000,
     )
 
@@ -438,7 +439,7 @@ async def _resolve_chat_tools(
 # the user a question (clarify) is visible to the client, not silently treated
 # as a finished answer. Tolerant: a missing/garbled tag → None → "complete".
 def _agent_fsm_enabled() -> bool:
-    raw = (os.environ.get("ONP_AGENT_FSM") or "").strip().lower()
+    raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_FSM") or "").strip().lower()
     return raw in ("on", "1", "true", "yes")
 
 
@@ -447,7 +448,7 @@ def _agent_max_iterations(default: int = 4) -> int:
     other budget in this codebase is env-tunable, and the v0.8.56 truncation
     notice even tells users to "raise the cap" — but there was no knob. Guarded
     + clamped like `web_search._timeout_sec`: blank/garbage/<1 → the default."""
-    raw = (os.environ.get("ONP_AGENT_MAX_ITERATIONS") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_MAX_ITERATIONS") or "").strip()
     if not raw:
         return default
     try:
@@ -463,7 +464,7 @@ def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
     loop and was unguarded: a malformed value raised ValueError that crashed the
     whole batch (misattributed to the tool), and `0`/negative produced an
     instant-timeout. Blank/garbage/<=0 → the default."""
-    raw = (os.environ.get("ONP_MCP_TOOL_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC") or "").strip()
     if not raw:
         return default
     try:
@@ -480,7 +481,7 @@ def _chat_model_timeout_sec(default: float = 300.0) -> float:
     halts on client disconnect) a hung/wedged sidecar that never streams would
     hang the turn forever. Generous default 300s (matches the /chat/execute outer
     wrap). Blank/garbage/<=0 → default."""
-    raw = (os.environ.get("ONP_CHAT_MODEL_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_TIMEOUT_SEC") or "").strip()
     if not raw:
         return default
     try:

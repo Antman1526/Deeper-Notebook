@@ -28,6 +28,8 @@ import re
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 _CLASSIFIER_SYSTEM_PROMPT = (
     "You are a strict PII detector. Given the user's text, identify the "
     "categories of personal or sensitive information it contains. Respond with "
@@ -54,24 +56,24 @@ _SIDECAR_SENTINELS = frozenset({"auto", "sidecar", "chat-sidecar", "local"})
 
 
 def _classifier_url() -> str | None:
-    raw = (os.environ.get("ONP_PRIVACY_CLASSIFIER_URL") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL") or "").strip()
     if not raw:
         return None
     if raw.lower() in _SIDECAR_SENTINELS:
         # Resolve to the chat sidecar base (set by the desktop bootstrap when
         # the sidecar registers its port). If that's unset too, no classifier.
         return (
-            os.environ.get("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL") or ""
+            resolve_env("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL") or ""
         ).strip() or None
     return raw
 
 
 def _classifier_model() -> str:
-    return (os.environ.get("ONP_PRIVACY_CLASSIFIER_MODEL") or "").strip() or "default"
+    return (resolve_env("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_MODEL") or "").strip() or "default"
 
 
 def _classifier_timeout() -> float:
-    raw = (os.environ.get("ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_TIMEOUT_SEC") or "").strip()
     if not raw:
         return 5.0
     try:

@@ -32,6 +32,8 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from deeper_notebook.environment import resolve_env
+
 if TYPE_CHECKING:
     from desktop.config import Config
     from desktop.launcher import Supervisor
@@ -58,7 +60,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
 
     from desktop.auto_register.assigner import pick_chat_llm_file
     try:
-        timeout = float(os.environ.get("ONP_MODEL_SCAN_TIMEOUT", "20") or 20)
+        timeout = float(resolve_env("DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT", "20") or 20)
     except ValueError:
         timeout = 20.0
     if timeout <= 0:
@@ -398,7 +400,6 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
     Port + URL come from OPENCHRONICLE_MCP_URL env var if set, else default
     (P1-MED-10). The bridge shim reads the same env var.
     """
-    import os
     import urllib.parse
 
     ctx.openchronicle_available = False
@@ -673,7 +674,6 @@ def _handle_already_running(exc, ctx) -> bool:
     minimal Linux container), we log + return False so the caller
     falls through to the generic error path.
     """
-    import os
     import signal
     import time
 
@@ -846,7 +846,13 @@ def _phase_auto_register(ctx: AppContext) -> None:
         mlx_model_ref = None
         if cfg.provider == "mlx":
             mlx_base_url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL")
-            mlx_model_ref = ctx.extra_env.get("OPEN_NOTEBOOK_ACTIVE_MLX_MODEL") or cfg.default_model
+            mlx_model_ref = (
+                resolve_env(
+                    "DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL",
+                    getter=ctx.extra_env.get,
+                )
+                or cfg.default_model
+            )
 
         auto_register(
             api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,

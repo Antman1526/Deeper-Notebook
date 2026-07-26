@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from api.routers import gmail as gmail_mod
 
 
@@ -53,6 +55,100 @@ def test_purge_stale_states_drops_expired_entries():
     assert "fresh" in gmail_mod._oauth_states
     # Cleanup so we don't pollute later runs
     gmail_mod._oauth_states.clear()
+
+
+def test_oauth_callback_url_keeps_legacy_registered_path():
+    """The Google Console registration must remain valid through the rebrand."""
+    from starlette.requests import Request
+
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("127.0.0.1", 5055),
+            "path": "/api/onp/gmail/connect",
+            "root_path": "",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    assert (
+        gmail_mod._callback_url(request)
+        == "http://127.0.0.1:5055/api/onp/gmail/callback"
+    )
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_preserves_existing_refresh_token(monkeypatch):
+    """Google may omit refresh_token on reconnect; keep the persisted token."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.requests import Request
+
+    state = "refresh-token-continuity"
+    gmail_mod._oauth_states[state] = datetime.now(timezone.utc) + timedelta(minutes=5)
+    integration = MagicMock()
+    integration.client_id = "client-id.apps.googleusercontent.com"
+    integration.client_secret = "client-secret"
+    integration.refresh_token = "persisted-refresh-token"
+    integration.save = AsyncMock()
+
+    token_response = MagicMock()
+    token_response.raise_for_status.return_value = None
+    token_response.json.return_value = {
+        "access_token": "new-access-token",
+        "expires_in": 3600,
+    }
+    user_response = MagicMock()
+    user_response.raise_for_status.return_value = None
+    user_response.json.return_value = {"email": "owner@example.com"}
+
+    class _Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return token_response
+
+        async def get(self, *_args, **_kwargs):
+            return user_response
+
+    monkeypatch.setattr(
+        gmail_mod.GmailIntegration,
+        "get",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(gmail_mod.httpx, "AsyncClient", _Client)
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("127.0.0.1", 5055),
+            "path": "/api/onp/gmail/callback",
+            "root_path": "",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    response = await gmail_mod.callback(
+        request,
+        code="oauth-code",
+        state=state,
+        error=None,
+    )
+
+    assert response.status_code == 200
+    assert integration.access_token == "new-access-token"
+    assert integration.refresh_token == "persisted-refresh-token"
+    integration.save.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +217,8 @@ def test_v0824_oauth_callback_sanitizes_token_exchange_error():
     from the Google token exchange. Google's error responses include
     the OAuth client_id and redirect_uri, which leak operator config
     in the user's browser tab beyond what the user needs to triage."""
-    from unittest.mock import AsyncMock, MagicMock, patch
     from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from fastapi.testclient import TestClient
 

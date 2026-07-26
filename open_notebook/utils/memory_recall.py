@@ -35,6 +35,7 @@ from typing import Any
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.database.repository import repo_query
 
 # Total cap across BOTH facts and preferences so the injected block
@@ -64,7 +65,7 @@ _DEFAULT_EPISODE_RECALL = True
 
 
 def _episode_recall_enabled() -> bool:
-    raw = (os.environ.get("ONP_MEMORY_RECALL_EPISODES") or "").strip().lower()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES") or "").strip().lower()
     if not raw:
         return _DEFAULT_EPISODE_RECALL
     return raw not in ("0", "false", "no", "off")
@@ -184,7 +185,7 @@ async def recall_relevant_memory(
     # v0.7.99's outer wrap fires). 5s default keeps chat snappy; on
     # timeout we fall through to recency recall which is DB-only.
     _recall_embed_timeout = float(
-        os.environ.get("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5").strip() or 5
+        resolve_env("DEEPER_NOTEBOOK_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5").strip() or 5
     )
     try:
         # Lazy import to avoid pulling the model layer into module-load
@@ -340,7 +341,7 @@ _DEFAULT_RECALL_BUDGET_SEC = 12.0
 
 
 def _recall_budget_sec() -> float:
-    raw = (os.environ.get("ONP_MEMORY_RECALL_BUDGET_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC") or "").strip()
     if not raw:
         return _DEFAULT_RECALL_BUDGET_SEC
     try:
@@ -414,7 +415,7 @@ async def _recall_memory_inner(
     """v0.7.133 — Extracted inner so the public `recall_memory` can
     wrap with a single asyncio.wait_for. Behavior unchanged from the
     pre-budget version."""
-    mode = (os.environ.get("ONP_MEMORY_RECALL_MODE") or "auto").strip().lower()
+    mode = (resolve_env("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE") or "auto").strip().lower()
 
     if mode == "recent" or not query or not query.strip():
         return await recall_recent_memory()
@@ -485,7 +486,7 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
     before falling through to empty.
     """
     _query_timeout = float(
-        os.environ.get("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5").strip() or 5
+        resolve_env("DEEPER_NOTEBOOK_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5").strip() or 5
     )
     try:
         result = await asyncio.wait_for(

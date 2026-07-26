@@ -27,6 +27,7 @@ from api.schemas.studio import (
     StudioWorkflowRunCreate,
     StudioWorkflowRunResponse,
 )
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -190,8 +191,8 @@ def _artifact_model_role(artifact_type: str) -> str:
 
 def _configured_model_dir() -> Path | None:
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -276,7 +277,7 @@ def _citation_preview(text: str, limit: int = 280) -> str:
 
 
 def _artifact_export_dir() -> Path:
-    raw = os.environ.get("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", "").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
 

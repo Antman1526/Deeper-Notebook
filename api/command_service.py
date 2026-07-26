@@ -5,6 +5,7 @@ from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from deeper_notebook.environment import resolve_env
 
 
 class CommandService:
@@ -38,7 +39,7 @@ class CommandService:
             # ONP_SUBMIT_COMMAND_TIMEOUT_SEC.
             import os
             _submit_timeout = float(
-                os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+                resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
                 or 10
             )
             try:

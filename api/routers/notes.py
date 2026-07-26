@@ -5,6 +5,7 @@ from loguru import logger
 
 from api.models import NoteCreate, NoteResponse, NoteUpdate
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.notebook import Note
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 
@@ -96,7 +97,7 @@ async def create_note(note_data: NoteCreate):
             # erroring the whole create-note request. 60s default is
             # generous for a one-sentence prompt; tunable via env.
             _title_timeout = float(
-                os.environ.get("ONP_NOTE_TITLE_TIMEOUT_SEC", "60").strip() or 60
+                resolve_env("DEEPER_NOTEBOOK_NOTE_TITLE_TIMEOUT_SEC", "60").strip() or 60
             )
             result = None
             try:
@@ -133,9 +134,9 @@ async def create_note(note_data: NoteCreate):
                 # CJK-heavy content can raise it) and clamp to a sane
                 # range so a misconfigured value can't break note
                 # creation entirely.
-                import os
-                _max_title_len_raw = os.environ.get(
-                    "ONP_NOTE_TITLE_FALLBACK_LEN", "80"
+                _max_title_len_raw = resolve_env(
+                    "DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN",
+                    "80",
                 )
                 try:
                     _max_title_len = max(

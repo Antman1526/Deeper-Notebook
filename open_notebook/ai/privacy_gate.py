@@ -32,6 +32,7 @@ import re
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.router import ModelChoice
 from open_notebook.exceptions import ConfigurationError
 
@@ -104,7 +105,7 @@ def detect_sensitive(text: str) -> list[str]:
 # --------------------------------------------------------------- gate config
 
 def _privacy_gate_enabled(mode: str | None = None) -> bool:
-    raw = mode if mode is not None else (os.environ.get("ONP_PRIVACY_GATE") or "")
+    raw = mode if mode is not None else (resolve_env("DEEPER_NOTEBOOK_PRIVACY_GATE") or "")
     return raw.strip().lower() in ("on", "1", "true", "yes", "local", "local-only")
 
 

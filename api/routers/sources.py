@@ -33,6 +33,7 @@ from api.models import (
 )
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from commands.source_commands import SourceProcessingInput
+from deeper_notebook.environment import resolve_env
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
@@ -64,7 +65,7 @@ def _source_upload_max_bytes() -> int:
     Defensive parsing: garbage or below-minimum values fall back to the
     default with a logged warning. Returns the active cap in bytes.
     """
-    raw = os.environ.get("ONP_SOURCE_UPLOAD_MAX_BYTES")
+    raw = resolve_env("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES")
     if raw is None:
         return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
     try:

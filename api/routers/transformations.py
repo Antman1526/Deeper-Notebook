@@ -14,6 +14,7 @@ from api.models import (
     TransformationUpdate,
 )
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
 from open_notebook.exceptions import (
@@ -123,7 +124,7 @@ async def optimize_transformation_prompt(
             raise HTTPException(status_code=501, detail="Optimizer unavailable")
 
         _timeout = float(
-            _os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
+            resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
         )
         job_id = await _asyncio.wait_for(
             _asyncio.to_thread(
@@ -219,7 +220,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         import os
 
         _xform_timeout = float(
-            os.environ.get("ONP_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
+            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
         )
         try:
             result = await asyncio.wait_for(

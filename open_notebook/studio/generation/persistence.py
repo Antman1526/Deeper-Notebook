@@ -13,6 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.notebook import StudioArtifact
 from open_notebook.exceptions import InvalidInputError
 from open_notebook.studio.exporters import (
@@ -38,7 +39,7 @@ _COURSE_PACK_ARTIFACT_TYPES = {"course_pack", "training_guide"}
 
 
 def _artifact_export_dir() -> Path:
-    raw = os.environ.get("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", "").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
 

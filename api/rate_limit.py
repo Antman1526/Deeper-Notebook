@@ -19,6 +19,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from deeper_notebook.environment import resolve_env
+
 # Liveness/metrics probes must never be rate-limited (orchestrators poll them).
 _EXEMPT_PREFIXES = (
     "/health", "/livez", "/readyz", "/metrics", "/api/healthz",
@@ -29,7 +31,7 @@ _WINDOW_SEC = 60.0
 
 def _limit_per_min() -> int:
     """Requests/IP/minute. 0 (default) disables the limiter entirely."""
-    raw = (os.environ.get("ONP_RATE_LIMIT_PER_MIN") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN") or "").strip()
     if not raw:
         return 0
     try:

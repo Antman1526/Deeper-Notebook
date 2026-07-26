@@ -29,6 +29,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.health.network import get_network_state_with_settings
 
@@ -164,8 +165,8 @@ async def find_measured_local_language_route(
 
 def _configured_local_model_dir() -> Path | None:
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:

@@ -7,6 +7,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
 
+from deeper_notebook.environment import resolve_env
+
 # v0.7.133 — Notebook delete bulk-SQL threshold (Area for Review #4).
 _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD = 25
 
@@ -26,7 +28,7 @@ def _notebook_delete_bulk_threshold() -> int:
     Set to 1 (or 0) to force bulk on every delete; set to a huge
     number to force the per-note path. Useful for debugging.
     """
-    raw = (os.environ.get("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD") or "").strip()
     if not raw:
         return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
     try:
@@ -1437,7 +1439,7 @@ _DEFAULT_VECTOR_MIN_SCORE = 0.3
 
 
 def _vector_min_score() -> float:
-    raw = (os.environ.get("ONP_VECTOR_MIN_SCORE") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE") or "").strip()
     if not raw:
         return _DEFAULT_VECTOR_MIN_SCORE
     try:

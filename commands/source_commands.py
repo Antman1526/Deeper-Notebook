@@ -5,6 +5,7 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Source
@@ -337,7 +338,7 @@ async def run_transformation_command(
         import asyncio
         import os as _os
         _xform_timeout = float(
-            _os.environ.get("ONP_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
+            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
         )
         try:
             await asyncio.wait_for(

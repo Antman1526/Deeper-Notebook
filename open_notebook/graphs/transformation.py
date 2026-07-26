@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from loguru import logger
 from typing_extensions import TypedDict
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
@@ -15,7 +16,6 @@ from open_notebook.exceptions import ExternalServiceError, OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
-
 
 # v0.8.26 — Per-node LLM-call timeout for the transformation graph.
 # Same family as the v0.7.138 ask-graph fix that was missed for this
@@ -35,7 +35,7 @@ _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC = 180.0
 
 
 def _transform_node_timeout_sec() -> float:
-    raw = (os.environ.get("ONP_TRANSFORM_NODE_TIMEOUT_SEC") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC") or "").strip()
     if not raw:
         return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
     try:
@@ -74,7 +74,7 @@ _TRUNCATION_MARKER = "\n\n[... transformation input truncated for context budget
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None:
         return default
     try:
@@ -97,7 +97,7 @@ def _truncate_transformation_input(content: str) -> str:
     prompt) sees the input was elided rather than silently lost.
     """
     cap = _env_int(
-        "ONP_TRANSFORMATION_INPUT_CAP",
+        "DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP",
         _TRANSFORMATION_INPUT_CAP_DEFAULT,
         minimum=500,
     )
