@@ -19,11 +19,13 @@ from cryptography.fernet import Fernet, InvalidToken
 from loguru import logger
 from pydantic import BaseModel
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.database.repository import (
     ensure_record_id,
     repo_query,
     repo_upsert,
 )
+from open_notebook.utils.encryption import get_secret_from_env
 
 SINGLETON_ID = "gmail_integration:singleton"
 
@@ -97,7 +99,10 @@ _QUERY_TIMEOUT_S = 3.0
 
 
 def _fernet() -> Optional[Fernet]:
-    key = os.environ.get("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+    key = resolve_env(
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY",
+        getter=get_secret_from_env,
+    )
     if not key:
         return None
     try:

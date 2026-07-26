@@ -159,9 +159,12 @@ async def test_source_chat_invokes_trim(monkeypatch):
         {"configurable": {}},
     )
 
-    # Trim was called with the source_chat env var name and 8k default
+    # Trim was called with the canonical source_chat env var name and 8k default
     assert len(trim_calls) == 1
-    assert trim_calls[0]["env_var_name"] == "ONP_SOURCE_CHAT_HISTORY_CHAR_CAP"
+    assert (
+        trim_calls[0]["env_var_name"]
+        == "DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP"
+    )
     assert trim_calls[0]["default_char_cap"] == 8_000
     assert trim_calls[0]["messages"] == msgs
 

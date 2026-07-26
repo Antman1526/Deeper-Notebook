@@ -9,6 +9,7 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.podcasts.models import (
@@ -407,7 +408,7 @@ async def generate_podcast_command(
         # marks the episode as failed → episode.delete() cleanup
         # path below fires, including the empty-output-dir sweep.
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         episode.generation_stage = STAGE_OUTLINE
         await episode.save()
@@ -633,7 +634,7 @@ async def resume_podcast_command(
         )
 
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         try:
             result = await run_graph_with_stages(

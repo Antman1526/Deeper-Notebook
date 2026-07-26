@@ -15,6 +15,7 @@ import httpx
 from esperanto.factory import AIFactory
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.credential import Credential
 
 # v0.7.100 — Per-test timeout. The endpoint that calls this is
@@ -66,8 +67,12 @@ def _connection_timeout_for(provider: str) -> float:
     """
     p = (provider or "").lower()
     # 1. Provider-specific env
-    per_env = os.environ.get(
-        f"ONP_CONNECTION_TEST_TIMEOUT_SEC_{p.upper()}", ""
+    per_env = (
+        resolve_env(
+            f"DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_{p.upper()}",
+            "",
+        )
+        or ""
     ).strip()
     if per_env:
         try:
@@ -78,7 +83,7 @@ def _connection_timeout_for(provider: str) -> float:
                 p.upper(), per_env,
             )
     # 2. Global override
-    global_env = os.environ.get("ONP_CONNECTION_TEST_TIMEOUT_SEC", "").strip()
+    global_env = resolve_env("DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC", "").strip()
     if global_env:
         try:
             return float(global_env)

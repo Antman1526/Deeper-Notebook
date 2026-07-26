@@ -31,6 +31,7 @@ explicitly asked to clean up:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -122,10 +123,13 @@ def test_command_service_wraps_untyped_exceptions():
 def test_notes_title_fallback_len_is_parameterized():
     """v0.7.204 — the `first_line[:80]` magic number in notes.py
     title-fallback must be parameterized via
-    ONP_NOTE_TITLE_FALLBACK_LEN env, clamped to a sane range so
+    DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN env, clamped to a sane range so
     a misconfigured value can't break note creation entirely."""
     src = _src("api/routers/notes.py")
-    assert "ONP_NOTE_TITLE_FALLBACK_LEN" in src
+    assert re.search(
+        r'resolve_env\(\s*"DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN"',
+        src,
+    )
     # Pin the clamp range so a careless refactor that drops it
     # doesn't let an operator set it to 0 / negative.
     assert "max(\n                        20, min(int(_max_title_len_raw), 500)\n                    )" in src

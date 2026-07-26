@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, TypeVar, Union
 from loguru import logger
 from surrealdb import AsyncSurreal, RecordID  # type: ignore
 
+from deeper_notebook.environment import resolve_env
+
 T = TypeVar("T", dict[str, Any], list[dict[str, Any]])
 
 
@@ -40,7 +42,7 @@ _DB_POOL_MAX = 32
 
 
 def _db_pool_size() -> int:
-    raw = os.environ.get("ONP_DB_POOL_SIZE")
+    raw = resolve_env("DEEPER_NOTEBOOK_DB_POOL_SIZE")
     if not raw:
         return _DB_POOL_SIZE_DEFAULT
     try:
@@ -61,7 +63,7 @@ def _db_pool_size() -> int:
 
 
 def _db_pool_disabled() -> bool:
-    return os.environ.get("ONP_DB_POOL_DISABLED", "").lower() in {
+    return resolve_env("DEEPER_NOTEBOOK_DB_POOL_DISABLED", "").lower() in {
         "1", "true", "yes", "on"
     }
 
@@ -440,7 +442,7 @@ async def repo_query(
     import time
 
     _slow_threshold_ms = float(
-        os.environ.get("ONP_SLOW_QUERY_LOG_MS", "500").strip() or 500
+        resolve_env("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "500").strip() or 500
     )
     start = time.monotonic()
     try:

@@ -326,7 +326,9 @@ async def callback(
             )
 
         access_token = tok.get("access_token")
-        refresh_token = tok.get("refresh_token")
+        # Google commonly omits refresh_token on a repeat consent exchange.
+        # Preserve the encrypted token already stored for this integration.
+        refresh_token = tok.get("refresh_token") or g.refresh_token
         expires_in = int(tok.get("expires_in", 3600))
         if not access_token or not refresh_token:
             log.warning("Gmail token response missing access_token or refresh_token")

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, List, Optional
 import numpy as np
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 from .chunking import CHUNK_SIZE, ContentType, chunk_text
 from .token_utils import token_count
 
@@ -28,7 +30,7 @@ def _get_embedding_batch_size() -> int:
     This is intentionally configurable because provider limits vary widely, and
     CPU-only local embedding endpoints often need smaller batches than cloud APIs.
     """
-    raw = os.getenv("OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE", "50").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_EMBEDDING_BATCH_SIZE", "50").strip()
     try:
         value = int(raw)
         if value < 1:

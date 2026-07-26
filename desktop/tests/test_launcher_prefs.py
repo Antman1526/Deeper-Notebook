@@ -11,9 +11,9 @@ Six test cases covering the full behaviour contract:
 from __future__ import annotations
 
 import os
-import pytest
 from pathlib import Path
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,9 +63,9 @@ def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
     new_text = path.read_text()
     # Original comment and blank line preserved
     assert "# launcher.env" in new_text
-    # Both old and new keys present
-    assert "ONP_CHAT_LLM_CTX=4096" in new_text
-    assert "ONP_CHAT_LLM_CTX_MAX=65536" in new_text
+    # Existing legacy keys are accepted, then written back canonically.
+    assert "DN_CHAT_LLM_CTX=4096" in new_text
+    assert "DN_CHAT_LLM_CTX_MAX=65536" in new_text
 
 
 def test_none_value_removes_key(tmp_path, monkeypatch):
@@ -76,7 +76,7 @@ def test_none_value_removes_key(tmp_path, monkeypatch):
     result = lp.update_prefs({"ONP_CHAT_LLM_CTX_MAX": None})
     assert "ONP_CHAT_LLM_CTX_MAX" not in result
     assert "ONP_CHAT_LLM_CTX_MAX" not in path.read_text()
-    assert result == {"ONP_CHAT_LLM_CTX": "8192"}
+    assert result == {"DN_CHAT_LLM_CTX": "8192"}
 
 
 def test_env_wins_on_merge(tmp_path, monkeypatch):
@@ -189,8 +189,9 @@ def test_merge_with_env_logs_warning_on_malformed_file(
         "OPEN_NOTEBOOK_LOCAL_N_CTX=32768\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
-    from desktop.launcher_prefs import merge_with_env
     import logging
+
+    from desktop.launcher_prefs import merge_with_env
 
     env: dict[str, str] = {}
     with caplog.at_level(logging.WARNING, logger="desktop.launcher_prefs"):
@@ -206,3 +207,40 @@ def test_merge_with_env_logs_warning_on_malformed_file(
         "v0.8.8: malformed launcher.env must log a WARNING so operators "
         "see they have a broken config; pre-v0.8.8 was silent"
     )
+
+
+def test_update_prefs_writes_only_canonical_winners(tmp_path, monkeypatch):
+    """A mixed legacy/canonical file is rewritten without duplicate aliases."""
+    path = _write(
+        tmp_path,
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/canonical/model.gguf\n"
+        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/legacy/model.gguf\n"
+        "DN_CHAT_LLM_CTX=32768\n"
+        "ONP_CHAT_LLM_CTX=8192\n",
+    )
+    monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
+    from desktop import launcher_prefs as lp
+
+    result = lp.update_prefs({})
+    text = path.read_text(encoding="utf-8")
+
+    assert result == {
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH": "/canonical/model.gguf",
+        "DN_CHAT_LLM_CTX": "32768",
+    }
+    assert "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=" not in text
+    assert "ONP_CHAT_LLM_CTX=" not in text
+
+
+def test_legacy_launcher_pref_remains_accepted_and_is_canonicalized(
+    tmp_path,
+    monkeypatch,
+):
+    path = _write(tmp_path, "ONP_CHAT_LLM_CTX_MAX=65536\n")
+    monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
+    from desktop import launcher_prefs as lp
+
+    result = lp.update_prefs({})
+
+    assert result == {"DN_CHAT_LLM_CTX_MAX": "65536"}
+    assert path.read_text(encoding="utf-8") == "DN_CHAT_LLM_CTX_MAX=65536\n"

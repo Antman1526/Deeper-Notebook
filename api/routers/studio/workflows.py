@@ -27,6 +27,7 @@ from api.schemas.studio import (
     StudioWorkflowRunCreate,
     StudioWorkflowRunResponse,
 )
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -141,7 +142,7 @@ def _studio_link_title(link: str) -> str:
 # study notebooks for any single-document upload up to ~15 KB of text.
 def _env_int(name: str, default: int) -> int:
     """Read a positive int from env; fall back to default on missing/invalid."""
-    raw = os.environ.get(name, "").strip()
+    raw = resolve_env(name, "").strip()
     if not raw:
         return default
     try:
@@ -161,10 +162,10 @@ def _env_int(name: str, default: int) -> int:
 # Defaults sized for local 7B-9B models with 8k-32k context. Cloud users
 # can raise these via env vars (e.g. ONP_STUDIO_MAX_COMBINED_CHARS=200000).
 _MAX_EXTRACT_CHARS_PER_FILE = _env_int(
-    "ONP_STUDIO_MAX_FILE_CHARS", 15_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000,
 )
 _MAX_COMBINED_CHARS = _env_int(
-    "ONP_STUDIO_MAX_COMBINED_CHARS", 60_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000,
 )
 
 # v0.7.1 — Cap warning-message length. Parser libraries (PyMuPDF, mammoth)
@@ -319,12 +320,12 @@ do not pad to hit a length target.
 # Default ON. Falls back to the legacy single-note path (NOTEBOOK_SYSTEM_PROMPT
 # above) if disabled OR if the outline pass returns un-parseable JSON.
 _MULTIPAGE_ENABLED = (
-    os.environ.get("ONP_STUDIO_NOTEBOOK_MULTIPAGE", "true").strip().lower()
+    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE", "true").strip().lower()
     not in ("0", "false", "no", "off")
 )
 # Caps pages to bound LLM cost. Outline LLM is *also* told this number so it
 # doesn't propose more than we can render.
-_PAGES_MAX = _env_int("ONP_STUDIO_NOTEBOOK_PAGES_MAX", 6)
+_PAGES_MAX = _env_int("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PAGES_MAX", 6)
 if _PAGES_MAX < 2:
     _PAGES_MAX = 2  # one overview + at least one detail page
 if _PAGES_MAX > 12:
@@ -338,7 +339,7 @@ if _PAGES_MAX > 12:
 # mean per-page failures can interleave in logs, but the final result
 # is identical (each page still gets its own warning on failure).
 _PARALLEL_PAGES = (
-    os.environ.get("ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
+    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
     in ("1", "true", "yes", "on")
 )
 # v0.7.93 — Per-page generation timeout. Local LLMs (especially the
@@ -348,10 +349,10 @@ _PARALLEL_PAGES = (
 # generation request — including subsequent pages, the response, and
 # the user's browser tab. Default: 180s, plenty for a 7B-9B at 8k
 # context. Cloud users with stable APIs can raise via env.
-_PAGE_TIMEOUT_SEC = _env_int("ONP_STUDIO_PAGE_TIMEOUT_SEC", 180)
+_PAGE_TIMEOUT_SEC = _env_int("DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180)
 # Outline pass gets its own (shorter) timeout — JSON-only response,
 # small token budget, should be fast.
-_OUTLINE_TIMEOUT_SEC = _env_int("ONP_STUDIO_OUTLINE_TIMEOUT_SEC", 90)
+_OUTLINE_TIMEOUT_SEC = _env_int("DEEPER_NOTEBOOK_STUDIO_OUTLINE_TIMEOUT_SEC", 90)
 
 # Outline pass: small JSON response. Keep token budget tight — this prompt
 # does NOT need to expand on any topic, just identify the structure.
@@ -719,7 +720,7 @@ async def studio_generate(
     ) -> None:
         try:
             _extract_timeout = float(
-                os.environ.get("ONP_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+                resolve_env("DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
             )
             try:
                 processed = await asyncio.wait_for(

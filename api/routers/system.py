@@ -31,12 +31,12 @@ Design choices:
 from __future__ import annotations
 
 import os
-
 import secrets
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from deeper_notebook.environment import normalize_product_environment, resolve_env
 from open_notebook.ai.offline_gate import find_local_language_model
 from open_notebook.health.network import get_network_state_with_settings
 
@@ -51,6 +51,7 @@ router = APIRouter()
 #   hot_swap_chat so provision.py's router sees the new GGUF's native
 #   context length without app restart.
 _ALLOWED_ENV_VARS: frozenset[str] = frozenset({
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
     "OPEN_NOTEBOOK_LOCAL_N_CTX",
 })
 
@@ -86,8 +87,8 @@ async def env_refresh(
     Returns `{updated: [keys], rejected: [keys]}` so the caller can
     distinguish "applied" from "ignored" without parsing log lines.
     """
-    expected_token = os.environ.get(
-        "OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "",
+    expected_token = (
+        resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "") or ""
     ).strip()
     if not expected_token:
         # No token configured → endpoint is disabled. Return 503 so
@@ -112,6 +113,7 @@ async def env_refresh(
 
     updated: list[str] = []
     rejected: list[str] = []
+    accepted: dict[str, str] = {}
     for k, v in (body.vars or {}).items():
         if k not in _ALLOWED_ENV_VARS:
             rejected.append(k)
@@ -119,9 +121,13 @@ async def env_refresh(
         # `os.environ` mutation is process-wide and thread-safe per
         # CPython's GIL. The router reads via `os.getenv()` lazily at
         # chat-turn time, so the next turn picks up the new value.
-        os.environ[k] = str(v)
+        accepted[k] = str(v)
         updated.append(k)
 
+    # Normalize the accepted patch independently so a freshly supplied legacy
+    # alias overrides stale higher-precedence mirrors from an earlier refresh.
+    # Multiple aliases in one request still use the standard precedence rule.
+    os.environ.update(normalize_product_environment(accepted))
     return {"updated": updated, "rejected": rejected}
 
 

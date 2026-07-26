@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 
 from api.command_service import CommandService
 from api.models import EmbedRequest, EmbedResponse
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import model_manager
-from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.domain.notebook import Note, Notebook, Source
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -248,9 +249,14 @@ async def vectorize_notebook_sources(
     # misconfigured callers passing massive `limit` values. Default
     # 500 unchanged. If the caller's `limit` exceeds the cap, clamp
     # down with a warning rather than reject — backward compat.
-    import os as _os_for_cap
     _max_sources_cap = int(
-        _os_for_cap.environ.get("ONP_BULK_VECTORIZE_MAX_SOURCES", "500").strip()
+        (
+            resolve_env(
+                "DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES",
+                "500",
+            )
+            or "500"
+        ).strip()
         or 500
     )
     effective_limit = min(limit, _max_sources_cap)

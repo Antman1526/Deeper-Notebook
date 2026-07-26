@@ -27,12 +27,14 @@ from langchain_text_splitters import (
 )
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 from .token_utils import token_count
 
 
 def _get_chunk_size() -> int:
     """Get chunk size from environment variable or use default."""
-    chunk_size_str = os.getenv("OPEN_NOTEBOOK_CHUNK_SIZE")
+    chunk_size_str = resolve_env("DEEPER_NOTEBOOK_CHUNK_SIZE")
     if chunk_size_str:
         try:
             chunk_size = int(chunk_size_str)
@@ -59,7 +61,7 @@ def _get_chunk_size() -> int:
 
 def _get_chunk_overlap(chunk_size: int) -> int:
     """Get chunk overlap from environment variable or calculate default (15% of chunk size)."""
-    overlap_str = os.getenv("OPEN_NOTEBOOK_CHUNK_OVERLAP")
+    overlap_str = resolve_env("DEEPER_NOTEBOOK_CHUNK_OVERLAP")
     if overlap_str:
         try:
             overlap = int(overlap_str)
@@ -94,7 +96,7 @@ def _get_min_chunk_size() -> int:
     llama.cpp's OpenAI-compatible endpoint, for example, returns null vector
     elements for such inputs and crashes downstream parsing.
     """
-    raw = os.getenv("OPEN_NOTEBOOK_MIN_CHUNK_SIZE")
+    raw = resolve_env("DEEPER_NOTEBOOK_MIN_CHUNK_SIZE")
     if raw is None:
         return 5
     try:

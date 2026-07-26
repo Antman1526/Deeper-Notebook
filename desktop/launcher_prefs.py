@@ -40,12 +40,47 @@ log = logging.getLogger(__name__)
 # understood set of knobs — not a general-purpose secrets store.
 # ---------------------------------------------------------------------------
 ALLOWED_KEYS: frozenset[str] = frozenset({
+    "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+    "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+    "DN_CHAT_LLM_CTX",
+    "DN_CHAT_LLM_CTX_MAX",
     "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
     "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",    # canonical alias mirroring the spec table
+    "OPEN_NOTEBOOK_LOCAL_N_CTX",
     "ONP_CHAT_LLM_CTX",
     "ONP_CHAT_LLM_CTX_MAX",
 })
+
+_PREF_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
+    (
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+    ),
+    (
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+        "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+    ),
+    (
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+        "OPEN_NOTEBOOK_LOCAL_N_CTX",
+    ),
+    ("DN_CHAT_LLM_CTX", "ONP_CHAT_LLM_CTX"),
+    ("DN_CHAT_LLM_CTX_MAX", "ONP_CHAT_LLM_CTX_MAX"),
+)
+
+
+def _canonicalize_prefs(prefs: dict[str, str]) -> dict[str, str]:
+    """Collapse compatibility aliases to the first name in each group."""
+    result = dict(prefs)
+    for group in _PREF_ALIAS_GROUPS:
+        winner = next((name for name in group if name in prefs), None)
+        if winner is None:
+            continue
+        for name in group:
+            result.pop(name, None)
+        result[group[0]] = prefs[winner]
+    return result
 
 
 def _prefs_path() -> Path:
@@ -160,9 +195,16 @@ def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
 
     for key, value in updates.items():
         if value is None:
-            current.pop(key, None)
+            group = next(
+                (aliases for aliases in _PREF_ALIAS_GROUPS if key in aliases),
+                (key,),
+            )
+            for alias in group:
+                current.pop(alias, None)
         else:
             current[key] = str(value)
+
+    current = _canonicalize_prefs(current)
 
     # Write atomically (write to a temp file, rename).
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -28,6 +28,7 @@ import os
 
 import httpx
 
+from deeper_notebook.environment import resolve_env
 from desktop.auto_register._http import _ensure_credential, _ensure_model
 
 log = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ _PROBE_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0)
 
 def _osaurus_port() -> int:
     """Read the configured Osaurus port from env, fall back to default."""
-    raw = os.environ.get("OPEN_NOTEBOOK_OSAURUS_PORT", "").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_OSAURUS_PORT", "").strip()
     if not raw:
         return DEFAULT_OSAURUS_PORT
     try:

@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+from deeper_notebook.environment import resolve_env
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
@@ -21,13 +22,14 @@ from open_notebook.exceptions import (
     NetworkError,
     NotFoundError,
 )
-from open_notebook.graphs.chat import graph as chat_graph
+
 # v0.7.192 — Lazy async-graph getter for ainvoke / astream_events
 # call sites. Newer langgraph raises NotImplementedError when those
 # internally call aget_tuple() against the sync SqliteSaver. The
 # lazy pattern works around aiosqlite capturing the event loop at
 # construct time; see open_notebook/graphs/chat.py for details.
 from open_notebook.graphs.chat import get_async_graph
+from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -856,7 +858,7 @@ async def execute_chat(request: ExecuteChatRequest):
             # naturally bounded by SSE disconnect handling (v0.7.50+) and
             # doesn't need this wrap.
             _chat_timeout = float(
-                os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
+                resolve_env("DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC", "300").strip() or 300
             )
             try:
                 # v0.7.192 — Use the AsyncSqliteSaver-backed twin

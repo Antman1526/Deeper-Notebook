@@ -16,6 +16,8 @@ from urllib.parse import urlparse
 import httpx
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 # v0.7.187 — Shared timeout config for credentials-discovery probes.
 # Backend audit finding #7: AsyncClient() with no top-level timeout
 # means TLS handshake / pool-acquisition stages can hang past the
@@ -221,8 +223,8 @@ def require_encryption_key() -> None:
     legacy ProviderConfig — even though encryption was working
     perfectly. Same fix applied to `get_provider_status` below.
     """
-    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
-    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    has_singular = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env))
+    has_plural = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env))
     if not (has_singular or has_plural):
         raise ValueError(
             "Encryption key not configured. "
@@ -371,8 +373,8 @@ async def get_provider_status() -> dict:
     # for rotation-only deployments, which surfaced as a misleading
     # "encryption not configured" banner in the credentials UI.
     encryption_configured = bool(
-        get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
-        or get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS")
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env)
+        or resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env)
     )
 
     configured: dict[str, bool] = {}

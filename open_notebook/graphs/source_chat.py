@@ -5,6 +5,7 @@ from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
+
 # v0.7.192 — See chat.py for the SqliteSaver / AsyncSqliteSaver split
 # rationale. Same pattern applied here.
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -13,6 +14,7 @@ from langgraph.graph.message import add_messages
 from loguru import logger
 from typing_extensions import TypedDict
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.provision import (
     provision_langchain_chat_model,
     provision_langchain_model,
@@ -54,7 +56,7 @@ _SOURCE_TRUNCATION_MARKER = "\n...[truncated for context budget]"
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None:
         return default
     try:
@@ -210,7 +212,7 @@ async def _call_model_with_source_context_inner(
     # a 16k-context local server.
     history = trim_message_history(
         state.get("messages", []),
-        env_var_name="ONP_SOURCE_CHAT_HISTORY_CHAR_CAP",
+        env_var_name="DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP",
         default_char_cap=8_000,
     )
     payload = [SystemMessage(content=system_prompt)] + history
@@ -338,17 +340,17 @@ def _format_source_context(context_data: dict) -> str:
         Formatted context string
     """
     source_cap = _env_int(
-        "ONP_SOURCE_CHAT_SOURCE_CHAR_CAP",
+        "DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP",
         _SOURCE_CHAT_SOURCE_CHAR_CAP_DEFAULT,
         minimum=500,
     )
     insight_cap = _env_int(
-        "ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP",
+        "DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP",
         _SOURCE_CHAT_INSIGHT_CHAR_CAP_DEFAULT,
         minimum=200,
     )
     max_insights = _env_int(
-        "ONP_SOURCE_CHAT_MAX_INSIGHTS",
+        "DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS",
         _SOURCE_CHAT_MAX_INSIGHTS_DEFAULT,
         minimum=1,
     )

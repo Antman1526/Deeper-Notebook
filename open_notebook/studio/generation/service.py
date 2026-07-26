@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.domain.notebook import StudioArtifact, StudioWorkflowRun
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.studio.payloads import build_structured_payload
@@ -42,7 +43,7 @@ def _strict_evidence_required(artifact: StudioArtifact) -> bool:
     """Default strict verification on only for publishable Studio exports."""
     if artifact.artifact_type not in _PUBLISHABLE_ARTIFACT_TYPES:
         return False
-    raw = os.environ.get("ONP_STUDIO_STRICT_EVIDENCE", "true").strip().lower()
+    raw = resolve_env("DEEPER_NOTEBOOK_STUDIO_STRICT_EVIDENCE", "true").strip().lower()
     return raw not in {"0", "false", "no", "off"}
 
 
@@ -292,7 +293,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 SystemMessage(content=_system_prompt(artifact)),
                 HumanMessage(content=combined_context),
             ],
-            timeout_seconds=context.env_int("ONP_STUDIO_PAGE_TIMEOUT_SEC", 180),
+            timeout_seconds=context.env_int("DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180),
         )
         content = render_artifact_markdown(result.document)
         _store_generated_output(artifact, result, content, citations)
@@ -316,7 +317,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                             HumanMessage(content=combined_context),
                         ],
                         timeout_seconds=context.env_int(
-                            "ONP_STUDIO_PAGE_TIMEOUT_SEC", 180
+                            "DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180
                         ),
                     )
                     result = repaired

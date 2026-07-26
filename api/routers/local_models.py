@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.local_models import (
     cancel_snapshot_install,
     get_snapshot_install,
@@ -158,8 +159,8 @@ async def local_models_inventory():
 
     # Resolve model dir per docstring precedence.
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -218,8 +219,8 @@ async def local_models_role_routing():
     )
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -348,7 +349,7 @@ def _launcher_provider_for_runtime(runtime: str | None) -> str | None:
 
 
 def _launcher_config_summary(model_dir: Path):
-    active_gguf_model = os.environ.get("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
+    active_gguf_model = resolve_env("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
     config_path = Path.home() / ".open-notebook-plus" / "config.toml"
     if not config_path.exists():
         return {
@@ -842,8 +843,8 @@ def _configured_model_dir():
     from pathlib import Path as _Path
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -1239,8 +1240,8 @@ async def local_models_download(body: dict):
         )
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -1420,8 +1421,8 @@ async def local_models_downloads_list():
     from open_notebook.local_models import list_jobs, reconcile_jobs
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -1514,7 +1515,7 @@ async def sidecar_log(kind: str):
             ),
         )
 
-    log_dir_str = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", "").strip()
+    log_dir_str = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", "").strip()
     if not log_dir_str:
         # API running standalone (no launcher) — no logs to surface.
         return {"kind": kind, "log": "", "hint": None, "available": False}
@@ -1598,8 +1599,8 @@ async def local_models_set_active(body: dict):
     # Resolve the configured model dir using the same precedence as
     # the inventory + download endpoints — keeps the three in sync.
     raw_dir = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw_dir:
@@ -1629,8 +1630,8 @@ async def local_models_set_active(body: dict):
 
     # Reuse the same control-plane proxy machinery as the restart
     # endpoint.
-    control_url = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
-    control_token = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
+    control_url = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
+    control_token = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
     if not control_url or not control_token:
         raise HTTPException(
             status_code=503,
@@ -1731,8 +1732,8 @@ async def sidecar_restart(kind: str):
             ),
         )
 
-    control_url = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
-    control_token = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
+    control_url = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
+    control_token = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
     if not control_url or not control_token:
         raise HTTPException(
             status_code=503,

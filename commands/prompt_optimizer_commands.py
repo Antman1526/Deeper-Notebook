@@ -19,6 +19,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from surreal_commands import CommandInput, CommandOutput, command
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.config import DATA_FOLDER
 from open_notebook.domain.transformation import Transformation
 from open_notebook.prompt_optimizer import skillopt_available
@@ -163,7 +164,7 @@ async def optimize_prompt_command(
         )
 
         timeout = float(
-            os.environ.get("ONP_PROMPT_OPT_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PROMPT_OPT_TIMEOUT_SEC", "1800").strip() or 1800
         )
         try:
             result = await asyncio.wait_for(

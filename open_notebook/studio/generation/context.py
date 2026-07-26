@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
 from open_notebook.ai.models import Model
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -25,7 +26,7 @@ from .prompts import artifact_model_role
 
 
 def env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
+    raw = resolve_env(name, "").strip()
     if not raw:
         return default
     try:
@@ -42,7 +43,7 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
-MAX_EXTRACT_CHARS_PER_FILE = env_int("ONP_STUDIO_MAX_FILE_CHARS", 15_000)
+MAX_EXTRACT_CHARS_PER_FILE = env_int("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000)
 
 
 def sources_not_ready_exception(
@@ -149,8 +150,8 @@ def artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | No
 
 def configured_model_dir() -> Path | None:
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:

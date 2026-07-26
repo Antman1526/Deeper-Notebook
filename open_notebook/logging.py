@@ -27,6 +27,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+
 _DEFAULT_ROTATION = "20 MB"
 _DEFAULT_RETENTION = "14 days"
 _DEFAULT_LEVEL = "INFO"
@@ -74,7 +76,7 @@ def default_log_dir() -> Path:
     writable (e.g. read-only filesystem), the caller can override via
     ONP_LOG_DIR.
     """
-    raw = os.environ.get("ONP_LOG_DIR")
+    raw = resolve_env("DEEPER_NOTEBOOK_LOG_DIR")
     if raw:
         return Path(raw).expanduser()
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
@@ -121,10 +123,10 @@ def configure_logging(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     if level is None:
-        level = os.environ.get("ONP_LOG_LEVEL", _DEFAULT_LEVEL).upper()
+        level = resolve_env("DEEPER_NOTEBOOK_LOG_LEVEL", _DEFAULT_LEVEL).upper()
 
     if json_sink is None:
-        json_sink = os.environ.get("ONP_LOG_JSON", "").lower() in {
+        json_sink = resolve_env("DEEPER_NOTEBOOK_LOG_JSON", "").lower() in {
             "1", "true", "yes", "on"
         }
 
