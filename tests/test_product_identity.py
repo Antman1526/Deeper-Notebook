@@ -265,6 +265,40 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
     ] == [1]
 
 
+def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_path):
+    repo = _init_tracked_repo(
+        tmp_path / "repo",
+        {
+            "commands/example.py": (
+                'legacy_module = open_notebook; @command("work", '
+                'app="open_notebook")\n'
+            )
+        },
+    )
+    allowlist = {
+        (
+            "commands/example.py",
+            'app="open_notebook"',
+        ): "compatibility_alias"
+    }
+
+    report = audit_repository(repo, allowlist)
+
+    assert len(report["categories"]["compatibility_alias"]) == 1
+    assert [
+        match
+        for match in report["categories"]["unexpected_active_identity"]
+        if match["pattern"] == "open_notebook"
+    ] == [
+        {
+            "path": "commands/example.py",
+            "pattern": "open_notebook",
+            "source": "content",
+            "line": 1,
+        }
+    ]
+
+
 def test_audit_reports_stale_entries_and_skips_binary_contents(tmp_path):
     repo = _init_tracked_repo(
         tmp_path / "repo",
