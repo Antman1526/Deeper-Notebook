@@ -127,6 +127,29 @@ def _text_lines(path: Path) -> list[str] | None:
         return None
 
 
+def _pattern_occurrences(
+    value: str,
+    patterns: tuple[str, ...],
+) -> list[tuple[str, int, int]]:
+    occurrences: list[tuple[str, int, int]] = []
+    for pattern in patterns:
+        if not pattern:
+            continue
+        start = 0
+        while (match_start := value.find(pattern, start)) != -1:
+            match_end = match_start + len(pattern)
+            occurrences.append((pattern, match_start, match_end))
+            start = match_start + 1
+    return sorted(
+        occurrences,
+        key=lambda occurrence: (
+            occurrence[1],
+            -(occurrence[2] - occurrence[1]),
+            occurrence[0],
+        ),
+    )
+
+
 def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
     """Scan tracked path names and UTF-8 text contents for legacy references."""
     categorized: dict[str, list[dict[str, object]]] = {
@@ -149,9 +172,8 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
 
     for relative_path in _tracked_paths(root):
         patterns = patterns_for_path(relative_path, allowlist)
-        for pattern in patterns:
-            if pattern in relative_path:
-                record(relative_path, pattern, "path", None)
+        for pattern, _start, _end in _pattern_occurrences(relative_path, patterns):
+            record(relative_path, pattern, "path", None)
 
         absolute_path = root / relative_path
         if not absolute_path.is_file():
@@ -160,17 +182,19 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
         if lines is None:
             continue
         for line_number, line in enumerate(lines, start=1):
-            found_patterns = [pattern for pattern in patterns if pattern in line]
+            occurrences = _pattern_occurrences(line, patterns)
             allowed_contexts = [
-                pattern
-                for pattern in found_patterns
+                (pattern, start, end)
+                for pattern, start, end in occurrences
                 if classify_match(relative_path, pattern, allowlist)
                 != "unexpected_active_identity"
             ]
-            for pattern in found_patterns:
+            for pattern, start, end in occurrences:
                 if any(
-                    pattern != context and pattern in context
-                    for context in allowed_contexts
+                    pattern != context_pattern
+                    and context_start <= start
+                    and end <= context_end
+                    for context_pattern, context_start, context_end in allowed_contexts
                 ):
                     continue
                 record(relative_path, pattern, "content", line_number)
