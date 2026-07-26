@@ -40,6 +40,12 @@ def test_plus_stable_feature_flags_default_on(monkeypatch):
 def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
     import open_notebook.feature_flags as feature_flags
 
+    for name in (
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DN_EVIDENCE_STUDIO",
+        "OPEN_NOTEBOOK_EVIDENCE_STUDIO",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "yes")
     assert feature_flags.evidence_studio_enabled() is True
 

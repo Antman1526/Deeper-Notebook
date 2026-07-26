@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ast
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -159,6 +161,103 @@ def test_file_aware_secret_getter_obeys_alias_precedence_without_leaking(
     assert "legacy-secret" not in repr(receipt)
 
 
+def test_canonical_direct_secret_beats_lower_legacy_file_and_normalizes_safely(
+    monkeypatch,
+    tmp_path,
+):
+    canonical = "DEEPER_NOTEBOOK_ENCRYPTION_KEY"
+    _clear_aliases(monkeypatch, canonical)
+    legacy_secret_path = tmp_path / "legacy-secret"
+    legacy_secret_path.write_text("lower-priority-secret\n", encoding="utf-8")
+    monkeypatch.setenv(canonical, "canonical-direct-secret")
+    monkeypatch.setenv(
+        "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE",
+        str(legacy_secret_path),
+    )
+
+    value, receipt = resolve_env(
+        canonical,
+        getter=get_secret_from_env,
+        with_receipt=True,
+    )
+    normalized = normalize_product_environment(
+        {
+            canonical: "canonical-direct-secret",
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_secret_path),
+        }
+    )
+
+    assert value == "canonical-direct-secret"
+    assert receipt.winner == canonical
+    assert "canonical-direct-secret" not in repr(receipt)
+    assert "lower-priority-secret" not in repr(receipt)
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
+    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+
+
+def test_empty_canonical_direct_secret_beats_lower_legacy_file(tmp_path):
+    legacy_secret_path = tmp_path / "legacy-secret"
+    legacy_secret_path.write_text("lower-priority-secret\n", encoding="utf-8")
+    normalized = normalize_product_environment(
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": "",
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_secret_path),
+        }
+    )
+
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == ""
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == ""
+    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+
+
+def test_file_form_wins_before_direct_form_within_same_alias(tmp_path):
+    secret_path = tmp_path / "canonical-secret"
+    secret_path.write_text("canonical-file-secret\n", encoding="utf-8")
+    normalized = normalize_product_environment(
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(secret_path),
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": "canonical-direct-secret",
+        }
+    )
+
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(secret_path)
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(secret_path)
+    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+    assert "canonical-file-secret" not in repr(normalized)
+
+
+def test_empty_file_form_is_still_an_assigned_higher_priority_value():
+    normalized = normalize_product_environment(
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": "",
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": "canonical-direct-secret",
+        }
+    )
+
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == ""
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == ""
+    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+
+
+def test_legacy_provider_timeout_is_registered_and_mirrored_for_children():
+    canonical = "DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA"
+    env = {"ONP_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA": "75"}
+
+    with pytest.warns(LegacyEnvironmentWarning):
+        normalized = normalize_product_environment(env)
+
+    assert canonical in SETTINGS
+    assert normalized[canonical] == "75"
+    assert normalized["DN_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA"] == "75"
+    assert normalized["OPEN_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA"] == "75"
+    assert normalized["ONP_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA"] == "75"
+
+
 def test_legacy_warning_is_once_per_key_and_never_contains_value(monkeypatch):
     import deeper_notebook.environment as environment
 
@@ -185,8 +284,45 @@ def test_every_registered_setting_has_unique_aliases():
             owners[name] = canonical
 
 
-def test_production_python_does_not_directly_read_legacy_product_keys():
-    """All product-owned legacy reads must route through the central resolver."""
+@pytest.mark.parametrize("module_name", ["api.main", "commands"])
+def test_bootstrap_applies_normalized_aliases_to_process_environment(module_name):
+    sentinel = "bootstrap-do-not-leak"
+    aliases = (
+        "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN",
+        "DN_METRICS_AUTH_TOKEN",
+        "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN",
+        "ONP_METRICS_AUTH_TOKEN",
+    )
+    child_env = dict(os.environ)
+    for name in aliases:
+        child_env.pop(name, None)
+    child_env["ONP_METRICS_AUTH_TOKEN"] = sentinel
+    script = (
+        "import importlib, os\n"
+        f"importlib.import_module({module_name!r})\n"
+        f"names = {aliases!r}\n"
+        f"assert all(os.environ.get(name) == {sentinel!r} for name in names)\n"
+        "print('bootstrap-mirrors-present')\n"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    combined_output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, combined_output
+    assert "bootstrap-mirrors-present" in completed.stdout
+    assert sentinel not in combined_output
+
+
+def test_production_python_does_not_directly_access_legacy_product_keys():
+    """All product-owned legacy accesses must route through the central resolver."""
     root = Path(__file__).resolve().parents[1]
     production_roots = ("api", "commands", "desktop", "open_notebook")
     violations: list[str] = []
@@ -210,6 +346,24 @@ def test_production_python_does_not_directly_read_legacy_product_keys():
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
+                if isinstance(node, ast.Subscript):
+                    is_environ_subscript = (
+                        isinstance(node.value, ast.Attribute)
+                        and isinstance(node.value.value, ast.Name)
+                        and node.value.value.id == "os"
+                        and node.value.attr == "environ"
+                    )
+                    key = node.slice
+                    if (
+                        is_environ_subscript
+                        and isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                        and key.value.startswith(("OPEN_NOTEBOOK_", "ONP_"))
+                    ):
+                        violations.append(
+                            f"{path.relative_to(root)}:{node.lineno}:{key.value}"
+                        )
+                    continue
                 if not isinstance(node, ast.Call) or not node.args:
                     continue
                 function_name = (
