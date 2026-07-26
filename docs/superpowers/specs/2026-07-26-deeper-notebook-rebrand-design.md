@@ -8,7 +8,7 @@
 
 **Upstream:** https://github.com/lfnovo/open-notebook
 
-**Status:** Approved design; pending written-spec review
+**Status:** Approved by the user on 2026-07-26
 
 ## Purpose
 
