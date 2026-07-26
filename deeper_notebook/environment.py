@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import threading
 import warnings
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 
 
@@ -83,6 +83,25 @@ _LONG_SUFFIXES = (
     "MODEL_DIR_DEFAULT",
     "OSAURUS_PORT",
     "PASSWORD",
+)
+
+CONNECTION_TIMEOUT_PROVIDERS = (
+    "ANTHROPIC",
+    "AZURE",
+    "DASHSCOPE",
+    "DEEPSEEK",
+    "ELEVENLABS",
+    "GOOGLE",
+    "GROQ",
+    "MINIMAX",
+    "MISTRAL",
+    "OLLAMA",
+    "OPENAI",
+    "OPENAI_COMPATIBLE",
+    "OPENROUTER",
+    "VERTEX",
+    "VOYAGE",
+    "XAI",
 )
 
 _SHORT_SUFFIXES = (
@@ -189,6 +208,10 @@ _SHORT_SUFFIXES = (
     "WEB_SEARCH_TIMEOUT_SEC",
     "WEB_SEARCH_TOTAL_BUDGET_SEC",
     "WORKER_MAX_TASKS",
+    *(
+        f"CONNECTION_TEST_TIMEOUT_SEC_{provider}"
+        for provider in CONNECTION_TIMEOUT_PROVIDERS
+    ),
 )
 
 
@@ -300,32 +323,57 @@ def normalize_product_environment(
     """
     normalized = dict(environment)
     for aliases in SETTINGS.values():
-        values = {name: environment.get(name) for name in aliases.precedence}
+        candidates = tuple(
+            candidate
+            for name in aliases.precedence
+            for candidate in (f"{name}_FILE", name)
+        )
         winner = next(
-            (name for name in aliases.precedence if values[name] is not None),
+            (name for name in candidates if environment.get(name) is not None),
             None,
         )
-        if winner is not None:
-            value = values[winner]
-            assert value is not None
-            for name in aliases.precedence:
-                normalized[name] = value
-            if winner in aliases.legacy_names:
-                _warn_legacy_once(winner, aliases.canonical)
+        if winner is None:
+            continue
 
-        file_aliases = tuple(f"{name}_FILE" for name in aliases.precedence)
-        file_winner = next(
-            (name for name in file_aliases if environment.get(name) is not None),
-            None,
+        value = environment[winner]
+        for name in candidates:
+            normalized.pop(name, None)
+
+        is_file = winner.endswith("_FILE")
+        mirror_names = tuple(
+            f"{name}_FILE" if is_file else name
+            for name in aliases.precedence
         )
-        if file_winner is not None:
-            file_value = environment[file_winner]
-            for name in file_aliases:
-                normalized[name] = file_value
-            base_winner = file_winner.removesuffix("_FILE")
-            if base_winner in aliases.legacy_names:
-                _warn_legacy_once(file_winner, f"{aliases.canonical}_FILE")
+        for name in mirror_names:
+            normalized[name] = value
 
+        base_winner = winner.removesuffix("_FILE")
+        if base_winner in aliases.legacy_names:
+            canonical = (
+                f"{aliases.canonical}_FILE"
+                if is_file
+                else aliases.canonical
+            )
+            _warn_legacy_once(winner, canonical)
+
+    return normalized
+
+
+def apply_product_environment(
+    environment: MutableMapping[str, str],
+) -> dict[str, str]:
+    """Apply exact normalized product state to a process environment."""
+    normalized = normalize_product_environment(environment)
+    product_names = {
+        candidate
+        for aliases in SETTINGS.values()
+        for name in aliases.precedence
+        for candidate in (name, f"{name}_FILE")
+    }
+    for name in product_names:
+        if name not in normalized:
+            environment.pop(name, None)
+    environment.update(normalized)
     return normalized
 
 
@@ -336,10 +384,12 @@ def _reset_warning_state_for_tests() -> None:
 
 
 __all__ = [
+    "CONNECTION_TIMEOUT_PROVIDERS",
     "EnvResolution",
     "LegacyEnvironmentWarning",
     "SETTINGS",
     "SettingAliases",
+    "apply_product_environment",
     "normalize_product_environment",
     "resolve_env",
 ]

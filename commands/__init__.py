@@ -24,10 +24,10 @@ prevent the worker from booting — defense-in-depth only.
 
 import os
 
-from deeper_notebook.environment import normalize_product_environment
+from deeper_notebook.environment import apply_product_environment
 
 # The surreal-commands worker imports this package before command modules.
-_NORMALIZED_PRODUCT_ENVIRONMENT = normalize_product_environment(os.environ)
+_NORMALIZED_PRODUCT_ENVIRONMENT = apply_product_environment(os.environ)
 
 try:
     from open_notebook.logging import configure_logging

@@ -27,6 +27,12 @@ def _client() -> TestClient:
 @pytest.fixture(autouse=True)
 def _isolate_background_evaluation(monkeypatch):
     """Keep router tests focused on API behavior, not live evaluation persistence."""
+    for name in (
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DN_EVIDENCE_STUDIO",
+        "OPEN_NOTEBOOK_EVIDENCE_STUDIO",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
         artifact_generation_service,
         "_schedule_artifact_evaluation",

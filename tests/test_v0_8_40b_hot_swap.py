@@ -16,6 +16,7 @@ callbacks.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from http import HTTPStatus
@@ -228,6 +229,12 @@ def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
     gguf = model_dir / "new-chat-q4.gguf"
     gguf.write_bytes(b"z" * 256)
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    active_aliases = (
+        "DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL",
+        "OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL",
+    )
+    for name in active_aliases:
+        monkeypatch.delenv(name, raising=False)
 
     received_paths: list[str] = []
 
@@ -253,6 +260,8 @@ def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
         # not the user-provided one (matters when path was relative).
         assert len(received_paths) == 1
         assert received_paths[0] == str(gguf.resolve())
+        for name in active_aliases:
+            assert os.environ[name] == str(gguf.resolve())
     finally:
         srv.stop()
 
