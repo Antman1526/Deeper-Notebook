@@ -1,5 +1,5 @@
 [project]
-name = "open-notebook"
+name = "deeper-notebook"
 # NOTE (v0.8.70): this is the UPSTREAM open-notebook / Docker image version,
 # consumed by .github/workflows/build-and-release.yml to tag the server
 # container image. It is a SEPARATE track from the Plus DESKTOP app version,
@@ -7,7 +7,7 @@ name = "open-notebook"
 # fork line) and drives the window/`/api/version`/update-notifier baseline.
 # Do not "reconcile" the two — they intentionally version different artifacts.
 version = "1.8.5"
-description = "An open source implementation of a research assistant, inspired by Google Notebook LM"
+description = "Local-first, source-grounded research and personal knowledge workspace"
 authors = [
     {name = "Luis Novo", email = "lfnovo@gmail.com"}
 ]
@@ -91,8 +91,8 @@ dependencies = [
     # version that supports pillow>=12.
 ]
 
-[tool.setuptools]
-package-dir = {"open_notebook" = "open_notebook"}
+[tool.setuptools.packages.find]
+include = ["deeper_notebook*", "open_notebook*"]
 
 
 [project.optional-dependencies]

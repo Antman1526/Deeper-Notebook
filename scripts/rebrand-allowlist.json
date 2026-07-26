@@ -1,0 +1,274 @@
+{
+  "entries": [
+    {
+      "path": "deeper_notebook/identity.py",
+      "pattern": ".open-notebook-plus",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "deeper_notebook/identity.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "deeper_notebook/identity.py",
+      "pattern": "/api/onp",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/build/open-notebook-plus.iss",
+      "pattern": "open-notebook-plus",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/build/open-notebook-plus.iss",
+      "pattern": "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/db_repair.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/launcher.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/_register.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/client.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "desktop/memory/surreal_store.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/embedding_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/example_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/podcast_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/prompt_optimizer_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/source_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "commands/studio_commands.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "Open Notebook Plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "Open Notebook",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "open-notebook-Plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "open-notebook-plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "open_notebook",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "ONP_",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/specs/**",
+      "pattern": "/api/onp",
+      "category": "historical_reference"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "Open Notebook Plus",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "Open Notebook",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "OpenNotebook",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "open-notebook-Plus",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "open-notebook-plus",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "open_notebook",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "OPEN_NOTEBOOK_",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "ONP_",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "/onp/",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "onpFetch",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "--onp-",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "components/onp",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "docs/superpowers/plans/**",
+      "pattern": "/api/onp",
+      "category": "migration_documentation"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "Open Notebook Plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "Open Notebook",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "OpenNotebook",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "open-notebook-Plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "open-notebook-plus",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "open_notebook",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "OPEN_NOTEBOOK_",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "ONP_",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "/onp/",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "--onp-",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "components/onp",
+      "category": "historical_reference"
+    },
+    {
+      "path": "desktop/CHANGELOG.md",
+      "pattern": "/api/onp",
+      "category": "historical_reference"
+    },
+    {
+      "path": "README.upstream.md",
+      "pattern": "Open Notebook",
+      "category": "upstream_reference"
+    },
+    {
+      "path": "README.upstream.md",
+      "pattern": "open-notebook",
+      "category": "upstream_reference"
+    },
+    {
+      "path": "tests/test_product_identity.py",
+      "pattern": "Open Notebook Plus",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "tests/test_product_identity.py",
+      "pattern": ".open-notebook-plus",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "tests/test_product_identity.py",
+      "pattern": "open_notebook",
+      "category": "compatibility_alias"
+    },
+    {
+      "path": "tests/test_product_identity.py",
+      "pattern": "/api/onp",
+      "category": "compatibility_alias"
+    }
+  ]
+}
