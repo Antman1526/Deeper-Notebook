@@ -87,7 +87,13 @@ def test_v0828_fernet_silent_when_key_unset(monkeypatch):
     the downstream behavior (return None → caller raises clear
     RuntimeError) is correct. We're only logging the Fernet-raises
     case, not the no-key case."""
-    monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", raising=False)
+    for name in (
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY",
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE",
+        "OPEN_NOTEBOOK_ENCRYPTION_KEY",
+        "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
     from open_notebook.domain import gmail as gmail_mod
 

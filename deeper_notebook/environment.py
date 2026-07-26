@@ -336,6 +336,14 @@ def normalize_product_environment(
             continue
 
         value = environment[winner]
+        direct_fallback = next(
+            (
+                environment[name]
+                for name in aliases.precedence
+                if environment.get(name) is not None
+            ),
+            None,
+        )
         for name in candidates:
             normalized.pop(name, None)
 
@@ -346,6 +354,9 @@ def normalize_product_environment(
         )
         for name in mirror_names:
             normalized[name] = value
+        if is_file and direct_fallback is not None:
+            for name in aliases.precedence:
+                normalized[name] = direct_fallback
 
         base_winner = winner.removesuffix("_FILE")
         if base_winner in aliases.legacy_names:

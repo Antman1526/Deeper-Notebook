@@ -6,6 +6,7 @@ import ast
 import os
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ import pytest
 from deeper_notebook.environment import (
     SETTINGS,
     LegacyEnvironmentWarning,
+    apply_product_environment,
     normalize_product_environment,
     resolve_env,
 )
@@ -32,6 +34,42 @@ def _clear_aliases(monkeypatch: pytest.MonkeyPatch, canonical: str) -> None:
     for name in SETTINGS[canonical].precedence:
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(f"{name}_FILE", raising=False)
+
+
+def _apply_and_resolve_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: dict[str, str],
+):
+    canonical = "DEEPER_NOTEBOOK_ENCRYPTION_KEY"
+    _clear_aliases(monkeypatch, canonical)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        normalized = apply_product_environment(os.environ)
+        value, receipt = resolve_env(
+            canonical,
+            getter=get_secret_from_env,
+            with_receipt=True,
+        )
+    return value, receipt, normalized, caught
+
+
+def _assert_secret_values_not_exposed(
+    secrets: tuple[str, ...],
+    receipt,
+    caught,
+    captured,
+) -> None:
+    observable = (
+        repr(receipt)
+        + "".join(str(item.message) for item in caught)
+        + captured.out
+        + captured.err
+    )
+    for secret in secrets:
+        assert secret not in observable
 
 
 def test_canonical_long_name_wins(monkeypatch):
@@ -225,8 +263,8 @@ def test_file_form_wins_before_direct_form_within_same_alias(tmp_path):
 
     assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(secret_path)
     assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(secret_path)
-    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY" not in normalized
-    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
     assert "canonical-file-secret" not in repr(normalized)
 
 
@@ -240,8 +278,173 @@ def test_empty_file_form_is_still_an_assigned_higher_priority_value():
 
     assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == ""
     assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == ""
-    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY" not in normalized
-    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY" not in normalized
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == "canonical-direct-secret"
+
+
+def test_apply_preserves_direct_secret_fallback_for_empty_file_path(
+    monkeypatch,
+    capsys,
+):
+    direct_secret = "direct-empty-path-sentinel"
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": "",
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": direct_secret,
+        },
+    )
+
+    assert value == direct_secret
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    _assert_secret_values_not_exposed(
+        (direct_secret,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_preserves_direct_secret_fallback_for_missing_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    direct_secret = "direct-missing-file-sentinel"
+    missing_path = tmp_path / "does-not-exist"
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(missing_path),
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": direct_secret,
+        },
+    )
+
+    assert value == direct_secret
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    _assert_secret_values_not_exposed(
+        (direct_secret,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_preserves_direct_secret_fallback_for_unreadable_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    direct_secret = "direct-unreadable-file-sentinel"
+    secret_path = tmp_path / "unreadable-secret"
+    secret_path.write_text("unreadable-file-sentinel\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def _deny_target_read(path, *args, **kwargs):
+        if path == secret_path:
+            raise PermissionError("portable unreadable-file simulation")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _deny_target_read)
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(secret_path),
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": direct_secret,
+        },
+    )
+
+    assert value == direct_secret
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    _assert_secret_values_not_exposed(
+        (direct_secret, "unreadable-file-sentinel"),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_preserves_direct_secret_fallback_for_empty_content_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    direct_secret = "direct-empty-content-sentinel"
+    secret_path = tmp_path / "empty-secret"
+    secret_path.write_text(" \n", encoding="utf-8")
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(secret_path),
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": direct_secret,
+        },
+    )
+
+    assert value == direct_secret
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    _assert_secret_values_not_exposed(
+        (direct_secret,),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_keeps_usable_file_ahead_of_preserved_direct_fallback(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    file_secret = "usable-file-sentinel"
+    direct_secret = "direct-fallback-sentinel"
+    secret_path = tmp_path / "usable-secret"
+    secret_path.write_text(f"{file_secret}\n", encoding="utf-8")
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE": str(secret_path),
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": direct_secret,
+        },
+    )
+
+    assert value == file_secret
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == direct_secret
+    _assert_secret_values_not_exposed(
+        (file_secret, direct_secret),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
+
+
+def test_apply_keeps_canonical_direct_ahead_of_lower_legacy_file(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    canonical_secret = "canonical-direct-sentinel"
+    legacy_file_secret = "legacy-file-sentinel"
+    legacy_path = tmp_path / "legacy-secret"
+    legacy_path.write_text(f"{legacy_file_secret}\n", encoding="utf-8")
+    value, receipt, normalized, caught = _apply_and_resolve_secret(
+        monkeypatch,
+        {
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": canonical_secret,
+            "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE": str(legacy_path),
+        },
+    )
+
+    assert value == canonical_secret
+    assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY"] == canonical_secret
+    assert "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+    assert "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE" not in normalized
+    _assert_secret_values_not_exposed(
+        (canonical_secret, legacy_file_secret),
+        receipt,
+        caught,
+        capsys.readouterr(),
+    )
 
 
 def test_legacy_provider_timeout_is_registered_and_mirrored_for_children():
