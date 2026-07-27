@@ -29,10 +29,10 @@ def _emergency_log(exc: BaseException) -> None:
     process still exits with a non-zero code so the caller knows it failed.
     """
     import datetime as _dt
-    import os as _os
     import traceback as _traceback
-    log_dir = active_data_root() / "logs"
+
     try:
+        log_dir = active_data_root() / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "launcher.log"
         with log_path.open("a") as f:

@@ -25,7 +25,7 @@ from desktop.data_root import active_data_root
 
 STATIC_DIR = Path(__file__).parent / "static"
 CATALOG_PATH = Path(__file__).parent / "catalog.json"
-_CONFIG_PATH = active_data_root() / "config.toml"
+CONFIG_PATH_KEY = web.AppKey("config_path", Path)
 
 _MIN_BYTES = 100_000
 
@@ -41,10 +41,18 @@ def _classify(rel: str) -> str:
     return "chat"
 
 
-def build_app(model_dir: Path) -> web.Application:
+def build_app(
+    model_dir: Path, *, config_path: Path | None = None
+) -> web.Application:
     app = web.Application()
     model_dir = Path(model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
+    config_path = (
+        Path(config_path)
+        if config_path is not None
+        else active_data_root() / "config.toml"
+    )
+    app[CONFIG_PATH_KEY] = config_path
 
     async def index(_: web.Request) -> web.Response:
         if (STATIC_DIR / "index.html").exists():
@@ -54,7 +62,7 @@ def build_app(model_dir: Path) -> web.Application:
 
     async def theme(_: web.Request) -> web.Response:
         try:
-            raw = tomllib.loads(_CONFIG_PATH.read_text())
+            raw = tomllib.loads(config_path.read_text())
             t = raw.get("theme", "light-blue")
         except Exception:
             t = "light-blue"

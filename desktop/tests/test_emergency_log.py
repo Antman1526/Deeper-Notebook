@@ -89,3 +89,21 @@ def test_emergency_log_creates_logs_dir_if_missing(tmp_path, monkeypatch):
 
     assert log_dir.exists()
     assert (log_dir / "launcher.log").exists()
+
+
+def test_emergency_log_falls_back_when_data_root_resolution_fails(
+    monkeypatch, capsys
+):
+    from desktop import __main__ as entrypoint
+
+    def blocked_root():
+        raise RuntimeError("rollback requires operator action")
+
+    monkeypatch.setattr(entrypoint, "active_data_root", blocked_root)
+
+    original = RuntimeError("simulated early failure")
+    entrypoint._emergency_log(original)
+
+    captured = capsys.readouterr()
+    assert "Launcher early-init failure" in captured.err
+    assert "simulated early failure" in captured.err

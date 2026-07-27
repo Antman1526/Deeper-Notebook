@@ -3,7 +3,24 @@ from pathlib import Path
 
 from aiohttp.test_utils import AioHTTPTestCase
 
+from desktop.model_manager import server
 from desktop.model_manager.server import build_app
+
+
+def test_build_app_accepts_config_path_without_resolving_data_root(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("theme='dracula'")
+
+    def unexpected_resolution():
+        raise AssertionError("injected config must avoid data-root resolution")
+
+    monkeypatch.setattr(server, "active_data_root", unexpected_resolution)
+
+    app = build_app(model_dir=tmp_path / "models", config_path=config_path)
+
+    assert app[server.CONFIG_PATH_KEY] == config_path
 
 
 class ModelManagerTest(AioHTTPTestCase):

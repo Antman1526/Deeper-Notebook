@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-import errno
+import ctypes
 import json
 import os
 import socket
@@ -80,17 +80,32 @@ def test_legacy_symlink_to_canonical_is_ready(tmp_path):
     assert decision.active_root == canonical
 
 
-def test_same_volume_migration_uses_os_replace(tmp_path, monkeypatch):
+def test_two_root_symlinks_to_external_target_are_conflict(tmp_path):
+    canonical, legacy, _ = _roots(tmp_path)
+    external = tmp_path / "external-state"
+    external.mkdir()
+    canonical.symlink_to(external, target_is_directory=True)
+    legacy.symlink_to(external, target_is_directory=True)
+
+    decision = classify_roots(canonical, legacy)
+
+    assert decision.state == "migration-conflict"
+    assert decision.reason_code == "canonical-root-symlink"
+
+
+def test_same_volume_migration_uses_atomic_no_replace(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     calls: list[tuple[Path, Path]] = []
-    real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
 
-    def tracked_replace(source, destination):
+    def tracked_rename(source, destination):
         calls.append((Path(source), Path(destination)))
-        return real_replace(source, destination)
+        return real_rename(source, destination)
 
-    monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"
@@ -101,18 +116,20 @@ def test_same_volume_migration_uses_os_replace(tmp_path, monkeypatch):
 def test_started_receipt_is_durable_before_root_move(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
-    real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
     observed_started: dict[str, object] = {}
 
-    def tracked_replace(source, destination):
+    def tracked_rename(source, destination):
         if Path(source) == legacy and Path(destination) == canonical:
             receipt_paths = list(receipts.glob("*.json"))
             assert len(receipt_paths) == 1
             observed_started.update(json.loads(receipt_paths[0].read_text()))
             assert observed_started["status"] == "started"
-        return real_replace(source, destination)
+        return real_rename(source, destination)
 
-    monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"
@@ -145,14 +162,16 @@ def test_nonempty_conflicting_canonical_is_never_replaced(tmp_path, monkeypatch)
     canonical.mkdir()
     (canonical / "config.toml").write_text("different")
     root_moves: list[tuple[Path, Path]] = []
-    real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
 
-    def tracked_replace(source, destination):
+    def tracked_rename(source, destination):
         if {Path(source), Path(destination)} == {legacy, canonical}:
             root_moves.append((Path(source), Path(destination)))
-        return real_replace(source, destination)
+        return real_rename(source, destination)
 
-    monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-conflict"
@@ -168,7 +187,7 @@ def test_canonical_created_during_preflight_is_never_replaced(
     _seed_legacy(legacy)
     real_snapshot = data_root._snapshot_critical_hashes
     root_moves: list[tuple[Path, Path]] = []
-    real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
 
     def race_destination(root):
         result = real_snapshot(root)
@@ -176,15 +195,17 @@ def test_canonical_created_during_preflight_is_never_replaced(
         (canonical / "racing-writer.txt").write_text("do not replace")
         return result
 
-    def tracked_replace(source, destination):
+    def tracked_rename(source, destination):
         if Path(source) == legacy and Path(destination) == canonical:
             root_moves.append((Path(source), Path(destination)))
-        return real_replace(source, destination)
+        return real_rename(source, destination)
 
     monkeypatch.setattr(
         data_root, "_snapshot_critical_hashes", race_destination
     )
-    monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-conflict"
@@ -222,20 +243,62 @@ def test_failed_validation_rolls_back_and_leaves_legacy_root(
     assert json.loads(decision.receipt_path.read_text())["status"] == "rolled-back"
 
 
+def test_rollback_destination_race_preserves_both_roots(
+    tmp_path, monkeypatch
+):
+    canonical, legacy, receipts = _roots(tmp_path)
+    _seed_legacy(legacy)
+    real_rename = data_root._rename_directory_no_replace
+    rename_calls = 0
+
+    def race_rollback_destination(source, destination):
+        nonlocal rename_calls
+        rename_calls += 1
+        if rename_calls == 2:
+            assert Path(source) == canonical
+            assert Path(destination) == legacy
+            legacy.mkdir()
+            (legacy / "racing-writer.txt").write_text("preserve me")
+        return real_rename(source, destination)
+
+    def fail_after_validation(stage):
+        if stage == "after_validation":
+            raise RuntimeError("trigger rollback")
+
+    monkeypatch.setattr(
+        data_root,
+        "_rename_directory_no_replace",
+        race_rollback_destination,
+    )
+    decision = migrate_data_root(
+        canonical,
+        legacy,
+        receipt_dir=receipts,
+        failure_injector=fail_after_validation,
+    )
+
+    assert decision.state == "rollback-available"
+    assert decision.reason_code == "filesystem-operation-failed"
+    assert canonical.is_dir()
+    assert (legacy / "racing-writer.txt").read_text() == "preserve me"
+
+
 def test_rerun_after_success_is_idempotent(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     first = migrate_data_root(canonical, legacy, receipt_dir=receipts)
     assert first.state == "ready"
-    real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
     second_root_moves: list[tuple[Path, Path]] = []
 
-    def tracked_replace(source, destination):
+    def tracked_rename(source, destination):
         if {Path(source), Path(destination)} == {legacy, canonical}:
             second_root_moves.append((Path(source), Path(destination)))
-        return real_replace(source, destination)
+        return real_rename(source, destination)
 
-    monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     second = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert second.state == "ready"
@@ -441,6 +504,62 @@ def test_unverifiable_lock_start_time_is_never_reclaimed(
 
 
 @pytest.mark.parametrize(
+    ("open_result", "last_error", "expected"),
+    [
+        (1234, 0, "live"),
+        (0, 5, "live"),
+        (0, 87, "absent"),
+        (0, 1168, "absent"),
+        (0, 31, "unknown"),
+    ],
+)
+def test_windows_process_status_is_query_only_and_tri_state(
+    monkeypatch, open_result, last_error, expected
+):
+    calls: list[tuple[int, bool, int]] = []
+
+    class FakeKernel32:
+        def OpenProcess(self, access, inherit, pid):
+            calls.append((access, inherit, pid))
+            return open_result
+
+        def CloseHandle(self, handle):
+            assert handle == open_result
+
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: FakeKernel32(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ctypes, "get_last_error", lambda: last_error, raising=False
+    )
+
+    assert data_root._windows_process_status(4321) == expected
+    assert calls == [(0x1000, False, 4321)]
+
+
+def test_windows_pid_probe_never_calls_os_kill(monkeypatch):
+    monkeypatch.setattr(data_root.sys, "platform", "win32")
+    monkeypatch.setattr(
+        data_root, "_windows_process_status", lambda pid: "unknown"
+    )
+
+    def unsafe_kill(*_args):
+        raise AssertionError("os.kill must never probe a Windows PID")
+
+    monkeypatch.setattr(data_root.os, "kill", unsafe_kill)
+
+    assert data_root._pid_exists(4321) is None
+
+
+def test_session_guard_rejects_resolution_outside_test_home():
+    with pytest.raises(AssertionError, match="outside"):
+        data_root.active_data_root(home=Path("/task3-outside-test-home"))
+
+
+@pytest.mark.parametrize(
     "stage",
     [
         "after_receipt",
@@ -561,6 +680,35 @@ def test_interrupted_started_receipt_with_moved_root_blocks_later_writers(
         data_root.active_data_root(home=tmp_path)
 
 
+def test_new_completed_receipt_supersedes_older_started_receipt(tmp_path):
+    canonical, legacy, receipts = _roots(tmp_path)
+    _seed_legacy(legacy)
+    receipts.mkdir(mode=0o700)
+    old_receipt = receipts / "migration-old-crash.json"
+    old_receipt.write_text(
+        json.dumps(
+            {
+                "status": "started",
+                "migration_id": "old-crash",
+                "source_path": str(legacy),
+                "canonical_path": str(canonical),
+                "rollback_instructions": ["keep services stopped"],
+            }
+        )
+    )
+    os.utime(old_receipt, ns=(1, 1))
+
+    migrated = migrate_data_root(canonical, legacy, receipt_dir=receipts)
+    assert migrated.state == "ready"
+
+    first_repeat = data_root.resolve_data_root(home=tmp_path)
+    second_repeat = data_root.resolve_data_root(home=tmp_path)
+
+    assert first_repeat.state == "ready"
+    assert second_repeat.state == "ready"
+    assert first_repeat.active_root == canonical
+
+
 def test_live_migration_lock_blocks_write_capable_active_root(tmp_path):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
@@ -627,14 +775,14 @@ def test_exdev_from_root_rename_is_deferred_without_copy(
 ):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
-    real_replace = os.replace
+    def unavailable_atomic_rename(_source, _destination):
+        raise data_root._AtomicRenameUnavailable("EXDEV")
 
-    def exdev_for_root_only(source, destination):
-        if Path(source) == legacy and Path(destination) == canonical:
-            raise OSError(errno.EXDEV, "cross-device link")
-        return real_replace(source, destination)
-
-    monkeypatch.setattr(data_root.os, "replace", exdev_for_root_only)
+    monkeypatch.setattr(
+        data_root,
+        "_rename_directory_no_replace",
+        unavailable_atomic_rename,
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-deferred"
@@ -652,6 +800,7 @@ def test_receipt_file_and_parent_are_fsynced_around_transitions(
     real_fsync = os.fsync
     real_fsync_directory = data_root._fsync_directory
     real_replace = os.replace
+    real_rename = data_root._rename_directory_no_replace
 
     def tracked_fsync(fd):
         events.append(("file-fsync", None))
@@ -664,15 +813,20 @@ def test_receipt_file_and_parent_are_fsynced_around_transitions(
     def tracked_replace(source, destination):
         source = Path(source)
         destination = Path(destination)
-        if source == legacy and destination == canonical:
-            events.append(("root-move", None))
-        elif source.parent == receipts and destination.parent == receipts:
+        if source.parent == receipts and destination.parent == receipts:
             events.append(("receipt-finalize", None))
         return real_replace(source, destination)
+
+    def tracked_rename(source, destination):
+        events.append(("root-move", None))
+        return real_rename(source, destination)
 
     monkeypatch.setattr(data_root.os, "fsync", tracked_fsync)
     monkeypatch.setattr(data_root, "_fsync_directory", tracked_fsync_directory)
     monkeypatch.setattr(data_root.os, "replace", tracked_replace)
+    monkeypatch.setattr(
+        data_root, "_rename_directory_no_replace", tracked_rename
+    )
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"

@@ -68,6 +68,10 @@ class _ValidationError(RuntimeError):
     pass
 
 
+class _AtomicRenameUnavailable(RuntimeError):
+    pass
+
+
 class _InjectedFailure(RuntimeError):
     def __init__(self, stage: str):
         self.stage = stage
@@ -136,6 +140,15 @@ def classify_roots(canonical: Path, legacy: Path) -> DataRootDecision:
             "not-needed", canonical, canonical, legacy
         )
 
+    if canonical.is_symlink():
+        return DataRootDecision(
+            "migration-conflict",
+            legacy if legacy_exists else canonical,
+            canonical,
+            legacy,
+            reason_code="canonical-root-symlink",
+        )
+
     if legacy.is_symlink():
         try:
             same_target = (
@@ -153,15 +166,6 @@ def classify_roots(canonical: Path, legacy: Path) -> DataRootDecision:
             canonical,
             legacy,
             reason_code="legacy-root-symlink",
-        )
-
-    if canonical.is_symlink():
-        return DataRootDecision(
-            "migration-conflict",
-            legacy if legacy_exists else canonical,
-            canonical,
-            legacy,
-            reason_code="canonical-root-symlink",
         )
 
     if canonical_exists and not canonical.is_dir():
@@ -337,6 +341,152 @@ def _device_id(path: Path) -> int:
     return Path(path).stat().st_dev
 
 
+def _raise_posix_rename_error(
+    error: int, source: Path, destination: Path
+) -> None:
+    if error in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(
+            error, os.strerror(error), str(destination)
+        )
+    unsupported_errors = {
+        errno.EXDEV,
+        errno.EINVAL,
+        getattr(errno, "ENOSYS", errno.EINVAL),
+        getattr(errno, "ENOTSUP", errno.EINVAL),
+        getattr(errno, "EOPNOTSUPP", errno.EINVAL),
+    }
+    if error in unsupported_errors:
+        raise _AtomicRenameUnavailable(
+            f"exclusive directory rename unavailable: errno {error}"
+        )
+    raise OSError(
+        error,
+        os.strerror(error),
+        f"{source} -> {destination}",
+    )
+
+
+def _rename_macos_no_replace(source: Path, destination: Path) -> None:
+    """Atomically rename a directory with macOS ``RENAME_EXCL``."""
+    import ctypes
+
+    try:
+        renamex_np = ctypes.CDLL(None, use_errno=True).renamex_np
+    except (AttributeError, OSError) as exc:
+        raise _AtomicRenameUnavailable(
+            "renamex_np is unavailable"
+        ) from exc
+    renamex_np.argtypes = (
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renamex_np.restype = ctypes.c_int
+    if renamex_np(
+        os.fsencode(source),
+        os.fsencode(destination),
+        0x00000004,  # RENAME_EXCL
+    ) == 0:
+        return
+    _raise_posix_rename_error(
+        ctypes.get_errno(), Path(source), Path(destination)
+    )
+
+
+def _rename_linux_no_replace(source: Path, destination: Path) -> None:
+    """Atomically rename a directory with Linux ``RENAME_NOREPLACE``."""
+    import ctypes
+
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except (AttributeError, OSError) as exc:
+        raise _AtomicRenameUnavailable(
+            "renameat2 is unavailable"
+        ) from exc
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    at_fdcwd = -100
+    if renameat2(
+        at_fdcwd,
+        os.fsencode(source),
+        at_fdcwd,
+        os.fsencode(destination),
+        0x00000001,  # RENAME_NOREPLACE
+    ) == 0:
+        return
+    _raise_posix_rename_error(
+        ctypes.get_errno(), Path(source), Path(destination)
+    )
+
+
+def _rename_windows_no_replace(source: Path, destination: Path) -> None:
+    """Atomically rename a directory without ``MOVEFILE_REPLACE_EXISTING``."""
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        move_file = ctypes.WinDLL(
+            "kernel32", use_last_error=True
+        ).MoveFileExW
+    except (AttributeError, OSError) as exc:
+        raise _AtomicRenameUnavailable(
+            "MoveFileExW is unavailable"
+        ) from exc
+    move_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+    )
+    move_file.restype = wintypes.BOOL
+    if move_file(
+        str(source),
+        str(destination),
+        0x00000008,  # MOVEFILE_WRITE_THROUGH; deliberately no REPLACE flag
+    ):
+        return
+    error = ctypes.get_last_error()
+    if error in {80, 183}:  # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
+        raise FileExistsError(error, "destination exists", str(destination))
+    if error in {
+        1,  # ERROR_INVALID_FUNCTION
+        17,  # ERROR_NOT_SAME_DEVICE
+        50,  # ERROR_NOT_SUPPORTED
+        120,  # ERROR_CALL_NOT_IMPLEMENTED
+    }:
+        raise _AtomicRenameUnavailable(
+            f"exclusive directory rename unavailable: Windows error {error}"
+        )
+    raise OSError(
+        error,
+        f"MoveFileExW failed with Windows error {error}",
+        f"{source} -> {destination}",
+    )
+
+
+def _rename_directory_no_replace(
+    source: Path, destination: Path
+) -> None:
+    """Use only native atomic directory renames that reject destinations."""
+    if sys.platform == "darwin":
+        _rename_macos_no_replace(source, destination)
+        return
+    if sys.platform == "linux":
+        _rename_linux_no_replace(source, destination)
+        return
+    if sys.platform == "win32":
+        _rename_windows_no_replace(source, destination)
+        return
+    raise _AtomicRenameUnavailable(
+        f"unsupported platform for exclusive rename: {sys.platform}"
+    )
+
+
 def _process_start_time(pid: int) -> str | None:
     """Return an OS-derived process creation marker suitable for PID reuse."""
     if pid <= 0:
@@ -388,6 +538,13 @@ def _process_start_time(pid: int) -> str | None:
 def _pid_exists(pid: int) -> bool | None:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        status = _windows_process_status(pid)
+        if status == "live":
+            return True
+        if status == "absent":
+            return False
+        return None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -397,6 +554,36 @@ def _pid_exists(pid: int) -> bool | None:
     except OSError:
         return None
     return True
+
+
+def _windows_process_status(
+    pid: int,
+) -> Literal["live", "absent", "unknown"]:
+    """Query Windows process state without sending any signal.
+
+    Access denied is positive evidence that the PID exists under another
+    security context. Only explicit not-found errors establish absence;
+    every other failure remains unknown and therefore non-reclaimable.
+    """
+    import ctypes
+
+    process_query_limited_information = 0x1000
+    error_access_denied = 5
+    error_invalid_parameter = 87
+    error_not_found = 1168
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(
+        process_query_limited_information, False, pid
+    )
+    if handle:
+        kernel32.CloseHandle(handle)
+        return "live"
+    error = ctypes.get_last_error()
+    if error == error_access_denied:
+        return "live"
+    if error in {error_invalid_parameter, error_not_found}:
+        return "absent"
+    return "unknown"
 
 
 def _read_lock(lock_path: Path) -> tuple[dict[str, object], os.stat_result] | None:
@@ -543,6 +730,8 @@ def _reason_for_exception(exc: BaseException) -> str:
         return str(exc)
     if isinstance(exc, _ValidationError):
         return str(exc)
+    if isinstance(exc, _AtomicRenameUnavailable):
+        return "atomic-rename-unavailable"
     if isinstance(exc, OSError):
         return "filesystem-operation-failed"
     return "migration-step-failed"
@@ -585,10 +774,20 @@ def _unresolved_rollback(
                 continue
             payload = json.loads(receipt_path.read_text(encoding="utf-8"))
             if (
-                payload.get("status") in {"started", "rollback-available"}
-                and payload.get("canonical_path") == str(canonical)
-                and payload.get("source_path") == str(legacy)
+                payload.get("canonical_path") != str(canonical)
+                or payload.get("source_path") != str(legacy)
             ):
+                continue
+            status = payload.get("status")
+            if status in {
+                "completed",
+                "conflict",
+                "deferred",
+                "failed",
+                "rolled-back",
+            }:
+                return None
+            if status in {"started", "rollback-available"}:
                 return DataRootDecision(
                     "rollback-available",
                     canonical,
@@ -738,15 +937,26 @@ def migrate_data_root(
                 reason_code,
             )
         try:
-            os.replace(legacy, canonical)
-        except OSError as exc:
-            unsupported_errors = {
-                errno.EXDEV,
-                getattr(errno, "ENOTSUP", errno.EXDEV),
-                getattr(errno, "EOPNOTSUPP", errno.EXDEV),
+            _rename_directory_no_replace(legacy, canonical)
+        except FileExistsError:
+            reason_code = "canonical-root-appeared"
+            conflict = {
+                **started,
+                "status": "conflict",
+                "reason_code": reason_code,
+                "critical_hashes_before": before_hashes,
+                "completed_at": _now(),
             }
-            if exc.errno not in unsupported_errors:
-                raise
+            _replace_json(receipt_path, conflict)
+            return DataRootDecision(
+                "migration-conflict",
+                legacy,
+                canonical,
+                legacy,
+                receipt_path,
+                reason_code,
+            )
+        except _AtomicRenameUnavailable:
             reason_code = "atomic-rename-unavailable"
             deferred = {
                 **started,
@@ -844,7 +1054,7 @@ def migrate_data_root(
                 raise _ValidationError("legacy-path-reappeared")
             if _snapshot_critical_hashes(canonical) != before_hashes:
                 raise _ValidationError("rollback-hash-mismatch")
-            os.replace(canonical, legacy)
+            _rename_directory_no_replace(canonical, legacy)
             _fsync_directory(legacy.parent)
         except BaseException as rollback_exc:
             rollback_problem = _reason_for_exception(rollback_exc)
