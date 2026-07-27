@@ -166,7 +166,7 @@ async def provision_langchain_chat_model(
 
     Env knobs (all optional):
       OPEN_NOTEBOOK_AUTO_ROUTE_CHAT      — enable smart routing (default: off)
-      OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID  — SurrealDB model ID for local chat
+      DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID  — SurrealDB model ID for local chat
       OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID  — SurrealDB model ID for cloud chat
                                            (falls back to DefaultModels.default_chat_model)
       OPEN_NOTEBOOK_LOCAL_N_CTX          — local model context window (default: 32768)

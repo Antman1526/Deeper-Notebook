@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 CATEGORIES = (
@@ -33,74 +36,160 @@ PATTERNS = (
     "/api/onp",
 )
 
-Allowlist = Mapping[tuple[str, str], str]
-_GLOB_PREFIXES = (
-    "docs/superpowers/specs/",
-    "docs/superpowers/plans/",
-    "docs/0-START-HERE/",
-    "docs/1-INSTALLATION/",
-    "docs/2-CORE-CONCEPTS/",
-    "docs/3-USER-GUIDE/",
-    "docs/4-AI-PROVIDERS/",
-    "docs/5-CONFIGURATION/",
-    "docs/6-TROUBLESHOOTING/",
-    "docs/7-DEVELOPMENT/",
+OccurrenceKey = tuple[str, str, str, int | None, int, str]
+
+
+@dataclass(frozen=True)
+class Approval:
+    category: str
+    reason: str
+
+
+Allowlist = Mapping[OccurrenceKey, Approval]
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_OCCURRENCE_FIELDS = (
+    "source",
+    "line",
+    "column",
+    "context_sha256",
 )
+_AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 
 
-def _path_matches(allowlisted_path: str, path: str) -> bool:
-    if not allowlisted_path.endswith("/**"):
-        return allowlisted_path == path
-    prefix = allowlisted_path.removesuffix("**")
-    return path.startswith(prefix)
+def context_sha256(context: str) -> str:
+    """Return the integrity digest used to pin an approval to exact context."""
+    return hashlib.sha256(context.encode("utf-8")).hexdigest()
 
 
-def classify_match(path: str, pattern: str, allowlist: Allowlist) -> str:
-    """Return the allowlisted category or flag the reference as active identity."""
-    for (allowlisted_path, allowlisted_pattern), category in allowlist.items():
-        if allowlisted_pattern == pattern and _path_matches(allowlisted_path, path):
-            return category
-    return "unexpected_active_identity"
+def occurrence_anchor(
+    path: str,
+    source: str,
+    line: int | None,
+    column: int,
+) -> str:
+    """Return the human-readable anchor every approval reason must name."""
+    line_label = "path" if line is None else str(line)
+    return f"{path}@{source}:{line_label}:{column}"
+
+
+def _occurrence_key(
+    *,
+    path: str,
+    pattern: str,
+    source: str,
+    line: int | None,
+    column: int,
+    context: str,
+) -> OccurrenceKey:
+    return (
+        path,
+        pattern,
+        source,
+        line,
+        column,
+        context_sha256(context),
+    )
+
+
+def classify_match(key: OccurrenceKey, allowlist: Allowlist) -> str:
+    """Return the exact occurrence's category or flag it as active identity."""
+    approval = allowlist.get(key)
+    return approval.category if approval else "unexpected_active_identity"
 
 
 def patterns_for_path(path: str, allowlist: Allowlist) -> tuple[str, ...]:
     """Return global audit patterns plus custom allowlist patterns for this path."""
     custom_patterns = (
-        pattern
-        for (allowlisted_path, pattern) in allowlist
-        if pattern not in PATTERNS and _path_matches(allowlisted_path, path)
+        key[1]
+        for key in allowlist
+        if key[0] == path and key[1] not in PATTERNS
     )
     return tuple(dict.fromkeys((*PATTERNS, *custom_patterns)))
 
 
-def load_allowlist(path: Path) -> dict[tuple[str, str], str]:
-    """Load and validate exact path/pattern/category allowlist records."""
+def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
+    """Load approvals pinned to exact path/content occurrences."""
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 2:
+        raise ValueError("allowlist schema_version must be 2")
     entries = payload.get("entries")
     if not isinstance(entries, list):
         raise ValueError("allowlist must contain an 'entries' list")
 
-    allowlist: dict[tuple[str, str], str] = {}
+    allowlist: dict[OccurrenceKey, Approval] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError("each allowlist entry must be an object")
         allowlisted_path = entry.get("path")
         pattern = entry.get("pattern")
+        source = entry.get("source")
+        line = entry.get("line")
+        column = entry.get("column")
+        digest = entry.get("context_sha256")
         category = entry.get("category")
-        if not all(isinstance(value, str) for value in (allowlisted_path, pattern, category)):
-            raise ValueError("allowlist path, pattern, and category must be strings")
+        reason = entry.get("reason")
+        if not all(field in entry for field in _OCCURRENCE_FIELDS):
+            raise ValueError(
+                "allowlist entries require source, line, column, and context_sha256"
+            )
+        if not all(
+            isinstance(value, str)
+            for value in (
+                allowlisted_path,
+                pattern,
+                source,
+                digest,
+                category,
+                reason,
+            )
+        ):
+            raise ValueError(
+                "allowlist path, pattern, source, context_sha256, category, "
+                "and reason must be strings; line and column must also be present"
+            )
+        if source not in {"path", "content"}:
+            raise ValueError("allowlist source must be 'path' or 'content'")
+        if source == "content" and (
+            not isinstance(line, int) or isinstance(line, bool) or line < 1
+        ):
+            raise ValueError("content approvals require a positive line")
+        if source == "path" and line is not None:
+            raise ValueError("path approvals require line=null")
+        if (
+            not isinstance(column, int)
+            or isinstance(column, bool)
+            or column < 1
+        ):
+            raise ValueError("allowlist column must be a positive integer")
+        if not _SHA256_RE.fullmatch(digest):
+            raise ValueError("allowlist context_sha256 must be 64 lowercase hex chars")
+        if not reason.strip():
+            raise ValueError("allowlist reason must be nonempty")
+        anchor = occurrence_anchor(
+            allowlisted_path,
+            source,
+            line,
+            column,
+        )
+        if anchor not in reason:
+            raise ValueError(
+                f"allowlist reason must name exact occurrence anchor {anchor}"
+            )
         if category not in CATEGORIES[:-1]:
             raise ValueError(f"invalid allowlist category: {category}")
         if "*" in allowlisted_path:
-            if not allowlisted_path.endswith("/**"):
-                raise ValueError("allowlist paths may only use a trailing '/**'")
-            prefix = allowlisted_path.removesuffix("**")
-            if prefix not in _GLOB_PREFIXES:
-                raise ValueError(f"disallowed allowlist wildcard path: {allowlisted_path}")
-        key = (allowlisted_path, pattern)
+            raise ValueError("allowlist paths must be exact; wildcards are disallowed")
+        key: OccurrenceKey = (
+            allowlisted_path,
+            pattern,
+            source,
+            line,
+            column,
+            digest,
+        )
         if key in allowlist:
             raise ValueError(f"duplicate allowlist entry: {key}")
-        allowlist[key] = category
+        allowlist[key] = Approval(category=category, reason=reason)
     return allowlist
 
 
@@ -155,25 +244,56 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
     categorized: dict[str, list[dict[str, object]]] = {
         category: [] for category in CATEGORIES
     }
-    matched_allowlist: set[tuple[str, str]] = set()
-    def record(path: str, pattern: str, source: str, line: int | None) -> None:
-        category = classify_match(path, pattern, allowlist)
+    matched_allowlist: set[OccurrenceKey] = set()
+
+    def record(
+        *,
+        path: str,
+        pattern: str,
+        source: str,
+        line: int | None,
+        column: int,
+        context: str,
+    ) -> None:
+        key = _occurrence_key(
+            path=path,
+            pattern=pattern,
+            source=source,
+            line=line,
+            column=column,
+            context=context,
+        )
+        category = classify_match(key, allowlist)
         entry: dict[str, object] = {
             "path": path,
             "pattern": pattern,
             "source": source,
+            "column": column,
+            "context_sha256": key[-1],
         }
         if line is not None:
             entry["line"] = line
         categorized[category].append(entry)
-        for key in allowlist:
-            if key[1] == pattern and _path_matches(key[0], path):
-                matched_allowlist.add(key)
+        if key in allowlist:
+            matched_allowlist.add(key)
 
     for relative_path in _tracked_paths(root):
+        # The allowlist contains hashes of audited source lines. Auditing its
+        # own serialized entries would make those hashes self-referential and
+        # impossible to stabilize. Its structure and every field are instead
+        # validated by ``load_allowlist`` before repository scanning begins.
+        if relative_path in _AUDIT_METADATA_PATHS:
+            continue
         patterns = patterns_for_path(relative_path, allowlist)
-        for pattern, _start, _end in _pattern_occurrences(relative_path, patterns):
-            record(relative_path, pattern, "path", None)
+        for pattern, start, _end in _pattern_occurrences(relative_path, patterns):
+            record(
+                path=relative_path,
+                pattern=pattern,
+                source="path",
+                line=None,
+                column=start + 1,
+                context=relative_path,
+            )
 
         absolute_path = root / relative_path
         if not absolute_path.is_file():
@@ -186,7 +306,17 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
             allowed_contexts = [
                 (pattern, start, end)
                 for pattern, start, end in occurrences
-                if classify_match(relative_path, pattern, allowlist)
+                if classify_match(
+                    _occurrence_key(
+                        path=relative_path,
+                        pattern=pattern,
+                        source="content",
+                        line=line_number,
+                        column=start + 1,
+                        context=line,
+                    ),
+                    allowlist,
+                )
                 != "unexpected_active_identity"
             ]
             for pattern, start, end in occurrences:
@@ -197,14 +327,31 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
                     for context_pattern, context_start, context_end in allowed_contexts
                 ):
                     continue
-                record(relative_path, pattern, "content", line_number)
+                record(
+                    path=relative_path,
+                    pattern=pattern,
+                    source="content",
+                    line=line_number,
+                    column=start + 1,
+                    context=line,
+                )
 
     stale = [
-        {"path": path, "pattern": pattern, "category": category}
-        for (path, pattern), category in allowlist.items()
-        if (path, pattern) not in matched_allowlist
+        {
+            "path": key[0],
+            "pattern": key[1],
+            "source": key[2],
+            "line": key[3],
+            "column": key[4],
+            "context_sha256": key[5],
+            "category": approval.category,
+            "reason": approval.reason,
+        }
+        for key, approval in allowlist.items()
+        if key not in matched_allowlist
     ]
     return {
+        "schema_version": 2,
         "categories": categorized,
         "summary": {
             category: len(matches) for category, matches in categorized.items()

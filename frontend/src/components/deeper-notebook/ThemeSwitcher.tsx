@@ -10,7 +10,7 @@
  *   2. window.ONP.setTheme(theme) sets <html data-theme="..."> immediately
  *      (instant visual feedback — no reload)
  *   3. window.ONP.setTheme also POSTs to the canonical theme endpoint
- *      ~/.open-notebook-plus/config.toml
+ *      ~/.deeper-notebook/config.toml
  *   4. Next page load: desktop/window.py re-reads config.toml, bakes in
  *      the new theme, injection JS applies it
  */

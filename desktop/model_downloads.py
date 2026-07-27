@@ -1,7 +1,7 @@
 """Auto-download recommended local models (embedding, STT, TTS) on first launch.
 
 Each download is idempotent and skipped when the target file exists.
-Failures are non-fatal — logged to ~/.open-notebook-plus/logs/downloads.log
+Failures are non-fatal — logged to ~/.deeper-notebook/logs/downloads.log
 and the launcher continues without that model.
 """
 from __future__ import annotations

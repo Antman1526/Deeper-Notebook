@@ -41,7 +41,7 @@ The fix:
      build) and writes to the live file, never compounding edits.
   3. If the bundle directory is read-only (e.g., `.app` installed
      to `/Applications` by another user), the patcher copies the
-     frontend to `~/.open-notebook-plus/frontend-runtime/` and
+     frontend to `~/.deeper-notebook/frontend-runtime/` and
      patches there instead, returning that path for the launcher
      to use as `cwd`.
 
@@ -81,7 +81,7 @@ REWRITE_TARGET_FILES: tuple[str, ...] = (
 BUILD_TIME_DEFAULT_HOST = "localhost:5055"
 
 # Where we copy the frontend to if the bundle directory is read-only.
-# Same parent as other launcher runtime state (`~/.open-notebook-plus/`).
+# Same parent as other launcher runtime state (`~/.deeper-notebook/`).
 WRITABLE_COPY_NAME = "frontend-runtime"
 
 
@@ -138,7 +138,7 @@ def _copy_to_writable(frontend_dir: Path) -> Path:
     return the new path. Idempotent: only copies on first invocation
     or when the source has been updated.
 
-    The destination is `~/.open-notebook-plus/frontend-runtime/`.
+    The destination is `~/.deeper-notebook/frontend-runtime/`.
     We compare source/dest mtimes on a sentinel file (`server.js`)
     to decide whether to re-copy after an app upgrade.
     """
@@ -210,7 +210,7 @@ def patch_rewrites_for_api_port(
 
     Returns:
         Path to spawn Next.js from. Either `frontend_dir` (if it
-        was writable) or `~/.open-notebook-plus/frontend-runtime/`
+        was writable) or `~/.deeper-notebook/frontend-runtime/`
         (writable per-user copy).
 
     Raises:
@@ -233,7 +233,7 @@ def patch_rewrites_for_api_port(
     # package.json,public} as symlinks INTO Resources. The launcher passes the
     # Frameworks path (repo_root/frontend = MEIPASS/frontend). Copying that
     # read-only dir with copytree(symlinks=True) reproduces the symlinks in
-    # ~/.open-notebook-plus/frontend-runtime, where they DANGLE — they point
+    # ~/.deeper-notebook/frontend-runtime, where they DANGLE — they point
     # `../../Resources/...` relative to the new location, which does not exist.
     # The patcher then finds no server.js/.next manifests, can't inject the
     # dynamic API port, and the frontend falls back to the baked localhost:5055

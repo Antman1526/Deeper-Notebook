@@ -188,7 +188,7 @@ def acquire_singleton(
     """Acquire the singleton lock or raise `AlreadyRunning`.
 
     `pid_file` should be a path under the per-user state dir (e.g.,
-    `~/.open-notebook-plus/launcher.pid`). Parent directory is
+    `~/.deeper-notebook/launcher.pid`). Parent directory is
     created if missing.
 
     Behavior:
@@ -339,7 +339,7 @@ def reap_orphans(
     dry_run: bool = False,
 ) -> list[OrphanProcess]:
     """Find processes whose executable path lives inside any of
-    `bundle_paths` (typically `~/.open-notebook-plus/venv` and
+    `bundle_paths` (typically `~/.deeper-notebook/venv` and
     `desktop/bin/`) and whose parent is no longer this launcher.
 
     Cross-platform: uses `ps -ef` on POSIX, `tasklist /v /fo csv` on

@@ -2,7 +2,7 @@
 
 On first launch (after the wizard), bootstrap.ensure_venv() uses the bundled
 uv binary and python-build-standalone interpreter to create
-~/.open-notebook-plus/venv and install upstream deps (~30-60s). Subsequent
+~/.deeper-notebook/venv and install upstream deps (~30-60s). Subsequent
 launches skip bootstrapping when requirements.lock hasn't changed.
 
 The supervisor spawns FastAPI/worker/llama-cpp using the venv's Python

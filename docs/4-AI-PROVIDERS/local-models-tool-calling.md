@@ -77,8 +77,8 @@ If you have **MCP servers registered** and want them used:
 
 1. Open **Settings → Models** and confirm `default_chat_model`
    points at one of the ✅ Supported models above.
-2. Optionally set `OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID` in
-   `~/.open-notebook-plus/launcher.env` (via **Settings →
+2. Optionally set `DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID` in
+   `~/.deeper-notebook/launcher.env` (via **Settings →
    Launcher Preferences**, v0.8.6 Item D) to force the smart
    router (v0.8.0 Phase 3) onto a specific supported model.
 3. Verify by chatting "What's the top headline on Hacker News

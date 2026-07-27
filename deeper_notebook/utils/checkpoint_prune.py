@@ -1,7 +1,7 @@
 """ONP v0.7.125 — LangGraph SQLite checkpoint pruning.
 
 LangGraph persists chat-graph state to
-`~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite` via
+`~/.deeper-notebook/data/sqlite-db/checkpoints.sqlite` via
 SqliteSaver. Every chat turn appends rows to:
 
   * `checkpoints` — one row per saved state snapshot

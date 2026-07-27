@@ -309,7 +309,7 @@ def _phase_load_config(ctx: AppContext) -> None:
     # only written by a single .write_text() on supervisor crash (which
     # also OVERWROTE the file each time, losing history). Several
     # comments throughout the codebase promise that users can
-    # `cat ~/.open-notebook-plus/logs/launcher.log` to debug startup —
+    # `cat ~/.deeper-notebook/logs/launcher.log` to debug startup —
     # this makes that actually true. Append-mode + rotate-on-size keeps
     # the file bounded.
     _setup_launcher_log_handler(log_dir / "launcher.log")
@@ -456,8 +456,8 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # subprocess that no caller routed traffic to, plus 10-30s
         # of cold-mmap latency on every launch.
         #
-        # Knock-on: v0.8.2 Item A (OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH /
-        # OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT) was wired into
+        # Knock-on: v0.8.2 Item A (DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH /
+        # DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT) was wired into
         # LlamaCppProvider — i.e. the dead path. The Supervisor spawn
         # now picks up those env vars directly (see launcher.py
         # _spawn_llamacpp_chat v0.8.3 block) so speculative decoding

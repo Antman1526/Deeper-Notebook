@@ -5,7 +5,7 @@ constraints. Picks are deterministic — given the same input pool, the output
 never changes — so re-running auto_register on relaunch is idempotent.
 
 Every pick comes with a human-readable `reason` for logging, so users can run
-`cat ~/.open-notebook-plus/logs/auto_register.log` and see WHY each slot got
+`cat ~/.deeper-notebook/logs/auto_register.log` and see WHY each slot got
 the model it got.
 """
 from __future__ import annotations

@@ -56,7 +56,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
         # Memory (local) credential test then reported "Cannot
         # connect to server", and every chat session lost the
         # mem0 writer that extracts facts + summarizes turns.
-        # Visible in ~/.open-notebook-plus/logs/memory.log.
+        # Visible in ~/.deeper-notebook/logs/memory.log.
         "embedder": {
             "provider": "openai",
             "config": {

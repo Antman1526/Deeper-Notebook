@@ -222,7 +222,7 @@ async def lifespan(app: FastAPI):
     """
     # v0.7.14 — configure rotated file logging before anything else, so
     # startup errors (migrations, encryption checks) land in a file the
-    # user can `tail`. Default sink: ~/.open-notebook-plus/logs/api.log
+    # user can `tail`. Default sink: ~/.deeper-notebook/logs/api.log
     # Honors ONP_LOG_DIR, ONP_LOG_LEVEL, ONP_LOG_JSON.
     log_dir = configure_logging("api")
 
@@ -484,7 +484,7 @@ async def lifespan(app: FastAPI):
         logger.warning("DB pool warmup encountered an error: {}", exc)
 
     # v0.7.125 — LangGraph SQLite checkpoint pruning. Without this,
-    # ~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite grows
+    # ~/.deeper-notebook/data/sqlite-db/checkpoints.sqlite grows
     # unbounded — every chat turn appends rows that LangGraph never
     # reads again (it only queries the latest checkpoint per thread
     # when resuming). After a year of moderate use on a single-user

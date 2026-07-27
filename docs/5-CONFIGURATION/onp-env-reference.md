@@ -56,7 +56,7 @@ you at this case explicitly.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEEPER_NOTEBOOK_LOG_DIR` | `~/.open-notebook-plus/logs` | Directory for rotated log files. Created if missing. |
+| `DEEPER_NOTEBOOK_LOG_DIR` | `~/.deeper-notebook/logs` | Directory for rotated log files. Created if missing. |
 | `DEEPER_NOTEBOOK_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
 | `DEEPER_NOTEBOOK_LOG_JSON` | `0` | Set to `1` for a parallel `<component>.jsonl` file (for log aggregators). |
 
