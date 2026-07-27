@@ -1,8 +1,8 @@
 # desktop/build/post_build_windows.ps1 — archive the complete PyInstaller onedir bundle
 $ErrorActionPreference = "Stop"
-$Name = "Open Notebook Plus"
+$Name = "Deeper Notebook"
 $Src = "dist\$Name"
-$Dest = "dist\Open-Notebook-Plus-windows-x64.zip"
+$Dest = "dist\Deeper-Notebook-windows-x64.zip"
 
 if (-not (Test-Path $Src)) {
   Write-Error "$Src not found. Run pyinstaller first."

@@ -37,9 +37,12 @@ from desktop.data_root import active_data_root
 
 # Public GitHub repo that publishes the desktop releases.
 GITHUB_OWNER = "Antman1526"
-GITHUB_REPO = "open-notebook-Plus"
+GITHUB_REPO = "Deeper-Notebook"
 RELEASES_LATEST_URL = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+)
+RELEASES_FALLBACK_URL = (
+    f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 )
 
 # How long a check result is reused before we ping GitHub again.
@@ -77,9 +80,12 @@ def app_version() -> str:
     try:
         from importlib.metadata import version
 
-        return version("open-notebook")
+        return version("deeper-notebook")
     except Exception:  # pragma: no cover
-        return "0.0.0"
+        try:
+            return version("open-notebook")
+        except Exception:
+            return "0.0.0"
 
 
 def _parse_version(raw: Optional[str]) -> tuple[int, ...]:
@@ -168,7 +174,7 @@ def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
         "update_available": available,
         "skipped": available and skipped == latest,
         "skipped_version": skipped,
-        "html_url": cache.get("html_url"),
+        "html_url": cache.get("html_url") or RELEASES_FALLBACK_URL,
         "published_at": cache.get("published_at"),
         "enabled": bool(state.get("enabled", True)),
         "last_check": state.get("last_check"),

@@ -10,8 +10,21 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "release_manifest.py"
-INSTALLER_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "open-notebook-plus.iss"
+INSTALLER_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "deeper-notebook.iss"
 WORKFLOW_FILE = REPOSITORY_ROOT / ".github" / "workflows" / "build-desktop.yml"
+WINDOWS_WORKFLOW_FILE = (
+    REPOSITORY_ROOT / ".github" / "workflows" / "build-windows.yml"
+)
+PYINSTALLER_SPEC = REPOSITORY_ROOT / "desktop" / "build" / "pyinstaller.spec"
+MAC_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_mac.sh"
+WINDOWS_POST_BUILD = (
+    REPOSITORY_ROOT / "desktop" / "build" / "post_build_windows.ps1"
+)
+WINDOWS_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "build_windows.ps1"
+MAKEFILE = REPOSITORY_ROOT / "Makefile"
+
+COMPATIBLE_BUNDLE_ID = "com.antman1526.open-notebook-plus"
+STABLE_WINDOWS_APP_ID = "{{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}"
 
 
 def run_manifest(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -25,7 +38,7 @@ def run_manifest(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_writes_manifest_with_artifact_integrity_metadata(tmp_path: Path) -> None:
-    artifact = tmp_path / "Open-Notebook-Plus-mac-arm64.dmg"
+    artifact = tmp_path / "Deeper-Notebook-mac-arm64.dmg"
     artifact.write_bytes(b"release artifact")
     output = tmp_path / "release-manifest.json"
 
@@ -84,7 +97,7 @@ def test_rejects_missing_or_empty_artifacts(tmp_path: Path) -> None:
 
 
 def test_rejects_invalid_platform_or_architecture(tmp_path: Path) -> None:
-    artifact = tmp_path / "Open-Notebook-Plus-mac-arm64.dmg"
+    artifact = tmp_path / "Deeper-Notebook-mac-arm64.dmg"
     artifact.write_bytes(b"release artifact")
     output = tmp_path / "release-manifest.json"
 
@@ -116,7 +129,7 @@ def test_rejects_invalid_platform_or_architecture(tmp_path: Path) -> None:
 
 
 def test_rejects_output_that_would_overwrite_the_artifact(tmp_path: Path) -> None:
-    artifact = tmp_path / "Open-Notebook-Plus-mac-arm64.dmg"
+    artifact = tmp_path / "Deeper-Notebook-mac-arm64.dmg"
     artifact_contents = b"release artifact"
     artifact.write_bytes(artifact_contents)
 
@@ -150,14 +163,113 @@ def test_windows_installer_and_ci_keep_installation_per_user_and_verifiable() ->
 
     assert "SourceDir=..\\.." in installer
     assert "OutputDir=dist" in installer
-    assert 'Source: "dist\\Open Notebook Plus\\*"' in installer
+    assert 'Source: "dist\\Deeper Notebook\\*"' in installer
     assert "PrivilegesRequired=lowest" in installer
     assert "PrivilegesRequiredOverridesAllowed" not in installer
     assert '"/DIR=""$installDir"""' in workflow
     assert "$installProcess = Start-Process" in workflow
     assert "if ($installProcess.ExitCode -ne 0)" in workflow
-    assert "$upgradeProcess = Start-Process" in workflow
-    assert "if ($upgradeProcess.ExitCode -ne 0)" in workflow
+    assert "$repairProcess = Start-Process" in workflow
+    assert "if ($repairProcess.ExitCode -ne 0)" in workflow
     assert "$uninstallProcess = Start-Process" in workflow
     assert "if ($uninstallProcess.ExitCode -ne 0)" in workflow
     assert "if (Test-Path $installDir)" in workflow
+
+
+def test_release_surfaces_use_exact_deeper_notebook_artifact_names() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+    compatibility_start = workflow.index("  macos-compatibility-upgrade:")
+    release_start = workflow.index("  release:")
+    active_workflow = workflow[:compatibility_start] + workflow[release_start:]
+    release_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            WINDOWS_WORKFLOW_FILE,
+            PYINSTALLER_SPEC,
+            MAC_POST_BUILD,
+            WINDOWS_POST_BUILD,
+            WINDOWS_BUILD,
+            INSTALLER_SCRIPT,
+        )
+    ) + active_workflow
+
+    for artifact_name in (
+        "Deeper-Notebook-mac-arm64.dmg",
+        "Deeper-Notebook-mac-x86_64.dmg",
+        "Deeper-Notebook-windows-x64.zip",
+        "Deeper-Notebook-Setup-x64.exe",
+    ):
+        assert artifact_name in release_sources
+    assert "Open-Notebook-Plus-" not in release_sources
+
+
+def test_pyinstaller_uses_canonical_visible_names_and_compatible_bundle_id() -> None:
+    spec = PYINSTALLER_SPEC.read_text(encoding="utf-8")
+
+    assert 'name="Deeper Notebook"' in spec
+    assert 'name="Deeper Notebook.app"' in spec
+    assert '"CFBundleName": "Deeper Notebook"' in spec
+    assert '"CFBundleDisplayName": "Deeper Notebook"' in spec
+    assert "Deeper Notebook uses your microphone" in spec
+    assert f'bundle_identifier="{COMPATIBLE_BUNDLE_ID}"' in spec
+    assert "compatibility identifier" in spec.lower()
+    assert '"desktop.app_migration"' in spec
+
+
+def test_installer_rebrands_visible_identity_but_pins_upgrade_app_id() -> None:
+    installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+
+    assert '#define MyAppName "Deeper Notebook"' in installer
+    assert '#define MyAppExeName "Deeper Notebook.exe"' in installer
+    assert f"AppId={STABLE_WINDOWS_APP_ID}" in installer
+    assert "DefaultDirName={localappdata}\\Programs\\Deeper Notebook" in installer
+    assert "OutputBaseFilename=Deeper-Notebook-Setup-x64" in installer
+    assert 'Name: "{app}\\Open Notebook Plus.exe"' in installer
+
+
+def test_legacy_installer_filename_was_git_moved() -> None:
+    assert INSTALLER_SCRIPT.is_file()
+    assert not (
+        REPOSITORY_ROOT / "desktop" / "build" / "open-notebook-plus.iss"
+    ).exists()
+
+
+def test_compatibility_jobs_build_exact_approved_baseline_in_separate_worktree() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+
+    assert "macos-compatibility-upgrade:" in workflow
+    assert "windows-compatibility-upgrade:" in workflow
+    assert workflow.count("7888102") >= 2
+    assert workflow.count("git worktree add") >= 2
+    assert "legacy-source" in workflow
+    assert "synthetic-state" in workflow
+    assert "state-before.sha256" in workflow
+    assert "state-after.sha256" in workflow
+    assert "desktop.app_migration" in workflow
+    assert "Open Notebook Plus.app" in workflow
+    assert "Deeper Notebook.app" in workflow
+    assert "Open-Notebook-Plus-Setup-x64.exe" in workflow
+    assert "Deeper-Notebook-Setup-x64.exe" in workflow
+    assert "Open Notebook Plus.exe" in workflow
+    assert "Deeper Notebook.exe" in workflow
+    assert "stable AppId" in workflow
+    assert "repair test" in workflow.lower()
+    assert "upgrade-path" not in workflow.lower()
+
+
+def test_compatibility_workflows_never_mutate_real_applications() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+
+    assert "/Applications/Open Notebook Plus.app" not in workflow
+    assert "/Applications/Deeper Notebook.app" not in workflow
+    assert 'applications_dir="$RUNNER_TEMP/Applications"' in workflow
+
+
+def test_makefile_build_contract_is_portable_and_uses_canonical_outputs() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+
+    assert "/Users/Antman/Desktop/OpenNotebook" not in makefile
+    assert "uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q" in makefile
+    assert "dist/Deeper Notebook.app" in makefile
+    assert "dist/Deeper-Notebook-mac-<arch>.dmg" in makefile
+    assert "/Applications/Deeper Notebook.app" in makefile

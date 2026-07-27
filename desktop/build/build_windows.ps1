@@ -1,21 +1,21 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Build Open Notebook Plus for Windows x64 locally (the ROG).
+    Build Deeper Notebook for Windows x64 locally (the ROG).
     Mirrors the CI job `build-windows-x64` in .github/workflows/build-desktop.yml.
 
 .DESCRIPTION
     Produces:
-      dist\Open Notebook Plus\Open Notebook Plus.exe   (the launcher .exe + onedir bundle)
-      dist\Open-Notebook-Plus-windows-x64.zip          (zipped, ready to share/install)
+      dist\Deeper Notebook\Deeper Notebook.exe   (the launcher .exe + onedir bundle)
+      dist\Deeper-Notebook-windows-x64.zip        (zipped, ready to share/install)
 
     Stages (same order as macOS `make build-mac`, minus the .app/.dmg packaging):
       1. Create an isolated build venv
       2. pip install backend + desktop requirements, then the package (editable)
       3. Build the Next.js frontend (npm ci + npm run build)
       4. Fetch pinned native runtimes (SurrealDB, Node, uv, python-build-standalone)
-      5. PyInstaller -> dist\Open Notebook Plus\
-      6. Zip it -> dist\Open-Notebook-Plus-windows-x64.zip
+      5. PyInstaller -> dist\Deeper Notebook\
+      6. Zip it -> dist\Deeper-Notebook-windows-x64.zip
 
 .PARAMETER SkipFrontend
     Skip the frontend rebuild (use the existing frontend\.next build).
@@ -101,18 +101,18 @@ if (-not $SkipRuntimes) {
 }
 
 # --- 5. PyInstaller ---
-Step 5 "Running PyInstaller (produces dist\Open Notebook Plus\)"
+Step 5 "Running PyInstaller (produces dist\Deeper Notebook\)"
 & $VenvPy -m PyInstaller (Join-Path $RepoRoot "desktop\build\pyinstaller.spec") --noconfirm
 if ($LASTEXITCODE -ne 0) { Die "PyInstaller failed" }
 
 # --- 6. zip ---
-Step 6 "Packaging dist\Open-Notebook-Plus-windows-x64.zip"
+Step 6 "Packaging dist\Deeper-Notebook-windows-x64.zip"
 & pwsh -File (Join-Path $RepoRoot "desktop\build\post_build_windows.ps1")
 if ($LASTEXITCODE -ne 0) { Die "post_build_windows.ps1 failed" }
 
 # --- done ---
-$Exe = Join-Path $RepoRoot "dist\Open Notebook Plus\Open Notebook Plus.exe"
-$Zip = Join-Path $RepoRoot "dist\Open-Notebook-Plus-windows-x64.zip"
+$Exe = Join-Path $RepoRoot "dist\Deeper Notebook\Deeper Notebook.exe"
+$Zip = Join-Path $RepoRoot "dist\Deeper-Notebook-windows-x64.zip"
 Write-Host "`n=== BUILD COMPLETE ===" -ForegroundColor Green
 if (Test-Path $Exe) { Write-Host "  Launcher:  $Exe" -ForegroundColor Green }
 if (Test-Path $Zip) { Write-Host "  Zip:       $Zip  ($([math]::Round((Get-Item $Zip).Length/1MB,0)) MB)" -ForegroundColor Green }

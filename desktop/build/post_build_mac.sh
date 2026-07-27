@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# desktop/build/post_build_mac.sh — wrap dist/Open Notebook Plus.app into a .dmg
+# desktop/build/post_build_mac.sh — wrap dist/Deeper Notebook.app into a .dmg
 set -euo pipefail
 
-APP_NAME="Open Notebook Plus"
+APP_NAME="Deeper Notebook"
 APP_PATH="dist/${APP_NAME}.app"
-DMG_NAME="Open-Notebook-Plus"
+DMG_NAME="Deeper-Notebook"
 DMG_PATH="dist/${DMG_NAME}-mac-$(uname -m).dmg"
 
 if [[ ! -d "${APP_PATH}" ]]; then
@@ -12,12 +12,12 @@ if [[ ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
-# v0.8.67k — detach any stale mount of a prior ONP .dmg before creating a new
+# Detach any stale mount of a prior Deeper Notebook .dmg before creating a new
 # one. A left-over mounted image (common after an interrupted build, or when
 # the Finder auto-mounts the previous .dmg) made `hdiutil create` fail with
 # "hdiutil: create failed - Resource busy", which aborted the whole build at
-# the dmg step even though dist/Open Notebook Plus.app was already complete.
-for _dev in $(hdiutil info 2>/dev/null | grep -iE 'Open Notebook' | grep -oE '/dev/disk[0-9]+' | sort -u); do
+# the dmg step even though dist/Deeper Notebook.app was already complete.
+for _dev in $(hdiutil info 2>/dev/null | grep -iE 'Deeper Notebook' | grep -oE '/dev/disk[0-9]+' | sort -u); do
   hdiutil detach "${_dev}" -force >/dev/null 2>&1 || true
 done
 
