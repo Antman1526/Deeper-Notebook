@@ -77,7 +77,10 @@ def test_active_router_and_frontend_helper_have_canonical_paths() -> None:
     assert "from .deeper_notebook import" in legacy_router.read_text(encoding="utf-8")
     assert canonical_helper.is_file()
     assert "deeperNotebookFetch" in canonical_helper.read_text(encoding="utf-8")
-    assert not legacy_helper.exists()
+    assert legacy_helper.is_file()
+    assert "deeperNotebookFetch as onpFetch" in legacy_helper.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_desktop_active_chrome_uses_deeper_notebook_identity() -> None:

@@ -1,11 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deeperNotebookFetch } from './deeper-notebook'
+import {
+  deeperNotebookFetch,
+  onpFetch as canonicalCompatibilityExport,
+} from './deeper-notebook'
+import {
+  deeperNotebookFetch as shimCanonicalExport,
+  onpFetch as legacyModuleExport,
+} from './onp'
 
 describe('deeperNotebookFetch', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+  })
+
+  it('keeps deprecated exports as aliases of the canonical helper', () => {
+    expect(canonicalCompatibilityExport).toBe(deeperNotebookFetch)
+    expect(shimCanonicalExport).toBe(deeperNotebookFetch)
+    expect(legacyModuleExport).toBe(deeperNotebookFetch)
   })
 
   it('preserves auth-aware fetch behavior on canonical endpoints', async () => {

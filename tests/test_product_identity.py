@@ -153,6 +153,7 @@ def _approval(
     column: int | None = None,
     category: str = "compatibility_alias",
     rationale: str = "Compatibility behavior is intentionally preserved.",
+    compatibility_contract: str = "test-compatibility-v1",
 ):
     actual_column = column or context.index(pattern) + 1
     key = (
@@ -175,7 +176,7 @@ def _approval(
             category=category,
             explanation=rationale,
             compatibility_contract=(
-                "test-compatibility-v1"
+                compatibility_contract
                 if category == "compatibility_alias"
                 else None
             ),
@@ -715,7 +716,7 @@ def _v5_contract_entry(
     *,
     path: str = "fixtures/legacy-name.py",
     pattern: str = "Open Notebook Plus",
-    contract_id: str = "fixture-v1",
+    contract_id: str = "legacy-test-fixture-v1",
 ) -> dict[str, object]:
     context = f"legacy_name = {pattern!r}"
     column = context.index(pattern) + 1
@@ -781,7 +782,7 @@ def _write_v5_contract_allowlist(
     scope_paths: list[str] | None = None,
     coverage_sha256: str | None = None,
 ) -> Path:
-    contract_id = "fixture-v1"
+    contract_id = "legacy-test-fixture-v1"
     payload = {
         "schema_version": 5,
         "persisted_queue_identifiers": [],
@@ -936,7 +937,9 @@ def test_regression_fixture_contract_rejects_active_production_paths(
 
     with pytest.raises(
         ValueError,
-        match="kind-specific boundary|active UI",
+        match=(
+            "canonical compatibility contract|kind-specific boundary|active UI"
+        ),
     ):
         load_allowlist(allowlist_path)
 
@@ -964,6 +967,120 @@ def test_regression_fixture_scope_accepts_only_true_test_or_fixture_paths():
         rebrand_audit._scope_path_allowed("regression_fixture", path)
         for path in rejected
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern", "expected"),
+    [
+        ("frontend/src/lib/features.ts", "ONP_", "frontend-env-alias-v1"),
+        (
+            "frontend/src/lib/theme-storage.ts",
+            "onp-theme",
+            "theme-storage-migration-v1",
+        ),
+        (
+            "frontend/src/lib/api/deeper-notebook.ts",
+            "onpFetch",
+            "legacy-api-route-v1",
+        ),
+        (
+            "frontend/src/lib/api/onp.ts",
+            "/api/onp",
+            "legacy-api-route-v1",
+        ),
+    ],
+)
+def test_canonical_mapper_allows_only_exact_frontend_compatibility_seams(
+    path,
+    pattern,
+    expected,
+):
+    occurrence = {
+        "path": path,
+        "pattern": pattern,
+        "source": "path" if pattern == "/api/onp" else "content",
+        "line": None if pattern == "/api/onp" else 1,
+        "column": 1,
+        "context_sha256": "0" * 64,
+    }
+    arbitrary = dict(occurrence, path="frontend/src/lib/VisibleTip.ts")
+
+    assert rebrand_audit.compatibility_contract_for_occurrence(occurrence) == (
+        expected
+    )
+    assert rebrand_audit.compatibility_contract_for_occurrence(arbitrary) is None
+
+
+@pytest.mark.parametrize(
+    "kind",
+    sorted(rebrand_audit.COMPATIBILITY_CONTRACT_KINDS),
+)
+def test_canonical_mapper_rejects_cross_kind_contract_laundering(
+    tmp_path,
+    kind,
+):
+    root = tmp_path / kind
+    context = "visible_name = 'Open Notebook Plus'"
+    active_path = "deeper_notebook/domain.py"
+    proof_path = next(
+        path
+        for path in sorted(rebrand_audit._KIND_PROOF_PATHS[kind])
+        if path.endswith(".py")
+    )
+    _init_tracked_repo(
+        root,
+        {
+            active_path: context + "\n",
+            proof_path: "def test_contract_proof():\n    assert True\n",
+        },
+    )
+    contract_id = f"laundered-{kind}"
+    entry = _contract_entry(
+        path=active_path,
+        pattern="Open Notebook Plus",
+        context=context,
+        contract=contract_id,
+    )
+    (root / "scripts").mkdir()
+    allowlist_path = _write_contract_allowlist(
+        root / "scripts/rebrand-allowlist.json",
+        [entry],
+        {
+            contract_id: {
+                "kind": kind,
+                "owner": "adversarial-audit-test",
+                "retention_reason": (
+                    "The fabricated contract has a valid proof and digest but "
+                    "must not override the canonical occurrence mapper."
+                ),
+                "proof": f"{proof_path}::test_contract_proof",
+            }
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="canonical compatibility contract",
+    ):
+        load_allowlist(allowlist_path)
+
+
+def test_audit_rechecks_canonical_contract_for_preconstructed_allowlist(
+    tmp_path,
+):
+    path = "deeper_notebook/domain.py"
+    context = "visible_name = 'Open Notebook Plus'"
+    root = _init_tracked_repo(tmp_path / "repo", {path: context + "\n"})
+    key, approval = _approval(
+        path=path,
+        pattern="Open Notebook Plus",
+        context=context,
+    )
+
+    report = audit_repository(root, {key: approval})
+
+    assert report["summary"]["compatibility_alias"] == 0
+    assert report["summary"]["unexpected_active_identity"] == 2
 
 
 def test_runtime_record_contract_has_exact_behavioral_inventory():
@@ -1175,7 +1292,10 @@ def test_allowlist_rejects_compatibility_for_active_docs_ui_and_defaults(
 
     with pytest.raises(
         ValueError,
-        match="active UI, documentation, or default identifier",
+        match=(
+            "canonical compatibility contract|active UI, documentation, "
+            "or default identifier"
+        ),
     ):
         load_allowlist(allowlist_path)
 
@@ -1401,7 +1521,7 @@ def test_allowlist_rejects_semantic_duplicates_across_structural_term_case(
                 "line": 1,
                 "column": 1,
                 "context_sha256": context_sha256(line),
-                "category": "compatibility_alias",
+                "category": "upstream_reference",
                 "rationale": _rationale(
                     path=path,
                     pattern=line,
@@ -1409,7 +1529,7 @@ def test_allowlist_rejects_semantic_duplicates_across_structural_term_case(
                     line=1,
                     column=1,
                     context=line,
-                    category="compatibility_alias",
+                    category="upstream_reference",
                     explanation=explanation,
                 ),
             }
@@ -2056,17 +2176,18 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
     repo = _init_tracked_repo(
         tmp_path / "repo",
         {
-            "commands/example.py": (
+            "commands/example_commands.py": (
                 "from open_notebook.domain import Note\n"
                 f"{compatibility_line}\n"
             )
         },
     )
     key, approval = _approval(
-        path="commands/example.py",
+        path="commands/example_commands.py",
         pattern="open_notebook",
         context=compatibility_line,
         line=2,
+        compatibility_contract="persisted-queue-identifier-v1",
     )
     allowlist = {key: approval}
 
@@ -2074,7 +2195,7 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
 
     assert report["categories"]["compatibility_alias"] == [
         {
-            "path": "commands/example.py",
+            "path": "commands/example_commands.py",
             "pattern": "open_notebook",
             "source": "content",
             "line": 2,
@@ -2097,14 +2218,15 @@ def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_pa
     repo = _init_tracked_repo(
         tmp_path / "repo",
         {
-            "commands/example.py": f"{line}\n"
+            "commands/example_commands.py": f"{line}\n"
         },
     )
     key, approval = _approval(
-        path="commands/example.py",
+        path="commands/example_commands.py",
         pattern="open_notebook",
         context=line,
         column=line.rindex("open_notebook") + 1,
+        compatibility_contract="persisted-queue-identifier-v1",
     )
     allowlist = {key: approval}
 
@@ -2117,7 +2239,7 @@ def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_pa
         if match["pattern"] == "open_notebook"
     ] == [
         {
-            "path": "commands/example.py",
+            "path": "commands/example_commands.py",
             "pattern": "open_notebook",
             "source": "content",
             "line": 1,
