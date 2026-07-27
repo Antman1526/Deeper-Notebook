@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+from importlib import metadata
 from pathlib import Path
 
 import pytest
 
 from api import updates_service as svc
+
+REAL_APP_VERSION = svc.app_version
 
 
 @pytest.fixture(autouse=True)
@@ -144,3 +147,59 @@ def test_set_enabled_persists(_isolated_state):
     on_disk = json.loads(Path(_isolated_state).read_text())
     assert on_disk["enabled"] is False
     assert svc.is_enabled() is False
+
+
+def test_update_service_targets_canonical_release_repository():
+    assert svc.GITHUB_OWNER == "Antman1526"
+    assert svc.GITHUB_REPO == "Deeper-Notebook"
+    assert (
+        svc.RELEASES_LATEST_URL
+        == "https://api.github.com/repos/Antman1526/Deeper-Notebook/releases/latest"
+    )
+    assert (
+        svc.RELEASES_FALLBACK_URL
+        == "https://github.com/Antman1526/Deeper-Notebook/releases/latest"
+    )
+
+
+def test_status_uses_canonical_release_page_when_github_payload_has_no_url():
+    status = svc._status_from_state(
+        {"enabled": True, "cache": {"latest": "v0.8.70"}}
+    )
+
+    assert (
+        status["html_url"]
+        == "https://github.com/Antman1526/Deeper-Notebook/releases/latest"
+    )
+
+
+def test_app_version_prefers_canonical_distribution(monkeypatch):
+    monkeypatch.delattr(__import__("desktop"), "__version__", raising=False)
+    looked_up: list[str] = []
+
+    def distribution_version(name: str) -> str:
+        looked_up.append(name)
+        if name == "deeper-notebook":
+            return "1.2.3"
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(metadata, "version", distribution_version)
+
+    assert REAL_APP_VERSION() == "1.2.3"
+    assert looked_up == ["deeper-notebook"]
+
+
+def test_app_version_uses_legacy_distribution_only_as_fallback(monkeypatch):
+    monkeypatch.delattr(__import__("desktop"), "__version__", raising=False)
+    looked_up: list[str] = []
+
+    def distribution_version(name: str) -> str:
+        looked_up.append(name)
+        if name == "open-notebook":
+            return "0.8.94"
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(metadata, "version", distribution_version)
+
+    assert REAL_APP_VERSION() == "0.8.94"
+    assert looked_up == ["deeper-notebook", "open-notebook"]
