@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from desktop.data_root import active_data_root
+from desktop.data_root import prepare_recovery_log_directory
 
 
 def _emergency_log(exc: BaseException) -> None:
@@ -24,24 +24,45 @@ def _emergency_log(exc: BaseException) -> None:
     handler wasn't attached yet), just a dock-bouncing PyWebView app that
     failed to open.
 
-    We write to a fixed path that doesn't depend on any of the modules that
-    might have failed to import. Best-effort — if even this fails, the
-    process still exits with a non-zero code so the caller knows it failed.
+    We write outside both product data roots so a failed or ambiguous root
+    resolution cannot recursively trigger itself. Best-effort — if even this
+    fails, the process still exits non-zero so the caller knows it failed.
     """
     import datetime as _dt
+    import os as _os
+    import stat as _stat
     import traceback as _traceback
 
     try:
-        log_dir = active_data_root() / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir = prepare_recovery_log_directory()
         log_path = log_dir / "launcher.log"
-        with log_path.open("a") as f:
-            f.write(
-                f"\n===== EARLY-INIT FAILURE at "
-                f"{_dt.datetime.now().isoformat()} =====\n"
-                f"{type(exc).__name__}: {exc}\n"
-                f"{_traceback.format_exc()}\n"
-            )
+        if log_path.is_symlink():
+            raise OSError("recovery launcher log is a symlink")
+        payload = (
+            f"\n===== EARLY-INIT FAILURE at "
+            f"{_dt.datetime.now().isoformat()} =====\n"
+            f"{type(exc).__name__}: {exc}\n"
+            f"{_traceback.format_exc()}\n"
+        ).encode("utf-8", errors="replace")
+        flags = _os.O_CREAT | _os.O_APPEND | _os.O_WRONLY
+        flags |= getattr(_os, "O_NOFOLLOW", 0)
+        fd = _os.open(log_path, flags, 0o600)
+        try:
+            stat_result = _os.fstat(fd)
+            if not _stat.S_ISREG(stat_result.st_mode):
+                raise OSError("recovery launcher log is not a regular file")
+            getuid = getattr(_os, "getuid", None)
+            if getuid is not None and stat_result.st_uid != getuid():
+                raise OSError("recovery launcher log is not owned by this user")
+            view = memoryview(payload)
+            while view:
+                written = _os.write(fd, view)
+                if written <= 0:
+                    raise OSError("short emergency-log write")
+                view = view[written:]
+            _os.fsync(fd)
+        finally:
+            _os.close(fd)
     except Exception:
         # If we can't even write to the log dir, fall back to stderr.
         try:

@@ -80,6 +80,8 @@ class _InjectedFailure(RuntimeError):
 
 LOCK_FILE_NAME = "data-root-migration.lock"
 _MIGRATION_DIRECTORY_NAME = ".deeper-notebook-migrations"
+RECOVERY_DIRECTORY_NAME = ".deeper-notebook-recovery"
+CONFLICT_RECOVERY_RECEIPT_NAME = "data-root-conflict-recovery.json"
 _CRITICAL_FILES = (
     Path("config.toml"),
     Path("launcher.env"),
@@ -126,6 +128,126 @@ def _tree_manifest(root: Path) -> dict[str, tuple[str, str]]:
 
     visit(root)
     return manifest
+
+
+def recovery_metadata_root(*, home: Path | None = None) -> Path:
+    """Return metadata storage that is never either product data root."""
+    base = Path(home) if home is not None else user_home()
+    return base / RECOVERY_DIRECTORY_NAME
+
+
+def _ensure_private_owned_directory(
+    path: Path,
+    *,
+    symlink_reason: str,
+    ownership_reason: str,
+) -> None:
+    """Create or validate an exact private directory without following links."""
+    if path.is_symlink():
+        raise _CriticalPathError(symlink_reason)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        stat_result = path.lstat()
+    except OSError as exc:
+        raise _CriticalPathError(ownership_reason) from exc
+    if not stat.S_ISDIR(stat_result.st_mode) or path.is_symlink():
+        raise _CriticalPathError(symlink_reason)
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and stat_result.st_uid != getuid():
+        raise _CriticalPathError(ownership_reason)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+
+
+def prepare_recovery_metadata_root(*, home: Path | None = None) -> Path:
+    """Create and validate the private sibling recovery directory."""
+    recovery_root = recovery_metadata_root(home=home)
+    _ensure_private_owned_directory(
+        recovery_root,
+        symlink_reason="recovery-metadata-directory-symlink",
+        ownership_reason="recovery-metadata-directory-not-owned",
+    )
+    return recovery_root
+
+
+def prepare_recovery_log_directory(*, home: Path | None = None) -> Path:
+    """Create and validate the private sibling emergency-log directory."""
+    log_dir = prepare_recovery_metadata_root(home=home) / "logs"
+    _ensure_private_owned_directory(
+        log_dir,
+        symlink_reason="recovery-log-directory-symlink",
+        ownership_reason="recovery-log-directory-not-owned",
+    )
+    return log_dir
+
+
+def _safe_tree_summary(root: Path) -> dict[str, object]:
+    """Hash a root without exposing file contents or selecting it for use."""
+    if root.is_symlink() or not root.is_dir():
+        raise _CriticalPathError("recovery-root-is-not-safe-directory")
+    digest = hashlib.sha256()
+    file_count = 0
+    directory_count = 0
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise _CriticalPathError("recovery-root-tree-symlink")
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        if path.is_file():
+            file_count += 1
+            with path.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+        elif path.is_dir():
+            directory_count += 1
+        else:
+            raise _CriticalPathError("recovery-root-tree-special-file")
+        digest.update(b"\0")
+    return {
+        "path": str(root),
+        "tree_sha256": digest.hexdigest(),
+        "file_count": file_count,
+        "directory_count": directory_count,
+    }
+
+
+def write_conflict_recovery_evidence(
+    decision: DataRootDecision,
+    *,
+    home: Path | None = None,
+) -> tuple[Path, dict[str, object]]:
+    """Persist read-only conflict evidence outside both ambiguous roots."""
+    if (
+        decision.state != "migration-conflict"
+        or decision.reason_code != "non-equivalent-roots"
+    ):
+        raise ValueError("only divergent data roots use conflict recovery")
+
+    recovery_root = recovery_metadata_root(home=home)
+    if recovery_root in {decision.canonical_root, decision.legacy_root}:
+        raise _CriticalPathError("recovery-metadata-overlaps-data-root")
+    recovery_root = prepare_recovery_metadata_root(home=home)
+
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "recorded_at": _now(),
+        "state": decision.state,
+        "reason_code": decision.reason_code,
+        "selected_root": None,
+        "mutated_roots": [],
+        "canonical": _safe_tree_summary(decision.canonical_root),
+        "legacy": _safe_tree_summary(decision.legacy_root),
+    }
+    receipt_path = recovery_root / CONFLICT_RECOVERY_RECEIPT_NAME
+    _replace_json(receipt_path, payload)
+
+    log_dir = prepare_recovery_log_directory(home=home)
+    log_path = log_dir / "recovery.log"
+    _replace_json(log_path, payload)
+    return recovery_root, payload
 
 
 def classify_roots(canonical: Path, legacy: Path) -> DataRootDecision:
