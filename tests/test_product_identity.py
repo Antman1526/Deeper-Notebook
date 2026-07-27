@@ -655,19 +655,12 @@ def _valid_contract(**overrides: object) -> dict[str, object]:
 
 
 def test_allowlist_accepts_proof_backed_structured_compatibility_contract(
-    tmp_path,
 ):
-    allowlist_path = _write_contract_allowlist(
-        tmp_path / "valid-contract.json",
-        [_contract_entry()],
-        {"env-alias-v1": _valid_contract()},
-    )
+    loaded = load_allowlist(ALLOWLIST_PATH)
 
-    loaded = load_allowlist(allowlist_path)
-
-    assert len(loaded) == 1
-    assert next(iter(loaded.values())).rationale.compatibility_contract == (
-        "env-alias-v1"
+    assert any(
+        approval.rationale.compatibility_contract == "env-alias-v1"
+        for approval in loaded.values()
     )
 
 
@@ -819,14 +812,13 @@ def _write_v5_contract_allowlist(
 
 
 def test_schema_v5_accepts_only_kind_specific_static_proof_ids(tmp_path):
-    entries = [_v5_contract_entry()]
-    valid = _write_v5_contract_allowlist(
-        tmp_path / "valid-static-proof.json",
-        entries=entries,
+    rebrand_audit._validate_compatibility_proof(
+        ROOT,
+        "static:regression-fixture-contract-v1",
+        "regression_fixture",
     )
 
-    assert len(load_allowlist(valid)) == 1
-
+    entries = [_v5_contract_entry()]
     invalid = _write_v5_contract_allowlist(
         tmp_path / "generic-static-proof.json",
         entries=entries,
@@ -856,7 +848,10 @@ def test_schema_v5_rejects_contract_coverage_digest_tampering(tmp_path):
         coverage_sha256="0" * 64,
     )
 
-    with pytest.raises(ValueError, match="coverage digest"):
+    with pytest.raises(
+        ValueError,
+        match="coverage digest|canonical compatibility contract",
+    ):
         load_allowlist(tampered)
 
 
@@ -868,7 +863,10 @@ def test_schema_v5_rejects_entry_outside_exact_contract_scope(tmp_path):
         scope_paths=["fixtures/different.py"],
     )
 
-    with pytest.raises(ValueError, match="exact contract scope"):
+    with pytest.raises(
+        ValueError,
+        match="exact contract scope|canonical compatibility contract",
+    ):
         load_allowlist(broad)
 
 
@@ -995,20 +993,257 @@ def test_canonical_mapper_allows_only_exact_frontend_compatibility_seams(
     pattern,
     expected,
 ):
-    occurrence = {
-        "path": path,
-        "pattern": pattern,
-        "source": "path" if pattern == "/api/onp" else "content",
-        "line": None if pattern == "/api/onp" else 1,
-        "column": 1,
-        "context_sha256": "0" * 64,
-    }
-    arbitrary = dict(occurrence, path="frontend/src/lib/VisibleTip.ts")
-
-    assert rebrand_audit.compatibility_contract_for_occurrence(occurrence) == (
-        expected
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    key = next(
+        key
+        for key, contract_id in selectors.items()
+        if key[0] == path and key[1] == pattern and contract_id == expected
     )
-    assert rebrand_audit.compatibility_contract_for_occurrence(arbitrary) is None
+    occurrence = {
+        field: value
+        for field, value in zip(
+            (
+                "path",
+                "pattern",
+                "source",
+                "line",
+                "column",
+                "context_sha256",
+            ),
+            key,
+            strict=True,
+        )
+    }
+    arbitrary = dict(occurrence, context_sha256="0" * 64)
+
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            occurrence,
+            root=ROOT,
+            selectors=selectors,
+        )
+        == expected
+    )
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            arbitrary,
+            root=ROOT,
+            selectors=selectors,
+        )
+        is None
+    )
+
+
+_SAME_FILE_LAUNDERING_PROBES = (
+    (
+        "frontend/src/lib/features.ts",
+        "ONP_",
+        "const ONP_REVIEW_PROBE = true",
+        "frontend-env-alias-v1",
+        "env_alias",
+        "tests/test_environment_aliases.py",
+    ),
+    (
+        "api/routers/chat.py",
+        "open_notebook",
+        'CHAT_REVIEW_PROBE = "open_notebook"',
+        "persisted-queue-identifier-v1",
+        "persisted_identifier",
+        "tests/test_persisted_queue_identifiers.py",
+    ),
+    (
+        "deeper_notebook/domain/notebook.py",
+        "open_notebook",
+        'NOTEBOOK_REVIEW_PROBE = "open_notebook"',
+        "persisted-queue-identifier-v1",
+        "persisted_identifier",
+        "tests/test_persisted_queue_identifiers.py",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    (
+        "path",
+        "pattern",
+        "context",
+        "contract_id",
+        "kind",
+        "proof_path",
+    ),
+    _SAME_FILE_LAUNDERING_PROBES,
+)
+def test_same_file_laundering_is_rejected_by_load_and_audit(
+    tmp_path,
+    path,
+    pattern,
+    context,
+    contract_id,
+    kind,
+    proof_path,
+):
+    root = _init_tracked_repo(
+        tmp_path / "repo",
+        {
+            path: context + "\n",
+            proof_path: (
+                "def test_exact_compatibility_selector():\n"
+                "    assert True\n"
+            ),
+        },
+    )
+    entry = _contract_entry(
+        path=path,
+        pattern=pattern,
+        context=context,
+        contract=contract_id,
+    )
+    (root / "scripts").mkdir()
+    allowlist_path = _write_contract_allowlist(
+        root / "scripts/rebrand-allowlist.json",
+        [entry],
+        {
+            contract_id: {
+                "kind": kind,
+                "owner": "same-file-laundering-regression",
+                "retention_reason": (
+                    "The probe must not inherit compatibility merely because "
+                    "it shares a path and token with an approved construct."
+                ),
+                "proof": f"{proof_path}::test_exact_compatibility_selector",
+            }
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="canonical compatibility contract",
+    ):
+        load_allowlist(allowlist_path)
+
+    key, approval = _approval(
+        path=path,
+        pattern=pattern,
+        context=context,
+        compatibility_contract=contract_id,
+    )
+    report = audit_repository(root, {key: approval})
+    assert report["summary"]["compatibility_alias"] == 0
+    assert report["summary"]["unexpected_active_identity"] == 1
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern", "context", "_contract_id", "_kind", "_proof_path"),
+    _SAME_FILE_LAUNDERING_PROBES,
+)
+def test_same_file_laundering_blocks_allowlist_regeneration(
+    tmp_path,
+    path,
+    pattern,
+    context,
+    _contract_id,
+    _kind,
+    _proof_path,
+):
+    root = _init_tracked_repo(
+        tmp_path / "repo",
+        {path: context + "\n"},
+    )
+    (root / "scripts").mkdir()
+    allowlist_path = root / "scripts/rebrand-allowlist.json"
+    allowlist_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 5,
+                "persisted_queue_identifiers": [],
+                "compatibility_contracts": {},
+                "entries": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unclassified occurrence requires explicit review",
+    ):
+        rebrand_audit.regenerate_allowlist(root, allowlist_path)
+
+
+def test_exact_selector_inventory_matches_every_declared_contract_digest():
+    payload = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    expected = {
+        (
+            entry["path"],
+            entry["pattern"],
+            entry["source"],
+            entry["line"],
+            entry["column"],
+            entry["context_sha256"],
+        ): entry["rationale"]["compatibility_contract"]
+        for entry in payload["entries"]
+        if entry["category"] == "compatibility_alias"
+    }
+
+    assert selectors == expected
+    for contract_id, contract in payload["compatibility_contracts"].items():
+        owned_entries = [
+            entry
+            for entry in payload["entries"]
+            if selectors.get(
+                (
+                    entry["path"],
+                    entry["pattern"],
+                    entry["source"],
+                    entry["line"],
+                    entry["column"],
+                    entry["context_sha256"],
+                )
+            )
+            == contract_id
+        ]
+        assert (
+            rebrand_audit.compatibility_coverage_digest(
+                owned_entries,
+                contract_id,
+            )
+            == contract["coverage_sha256"]
+        )
+
+
+def test_exact_selectors_reject_extra_literal_in_each_active_production_scope():
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    active_examples: dict[str, tuple[object, ...]] = {}
+    for key, contract_id in selectors.items():
+        path, pattern, source, _line, _column, _digest = key
+        if (
+            source == "content"
+            and not path.startswith(("tests/", "desktop/tests/", "fixtures/"))
+            and "/tests/" not in path
+            and ".test." not in Path(path).name
+        ):
+            active_examples.setdefault(contract_id, key)
+
+    assert active_examples
+    for contract_id, key in active_examples.items():
+        path, pattern, source, _line, _column, _digest = key
+        context = f"selector_review_probe = {pattern!r}"
+        probe = {
+            "path": path,
+            "pattern": pattern,
+            "source": source,
+            "line": 999_999,
+            "column": context.index(pattern) + 1,
+            "context_sha256": context_sha256(context),
+        }
+        assert (
+            rebrand_audit.compatibility_contract_for_occurrence(
+                probe,
+                root=ROOT,
+            )
+            is None
+        ), contract_id
 
 
 @pytest.mark.parametrize(
@@ -1309,7 +1544,7 @@ def test_allowlist_rejects_compatibility_for_active_docs_ui_and_defaults(
             "env-alias-v1",
         ),
         (
-            "open_notebook/domain/notebook.py",
+            "open_notebook/_alias.py",
             "open_notebook",
             "python-import-shim-v1",
         ),
@@ -1345,16 +1580,37 @@ def test_compatibility_contract_mapping_uses_only_proof_backed_groups(
     pattern,
     expected_contract,
 ):
-    assert rebrand_audit.compatibility_contract_for_occurrence(
-        {
-            "path": path,
-            "pattern": pattern,
-            "source": "content",
-            "line": 1,
-            "column": 1,
-            "context_sha256": "0" * 64,
-        }
-    ) == expected_contract
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    key = next(
+        key
+        for key, contract_id in selectors.items()
+        if key[0] == path
+        and key[1] == pattern
+        and contract_id == expected_contract
+    )
+    occurrence = {
+        field: value
+        for field, value in zip(
+            (
+                "path",
+                "pattern",
+                "source",
+                "line",
+                "column",
+                "context_sha256",
+            ),
+            key,
+            strict=True,
+        )
+    }
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            occurrence,
+            root=ROOT,
+            selectors=selectors,
+        )
+        == expected_contract
+    )
 
 
 @pytest.mark.parametrize(
@@ -1722,7 +1978,9 @@ def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
     assert "Version 1 migration" in entry["rationale"]["explanation"]
 
 
-def test_allowlist_regeneration_assigns_only_proof_backed_contracts(tmp_path):
+def test_allowlist_regeneration_rejects_unselected_same_file_env_alias(
+    tmp_path,
+):
     path = "deeper_notebook/environment.py"
     line = "legacy_prefix = 'ONP_SETTING'"
     repo = _init_tracked_repo(tmp_path / "repo", {path: line + "\n"})
@@ -1738,22 +1996,11 @@ def test_allowlist_regeneration_assigns_only_proof_backed_contracts(tmp_path):
         {"env-alias-v1": _valid_contract()},
     )
 
-    generated = rebrand_audit.regenerate_allowlist(repo, allowlist_path)
-
-    contract = generated["compatibility_contracts"]["env-alias-v1"]
-    assert contract["kind"] == "env_alias"
-    assert contract["proof"] == (
-        "tests/test_environment_aliases.py::test_all_four_precedence_positions"
-    )
-    assert contract["scope"] == {
-        "paths": ["deeper_notebook/environment.py"],
-        "patterns": ["ONP_"],
-        "sources": ["content"],
-    }
-    assert re.fullmatch(r"[0-9a-f]{64}", contract["coverage_sha256"])
-    assert generated["entries"][0]["rationale"][
-        "compatibility_contract"
-    ] == "env-alias-v1"
+    with pytest.raises(
+        ValueError,
+        match="uncontracted compatibility groups require review",
+    ):
+        rebrand_audit.regenerate_allowlist(repo, allowlist_path)
 
 
 def test_allowlist_regeneration_surfaces_ungrounded_compatibility_groups(
@@ -2178,7 +2425,10 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
         {
             "commands/example_commands.py": (
                 "from open_notebook.domain import Note\n"
+                "from surreal_commands import command\n"
                 f"{compatibility_line}\n"
+                "def work():\n"
+                "    return None\n"
             )
         },
     )
@@ -2186,7 +2436,7 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
         path="commands/example_commands.py",
         pattern="open_notebook",
         context=compatibility_line,
-        line=2,
+        line=3,
         compatibility_contract="persisted-queue-identifier-v1",
     )
     allowlist = {key: approval}
@@ -2198,7 +2448,7 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
             "path": "commands/example_commands.py",
             "pattern": "open_notebook",
             "source": "content",
-            "line": 2,
+            "line": 3,
             "column": compatibility_line.index("open_notebook") + 1,
             "context_sha256": context_sha256(compatibility_line),
         }
@@ -2212,8 +2462,8 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
 
 def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_path):
     line = (
-        'legacy_module = open_notebook; @command("work", '
-        'app="open_notebook")'
+        'legacy_module = open_notebook; submit_command('
+        '"open_notebook", "work", {})'
     )
     repo = _init_tracked_repo(
         tmp_path / "repo",
