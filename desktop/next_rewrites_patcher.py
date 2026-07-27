@@ -61,7 +61,7 @@ import os
 import shutil
 from pathlib import Path
 
-from desktop.paths import user_home
+from desktop.data_root import active_data_root
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ def _copy_to_writable(frontend_dir: Path) -> Path:
     We compare source/dest mtimes on a sentinel file (`server.js`)
     to decide whether to re-copy after an app upgrade.
     """
-    user_dir = user_home() / ".open-notebook-plus" / WRITABLE_COPY_NAME
+    user_dir = active_data_root() / WRITABLE_COPY_NAME
     src_sentinel = frontend_dir / "server.js"
     dest_sentinel = user_dir / "server.js"
 

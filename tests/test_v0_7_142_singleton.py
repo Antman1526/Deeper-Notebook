@@ -229,7 +229,7 @@ def test_default_pid_file_location():
     from desktop.singleton import default_pid_file
     p = default_pid_file()
     assert p.name == "launcher.pid"
-    assert p.parent.name == ".open-notebook-plus"
+    assert p.parent.name == ".deeper-notebook"
 
 
 # ---------------------------------------------------------------------- #

@@ -37,6 +37,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
+from desktop.data_root import active_data_root
 from open_notebook.ai.offline_gate import find_local_language_model
 from open_notebook.health.network import get_network_state_with_settings
 
@@ -146,9 +147,7 @@ async def db_repair_needed() -> dict:
     Read-only, no secrets. Unlike the launcher→API push routes above, this is a
     normal authenticated GET (the frontend calls it through the API client);
     it is intentionally NOT in main.py's excluded_paths."""
-    from pathlib import Path
-
-    flag = Path.home() / ".open-notebook-plus" / ".needs_db_repair"
+    flag = active_data_root() / ".needs_db_repair"
     try:
         needs = flag.exists()
     except OSError:

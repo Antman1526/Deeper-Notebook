@@ -20,6 +20,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
+from desktop.data_root import active_data_root
 from open_notebook.local_models import (
     cancel_snapshot_install,
     get_snapshot_install,
@@ -350,7 +351,7 @@ def _launcher_provider_for_runtime(runtime: str | None) -> str | None:
 
 def _launcher_config_summary(model_dir: Path):
     active_gguf_model = resolve_env("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
-    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    config_path = active_data_root() / "config.toml"
     if not config_path.exists():
         return {
             "available": False,
@@ -1056,7 +1057,7 @@ async def local_models_set_launch_default(body: dict):
             detail=f"Launch default is not supported for runtime {runtime!r}.",
         )
 
-    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    config_path = active_data_root() / "config.toml"
     try:
         cfg = load_or_create(config_path)
     except HTTPException:

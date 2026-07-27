@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from deeper_notebook.environment import resolve_env
+from desktop.data_root import active_data_root
 
 if TYPE_CHECKING:
     from desktop.config import Config
@@ -187,7 +188,7 @@ def _phase_load_config(ctx: AppContext) -> None:
     ctx._first_run = not cfg_path.exists()
     ctx._cfg_path = cfg_path
 
-    log_dir = Path.home() / ".open-notebook-plus" / "logs"
+    log_dir = active_data_root() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     ctx.log_dir = log_dir
 
@@ -271,7 +272,7 @@ def _phase_bootstrap_runtime(ctx: AppContext) -> None:
 
     standalone_python = bootstrap.extract_python_runtime(
         tarball=_bundled_python_tarball(arch),
-        dest_parent=Path.home() / ".open-notebook-plus",
+        dest_parent=active_data_root(),
     )
 
     ctx.venv_py = bootstrap.ensure_venv(

@@ -22,6 +22,7 @@ from typing import IO, TYPE_CHECKING
 import httpx
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
+from desktop.data_root import active_data_root
 
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
@@ -194,10 +195,7 @@ class Supervisor:
         self.node_arch = node_arch
         self.extra_env = dict(extra_env or {})
         self.debug_mode = debug_mode
-        self.log_dir = log_dir or (
-            user_home()
-            / ".open-notebook-plus" / "logs"
-        )
+        self.log_dir = log_dir or (active_data_root() / "logs")
         # venv_python: the Python interpreter used to spawn FastAPI/worker children.
         # When None, falls back to sys.executable (unfrozen/dev path).
         self.venv_python: Path = venv_python or Path(sys.executable)
@@ -297,7 +295,7 @@ class Supervisor:
         # our subprocess children live: the user-data venv (Python API +
         # worker) and the bundled binary dir (Node, surreal, llama-cpp).
         bundle_paths = [
-            Path.home() / ".open-notebook-plus" / "venv",
+            active_data_root() / "venv",
             self.bin_dir,
         ]
         try:
@@ -330,9 +328,7 @@ class Supervisor:
         # to ANY read-only CWD (DMG, Time Machine snapshot, /Applications
         # under a non-admin user, …) without affecting Docker / dev where
         # the env var would simply not be set otherwise.
-        data_folder = Path(
-            str(user_home())
-        ) / ".open-notebook-plus" / "data"
+        data_folder = active_data_root() / "data"
         data_folder.mkdir(parents=True, exist_ok=True)
         # v0.8.7 — Resolve chat-LLM n_ctx HERE, before session_env is
         # built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
@@ -1016,8 +1012,7 @@ class Supervisor:
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
         binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
-        data_dir = user_home() \
-            / ".open-notebook-plus" / "surreal_data"
+        data_dir = active_data_root() / "surreal_data"
         data_dir.mkdir(parents=True, exist_ok=True)
         # Use --flag=value form so passwords/usernames that happen to start
         # with '-' (a real possibility from secrets.token_urlsafe which uses
@@ -1101,7 +1096,7 @@ class Supervisor:
             return
         try:
             from desktop import db_repair
-            data_home = user_home() / ".open-notebook-plus"
+            data_home = active_data_root()
             if not db_repair.needs_repair(data_home):
                 return
             ext = ".exe" if self.surreal_arch.startswith("windows") else ""
@@ -1115,7 +1110,7 @@ class Supervisor:
                 repair_port = 18799
             ok = db_repair.auto_repair(
                 surreal_bin=self.bin_dir / f"surreal-{self.surreal_arch}{ext}",
-                data_dir=user_home() / ".open-notebook-plus" / "surreal_data",
+                data_dir=active_data_root() / "surreal_data",
                 backup_dir=user_home() / "onp-backups",
                 surreal_user=self.cfg.surreal_user,
                 surreal_password=self.cfg.surreal_password,
@@ -1143,7 +1138,7 @@ class Supervisor:
         if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
             return
         worker_log = self.log_dir / "worker.log"
-        data_home = user_home() / ".open-notebook-plus"
+        data_home = active_data_root()
         # v0.8.67l — only consider content appended AFTER this boot's worker
         # spawn. worker.log is append-only, so a stale crash from a PREVIOUS
         # (already-repaired) session would otherwise falsely re-flag a repair.

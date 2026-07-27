@@ -19,15 +19,15 @@ def _client() -> TestClient:
 
 
 def test_reports_false_when_flag_absent(tmp_path, monkeypatch):
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
     resp = _client().get("/api/system/db-repair-needed")
     assert resp.status_code == 200
     assert resp.json() == {"needs_repair": False}
 
 
 def test_reports_true_when_flag_present(tmp_path, monkeypatch):
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    data_home = tmp_path / ".open-notebook-plus"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_home = tmp_path / ".deeper-notebook"
     data_home.mkdir()
     (data_home / ".needs_db_repair").write_text("2026-06-02 00:00:00\n")
 
@@ -42,7 +42,7 @@ def test_never_raises_on_unreadable_home(tmp_path, monkeypatch):
         def exists(self):  # type: ignore[override]
             raise OSError("no permission")
 
-    monkeypatch.setattr("pathlib.Path.home", lambda: _Boom(tmp_path))
+    monkeypatch.setattr(system, "active_data_root", lambda: _Boom(tmp_path))
     resp = _client().get("/api/system/db-repair-needed")
     assert resp.status_code == 200
     assert resp.json() == {"needs_repair": False}

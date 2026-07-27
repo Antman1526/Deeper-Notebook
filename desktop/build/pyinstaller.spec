@@ -92,6 +92,7 @@ datas = [
     # Paths: <MEIPASS>/upstream/api, /upstream/open_notebook, etc.
     (str(PROJECT_ROOT / "api"),          "upstream/api"),
     (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
+    (str(PROJECT_ROOT / "deeper_notebook"), "upstream/deeper_notebook"),
     (str(PROJECT_ROOT / "commands"),     "upstream/commands"),
     (str(PROJECT_ROOT / "prompts"),      "upstream/prompts"),
     (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
@@ -133,6 +134,8 @@ datas = [
     # case where this file is missing, but ONLY if no other directory with
     # an __init__.py shadows the search path. Belt-and-suspenders.
     (str(PROJECT_ROOT / "desktop" / "__init__.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "data_root.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "paths.py"), "upstream/desktop"),
     # v0.5.7/8 audit-fix: bundle additional desktop modules that upstream
     # API routers import:
     #   - desktop.config           — used by /api/onp/theme (theme switcher)

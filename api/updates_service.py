@@ -33,6 +33,8 @@ from typing import Any, Optional
 import httpx
 from loguru import logger
 
+from desktop.data_root import active_data_root
+
 # Public GitHub repo that publishes the desktop releases.
 GITHUB_OWNER = "Antman1526"
 GITHUB_REPO = "open-notebook-Plus"
@@ -52,7 +54,7 @@ def _state_path() -> Path:
     Shares the ``~/.open-notebook-plus`` directory used by launcher prefs so
     all desktop-side state lives in one place.
     """
-    return Path.home() / ".open-notebook-plus" / "update_state.json"
+    return active_data_root() / "update_state.json"
 
 
 def app_version() -> str:
