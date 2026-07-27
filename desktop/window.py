@@ -359,8 +359,8 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     voice_js = _voice_injection_js()
-    # v0.7.152 — Set window.ONP_STT_URL and window.ONP_TTS_URL BEFORE the
-    # voice-injection script runs so it picks up the per-launch shim ports.
+    # v0.7.152 — Set canonical voice endpoints plus deterministic legacy
+    # mirrors before the voice-injection script runs.
     #
     # Background: voice_injection.js defaults `STT_URL` to `/api/transcribe`
     # and `TTS_URL` to `/api/audio/speech`. Neither path exists on the main
@@ -379,11 +379,13 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     voice_globals_pieces: list[str] = []
     if stt_url:
         voice_globals_pieces.append(
-            f"window.ONP_STT_URL = {_json.dumps(stt_url)};"
+            f"window.DEEPER_NOTEBOOK_STT_URL = {_json.dumps(stt_url)};"
+            "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;"
         )
     if tts_url:
         voice_globals_pieces.append(
-            f"window.ONP_TTS_URL = {_json.dumps(tts_url)};"
+            f"window.DEEPER_NOTEBOOK_TTS_URL = {_json.dumps(tts_url)};"
+            "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;"
         )
     voice_globals = "\n        ".join(voice_globals_pieces)
     # Append a script-tag injection so the voice JS runs after page DOM is ready.
@@ -405,8 +407,12 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     except Exception:
         _onp_version = "unknown"
     memory_globals = (
-        f"window.ONP_MEMORY_URL = {_json.dumps(memory_url)};"
-        f"window.ONP_REMIND_OPENCHRONICLE = {('true' if remind_openchronicle else 'false')};"
+        f"window.DEEPER_NOTEBOOK_MEMORY_URL = {_json.dumps(memory_url)};"
+        "window.ONP_MEMORY_URL = window.DEEPER_NOTEBOOK_MEMORY_URL;"
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE = "
+        f"{('true' if remind_openchronicle else 'false')};"
+        "window.ONP_REMIND_OPENCHRONICLE = "
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;"
         f"window.ONP_VERSION = {_json.dumps(_onp_version)};"
     )
     memory_injector = f"""

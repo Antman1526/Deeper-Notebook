@@ -6,6 +6,7 @@ test asserting the token set is complete or that WCAG contrast holds. (P1-LOW-12
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -142,7 +143,7 @@ def test_injection_sets_initial_theme_via_dataset():
 # ---------------------------------------------------------------------------
 
 
-def test_injection_sets_onp_stt_url_when_provided():
+def test_injection_sets_canonical_stt_url_and_deterministic_legacy_mirror():
     """v0.7.152 regression.
 
     `voice_injection.js` reads `window.ONP_STT_URL` to know where to POST
@@ -158,12 +159,16 @@ def test_injection_sets_onp_stt_url_when_provided():
     )
     # Look for the EXPLICIT assignment (the bare `window.ONP_STT_URL`
     # token already appears in voice_injection.js as a fallback lookup).
-    assert "window.ONP_STT_URL = " in js
+    assert "window.DEEPER_NOTEBOOK_STT_URL = " in js
+    assert (
+        "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;"
+        in js
+    )
     assert "127.0.0.1:51234" in js
     assert "/v1/audio/transcriptions" in js
 
 
-def test_injection_sets_onp_tts_url_when_provided():
+def test_injection_sets_canonical_tts_url_and_deterministic_legacy_mirror():
     """v0.7.152 — same wiring for the TTS speaker button.
 
     voice_injection.js posts to `window.ONP_TTS_URL` (defaults to
@@ -174,12 +179,16 @@ def test_injection_sets_onp_tts_url_when_provided():
         "dark",
         tts_url="http://127.0.0.1:51235/v1/audio/speech",
     )
-    assert "window.ONP_TTS_URL = " in js
+    assert "window.DEEPER_NOTEBOOK_TTS_URL = " in js
+    assert (
+        "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;"
+        in js
+    )
     assert "127.0.0.1:51235" in js
     assert "/v1/audio/speech" in js
 
 
-def test_injection_omits_onp_stt_url_when_none():
+def test_injection_omits_canonical_and_legacy_voice_urls_when_none():
     """v0.7.152 — When the whisper shim failed to start (`stt_url=None`),
     we MUST NOT inject `window.ONP_STT_URL = "...";`, so that
     voice_injection.js falls back to its built-in `/api/transcribe`
@@ -193,6 +202,8 @@ def test_injection_omits_onp_stt_url_when_none():
     ASSIGNMENT pattern, not the bare name.
     """
     js = _theme_injection_js("dark", stt_url=None, tts_url=None)
+    assert "window.DEEPER_NOTEBOOK_STT_URL =" not in js
+    assert "window.DEEPER_NOTEBOOK_TTS_URL =" not in js
     assert "window.ONP_STT_URL =" not in js, (
         "must not emit an assignment to window.ONP_STT_URL when stt_url is None"
     )
@@ -201,7 +212,7 @@ def test_injection_omits_onp_stt_url_when_none():
     )
 
 
-def test_injection_supports_both_stt_and_tts_simultaneously():
+def test_injection_supports_both_canonical_voice_urls_and_legacy_mirrors():
     """Both URLs in the same injection should both land. Regression guard
     against a future copy-paste bug where one accidentally overrides
     or shadows the other."""
@@ -210,10 +221,90 @@ def test_injection_supports_both_stt_and_tts_simultaneously():
         stt_url="http://127.0.0.1:51111/v1/audio/transcriptions",
         tts_url="http://127.0.0.1:51222/v1/audio/speech",
     )
-    assert "window.ONP_STT_URL = " in js
-    assert "window.ONP_TTS_URL = " in js
+    assert "window.DEEPER_NOTEBOOK_STT_URL = " in js
+    assert "window.DEEPER_NOTEBOOK_TTS_URL = " in js
+    assert "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;" in js
+    assert "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;" in js
     assert "51111" in js
     assert "51222" in js
+
+
+def test_injection_sets_canonical_memory_globals_and_legacy_mirrors():
+    js = _theme_injection_js(
+        "dark",
+        memory_url="http://127.0.0.1:51236/memory",
+        remind_openchronicle=True,
+    )
+
+    assert "window.DEEPER_NOTEBOOK_MEMORY_URL = " in js
+    assert "window.ONP_MEMORY_URL = window.DEEPER_NOTEBOOK_MEMORY_URL;" in js
+    assert "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE = true;" in js
+    assert (
+        "window.ONP_REMIND_OPENCHRONICLE = "
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;"
+        in js
+    )
+
+
+def test_desktop_bridge_producer_consumer_contract_is_canonical_first():
+    root = Path(__file__).resolve().parents[2]
+    producer = _theme_injection_js(
+        "dark",
+        stt_url="http://127.0.0.1:51111/v1/audio/transcriptions",
+        tts_url="http://127.0.0.1:51222/v1/audio/speech",
+        memory_url="http://127.0.0.1:51236/memory",
+        remind_openchronicle=True,
+    )
+    voice = (
+        root / "desktop/first_run/static/voice_injection.js"
+    ).read_text(encoding="utf-8")
+    memory = (
+        root / "desktop/first_run/static/memory_injection.js"
+    ).read_text(encoding="utf-8")
+
+    producer_pairs = [
+        ("window.DEEPER_NOTEBOOK_STT_URL =", "window.ONP_STT_URL ="),
+        ("window.DEEPER_NOTEBOOK_TTS_URL =", "window.ONP_TTS_URL ="),
+        ("window.DEEPER_NOTEBOOK_MEMORY_URL =", "window.ONP_MEMORY_URL ="),
+        (
+            "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE =",
+            "window.ONP_REMIND_OPENCHRONICLE =",
+        ),
+    ]
+    for canonical, legacy in producer_pairs:
+        assert producer.index(canonical) < producer.index(legacy)
+
+    consumer_chains = [
+        (
+            voice,
+            "window.DEEPER_NOTEBOOK_STT_URL",
+            "window.ONP_STT_URL",
+            "'/api/transcribe'",
+        ),
+        (
+            voice,
+            "window.DEEPER_NOTEBOOK_TTS_URL",
+            "window.ONP_TTS_URL",
+            "'/api/audio/speech'",
+        ),
+        (
+            memory,
+            "window.DEEPER_NOTEBOOK_MEMORY_URL",
+            "window.ONP_MEMORY_URL",
+            "'#'",
+        ),
+        (
+            memory,
+            "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE",
+            "window.ONP_REMIND_OPENCHRONICLE",
+            "false",
+        ),
+    ]
+    for source, canonical, legacy, fallback in consumer_chains:
+        canonical_position = source.index(canonical)
+        legacy_position = source.index(legacy, canonical_position)
+        fallback_position = source.index(fallback, legacy_position)
+        assert canonical_position < legacy_position < fallback_position
 
 
 def test_recovery_card_renders_explanation_confirmation_and_explicit_actions():

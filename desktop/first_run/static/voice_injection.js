@@ -10,8 +10,12 @@
   if (window.__DEEPER_NOTEBOOK_VOICE_INJECTED) return;
   window.__DEEPER_NOTEBOOK_VOICE_INJECTED = true;
 
-  const STT_URL = (window.DEEPER_NOTEBOOK_STT_URL || '/api/transcribe');
-  const TTS_URL = (window.DEEPER_NOTEBOOK_TTS_URL || '/api/audio/speech');
+  const STT_URL = (
+    window.DEEPER_NOTEBOOK_STT_URL || window.ONP_STT_URL || '/api/transcribe'
+  );
+  const TTS_URL = (
+    window.DEEPER_NOTEBOOK_TTS_URL || window.ONP_TTS_URL || '/api/audio/speech'
+  );
 
   // ---------------------------------------------------------------------------
   // Inject global styles
