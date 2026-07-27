@@ -162,6 +162,98 @@ def test_canonical_macos_system_trees_and_descendants_are_unsafe(
     assert _is_lexically_unsafe_root(Path(candidate)) is True
 
 
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/PRIVATE/VAR/SPOOL",
+        "/Private/Var/Arbitrary/Deeper",
+        "/SYSTEM",
+        "/sYsTeM/Library",
+        "/USERS",
+        "/vOlUmEs",
+        "/UsR/Local",
+    ],
+)
+def test_mixed_case_macos_system_trees_and_descendants_are_unsafe(
+    candidate: str,
+) -> None:
+    assert _is_lexically_unsafe_root(Path(candidate)) is True
+
+
+def _swap_ascii_case(value: str) -> str:
+    return "".join(
+        character.lower() if character.isupper() else character.upper()
+        for character in value
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/PRIVATE/VAR/SPOOL",
+        "/sYsTeM/Library",
+        "/USERS",
+    ],
+)
+def test_mixed_case_system_root_rejects_before_descriptor_open(
+    candidate: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    open_calls: list[tuple[object, ...]] = []
+
+    def unexpected_open(*args: object, **kwargs: object) -> int:
+        open_calls.append(args)
+        raise AssertionError(f"os.open must not run: {kwargs}")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security._descriptor_security_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(os, "open", unexpected_open)
+
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root(candidate)
+    assert caught.value.code == "unsafe_root"
+    assert open_calls == []
+
+
+def test_case_varied_home_and_desktop_reject_before_descriptor_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    candidates = [
+        _swap_ascii_case(str(home)),
+        str(Path(_swap_ascii_case(str(home))) / "dEsKtOp"),
+    ]
+    open_calls: list[tuple[object, ...]] = []
+
+    def unexpected_open(*args: object, **kwargs: object) -> int:
+        open_calls.append(args)
+        raise AssertionError(f"os.open must not run: {kwargs}")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security._descriptor_security_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(os, "open", unexpected_open)
+
+    for candidate in candidates:
+        with pytest.raises(VaultSecurityError) as caught:
+            approve_vault_root(candidate)
+        assert caught.value.code == "unsafe_root"
+    assert open_calls == []
+
+
+def test_case_varied_deep_desktop_descendant_remains_lexically_allowed() -> None:
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    candidate = (
+        Path(_swap_ascii_case(str(home)))
+        / "dEsKtOp"
+        / "BrainPulse Ventures LLC"
+        / "2nd Brains"
+    )
+    assert _is_lexically_unsafe_root(candidate) is False
+
+
 def test_approved_root_fails_closed_without_descriptor_security(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
