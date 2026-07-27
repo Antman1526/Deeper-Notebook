@@ -69,7 +69,8 @@ replacement plan:
 - Local model inventory, manifest, benchmark, launch-default, and health APIs.
 - `AI_Models` integration rooted at `/Users/Antman/Desktop/AI_Models`.
 - Evidence Studio artifact API, schemas, domain model, exports, and frontend rail.
-- ONP shadow components under `frontend/src/components/onp/`.
+- Deeper Notebook downstream components under
+  `frontend/src/components/deeper-notebook/`.
 - Source ingestion safety: async defaults, upload caps, retry preflight,
   processing progress, extraction-quality signals, and source-readiness gates.
   This includes `api/routers/sources.py`, the Sources page, source detail and
@@ -89,7 +90,7 @@ uv run pytest tests/test_evidence_studio_artifact_api.py \
   tests/test_local_model_role_routing.py
 
 cd frontend
-npm test -- --run src/components/onp/ArtifactRail.test.tsx \
+npm test -- --run src/components/deeper-notebook/ArtifactRail.test.tsx \
   src/app/'(dashboard)'/settings/local-models/page.test.tsx
 npx tsc --noEmit
 npm run lint
