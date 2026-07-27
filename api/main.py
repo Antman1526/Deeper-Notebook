@@ -37,6 +37,7 @@ from api.routers import (
     config,
     context,
     credentials,
+    deeper_notebook,
     embedding,
     embedding_rebuild,
     episode_profiles,
@@ -48,7 +49,6 @@ from api.routers import (
     models,
     notebooks,
     notes,
-    onp,
     podcasts,
     research,
     search,
@@ -81,6 +81,7 @@ from deeper_notebook.exceptions import (
     OpenNotebookError,
     RateLimitError,
 )
+from deeper_notebook.identity import DESCRIPTION, PRODUCT_NAME
 from deeper_notebook.logging import configure_logging
 from deeper_notebook.utils.encryption import get_secret_from_env
 
@@ -652,8 +653,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Open Notebook API",
-    description="API for Open Notebook - Research Assistant",
+    title=PRODUCT_NAME,
+    description=DESCRIPTION,
     lifespan=lifespan,
 )
 
@@ -944,8 +945,26 @@ app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(transformations.router, prefix="/api", tags=["transformations"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
-app.include_router(onp.router, prefix="/api", tags=["onp"])  # ONP desktop-wrapper endpoints
-app.include_router(gmail_router.router, prefix="/api", tags=["onp-gmail"])  # Gmail digest integration
+app.include_router(
+    deeper_notebook.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook"],
+)
+app.include_router(
+    deeper_notebook.router,
+    prefix="/api/onp",
+    include_in_schema=False,
+)
+app.include_router(
+    gmail_router.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-gmail"],
+)
+app.include_router(
+    gmail_router.router,
+    prefix="/api/onp",
+    include_in_schema=False,
+)
 app.include_router(embedding.router, prefix="/api", tags=["embedding"])
 app.include_router(
     embedding_rebuild.router, prefix="/api/embeddings", tags=["embeddings"]
@@ -983,7 +1002,11 @@ app.include_router(_updates_router.router, tags=["updates"])  # v0.8.70 — in-a
 
 @app.get("/")
 async def root():
-    return {"message": "Open Notebook API is running"}
+    return {
+        "message": "Deeper Notebook API is running",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 @app.get("/health")
@@ -993,7 +1016,11 @@ async def health():
     Same shape as /livez. Existing dashboards and the launcher's wait
     loop point at /health; new code should use /livez (cheap) or
     /readyz (full dependency check)."""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 # v0.7.210 — Version endpoint. Drives the splash window's "Open
@@ -1018,7 +1045,8 @@ async def api_version():
         desktop_version = "unknown"
     return {
         "version": desktop_version,
-        "name": "Open Notebook Plus",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
     }
 
 
@@ -1034,7 +1062,11 @@ async def livez():
     Intentionally trivial. Should return < 1ms. No DB call. If this
     fails, the process is wedged and needs a restart.
     """
-    return {"status": "alive"}
+    return {
+        "status": "alive",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 @app.get("/readyz")
@@ -1078,6 +1110,8 @@ async def readyz():
     ready = db_status == "online" and migrations_ok
     body = {
         "status": "ready" if ready else "not_ready",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
         "checks": {
             "database": db_status,
             "database_error": db_health.get("error"),

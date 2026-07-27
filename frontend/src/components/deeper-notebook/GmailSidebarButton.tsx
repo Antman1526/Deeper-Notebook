@@ -7,7 +7,7 @@
  *   3. Error           → "Gmail · ⚠" (amber, hover for detail)
  *
  * Click → navigates to /settings/api-keys#email-digests (anchored to the
- * full setup panel). Polls /api/onp/gmail/status on mount + every 60 s so
+ * full setup panel). Polls the canonical Gmail status endpoint on mount so
  * the badge stays in sync after the user finishes the OAuth flow.
  */
 'use client'
@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { onpFetch } from '@/lib/api/onp'
+import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
 import { Button } from '@/components/ui/button'
 import { Mail, CheckCircle2 } from 'lucide-react'
 
@@ -41,7 +41,9 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
     let cancelled = false
     const load = async () => {
       try {
-        const r = await onpFetch('/api/onp/gmail/status')
+        const r = await deeperNotebookFetch(
+          '/api/deeper-notebook/gmail/status',
+        )
         if (!r.ok) return
         const data = (await r.json()) as GmailStatus
         if (!cancelled) setStatus(data)

@@ -222,7 +222,7 @@ async def _snapshot_artifact_revision(artifact: StudioArtifact) -> None:
 
 def _system_prompt(artifact: StudioArtifact) -> str:
     return f"""\
-You are Evidence Studio inside Open Notebook Plus.
+You are Evidence Studio inside Deeper Notebook.
 
 {artifact_instruction(artifact)}
 

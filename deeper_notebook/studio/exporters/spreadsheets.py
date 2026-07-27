@@ -12,6 +12,8 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from deeper_notebook.identity import PRODUCT_NAME
+from deeper_notebook.studio.exporters.metadata import brand_office_application
 from deeper_notebook.studio.schemas import DataTableDocument
 
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
@@ -117,9 +119,11 @@ def export_spreadsheet(document: DataTableDocument, path: Path) -> None:
             break
 
     workbook.properties.title = document.title
-    workbook.properties.creator = "Open Notebook Plus"
+    workbook.properties.creator = PRODUCT_NAME
+    workbook.properties.lastModifiedBy = PRODUCT_NAME
     workbook.properties.subject = "Evidence Studio editable data export"
     workbook.save(path)
+    brand_office_application(path)
 
 
 __all__ = ["export_spreadsheet"]

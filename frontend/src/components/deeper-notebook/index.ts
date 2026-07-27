@@ -1,5 +1,5 @@
 /**
- * Open notebook+ shadow component layer. See ./README.md for the pattern.
+ * Deeper Notebook product component layer. See ./README.md for the pattern.
  *
  * Import from this barrel so upstream-page edits are one-line:
  *   import { ReasoningSlotCard } from '@/components/deeper-notebook'

@@ -1,4 +1,4 @@
-"""surreal-commands handlers registered by Open Notebook Plus v0.4 memory layer.
+"""surreal-commands handlers registered by the Deeper Notebook memory layer.
 
 This file is copied into the bundled upstream's commands/ directory at first
 launch by desktop/app.py:_phase_register_memory_commands.

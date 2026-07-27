@@ -1,4 +1,4 @@
-"""Centralized loguru configuration for Open Notebook Plus.
+"""Centralized loguru configuration for Deeper Notebook.
 
 v0.7.14 — for local-deploy use (the project's documented target), the
 launcher and API both run as long-lived subprocesses on the user's

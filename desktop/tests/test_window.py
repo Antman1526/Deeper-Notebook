@@ -101,12 +101,12 @@ def test_injection_contains_every_theme_as_attribute_selector():
 
 def test_theme_ids_are_in_lockstep_with_api_allowlist():
     """v0.8.72 — the theme palette lives in desktop/window.py:_THEMES, but the
-    API (api/routers/onp.py:_VALID_THEMES) independently allowlists which theme
-    strings POST /api/onp/theme will accept and persist. If they drift, a theme
+    API theme router independently allowlists which theme strings the
+    canonical endpoint will accept and persist. If they drift, a theme
     shown in the picker would be rejected on save (or vice-versa). Pin them
     together. (The frontend ThemeSwitcher:ONP_THEMES is the third copy — kept in
     sync by code review, since it can't be imported here.)"""
-    from api.routers.onp import _VALID_THEMES
+    from api.routers.deeper_notebook import _VALID_THEMES
 
     assert set(_THEMES) == set(_VALID_THEMES), (
         "desktop _THEMES and api _VALID_THEMES are out of sync: "
@@ -120,8 +120,8 @@ def test_injection_exposes_setTheme_bridge():
     js = _theme_injection_js("dark")
     assert "window.ONP" in js
     assert "ONP.setTheme" in js
-    # And it should POST to /api/onp/theme to persist
-    assert "/api/onp/theme" in js
+    # And it should POST to the canonical endpoint to persist.
+    assert "/api/deeper-notebook/theme" in js
 
 
 def test_injection_sets_initial_theme_via_dataset():

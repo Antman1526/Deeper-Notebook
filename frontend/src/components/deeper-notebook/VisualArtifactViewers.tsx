@@ -231,7 +231,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                   </div>
                 )}
                 <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[#b7c8d8]">
-                  Open Notebook Plus / Evidence Studio
+                  Deeper Notebook / Evidence Studio
                 </div>
               </div>
             </div>

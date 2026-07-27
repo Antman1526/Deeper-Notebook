@@ -273,7 +273,7 @@ class Supervisor:
         #
         # Now: acquire a PID-file lock at start. If another live instance
         # holds it, AlreadyRunning propagates up to the app's UI which
-        # can show a friendly "Open Notebook Plus is already running"
+        # can show a friendly "Deeper Notebook is already running"
         # dialog. Then sweep any orphans from prior crashed launchers
         # before we bind our own ports.
         # v0.8.6 — Merge launcher.env file values into os.environ BEFORE

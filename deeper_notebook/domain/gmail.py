@@ -34,7 +34,7 @@ SINGLETON_ID = "gmail_integration:singleton"
 # Background: the SurrealDB `SELECT * FROM ONLY $rid` lookup for this
 # singleton was observed taking 4-8 seconds on cold-start (see api.log
 # slow-query warnings on every fresh launch). The frontend polls
-# `/api/onp/gmail/status` on mount (60s adaptive interval) and the
+# the canonical Gmail status endpoint on mount (60s adaptive interval) and the
 # /settings/api-keys page mounts BOTH the GmailIntegration panel AND
 # the GmailSidebarButton, so two concurrent slow queries fire on
 # every cold load → 8+ seconds of perceived freeze.

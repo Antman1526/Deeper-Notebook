@@ -332,7 +332,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
       window.ONP.setTheme = function(theme) {{
         applyTheme(theme);
         try {{
-          fetch('/api/onp/theme', {{
+          fetch('/api/deeper-notebook/theme', {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
             body: JSON.stringify({{theme: theme}}),
@@ -641,7 +641,7 @@ class _OnpJsApi:
 
 
 def open_window(url: str, on_close: Callable[[], None],
-                title: str = "Open notebook+",
+                title: str = "Deeper Notebook",
                 width: int = 1280, height: int = 800,
                 theme: str = "light-blue",
                 memory_url: str | None = None,
@@ -742,7 +742,7 @@ def open_window(url: str, on_close: Callable[[], None],
             return  # splash / error page / warm-up 404 — controller retries
         _page_loaded.set()  # confirms the handoff for the controller
         # v0.5.7 — re-read config.toml on every page load so live theme
-        # switches via /api/onp/theme persist across navigations. Falls back
+        # switches via the canonical theme endpoint persist across navigations.
         # to the `theme` argument if the config can't be read.
         active_theme = theme
         try:

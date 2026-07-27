@@ -55,7 +55,8 @@ async def test_empty_activity_shows_quiet_days_message(fake_query):
     html, total = await digest_mod.build_digest_html(g)
     assert total == 0
     assert "No notebook activity" in html
-    assert "Open Notebook Plus" in html  # header rendered
+    assert "Deeper Notebook" in html  # header rendered
+    assert "Open Notebook Plus" not in html
 
 
 @pytest.mark.asyncio

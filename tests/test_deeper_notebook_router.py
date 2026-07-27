@@ -1,11 +1,11 @@
-"""ONP v0.6.5 — Tests for api/routers/onp.py.
+"""Tests for the canonical Deeper Notebook theme router.
 
 Covers:
-  * GET /onp/theme passes HTTPException through (so the bundling error is
+  * GET /theme passes HTTPException through (so the bundling error is
     visible) but swallows generic Exception (config not yet written on
     first run).
-  * POST /onp/theme rejects unknown themes.
-  * POST /onp/theme uses dataclasses.replace so adding fields to Config
+  * POST /theme rejects unknown themes.
+  * POST /theme uses dataclasses.replace so adding fields to Config
     doesn't silently revert them.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from api.routers import onp as onp_mod
+from api.routers import deeper_notebook as deeper_notebook_mod
 
 # --- Lightweight fake Config that mimics desktop.config.Config ------------
 
@@ -42,11 +42,11 @@ class _FakeCfg:
 @pytest.fixture
 def app():
     a = FastAPI()
-    a.include_router(onp_mod.router, prefix="/api")
+    a.include_router(deeper_notebook_mod.router, prefix="/api/deeper-notebook")
     return a
 
 
-# --- GET /onp/theme -------------------------------------------------------
+# --- GET /theme -----------------------------------------------------------
 
 
 def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
@@ -54,10 +54,10 @@ def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
     silently fall back to the default theme, NOT 500."""
     def _broken_load():
         raise FileNotFoundError("config not yet written")
-    monkeypatch.setattr(onp_mod, "_load_config", _broken_load)
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config", _broken_load)
 
     with TestClient(app) as client:
-        r = client.get("/api/onp/theme")
+        r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 200
     assert r.json()["theme"] == "light-blue"
 
@@ -67,32 +67,32 @@ def test_get_theme_propagates_http_exception(app, monkeypatch):
     the user MUST see the actionable error, not a silent fallback."""
     def _bundling_err():
         raise HTTPException(status_code=500, detail="desktop.config not bundled")
-    monkeypatch.setattr(onp_mod, "_load_config", _bundling_err)
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config", _bundling_err)
 
     with TestClient(app) as client:
-        r = client.get("/api/onp/theme")
+        r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 500
     assert "not bundled" in r.json()["detail"]
 
 
 def test_get_theme_returns_loaded_value(app, monkeypatch):
-    monkeypatch.setattr(onp_mod, "_load_config",
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
                         lambda: (Path("/tmp/c.toml"), _FakeCfg(theme="dracula")))
     with TestClient(app) as client:
-        r = client.get("/api/onp/theme")
+        r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 200
     assert r.json()["theme"] == "dracula"
     assert "dracula" in r.json()["available"]
 
 
-# --- POST /onp/theme ------------------------------------------------------
+# --- POST /theme ----------------------------------------------------------
 
 
 def test_post_theme_rejects_unknown(app, monkeypatch):
-    monkeypatch.setattr(onp_mod, "_load_config",
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
                         lambda: (Path("/tmp/c.toml"), _FakeCfg()))
     with TestClient(app) as client:
-        r = client.post("/api/onp/theme", json={"theme": "neon-purple"})
+        r = client.post("/api/deeper-notebook/theme", json={"theme": "neon-purple"})
     assert r.status_code == 400
     assert "unknown theme" in r.json()["detail"]
 
@@ -114,11 +114,11 @@ def test_post_theme_preserves_other_fields_via_dataclasses_replace(app, monkeypa
         saved["cfg"] = self
 
     monkeypatch.setattr(_FakeCfg, "save", _save)
-    monkeypatch.setattr(onp_mod, "_load_config",
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
                         lambda: (Path("/tmp/c.toml"), original))
 
     with TestClient(app) as client:
-        r = client.post("/api/onp/theme", json={"theme": "dark"})
+        r = client.post("/api/deeper-notebook/theme", json={"theme": "dark"})
 
     assert r.status_code == 200
     assert r.json()["theme"] == "dark"
@@ -133,10 +133,10 @@ def test_post_theme_surfaces_bundling_error(app, monkeypatch):
     handling; now both go through _load_config."""
     def _bundling_err():
         raise HTTPException(status_code=500, detail="desktop.config not bundled")
-    monkeypatch.setattr(onp_mod, "_load_config", _bundling_err)
+    monkeypatch.setattr(deeper_notebook_mod, "_load_config", _bundling_err)
 
     with TestClient(app) as client:
-        r = client.post("/api/onp/theme", json={"theme": "dark"})
+        r = client.post("/api/deeper-notebook/theme", json={"theme": "dark"})
     assert r.status_code == 500
     assert "not bundled" in r.json()["detail"]
 
@@ -160,12 +160,12 @@ def test_v0825_post_theme_sanitizes_save_failure_detail(app, monkeypatch):
 
     monkeypatch.setattr(_FakeCfg, "save", _save_boom)
     monkeypatch.setattr(
-        onp_mod, "_load_config",
+        deeper_notebook_mod, "_load_config",
         lambda: (Path("/tmp/c.toml"), _FakeCfg()),
     )
 
     with TestClient(app) as client:
-        r = client.post("/api/onp/theme", json={"theme": "dark"})
+        r = client.post("/api/deeper-notebook/theme", json={"theme": "dark"})
 
     assert r.status_code == 500, r.text
     detail = r.json().get("detail", "")

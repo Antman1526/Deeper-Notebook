@@ -1,4 +1,4 @@
-"""Top-level application orchestration for Open Notebook Plus desktop launcher.
+"""Top-level application orchestration for the Deeper Notebook desktop launcher.
 
 Exposes a single public entry point:
 
@@ -698,7 +698,7 @@ def _handle_already_running(exc, ctx) -> bool:
         root.withdraw()
         # `askyesno` returns True for Yes, False for No.
         user_chose_quit = _mb.askyesno(
-            title="Open Notebook Plus is already running",
+            title="Deeper Notebook is already running",
             message=(
                 f"Another instance is already running (PID {exc.pid}).\n\n"
                 "Do you want to quit the existing app and relaunch?"
@@ -717,12 +717,12 @@ def _handle_already_running(exc, ctx) -> bool:
             import subprocess
             script = (
                 'display dialog '
-                f'"Another Open Notebook Plus instance is already running '
+                f'"Another Deeper Notebook instance is already running '
                 f'(PID {exc.pid}).\\n\\nDo you want to quit the existing '
                 f'app and relaunch?" '
                 'buttons {"Cancel", "Quit & Relaunch"} '
                 'default button "Quit & Relaunch" '
-                'with title "Open Notebook Plus is already running" '
+                'with title "Deeper Notebook is already running" '
                 'with icon caution'
             )
             result = subprocess.run(
