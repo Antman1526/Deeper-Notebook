@@ -8,6 +8,8 @@ from datetime import date
 from deeper_notebook.vault.contracts import ParsedTask
 from deeper_notebook.vault.parsers.common import (
     DecodedSource,
+    SourceLine,
+    SourceRegion,
     explicit_block_id,
     make_block,
     ordered_unique,
@@ -21,7 +23,10 @@ from deeper_notebook.vault.parsers.markdown import (
 
 _BLOCK = re.compile(r"^([ \t]*)[-*+][ \t]+(.*)$")
 _PROPERTY = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]{1,128})::[ \t]*(.*)$")
-_TASK = re.compile(r"^(TODO|DOING|DONE|CANCELED)\b[ \t]*(.*)$")
+_TASK = re.compile(
+    r"^(TODO|DOING|DONE|CANCELED|CANCELLED|NOW|LATER|WAITING)\b[ \t]*(.*)$"
+)
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 _MARKER = re.compile(
     r"^[ \t]*(SCHEDULED|DEADLINE|COMPLETED|CLOSED):[ \t]*(.*)$",
     re.IGNORECASE,
@@ -38,6 +43,10 @@ _STATUS = {
     "DOING": "doing",
     "DONE": "done",
     "CANCELED": "canceled",
+    "CANCELLED": "canceled",
+    "NOW": "doing",
+    "LATER": "todo",
+    "WAITING": "todo",
 }
 
 
@@ -47,9 +56,43 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
     block_by_id = {}
     task_by_block: dict[str, ParsedTask] = {}
     page_properties_open = True
+    fence_marker: tuple[str, int] | None = None
+    scan_jobs: list[tuple[SourceLine, str | None]] = []
 
     for line in source.body_lines():
         if not line.content.strip():
+            continue
+        fence_match = _FENCE.match(line.content)
+        if fence_marker is not None:
+            parent_id = block_stack[-1][1] if block_stack else None
+            block = make_block(
+                relative_path=relative_path,
+                parent_id=parent_id,
+                position=len(accumulator.blocks),
+                block_kind="code",
+                line=line,
+                plain_text=line.content,
+            )
+            accumulator.blocks.append(block)
+            if (
+                fence_match is not None
+                and fence_match.group(1)[0] == fence_marker[0]
+                and len(fence_match.group(1)) >= fence_marker[1]
+            ):
+                fence_marker = None
+            continue
+        if fence_match is not None:
+            parent_id = block_stack[-1][1] if block_stack else None
+            block = make_block(
+                relative_path=relative_path,
+                parent_id=parent_id,
+                position=len(accumulator.blocks),
+                block_kind="code",
+                line=line,
+                plain_text=line.content,
+            )
+            accumulator.blocks.append(block)
+            fence_marker = (fence_match.group(1)[0], len(fence_match.group(1)))
             continue
         property_match = _PROPERTY.match(line.content)
         block_match = _BLOCK.match(line.content)
@@ -59,7 +102,7 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
             accumulator.source.properties[key] = split_property_value(
                 property_match.group(3)
             )
-            accumulator.scan_inline(line, None)
+            scan_jobs.append((line, None))
             continue
 
         page_properties_open = False
@@ -79,7 +122,7 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
                     task.priority = str(value)
                 elif lowered in {"tags", "tag"} and task is not None:
                     task.tags = _property_tags(value)
-                accumulator.scan_inline(line, owner_id)
+                scan_jobs.append((line, owner_id))
                 continue
 
         marker_match = _MARKER.match(line.content)
@@ -89,14 +132,14 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
             task = task_by_block.get(owner_id or "")
             if task is not None:
                 _apply_task_marker(task, marker_match.group(1), marker_match.group(2))
-                accumulator.scan_inline(line, owner_id)
+                scan_jobs.append((line, owner_id))
                 continue
 
         if not block_match and accumulator.blocks:
             indent = _leading_indent(line.content)
             owner_id = _owner_at_indent(block_stack, indent)
             if owner_id is not None:
-                accumulator.scan_inline(line, owner_id)
+                scan_jobs.append((line, owner_id))
                 continue
 
         indent = _indent_width(block_match.group(1)) if block_match else 0
@@ -127,23 +170,63 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
             task_text = task_match.group(2)
             priority = _extract_priority(task_text)
             recurrence = _extract_recurrence(task_text)
-            tags = _tags_from_text(task_text)
             task = ParsedTask(
                 block_parser_id=block.parser_id,
                 status=status,
                 priority=priority,
                 recurrence=recurrence,
-                tags=tags,
+                tags=[],
             )
             for marker in _INLINE_MARKER.finditer(task_text):
                 _apply_task_marker(task, marker.group(1), marker.group(2))
             accumulator.tasks.append(task)
             task_by_block[block.parser_id] = task
 
-        accumulator.scan_inline(line, block.parser_id)
+        scan_jobs.append((line, block.parser_id))
 
+    _scan_queued_regions(accumulator, scan_jobs)
+    for task in accumulator.tasks:
+        extracted_tags = [
+            link.target_text
+            for link in accumulator.links
+            if link.link_kind == "tag"
+            and link.source_block_parser_id == task.block_parser_id
+        ]
+        task.tags = ordered_unique(task.tags + extracted_tags)
     accumulator.tags = ordered_unique(accumulator.tags)
     return accumulator
+
+
+def _scan_queued_regions(
+    accumulator: ParseAccumulator,
+    jobs: list[tuple[SourceLine, str | None]],
+) -> None:
+    current_lines: list[SourceLine] = []
+    current_block_id: str | None = None
+
+    def flush() -> None:
+        if not current_lines:
+            return
+        markdown = "".join(line.markdown for line in current_lines)
+        region = SourceRegion(
+            source_start=current_lines[0].source_start,
+            source_end=current_lines[-1].source_end,
+            markdown=markdown,
+            content=markdown.rstrip("\r\n"),
+        )
+        accumulator.scan_inline(region, current_block_id)
+
+    for line, block_id in jobs:
+        if current_lines and (
+            block_id != current_block_id
+            or current_lines[-1].source_end != line.source_start
+        ):
+            flush()
+            current_lines = []
+        if not current_lines:
+            current_block_id = block_id
+        current_lines.append(line)
+    flush()
 
 
 def _owner_at_indent(
@@ -186,10 +269,6 @@ def _extract_priority(value: str) -> str | None:
 def _extract_recurrence(value: str) -> str | None:
     matched = _RECURRENCE.search(value)
     return matched.group(0) if matched else None
-
-
-def _tags_from_text(value: str) -> list[str]:
-    return ordered_unique(re.findall(r"(?<![\w/#])#([A-Za-z0-9][\w/-]{0,255})", value))
 
 
 def _property_tags(value: object) -> list[str]:
