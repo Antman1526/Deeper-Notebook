@@ -16,7 +16,11 @@ from api.models import (
 )
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from deeper_notebook.database.repository import ensure_record_id, repo_query
-from deeper_notebook.domain.notebook import Notebook, Source
+from deeper_notebook.domain.notebook import (
+    ExternalNoteReadOnlyError,
+    Notebook,
+    Source,
+)
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
@@ -650,6 +654,8 @@ async def delete_notebook(
         )
     except HTTPException:
         raise
+    except ExternalNoteReadOnlyError:
+        raise HTTPException(status_code=409, detail="external_note_read_only")
     except (NotFoundError, InvalidInputError):
         # v0.7.179 — Let typed exceptions bubble to the global handlers
         # in api/main.py (NotFoundError → 404, InvalidInputError → 400).
