@@ -8,7 +8,7 @@
  *   3. Connected → show email, frequency picker, section toggles,
  *      "Send digest now" + "Disconnect" buttons
  *
- * Shadow-layer component — see components/onp/README.md.
+ * Shadow-layer component — see components/deeper-notebook/README.md.
  */
 'use client'
 
@@ -287,7 +287,7 @@ export function GmailIntegration() {
           <Mail className="h-4 w-4" />
           Email Digests
           {status.connected && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs text-[var(--onp-success,_#14B870)]">
+            <span className="ml-2 inline-flex items-center gap-1 text-xs text-[var(--dn-success,_#14B870)]">
               <CheckCircle2 className="h-3 w-3" /> Connected
             </span>
           )}
@@ -306,7 +306,7 @@ export function GmailIntegration() {
           </p>
         )}
         {message && (
-          <p className="text-sm text-[var(--onp-success,_#14B870)] p-2 rounded bg-[var(--onp-success-soft,_rgba(20,184,112,0.1))]">
+          <p className="text-sm text-[var(--dn-success,_#14B870)] p-2 rounded bg-[var(--dn-success-soft,_rgba(20,184,112,0.1))]">
             {message}
           </p>
         )}

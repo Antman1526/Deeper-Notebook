@@ -52,12 +52,12 @@ export function CitationDrawer({
   return (
     <section
       aria-label="Citation evidence"
-      className="mt-4 rounded-md border border-[var(--onp-evidence)] bg-background p-3 shadow-[var(--onp-elevation-low)]"
+      className="mt-4 rounded-md border border-[var(--dn-evidence)] bg-background p-3 shadow-[var(--dn-elevation-low)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Quote className="h-4 w-4 text-[var(--onp-evidence)]" aria-hidden="true" />
+            <Quote className="h-4 w-4 text-[var(--dn-evidence)]" aria-hidden="true" />
             Citation evidence
           </div>
           <div className="mt-1 truncate text-xs text-muted-foreground">{evidence.title}</div>
@@ -87,7 +87,7 @@ export function CitationDrawer({
       </dl>
 
       {evidence.preview ? (
-        <blockquote className="mt-3 border-l-2 border-[var(--onp-accent-strong)] pl-3 text-sm leading-6 text-foreground">
+        <blockquote className="mt-3 border-l-2 border-[var(--dn-accent-strong)] pl-3 text-sm leading-6 text-foreground">
           {evidence.preview}
         </blockquote>
       ) : (

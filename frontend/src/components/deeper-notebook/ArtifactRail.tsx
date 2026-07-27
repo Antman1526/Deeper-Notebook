@@ -8,9 +8,9 @@ import ReactMarkdown from 'react-markdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { CitationDrawer, citationEvidenceFromRecord, type CitationEvidence } from '@/components/onp/CitationDrawer'
-import { CitationCoverageBadge } from '@/components/onp/CitationCoverageBadge'
-import { ArtifactExportMenu } from '@/components/onp/ArtifactExportMenu'
+import { CitationDrawer, citationEvidenceFromRecord, type CitationEvidence } from '@/components/deeper-notebook/CitationDrawer'
+import { CitationCoverageBadge } from '@/components/deeper-notebook/CitationCoverageBadge'
+import { ArtifactExportMenu } from '@/components/deeper-notebook/ArtifactExportMenu'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { getSourceReadiness, SourceHealthPill } from '@/components/onp/SourceHealthPill'
+import { getSourceReadiness, SourceHealthPill } from '@/components/deeper-notebook/SourceHealthPill'
 import {
   CoursePackViewer,
   CoursePackProgress,
@@ -34,13 +34,13 @@ import {
   QuizRunner,
   ResearchRunViewer,
   StudyProgress,
-} from '@/components/onp/StudyArtifactViewers'
+} from '@/components/deeper-notebook/StudyArtifactViewers'
 import {
   InfographicViewer,
   isInfographicDocument,
   isSlideDeckDocument,
   SlideDeckViewer,
-} from '@/components/onp/VisualArtifactViewers'
+} from '@/components/deeper-notebook/VisualArtifactViewers'
 import { isEvidenceStudioEnabled, isResearchRunsEnabled } from '@/lib/features'
 import { artifactMarkdown } from '@/lib/studio-artifacts'
 import {
@@ -132,10 +132,10 @@ function artifactTypeLabel(type: StudioArtifactType): string {
 }
 
 function statusClassName(status: StudioArtifact['status']): string {
-  if (status === 'completed') return 'border-[var(--onp-success)] text-[var(--onp-success)]'
+  if (status === 'completed') return 'border-[var(--dn-success)] text-[var(--dn-success)]'
   if (status === 'failed' || status === 'cancelled') return 'border-destructive text-destructive'
-  if (status === 'running') return 'border-[var(--onp-info)] text-[var(--onp-info)]'
-  return 'border-[var(--onp-warning)] text-[var(--onp-warning)]'
+  if (status === 'running') return 'border-[var(--dn-info)] text-[var(--dn-info)]'
+  return 'border-[var(--dn-warning)] text-[var(--dn-warning)]'
 }
 
 function unsupportedCitationMarkers(artifact: StudioArtifact | null): string[] {
@@ -196,18 +196,18 @@ function workflowRunStatusLabel(status?: StudioWorkflowRun['status']): string {
 }
 
 function workflowRunStatusClassName(status?: StudioWorkflowRun['status']): string {
-  if (status === 'completed') return 'border-[var(--onp-success)] text-[var(--onp-success)]'
+  if (status === 'completed') return 'border-[var(--dn-success)] text-[var(--dn-success)]'
   if (status === 'failed' || status === 'cancelled') return 'border-destructive text-destructive'
-  if (status === 'running') return 'border-[var(--onp-info)] text-[var(--onp-info)]'
-  return 'border-[var(--onp-warning)] text-[var(--onp-warning)]'
+  if (status === 'running') return 'border-[var(--dn-info)] text-[var(--dn-info)]'
+  return 'border-[var(--dn-warning)] text-[var(--dn-warning)]'
 }
 
 function workflowStepClassName(status: string): string {
-  if (status === 'completed') return 'border-[var(--onp-success)] bg-[var(--onp-success-soft)]'
-  if (status === 'running') return 'border-[var(--onp-info)] bg-[var(--onp-info-soft)]'
+  if (status === 'completed') return 'border-[var(--dn-success)] bg-[var(--dn-success-soft)]'
+  if (status === 'running') return 'border-[var(--dn-info)] bg-[var(--dn-info-soft)]'
   if (status === 'failed') return 'border-destructive bg-destructive/10'
   if (status === 'blocked') return 'border-muted bg-muted/50 text-muted-foreground'
-  return 'border-[var(--onp-warning)] bg-[var(--onp-warning-soft)]'
+  return 'border-[var(--dn-warning)] bg-[var(--dn-warning-soft)]'
 }
 
 function workflowRunTimestamp(run: StudioWorkflowRun): string {
@@ -438,11 +438,11 @@ export function ArtifactRail({
   return (
     <section
       aria-label="Evidence Studio artifacts"
-      className="mb-5 overflow-hidden rounded-lg border border-[var(--onp-border-strong)] bg-card shadow-[var(--onp-elevation-md)]"
+      className="mb-5 overflow-hidden rounded-lg border border-[var(--dn-border-strong)] bg-card shadow-[var(--dn-elevation-md)]"
     >
-      <div className="flex flex-col gap-3 border-b bg-[var(--onp-surface-raised)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 border-b bg-[var(--dn-surface-raised)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-md border border-[var(--onp-border-strong)] bg-background text-primary shadow-[var(--onp-elevation-low)]">
+          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-md border border-[var(--dn-border-strong)] bg-background text-primary shadow-[var(--dn-elevation-low)]">
             <Layers3 className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
@@ -496,7 +496,7 @@ export function ArtifactRail({
                   setSelectedArtifact(artifact)
                   setSelectedCitation(null)
                 }}
-                className="flex min-h-14 min-w-56 max-w-72 flex-none items-center gap-2 rounded-md border bg-background px-3 py-2 text-left transition-colors hover:border-[var(--onp-border-strong)] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-14 min-w-56 max-w-72 flex-none items-center gap-2 rounded-md border bg-background px-3 py-2 text-left transition-colors hover:border-[var(--dn-border-strong)] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Icon className="h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
@@ -562,7 +562,7 @@ export function ArtifactRail({
                   return (
                     <div
                       key={run.id}
-                      className="rounded-md border bg-card px-3 py-2 shadow-[var(--onp-elevation-low)]"
+                      className="rounded-md border bg-card px-3 py-2 shadow-[var(--dn-elevation-low)]"
                     >
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
@@ -709,7 +709,7 @@ export function ArtifactRail({
       </div>
 
       {generationBlocked && (
-        <div className="mt-2 rounded-md border border-[var(--onp-warning)] bg-[var(--onp-warning-soft)] px-3 py-2 text-xs text-muted-foreground">
+        <div className="mt-2 rounded-md border border-[var(--dn-warning)] bg-[var(--dn-warning-soft)] px-3 py-2 text-xs text-muted-foreground">
           {blockedSourceMessage}
         </div>
       )}
@@ -903,7 +903,7 @@ export function ArtifactRail({
                             </div>
                             <div className="truncate text-xs text-muted-foreground">{sourceId}</div>
                             {preview && (
-                              <blockquote className="mt-2 line-clamp-4 border-l-2 border-[var(--onp-accent-strong)] pl-2 text-xs leading-5 text-muted-foreground">
+                              <blockquote className="mt-2 line-clamp-4 border-l-2 border-[var(--dn-accent-strong)] pl-2 text-xs leading-5 text-muted-foreground">
                                 {preview}
                               </blockquote>
                             )}

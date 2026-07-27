@@ -53,38 +53,46 @@
 }
 
 :root {
+  /* Deeper Notebook — Research Core palette. Runtime-injected user themes
+     continue to override the semantic variables below. */
+  --dn-deep: #071B1D;
+  --dn-dark-teal: #0F766E;
+  --dn-teal: #2DD4BF;
+  --dn-cyan: #38BDF8;
+  --dn-light: #CCFBF1;
+
   --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.623 0.214 259.815);
-  --primary-foreground: oklch(0.97 0.014 254.604);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
+  --background: var(--dn-deep);
+  --foreground: var(--dn-light);
+  --card: color-mix(in oklab, var(--dn-deep) 88%, var(--dn-dark-teal));
+  --card-foreground: var(--dn-light);
+  --popover: color-mix(in oklab, var(--dn-deep) 84%, var(--dn-dark-teal));
+  --popover-foreground: var(--dn-light);
+  --primary: var(--dn-teal);
+  --primary-foreground: var(--dn-deep);
+  --secondary: color-mix(in oklab, var(--dn-dark-teal) 70%, var(--dn-deep));
+  --secondary-foreground: var(--dn-light);
+  --muted: color-mix(in oklab, var(--dn-dark-teal) 42%, var(--dn-deep));
+  --muted-foreground: color-mix(in oklab, var(--dn-light) 72%, var(--dn-dark-teal));
+  --accent: var(--dn-dark-teal);
+  --accent-foreground: var(--dn-light);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.623 0.214 259.815);
-  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-accent: oklch(0.92 0.01 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  --border: color-mix(in oklab, var(--dn-light) 20%, transparent);
+  --input: color-mix(in oklab, var(--dn-light) 24%, transparent);
+  --ring: var(--dn-cyan);
+  --chart-1: var(--dn-teal);
+  --chart-2: var(--dn-cyan);
+  --chart-3: var(--dn-light);
+  --chart-4: var(--dn-dark-teal);
+  --chart-5: oklch(0.78 0.16 75);
+  --sidebar: var(--dn-deep);
+  --sidebar-foreground: var(--dn-light);
+  --sidebar-primary: var(--dn-teal);
+  --sidebar-primary-foreground: var(--dn-deep);
+  --sidebar-accent: color-mix(in oklab, var(--dn-dark-teal) 78%, var(--dn-deep));
+  --sidebar-accent-foreground: var(--dn-light);
+  --sidebar-border: color-mix(in oklab, var(--dn-light) 18%, transparent);
+  --sidebar-ring: var(--dn-cyan);
 
   /* v0.7.27 — semantic state tokens (light) */
   --success: oklch(0.62 0.16 145);            /* emerald-ish green */
@@ -113,37 +121,37 @@
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.546 0.245 262.881);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: var(--dn-deep);
+  --foreground: var(--dn-light);
+  --card: color-mix(in oklab, var(--dn-deep) 88%, var(--dn-dark-teal));
+  --card-foreground: var(--dn-light);
+  --popover: color-mix(in oklab, var(--dn-deep) 84%, var(--dn-dark-teal));
+  --popover-foreground: var(--dn-light);
+  --primary: var(--dn-teal);
+  --primary-foreground: var(--dn-deep);
+  --secondary: color-mix(in oklab, var(--dn-dark-teal) 70%, var(--dn-deep));
+  --secondary-foreground: var(--dn-light);
+  --muted: color-mix(in oklab, var(--dn-dark-teal) 42%, var(--dn-deep));
+  --muted-foreground: color-mix(in oklab, var(--dn-light) 72%, var(--dn-dark-teal));
+  --accent: var(--dn-dark-teal);
+  --accent-foreground: var(--dn-light);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.546 0.245 262.881);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.35 0.01 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  --border: color-mix(in oklab, var(--dn-light) 20%, transparent);
+  --input: color-mix(in oklab, var(--dn-light) 24%, transparent);
+  --ring: var(--dn-cyan);
+  --chart-1: var(--dn-teal);
+  --chart-2: var(--dn-cyan);
+  --chart-3: var(--dn-light);
+  --chart-4: var(--dn-dark-teal);
+  --chart-5: oklch(0.78 0.16 75);
+  --sidebar: var(--dn-deep);
+  --sidebar-foreground: var(--dn-light);
+  --sidebar-primary: var(--dn-teal);
+  --sidebar-primary-foreground: var(--dn-deep);
+  --sidebar-accent: color-mix(in oklab, var(--dn-dark-teal) 78%, var(--dn-deep));
+  --sidebar-accent-foreground: var(--dn-light);
+  --sidebar-border: color-mix(in oklab, var(--dn-light) 18%, transparent);
+  --sidebar-ring: var(--dn-cyan);
 
   /* v0.7.27 — semantic state tokens (dark) */
   --success: oklch(0.7 0.15 145);

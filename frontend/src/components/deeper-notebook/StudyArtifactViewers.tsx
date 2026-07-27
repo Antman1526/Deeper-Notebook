@@ -474,7 +474,7 @@ export function CoursePackViewer({
                   key={module.title}
                   className={cn(
                     'rounded-md border bg-background px-2 py-2',
-                    index === selectedIndex && 'border-[var(--onp-accent-strong)]',
+                    index === selectedIndex && 'border-[var(--dn-accent-strong)]',
                   )}
                 >
                   <div className="flex items-start gap-2">
@@ -891,13 +891,13 @@ export function QuizRunner({
               onClick={() => chooseAnswer(option.key)}
               className={cn(
                 'flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                isCorrect && 'border-[var(--onp-success)] bg-[var(--onp-success-soft)]',
+                isCorrect && 'border-[var(--dn-success)] bg-[var(--dn-success-soft)]',
                 isWrong && 'border-destructive bg-destructive/10',
               )}
             >
               <span className="font-medium">{option.key}.</span>
               <span className="min-w-0 flex-1">{option.text}</span>
-              {isCorrect && <Check className="h-4 w-4 text-[var(--onp-success)]" aria-hidden="true" />}
+              {isCorrect && <Check className="h-4 w-4 text-[var(--dn-success)]" aria-hidden="true" />}
               {isWrong && <X className="h-4 w-4 text-destructive" aria-hidden="true" />}
             </button>
           )

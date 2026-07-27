@@ -4,7 +4,7 @@ import React from 'react'
 import { Copy, FolderOpen, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ModelFleetBadge } from '@/components/onp/ModelFleetBadge'
+import { ModelFleetBadge } from '@/components/deeper-notebook/ModelFleetBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'

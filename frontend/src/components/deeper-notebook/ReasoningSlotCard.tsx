@@ -22,7 +22,7 @@ interface ReasoningSlotCardProps {
 export function ReasoningSlotCard({ assignedModel }: ReasoningSlotCardProps) {
   return (
     <Card
-      className="border bg-[var(--onp-info-soft)] shadow-[var(--onp-elevation-low)]"
+      className="border bg-[var(--dn-info-soft)] shadow-[var(--dn-elevation-low)]"
     >
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
