@@ -14,15 +14,15 @@ function runtimeLabel(runtime: ModelRuntime): string {
 
 function runtimeClassName(runtime: ModelRuntime): string {
   if (runtime === 'mlx') {
-    return 'border-[var(--onp-model-mlx)] text-[var(--onp-model-mlx)]'
+    return 'border-[var(--dn-model-mlx)] text-[var(--dn-model-mlx)]'
   }
   if (runtime === 'gguf') {
-    return 'border-[var(--onp-model-gguf)] text-[var(--onp-model-gguf)]'
+    return 'border-[var(--dn-model-gguf)] text-[var(--dn-model-gguf)]'
   }
   if (runtime === 'transformers') {
-    return 'border-[var(--onp-info)] text-[var(--onp-info)]'
+    return 'border-[var(--dn-info)] text-[var(--dn-info)]'
   }
-  return 'border-[var(--onp-info)] text-[var(--onp-info)]'
+  return 'border-[var(--dn-info)] text-[var(--dn-info)]'
 }
 
 export function ModelFleetBadge({ runtime }: { runtime: ModelRuntime }) {

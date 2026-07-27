@@ -27,7 +27,7 @@ import {
 // ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
 // shadow-layer ThemeSwitcher that supports all ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
-import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
+import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/deeper-notebook'
 import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'

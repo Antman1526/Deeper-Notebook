@@ -256,7 +256,7 @@ export function ArtifactExportMenu({
                               onClick={() => void copyPath(item.path!)}
                             >
                               {copiedPath === item.path ? (
-                                <Check className="h-4 w-4 text-[var(--onp-success)]" aria-hidden="true" />
+                                <Check className="h-4 w-4 text-[var(--dn-success)]" aria-hidden="true" />
                               ) : (
                                 <Copy className="h-4 w-4" aria-hidden="true" />
                               )}
