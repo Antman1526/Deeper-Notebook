@@ -49,6 +49,12 @@ REQUIRED_INDEXES = (
     "idx_vault_trust_manifest",
 )
 
+TRUST_FIELDS = (
+    "vault_id ON TABLE vault_trust_record TYPE option<record<vault_mount>>",
+    "canonical_relative_path ON TABLE vault_trust_record TYPE option<string>",
+    "manifest_relative_path ON TABLE vault_trust_record TYPE string",
+)
+
 
 def test_vault_migration_is_present_schemafull_and_idempotent():
     sql = UP.read_text(encoding="utf-8")
@@ -74,7 +80,9 @@ def test_vault_migration_is_present_schemafull_and_idempotent():
 def test_vault_migration_pins_read_only_state_semantics():
     sql = UP.read_text(encoding="utf-8")
 
-    assert "parent_vault_id ON TABLE vault_mount TYPE option<record<vault_mount>>" in sql
+    assert (
+        "parent_vault_id ON TABLE vault_mount TYPE option<record<vault_mount>>" in sql
+    )
     assert "watch_enabled ON TABLE vault_mount TYPE bool DEFAULT false" in sql
     assert '$this.format_mode != "mixed" OR $value = false' in sql
     assert (
@@ -89,6 +97,8 @@ def test_vault_migration_pins_read_only_state_semantics():
         'resolution_state ON TABLE vault_trust_record TYPE string DEFAULT "unresolved" '
         'ASSERT $value IN ["resolved", "unresolved"]'
     ) in sql
+    for field in TRUST_FIELDS:
+        assert f"DEFINE FIELD IF NOT EXISTS {field};" in sql
 
 
 def test_vault_down_migration_removes_only_vault_schema():
@@ -99,6 +109,7 @@ def test_vault_down_migration_removes_only_vault_schema():
     assert "REMOVE TABLE IF EXISTS note;" not in sql
     for field in NOTE_FIELDS:
         assert f"REMOVE FIELD IF EXISTS {field} ON TABLE note;" in sql
+    assert "REMOVE TABLE IF EXISTS vault_trust_record;" in sql
 
 
 def _document(**updates) -> ParsedDocument:
