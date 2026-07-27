@@ -15,9 +15,9 @@ from api.models import (
     NotebookUpdate,
 )
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Notebook, Source
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import Notebook, Source
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -48,7 +48,7 @@ async def _cleanup_checkpoint_threads(
     try:
         import asyncio
 
-        from open_notebook.graphs.chat import chat_graph
+        from deeper_notebook.graphs.chat import chat_graph
 
         checkpointer = getattr(chat_graph, "checkpointer", None)
         delete_thread = getattr(checkpointer, "delete_thread", None)
@@ -310,9 +310,9 @@ async def get_suggested_questions(
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    from open_notebook.ai.provision import provision_langchain_model
-    from open_notebook.utils import clean_thinking_content
-    from open_notebook.utils.text_utils import extract_text_content
+    from deeper_notebook.ai.provision import provision_langchain_model
+    from deeper_notebook.utils import clean_thinking_content
+    from deeper_notebook.utils.text_utils import extract_text_content
 
     try:
         notebook = await Notebook.get(notebook_id)
@@ -412,7 +412,7 @@ async def discover_sources(notebook_id: str, request: DiscoverSourcesRequest):
     never an error). Best-effort: provider/transport errors degrade to empty
     results rather than failing the request.
     """
-    from open_notebook.tools.web_search import (
+    from deeper_notebook.tools.web_search import (
         active_provider,
         run_web_search,
         web_search_enabled,

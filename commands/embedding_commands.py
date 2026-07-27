@@ -6,13 +6,16 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command, submit_command
 
-from open_notebook.ai.models import model_manager
-from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
-from open_notebook.domain.notebook import Note, Source, SourceInsight
-from open_notebook.exceptions import ConfigurationError
-from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
-from open_notebook.utils.embedding import generate_embedding, generate_embeddings
-
+from deeper_notebook.ai.models import model_manager
+from deeper_notebook.database.repository import (
+    ensure_record_id,
+    repo_insert,
+    repo_query,
+)
+from deeper_notebook.domain.notebook import Note, Source, SourceInsight
+from deeper_notebook.exceptions import ConfigurationError
+from deeper_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
+from deeper_notebook.utils.embedding import generate_embedding, generate_embeddings
 
 # v0.7.178 — Sanity cap on per-source chunk count. With default 1500-char
 # chunks this represents ~15MB of text in one source — generous for any

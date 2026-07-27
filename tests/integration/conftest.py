@@ -176,8 +176,8 @@ async def surreal_db() -> AsyncIterator[dict[str, Any]]:
 
     # Import here, after env is patched, so the pool's lazy init reads
     # the test namespace on first acquire.
-    from open_notebook.database import repository as repo_mod
-    from open_notebook.database.async_migrate import AsyncMigrationManager
+    from deeper_notebook.database import repository as repo_mod
+    from deeper_notebook.database.async_migrate import AsyncMigrationManager
 
     await repo_mod.close_pool()  # idempotent if not yet initialized
 
@@ -279,7 +279,7 @@ async def _discover_tables() -> list[str]:
     artifact, refers_to) show up here alongside node tables; DELETE on
     them works the same way.
     """
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     rows = await repo_query("INFO FOR DB;")
     # SurrealDB's INFO FOR DB returns a dict-shaped result. The exact
@@ -326,7 +326,7 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
     table) are explicitly protected — wiping them would force a
     migration re-run on the next test.
     """
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     try:
         tables = await _discover_tables()
@@ -361,6 +361,6 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
     finally:
         # Do not let a WebSocket or asyncio.Queue created for this test's loop
         # leak into the next test's loop.
-        from open_notebook.database import repository as repo_mod
+        from deeper_notebook.database import repository as repo_mod
 
         await repo_mod.close_pool()

@@ -46,7 +46,7 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_position_overflow_falls_back_to_vector_search(self):
-        from open_notebook.domain import notebook as notebook_module
+        from deeper_notebook.domain import notebook as notebook_module
 
         overflow = RuntimeError(
             "A value can't be highlighted: position overflow: 2545 - len: 1965"
@@ -69,8 +69,8 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_position_overflow_raises_when_vector_also_fails(self):
-        from open_notebook.domain import notebook as notebook_module
-        from open_notebook.exceptions import DatabaseOperationError
+        from deeper_notebook.domain import notebook as notebook_module
+        from deeper_notebook.exceptions import DatabaseOperationError
 
         overflow = RuntimeError("position overflow: 1 - len: 0")
         with (
@@ -91,8 +91,8 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_other_runtime_errors_still_raise(self):
-        from open_notebook.domain import notebook as notebook_module
-        from open_notebook.exceptions import DatabaseOperationError
+        from deeper_notebook.domain import notebook as notebook_module
+        from deeper_notebook.exceptions import DatabaseOperationError
 
         with patch.object(
             notebook_module,

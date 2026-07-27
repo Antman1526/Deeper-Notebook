@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-import open_notebook.ai.connection_tester as ct
+import deeper_notebook.ai.connection_tester as ct
 from api.command_service import CommandService
 
 

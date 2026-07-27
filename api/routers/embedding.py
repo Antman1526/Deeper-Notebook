@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field
 
 from api.command_service import CommandService
 from api.models import EmbedRequest, EmbedResponse
+from deeper_notebook.ai.models import model_manager
+from deeper_notebook.domain.notebook import Note, Notebook, Source
 from deeper_notebook.environment import resolve_env
-from open_notebook.ai.models import model_manager
-from open_notebook.domain.notebook import Note, Notebook, Source
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 

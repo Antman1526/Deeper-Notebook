@@ -2,7 +2,7 @@
 
 Background: `Source.get()` / `Notebook.get()` / `Model.get()` (and
 similar domain-model fetchers) raise `NotFoundError` when the record
-isn't found — NOT return None (see open_notebook/domain/base.py:183).
+isn't found — NOT return None (see deeper_notebook/domain/base.py:183).
 The local `if not source: raise HTTPException(404)` guards that
 appear all over the routers are dead code as a result.
 
@@ -51,7 +51,7 @@ def test_notebooks_router_reraises_typed_exceptions():
     Without it, legitimate not-found responses become 500s."""
     src = _read_source("api/routers/notebooks.py")
     assert (
-        "from open_notebook.exceptions import InvalidInputError, NotFoundError"
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
         in src
     ), "v0.7.179 regression: NotFoundError import gone from notebooks.py"
     # At least one typed re-raise clause present.
@@ -66,7 +66,7 @@ def test_podcasts_router_reraises_typed_exceptions():
     """v0.7.179: same pin for podcasts.py."""
     src = _read_source("api/routers/podcasts.py")
     assert (
-        "from open_notebook.exceptions import InvalidInputError, NotFoundError"
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
         in src
     ), "v0.7.179 regression: NotFoundError import gone from podcasts.py"
     assert "except (NotFoundError, InvalidInputError):" in src
@@ -76,7 +76,7 @@ def test_models_router_reraises_typed_exceptions():
     """v0.7.179: same pin for models.py."""
     src = _read_source("api/routers/models.py")
     assert (
-        "from open_notebook.exceptions import InvalidInputError, NotFoundError"
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
         in src
     ), "v0.7.179 regression: NotFoundError import gone from models.py"
     assert "except (NotFoundError, InvalidInputError):" in src
@@ -88,7 +88,7 @@ def test_sources_router_reraises_typed_exceptions():
     surface."""
     src = _read_source("api/routers/sources.py")
     assert (
-        "from open_notebook.exceptions import InvalidInputError, NotFoundError"
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
         in src
     )
     assert "except (NotFoundError, InvalidInputError):" in src
@@ -158,9 +158,9 @@ def test_forward_guard_domain_get_implies_notfounderror_import():
         if path.name == "__init__.py":
             continue
         src = path.read_text(encoding="utf-8")
-        # Heuristic: imports anything from open_notebook.domain
+        # Heuristic: imports anything from deeper_notebook.domain
         # and has at least one `await X.get(...)` style call.
-        if "from open_notebook.domain" not in src:
+        if "from deeper_notebook.domain" not in src:
             continue
         if ".get(" not in src:
             continue

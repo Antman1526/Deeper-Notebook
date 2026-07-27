@@ -46,7 +46,7 @@ class MCPServerUpdate(BaseModel):
 @router.get("/api/mcp")
 async def list_mcp_servers():
     """Return all registered MCP servers with id, name, url, enabled."""
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     rows = await repo_query("SELECT id, name, url, enabled FROM mcp_server")
     return rows or []
@@ -70,7 +70,7 @@ async def list_mcp_recommendations():
     Qdrant, sentence-transformers) or that don't fit our research-
     assistant use case (Context7 — code-doc lookup).
     """
-    from open_notebook.mcp.recommendations import RECOMMENDATIONS
+    from deeper_notebook.mcp.recommendations import RECOMMENDATIONS
     return {"recommendations": RECOMMENDATIONS}
 
 
@@ -88,7 +88,7 @@ async def web_search_status():
     Returns ``{enabled, provider, tool_name}``. No secrets — provider is a
     label (serper/tavily/searxng), never the key.
     """
-    from open_notebook.tools.web_search import (
+    from deeper_notebook.tools.web_search import (
         WEB_SEARCH_TOOL_NAME,
         active_provider,
         web_search_enabled,
@@ -114,7 +114,7 @@ async def create_mcp_server(body: MCPServerCreate):
     import asyncio
 
     from api.credentials_service import validate_url
-    from open_notebook.database.repository import repo_create
+    from deeper_notebook.database.repository import repo_create
 
     # v0.8.66 (audit H4) — SSRF validation. The stored URL is later fetched
     # outbound by /test AND by the chat tool loop on every turn. Without this,
@@ -166,7 +166,7 @@ async def update_mcp_server(server_id: str, body: MCPServerUpdate):
     ``repo_update`` auto-bumps the ``updated`` timestamp.
     Returns 400 when the caller sends an empty body (nothing to write).
     """
-    from open_notebook.database.repository import ensure_record_id, repo_update
+    from deeper_notebook.database.repository import ensure_record_id, repo_update
 
     fields = body.model_dump(exclude_none=True)
     if not fields:
@@ -195,7 +195,7 @@ async def update_mcp_server(server_id: str, body: MCPServerUpdate):
 @router.delete("/api/mcp/{server_id}")
 async def delete_mcp_server(server_id: str):
     """Remove an MCP server row by id."""
-    from open_notebook.database.repository import ensure_record_id, repo_query
+    from deeper_notebook.database.repository import ensure_record_id, repo_query
 
     # v0.8.66 (audit H3) — a SurrealDB record `id` column is a RecordID; the
     # comparison `id = $id` is FALSE when `$id` is bound as a plain string, so
@@ -222,8 +222,8 @@ async def test_mcp_server(server_id: str):
     import asyncio
 
     from api.credentials_service import validate_url
-    from open_notebook.database.repository import ensure_record_id, repo_query
-    from open_notebook.mcp.client import MCPClient
+    from deeper_notebook.database.repository import ensure_record_id, repo_query
+    from deeper_notebook.mcp.client import MCPClient
 
     # v0.8.66 (audit H3) — bind a RecordID, not a string, or the SELECT matches
     # 0 rows and Test 404s on a server that genuinely exists.

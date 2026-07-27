@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.schemas.evaluations import ClaimVerdictResponse
-from open_notebook.evaluation.schemas import (
+from deeper_notebook.evaluation.schemas import (
     ClaimVerdict,
     EvidenceSpan,
     hash_source_text,

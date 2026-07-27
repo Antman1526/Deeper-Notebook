@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import base64
 
-from open_notebook.utils.encryption import (
+from deeper_notebook.utils.encryption import (
     _ensure_fernet_key,
     encrypt_value,
     looks_like_fernet_token,
@@ -30,7 +30,7 @@ from open_notebook.utils.encryption import (
 def _set_key(monkeypatch, key="test-key"):
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", key)
     # Reset the lazy-init cache between tests
-    from open_notebook.utils import encryption
+    from deeper_notebook.utils import encryption
     encryption._ENCRYPTION_KEY = None
 
 

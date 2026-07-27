@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import system as system_router
-from open_notebook.health import network
-from open_notebook.health.network import NetworkState
+from deeper_notebook.health import network
+from deeper_notebook.health.network import NetworkState
 
 
 @pytest.fixture(autouse=True)

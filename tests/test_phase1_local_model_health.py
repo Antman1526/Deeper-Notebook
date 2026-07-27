@@ -12,7 +12,7 @@ def test_probe_local_model_returns_unknown_for_zero_port():
     """A port of 0 means the supervisor never spawned this service;
     health must surface that as `status='not_configured'` rather
     than raising or returning a misleading 'down'."""
-    from open_notebook.health.local_models import probe_local_model
+    from deeper_notebook.health.local_models import probe_local_model
 
     result = probe_local_model(
         name="whisper",
@@ -26,7 +26,7 @@ def test_probe_local_model_returns_unknown_for_zero_port():
 def test_probe_openai_compatible_healthy(monkeypatch):
     """A live llama-cpp server returns 200 on /models; probe
     must report status='healthy' with measured latency."""
-    from open_notebook.health.local_models import probe_local_model
+    from deeper_notebook.health.local_models import probe_local_model
 
     fake_resp = MagicMock()
     fake_resp.status_code = 200
@@ -55,7 +55,7 @@ def test_probe_openai_compatible_unhealthy_connect_refused():
     probe must report status='unhealthy' with a connect detail.
     Uses a port that's vanishingly unlikely to be in use on the
     test runner (1 is a privileged port that pytest won't bind)."""
-    from open_notebook.health.local_models import probe_local_model
+    from deeper_notebook.health.local_models import probe_local_model
 
     result = probe_local_model(
         name="local_chat", kind="openai_compatible",
@@ -69,7 +69,7 @@ def test_probe_ollama_healthy(monkeypatch):
     """Local Ollama credentials should appear in the Local Models
     connection checks instead of being ignored by the openai-compatible-only
     probe path."""
-    from open_notebook.health.local_models import probe_local_model
+    from deeper_notebook.health.local_models import probe_local_model
 
     fake_resp = MagicMock()
     fake_resp.status_code = 200
@@ -102,7 +102,7 @@ def test_probe_ollama_healthy(monkeypatch):
 def test_probe_all_iterates_credentials():
     """Given a list of credential dicts, probe_all returns one
     HealthResult per cred in input order."""
-    from open_notebook.health.local_models import probe_all_local_models
+    from deeper_notebook.health.local_models import probe_all_local_models
 
     creds = [
         {"name": "chat", "kind": "openai_compatible",
@@ -125,7 +125,7 @@ def test_probe_all_runs_bounded_concurrent_probes_in_input_order(monkeypatch):
     import threading
     import time
 
-    from open_notebook.health import local_models as hm
+    from deeper_notebook.health import local_models as hm
 
     active = 0
     max_active = 0
@@ -174,7 +174,7 @@ async def test_load_local_credentials_includes_local_ollama(monkeypatch):
     """The API health endpoint should probe local Ollama credentials
     alongside OpenAI-compatible sidecars."""
     from api.routers import local_models as router_mod
-    from open_notebook.domain.credential import Credential
+    from deeper_notebook.domain.credential import Credential
 
     async def _fake_get_all():
         return [
@@ -220,7 +220,7 @@ def test_router_returns_health_payload(monkeypatch):
     from api.main import app
 
     # Stub the probe to avoid real HTTP.
-    from open_notebook.health import local_models as hm
+    from deeper_notebook.health import local_models as hm
     monkeypatch.setattr(
         hm, "probe_all_local_models",
         lambda creds: [{"name": "chat", "status": "healthy",
@@ -266,7 +266,7 @@ def test_local_chat_healthy_cached_is_awaitable():
     import asyncio
     import inspect
 
-    from open_notebook.ai import provision as provision_mod
+    from deeper_notebook.ai import provision as provision_mod
 
     assert inspect.iscoroutinefunction(
         provision_mod._local_chat_healthy_cached
@@ -332,7 +332,7 @@ def test_local_models_health_endpoint_yields_event_loop():
 
     from api.main import app
     from api.routers import local_models as router_mod
-    from open_notebook.health import local_models as hm
+    from deeper_notebook.health import local_models as hm
 
     async def _stub_creds():
         return [{

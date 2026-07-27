@@ -24,7 +24,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from open_notebook.local_models import downloader as dl_mod
+from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as lm_router
 
 

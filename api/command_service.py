@@ -78,7 +78,7 @@ class CommandService:
             # subclass Exception too — only untyped Exceptions get
             # wrapped. Logging stays at error level so ops have the
             # full stack.
-            from open_notebook.exceptions import OpenNotebookError
+            from deeper_notebook.exceptions import OpenNotebookError
             logger.error(f"Failed to submit command job: {e}")
             if isinstance(e, (OpenNotebookError, ValueError, asyncio.TimeoutError)):
                 raise
@@ -152,7 +152,7 @@ class CommandService:
         Filters are applied in SurrealQL so we never load the whole
         table into Python.
         """
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         clauses: list[str] = []
         params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
@@ -276,7 +276,7 @@ class CommandService:
                 # Direct SurrealDB fallback. Mirrors the structure of the
                 # lifespan stale-command reaper. The `command:` prefix
                 # handling matches what surreal_commands itself stores.
-                from open_notebook.database.repository import repo_query
+                from deeper_notebook.database.repository import repo_query
 
                 record_id = (
                     job_id if job_id.startswith("command:") else f"command:{job_id}"

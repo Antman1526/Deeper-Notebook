@@ -13,11 +13,11 @@ from api.podcast_service import (
     PodcastService,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
-from open_notebook.config import DATA_FOLDER
-from open_notebook.database.repository import repo_query
-from open_notebook.exceptions import InvalidInputError, NotFoundError
-from open_notebook.podcasts import file_uri_to_local_path
-from open_notebook.podcasts.models import (
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.database.repository import repo_query
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.podcasts import file_uri_to_local_path
+from deeper_notebook.podcasts.models import (
     EpisodeProfile,
     PodcastOverviewMode,
     TranscriptSegment,
@@ -485,7 +485,7 @@ async def _retry_podcast_episode_locked(episode_id: str):
         # already gone — they couldn't even see the failed entry to
         # diagnose, and lost their stored content. Now we resolve
         # profiles upfront so the 400 lands without side effects.
-        from open_notebook.podcasts.models import (
+        from deeper_notebook.podcasts.models import (
             EpisodeProfile,
             SpeakerProfile,
         )
@@ -616,7 +616,7 @@ async def update_episode_outline(episode_id: str, request: OutlineUpdateRequest)
     """v0.8.68 — outline-review workflow: save the user's edited outline.
     Only allowed while the episode is awaiting review (the outline is about
     to drive transcript + TTS; editing it after audio exists would lie)."""
-    from open_notebook.podcasts.models import STAGE_AWAITING_REVIEW
+    from deeper_notebook.podcasts.models import STAGE_AWAITING_REVIEW
 
     try:
         episode = await PodcastService.get_episode(episode_id)

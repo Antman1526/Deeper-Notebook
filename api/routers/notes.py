@@ -5,9 +5,9 @@ from loguru import logger
 
 from api.models import NoteCreate, NoteResponse, NoteUpdate
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+from deeper_notebook.domain.notebook import Note
 from deeper_notebook.environment import resolve_env
-from open_notebook.domain.notebook import Note
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -40,7 +40,7 @@ async def get_notes(
             # is naturally bounded by the notebook size, so no pagination
             # is layered on top — that would require a separate change to
             # Notebook.get_notes().
-            from open_notebook.domain.notebook import Notebook
+            from deeper_notebook.domain.notebook import Notebook
 
             notebook = await Notebook.get(notebook_id)
             if not notebook:
@@ -87,7 +87,7 @@ async def create_note(note_data: NoteCreate):
             import asyncio
             import os
 
-            from open_notebook.graphs.prompt import graph as prompt_graph
+            from deeper_notebook.graphs.prompt import graph as prompt_graph
 
             prompt = "Based on the Note below, please provide a Title for this content, with max 15 words"
             # v0.7.95 — wrap the LLM call in wait_for so a hung local model
@@ -181,7 +181,7 @@ async def create_note(note_data: NoteCreate):
 
         # Add to notebook if specified
         if note_data.notebook_id:
-            from open_notebook.domain.notebook import Notebook
+            from deeper_notebook.domain.notebook import Notebook
 
             notebook = await Notebook.get(note_data.notebook_id)
             if not notebook:

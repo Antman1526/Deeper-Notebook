@@ -16,21 +16,21 @@ from api.schemas.video_overviews import (
     VideoOverviewComposeRequest,
     VideoOverviewResponse,
 )
-from open_notebook.config import DATA_FOLDER
-from open_notebook.domain.notebook import StudioArtifact
-from open_notebook.exceptions import InvalidInputError, NotFoundError
-from open_notebook.podcasts.models import TranscriptSegment
-from open_notebook.studio.exporters import render_slide_deck_images
-from open_notebook.studio.payloads import parse_payload_document
-from open_notebook.studio.schemas import SlideDeckDocument
-from open_notebook.video import (
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.podcasts.models import TranscriptSegment
+from deeper_notebook.studio.exporters import render_slide_deck_images
+from deeper_notebook.studio.payloads import parse_payload_document
+from deeper_notebook.studio.schemas import SlideDeckDocument
+from deeper_notebook.video import (
     VideoNarrationSegment,
     VideoOverviewDocument,
 )
-from open_notebook.video import (
+from deeper_notebook.video import (
     compose_video_overview as compose_local_video_overview,
 )
-from open_notebook.video.composer import VideoOverviewError
+from deeper_notebook.video.composer import VideoOverviewError
 
 router = APIRouter(prefix="/video-overviews", tags=["video-overviews"])
 _VIDEO_ROOT = (Path(DATA_FOLDER) / "video-overviews").resolve()

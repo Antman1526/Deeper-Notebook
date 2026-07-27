@@ -234,7 +234,7 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
     """v0.7.120 — A query that takes longer than ONP_SLOW_QUERY_LOG_MS
     must emit a WARNING with the elapsed time, threshold, and truncated
     query string. Doesn't affect the result the caller gets back."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
     monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")  # 10ms threshold
 
@@ -274,7 +274,7 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
 
 def test_slow_query_silent_when_under_threshold(monkeypatch):
     """v0.7.120 — Fast queries don't pollute the log."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
     monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "5000")  # 5s threshold
 
@@ -309,7 +309,7 @@ def test_slow_query_logs_even_when_query_errors(monkeypatch):
     """v0.7.120 — A slow query that ALSO raised should STILL log the
     slow-query warning. (The `finally:` block runs regardless.) That
     timing info is doubly useful when something's broken."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
     monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")
 
@@ -429,7 +429,7 @@ def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
     )
     try:
         # Simulate the check from api/main.py
-        from open_notebook.utils.encryption import get_secret_from_env
+        from deeper_notebook.utils.encryption import get_secret_from_env
 
         monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD", raising=False)
         monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD_FILE", raising=False)
@@ -460,7 +460,7 @@ def test_safe_cors_with_password_set_does_not_log_dangerous_error(
     dangerous combo doesn't apply, so we should NOT emit the ERROR."""
     from loguru import logger
 
-    from open_notebook.utils.encryption import get_secret_from_env
+    from deeper_notebook.utils.encryption import get_secret_from_env
 
     monkeypatch.setenv("OPEN_NOTEBOOK_PASSWORD", "strong-password-xyz")
 

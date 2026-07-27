@@ -6,7 +6,7 @@ not to follow embedded instructions, and escapes any forged end-delimiter.
 """
 from __future__ import annotations
 
-from open_notebook.graphs.chat import _fence_untrusted_tool_output
+from deeper_notebook.graphs.chat import _fence_untrusted_tool_output
 
 
 def test_fence_wraps_with_directive():

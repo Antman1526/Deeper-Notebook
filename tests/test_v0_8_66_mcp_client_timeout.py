@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-import open_notebook.mcp.client as cm
+import deeper_notebook.mcp.client as cm
 
 
 @pytest.mark.parametrize("val,expected", [

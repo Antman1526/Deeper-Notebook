@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from open_notebook.domain.notebook import Note
-from open_notebook.exceptions import InvalidInputError
+from deeper_notebook.domain.notebook import Note
+from deeper_notebook.exceptions import InvalidInputError
 
 
 def _make_row(suffix: str = "1") -> dict:

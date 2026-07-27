@@ -79,7 +79,7 @@ class TestModelCreation:
         self, mock_repo_query, client
     ):
         """Test that creating a model with same name but different provider is allowed."""
-        from open_notebook.ai.models import Model
+        from deeper_notebook.ai.models import Model
 
         # Mock repo_query to return empty (no duplicate found for different provider)
         mock_repo_query.return_value = []
@@ -99,7 +99,7 @@ class TestModelCreation:
     @patch("open_notebook.database.repository.repo_query")
     async def test_create_same_model_name_different_type(self, mock_repo_query, client):
         """Test that creating a model with same name but different type is allowed."""
-        from open_notebook.ai.models import Model
+        from deeper_notebook.ai.models import Model
 
         # Mock repo_query to return empty (no duplicate found for different type)
         mock_repo_query.return_value = []

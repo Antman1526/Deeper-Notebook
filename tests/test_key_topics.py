@@ -1,7 +1,7 @@
 """v0.8.91 — tests for opt-in source key-topics extraction (parse + default-off)."""
 
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.domain.transformation import parse_topics
+from deeper_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.domain.transformation import parse_topics
 
 
 def test_parse_topics_handles_empty():

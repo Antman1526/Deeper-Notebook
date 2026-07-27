@@ -60,7 +60,6 @@ from __future__ import annotations
 import asyncio
 import weakref
 
-
 # WeakValueDictionary: keys are str (session_id), values are
 # asyncio.Lock. When a Lock has no strong refs, the entry
 # auto-evicts. This is the correct memory model for "the lock

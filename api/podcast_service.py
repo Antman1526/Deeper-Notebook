@@ -7,13 +7,13 @@ from pydantic import BaseModel, field_validator
 from surreal_commands import get_command_status, submit_command
 
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
+from deeper_notebook.domain.notebook import Notebook
 from deeper_notebook.environment import resolve_env
-from open_notebook.domain.notebook import Notebook
-from open_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
+from deeper_notebook.exceptions import (  # v0.8.68 — offline gate + content budget
     ConfigurationError,
     InvalidInputError,
 )
-from open_notebook.podcasts.models import (
+from deeper_notebook.podcasts.models import (
     EpisodeProfile,
     PodcastEpisode,
     PodcastOverviewMode,
@@ -87,8 +87,8 @@ class PodcastService:
         the gate itself is swallowed so it can't break a submit that would
         have worked before."""
         try:
-            from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
-            from open_notebook.health.network import (
+            from deeper_notebook.ai.offline_gate import LOCAL_PROVIDERS
+            from deeper_notebook.health.network import (
                 get_network_state_with_settings,
             )
 
@@ -185,7 +185,7 @@ class PodcastService:
                     # touching `notebook` so the user gets a clear
                     # error at submission time.
                     if notebook is None:
-                        from open_notebook.exceptions import NotFoundError
+                        from deeper_notebook.exceptions import NotFoundError
 
                         raise NotFoundError(f"Notebook {notebook_id} not found")
                     content = (
@@ -200,7 +200,7 @@ class PodcastService:
                     # still fall back to the notebook-id-only content
                     # path (kept for backward compat with non-fatal
                     # transient DB hiccups).
-                    from open_notebook.exceptions import NotFoundError
+                    from deeper_notebook.exceptions import NotFoundError
 
                     if isinstance(e, NotFoundError):
                         raise
@@ -224,7 +224,7 @@ class PodcastService:
             try:
                 import os as _os
 
-                from open_notebook.utils import token_count
+                from deeper_notebook.utils import token_count
 
                 _max_tokens = int(
                     resolve_env("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "100000")
@@ -345,7 +345,7 @@ class PodcastService:
         resume_podcast command for an episode awaiting review. The offline
         gate runs here (transcript LLM + TTS are about to be used)."""
         try:
-            from open_notebook.podcasts.models import (
+            from deeper_notebook.podcasts.models import (
                 STAGE_AWAITING_REVIEW,
                 PodcastEpisode,
             )
@@ -491,7 +491,7 @@ class PodcastService:
         # NotFoundError; everything else propagates as its real
         # type and hits the global classifier with the right
         # HTTP code (500 for DB, 502 for upstream, etc.).
-        from open_notebook.exceptions import NotFoundError
+        from deeper_notebook.exceptions import NotFoundError
 
         episode = await PodcastEpisode.get(episode_id)
         if episode is None:

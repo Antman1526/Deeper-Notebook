@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from open_notebook.evaluation.datasets import (
+from deeper_notebook.evaluation.datasets import (
     DatasetIntegrityError,
     ExpectedClaim,
     GoldenCorpus,
@@ -17,7 +17,7 @@ from open_notebook.evaluation.datasets import (
     corpus_paths,
     load_golden_corpus,
 )
-from open_notebook.evaluation.runner import (
+from deeper_notebook.evaluation.runner import (
     DeterministicVerifier,
     EvaluationPrediction,
     PredictedSpan,

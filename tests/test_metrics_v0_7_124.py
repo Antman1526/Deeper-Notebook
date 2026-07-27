@@ -187,7 +187,7 @@ def test_slow_query_counter_increments_when_threshold_exceeded(monkeypatch):
     """v0.7.124 — repo_query bumps onp_db_slow_queries_total when a
     query exceeds ONP_SLOW_QUERY_LOG_MS. Matches the v0.7.120 log
     line one-for-one."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
     monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")
 
@@ -215,7 +215,7 @@ def test_slow_query_counter_increments_when_threshold_exceeded(monkeypatch):
 def test_slow_query_counter_silent_under_threshold(monkeypatch):
     """v0.7.124 — Negative-space check: fast queries don't pollute
     the slow counter."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
     monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "5000")  # 5s — never exceeded
 
@@ -256,10 +256,10 @@ def test_memory_recall_embed_timeout_bumps_counter(monkeypatch):
     async def _get_emb():
         return _HangingEmbed()
 
-    from open_notebook.ai import models as ai_models
+    from deeper_notebook.ai import models as ai_models
     monkeypatch.setattr(ai_models.model_manager, "get_embedding_model", _get_emb)
 
-    from open_notebook.utils.memory_recall import recall_relevant_memory
+    from deeper_notebook.utils.memory_recall import recall_relevant_memory
 
     # Capture the per-label value before + after
     before = _counter_value(
@@ -282,7 +282,7 @@ def test_memory_recall_query_timeout_bumps_counter(monkeypatch):
         await asyncio.sleep(5)
         return []
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _hanging_query)
 
     before = _counter_value(

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from open_notebook.database.async_migrate import (
+from deeper_notebook.database.async_migrate import (
     AsyncMigrationManager,
     AsyncMigrationRunner,
 )
@@ -77,6 +77,17 @@ def test_discover_empty_dir_returns_empty_lists(tmp_path):
     tmp_path.mkdir(parents=True, exist_ok=True)
     ups, downs = AsyncMigrationManager._discover_migrations(mig_dir=tmp_path)
     assert ups == [] and downs == []
+
+
+def test_default_migration_discovery_uses_canonical_package_path(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 1
+    assert len(downs) == len(ups)
 
 
 def test_discover_ignores_non_numeric_files(tmp_path):

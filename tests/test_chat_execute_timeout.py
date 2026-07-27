@@ -73,7 +73,7 @@ def hanging_graph(monkeypatch):
 @pytest.fixture()
 def fake_session(monkeypatch):
     """Make ChatSession.get return a fake session for our test session_id."""
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
 
     async def _get(session_id):
         if session_id.startswith("chat_session:"):

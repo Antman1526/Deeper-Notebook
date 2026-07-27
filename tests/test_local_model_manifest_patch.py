@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models.manifest import load_model_manifest
+from deeper_notebook.local_models.manifest import load_model_manifest
 
 
 def _app() -> FastAPI:

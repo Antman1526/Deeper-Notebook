@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_notebook.graphs import chat as chat_mod
+from deeper_notebook.graphs import chat as chat_mod
 
 
 class _FakeAIMessage:

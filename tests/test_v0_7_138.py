@@ -34,22 +34,22 @@ class TestAskNodeTimeout:
     ONP_ASK_NODE_TIMEOUT_SEC (default 120s)."""
 
     def test_default_timeout(self, monkeypatch):
-        from open_notebook.graphs.ask import _ask_node_timeout_sec
+        from deeper_notebook.graphs.ask import _ask_node_timeout_sec
         monkeypatch.delenv("ONP_ASK_NODE_TIMEOUT_SEC", raising=False)
         assert _ask_node_timeout_sec() == 120.0
 
     def test_env_override(self, monkeypatch):
-        from open_notebook.graphs.ask import _ask_node_timeout_sec
+        from deeper_notebook.graphs.ask import _ask_node_timeout_sec
         monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "30")
         assert _ask_node_timeout_sec() == 30.0
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
-        from open_notebook.graphs.ask import _ask_node_timeout_sec
+        from deeper_notebook.graphs.ask import _ask_node_timeout_sec
         monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "not-a-float")
         assert _ask_node_timeout_sec() == 120.0
 
     def test_zero_or_negative_falls_back_to_default(self, monkeypatch):
-        from open_notebook.graphs.ask import _ask_node_timeout_sec
+        from deeper_notebook.graphs.ask import _ask_node_timeout_sec
         for v in ("0", "-1", "-0.5"):
             monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", v)
             assert _ask_node_timeout_sec() == 120.0
@@ -60,8 +60,8 @@ class TestAskNodeTimeout:
         With the new timeout, the wrapper raises ExternalServiceError
         (mapped to HTTP 502 by the global handler) with a message
         naming the failing node."""
-        from open_notebook.exceptions import ExternalServiceError
-        from open_notebook.graphs.ask import _ask_invoke
+        from deeper_notebook.exceptions import ExternalServiceError
+        from deeper_notebook.graphs.ask import _ask_invoke
 
         monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "0.05")
 
@@ -80,7 +80,7 @@ class TestAskNodeTimeout:
     @pytest.mark.asyncio
     async def test_fast_invoke_returns_result(self, monkeypatch):
         """Non-hung path: _ask_invoke is a transparent passthrough."""
-        from open_notebook.graphs.ask import _ask_invoke
+        from deeper_notebook.graphs.ask import _ask_invoke
 
         monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "10")
 
@@ -234,7 +234,7 @@ class TestAllModelFlowsHaveTimeouts:
         return Path(path).read_text()
 
     def test_ask_graph_has_per_node_timeout_helper(self):
-        src = self._read("open_notebook/graphs/ask.py")
+        src = self._read("deeper_notebook/graphs/ask.py")
         assert "_ask_invoke" in src
         assert "asyncio.wait_for" in src
 

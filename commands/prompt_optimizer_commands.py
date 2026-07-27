@@ -19,10 +19,10 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from surreal_commands import CommandInput, CommandOutput, command
 
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.domain.transformation import Transformation
 from deeper_notebook.environment import resolve_env
-from open_notebook.config import DATA_FOLDER
-from open_notebook.domain.transformation import Transformation
-from open_notebook.prompt_optimizer import skillopt_available
+from deeper_notebook.prompt_optimizer import skillopt_available
 
 _MAX_EXAMPLES = 10
 _MAX_INPUT_CHARS = 6000
@@ -53,7 +53,7 @@ async def _default_model_ids() -> tuple[str, str]:
     """Target = the transformation default model; optimizer = chat default.
     Both fall back to the chat default (the registry guarantees neither is
     None only when configured — raise a clear error otherwise)."""
-    from open_notebook.ai.models import model_manager
+    from deeper_notebook.ai.models import model_manager
 
     target = await model_manager.get_default_model_id("transformation")
     optimizer = await model_manager.get_default_model_id("chat")
@@ -70,9 +70,9 @@ async def _gate_offline(model_ids: list[str]) -> None:
     Optimization runs dozens of LLM calls — starting it against an
     unreachable provider would burn the whole timeout."""
     try:
-        from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
-        from open_notebook.health.network import get_network_state_with_settings
-        from open_notebook.podcasts.models import _resolve_model_config
+        from deeper_notebook.ai.offline_gate import LOCAL_PROVIDERS
+        from deeper_notebook.health.network import get_network_state_with_settings
+        from deeper_notebook.podcasts.models import _resolve_model_config
 
         state = await get_network_state_with_settings()
         if state.status != "offline":
@@ -97,7 +97,7 @@ async def _gate_offline(model_ids: list[str]) -> None:
 
 
 async def _load_example_items(source_ids: list[str]) -> list[dict]:
-    from open_notebook.domain.notebook import Source
+    from deeper_notebook.domain.notebook import Source
 
     items: list[dict] = []
     for sid in source_ids[:_MAX_EXAMPLES]:
@@ -158,7 +158,7 @@ async def optimize_prompt_command(
             DATA_FOLDER, "prompt_optimizer", str(uuid.uuid4())
         )
 
-        from open_notebook.prompt_optimizer.runner import (
+        from deeper_notebook.prompt_optimizer.runner import (
             PromptOptimizerError,
             run_prompt_optimization,
         )

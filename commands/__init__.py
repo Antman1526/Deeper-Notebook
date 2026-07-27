@@ -30,7 +30,7 @@ from deeper_notebook.environment import apply_product_environment
 _NORMALIZED_PRODUCT_ENVIRONMENT = apply_product_environment(os.environ)
 
 try:
-    from open_notebook.logging import configure_logging
+    from deeper_notebook.logging import configure_logging
     configure_logging("worker")
 except Exception:
     # Logging setup is best-effort at import time. Even if it fails,

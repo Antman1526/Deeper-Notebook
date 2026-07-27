@@ -12,10 +12,10 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from deeper_notebook.environment import resolve_env
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
-from open_notebook.exceptions import (
+from deeper_notebook.exceptions import (
     ConfigurationError,
     ExternalServiceError,
     InvalidInputError,
@@ -28,9 +28,9 @@ from open_notebook.exceptions import (
 # internally call aget_tuple() against the sync SqliteSaver. The
 # lazy pattern works around aiosqlite capturing the event loop at
 # construct time; see open_notebook/graphs/chat.py for details.
-from open_notebook.graphs.chat import get_async_graph
-from open_notebook.graphs.chat import graph as chat_graph
-from open_notebook.utils.graph_utils import get_session_message_count
+from deeper_notebook.graphs.chat import get_async_graph
+from deeper_notebook.graphs.chat import graph as chat_graph
+from deeper_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
 
@@ -227,7 +227,7 @@ class UpdateSessionRequest(BaseModel):
     # all picks ("all servers enabled"); empty list [] means the same
     # in practice but is preserved as-is so the UI can distinguish "I
     # explicitly cleared the list" from "I never set it."
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -252,7 +252,7 @@ class ChatSessionResponse(BaseModel):
         None, description="Model override for this session"
     )
     # v0.8.43 — persistent MCP server disable picks (null = none).
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -279,7 +279,7 @@ class ExecuteChatRequest(BaseModel):
     # exclude_server_names; server-name match is case-insensitive +
     # trimmed (`_resolve_chat_tools` normalises both sides). Empty list
     # or null = all enabled servers visible (the v0.8.0 default).
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None,
         description=(
             "MCP server names to skip for this chat turn. Each entry "
@@ -327,10 +327,10 @@ class ExecuteChatResponse(BaseModel):
     # v0.8.68 — set when the offline gate answered this turn with a local
     # model: {"offline_fallback": true, "from_model_id", "to_model_id",
     # "to_model_name", "reason": "offline"|"forced-offline"}. None otherwise.
-    offline_fallback: Optional[Dict[str, Any]] = Field(
+    offline_fallback: Optional[dict[str, Any]] = Field(
         None, description="Offline local-model fallback info for this turn"
     )
-    mcp_tool_calls: Optional[List[Dict[str, Any]]] = Field(
+    mcp_tool_calls: Optional[list[dict[str, Any]]] = Field(
         None,
         description=(
             "v0.8.1 Item 3 — MCP tool-call payloads for this turn. Each item: "
@@ -348,7 +348,7 @@ class ExecuteChatResponse(BaseModel):
             "when the gate didn't act."
         ),
     )
-    privacy_categories: Optional[List[str]] = Field(
+    privacy_categories: Optional[list[str]] = Field(
         None,
         description=(
             "v0.8.58 — category LABELS of the sensitive content the gate "
@@ -1674,7 +1674,7 @@ async def build_context(request: BuildContextRequest):
         char_count = len(total_content)
         # Use token count utility if available
         try:
-            from open_notebook.utils import token_count
+            from deeper_notebook.utils import token_count
 
             estimated_tokens = token_count(total_content) if total_content else 0
         except ImportError:

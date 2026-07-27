@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from open_notebook.research.repository import _run_from_record
+from deeper_notebook.research.repository import _run_from_record
 
 
 def test_research_repository_discards_database_audit_metadata() -> None:

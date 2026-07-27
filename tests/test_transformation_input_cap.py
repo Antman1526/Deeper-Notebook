@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.graphs import transformation
+from deeper_notebook.graphs import transformation
 
 # ---------------------------------------------------------------------------
 # _truncate_transformation_input — pure function tests

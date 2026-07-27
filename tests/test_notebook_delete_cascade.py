@@ -38,7 +38,7 @@ class _FakeNote:
 def make_notebook(monkeypatch):
     """Factory yielding a Notebook with N attached notes and mocked
     SurrealDB queries. Returns (notebook, notes, repo_query_calls)."""
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
 
     def _factory(notes: list, sources: list = None):
         sources = sources or []
@@ -63,7 +63,7 @@ def make_notebook(monkeypatch):
         # ObjectModel.delete() (in base.py) calls repo_delete directly.
         # We need to stub that too, otherwise the notebook-row delete at
         # the very end of Notebook.delete tries to hit SurrealDB.
-        from open_notebook.domain import base as base_mod
+        from deeper_notebook.domain import base as base_mod
         monkeypatch.setattr(base_mod, "repo_delete", _fake_repo_delete)
 
         # Class-level monkeypatch — Pydantic v2 doesn't allow instance

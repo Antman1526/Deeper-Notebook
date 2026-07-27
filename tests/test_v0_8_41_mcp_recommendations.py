@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from open_notebook.mcp import recommendations as recs_mod
+from deeper_notebook.mcp import recommendations as recs_mod
 from api.routers import mcp as mcp_router
 
 

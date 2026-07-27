@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 import pytest
 
-from open_notebook.domain import gmail as gmail_mod
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.domain import gmail as gmail_mod
+from deeper_notebook.domain.gmail import GmailIntegration
 from api.routers import gmail as gmail_router
 
 

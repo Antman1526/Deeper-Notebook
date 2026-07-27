@@ -29,7 +29,7 @@ class TestIsCommandRegistered:
     lookup. These tests pin the helper's edge cases."""
 
     def test_registered_command_returns_true(self):
-        from open_notebook.domain import notebook as nb_mod
+        from deeper_notebook.domain import notebook as nb_mod
         fake_registry = MagicMock()
         fake_registry.get_command_by_id.return_value = MagicMock()  # truthy
         with patch.dict(
@@ -39,7 +39,7 @@ class TestIsCommandRegistered:
             assert nb_mod._is_command_registered("open_notebook.embed_note") is True
 
     def test_unregistered_command_returns_false(self):
-        from open_notebook.domain import notebook as nb_mod
+        from deeper_notebook.domain import notebook as nb_mod
         fake_registry = MagicMock()
         fake_registry.get_command_by_id.return_value = None
         with patch.dict(
@@ -52,7 +52,7 @@ class TestIsCommandRegistered:
         """Defensive: if the registry attribute disappears in a future
         surreal_commands version, fail-closed (treat as not registered,
         skip the submit). Better than crashing."""
-        from open_notebook.domain import notebook as nb_mod
+        from deeper_notebook.domain import notebook as nb_mod
 
         class _Borked:
             registry = property(lambda self: (_ for _ in ()).throw(AttributeError))
@@ -67,7 +67,7 @@ class TestNoteSaveUsesRegistry:
 
     @pytest.mark.asyncio
     async def test_save_skips_submit_when_command_not_registered(self):
-        from open_notebook.domain.notebook import Note
+        from deeper_notebook.domain.notebook import Note
 
         note = Note(title="N", content="content", note_type="human")
 
@@ -91,7 +91,7 @@ class TestNoteSaveUsesRegistry:
 
     @pytest.mark.asyncio
     async def test_save_calls_submit_when_registered(self):
-        from open_notebook.domain.notebook import Note
+        from deeper_notebook.domain.notebook import Note
 
         note = Note(title="N", content="content", note_type="human")
 
@@ -122,29 +122,29 @@ class TestMemoryRecallBudget:
     recall_memory orchestration in a single asyncio.wait_for."""
 
     def test_default_budget_when_env_unset(self, monkeypatch):
-        from open_notebook.utils.memory_recall import _recall_budget_sec
+        from deeper_notebook.utils.memory_recall import _recall_budget_sec
         monkeypatch.delenv("ONP_MEMORY_RECALL_BUDGET_SEC", raising=False)
         assert _recall_budget_sec() == 12.0
 
     def test_env_override_parsed(self, monkeypatch):
-        from open_notebook.utils.memory_recall import _recall_budget_sec
+        from deeper_notebook.utils.memory_recall import _recall_budget_sec
         monkeypatch.setenv("ONP_MEMORY_RECALL_BUDGET_SEC", "30")
         assert _recall_budget_sec() == 30.0
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
-        from open_notebook.utils.memory_recall import _recall_budget_sec
+        from deeper_notebook.utils.memory_recall import _recall_budget_sec
         monkeypatch.setenv("ONP_MEMORY_RECALL_BUDGET_SEC", "not-a-float")
         assert _recall_budget_sec() == 12.0
 
     def test_zero_or_negative_falls_back_to_default(self, monkeypatch):
-        from open_notebook.utils.memory_recall import _recall_budget_sec
+        from deeper_notebook.utils.memory_recall import _recall_budget_sec
         for v in ("0", "-5", "-0.1"):
             monkeypatch.setenv("ONP_MEMORY_RECALL_BUDGET_SEC", v)
             assert _recall_budget_sec() == 12.0, f"Expected fallback for {v!r}"
 
     @pytest.mark.asyncio
     async def test_recall_within_budget_returns_normally(self, monkeypatch):
-        from open_notebook.utils import memory_recall as mr_mod
+        from deeper_notebook.utils import memory_recall as mr_mod
 
         monkeypatch.setenv("ONP_MEMORY_RECALL_BUDGET_SEC", "5")
 
@@ -162,7 +162,7 @@ class TestMemoryRecallBudget:
     async def test_recall_exceeding_budget_returns_empty(self, monkeypatch):
         """When the inner orchestration takes longer than the budget,
         the outer wait_for fires and we return an empty memory dict."""
-        from open_notebook.utils import memory_recall as mr_mod
+        from deeper_notebook.utils import memory_recall as mr_mod
 
         monkeypatch.setenv("ONP_MEMORY_RECALL_BUDGET_SEC", "0.2")
 
@@ -193,7 +193,7 @@ class TestSourceDeletePostSweep:
 
     @pytest.mark.asyncio
     async def test_post_sweep_runs_after_super_delete(self):
-        from open_notebook.domain.notebook import Source
+        from deeper_notebook.domain.notebook import Source
 
         src = Source(title="t", full_text="x")
         src.id = "source:fake"
@@ -249,7 +249,7 @@ class TestSourceDeletePostSweep:
         """If the post-sweep query raises (transient DB hiccup), the
         delete still returns successfully — the orphan rows are present
         but unreachable since the source row is already gone."""
-        from open_notebook.domain.notebook import Source
+        from deeper_notebook.domain.notebook import Source
 
         src = Source(title="t", full_text="x")
         src.id = "source:fake"
@@ -292,17 +292,17 @@ class TestNotebookBulkDelete:
     per-note DELETEs."""
 
     def test_threshold_default(self, monkeypatch):
-        from open_notebook.domain.notebook import _notebook_delete_bulk_threshold
+        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
         monkeypatch.delenv("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD", raising=False)
         assert _notebook_delete_bulk_threshold() == 25
 
     def test_threshold_env_override(self, monkeypatch):
-        from open_notebook.domain.notebook import _notebook_delete_bulk_threshold
+        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
         monkeypatch.setenv("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD", "5")
         assert _notebook_delete_bulk_threshold() == 5
 
     def test_threshold_garbage_env_falls_back(self, monkeypatch):
-        from open_notebook.domain.notebook import _notebook_delete_bulk_threshold
+        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
         monkeypatch.setenv("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD", "nope")
         assert _notebook_delete_bulk_threshold() == 25
         monkeypatch.setenv("ONP_NOTEBOOK_DELETE_BULK_THRESHOLD", "-1")
@@ -312,7 +312,7 @@ class TestNotebookBulkDelete:
     async def test_bulk_delete_uses_three_statements(self):
         """The bulk path must issue exactly 3 SurrealQL statements
         regardless of N — that's the whole point of the optimization."""
-        from open_notebook.domain.notebook import Notebook, Note
+        from deeper_notebook.domain.notebook import Notebook, Note
 
         nb = Notebook(name="N", description="d")
         nb.id = "notebook:fake"
@@ -347,7 +347,7 @@ class TestNotebookBulkDelete:
     async def test_bulk_delete_failure_returns_zero(self):
         """Failure in bulk-delete must NOT propagate — outer
         Notebook.delete() handles the cascade fallback."""
-        from open_notebook.domain.notebook import Notebook, Note
+        from deeper_notebook.domain.notebook import Notebook, Note
 
         nb = Notebook(name="N", description="d")
         nb.id = "notebook:fake"
@@ -368,7 +368,7 @@ class TestNotebookBulkDelete:
 
     @pytest.mark.asyncio
     async def test_empty_notes_list_returns_zero(self):
-        from open_notebook.domain.notebook import Notebook
+        from deeper_notebook.domain.notebook import Notebook
         nb = Notebook(name="N", description="d")
         nb.id = "notebook:fake"
         result = await nb._bulk_delete_notes([])

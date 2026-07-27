@@ -37,14 +37,14 @@ def test_response_model_privacy_fields_default_none():
 
 
 def test_provision_sets_privacy_selection_keys():
-    src = _src("open_notebook/ai/provision.py")
+    src = _src("deeper_notebook/ai/provision.py")
     assert 'selection_out["privacy_gated"] = True' in src
     assert 'selection_out["privacy_categories"]' in src
     assert "findings_out=gate_findings" in src
 
 
 def test_graph_node_returns_privacy_fields():
-    src = _src("open_notebook/graphs/chat.py")
+    src = _src("deeper_notebook/graphs/chat.py")
     assert '"privacy_gated": selection_out.get("privacy_gated")' in src
     assert '"privacy_categories": selection_out.get("privacy_categories")' in src
 
@@ -63,7 +63,7 @@ def test_categories_are_labels_only_never_values():
     matched secret values. apply_privacy_gate populates findings_out from
     `findings` (category names from detect_sensitive / extra_findings), not
     from the content."""
-    src = _src("open_notebook/ai/privacy_gate.py")
+    src = _src("deeper_notebook/ai/privacy_gate.py")
     assert "findings_out.extend(findings)" in src
     # findings come from detect_sensitive (labels) ∪ extra_findings (labels)
     assert "set(detect_sensitive(content or \"\"))" in src

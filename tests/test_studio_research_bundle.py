@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from open_notebook.domain.notebook import StudioArtifact
-from open_notebook.studio.exporters.charts import ChartDocument, render_svg_chart
-from open_notebook.studio.exporters.research_bundle import (
+from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.studio.exporters.charts import ChartDocument, render_svg_chart
+from deeper_notebook.studio.exporters.research_bundle import (
     build_research_bundle,
     normalize_bundle_path,
     verify_research_bundle,
 )
-from open_notebook.studio.generation.persistence import persist_artifact_exports
-from open_notebook.studio.payloads import build_structured_payload
-from open_notebook.studio.schemas import GenericDocument, parse_artifact_document
+from deeper_notebook.studio.generation.persistence import persist_artifact_exports
+from deeper_notebook.studio.payloads import build_structured_payload
+from deeper_notebook.studio.schemas import GenericDocument, parse_artifact_document
 
 
 def _chart_payload() -> dict[str, object]:

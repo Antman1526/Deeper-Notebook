@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from surrealdb import RecordID
 
-from open_notebook.domain import gmail as gmail_mod
-from open_notebook.domain.gmail import GmailIntegration, SINGLETON_ID
+from deeper_notebook.domain import gmail as gmail_mod
+from deeper_notebook.domain.gmail import GmailIntegration, SINGLETON_ID
 
 
 @pytest.mark.asyncio

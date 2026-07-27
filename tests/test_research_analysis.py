@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.research import analysis
-from open_notebook.research.state import ResearchRun
+from deeper_notebook.research import analysis
+from deeper_notebook.research.state import ResearchRun
 
 
 @pytest.mark.asyncio

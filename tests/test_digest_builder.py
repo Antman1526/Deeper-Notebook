@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook import digest as digest_mod
+from deeper_notebook import digest as digest_mod
 
 
 def _make_g(**overrides):

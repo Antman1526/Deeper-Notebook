@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from deeper_notebook.environment import resolve_env
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 
 def _password_matches(provided: str, expected: str) -> bool:

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.graphs import ask
-from open_notebook.graphs.agent_fsm import AgentState
+from deeper_notebook.graphs import ask
+from deeper_notebook.graphs.agent_fsm import AgentState
 
 
 def _mock_synthesis(monkeypatch):

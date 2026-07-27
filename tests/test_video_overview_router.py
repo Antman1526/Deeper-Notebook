@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import video_overviews as video_mod
-from open_notebook.video.contracts import VideoOverviewOutput
+from deeper_notebook.video.contracts import VideoOverviewOutput
 
 
 class _Artifact:

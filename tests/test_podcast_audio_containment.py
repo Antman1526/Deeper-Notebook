@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-import open_notebook.podcasts as podcast_paths
+import deeper_notebook.podcasts as podcast_paths
 from api.routers import podcasts as podcasts_mod
 
 

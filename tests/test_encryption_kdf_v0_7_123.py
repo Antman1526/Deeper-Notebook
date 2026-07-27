@@ -25,7 +25,7 @@ import pytest
 def _reset_encryption_cache(monkeypatch):
     """Each test gets a fresh encryption-key cache. Required because
     the module caches the parsed keys in a module-level variable."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
     enc._reset_encryption_cache()
     yield
     enc._reset_encryption_cache()
@@ -35,7 +35,7 @@ def test_default_kdf_is_sha256_back_compat(monkeypatch):
     """v0.7.123 — When ONP_ENCRYPTION_KDF is unset, the derivation
     path is the original v0.7.0 sha256. No existing user sees any
     change in behavior."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "test-passphrase")
     monkeypatch.delenv("ONP_ENCRYPTION_KDF", raising=False)
@@ -50,7 +50,7 @@ def test_default_kdf_is_sha256_back_compat(monkeypatch):
 def test_pbkdf2_mode_uses_pbkdf2_derivation(monkeypatch):
     """v0.7.123 — Setting ONP_ENCRYPTION_KDF=pbkdf2 switches to the
     PBKDF2 path. The resulting Fernet key is different from sha256."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "test-passphrase")
     monkeypatch.setenv("ONP_ENCRYPTION_KDF", "pbkdf2")
@@ -67,7 +67,7 @@ def test_pbkdf2_derivation_is_deterministic():
     """v0.7.123 — PBKDF2 with deterministic salt must produce the same
     key for the same passphrase across calls (otherwise the next
     process restart couldn't decrypt anything)."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     k1 = enc._derive_fernet_key_pbkdf2("my-passphrase").decode()
     k2 = enc._derive_fernet_key_pbkdf2("my-passphrase").decode()
@@ -81,7 +81,7 @@ def test_pbkdf2_derivation_is_deterministic():
 def test_unknown_kdf_raises_actionable_error(monkeypatch):
     """v0.7.123 — A typo in ONP_ENCRYPTION_KDF should fail fast with a
     clear error message naming the valid options."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "x")
     monkeypatch.setenv("ONP_ENCRYPTION_KDF", "argon2id-typo")
@@ -96,7 +96,7 @@ def test_unknown_kdf_raises_actionable_error(monkeypatch):
 
 def test_round_trip_under_sha256(monkeypatch):
     """v0.7.123 — Sanity: encrypt + decrypt under sha256 still works."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "passphrase-A")
     monkeypatch.delenv("ONP_ENCRYPTION_KDF", raising=False)
@@ -108,7 +108,7 @@ def test_round_trip_under_sha256(monkeypatch):
 
 def test_round_trip_under_pbkdf2(monkeypatch):
     """v0.7.123 — Encrypt + decrypt under pbkdf2 also works."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "passphrase-A")
     monkeypatch.setenv("ONP_ENCRYPTION_KDF", "pbkdf2")
@@ -128,7 +128,7 @@ def test_migration_sha256_to_pbkdf2_keeps_existing_data_decryptable(
     This is the whole point of the migration design: no re-encrypt
     sweep is required for the user's data to remain accessible
     after they change the KDF env var."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "shared-passphrase")
 
@@ -157,7 +157,7 @@ def test_migration_pbkdf2_to_sha256_also_works(monkeypatch):
     """v0.7.123 — The reverse direction (rare but supported). User
     on pbkdf2 downgrades to sha256; pbkdf2-encrypted data must still
     decrypt because the MultiFernet tries both KDFs."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "shared-passphrase")
 
@@ -174,7 +174,7 @@ def test_rotation_works_alongside_kdf_migration(monkeypatch):
     """v0.7.123 — The v0.7.17 rotation feature (ENCRYPTION_KEYS plural)
     still works when KDFs are mixed. User has two keys
     (new + old) AND switches KDF — MultiFernet handles the matrix."""
-    from open_notebook.utils import encryption as enc
+    from deeper_notebook.utils import encryption as enc
 
     # Stage 1: encrypt with OLD key + sha256
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "old-key")

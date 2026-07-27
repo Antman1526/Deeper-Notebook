@@ -7,7 +7,6 @@ absent, the scorer still runs so the sidecar always spawns.
 """
 from __future__ import annotations
 
-
 from desktop.auto_register.assigner import pick_chat_llm_file
 
 

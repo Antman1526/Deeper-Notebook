@@ -50,7 +50,6 @@ import pytest
 
 from desktop.launcher import Supervisor
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures — mirror the patterns in test_launcher.py so failures
 # read the same way as the v0.7.206 n_ctx tests.

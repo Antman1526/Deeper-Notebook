@@ -9,11 +9,11 @@ from pathlib import Path
 from docx import Document
 from openpyxl import load_workbook
 
-from open_notebook.domain.notebook import StudioArtifact
-from open_notebook.studio.exporters import export_document, export_spreadsheet
-from open_notebook.studio.generation.persistence import persist_artifact_exports
-from open_notebook.studio.payloads import build_structured_payload
-from open_notebook.studio.schemas import (
+from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.studio.exporters import export_document, export_spreadsheet
+from deeper_notebook.studio.generation.persistence import persist_artifact_exports
+from deeper_notebook.studio.payloads import build_structured_payload
+from deeper_notebook.studio.schemas import (
     CoursePackDocument,
     DataTableDocument,
     GenericDocument,

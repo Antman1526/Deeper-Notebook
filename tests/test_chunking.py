@@ -6,7 +6,7 @@ Tests content type detection and text chunking functionality.
 
 import pytest
 
-from open_notebook.utils.chunking import (
+from deeper_notebook.utils.chunking import (
     CHUNK_SIZE,
     MIN_CHUNK_SIZE,
     ContentType,
@@ -15,7 +15,7 @@ from open_notebook.utils.chunking import (
     detect_content_type_from_extension,
     detect_content_type_from_heuristics,
 )
-from open_notebook.utils.token_utils import token_count
+from deeper_notebook.utils.token_utils import token_count
 
 
 def _build_text_with_max_tokens(fragment: str, max_tokens: int) -> str:

@@ -53,7 +53,7 @@ def test_notebook_delete_uses_valid_surrealql_for_chat_cascade():
     `$ids` inside a `WHERE id IN $ids` clause. The pre-fix
     `DELETE $ids` was invalid SurrealQL and silently leaked every
     chat_session row tied to a deleted notebook."""
-    src = _read_source("open_notebook/domain/notebook.py")
+    src = _read_source("deeper_notebook/domain/notebook.py")
     # The new, correct form is present.
     assert "DELETE chat_session WHERE id IN $ids" in src, (
         "v0.7.184 regression: chat-session cascade-delete reverted "

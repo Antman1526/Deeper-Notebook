@@ -12,6 +12,7 @@ which still requires webview.
 from __future__ import annotations
 
 import json as _json
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -465,8 +466,9 @@ def _frontend_server_ready(url: str) -> bool:
     status AND body — so Next's warm-up window, where it serves its
     not-found page (HTTP 200!) for valid routes, reads as not-ready.
     """
-    import httpx
     import re
+
+    import httpx
 
     try:
         r = httpx.get(url, timeout=2.0, follow_redirects=True)
@@ -540,8 +542,6 @@ def _start_handoff_controller(
 
     The error page can therefore never be the resting state.
     """
-    import threading
-
     _sleep = sleep or time.sleep
     _clock = clock or time.monotonic
     _ready = server_ready or (lambda: _frontend_server_ready(url))
@@ -657,9 +657,10 @@ def open_window(url: str, on_close: Callable[[], None],
     `/api/transcribe` + `/api/audio/speech` routes (which were generating
     the "STT failed: HTTP 404" toasts in the UI).
     """
+    import webview  # lazy: only the desktop runtime path needs this
+
     from desktop import window_state
     from desktop.data_root import active_data_root
-    import webview  # lazy: only the desktop runtime path needs this
 
     data_home = active_data_root()
     # v0.8.67m — reopen at the size you last left the window, if remembered;
@@ -723,8 +724,6 @@ def open_window(url: str, on_close: Callable[[], None],
         on_close()
 
     window.events.closed += _on_closed
-
-    import threading
 
     _page_loaded = threading.Event()
 

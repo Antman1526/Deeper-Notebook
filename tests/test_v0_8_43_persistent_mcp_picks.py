@@ -71,7 +71,7 @@ def test_chat_session_response_exposes_disabled_mcp_servers():
 
 def test_chat_session_domain_model_has_field():
     """Pydantic field on the domain model so SurrealDB writes the value."""
-    from open_notebook.domain.notebook import ChatSession
+    from deeper_notebook.domain.notebook import ChatSession
 
     s = ChatSession(title="hello", disabled_mcp_servers=["SearXNG"])
     assert s.disabled_mcp_servers == ["SearXNG"]
@@ -100,10 +100,10 @@ def test_v0_8_43_migration_files_exist_and_define_field():
     and reference `disabled_mcp_servers ON chat_session`. A typo here
     would propagate silently on every install."""
     repository_root = Path(__file__).resolve().parent.parent
-    base = repository_root / "open_notebook" / "database" / "migrations"
+    base = repository_root / "deeper_notebook" / "database" / "migrations"
     expected_base = (
         Path(__file__).resolve().parent.parent
-        / "open_notebook"
+        / "deeper_notebook"
         / "database"
         / "migrations"
     )

@@ -25,7 +25,7 @@ def _run(coro):
 # ------------------------------------------------------------- briefing_suffix
 
 def test_episode_model_stores_briefing_suffix():
-    from open_notebook.podcasts.models import PodcastEpisode
+    from deeper_notebook.podcasts.models import PodcastEpisode
 
     assert "briefing_suffix" in PodcastEpisode.model_fields
     ep = PodcastEpisode(
@@ -62,7 +62,7 @@ def test_retry_replays_suffix_and_allows_completed():
 
 def test_submit_rejects_oversized_content(monkeypatch):
     from api.podcast_service import PodcastService
-    from open_notebook.exceptions import InvalidInputError
+    from deeper_notebook.exceptions import InvalidInputError
 
     async def _fake_ep(name):
         return SimpleNamespace(
@@ -186,7 +186,7 @@ def test_audio_media_type_mapping_present():
 # ------------------------------------------------------------- docs accuracy
 
 def test_docs_no_longer_claim_silent_audio_fallback():
-    for doc in (_REPO / "CLAUDE.md", _REPO / "open_notebook" / "CLAUDE.md"):
+    for doc in (_REPO / "CLAUDE.md", _REPO / "deeper_notebook" / "CLAUDE.md"):
         assert "Fall back to silent audio" not in doc.read_text(), (
             f"{doc} still claims a silent-audio TTS fallback that the code "
             f"does not implement"

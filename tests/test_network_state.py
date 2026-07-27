@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.health import network
+from deeper_notebook.health import network
 
 
 @pytest.fixture(autouse=True)

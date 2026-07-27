@@ -27,7 +27,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from open_notebook.local_models import downloader as dl_mod
+from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as local_models_router
 
 
@@ -295,7 +295,7 @@ def test_download_endpoint_rejects_non_gguf(app):
 
 
 def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, tmp_path):
-    import open_notebook.local_models as lm
+    import deeper_notebook.local_models as lm
 
     calls: list[tuple[str, str, Path]] = []
 

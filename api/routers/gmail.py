@@ -39,8 +39,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from open_notebook.digest.scheduler import pending_digest_info
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.digest.scheduler import pending_digest_info
+from deeper_notebook.domain.gmail import GmailIntegration
 
 log = logging.getLogger(__name__)
 
@@ -497,7 +497,7 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
     async with _get_send_lock():
         g_latest = await GmailIntegration.get()
         if label != "Test":
-            from open_notebook.digest.scheduler import _should_send
+            from deeper_notebook.digest.scheduler import _should_send
             if not await _should_send(g_latest):
                 log.info("digest-scheduler: already sent or no longer due after acquiring send lock")
                 return (True, "Already sent recently", 0)
@@ -514,7 +514,7 @@ async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> 
                     0)
 
     # Build digest content from recent activity
-    from open_notebook.digest import build_digest_html
+    from deeper_notebook.digest import build_digest_html
     html, n = await build_digest_html(g)
 
     msg = MIMEMultipart("alternative")

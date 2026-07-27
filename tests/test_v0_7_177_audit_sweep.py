@@ -127,7 +127,7 @@ def test_cancel_command_job_guards_private_core_service_import():
     assert "except ImportError:" in src
 
     # The fallback to direct UPDATE on the command table is present.
-    assert "from open_notebook.database.repository import repo_query" in src
+    assert "from deeper_notebook.database.repository import repo_query" in src
     assert "SET status = 'canceled'" in src, (
         "v0.7.177 regression: the direct-UPDATE fallback for "
         "cancel_command_job is gone. Without it, an ImportError on "
@@ -162,7 +162,7 @@ def test_every_up_migration_uses_idempotent_defines():
     DEFINE statements at all. This prevents a future contributor
     from adding migration 17+ with the same idempotency footgun
     that v0.7.176 just fixed in 12 and 16."""
-    migrations_dir = ROOT / "open_notebook" / "database" / "migrations"
+    migrations_dir = ROOT / "deeper_notebook" / "database" / "migrations"
     offenders: list[tuple[str, str]] = []
     for path in sorted(migrations_dir.glob("*.surrealql")):
         if "_down" in path.name:
