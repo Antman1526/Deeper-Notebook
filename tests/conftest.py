@@ -97,7 +97,7 @@ def _isolate_data_root_home(tmp_path, monkeypatch):
 # themselves (see tests/test_offline_gate.py, tests/test_web_search_offline.py).
 @pytest.fixture(autouse=True)
 def _pin_network_state_online(monkeypatch):
-    from open_notebook.health import network
+    from deeper_notebook.health import network
 
     network.reset_network_state_for_tests()
     monkeypatch.setattr(network, "_probe_once", lambda: True)

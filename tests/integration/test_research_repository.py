@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.domain.notebook import Notebook
-from open_notebook.research.repository import ResearchRunRepository
-from open_notebook.research.state import (
+from deeper_notebook.domain.notebook import Notebook
+from deeper_notebook.research.repository import ResearchRunRepository
+from deeper_notebook.research.state import (
     ResearchCandidate,
     ResearchRun,
     ResearchStageResult,

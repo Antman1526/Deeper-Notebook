@@ -2,14 +2,14 @@
 
 import pytest
 
-from open_notebook.evaluation.claims import extract_material_claims
-from open_notebook.evaluation.schemas import (
+from deeper_notebook.evaluation.claims import extract_material_claims
+from deeper_notebook.evaluation.schemas import (
     hash_source_text,
     resolve_source_states,
     validate_verdict_against_snapshots,
 )
-from open_notebook.evaluation.verifier import CitationSource, verify_claim
-from open_notebook.utils.citation_offsets import slice_passage
+from deeper_notebook.evaluation.verifier import CitationSource, verify_claim
+from deeper_notebook.utils.citation_offsets import slice_passage
 
 
 def _source(source_id: str, text: str) -> CitationSource:

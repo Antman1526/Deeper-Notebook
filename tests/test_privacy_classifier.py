@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.ai import privacy_classifier as pc
-from open_notebook.ai.privacy_gate import apply_privacy_gate
-from open_notebook.ai.router import ModelChoice
+from deeper_notebook.ai import privacy_classifier as pc
+from deeper_notebook.ai.privacy_gate import apply_privacy_gate
+from deeper_notebook.ai.router import ModelChoice
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ def test_findings_out_empty_on_passthrough():
 def test_findings_out_populated_before_block(monkeypatch):
     """Even on the no-local BLOCK path, findings_out is populated (before the
     ConfigurationError) so the caller could log the categories."""
-    from open_notebook.exceptions import ConfigurationError
+    from deeper_notebook.exceptions import ConfigurationError
     out_list: list[str] = []
     with pytest.raises(ConfigurationError):
         apply_privacy_gate(

@@ -108,7 +108,7 @@ def repo_root() -> Path:
 
 
 def upstream_dir() -> Path:
-    """Location of bundled upstream source (api/, open_notebook/, commands/)."""
+    """Bundled source root with canonical and compatibility packages."""
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "upstream"  # type: ignore[attr-defined]
     return Path(__file__).resolve().parents[1]
@@ -869,7 +869,7 @@ def _phase_auto_register(ctx: AppContext) -> None:
         # frontend's /api/local-models/health endpoint re-runs these on
         # demand from the badge component.
         try:
-            from open_notebook.health.local_models import (
+            from deeper_notebook.health.local_models import (
                 probe_all_local_models,
             )
             creds_for_probe = []

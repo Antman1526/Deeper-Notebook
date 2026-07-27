@@ -1,7 +1,7 @@
 """v0.8.1 — ExecuteChatResponse.selected_provider shape + plumbing tests.
 
 Background: the v0.8.0 chat smart-router (pick_provider in
-open_notebook/ai/router.py) routes a chat turn to "local" or "cloud" and
+deeper_notebook/ai/router.py) routes a chat turn to "local" or "cloud" and
 provision_langchain_chat_model wraps it. Prior to v0.8.1 the routing
 decision was log-only — nothing in the HTTP response told the client
 which side won. scripts/verify-chat-platform.sh Steps 4 and 5 therefore
@@ -85,7 +85,7 @@ class TestProvisionChatModelExposesSelection:
     def test_selection_out_populated_when_routing_picks_local(self, monkeypatch):
         """Smart router on, healthy local, small content → selection_out
         carries provider='local'."""
-        import open_notebook.ai.provision as provision_mod
+        import deeper_notebook.ai.provision as provision_mod
 
         monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
@@ -116,7 +116,7 @@ class TestProvisionChatModelExposesSelection:
 
     def test_selection_out_populated_when_routing_picks_cloud(self, monkeypatch):
         """Overflow content → router picks cloud → selection_out reflects it."""
-        import open_notebook.ai.provision as provision_mod
+        import deeper_notebook.ai.provision as provision_mod
 
         monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
@@ -150,7 +150,7 @@ class TestProvisionChatModelExposesSelection:
     def test_selection_out_none_when_smart_routing_disabled(self, monkeypatch):
         """Smart-routing env var unset → selection_out stays empty (no
         local/cloud distinction exists in the default-path)."""
-        import open_notebook.ai.provision as provision_mod
+        import deeper_notebook.ai.provision as provision_mod
 
         monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
 

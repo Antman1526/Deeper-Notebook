@@ -17,7 +17,7 @@ Three small but defensible improvements:
     pass an explicit per-query budget so a single stuck pool
     connection doesn't pin the route handler.
 
-3.  `open_notebook/graphs/tools.py::get_current_timestamp` switched
+3.  `deeper_notebook/graphs/tools.py::get_current_timestamp` switched
     from naive local time (`YYYYMMDDHHmmss`) to UTC ISO 8601 basic
     (`YYYYMMDDTHHmmssZ`). The output lands in LLM prompts that may
     be replayed cross-machine; without the TZ marker every
@@ -111,7 +111,7 @@ def test_repo_query_accepts_timeout_kwarg():
     """v0.7.190: repo_query gained an optional `timeout_s` keyword
     for per-call wait_for bounding."""
     import inspect
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     sig = inspect.signature(repo_query)
     assert "timeout_s" in sig.parameters, (
@@ -127,7 +127,7 @@ def test_repo_query_default_call_unchanged():
     """v0.7.190 backward-compat pin: existing callers passing only
     (query_str, vars) must still work. The new kwarg is purely
     additive."""
-    src = _read_source("open_notebook/database/repository.py")
+    src = _read_source("deeper_notebook/database/repository.py")
     # The function signature line.
     sig_idx = src.find("async def repo_query(")
     assert sig_idx != -1
@@ -150,7 +150,7 @@ def test_get_current_timestamp_returns_iso8601_with_utc():
     `YYYYMMDDTHHmmssZ` (basic ISO 8601 with explicit UTC marker),
     not the previous ambiguous naive local-time
     `YYYYMMDDHHmmss`."""
-    from open_notebook.graphs.tools import get_current_timestamp
+    from deeper_notebook.graphs.tools import get_current_timestamp
 
     ts = get_current_timestamp.func()
     # T separator + Z marker.

@@ -8,9 +8,9 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
-from open_notebook.graphs import chat as chat_mod
-from open_notebook.tools.add_web_source import build_add_web_source_tool
-from open_notebook.tools.opencode import (
+from deeper_notebook.graphs import chat as chat_mod
+from deeper_notebook.tools.add_web_source import build_add_web_source_tool
+from deeper_notebook.tools.opencode import (
     OPENCODE_TOOL_NAME,
     build_opencode_tool,
     opencode_bin_path,

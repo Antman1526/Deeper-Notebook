@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from open_notebook.graphs import chat
+from deeper_notebook.graphs import chat
 
 # ---------------------------------------------------------------------------
 # _msg_char_len — defensive against many message shapes

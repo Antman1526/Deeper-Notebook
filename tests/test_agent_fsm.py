@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.graphs.agent_fsm import (
+from deeper_notebook.graphs.agent_fsm import (
     AgentLoop,
     AgentState,
     TodoItem,

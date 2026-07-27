@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.digest import scheduler
-from open_notebook.exceptions import NetworkError
+from deeper_notebook.digest import scheduler
+from deeper_notebook.exceptions import NetworkError
 
 
 @pytest.fixture(autouse=True)

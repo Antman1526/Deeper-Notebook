@@ -14,17 +14,17 @@ from api.models import (
     ProviderAvailabilityResponse,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
-from open_notebook.ai.connection_tester import test_individual_model
-from open_notebook.ai.key_provider import provision_provider_keys
-from open_notebook.ai.model_discovery import (
+from deeper_notebook.ai.connection_tester import test_individual_model
+from deeper_notebook.ai.key_provider import provision_provider_keys
+from deeper_notebook.ai.model_discovery import (
     discover_provider_models,
     get_provider_model_count,
     sync_all_providers,
     sync_provider_models,
 )
-from open_notebook.ai.models import DefaultModels, Model
-from open_notebook.domain.credential import Credential
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.ai.models import DefaultModels, Model
+from deeper_notebook.domain.credential import Credential
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -231,7 +231,7 @@ async def create_model(model_data: ModelCreate):
             )
 
         # Check for duplicate model name under the same provider and type (case-insensitive)
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         existing = await repo_query(
             "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND string::lowercase(name) = $name AND string::lowercase(type) = $type LIMIT 1",
@@ -708,7 +708,7 @@ async def get_models_by_provider(provider: str):
     Returns models from the database that belong to the specified provider.
     """
     try:
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         models = await repo_query(
             "SELECT * FROM model WHERE provider = $provider ORDER BY type, name",
@@ -799,7 +799,7 @@ async def auto_assign_defaults():
         - missing: List of slots with no available models
     """
     try:
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         # Get current defaults
         defaults = await DefaultModels.get_instance()
@@ -899,7 +899,7 @@ async def auto_assign_capability(force: bool = False):
     "never overwrite a manual override" guarantee makes the button a no-op.
     """
     try:
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
         try:
             from desktop.auto_register.assigner import SLOTS, assign_all
             from desktop.auto_register.capability import score_model

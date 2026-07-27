@@ -73,7 +73,7 @@ def fake_graph(monkeypatch):
 
 @pytest.fixture
 def fake_session(monkeypatch):
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
     sessions = {"chat_session:test": _FakeSession()}
 
     async def fake_get(session_id: str):

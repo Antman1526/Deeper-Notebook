@@ -23,7 +23,7 @@ def _clear_mcp_tool_cache():
     call_count==1 instead of 2). Clear before AND after every test
     in this file."""
     try:
-        from open_notebook.graphs.chat import _clear_tool_discovery_cache
+        from deeper_notebook.graphs.chat import _clear_tool_discovery_cache
     except ImportError:
         yield
         return
@@ -39,7 +39,7 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
     non-text content was either missing its mime type
     (ImageContent → no `mimeType` field on the return) or silently
     lost (EmbeddedResource → returned None)."""
-    from open_notebook.mcp.client import MCPClient
+    from deeper_notebook.mcp.client import MCPClient
     import asyncio
 
     # Fake content block shapes — mirror the public attrs from mcp's
@@ -113,7 +113,7 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
 def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
     """v0.8.13 — empty content list must return text="" + blocks=[]
     rather than KeyError'ing on the chat-graph side."""
-    from open_notebook.mcp.client import MCPClient
+    from deeper_notebook.mcp.client import MCPClient
     import asyncio
 
     class _Result:
@@ -143,7 +143,7 @@ def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
 def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     """Given a working streamable-http MCP server URL, the client
     must `list_tools()` and return the discovered tool names."""
-    from open_notebook.mcp.client import MCPClient
+    from deeper_notebook.mcp.client import MCPClient
 
     fake_tools = [
         {"name": "web_search", "description": "Search the web"},
@@ -185,7 +185,7 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
         "open_notebook.mcp.registry.list_enabled_servers",
         lambda: __import__("asyncio").Future(),
     )
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
     loop = asyncio.new_event_loop()
     try:
@@ -216,7 +216,7 @@ def test_chat_graph_binds_gbrain_style_tool_names(monkeypatch):
     `web_search` (which gbrain doesn't expose) and the tool would
     fail every turn. Post-fix, each discovered remote name becomes a
     `mcp_<remote_name>` LangChain Tool."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
     loop = asyncio.new_event_loop()
@@ -251,7 +251,7 @@ def test_chat_graph_builds_structured_tool_with_real_args_schema(monkeypatch):
     arg; the LLM had to guess the real arg names and routinely sent
     wrong/empty args. Post-fix, `bind_tools` sends the real arg names
     + types so the LLM formats calls correctly first try."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     from langchain_core.tools import StructuredTool
     import asyncio
 
@@ -311,7 +311,7 @@ def test_resolve_chat_tools_handles_nullable_json_schema(monkeypatch):
     shape (real-world MCP servers use it) must build a valid optional
     Pydantic field. Pre-v0.8.12 the type_map.get(list) returned None
     and propagated as a broken field type."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
     schema = {
@@ -361,7 +361,7 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
     chat turn doesn't pay an MCP handshake. Pre-v0.8.12 every turn
     re-discovered tools (~50-500ms per turn). Cache key = server URL,
     TTL = 30s."""
-    from open_notebook.graphs.chat import (
+    from deeper_notebook.graphs.chat import (
         _resolve_chat_tools, _clear_tool_discovery_cache,
     )
     import asyncio
@@ -412,7 +412,7 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
     flaky/down MCP server adds discovery latency to every chat turn
     until the operator removes it. Operator who fixes the server
     sees recovery on the next turn after the TTL window expires."""
-    from open_notebook.graphs.chat import (
+    from deeper_notebook.graphs.chat import (
         _resolve_chat_tools, _clear_tool_discovery_cache,
     )
     import asyncio
@@ -458,7 +458,7 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
     This test exercises the helper directly: fake model emits one
     tool_call, helper runs the tool, feeds ToolMessage back,
     re-invokes the model, returns (final_message, captures)."""
-    from open_notebook.graphs.chat import bind_mcp_and_run_tool_loop
+    from deeper_notebook.graphs.chat import bind_mcp_and_run_tool_loop
     from langchain_core.messages import AIMessage, HumanMessage
     from unittest.mock import MagicMock
     import asyncio
@@ -527,7 +527,7 @@ def test_source_chat_state_carries_mcp_tool_calls_field(monkeypatch):
     so the source-chat router can include MCP captures in its stream.
     Cheap structural check — the v0.7.183 source_chat tests + the new
     bind_mcp_and_run_tool_loop integration give end-to-end coverage."""
-    from open_notebook.graphs.source_chat import SourceChatState
+    from deeper_notebook.graphs.source_chat import SourceChatState
     annotations = getattr(SourceChatState, "__annotations__", {})
     assert "mcp_tool_calls" in annotations, (
         "v0.8.16: SourceChatState must declare mcp_tool_calls so the "
@@ -562,7 +562,7 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
         fake_list_tools_raise,
     )
 
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
     loop = asyncio.new_event_loop()
     try:
@@ -580,7 +580,7 @@ def test_mcp_registry_lists_enabled_servers(monkeypatch):
     """`list_enabled_servers()` returns only servers with
     `enabled=True`. Disabled servers are not used by the chat
     graph even if they're in the DB."""
-    from open_notebook.mcp.registry import list_enabled_servers
+    from deeper_notebook.mcp.registry import list_enabled_servers
 
     async def _fake_repo_query(q, params=None):
         return [
@@ -631,7 +631,7 @@ def test_mcp_router_list_and_create(monkeypatch):
         return {**data, "id": "mcp_server:abc123"}
 
     # Patch at the source so the router's lazy import picks it up.
-    import open_notebook.database.repository as _repo
+    import deeper_notebook.database.repository as _repo
 
     monkeypatch.setattr(_repo, "repo_query", _fake_repo_query)
     monkeypatch.setattr(_repo, "repo_create", _fake_repo_create)
@@ -664,7 +664,7 @@ def test_mcp_router_duplicate_name_409(monkeypatch):
     async def _dup_repo_create(table, data):
         raise RuntimeError("Database error: unique index constraint violated")
 
-    import open_notebook.database.repository as _repo
+    import deeper_notebook.database.repository as _repo
 
     monkeypatch.setattr(_repo, "repo_create", _dup_repo_create)
 
@@ -690,7 +690,7 @@ def test_list_enabled_servers_sorts_by_priority(monkeypatch):
     ORDER BY) to confirm that the Python-layer filter doesn't break it.
     The SQL clause is the source of truth; the integration test for a live
     DB is handled by the migration + manual QA."""
-    from open_notebook.mcp.registry import list_enabled_servers
+    from deeper_notebook.mcp.registry import list_enabled_servers
 
     # Rows as SurrealDB would return them after ORDER BY priority, created:
     # priority 10 → 50 → 100
@@ -745,7 +745,7 @@ def test_patch_mcp_server_updates_priority(monkeypatch):
         assert data["priority"] == 5
         return [_updated]
 
-    import open_notebook.database.repository as _repo
+    import deeper_notebook.database.repository as _repo
     monkeypatch.setattr(_repo, "repo_update", _fake_repo_update)
 
     client = TestClient(app)
@@ -776,7 +776,7 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
     one record per call with correct index, name, args, and text.
     Uses force_tool_names to bypass network discovery — the unit test
     pins the captures behavior, not the discovery surface."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
     async def fake_call_tool(self, name, args):
@@ -818,7 +818,7 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
 def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
     """v0.8.10 — calling the wrapped MCP tool twice yields index 1
     then 2 in captures. Same as above but pins the index increment."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
     async def fake_call_tool(self, name, args):
@@ -853,7 +853,7 @@ def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
 
 def test_resolve_chat_tools_truncates_long_text(monkeypatch):
     """Text longer than 4000 chars is truncated to exactly 4000 chars."""
-    from open_notebook.graphs.chat import _resolve_chat_tools
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
 
     long_text = "x" * 10000
@@ -972,7 +972,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
     fake_model.bind_tools = lambda tools: fake_model  # passthrough
 
     # Stub the provision so the node uses our fake model
-    import open_notebook.graphs.chat as chat_mod
+    import deeper_notebook.graphs.chat as chat_mod
     async def fake_provision(content, model_id, default_type, **kw):
         return fake_model
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
@@ -1083,7 +1083,7 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
     fake_model.ainvoke = fake_ainvoke
     fake_model.bind_tools = lambda tools: fake_model
 
-    import open_notebook.graphs.chat as chat_mod
+    import deeper_notebook.graphs.chat as chat_mod
     async def fake_provision(content, model_id, default_type, **kw):
         return fake_model
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)

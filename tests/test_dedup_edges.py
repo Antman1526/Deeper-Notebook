@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.database import dedup_edges
+from deeper_notebook.database import dedup_edges
 
 
 @pytest.fixture

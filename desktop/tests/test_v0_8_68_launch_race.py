@@ -155,6 +155,7 @@ def test_production_retry_budget_outlasts_a_slow_cold_boot():
     """Lock in the widened defaults so a future tweak can't silently shrink the
     budget back below a realistic slow-boot window (~minutes)."""
     import inspect
+
     from desktop.window import _start_handoff_controller
 
     sig = inspect.signature(_start_handoff_controller)

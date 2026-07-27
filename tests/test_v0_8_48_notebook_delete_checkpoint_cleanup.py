@@ -111,7 +111,7 @@ async def test_cleanup_noop_when_checkpointer_lacks_delete_thread(monkeypatch):
 def test_domain_delete_returns_session_ids_key():
     """Notebook.delete() must surface the cascade-deleted session ids
     under the exact key the router reads."""
-    src = _read_source("open_notebook/domain/notebook.py")
+    src = _read_source("deeper_notebook/domain/notebook.py")
     assert '"deleted_chat_session_ids"' in src
     assert "deleted_chat_session_ids = (" in src  # the stringify line
 

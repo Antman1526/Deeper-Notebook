@@ -13,7 +13,6 @@ import pytest
 
 from desktop import db_repair
 
-
 # --- crash-signature detection -------------------------------------------------
 
 def test_detects_the_lq_key_collision():

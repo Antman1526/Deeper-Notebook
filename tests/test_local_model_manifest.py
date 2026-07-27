@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from open_notebook.local_models.gguf_metadata import GGUFMetadata
-from open_notebook.local_models.inventory import LocalModelInfo
-from open_notebook.local_models.manifest import (
+from deeper_notebook.local_models.gguf_metadata import GGUFMetadata
+from deeper_notebook.local_models.inventory import LocalModelInfo
+from deeper_notebook.local_models.manifest import (
     build_manifest_recommendations,
     build_manifest_reconciliation,
     find_manifest_matches,

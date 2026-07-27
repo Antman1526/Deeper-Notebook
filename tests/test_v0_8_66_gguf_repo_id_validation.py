@@ -21,7 +21,7 @@ def client(monkeypatch, tmp_path):
             bytes_downloaded=0, bytes_total=None,
         )
 
-    import open_notebook.local_models as lm
+    import deeper_notebook.local_models as lm
     monkeypatch.setattr(lm, "start_download", _fake_start_download, raising=False)
 
     from api.main import app

@@ -6,15 +6,15 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
+from deeper_notebook.ai.models import Model, model_manager
+from deeper_notebook.domain.notebook import text_search, vector_search
 from deeper_notebook.environment import resolve_env
-from open_notebook.ai.models import Model, model_manager
-from open_notebook.domain.notebook import text_search, vector_search
-from open_notebook.exceptions import (
+from deeper_notebook.exceptions import (
     DatabaseOperationError,
     InvalidInputError,
     NotFoundError,
 )
-from open_notebook.graphs.ask import graph as ask_graph
+from deeper_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
 
@@ -315,7 +315,7 @@ async def stream_ask_response(
         # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
-        from open_notebook.utils.error_classifier import classify_error
+        from deeper_notebook.utils.error_classifier import classify_error
 
         _, user_message = classify_error(e)
         logger.error(f"Error in ask streaming: {str(e)}")

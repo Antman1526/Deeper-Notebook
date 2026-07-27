@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from open_notebook.database import repository as repo
+from deeper_notebook.database import repository as repo
 
 
 class _FakeConn:

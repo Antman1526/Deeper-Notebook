@@ -22,8 +22,8 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from open_notebook.domain import gmail as gmail_mod
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.domain import gmail as gmail_mod
+from deeper_notebook.domain.gmail import GmailIntegration
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,7 @@ and v0.7.165 closes the next two sites the audit found:
      single `result_messages` local that handles both dict and
      Pydantic state shapes.
 
-  2. `open_notebook/graphs/source.py:168,172` used `result["output"]`
+  2. `deeper_notebook/graphs/source.py:168,172` used `result["output"]`
      against the transformation graph. Now normalized via an
      `output_text` local with the same dual-path.
 
@@ -79,11 +79,11 @@ def test_chat_execute_normalizes_result_messages_via_dual_path():
 
 
 def test_source_transform_normalizes_output_via_dual_path():
-    """v0.7.165: open_notebook/graphs/source.py must normalize
+    """v0.7.165: deeper_notebook/graphs/source.py must normalize
     `output_text` before using it in both `source.add_insight(...)`
     and the returned `{"output": output_text}` dict.
     """
-    src = _read_source("open_notebook/graphs/source.py")
+    src = _read_source("deeper_notebook/graphs/source.py")
 
     assert "output_text = (" in src, (
         "v0.7.165 regression: source.py missing the `output_text = (...)` "
@@ -112,7 +112,7 @@ def test_chat_py_is_syntactically_valid():
 
 def test_source_graph_is_syntactically_valid():
     """Same as above for the graph module."""
-    src = _read_source("open_notebook/graphs/source.py")
+    src = _read_source("deeper_notebook/graphs/source.py")
     ast.parse(src)
 
 

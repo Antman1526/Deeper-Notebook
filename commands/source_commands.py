@@ -5,22 +5,22 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
-from deeper_notebook.environment import resolve_env
-from open_notebook.database.repository import ensure_record_id
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.domain.notebook import Source
-from open_notebook.domain.transformation import (
+from deeper_notebook.database.repository import ensure_record_id
+from deeper_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.domain.notebook import Source
+from deeper_notebook.domain.transformation import (
     KEY_TOPICS_TRANSFORMATION_TITLE,
     Transformation,
     get_or_create_key_topics_transformation,
     get_or_create_summarize_transformation,
     parse_topics,
 )
-from open_notebook.exceptions import ConfigurationError
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import ConfigurationError
 
 try:
-    from open_notebook.graphs.source import source_graph
-    from open_notebook.graphs.transformation import graph as transform_graph
+    from deeper_notebook.graphs.source import source_graph
+    from deeper_notebook.graphs.transformation import graph as transform_graph
 except ImportError as e:
     logger.error(f"Failed to import graphs: {e}")
     raise ValueError("graphs not available")

@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from open_notebook.domain.notebook import Asset, Source
+from deeper_notebook.domain.notebook import Asset, Source
 
 
 @pytest.mark.asyncio

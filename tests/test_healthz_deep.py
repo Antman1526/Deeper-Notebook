@@ -39,11 +39,11 @@ def _patch_all_healthy(monkeypatch):
 
     from api.routers import config as cfg_mod
     monkeypatch.setattr(cfg_mod, "check_database_health", _db_ok)
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
     monkeypatch.setattr(
         async_migrate, "AsyncMigrationManager", lambda: _Mgr(),
     )
-    from open_notebook.ai.models import model_manager
+    from deeper_notebook.ai.models import model_manager
     monkeypatch.setattr(
         model_manager, "get_embedding_model", _has_emb,
     )
@@ -89,7 +89,7 @@ def test_deep_returns_503_when_migrations_pending(client, monkeypatch):
         async def needs_migration(self):
             return True
 
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
     monkeypatch.setattr(
         async_migrate, "AsyncMigrationManager", lambda: _PendingMgr(),
     )
@@ -110,7 +110,7 @@ def test_deep_degraded_200_when_embedding_model_missing(client, monkeypatch):
     async def _no_emb():
         return None
 
-    from open_notebook.ai.models import model_manager
+    from deeper_notebook.ai.models import model_manager
     monkeypatch.setattr(
         model_manager, "get_embedding_model", _no_emb,
     )
@@ -132,7 +132,7 @@ def test_deep_degraded_when_chat_model_missing(client, monkeypatch):
     async def _no_chat(_type):
         return None
 
-    from open_notebook.ai.models import model_manager
+    from deeper_notebook.ai.models import model_manager
     monkeypatch.setattr(
         model_manager, "get_default_model", _no_chat,
     )

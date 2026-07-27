@@ -9,10 +9,10 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.environment import resolve_env
-from open_notebook.config import DATA_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.podcasts.models import (
+from deeper_notebook.podcasts.models import (
     STAGE_AWAITING_REVIEW,
     STAGE_CANCELLED,
     STAGE_OUTLINE,

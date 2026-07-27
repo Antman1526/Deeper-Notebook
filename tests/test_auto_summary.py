@@ -1,7 +1,7 @@
 """v0.8.88 — tests for opt-in source auto-summary (preview + default-off)."""
 
 from api.routers.sources import _summary_preview
-from open_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.domain.content_settings import ContentSettings
 
 
 def test_summary_preview_handles_empty():

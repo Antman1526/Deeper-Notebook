@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from api.routers import study as study_router
-from open_notebook.evaluation.schemas import EvidenceSpan
-from open_notebook.study.contracts import StudyCard, StudyRating
-from open_notebook.study.repository import StudyRepository
-from open_notebook.study.scheduler import StudyScheduler
+from deeper_notebook.evaluation.schemas import EvidenceSpan
+from deeper_notebook.study.contracts import StudyCard, StudyRating
+from deeper_notebook.study.repository import StudyRepository
+from deeper_notebook.study.scheduler import StudyScheduler
 
 
 def _citation() -> EvidenceSpan:

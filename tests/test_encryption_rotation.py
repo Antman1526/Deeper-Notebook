@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.utils import encryption
+from deeper_notebook.utils import encryption
 
 
 @pytest.fixture(autouse=True)

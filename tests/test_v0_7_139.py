@@ -304,8 +304,8 @@ class TestGetModelErrorDiscrimination:
     async def test_none_from_model_get_raises_configuration_error(self):
         """If Model.get returns None instead of raising, we still need
         to surface "not found" cleanly."""
-        from open_notebook.ai.models import ModelManager
-        from open_notebook.exceptions import ConfigurationError
+        from deeper_notebook.ai.models import ModelManager
+        from deeper_notebook.exceptions import ConfigurationError
 
         with patch(
             "open_notebook.ai.models.Model.get",
@@ -316,8 +316,8 @@ class TestGetModelErrorDiscrimination:
 
     @pytest.mark.asyncio
     async def test_notfound_error_maps_to_configuration_error(self):
-        from open_notebook.ai.models import ModelManager
-        from open_notebook.exceptions import (
+        from deeper_notebook.ai.models import ModelManager
+        from deeper_notebook.exceptions import (
             ConfigurationError,
             NotFoundError,
         )
@@ -334,8 +334,8 @@ class TestGetModelErrorDiscrimination:
         from Model.get is operational, not configuration — must surface
         as OpenNotebookError so the user doesn't go re-creating
         perfectly-valid models."""
-        from open_notebook.ai.models import ModelManager
-        from open_notebook.exceptions import OpenNotebookError
+        from deeper_notebook.ai.models import ModelManager
+        from deeper_notebook.exceptions import OpenNotebookError
 
         with patch(
             "open_notebook.ai.models.Model.get",
@@ -348,8 +348,8 @@ class TestGetModelErrorDiscrimination:
     async def test_typed_exception_passes_through(self):
         """OpenNotebookError-subclass exceptions from Model.get pass
         through verbatim — no double-wrapping."""
-        from open_notebook.ai.models import ModelManager
-        from open_notebook.exceptions import RateLimitError
+        from deeper_notebook.ai.models import ModelManager
+        from deeper_notebook.exceptions import RateLimitError
 
         with patch(
             "open_notebook.ai.models.Model.get",
@@ -362,8 +362,8 @@ class TestGetModelErrorDiscrimination:
     async def test_invalid_type_field_includes_actionable_hint(self):
         """A model with type=None or unknown type should produce an
         error that names the model + tells the user where to fix it."""
-        from open_notebook.ai.models import ModelManager
-        from open_notebook.exceptions import ConfigurationError
+        from deeper_notebook.ai.models import ModelManager
+        from deeper_notebook.exceptions import ConfigurationError
 
         fake_model = MagicMock()
         fake_model.id = "model:weird"

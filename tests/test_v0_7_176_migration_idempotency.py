@@ -33,7 +33,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRATIONS = ROOT / "open_notebook" / "database" / "migrations"
+MIGRATIONS = ROOT / "deeper_notebook" / "database" / "migrations"
 
 
 def _all_defines(text: str) -> list[str]:

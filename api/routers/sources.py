@@ -33,12 +33,12 @@ from api.models import (
 )
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from commands.source_commands import SourceProcessingInput
+from deeper_notebook.config import UPLOADS_FOLDER
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import Asset, Notebook, Source
+from deeper_notebook.domain.transformation import Transformation
 from deeper_notebook.environment import resolve_env
-from open_notebook.config import UPLOADS_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Asset, Notebook, Source
-from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 
@@ -1295,7 +1295,7 @@ async def locate_source_passage(source_id: str, body: LocatePassageRequest):
     Best-effort: returns ``{"match": null}`` when the source has no text or there
     is no decent match, so the frontend can simply open the source at the top.
     """
-    from open_notebook.utils.citation_offsets import locate_passage
+    from deeper_notebook.utils.citation_offsets import locate_passage
 
     try:
         source = await Source.get(source_id)

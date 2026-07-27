@@ -18,22 +18,22 @@ from api.schemas.capture import (
     CaptureScanResponse,
     RegisterCaptureRootRequest,
 )
-from open_notebook.ai.models import Model, model_manager
-from open_notebook.ai.offline_gate import LOCAL_PROVIDERS
-from open_notebook.capture.routing import (
+from deeper_notebook.ai.models import Model, model_manager
+from deeper_notebook.ai.offline_gate import LOCAL_PROVIDERS
+from deeper_notebook.capture.routing import (
     CaptureNotebook,
     CaptureNotebookSuggestion,
     CaptureRouteSource,
     CaptureRoutingError,
     CaptureRoutingService,
 )
-from open_notebook.capture.watcher import (
+from deeper_notebook.capture.watcher import (
     DEFAULT_CAPTURE_ROOT,
     CaptureInboxWatcher,
     SurrealCaptureRepository,
     _resolved_root,
 )
-from open_notebook.domain.notebook import Notebook
+from deeper_notebook.domain.notebook import Notebook
 
 router = APIRouter(prefix="/capture", tags=["capture"])
 

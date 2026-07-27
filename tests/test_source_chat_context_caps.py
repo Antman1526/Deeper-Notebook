@@ -1,6 +1,6 @@
 """v0.7.12 — regression tests for source_chat context-budget caps.
 
-`_format_source_context` in open_notebook/graphs/source_chat.py
+`_format_source_context` in deeper_notebook/graphs/source_chat.py
 previously had ONE cap (source full_text @ 5000 chars hardcoded) and
 zero caps on the insight side. A source with 20 LLM-generated insights
 of 1500 chars each = 30 KB ≈ 7,500 tokens of context — which combined
@@ -14,7 +14,7 @@ These tests pin the new env-configurable caps:
 """
 from __future__ import annotations
 
-from open_notebook.graphs import source_chat
+from deeper_notebook.graphs import source_chat
 
 # ---------------------------------------------------------------------------
 # Builders

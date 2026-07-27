@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.evaluation.repository import EvaluationRepository
+from deeper_notebook.evaluation.repository import EvaluationRepository
 
 
 @pytest.mark.asyncio

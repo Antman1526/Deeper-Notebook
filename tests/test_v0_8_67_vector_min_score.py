@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.domain import notebook as nb
+from deeper_notebook.domain import notebook as nb
 
 
 def _run(coro):
@@ -40,7 +40,7 @@ def _patch_search(monkeypatch):
         captured["vars"] = vars or {}
         return []
 
-    import open_notebook.utils.embedding as emb
+    import deeper_notebook.utils.embedding as emb
     monkeypatch.setattr(emb, "generate_embedding", _fake_embed)
     monkeypatch.setattr(nb, "repo_query", _fake_repo_query)
     return captured

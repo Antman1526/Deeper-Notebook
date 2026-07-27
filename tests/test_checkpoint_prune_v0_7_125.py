@@ -97,7 +97,7 @@ def test_prune_no_op_when_file_missing(tmp_path):
     """v0.7.125 — A fresh install has no checkpoints.sqlite. Prune
     must silently return zero counts (NOT raise) so the lifespan task
     doesn't crash on first boot."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     missing = tmp_path / "does-not-exist.sqlite"
     result = prune_old_checkpoints(missing)
@@ -110,7 +110,7 @@ def test_prune_no_op_when_tables_missing(tmp_path):
     """v0.7.125 — An existing sqlite file that doesn't have the
     LangGraph schema (someone ran a different sqlite tool on the
     path?) must NOT raise — silently skip."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "empty.sqlite"
     conn = sqlite3.connect(str(path))
@@ -126,7 +126,7 @@ def test_prune_keeps_most_recent_n_per_thread(tmp_path):
     """v0.7.125 — Core behavior. A thread with 100 checkpoints gets
     pruned to the N most recent (newest checkpoint_id wins because
     LangGraph's uuid6 IDs are sorted DESC for newest-first)."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 100})
@@ -159,7 +159,7 @@ def test_prune_keeps_most_recent_n_per_thread(tmp_path):
 def test_prune_independent_per_thread(tmp_path):
     """v0.7.125 — Each thread's cap is independent. A heavy chat
     thread doesn't cause a light thread's history to be pruned."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {
@@ -193,7 +193,7 @@ def test_prune_cascades_orphan_writes(tmp_path):
     """v0.7.125 — When a checkpoint is deleted, its associated `writes`
     rows must be cleaned up too (otherwise we leak rows that can
     never be re-associated with a checkpoint)."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-X": 20})
@@ -210,7 +210,7 @@ def test_prune_cascades_orphan_writes(tmp_path):
 def test_prune_honors_env_knob(tmp_path, monkeypatch):
     """v0.7.125 — ONP_CHECKPOINT_KEEP_PER_THREAD env var sets the
     retention cap when no explicit `keep_per_thread` is passed."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "3")
 
@@ -226,7 +226,7 @@ def test_prune_honors_env_knob(tmp_path, monkeypatch):
 def test_prune_falls_back_on_invalid_env(tmp_path, monkeypatch, caplog):
     """v0.7.125 — A typo in the env knob should fall back to the
     default (50) with a warning, NOT crash the pruning loop."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "not-a-number")
 
@@ -242,7 +242,7 @@ def test_prune_falls_back_on_invalid_env(tmp_path, monkeypatch, caplog):
 def test_prune_negative_env_falls_back_to_default(tmp_path, monkeypatch):
     """v0.7.125 — Negative values (which would prune EVERYTHING) are
     rejected with a warning + default-fallback."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "-5")
 
@@ -257,7 +257,7 @@ def test_prune_negative_env_falls_back_to_default(tmp_path, monkeypatch):
 def test_prune_is_idempotent(tmp_path):
     """v0.7.125 — Running prune twice in a row should not delete
     anything the second time (nothing left to prune below the cap)."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 100})
@@ -276,7 +276,7 @@ def test_prune_is_idempotent(tmp_path):
 def test_prune_returns_elapsed_ms(tmp_path):
     """v0.7.125 — Result dict includes elapsed_ms for operational
     visibility (matches the slow-query log philosophy)."""
-    from open_notebook.utils.checkpoint_prune import prune_old_checkpoints
+    from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 10})

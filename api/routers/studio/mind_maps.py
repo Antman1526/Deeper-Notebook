@@ -15,11 +15,11 @@ from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from api.schemas.studio import StudioArtifactResponse
-from open_notebook.domain.notebook import StudioArtifact
-from open_notebook.exceptions import NotFoundError
-from open_notebook.studio import artifact_generation as artifact_generation_service
-from open_notebook.studio.payloads import parse_payload_document
-from open_notebook.studio.schemas import MindMapDocument, MindMapNode
+from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.exceptions import NotFoundError
+from deeper_notebook.studio import artifact_generation as artifact_generation_service
+from deeper_notebook.studio.payloads import parse_payload_document
+from deeper_notebook.studio.schemas import MindMapDocument, MindMapNode
 
 from .common import (
     _artifact_response,

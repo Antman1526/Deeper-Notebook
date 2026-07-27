@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from open_notebook.local_models.quality_tasks import (
+from deeper_notebook.local_models.quality_tasks import (
     evaluate_quality_response,
     gate_quality_task,
     quality_task_for_role,

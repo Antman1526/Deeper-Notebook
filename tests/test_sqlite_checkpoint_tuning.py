@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from open_notebook.utils import sqlite_checkpoint as ckpt
+from deeper_notebook.utils import sqlite_checkpoint as ckpt
 
 
 @pytest.fixture(autouse=True)

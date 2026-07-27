@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from open_notebook.local_models import downloader as dl_mod
+from deeper_notebook.local_models import downloader as dl_mod
 
 
 @pytest.fixture(autouse=True)

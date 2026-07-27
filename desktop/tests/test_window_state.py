@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from desktop import window_state
 
-
 # --- clamp --------------------------------------------------------------------
 
 def test_clamp_applies_floor():

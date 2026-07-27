@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.graphs import source as source_graph
-from open_notebook.research.safe_fetch import SafeFetchResponse
-from open_notebook.security.outbound_url import ValidatedOutboundURL
-from open_notebook.tools.add_web_source import build_add_web_source_tool
-from open_notebook.utils.crawler import extract_url_with_crawl4ai
+from deeper_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.graphs import source as source_graph
+from deeper_notebook.research.safe_fetch import SafeFetchResponse
+from deeper_notebook.security.outbound_url import ValidatedOutboundURL
+from deeper_notebook.tools.add_web_source import build_add_web_source_tool
+from deeper_notebook.utils.crawler import extract_url_with_crawl4ai
 
 
 def _checked_response(url: str) -> SafeFetchResponse:

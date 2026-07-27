@@ -34,8 +34,8 @@ from pydantic import SecretStr
 
 from api.models import CredentialResponse
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
-from open_notebook.domain.credential import Credential
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.domain.credential import Credential
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 # =============================================================================
 # Constants
@@ -423,7 +423,7 @@ async def test_credential(credential_id: str) -> dict:
         cred = await Credential.get(credential_id)
         config = cred.to_esperanto_config()
 
-        from open_notebook.ai.connection_tester import (
+        from deeper_notebook.ai.connection_tester import (
             _test_azure_connection,
             _test_ollama_connection,
             _test_openai_compatible_connection,
@@ -462,7 +462,7 @@ async def test_credential(credential_id: str) -> dict:
         # Standard provider: use Esperanto to create and test
         from esperanto.factory import AIFactory
 
-        from open_notebook.ai.connection_tester import TEST_MODELS
+        from deeper_notebook.ai.connection_tester import TEST_MODELS
 
         if provider not in TEST_MODELS:
             return {
@@ -769,8 +769,8 @@ async def register_models(credential_id: str, models_data: list) -> dict:
     """
     cred = await Credential.get(credential_id)
 
-    from open_notebook.ai.models import Model
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.ai.models import Model
+    from deeper_notebook.database.repository import repo_query
 
     # Batch fetch existing models for this provider
     existing_models = await repo_query(
@@ -812,7 +812,7 @@ async def migrate_from_provider_config() -> dict:
     require_encryption_key()
     logger.info("Encryption key verified")
 
-    from open_notebook.domain.provider_config import ProviderConfig
+    from deeper_notebook.domain.provider_config import ProviderConfig
 
     config = await ProviderConfig.get_instance()
     logger.info(
@@ -863,8 +863,8 @@ async def migrate_from_provider_config() -> dict:
                 )
 
                 # Link existing models for this provider to the new credential
-                from open_notebook.ai.models import Model
-                from open_notebook.database.repository import repo_query
+                from deeper_notebook.ai.models import Model
+                from deeper_notebook.database.repository import repo_query
 
                 provider_models = await repo_query(
                     "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND credential IS NONE",
@@ -937,8 +937,8 @@ async def migrate_from_env() -> dict:
     require_encryption_key()
     logger.info("Encryption key verified")
 
-    from open_notebook.ai.models import Model
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.ai.models import Model
+    from deeper_notebook.database.repository import repo_query
 
     migrated = []
     skipped = []
