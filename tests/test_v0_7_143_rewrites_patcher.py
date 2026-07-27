@@ -229,7 +229,7 @@ class TestWritabilityDetection:
     def test_readonly_dir_falls_back_to_copy(self, tmp_path, monkeypatch):
         """If the bundle is read-only (e.g., installed under
         /Applications by another user), patcher copies to
-        ~/.open-notebook-plus/frontend-runtime/ and patches there."""
+        ~/.deeper-notebook/frontend-runtime/ and patches there."""
         import desktop.next_rewrites_patcher as patcher
 
         # Build the source bundle
@@ -239,13 +239,13 @@ class TestWritabilityDetection:
         # a directory unwritable, so force the patcher's write-probe outcome.
         monkeypatch.setattr(patcher, "_is_writable", lambda _path: False)
         # Use a fake HOME pointing into our tmp_path so the writable copy
-        # doesn't pollute the real ~/.open-notebook-plus/.
+        # doesn't pollute the real ~/.deeper-notebook/.
         monkeypatch.setenv("HOME", str(tmp_path / "fake-home"))
         result = patcher.patch_rewrites_for_api_port(src, 55555)
         expected = (
             tmp_path
             / "fake-home"
-            / ".open-notebook-plus"
+            / ".deeper-notebook"
             / patcher.WRITABLE_COPY_NAME
         )
         assert result == expected

@@ -56,7 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from desktop.paths import user_home
+from desktop.data_root import active_data_root
 
 log = logging.getLogger(__name__)
 
@@ -560,5 +560,4 @@ def _kill_orphan(pid: int, cmdline: str) -> None:
 
 def default_pid_file() -> Path:
     """Canonical PID-file location for the desktop launcher."""
-    base = user_home()
-    return base / ".open-notebook-plus" / "launcher.pid"
+    return active_data_root() / "launcher.pid"

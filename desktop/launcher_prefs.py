@@ -30,6 +30,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from desktop.data_root import active_data_root
+
 # v0.8.8 — log handle so merge_with_env can surface a malformed
 # launcher.env (was silently swallowing ValueError pre-v0.8.8).
 log = logging.getLogger(__name__)
@@ -85,7 +87,7 @@ def _canonicalize_prefs(prefs: dict[str, str]) -> dict[str, str]:
 
 def _prefs_path() -> Path:
     """Return the canonical path to the launcher.env file."""
-    return Path.home() / ".open-notebook-plus" / "launcher.env"
+    return active_data_root() / "launcher.env"
 
 
 def _parse_file(text: str) -> dict[str, str]:

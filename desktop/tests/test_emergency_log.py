@@ -22,7 +22,7 @@ import pytest
 
 def test_emergency_log_writes_to_launcher_log(tmp_path, monkeypatch):
     """Plant a fake HOME; verify _emergency_log writes the exception to
-    ~/.open-notebook-plus/logs/launcher.log."""
+    ~/.deeper-notebook/logs/launcher.log."""
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
@@ -31,7 +31,7 @@ def test_emergency_log_writes_to_launcher_log(tmp_path, monkeypatch):
     except RuntimeError as exc:
         _emergency_log(exc)
 
-    log_path = tmp_path / ".open-notebook-plus" / "logs" / "launcher.log"
+    log_path = tmp_path / ".deeper-notebook" / "logs" / "launcher.log"
     assert log_path.exists()
     text = log_path.read_text()
     assert "EARLY-INIT FAILURE" in text
@@ -45,7 +45,7 @@ def test_emergency_log_appends_to_existing_file(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
-    log_path = tmp_path / ".open-notebook-plus" / "logs" / "launcher.log"
+    log_path = tmp_path / ".deeper-notebook" / "logs" / "launcher.log"
     log_path.parent.mkdir(parents=True)
     log_path.write_text("PREVIOUS-LOG-CONTENT\n")
 
@@ -66,7 +66,7 @@ def test_emergency_log_swallows_its_own_failure(monkeypatch, capsys):
     monkeypatch.setenv("HOME", "/dev/null")
     from desktop.__main__ import _emergency_log
 
-    # Should not raise even though /dev/null/.open-notebook-plus fails to mkdir
+    # Should not raise even though /dev/null/.deeper-notebook fails to mkdir
     try:
         raise RuntimeError("the real error")
     except RuntimeError as exc:
@@ -79,7 +79,7 @@ def test_emergency_log_creates_logs_dir_if_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
-    log_dir = tmp_path / ".open-notebook-plus" / "logs"
+    log_dir = tmp_path / ".deeper-notebook" / "logs"
     assert not log_dir.exists()  # fresh
 
     try:

@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from desktop.data_root import active_data_root
+
 
 def _toml_string(v: str) -> str:
     """TOML-safe string serialization.
@@ -72,9 +74,7 @@ def default_model_dir() -> Path:
 
 
 def default_config_path() -> Path:
-    if sys.platform == "win32":
-        return Path(os.environ["USERPROFILE"]) / ".open-notebook-plus" / "config.toml"
-    return Path(os.environ["HOME"]) / ".open-notebook-plus" / "config.toml"
+    return active_data_root() / "config.toml"
 
 
 def load_or_create(path: Path) -> Config:

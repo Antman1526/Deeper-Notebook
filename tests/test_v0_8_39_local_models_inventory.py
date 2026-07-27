@@ -329,7 +329,7 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
     model_dir.mkdir()
     (model_dir / "qwen-7b-q4.gguf").write_bytes(b"x" * 2048)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -343,7 +343,7 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
         ])
     )
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -374,7 +374,7 @@ def test_inventory_endpoint_marks_activation_state(
     (mlx / "config.json").write_text('{"model_type": "qwen2"}')
     (mlx / "model.safetensors").write_bytes(b"y" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         "\n".join([
@@ -385,7 +385,7 @@ def test_inventory_endpoint_marks_activation_state(
     )
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", str(gguf))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -412,7 +412,7 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
     (repo / "config.json").write_text('{"model_type": "qwen2"}')
     (repo / "model.safetensors").write_bytes(b"x" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -428,7 +428,7 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
         ])
     )
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -463,7 +463,7 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
     gguf.parent.mkdir(parents=True)
     gguf.write_bytes(b"x" * 2048)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -479,7 +479,7 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
         ])
     )
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -510,7 +510,7 @@ def test_set_launch_default_rejects_inventory_only_model(
     (repo / "config.json").write_text('{"model_type": "fastcontext"}')
     (repo / "model.safetensors").write_bytes(b"x" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         "\n".join([
@@ -522,7 +522,7 @@ def test_set_launch_default_rejects_inventory_only_model(
         ])
     )
     monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(

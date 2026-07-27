@@ -74,7 +74,7 @@ def test_patch_resolves_symlinked_bundle_to_real_files(tmp_path, monkeypatch):
     work = nrp.patch_rewrites_for_api_port(fw, 53999)
 
     # Patched into the writable runtime copy.
-    assert work == home / ".open-notebook-plus" / nrp.WRITABLE_COPY_NAME
+    assert work == home / ".deeper-notebook" / nrp.WRITABLE_COPY_NAME
 
     server = work / "server.js"
     assert server.exists(), "server.js missing in runtime copy (the original bug)"

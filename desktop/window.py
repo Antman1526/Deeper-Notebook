@@ -657,11 +657,11 @@ def open_window(url: str, on_close: Callable[[], None],
     `/api/transcribe` + `/api/audio/speech` routes (which were generating
     the "STT failed: HTTP 404" toasts in the UI).
     """
-    import webview  # lazy: only the desktop runtime path needs this
     from desktop import window_state
-    from desktop.paths import user_home
+    from desktop.data_root import active_data_root
+    import webview  # lazy: only the desktop runtime path needs this
 
-    data_home = user_home() / ".open-notebook-plus"
+    data_home = active_data_root()
     # v0.8.67m — reopen at the size you last left the window, if remembered;
     # otherwise v0.8.67j's screen-aware default. Clamp a remembered size to the
     # CURRENT screen so a size saved on a bigger monitor can't strand the
