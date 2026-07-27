@@ -15,6 +15,7 @@ depend on any of the modules that might have failed.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -134,4 +135,37 @@ def test_emergency_log_refuses_symlinked_recovery_directory(
     entrypoint._emergency_log(RuntimeError("do not follow recovery link"))
 
     assert not (canonical / "logs" / "launcher.log").exists()
+    assert "Launcher early-init failure" in capsys.readouterr().err
+
+
+def test_emergency_log_dirfd_cannot_be_redirected_after_open(
+    tmp_path, monkeypatch, capsys
+):
+    from desktop import __main__ as entrypoint
+    from desktop import data_root
+
+    canonical = tmp_path / ".deeper-notebook"
+    canonical.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    real_open = data_root.open_recovery_log_directory
+    held = tmp_path / ".logs-held"
+
+    @contextmanager
+    def swapped_log_directory():
+        with real_open() as directory:
+            directory.path.rename(held)
+            directory.path.symlink_to(canonical, target_is_directory=True)
+            yield directory
+
+    monkeypatch.setattr(
+        entrypoint,
+        "open_recovery_log_directory",
+        swapped_log_directory,
+    )
+    entrypoint._emergency_log(RuntimeError("descriptor-bound"))
+
+    assert not (canonical / "launcher.log").exists()
+    assert "descriptor-bound" in (
+        held / "launcher.log"
+    ).read_text(encoding="utf-8")
     assert "Launcher early-init failure" in capsys.readouterr().err

@@ -13,7 +13,6 @@ import json
 import os
 import plistlib
 import sys
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,6 +20,7 @@ from pathlib import Path
 from typing import Literal
 
 from deeper_notebook.identity import DATA_DIR_NAME
+from desktop.data_root import atomic_replace_json, open_owned_directory
 from desktop.paths import user_home
 
 COMPATIBLE_BUNDLE_ID = "com.antman1526.open-notebook-plus"
@@ -80,6 +80,24 @@ class AppReplacementSnapshot:
 
 class AppReplacementRefused(RuntimeError):
     """Raised when an explicit replacement fails a safety precondition."""
+
+
+class AppReplacementOutcomeError(AppReplacementRefused):
+    """Raised with a user-safe statement of what happened around the move."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        move_outcome: Literal[
+            "not-moved",
+            "move-uncertain",
+            "moved-receipt-uncertain",
+        ],
+    ) -> None:
+        super().__init__(message)
+        self.move_outcome = move_outcome
+        self.user_message = message
 
 
 def _canonical_data_root() -> Path:
@@ -281,28 +299,8 @@ def detect_legacy_app_replacement(
 
 
 def _write_receipt(receipt_path: Path, receipt: dict[str, object]) -> None:
-    receipt_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=receipt_path.parent,
-            prefix=f".{receipt_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as receipt_file:
-            temporary_path = Path(receipt_file.name)
-            json.dump(receipt, receipt_file, indent=2)
-            receipt_file.write("\n")
-            receipt_file.flush()
-            os.fsync(receipt_file.fileno())
-        os.chmod(temporary_path, 0o600)
-        os.replace(temporary_path, receipt_path)
-    except Exception:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-        raise
+    with open_owned_directory(receipt_path.parent) as directory:
+        atomic_replace_json(directory, receipt_path.name, receipt)
 
 
 def _native_macos_recycle(source: Path) -> Path:
@@ -396,7 +394,23 @@ def replace_legacy_app(
         "canonical_app": str(decision.canonical_app),
         "started_at": now,
     }
-    _write_receipt(receipt_path, receipt)
+    try:
+        _write_receipt(receipt_path, receipt)
+    except Exception as error:
+        current = _capture_snapshot(
+            applications_dir, exact_legacy_app, decision.canonical_app
+        )
+        if _snapshot_matches(decision.snapshot, current):
+            raise AppReplacementOutcomeError(
+                "The old app was not moved because the recovery receipt "
+                "could not be started.",
+                move_outcome="not-moved",
+            ) from error
+        raise AppReplacementOutcomeError(
+            "The Trash move was not started, but the application paths changed. "
+            "Review Applications before trying again.",
+            move_outcome="move-uncertain",
+        ) from error
 
     recycle = recycler or _native_macos_recycle
     # Keep this identity check outside the recycler failure-receipt block:
@@ -419,8 +433,23 @@ def replace_legacy_app(
                 "error_type": type(error).__name__,
             }
         )
-        _write_receipt(receipt_path, receipt)
-        raise
+        try:
+            _write_receipt(receipt_path, receipt)
+        except Exception:
+            pass
+        current = _capture_snapshot(
+            applications_dir, exact_legacy_app, decision.canonical_app
+        )
+        if _snapshot_matches(decision.snapshot, current):
+            raise AppReplacementOutcomeError(
+                "The old app was not moved. The macOS Trash operation failed.",
+                move_outcome="not-moved",
+            ) from error
+        raise AppReplacementOutcomeError(
+            "The Trash operation returned an error after the app path changed. "
+            "Verify the macOS Trash and Applications before trying again.",
+            move_outcome="move-uncertain",
+        ) from error
 
     if _path_exists(exact_legacy_app):
         receipt.update(
@@ -440,7 +469,15 @@ def replace_legacy_app(
             "trash_destination": str(trash_destination),
         }
     )
-    _write_receipt(receipt_path, receipt)
+    try:
+        _write_receipt(receipt_path, receipt)
+    except Exception as error:
+        raise AppReplacementOutcomeError(
+            "Open Notebook Plus.app was moved, but the completion receipt "
+            "could not be saved. Verify the macOS Trash before taking any "
+            "further action.",
+            move_outcome="moved-receipt-uncertain",
+        ) from error
     return receipt_path
 
 
