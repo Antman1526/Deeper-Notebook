@@ -72,10 +72,13 @@ def test_active_repository_has_no_onp_css_custom_properties() -> None:
     )
 
 
-def test_persisted_onp_theme_storage_identity_remains_compatible() -> None:
+def test_theme_storage_uses_canonical_identity_and_mirrors_legacy() -> None:
     theme_switcher = (
         ROOT / "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx"
     ).read_text(encoding="utf-8")
 
+    assert "localStorage.getItem('dn-theme')" in theme_switcher
+    assert "localStorage.setItem('dn-theme', themeId)" in theme_switcher
     assert "localStorage.getItem('onp-theme')" in theme_switcher
     assert "localStorage.setItem('onp-theme', themeId)" in theme_switcher
+    assert "const themeBridge = w.DN ?? w.ONP" in theme_switcher

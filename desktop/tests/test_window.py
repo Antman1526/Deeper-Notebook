@@ -118,12 +118,14 @@ def test_theme_ids_are_in_lockstep_with_api_allowlist():
     )
 
 
-def test_injection_exposes_setTheme_bridge():
-    """v0.5.7 — window.ONP.setTheme is what ThemeSwitcher calls. Must be
-    present in the generated JS or the dropdown won't work."""
+def test_injection_exposes_canonical_theme_bridge_and_legacy_alias():
+    """The canonical bridge wins while an existing legacy bridge migrates."""
     js = _theme_injection_js("dark")
-    assert "window.ONP" in js
-    assert "ONP.setTheme" in js
+    assert "window.DN = window.DN || window.ONP || {}" in js
+    assert "window.ONP = window.DN" in js
+    assert "window.DN.setTheme" in js
+    assert "window.DN.themes" in js
+    assert "window.DN.relaunch" in js
     # And it should POST to the canonical endpoint to persist.
     assert "/api/deeper-notebook/theme" in js
 

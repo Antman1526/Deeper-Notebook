@@ -287,10 +287,10 @@ def _artifact_export_dir() -> Path:
         return (
             Path(home)
             / "BrainPulseKnowledge"
-            / "open-notebook-plus-imports"
+            / "deeper-notebook-imports"
             / "evidence-studio"
         )
-    return Path.cwd() / "open-notebook-plus-imports" / "evidence-studio"
+    return Path.cwd() / "deeper-notebook-imports" / "evidence-studio"
 
 
 def _artifact_export_slug(value: object, *, fallback: str) -> str:

@@ -39,6 +39,16 @@ def test_health_returns_200():
         assert r.json()["status"] == "ok"
 
 
+def test_models_use_canonical_owner_identity():
+    app = build_app(model=_fake_whisper_model())
+    with TestClient(app) as c:
+        body = c.get("/v1/models").json()
+
+    assert {model["owned_by"] for model in body["data"]} == {
+        "deeper-notebook"
+    }
+
+
 def test_transcribe_returns_text():
     app = build_app(model=_fake_whisper_model("the quick brown fox"))
     with TestClient(app) as c:

@@ -160,6 +160,25 @@ def test_legacy_speed_only_history_rows_remain_readable_as_performance_only(tmp_
     assert restored[0].score == 24.5
 
 
+def test_legacy_benchmark_filename_is_read_but_new_writes_are_canonical(tmp_path):
+    manifests = tmp_path / "Manifests"
+    manifests.mkdir()
+    legacy = manifests / "open-notebook-plus-benchmarks.json"
+    legacy.write_text(
+        '{"results": [{"role": "chat", "label": "Legacy", '
+        '"status": "completed", "score": 1.0}]}',
+        encoding="utf-8",
+    )
+
+    restored = load_benchmark_history(tmp_path)
+    canonical = benchmarks_mod.benchmark_history_path(tmp_path)
+    save_benchmark_history(tmp_path, restored)
+
+    assert canonical.name == "deeper-notebook-benchmarks.json"
+    assert canonical.is_file()
+    assert legacy.read_text(encoding="utf-8").startswith('{"results"')
+
+
 @pytest.mark.asyncio
 async def test_benchmark_skips_role_when_context_or_structured_output_gate_fails(
     tmp_path,

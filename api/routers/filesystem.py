@@ -88,7 +88,7 @@ class FsHomeResponse(BaseModel):
     desktop: Optional[str] = None
     documents: Optional[str] = None
     downloads: Optional[str] = None
-    default_exports: str               # ~/OpenNotebookPlus-Exports
+    default_exports: str               # ~/DeeperNotebook-Exports
 
 
 class FsMkdirRequest(BaseModel):
@@ -201,7 +201,13 @@ def fs_home() -> FsHomeResponse:
     desktop = home / "Desktop"
     documents = home / "Documents"
     downloads = home / "Downloads"
-    default_exports = home / "OpenNotebookPlus-Exports"
+    canonical_exports = home / "DeeperNotebook-Exports"
+    legacy_exports = home / "OpenNotebookPlus-Exports"
+    default_exports = (
+        legacy_exports
+        if legacy_exports.exists() and not canonical_exports.exists()
+        else canonical_exports
+    )
     return FsHomeResponse(
         home=str(home),
         desktop=str(desktop) if desktop.exists() else None,

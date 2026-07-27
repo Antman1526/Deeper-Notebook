@@ -59,7 +59,7 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
                 {
                     "id": "memory-local",
                     "object": "model",
-                    "owned_by": "open-notebook-plus",
+                    "owned_by": "deeper-notebook",
                 }
             ],
         }

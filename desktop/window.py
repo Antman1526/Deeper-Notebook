@@ -282,12 +282,12 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     base_js = f"""
     (function() {{
       var INITIAL_THEME = "{initial}";
-      // ONP v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
-      // The same <style id="onp-theme-injection"> is reused across Next.js soft
+      // DN v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
+      // The same <style id="dn-theme-injection"> is reused across Next.js soft
       // navigations because the CSS block is theme-independent.
-      if (!document.getElementById('onp-theme-injection')) {{
+      if (!document.getElementById('dn-theme-injection')) {{
         var s = document.createElement('style');
-        s.id = 'onp-theme-injection';
+        s.id = 'dn-theme-injection';
         s.textContent = `
         {all_themes_css}
         html, body {{
@@ -314,7 +314,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
       var IS_DARK = {{ {is_dark_js} }};
 
       // Apply a theme: sets dataset.theme + .dark class. Internal — called
-      // by both the initial-load path and window.ONP.setTheme.
+      // by both the initial-load path and window.DN.setTheme.
       function applyTheme(theme) {{
         if (!IS_DARK.hasOwnProperty(theme)) theme = "light-blue";
         document.documentElement.dataset.theme = theme;
@@ -328,9 +328,12 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
 
       // Expose a switcher for the ThemeSwitcher React component. Sets the
       // attribute immediately for instant feedback, then POSTs to persist.
-      // window.ONP is the namespace for all desktop-wrapper-only hooks.
-      window.ONP = window.ONP || {{}};
-      window.ONP.setTheme = function(theme) {{
+      // window.DN is the canonical desktop-wrapper namespace. Reuse an
+      // existing legacy bridge during migration, then expose a deterministic
+      // window.ONP alias for older renderer bundles.
+      window.DN = window.DN || window.ONP || {{}};
+      window.ONP = window.DN;
+      window.DN.setTheme = function(theme) {{
         applyTheme(theme);
         try {{
           fetch('/api/deeper-notebook/theme', {{
@@ -340,11 +343,11 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
           }}).catch(function() {{}});
         }} catch (e) {{}}
       }};
-      window.ONP.themes = Object.keys(IS_DARK);
+      window.DN.themes = Object.keys(IS_DARK);
       // v0.8.81 — one-click relaunch for the DB repair banner. Bridges to the
       // pywebview js_api; returns false in a plain browser (dev) so callers can
       // fall back. The native side reopens the app after this process exits.
-      window.ONP.relaunch = function() {{
+      window.DN.relaunch = function() {{
         try {{
           if (window.pywebview && window.pywebview.api && window.pywebview.api.relaunch) {{
             window.pywebview.api.relaunch();

@@ -34,13 +34,48 @@ def test_fs_home_returns_user_home_and_defaults(client: TestClient) -> None:
     body = r.json()
     assert body["home"] == str(Path(os.path.expanduser("~")).resolve())
     # Default exports path is always returned even if the folder doesn't exist.
-    assert body["default_exports"].endswith("OpenNotebookPlus-Exports")
+    assert body["default_exports"].endswith("DeeperNotebook-Exports")
     # Desktop/Documents/Downloads are platform-conditional — assert they are
     # either absent or absolute paths.
     for key in ("desktop", "documents", "downloads"):
         v = body.get(key)
         if v is not None:
             assert os.path.isabs(v)
+
+
+def test_fs_home_falls_back_to_existing_legacy_exports_without_moving(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy = tmp_path / "OpenNotebookPlus-Exports"
+    canonical = tmp_path / "DeeperNotebook-Exports"
+    legacy.mkdir()
+
+    body = client.get("/api/fs/home").json()
+
+    assert body["default_exports"] == str(legacy)
+    assert legacy.is_dir()
+    assert not canonical.exists()
+
+
+def test_fs_home_prefers_canonical_exports_when_both_exist(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy = tmp_path / "OpenNotebookPlus-Exports"
+    canonical = tmp_path / "DeeperNotebook-Exports"
+    legacy.mkdir()
+    canonical.mkdir()
+
+    body = client.get("/api/fs/home").json()
+
+    assert body["default_exports"] == str(canonical)
+    assert legacy.is_dir()
+    assert canonical.is_dir()
 
 
 # ----------------------------------------------------------------------------
