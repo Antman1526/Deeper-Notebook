@@ -644,3 +644,62 @@ def test_phase_native_and_pywebview_close_race_tears_down_exactly_once(
 
     assert supervisor_stops == [True]
     assert runtime_stops == [True]
+
+
+def test_phase_waits_for_inflight_callback_cleanup_before_returning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    cleanup_started = threading.Event()
+    allow_cleanup = threading.Event()
+    phase_returned = threading.Event()
+    callback_threads: list[threading.Thread] = []
+    phase_errors: list[BaseException] = []
+    ctx = _window_phase_context(tmp_path, supervisor_stops)
+
+    def stop_all() -> None:
+        cleanup_started.set()
+        if not allow_cleanup.wait(timeout=5):
+            raise TimeoutError("test did not release cleanup")
+        supervisor_stops.append(True)
+
+    ctx.sv.stop_all = stop_all
+
+    def fake_open_window(*_args, **kwargs) -> None:
+        callback = threading.Thread(target=kwargs["on_close"])
+        callback_threads.append(callback)
+        callback.start()
+        assert cleanup_started.wait(timeout=1)
+
+    def run_phase() -> None:
+        try:
+            desktop_app._phase_open_window(ctx)
+        except BaseException as exc:
+            phase_errors.append(exc)
+        finally:
+            phase_returned.set()
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+    monkeypatch.setattr(
+        desktop_app, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    phase_thread = threading.Thread(target=run_phase)
+    phase_thread.start()
+    assert cleanup_started.wait(timeout=1)
+    try:
+        assert not phase_returned.wait(timeout=0.1)
+    finally:
+        allow_cleanup.set()
+        phase_thread.join(timeout=2)
+        for callback in callback_threads:
+            callback.join(timeout=2)
+
+    assert not phase_thread.is_alive()
+    assert all(not callback.is_alive() for callback in callback_threads)
+    assert phase_errors == []
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]

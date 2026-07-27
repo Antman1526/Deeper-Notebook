@@ -327,7 +327,7 @@ jobs:
             "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
           legacy_pid=$!
           wait_for_packaged_ready "$legacy_pid"
-          wait_for_pid_visible_window "$legacy_pid" "Open Notebook Plus" "Open Notebook Plus"
+          wait_for_pid_visible_window "$legacy_pid" "Open Notebook Plus" "Open notebook+"
           graceful_stop_and_assert_clean \
             "$legacy_pid" "$compat_home" \
             "$RUNNER_TEMP/legacy-descendants.txt"
