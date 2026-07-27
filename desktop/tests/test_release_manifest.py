@@ -339,6 +339,28 @@ def test_compatibility_jobs_probe_real_readiness_then_leave_no_sidecars() -> Non
     assert "remaining_descendants" in compatibility
 
 
+def test_legacy_macos_probe_requires_a_visible_window_owned_by_legacy_pid() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+    compatibility = workflow[workflow.index("  macos-compatibility-upgrade:") :]
+
+    assert "wait_for_pid_visible_window()" in compatibility
+    assert "CGWindowListCopyWindowInfo" in compatibility
+    assert "kCGWindowOwnerPID" in compatibility
+    assert "kCGWindowLayer" in compatibility
+    assert "kCGWindowBounds" in compatibility
+    assert "kCGWindowName" in compatibility
+    assert "kCGWindowOwnerName" in compatibility
+    assert (
+        'wait_for_pid_visible_window "$legacy_pid" '
+        '"Open Notebook Plus" "Open Notebook Plus"'
+    ) in compatibility
+    assert compatibility.index(
+        'wait_for_pid_visible_window "$legacy_pid"'
+    ) < compatibility.index(
+        'graceful_stop_and_assert_clean \\\n            "$legacy_pid"'
+    )
+
+
 def test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut() -> None:
     workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
     compatibility = workflow[workflow.index("  windows-compatibility-upgrade:") :]
