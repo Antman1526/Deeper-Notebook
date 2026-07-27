@@ -23,7 +23,7 @@ aiohttp>=3.11.18,<4
 # leaving the embed + chat local-GGUF servers dead. Every source
 # upload then got stuck "Processing" because embed_source couldn't
 # reach the embedding port. Visible in
-# ~/.open-notebook-plus/logs/llamacpp_embed.log and llamacpp.log.
+# ~/.deeper-notebook/logs/llamacpp_embed.log and llamacpp.log.
 llama-cpp-python[server]>=0.3.16,<0.4
 
 # v0.8.69 — MLX local model server support for Apple Silicon. The

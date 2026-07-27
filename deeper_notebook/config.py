@@ -4,7 +4,7 @@ import os
 # v0.7.147 — Honor `DATA_FOLDER` env var (falls back to legacy "./data"
 # when unset, so existing Docker / dev workflows are unaffected). The
 # desktop launcher injects an absolute path under
-# `~/.open-notebook-plus/data/` because when the .app is launched from
+# `~/.deeper-notebook/data/` because when the .app is launched from
 # a mounted DMG (read-only) the CWD-relative "./data" raised
 # `OSError: [Errno 30] Read-only file system: './data'` at module
 # import time, crashing uvicorn before it bound a port. The launcher

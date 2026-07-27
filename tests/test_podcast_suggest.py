@@ -223,6 +223,58 @@ def test_suggest_falls_back_to_deep_dive_when_huge(app_with_suggest, monkeypatch
     assert body["length_minutes"] == 15
 
 
+@pytest.mark.parametrize(
+    ("presets", "expected"),
+    [
+        (
+            ["Deep Dive", "Deeper Notebook Local", "Quick Brief"],
+            "Deeper Notebook Local",
+        ),
+        (
+            ["Deep Dive", "Open Notebook Plus Local", "Quick Brief"],
+            "Open Notebook Plus Local",
+        ),
+        (
+            [
+                "Deep Dive",
+                "Open Notebook Plus Local",
+                "Deeper Notebook Local",
+                "Quick Brief",
+            ],
+            "Deeper Notebook Local",
+        ),
+    ],
+)
+def test_suggest_medium_volume_matches_canonical_and_legacy_local_profile_names(
+    app_with_suggest,
+    monkeypatch,
+    presets,
+    expected,
+):
+    sources = [
+        {"title": "Research A", "topics": [], "chars": 4_000},
+        {"title": "Research B", "topics": [], "chars": 4_000},
+    ]
+    monkeypatch.setattr(
+        podcasts_mod,
+        "repo_query",
+        _make_repo_query_stub(
+            source_ids=["s:1", "s:2"],
+            sources_data=sources,
+            presets=presets,
+        ),
+    )
+
+    with TestClient(app_with_suggest) as client:
+        response = client.post(
+            "/api/podcasts/suggest",
+            json={"source_ids": ["s:1", "s:2"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["episode_profile_name"] == expected
+
+
 def test_suggest_uses_notebook_title_when_provided(app_with_suggest, monkeypatch):
     sources = [{"title": "Source A", "topics": [], "chars": 5000}]
     monkeypatch.setattr(

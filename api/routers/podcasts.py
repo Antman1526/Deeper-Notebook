@@ -23,6 +23,10 @@ from deeper_notebook.podcasts.models import (
     TranscriptSegment,
     normalize_podcast_mode,
 )
+from deeper_notebook.podcasts.profile_names import (
+    CANONICAL_LOCAL_EPISODE_PROFILE,
+    select_existing_episode_profile_name,
+)
 
 router = APIRouter()
 
@@ -996,8 +1000,14 @@ async def suggest_episode(req: SuggestRequest):
             chosen = "Deep Dive"
             reason = "Large content volume — long-form deep dive fits."
         else:
-            chosen = "Deeper Notebook Local"
+            chosen = CANONICAL_LOCAL_EPISODE_PROFILE
             reason = "Balanced two-host format for mid-sized content."
+        equivalent = select_existing_episode_profile_name(
+            chosen,
+            available_presets,
+        )
+        if equivalent is not None:
+            chosen = equivalent
         # If our default isn't available (user deleted everything but
         # one), fall back to whatever exists.
         if chosen not in available_presets and available_presets:

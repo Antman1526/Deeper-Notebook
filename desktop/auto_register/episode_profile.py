@@ -31,6 +31,9 @@ from typing import Any, Dict, List
 
 import httpx
 
+from deeper_notebook.podcasts.profile_names import (
+    equivalent_episode_profile_names,
+)
 from desktop.auto_register._http import _is_embedding_gguf
 
 log = logging.getLogger(__name__)
@@ -198,14 +201,6 @@ _PRESETS: list[dict[str, Any]] = [
     },
 ]
 
-# Existing installations may already have the old default profile name stored
-# in SurrealDB. Treat it as the same preset during idempotent registration;
-# never rename or duplicate the persisted user record implicitly.
-_LEGACY_PRESET_NAMES: dict[str, frozenset[str]] = {
-    "Deeper Notebook Local": frozenset({"Open Notebook Plus Local"}),
-}
-
-
 def register_default_episode_profile(client: httpx.Client) -> None:
     """Idempotent: create the v0.7.30 preset library.
 
@@ -310,8 +305,7 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     skipped_no_speaker = 0
     for preset in _PRESETS:
         equivalent_names = {
-            preset["name"],
-            *_LEGACY_PRESET_NAMES.get(preset["name"], frozenset()),
+            *equivalent_episode_profile_names(preset["name"]),
         }
         if existing & equivalent_names:
             skipped += 1

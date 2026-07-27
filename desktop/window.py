@@ -942,7 +942,7 @@ def open_window(url: str, on_close: Callable[[], None],
     # auto-skip (router.replace('/')) raced a cold boot straight into WebKit's
     # "This page couldn't load" — the exact reload-screen-every-launch the user
     # hit. (The same ephemeral wipe also reset the "show the intro once"
-    # cookie.) Persisting to a stable path under ~/.open-notebook-plus means the
+    # cookie.) Persisting to a stable path under ~/.deeper-notebook means the
     # wizard shows ONCE, the intro shows ONCE, and they stay dismissed across
     # launches AND across rebuilds (the stable code-signing identity keeps the
     # same data container).

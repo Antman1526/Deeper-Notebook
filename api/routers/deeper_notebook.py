@@ -1,7 +1,7 @@
 """Deeper Notebook desktop-wrapper-specific endpoints.
 
 These don't exist in upstream open-notebook; they wrap state that lives in
-the user's `~/.open-notebook-plus/config.toml` so the React UI can read and
+the user's `~/.deeper-notebook/config.toml` so the React UI can read and
 update it without a PyWebView bridge.
 
 Routes are namespace-relative so ``api.main`` can mount both the canonical

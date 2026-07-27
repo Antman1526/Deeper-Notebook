@@ -353,7 +353,7 @@ export default function DashboardPage() {
             </kbd>{' '}
             from anywhere to jump to a notebook, source, or action.
             <Database className="ml-3 mr-1 inline h-3 w-3 align-text-bottom" />
-            All data lives in <code className="rounded bg-background px-1">~/.open-notebook-plus/</code>.
+            All data lives in <code className="rounded bg-background px-1">~/.deeper-notebook/</code>.
           </motion.div>
         </motion.div>
       </div>

@@ -2,7 +2,7 @@
 
 Admin-only endpoints (protected by PasswordAuthMiddleware, same as all
 other API endpoints) for reading and writing the launcher.env preference
-file at ``~/.open-notebook-plus/launcher.env``.
+file at ``~/.deeper-notebook/launcher.env``.
 
 Endpoints
 ---------
