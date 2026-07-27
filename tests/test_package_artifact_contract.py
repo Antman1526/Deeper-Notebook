@@ -83,7 +83,7 @@ def test_ci_inspects_the_actual_pyinstaller_output() -> None:
     )
     verification_command = (
         "python desktop/build/verify_package_contents.py --frozen-root "
-        '"dist/Open Notebook Plus"'
+        '"dist/Deeper Notebook"'
     )
 
     assert workflow.count(verification_command) == 3

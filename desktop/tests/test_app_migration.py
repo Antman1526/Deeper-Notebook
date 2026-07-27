@@ -6,6 +6,7 @@ import json
 import plistlib
 import shutil
 import sys
+import threading
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -517,3 +518,129 @@ def test_production_startup_to_rendered_confirmation_replacement_and_receipt(
     assert not (ctx.log_dir / "desktop-readiness.json").exists()
     assert ("window.ready", "done", "http://127.0.0.1:62001/") in events
     assert stopped
+
+
+def _window_phase_context(tmp_path: Path, supervisor_stops: list[bool]):
+    ctx = desktop_app._new_context()
+    ctx.sv = SimpleNamespace(
+        frontend_url="http://127.0.0.1:62001/",
+        session_env={"INTERNAL_API_URL": "http://127.0.0.1:62000"},
+        whisper_port=0,
+        piper_port=0,
+        stop_all=lambda: supervisor_stops.append(True),
+    )
+    ctx.cfg = SimpleNamespace(
+        theme="light-blue",
+        openchronicle_choice="skip",
+    )
+    ctx.progress_bus = SimpleNamespace(publish=lambda *_args, **_kwargs: None)
+    ctx.log_dir = tmp_path / "logs"
+    ctx.log_dir.mkdir()
+    return ctx
+
+
+def test_phase_native_termination_callback_tears_down_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    ctx = _window_phase_context(tmp_path, supervisor_stops)
+
+    def fake_open_window(*_args, **kwargs) -> None:
+        native_callback = threading.Thread(target=kwargs["on_close"])
+        native_callback.start()
+        native_callback.join()
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+    monkeypatch.setattr(
+        desktop_app, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    desktop_app._phase_open_window(ctx)
+
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]
+
+
+def test_phase_pywebview_close_callback_tears_down_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    ctx = _window_phase_context(tmp_path, supervisor_stops)
+
+    def fake_open_window(*_args, **kwargs) -> None:
+        kwargs["on_close"]()
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+    monkeypatch.setattr(
+        desktop_app, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    desktop_app._phase_open_window(ctx)
+
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]
+
+
+def test_phase_window_startup_exception_tears_down_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    ctx = _window_phase_context(tmp_path, supervisor_stops)
+
+    def fake_open_window(*_args, **_kwargs) -> None:
+        raise RuntimeError("window startup failed")
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+    monkeypatch.setattr(
+        desktop_app, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    with pytest.raises(RuntimeError, match="window startup failed"):
+        desktop_app._phase_open_window(ctx)
+
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]
+
+
+def test_phase_native_and_pywebview_close_race_tears_down_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    ctx = _window_phase_context(tmp_path, supervisor_stops)
+
+    def fake_open_window(*_args, **kwargs) -> None:
+        start = threading.Barrier(3)
+
+        def dispatch_close() -> None:
+            start.wait()
+            kwargs["on_close"]()
+
+        native_callback = threading.Thread(target=dispatch_close)
+        pywebview_callback = threading.Thread(target=dispatch_close)
+        native_callback.start()
+        pywebview_callback.start()
+        start.wait()
+        native_callback.join()
+        pywebview_callback.join()
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+    monkeypatch.setattr(
+        desktop_app, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    desktop_app._phase_open_window(ctx)
+
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]

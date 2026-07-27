@@ -246,6 +246,27 @@ jobs:
             echo "Timed out waiting for packaged API/frontend/window readiness." >&2
             return 1
           }
+          wait_for_pid_visible_window() {
+            local launcher_pid="$1"
+            local expected_owner="$2"
+            local expected_title="$3"
+            local attempt
+            for attempt in $(seq 1 300); do
+              kill -0 "$launcher_pid" 2>/dev/null || {
+                echo "Packaged app exited before its native window appeared." >&2
+                return 1
+              }
+              if "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+                'import sys; from Quartz import CGWindowListCopyWindowInfo,kCGWindowListOptionOnScreenOnly,kCGNullWindowID,kCGWindowOwnerPID,kCGWindowLayer,kCGWindowBounds,kCGWindowName,kCGWindowOwnerName,kCGWindowAlpha; pid=int(sys.argv[1]); owner=sys.argv[2]; title=sys.argv[3]; windows=CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly,kCGNullWindowID) or []; matched=any(int(w.get(kCGWindowOwnerPID,-1))==pid and int(w.get(kCGWindowLayer,-1))==0 and float(w.get(kCGWindowAlpha,0))>0 and float((w.get(kCGWindowBounds) or {}).get("Width",0))>=200 and float((w.get(kCGWindowBounds) or {}).get("Height",0))>=100 and str(w.get(kCGWindowOwnerName) or "").strip()==owner and str(w.get(kCGWindowName) or "").strip()==title for w in windows); raise SystemExit(0 if matched else 1)' \
+                "$launcher_pid" "$expected_owner" "$expected_title"; then
+                echo "Visible native window confirmed for pid=$launcher_pid."
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for the packaged app's PID-bound visible window." >&2
+            return 1
+          }
           graceful_stop_and_assert_clean() {
             local launcher_pid="$1"
             local scope_pattern="$2"
@@ -306,6 +327,7 @@ jobs:
             "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
           legacy_pid=$!
           wait_for_packaged_ready "$legacy_pid"
+          wait_for_pid_visible_window "$legacy_pid" "Open Notebook Plus" "Open Notebook Plus"
           graceful_stop_and_assert_clean \
             "$legacy_pid" "$compat_home" \
             "$RUNNER_TEMP/legacy-descendants.txt"
