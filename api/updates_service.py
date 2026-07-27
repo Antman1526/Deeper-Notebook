@@ -11,12 +11,12 @@ Design notes
 ------------
 - **Privacy:** the GitHub request only fires when checking is enabled (default
   on, user-togglable). When disabled, ``check()`` returns the cached/empty
-  result without any network call. Open Notebook is privacy-first, so the one
+  result without any network call. Deeper Notebook is privacy-first, so the one
   outbound call is gated and disclosed in the UI.
 - **Resilience:** any failure (offline, rate-limited, malformed JSON, no
   releases yet) resolves to ``update_available = False``. The notifier must
   never block startup or surface an error to the user.
-- **Caching:** results are cached in ``~/.open-notebook-plus/update_state.json``
+- **Caching:** results are cached in ``~/.deeper-notebook/update_state.json``
   for ``CHECK_TTL_SECONDS`` so reopening the app within the window doesn't
   re-ping GitHub.
 - **State:** the same file persists the user's enabled toggle and the version

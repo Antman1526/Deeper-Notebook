@@ -1,6 +1,6 @@
 # Free MCP servers for internet search
 
-*Open Notebook Plus v0.8.15+*
+*Deeper Notebook v0.8.15+*
 
 The v0.8.0 Phase 2 MCP integration lets your local LLM call any MCP
 server registered in **Settings → MCP Servers**. This page lists
@@ -79,7 +79,7 @@ patterns. The recipe is:
 > header. If it returns 404 or connection-refused, the wrapper
 > isn't running on the port you think.
 
-### Step 3 — Register in Open Notebook Plus
+### Step 3 — Register in Deeper Notebook
 
 1. Sidebar → **Settings → MCP Servers**
 2. **Add server** → Name `SearXNG`, URL `http://127.0.0.1:8770/mcp`
@@ -175,7 +175,7 @@ uvx mcp-server-brave-search
 ### Step 3 — Run it with your API key on a fixed port
 
 The official Brave Search server speaks MCP over **stdio** by
-default. To use it from Open Notebook Plus (which speaks streamable
+default. To use it from Deeper Notebook (which speaks streamable
 HTTP), wrap it with the `mcp-proxy` adapter:
 
 ```bash
@@ -188,7 +188,7 @@ available — check the
 [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)
 README for the latest official transport.
 
-### Step 4 — Register in Open Notebook Plus
+### Step 4 — Register in Deeper Notebook
 
 1. Sidebar → **Settings → MCP Servers**
 2. **Add server** → Name `Brave Search`, URL `http://127.0.0.1:8765/mcp`

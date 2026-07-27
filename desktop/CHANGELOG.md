@@ -1,5 +1,10 @@
 # Open Notebook Plus — Changelog
 
+> **Historical release record:** the current successor is
+> [Deeper Notebook](https://github.com/Antman1526/Deeper-Notebook). Artifact,
+> configuration, and path names below remain unchanged to describe what each
+> release actually shipped.
+
 The desktop-app fork's version history. Upstream `open-notebook` releases
 are tracked in [`../CHANGELOG.md`](../CHANGELOG.md); this file covers
 the Plus-specific commits on top of upstream.

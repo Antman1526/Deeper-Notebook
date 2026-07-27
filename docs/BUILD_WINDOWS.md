@@ -1,11 +1,12 @@
-# Building Open Notebook Plus for Windows
+# Building Deeper Notebook for Windows
 
-There are two ways to produce a Windows build (`Open Notebook Plus.exe` + a
-distributable `.zip`). Both run the **same** stages as the macOS `make build-mac`
+There are two ways to produce a Windows build (`Deeper Notebook.exe` plus a
+portable `.zip` and installer). Both run the **same** stages as the macOS `make build-mac`
 (minus the `.app`/`.dmg` packaging), producing a PyInstaller *onedir* bundle.
 
-> **What you get:** `dist\Open Notebook Plus\Open Notebook Plus.exe` (the launcher)
-> and `dist\Open-Notebook-Plus-windows-x64.zip` (the whole bundle, zipped).
+> **What you get:** `dist\Deeper Notebook\Deeper Notebook.exe` (the launcher),
+> `dist\Deeper-Notebook-windows-x64.zip` (the portable bundle), and
+> `dist\Deeper-Notebook-Setup-x64.exe` (the Inno Setup installer).
 > On first launch the app reprovisions a user venv and extracts the bundled
 > Python runtime (one-time, a few minutes), then starts SurrealDB + the API +
 > the Next.js frontend + the local AI sidecars and opens the desktop window.
@@ -24,13 +25,13 @@ wait on the slow/expensive macOS jobs.
 2. Select **build-windows** in the left sidebar.
 3. Click **Run workflow** -> pick the `desktop-app` branch -> **Run workflow**.
 4. When it finishes (~15 min), open the run -> **Artifacts** ->
-   download **Open-Notebook-Plus-windows-x64** (the `.zip`).
+   download **Deeper-Notebook-windows-x64** (the `.zip`).
 
 Or trigger it from your Mac with the GitHub CLI:
 ```bash
 gh workflow run build-windows.yml --ref desktop-app
 gh run watch                       # follow it live
-gh run download --name Open-Notebook-Plus-windows-x64   # grab the artifact when done
+gh run download --name Deeper-Notebook-windows-x64      # grab the artifact when done
 ```
 
 ### A2. Full release build (all platforms)
@@ -50,10 +51,10 @@ x86_64 **and** Windows x64; tagged builds (`vX.Y.Z`) are attached to a GitHub Re
 
 ### Build (one command)
 ```powershell
-git clone https://github.com/Antman1526/open-notebook-Plus.git
-cd open-notebook-Plus
-git checkout desktop-app
+git clone https://github.com/Antman1526/Deeper-Notebook.git
+cd Deeper-Notebook
 pwsh -File desktop\build\build_windows.ps1
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\build\deeper-notebook.iss
 ```
 
 The script:
@@ -61,8 +62,9 @@ The script:
 2. `pip install` backend + desktop requirements, then the package (editable)
 3. Builds the Next.js frontend (`npm ci && npm run build`)
 4. Downloads pinned native runtimes (SurrealDB, Node, uv, python-build-standalone)
-5. Runs PyInstaller -> `dist\Open Notebook Plus\`
-6. Zips it -> `dist\Open-Notebook-Plus-windows-x64.zip`
+5. Runs PyInstaller -> `dist\Deeper Notebook\`
+6. Zips it -> `dist\Deeper-Notebook-windows-x64.zip`
+7. Inno Setup writes `dist\Deeper-Notebook-Setup-x64.exe`
 
 **Useful flags:**
 ```powershell
@@ -106,5 +108,5 @@ The PyInstaller spec (`desktop/build/pyinstaller.spec`) already branches on
 - **SmartScreen warning on first launch** — the `.exe` is unsigned; click
   *More info -> Run anyway*. For distribution, sign it with an Authenticode cert
   (future: add a signing step to the workflow).
-- **No installer yet** — the build produces a portable `.zip`/onedir, not an
-  `.msi`/setup `.exe`. An Inno Setup or NSIS installer step can be added later.
+- **Installer fails to compile** — install Inno Setup 6 and invoke `ISCC.exe`
+  against `desktop\build\deeper-notebook.iss` after the portable build succeeds.

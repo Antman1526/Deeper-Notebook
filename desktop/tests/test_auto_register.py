@@ -473,8 +473,8 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
     # Names are unique
     names = [p["name"] for p in posted_episode_profiles]
     assert len(set(names)) == len(names), "duplicate preset names"
-    # Default preset is still in the set (back-compat)
-    assert "Open Notebook Plus Local" in names
+    # New installs receive the canonical default preset name.
+    assert "Deeper Notebook Local" in names
     # v0.7.149 — Debate preset MUST pair with Local Debate (semantic match)
     debate = next(p for p in posted_episode_profiles if p["name"] == "Debate")
     assert debate["speaker_config"] == "Local Debate", (
@@ -712,6 +712,51 @@ def test_episode_profile_library_is_idempotent():
     assert not (existing_names & posted_names), (
         f"presets that existed got re-posted: {existing_names & posted_names}"
     )
+
+
+def test_episode_profile_preserves_legacy_default_without_duplicate():
+    """An upgraded profile keeps its persisted legacy name without creating
+    a second canonical copy during idempotent auto-registration."""
+    from desktop.auto_register.episode_profile import (
+        register_default_episode_profile,
+    )
+
+    posted: list[dict] = []
+
+    class FakeClient:
+        def get(self, path):
+            class R:
+                def raise_for_status(self): pass
+                def json(self):
+                    if path == "/api/episode-profiles":
+                        return [{"name": "Open Notebook Plus Local"}]
+                    if path == "/api/speaker-profiles":
+                        return [
+                            {"name": "Local Duo"},
+                            {"name": "Local Debate"},
+                            {"name": "Local Interview"},
+                            {"name": "Local Solo"},
+                        ]
+                    if path == "/api/models":
+                        return [{"name": "Qwen-7B-chat", "id": "model:q"}]
+                    return []
+            return R()
+
+        def post(self, path, json=None):
+            if path == "/api/episode-profiles":
+                posted.append(json)
+
+            class R:
+                status_code = 201
+                text = ""
+
+                def json(self): return {}
+
+            return R()
+
+    register_default_episode_profile(FakeClient())
+
+    assert all(profile["name"] != "Deeper Notebook Local" for profile in posted)
 
 
 def test_ensure_credential_does_not_post_when_existing_set_lies():

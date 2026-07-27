@@ -199,6 +199,9 @@ def test_active_product_code_has_no_stale_visible_brand_labels() -> None:
         # This is a persisted episode-profile identity. It remains readable and
         # selectable until a dedicated record migration exists.
         source = source.replace("Open Notebook Plus Local", "")
+        # The replacement prompt must name the legacy .app bundle precisely so
+        # users know which installed application will be moved to Trash.
+        source = source.replace("Open Notebook Plus.app", "")
         for line_number, line in enumerate(source.splitlines(), start=1):
             if stale.search(line):
                 unexpected.append(f"{relative}:{line_number}")

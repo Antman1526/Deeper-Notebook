@@ -131,17 +131,18 @@ def test_custom_allowlist_patterns_are_scoped_to_their_path():
     )
 
 
-def test_legacy_installer_path_remains_unexpected_but_app_id_is_compatible():
+def test_legacy_installer_path_is_unexpected_but_current_app_id_is_compatible():
     allowlist = load_allowlist(ALLOWLIST_PATH)
-    installer = "desktop/build/open-notebook-plus.iss"
+    legacy_installer = "desktop/build/open-notebook-plus.iss"
+    current_installer = "desktop/build/deeper-notebook.iss"
 
     assert (
-        classify_match(installer, "open-notebook-plus", allowlist)
+        classify_match(legacy_installer, "open-notebook-plus", allowlist)
         == "unexpected_active_identity"
     )
     assert (
         classify_match(
-            installer,
+            current_installer,
             "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}",
             allowlist,
         )
@@ -207,6 +208,164 @@ def test_allowlist_accepts_upstream_docs_wildcard_and_rejects_arbitrary_scope(
     }
     with pytest.raises(ValueError, match="disallowed allowlist wildcard"):
         load_allowlist(invalid)
+
+
+def test_repository_allowlist_entries_have_specific_reasons():
+    payload = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+
+    for entry in payload["entries"]:
+        assert isinstance(entry.get("reason"), str), entry
+        assert entry["reason"].strip(), entry
+
+
+def test_current_runtime_descriptions_use_deeper_notebook_name():
+    expected_copy = {
+        "api/routers/auth.py": (
+            "Authentication router for Deeper Notebook API."
+        ),
+        "api/updates_service.py": (
+            "Deeper Notebook is privacy-first"
+        ),
+        "deeper_notebook/exceptions.py": (
+            "Base exception class for Deeper Notebook errors."
+        ),
+        "deeper_notebook/domain/__init__.py": (
+            "Domain models for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/__init__.py": (
+            "Utils package for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/token_utils.py": (
+            "Token utilities for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/context_builder.py": (
+            "Generic ContextBuilder for the Deeper Notebook project."
+        ),
+        "deeper_notebook/utils/embedding.py": (
+            "Unified embedding utilities for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/text_utils.py": (
+            "Text utilities for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/chunking.py": (
+            "Chunking utilities for Deeper Notebook."
+        ),
+        "deeper_notebook/utils/version_utils.py": (
+            "Version utilities for Deeper Notebook."
+        ),
+        "deeper_notebook/local_models/manifest.py": (
+            "Most helpers let Deeper Notebook"
+        ),
+    }
+
+    for path, expected in expected_copy.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert expected in source, path
+
+
+def test_podcast_default_profile_names_use_deeper_notebook():
+    source = (ROOT / "api/routers/podcasts.py").read_text(encoding="utf-8")
+    from desktop.auto_register.episode_profile import _PRESETS
+
+    assert "Deeper Notebook Local" in source
+    assert "Open Notebook Plus Local" not in source
+    assert _PRESETS[0]["name"] == "Deeper Notebook Local"
+
+
+def test_current_bootstrap_and_connection_test_copy_use_deeper_notebook():
+    bootstrap = (ROOT / "desktop/bootstrap.py").read_text(encoding="utf-8")
+    connection_tester = (
+        ROOT / "deeper_notebook/ai/connection_tester.py"
+    ).read_text(encoding="utf-8")
+
+    assert "open 'Deeper Notebook.app'" in bootstrap
+    assert 'text="Hello from Deeper Notebook"' in connection_tester
+
+
+def test_current_cli_and_development_banners_use_deeper_notebook():
+    expected_copy = {
+        "Makefile": (
+            "Starting Deeper Notebook",
+            "Stopping all Deeper Notebook services",
+            "Deeper Notebook Service Status",
+        ),
+        "run_api.py": (
+            "Startup script for Deeper Notebook API server.",
+            "Starting Deeper Notebook API server",
+        ),
+        "dev-init.sh": (
+            "Development environment startup for Deeper Notebook",
+            "=== Deeper Notebook Dev Startup ===",
+        ),
+        ".pre-commit-config.yaml": (
+            "Pre-commit hooks for Deeper Notebook",
+        ),
+        ".env.example": (
+            "default ~/.deeper-notebook/logs",
+        ),
+    }
+
+    for path, snippets in expected_copy.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        for snippet in snippets:
+            assert snippet in source, f"{path}: {snippet}"
+
+
+def test_current_operator_scripts_use_deeper_notebook_copy_and_compat_paths():
+    expected_copy = {
+        "commands/__init__.py": (
+            "Surreal-commands integration for Deeper Notebook.",
+        ),
+        "scripts/upstream_sync_guard.sh": (
+            "Safe upstream integration guard for Deeper Notebook.",
+            "deeper-notebook-upstream-sync-",
+        ),
+        "scripts/ralph.sh": (
+            "autonomous AI agent loop for Deeper Notebook",
+        ),
+        "scripts/backup_restore.py": (
+            "Backup + restore for the Deeper Notebook data",
+            "DEEPER_NOTEBOOK_DATA_DIR",
+        ),
+        "scripts/create-signing-identity.sh": (
+            "Deeper Notebook Local",
+        ),
+        "scripts/live_source_ingestion_smoke.py": (
+            "running native Deeper Notebook app",
+            "Deeper Notebook live ingestion smoke marker",
+        ),
+        "scripts/verify-chat-platform.sh": (
+            "Deeper Notebook v0.8.0",
+            "DEEPER_NOTEBOOK_PASSWORD",
+            "DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT",
+        ),
+    }
+
+    for path, snippets in expected_copy.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        for snippet in snippets:
+            assert snippet in source, f"{path}: {snippet}"
+
+    repair = (ROOT / "scripts/repair_desktop_db.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "/Applications/Deeper Notebook.app/" in repair
+    assert "/Applications/Open Notebook Plus.app/" in repair
+    assert "${HOME}/.deeper-notebook" in repair
+    assert "${HOME}/.open-notebook-plus" in repair
+
+
+def test_visible_locale_configuration_examples_use_canonical_short_prefix():
+    locale_root = ROOT / "frontend" / "src" / "lib" / "locales"
+    locale_files = sorted(locale_root.glob("*/index.ts"))
+    assert locale_files
+
+    for path in locale_files:
+        source = path.read_text(encoding="utf-8")
+        assert "ONP_" not in source, path
+        assert "DN_CHAT_LLM_CTX" in source, path
+        assert "DN_CHAT_LLM_CTX_MAX" in source, path
+        assert "DN_METRICS_AUTH_TOKEN" in source, path
 
 
 def test_audit_scans_tracked_paths_and_content(tmp_path):
@@ -297,6 +456,17 @@ def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_pa
             "line": 1,
         }
     ]
+
+
+def test_repository_rebrand_audit_has_no_unexpected_active_identity():
+    result = subprocess.run(
+        [sys.executable, "scripts/rebrand_audit.py", "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_audit_reports_stale_entries_and_skips_binary_contents(tmp_path):

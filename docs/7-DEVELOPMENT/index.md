@@ -1,6 +1,6 @@
 # Development
 
-Welcome to the Open Notebook development documentation! Whether you're contributing code, understanding our architecture, or maintaining the project, you'll find guidance here.
+Welcome to the Deeper Notebook development documentation! Whether you're contributing code, understanding our architecture, or maintaining the project, you'll find guidance here.
 
 ## 🎯 Pick Your Path
 
@@ -51,7 +51,7 @@ For deeper dives, check `/open_notebook/` CLAUDE.md for component-specific guida
 - Running the Plus verification ladder before merging upstream changes
 
 **[Source Scan Policy](scan-policy.md)** covers:
-- Keeping project scans inside the Open Notebook Plus source tree
+- Keeping project scans inside the Deeper Notebook source tree
 - Separating generated BrainPulseKnowledge packs from source code
 - Excluding generated builds, caches, installers, local state, and model weights
 
