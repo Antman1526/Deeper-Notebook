@@ -606,6 +606,109 @@ def test_allowlist_rejects_duplicate_generic_rationales(tmp_path):
         load_allowlist(duplicate)
 
 
+@pytest.mark.parametrize(
+    ("first_term", "second_term"),
+    [
+        ("Open Notebook Plus", "OPEN NOTEBOOK PLUS"),
+        ("Open Notebook Plus", "open notebook plus"),
+        ("historical_reference", "HISTORICAL_REFERENCE"),
+        ("historical_reference", "Historical_Reference"),
+    ],
+)
+def test_allowlist_rejects_semantic_duplicates_across_structural_term_case(
+    tmp_path,
+    first_term,
+    second_term,
+):
+    line = "open-notebook-plus"
+    explanations = [
+        (
+            f"The release record retains {term} wording because archive "
+            "readers need the legacy desktop lineage for attribution."
+        )
+        for term in (first_term, second_term)
+    ]
+    duplicate = _write_allowlist(
+        tmp_path / "case-duplicate.json",
+        [
+            {
+                "path": path,
+                "pattern": line,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": context_sha256(line),
+                "category": "compatibility_alias",
+                "rationale": _rationale(
+                    path=path,
+                    pattern=line,
+                    source="content",
+                    line=1,
+                    column=1,
+                    context=line,
+                    category="compatibility_alias",
+                    explanation=explanation,
+                ),
+            }
+            for path, explanation in zip(
+                ("docs/history-one.md", "docs/history-two.md"),
+                explanations,
+                strict=True,
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="duplicate semantic explanation"):
+        load_allowlist(duplicate)
+
+
+@pytest.mark.parametrize(
+    "structural_term",
+    [
+        "DOCS/HISTORY.MD",
+        "OPEN-NOTEBOOK-PLUS",
+        "COMPATIBILITY_ALIAS",
+    ],
+)
+def test_allowlist_rejects_case_variants_of_own_structural_fields(
+    tmp_path,
+    structural_term,
+):
+    path = "docs/history.md"
+    line = "open-notebook-plus"
+    explanation = (
+        f"The release record retains {structural_term} wording because "
+        "archive readers need the legacy desktop lineage for attribution."
+    )
+    allowlist_path = _write_allowlist(
+        tmp_path / "case-structural.json",
+        [
+            {
+                "path": path,
+                "pattern": line,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": context_sha256(line),
+                "category": "compatibility_alias",
+                "rationale": _rationale(
+                    path=path,
+                    pattern=line,
+                    source="content",
+                    line=1,
+                    column=1,
+                    context=line,
+                    category="compatibility_alias",
+                    explanation=explanation,
+                ),
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="must not repeat structural"):
+        load_allowlist(allowlist_path)
+
+
 def test_semantic_duplicate_key_ignores_mechanical_locator_suffixes():
     first = (
         "The release record preserves the former desktop name because that "
@@ -656,6 +759,31 @@ def test_semantic_explanation_uses_heading_and_line_purpose_not_locator(
     assert "Open Notebook Plus" not in explanation
     assert "historical_reference" not in explanation
     assert not re.search(r":[0-9]+:[0-9]+", explanation)
+
+
+def test_semantic_explanation_does_not_repeat_bare_path_with_different_case(
+    tmp_path,
+):
+    path = "Makefile"
+    line = "LEGACY_PACKAGE := open_notebook"
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / path).write_text(line + "\n", encoding="utf-8")
+
+    explanation = rebrand_audit.semantic_explanation_for_occurrence(
+        root,
+        {
+            "path": path,
+            "pattern": "open_notebook",
+            "source": "content",
+            "line": 1,
+            "column": line.index("open_notebook") + 1,
+            "context_sha256": context_sha256(line),
+        },
+        "compatibility_alias",
+    )
+
+    assert path.casefold() not in explanation.casefold()
 
 
 def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
