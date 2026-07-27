@@ -59,6 +59,35 @@ def _isolate_web_search_env(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_data_root_home(tmp_path, monkeypatch):
+    """Keep every backend test's resolver inside its own temporary home."""
+    test_home = tmp_path
+    monkeypatch.setenv("HOME", str(test_home))
+    monkeypatch.setenv("USERPROFILE", str(test_home))
+
+    from desktop import data_root
+
+    original_resolve = data_root.resolve_data_root
+    allowed_root = tmp_path.resolve()
+
+    def guarded_resolve(*, home=None, failure_injector=None):
+        candidate = (
+            Path(home)
+            if home is not None
+            else Path(os.environ["HOME"])
+        ).resolve()
+        assert candidate.is_relative_to(allowed_root), (
+            f"test attempted data-root resolution outside {allowed_root}: "
+            f"{candidate}"
+        )
+        return original_resolve(
+            home=home, failure_injector=failure_injector
+        )
+
+    monkeypatch.setattr(data_root, "resolve_data_root", guarded_resolve)
+
+
 # v0.8.68 — pin the network-state service to "online" for every test so the
 # suite is deterministic regardless of the machine's actual connectivity
 # (the offline gate / web_search short-circuit would otherwise change
