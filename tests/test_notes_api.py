@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from deeper_notebook.domain.notebook import ExternalNoteReadOnlyError
+
 
 @pytest.fixture
 def client():
@@ -113,3 +115,48 @@ class TestNoteUpdate:
         assert response.status_code == 200
         data = response.json()
         assert data["command_id"] is None
+
+    @patch("api.routers.notes.Note")
+    def test_update_external_note_returns_conflict(self, mock_note_cls, client):
+        mock_note = AsyncMock()
+        mock_note.title = "Canonical"
+        mock_note.content = "Original"
+        mock_note.note_type = "human"
+        mock_note_cls.get = AsyncMock(return_value=mock_note)
+        mock_note.save.side_effect = ExternalNoteReadOnlyError()
+
+        response = client.put(
+            "/api/notes/note:external",
+            json={"content": "Caller mutation"},
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "external_note_read_only"}
+
+
+class TestExternalNoteDelete:
+    @patch("api.routers.notes.Note")
+    def test_delete_external_note_returns_conflict(self, mock_note_cls, client):
+        mock_note = AsyncMock()
+        mock_note_cls.get = AsyncMock(return_value=mock_note)
+        mock_note.delete.side_effect = ExternalNoteReadOnlyError()
+
+        response = client.delete("/api/notes/note:external")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "external_note_read_only"}
+
+
+class TestExternalNoteNotebookCascade:
+    @patch("api.routers.notebooks.Notebook")
+    def test_notebook_delete_with_external_note_returns_conflict(
+        self, mock_notebook_cls, client
+    ):
+        mock_notebook = AsyncMock()
+        mock_notebook_cls.get = AsyncMock(return_value=mock_notebook)
+        mock_notebook.delete.side_effect = ExternalNoteReadOnlyError()
+
+        response = client.delete("/api/notebooks/notebook:brain")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "external_note_read_only"}

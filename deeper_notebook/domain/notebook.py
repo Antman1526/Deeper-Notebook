@@ -83,7 +83,21 @@ from surrealdb import RecordID
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.base import ObjectModel
-from deeper_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from deeper_notebook.exceptions import (
+    DatabaseOperationError,
+    DeeperNotebookError,
+    InvalidInputError,
+)
+from deeper_notebook.vault import _projection_refresh_is_active
+
+
+class ExternalNoteReadOnlyError(DeeperNotebookError):
+    """A canonical external note can only be refreshed by the vault projector."""
+
+    code: ClassVar[str] = "external_note_read_only"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
 
 
 class Notebook(ObjectModel):
@@ -336,6 +350,14 @@ class Notebook(ObjectModel):
             import asyncio as _asyncio_for_delete  # local alias avoids name shadowing
             notes = await self.get_notes()
             if notes:
+                # Canonical external notes are projections of files that remain
+                # the source of truth. Abort the whole cascade before its bulk
+                # fast path or any per-note delete can mutate the database.
+                if any(
+                    getattr(note, "canonical_external", False) is True
+                    for note in notes
+                ):
+                    raise ExternalNoteReadOnlyError()
                 bulk_threshold = _notebook_delete_bulk_threshold()
                 if len(notes) > bulk_threshold:
                     deleted_notes = await self._bulk_delete_notes(notes)
@@ -477,6 +499,8 @@ class Notebook(ObjectModel):
                 "deleted_chat_session_ids": deleted_chat_session_ids,
             }
 
+        except ExternalNoteReadOnlyError:
+            raise
         except Exception as e:
             logger.error(f"Error deleting notebook {self.id}: {e}")
             logger.exception(e)
@@ -1025,6 +1049,14 @@ class Note(ObjectModel):
     title: Optional[str] = None
     note_type: Optional[Literal["human", "ai"]] = None
     content: Optional[str] = None
+    vault_id: str | None = None
+    vault_file_id: str | None = None
+    source_format: str | None = None
+    canonical_external: bool | None = None
+    properties: dict[str, Any] | None = None
+    tags: list[str] | None = None
+    source_hash: str | None = None
+    external_state: str | None = None
 
     @field_validator("content")
     @classmethod
@@ -1043,6 +1075,12 @@ class Note(ObjectModel):
         Returns:
             Optional[str]: The command_id if embedding was submitted, None otherwise
         """
+        if (
+            not _projection_refresh_is_active()
+            and await self._is_canonical_external()
+        ):
+            raise ExternalNoteReadOnlyError()
+
         # Call parent save (without embedding)
         await super().save()
 
@@ -1114,6 +1152,8 @@ class Note(ObjectModel):
     async def add_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:
             raise InvalidInputError("Notebook ID must be provided")
+        if await self._is_canonical_external():
+            raise ExternalNoteReadOnlyError()
         # v0.7.73 — defensive dedup at the domain layer. Same rationale
         # as Source.add_to_notebook: the artifact-edge create was not
         # idempotent, and `notes.py:90` (create_note flow) could
@@ -1145,6 +1185,8 @@ class Note(ObjectModel):
         if self.id is None:
             from deeper_notebook.exceptions import InvalidInputError as _IIE
             raise _IIE("Cannot delete note without an ID")
+        if await self._is_canonical_external():
+            raise ExternalNoteReadOnlyError()
         try:
             note_id = ensure_record_id(self.id)
             # Delete artifact edges first so the FETCH path in
@@ -1165,6 +1207,19 @@ class Note(ObjectModel):
                 f"{self.id}: {exc}. Continuing with note deletion."
             )
         return await super().delete()
+
+    async def _is_canonical_external(self) -> bool:
+        """Fail closed when the current or persisted row is file-canonical."""
+
+        if self.canonical_external is True:
+            return True
+        if self.id is None:
+            return False
+        rows = await repo_query(
+            "SELECT canonical_external FROM $id",
+            {"id": ensure_record_id(self.id)},
+        )
+        return bool(rows and rows[0].get("canonical_external") is True)
 
     # v0.8.67 (audit A3) — "short" note context budget. Was a flat 100-CHAR
     # slice (`self.content[:100]`) that truncated mid-word with no marker, so
