@@ -7,9 +7,13 @@ const source = readFileSync(resolve(process.cwd(), 'src/lib/features.ts'), 'utf8
 
 const PUBLIC_FLAG_NAMES = [
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
+  'NEXT_PUBLIC_ONP_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_DN_VISUAL_REFRESH',
+  'NEXT_PUBLIC_ONP_VISUAL_REFRESH',
   'NEXT_PUBLIC_DN_MODEL_FLEET',
+  'NEXT_PUBLIC_ONP_MODEL_FLEET',
   'NEXT_PUBLIC_DN_RESEARCH_RUNS',
+  'NEXT_PUBLIC_ONP_RESEARCH_RUNS',
 ] as const
 
 describe('Next production feature-flag contract', () => {

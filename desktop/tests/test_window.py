@@ -270,6 +270,7 @@ def test_desktop_bridge_producer_consumer_contract_is_canonical_first():
             "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE =",
             "window.ONP_REMIND_OPENCHRONICLE =",
         ),
+        ("window.DEEPER_NOTEBOOK_VERSION =", "window.ONP_VERSION ="),
     ]
     for canonical, legacy in producer_pairs:
         assert producer.index(canonical) < producer.index(legacy)

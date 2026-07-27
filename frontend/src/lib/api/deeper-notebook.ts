@@ -51,3 +51,6 @@ export async function deeperNotebookFetch(
   }
   return response
 }
+
+/** @deprecated Use deeperNotebookFetch. */
+export const onpFetch = deeperNotebookFetch

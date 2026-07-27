@@ -712,6 +712,7 @@ _KIND_SCOPE_EXACT_PATHS = {
             "desktop/tests/test_window.py",
             "desktop/window.py",
             "deeper_notebook/studio/exporters/research_bundle.py",
+            "frontend/src/lib/desktop-version.test.ts",
             "frontend/src/lib/desktop-version.ts",
             "tests/test_v0_7_210_version_and_reaper.py",
             "tests/test_task6_active_product.py",
@@ -1611,7 +1612,22 @@ def _compatibility_is_forbidden(
     if "/locales/" in f"/{path}":
         return True
     if path.startswith("frontend/src/") and ".test." not in Path(path).name:
-        return True
+        canonical_contract = compatibility_contract_for_occurrence(
+            {
+                "path": path,
+                "pattern": pattern,
+                "source": source,
+                "line": line,
+            }
+        )
+        if canonical_contract not in {
+            "desktop-bridge-v1",
+            "frontend-env-alias-v1",
+            "legacy-api-route-v1",
+            "theme-storage-migration-v1",
+        }:
+            return True
+        return False
     if (
         path.startswith("tests/")
         or path.startswith("desktop/tests/")
@@ -1650,13 +1666,50 @@ def compatibility_contract_for_occurrence(
     if "/locales/" in f"/{path}":
         return None
     if (
-        path.startswith("frontend/src/")
-        and ".test." not in path
+        path == ".github/ISSUE_TEMPLATE/installation_issue.yml"
+        and pattern == "open_notebook"
+        and occurrence.get("source") == "content"
+        and occurrence.get("context_sha256")
+        == "71c06c2b6d121192c42e44a6295208529d40bf7792e1c4a407ed68050528ab0d"
+    ):
+        return "compose-service-identifier-v1"
+    if path.startswith("frontend/src/") and ".test." not in Path(path).name:
+        if path == "frontend/src/lib/features.ts" and pattern == "ONP_":
+            return "frontend-env-alias-v1"
+        if (
+            path == "frontend/src/lib/theme-storage.ts"
+            and pattern == "onp-theme"
+        ):
+            return "theme-storage-migration-v1"
+        if (
+            path == "frontend/src/lib/desktop-version.ts"
+            and pattern == "ONP_"
+        ):
+            return "desktop-bridge-v1"
+        if path in {
+            "frontend/src/lib/api/deeper-notebook.ts",
+            "frontend/src/lib/api/onp.ts",
+        } and pattern in {
+            "/api/onp",
+            "/onp/",
+            "onpFetch",
+        }:
+            return "legacy-api-route-v1"
+        return None
+    if path == "tests/test_product_identity.py":
+        return "rebrand-audit-regression-v1"
+    if pattern == "onp-theme":
+        if path in {
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
+            "tests/test_task5_brand_namespace.py",
+        }:
+            return "theme-storage-migration-v1"
+        return None
+    if (
+        path.startswith("fixtures/")
         and pattern in _VISIBLE_IDENTITY_PATTERNS
     ):
-        return None
-    if pattern == "onp-theme":
-        return "theme-storage-migration-v1"
+        return "legacy-test-fixture-v1"
 
     is_test = (
         path.startswith("tests/")
@@ -1671,14 +1724,13 @@ def compatibility_contract_for_occurrence(
             and pattern in {"OPEN_NOTEBOOK_", "ONP_"}
         ):
             return "frontend-canonical-help-regression-v1"
-        if path == "tests/test_product_identity.py":
-            return "rebrand-audit-regression-v1"
         if pattern in {
             "OPEN_NOTEBOOK_",
             "ONP_",
         }:
             if path in {
                 "desktop/tests/test_window.py",
+                "frontend/src/lib/desktop-version.test.ts",
                 "tests/test_v0_7_210_version_and_reaper.py",
             }:
                 return "desktop-bridge-v1"
@@ -2173,6 +2225,24 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                     "compatibility_alias requires a structured compatibility "
                     "contract"
                 )
+            canonical_contract = compatibility_contract_for_occurrence(entry)
+            if canonical_contract != compatibility_contract:
+                raise ValueError(
+                    "compatibility entry must use its exact canonical "
+                    "compatibility contract"
+                )
+            canonical_definition = _DEFAULT_COMPATIBILITY_CONTRACTS.get(
+                canonical_contract
+            )
+            if (
+                canonical_definition is None
+                or contracts[compatibility_contract]["kind"]
+                != canonical_definition["kind"]
+            ):
+                raise ValueError(
+                    "compatibility entry kind must match its canonical "
+                    "compatibility contract kind"
+                )
             if _compatibility_is_forbidden(
                 root,
                 allowlisted_path,
@@ -2302,6 +2372,19 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
     }
     matched_allowlist: set[OccurrenceKey] = set()
 
+    def audited_category(
+        key: OccurrenceKey,
+        occurrence: Mapping[str, object],
+    ) -> str:
+        category = classify_match(key, allowlist)
+        approval = allowlist.get(key)
+        if approval is None or category != "compatibility_alias":
+            return category
+        canonical_contract = compatibility_contract_for_occurrence(occurrence)
+        if canonical_contract != approval.rationale.compatibility_contract:
+            return "unexpected_active_identity"
+        return category
+
     def record(
         *,
         path: str,
@@ -2319,7 +2402,6 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
             column=column,
             context=context,
         )
-        category = classify_match(key, allowlist)
         entry: dict[str, object] = {
             "path": path,
             "pattern": pattern,
@@ -2329,8 +2411,9 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
         }
         if line is not None:
             entry["line"] = line
+        category = audited_category(key, entry)
         categorized[category].append(entry)
-        if key in allowlist:
+        if key in allowlist and category != "unexpected_active_identity":
             matched_allowlist.add(key)
 
     for relative_path in _tracked_paths(root):
@@ -2362,7 +2445,7 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
             allowed_contexts = [
                 (pattern, start, end)
                 for pattern, start, end in occurrences
-                if classify_match(
+                if audited_category(
                     _occurrence_key(
                         path=relative_path,
                         pattern=pattern,
@@ -2371,7 +2454,14 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
                         column=start + 1,
                         context=line,
                     ),
-                    allowlist,
+                    {
+                        "path": relative_path,
+                        "pattern": pattern,
+                        "source": "content",
+                        "line": line_number,
+                        "column": start + 1,
+                        "context_sha256": context_sha256(line),
+                    },
                 )
                 != "unexpected_active_identity"
             ]
@@ -2516,20 +2606,10 @@ def regenerate_allowlist(
         ),
     ):
         policy_key = (match["path"], match["pattern"])
-        compose_service_occurrence = False
-        if (
-            match["path"] == ".github/ISSUE_TEMPLATE/installation_issue.yml"
-            and match["pattern"] == "open_notebook"
-            and match["source"] == "content"
-            and isinstance(match.get("line"), int)
-        ):
-            issue_line = (
-                root
-                / ".github/ISSUE_TEMPLATE/installation_issue.yml"
-            ).read_text(encoding="utf-8").splitlines()[int(match["line"]) - 1]
-            compose_service_occurrence = (
-                "docker compose logs -f open_notebook" in issue_line
-            )
+        compose_service_occurrence = (
+            compatibility_contract_for_occurrence(match)
+            == "compose-service-identifier-v1"
+        )
         category = (
             "compatibility_alias"
             if compose_service_occurrence
