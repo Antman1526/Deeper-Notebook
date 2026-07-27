@@ -29,6 +29,187 @@ import pytest
 from deeper_notebook.domain.notebook import Asset, Source
 
 
+def _source_for(path: Path, *, source_id: str = "source:file") -> Source:
+    return Source(
+        id=source_id,
+        asset=Asset(file_path=str(path)),
+        title="Upload cleanup",
+    )
+
+
+def test_upload_cleanup_refuses_file_symlink(tmp_path, monkeypatch):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    link = uploads / "link.txt"
+    link.symlink_to(outside)
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    _source_for(link)._cleanup_uploaded_file()
+
+    assert link.is_symlink()
+    assert outside.read_text() == "outside"
+
+
+def test_upload_cleanup_refuses_intermediate_symlink_even_when_target_is_inside(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    owned_directory = uploads / "owned-directory"
+    owned_directory.mkdir()
+    owned_file = owned_directory / "owned.txt"
+    owned_file.write_text("preserve")
+    linked_directory = uploads / "linked-directory"
+    linked_directory.symlink_to(owned_directory, target_is_directory=True)
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    _source_for(linked_directory / owned_file.name)._cleanup_uploaded_file()
+
+    assert linked_directory.is_symlink()
+    assert owned_file.read_text() == "preserve"
+
+
+@pytest.mark.parametrize("_iteration", range(50))
+def test_upload_cleanup_detects_parent_swap_after_secure_open(
+    _iteration,
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    visible_parent = uploads / "parent"
+    visible_parent.mkdir()
+    safe_file = visible_parent / "owned.txt"
+    safe_file.write_text("safe")
+    moved_parent = uploads / "original-parent"
+    outside_parent = tmp_path / "outside-parent"
+    outside_parent.mkdir()
+    outside_victim = outside_parent / safe_file.name
+    outside_victim.write_text("outside")
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    real_open = os.open
+    swapped = False
+
+    def open_then_swap(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal swapped
+        fd = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == visible_parent.name and dir_fd is not None and not swapped:
+            visible_parent.rename(moved_parent)
+            visible_parent.symlink_to(outside_parent, target_is_directory=True)
+            swapped = True
+        return fd
+
+    monkeypatch.setattr(os, "open", open_then_swap)
+    monkeypatch.setattr(
+        os,
+        "supports_dir_fd",
+        os.supports_dir_fd | {open_then_swap},
+    )
+
+    _source_for(safe_file)._cleanup_uploaded_file()
+
+    assert swapped
+    assert (moved_parent / safe_file.name).read_text() == "safe"
+    assert outside_victim.read_text() == "outside"
+
+
+def test_upload_cleanup_parent_symlink_swap_never_unlinks_outside(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    safe_parent = uploads / "safe-parent"
+    safe_parent.mkdir()
+    safe_file = safe_parent / "owned.txt"
+    safe_file.write_text("safe")
+    outside_parent = tmp_path / "outside-parent"
+    outside_parent.mkdir()
+    outside_victim = outside_parent / safe_file.name
+    outside_victim.write_text("outside")
+    visible_parent = uploads / "visible-parent"
+    visible_parent.symlink_to(safe_parent, target_is_directory=True)
+    stored_path = visible_parent / safe_file.name
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    real_exists = Path.exists
+    swapped = False
+
+    def exists_after_swap(path: Path) -> bool:
+        nonlocal swapped
+        if path == stored_path and not swapped:
+            visible_parent.unlink()
+            visible_parent.symlink_to(outside_parent, target_is_directory=True)
+            swapped = True
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, "exists", exists_after_swap)
+
+    _source_for(stored_path)._cleanup_uploaded_file()
+
+    assert safe_file.read_text() == "safe"
+    assert outside_victim.read_text() == "outside"
+
+
+def test_upload_cleanup_missing_file_is_a_noop(tmp_path, monkeypatch):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    missing = uploads / "missing.txt"
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    _source_for(missing)._cleanup_uploaded_file()
+
+    assert not missing.exists()
+
+
+def test_upload_cleanup_refuses_directory(tmp_path, monkeypatch):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    directory = uploads / "not-a-file"
+    directory.mkdir()
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+
+    _source_for(directory)._cleanup_uploaded_file()
+
+    assert directory.is_dir()
+
+
+def test_upload_cleanup_fails_closed_without_secure_dir_fd_support(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    owned_file = uploads / "owned.txt"
+    owned_file.write_text("preserve")
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+    monkeypatch.setattr(os, "supports_dir_fd", frozenset())
+
+    _source_for(owned_file)._cleanup_uploaded_file()
+
+    assert owned_file.read_text() == "preserve"
+
+
+def test_upload_cleanup_fails_closed_without_capability_metadata(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    owned_file = uploads / "owned.txt"
+    owned_file.write_text("preserve")
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+    monkeypatch.delattr(os, "supports_dir_fd")
+
+    _source_for(owned_file)._cleanup_uploaded_file()
+
+    assert owned_file.read_text() == "preserve"
+
+
 @pytest.mark.asyncio
 async def test_source_delete_refuses_path_outside_uploads(tmp_path, monkeypatch):
     """The actual v0.6.34 regression test. Plant a source whose
