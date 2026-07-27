@@ -1089,6 +1089,8 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
 def _phase_open_window(ctx: AppContext) -> None:
     """Open the main PyWebView window. Blocks until the window is closed."""
+    import threading
+
     from desktop.window import open_window
 
     assert ctx.sv is not None
@@ -1122,13 +1124,23 @@ def _phase_open_window(ctx: AppContext) -> None:
         if piper_port else None
     )
 
-    try:
-        def _close_runtime() -> None:
+    cleanup_lock = threading.Lock()
+    cleanup_dispatched = False
+
+    def _close_runtime_once() -> None:
+        nonlocal cleanup_dispatched
+        with cleanup_lock:
+            if cleanup_dispatched:
+                return
+            cleanup_dispatched = True
+        try:
             if ctx.log_dir is not None:
                 _clear_desktop_readiness_marker(ctx.log_dir)
             ctx.sv.stop_all()
+        finally:
             _stop_runtime(ctx)
 
+    try:
         def _window_ready() -> None:
             assert ctx.log_dir is not None
             _write_desktop_readiness_marker(
@@ -1140,17 +1152,14 @@ def _phase_open_window(ctx: AppContext) -> None:
                 "window.ready", "done", ctx.sv.frontend_url
             )
 
-        open_window(ctx.sv.frontend_url, on_close=_close_runtime,
+        open_window(ctx.sv.frontend_url, on_close=_close_runtime_once,
                     theme=ctx.cfg.theme,
                     memory_url=memory_url, remind_openchronicle=remind,
                     stt_url=stt_url, tts_url=tts_url,
                     app_recovery=ctx.app_recovery,
                     on_ready=_window_ready)
     finally:
-        if ctx.log_dir is not None:
-            _clear_desktop_readiness_marker(ctx.log_dir)
-        ctx.sv.stop_all()
-        _stop_runtime(ctx)
+        _close_runtime_once()
 
 
 # ---------------------------------------------------------------------------
