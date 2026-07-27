@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -278,6 +279,9 @@ def test_post_commit_upload_cleanup_is_filesystem_only(
     outside_file.write_text("must survive", encoding="utf-8")
     escaping_link = uploads / "escaping-link.txt"
     escaping_link.symlink_to(outside_file)
+    fifo = uploads / "post-commit-fifo"
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(fifo)
 
     queue_calls: list[str] = []
 
@@ -344,19 +348,31 @@ def test_post_commit_upload_cleanup_is_filesystem_only(
             command=RecordID("command", "escaping-link"),
         ),
     ]
+    if hasattr(os, "mkfifo"):
+        sources.append(
+            Source(
+                id="source:fifo",
+                title="FIFO upload",
+                asset=Asset(file_path=str(fifo)),
+                command=RecordID("command", "fifo"),
+            )
+        )
+    exclusive_source_ids = [
+        "source:owned",
+        "source:escaping-link",
+    ]
+    if hasattr(os, "mkfifo"):
+        exclusive_source_ids.append("source:fifo")
     notebook, calls = make_notebook(
         [],
         sources=sources,
         transaction_result=[
             {
                 "deleted_notes": 0,
-                "deleted_sources": 2,
+                "deleted_sources": len(sources),
                 "unlinked_sources": 0,
                 "deleted_chat_session_ids": [],
-                "exclusive_source_ids": [
-                    "source:owned",
-                    "source:escaping-link",
-                ],
+                "exclusive_source_ids": exclusive_source_ids,
             }
         ],
     )
@@ -371,6 +387,8 @@ def test_post_commit_upload_cleanup_is_filesystem_only(
     assert not uploaded_file.exists()
     assert escaping_link.is_symlink()
     assert outside_file.read_text(encoding="utf-8") == "must survive"
+    if hasattr(os, "mkfifo"):
+        assert fifo.is_fifo()
 
 
 def test_transaction_failure_skips_filesystem_and_queue_cleanup(
