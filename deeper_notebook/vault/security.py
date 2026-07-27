@@ -280,6 +280,7 @@ def _is_lexically_unsafe_root(path: Path) -> bool:
         "/boot",
         "/private/etc",
         "/private/tmp",
+        "/private/var",
         "/private/var/log",
         "/private/var/db",
         "/private/var/tmp",
@@ -314,6 +315,8 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
     if not expanded.is_absolute() or ".." in expanded.parts:
         raise VaultSecurityError("invalid_root")
     normalized = Path(os.path.normpath(expanded_text))
+    if _is_lexically_unsafe_root(normalized):
+        raise VaultSecurityError("unsafe_root")
     chain_fds: tuple[int, ...] = ()
     approved: ApprovedVaultRoot | None = None
     try:
@@ -333,9 +336,6 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
             _component_names=normalized.parts[1:],
         )
         approved._assert_current()
-        if _is_lexically_unsafe_root(normalized):
-            raise VaultSecurityError("unsafe_root")
-
         prefix = Path(os.path.sep)
         for component in normalized.parts[1:]:
             prefix /= component
@@ -368,7 +368,11 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
 
 
 def _relative_parts(relative_path: str) -> tuple[str, ...]:
-    if not isinstance(relative_path, str) or not relative_path or "\x00" in relative_path:
+    if (
+        not isinstance(relative_path, str)
+        or not relative_path
+        or "\x00" in relative_path
+    ):
         raise VaultSecurityError("path_escape")
     if "\\" in relative_path:
         raise VaultSecurityError("path_escape")
@@ -407,9 +411,8 @@ def classify_vault_path(relative_path: str) -> VaultPathClassification:
     if folded[0] == "brain-engine":
         return VaultPathClassification("connector", True)
 
-    protected = (
-        folded[0] == "sources"
-        or (len(folded) >= 2 and folded[:2] == ("inbox", "raw"))
+    protected = folded[0] == "sources" or (
+        len(folded) >= 2 and folded[:2] == ("inbox", "raw")
     )
     suffix = PurePosixPath(name).suffix.casefold()
     if suffix in INDEXABLE_MARKDOWN:
@@ -434,9 +437,7 @@ def _open_relative_file(
             file_fd = os.open(parts[-1], _file_flags(), dir_fd=parent_fd)
         except OSError as exc:
             try:
-                entry_stat = os.stat(
-                    parts[-1], dir_fd=parent_fd, follow_symlinks=False
-                )
+                entry_stat = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
             except OSError:
                 entry_stat = None
             if entry_stat is not None and stat.S_ISLNK(entry_stat.st_mode):
@@ -485,9 +486,7 @@ def _validate_open_path_identity(
         parent_fd = directory_fd
 
     try:
-        final_path_stat = os.stat(
-            parts[-1], dir_fd=parent_fd, follow_symlinks=False
-        )
+        final_path_stat = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
     except OSError as exc:
         raise VaultSecurityError("changed_during_read") from exc
     if (
