@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from surrealdb import RecordID, Surreal
 
+from deeper_notebook.domain.notebook import Asset, Source
 from deeper_notebook.exceptions import DatabaseOperationError
 
 
@@ -34,7 +37,7 @@ class _FakeSource:
         self.id = source_id
         self.cleanup_calls = 0
 
-    async def _cleanup_external_resources(self) -> None:
+    def _cleanup_uploaded_file(self) -> None:
         self.cleanup_calls += 1
 
 
@@ -129,7 +132,8 @@ def test_success_uses_one_transaction_and_never_calls_per_note_delete(make_noteb
     for fragment in (
         "DELETE note WHERE id IN $current_note_ids",
         "DELETE artifact WHERE in IN $current_note_ids",
-        "DELETE reference WHERE out = $notebook_id",
+        "LET $notebook_reference_ids = SELECT VALUE id",
+        "DELETE $notebook_reference_ids",
         "DELETE chat_session WHERE id IN $chat_session_ids",
         "DELETE $notebook_id",
     ):
@@ -258,6 +262,160 @@ def test_transaction_failure_never_runs_external_source_cleanup(make_notebook):
     assert source.cleanup_calls == 0
 
 
+def test_post_commit_upload_cleanup_is_filesystem_only(
+    make_notebook,
+    monkeypatch,
+    tmp_path: Path,
+):
+    from deeper_notebook.database import repository as repository_module
+    from deeper_notebook.domain import base as base_module
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    uploaded_file = uploads / "owned.txt"
+    uploaded_file.write_text("delete after commit", encoding="utf-8")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("must survive", encoding="utf-8")
+    escaping_link = uploads / "escaping-link.txt"
+    escaping_link.symlink_to(outside_file)
+
+    queue_calls: list[str] = []
+
+    async def observed_get_command_status(_command_id):
+        queue_calls.append("get_command_status")
+
+        class _Status:
+            value = "running"
+
+        return _Status()
+
+    class _ObservedService:
+        async def update_command_result(self, *_args, **_kwargs):
+            queue_calls.append("update_command_result")
+
+    def observed_get_command_service():
+        queue_calls.append("get_command_service")
+        return _ObservedService()
+
+    monkeypatch.setattr(
+        "deeper_notebook.config.UPLOADS_FOLDER",
+        str(uploads),
+    )
+    monkeypatch.setattr(
+        "surreal_commands.get_command_status",
+        observed_get_command_status,
+    )
+    monkeypatch.setattr(
+        "surreal_commands.core.service.get_command_service",
+        observed_get_command_service,
+    )
+    repo_delete = AsyncMock(
+        side_effect=AssertionError("post-commit cleanup touched repo_delete")
+    )
+    monkeypatch.setattr(base_module, "repo_delete", repo_delete)
+    repository_api_mocks: dict[str, AsyncMock] = {}
+    for name in (
+        "repo_create",
+        "repo_delete",
+        "repo_query",
+        "repo_relate",
+        "repo_update",
+        "repo_upsert",
+    ):
+        mock = AsyncMock(
+            side_effect=AssertionError(
+                f"post-commit cleanup touched repository.{name}"
+            )
+        )
+        monkeypatch.setattr(repository_module, name, mock)
+        repository_api_mocks[name] = mock
+
+    sources = [
+        Source(
+            id="source:owned",
+            title="Owned upload",
+            asset=Asset(file_path=str(uploaded_file)),
+            command=RecordID("command", "owned"),
+        ),
+        Source(
+            id="source:escaping-link",
+            title="Escaping symlink",
+            asset=Asset(file_path=str(escaping_link)),
+            command=RecordID("command", "escaping-link"),
+        ),
+    ]
+    notebook, calls = make_notebook(
+        [],
+        sources=sources,
+        transaction_result=[
+            {
+                "deleted_notes": 0,
+                "deleted_sources": 2,
+                "unlinked_sources": 0,
+                "deleted_chat_session_ids": [],
+                "exclusive_source_ids": [
+                    "source:owned",
+                    "source:escaping-link",
+                ],
+            }
+        ],
+    )
+
+    asyncio.run(notebook.delete(delete_exclusive_sources=True))
+
+    _transaction(calls)
+    assert queue_calls == []
+    repo_delete.assert_not_awaited()
+    for mock in repository_api_mocks.values():
+        mock.assert_not_awaited()
+    assert not uploaded_file.exists()
+    assert escaping_link.is_symlink()
+    assert outside_file.read_text(encoding="utf-8") == "must survive"
+
+
+def test_transaction_failure_skips_filesystem_and_queue_cleanup(
+    make_notebook,
+    monkeypatch,
+    tmp_path: Path,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    uploaded_file = uploads / "preserved.txt"
+    uploaded_file.write_text("preserve on rollback", encoding="utf-8")
+    queue_calls: list[str] = []
+
+    async def observed_get_command_status(_command_id):
+        queue_calls.append("get_command_status")
+        raise AssertionError("queue cleanup ran after transaction failure")
+
+    monkeypatch.setattr(
+        "deeper_notebook.config.UPLOADS_FOLDER",
+        str(uploads),
+    )
+    monkeypatch.setattr(
+        "surreal_commands.get_command_status",
+        observed_get_command_status,
+    )
+    source = Source(
+        id="source:preserved",
+        title="Preserved upload",
+        asset=Asset(file_path=str(uploaded_file)),
+        command=RecordID("command", "preserved"),
+    )
+    notebook, calls = make_notebook(
+        [],
+        sources=[source],
+        transaction_error=RuntimeError("simulated transaction failure"),
+    )
+
+    with pytest.raises(DatabaseOperationError):
+        asyncio.run(notebook.delete(delete_exclusive_sources=True))
+
+    _transaction(calls)
+    assert queue_calls == []
+    assert uploaded_file.read_text(encoding="utf-8") == "preserve on rollback"
+
+
 def _embedded_params(params: dict[str, Any]) -> dict[str, Any]:
     converted = dict(params)
     converted["notebook_id"] = RecordID("notebook", "test-cascade")
@@ -284,44 +442,54 @@ def test_embedded_surreal_success_returns_result_and_commits(make_notebook):
     asyncio.run(notebook.delete(delete_exclusive_sources=True))
     query, params = _transaction(calls)
 
-    with Surreal("mem://") as db:
-        db.use("cascade", "success")
-        db.query(
-            """
-            CREATE notebook:`test-cascade`;
-            CREATE notebook:other;
-            CREATE note:a SET canonical_external = false;
-            RELATE note:a->artifact->notebook:`test-cascade`;
-            CREATE source:exclusive;
-            RELATE source:exclusive->reference->notebook:`test-cascade`;
-            CREATE source:shared;
-            RELATE source:shared->reference->notebook:`test-cascade`;
-            RELATE source:shared->reference->notebook:other;
-            CREATE source_embedding:a SET source = source:exclusive;
-            CREATE source_insight:a SET source = source:exclusive;
-            CREATE chat_session:a;
-            RELATE chat_session:a->refers_to->notebook:`test-cascade`;
-            """
-        )
+    for iteration in range(50):
+        with Surreal("mem://") as db:
+            db.use("cascade", f"success-{iteration}")
+            db.query(
+                """
+                CREATE notebook:`test-cascade`;
+                CREATE notebook:other;
+                CREATE note:a SET canonical_external = false;
+                RELATE note:a->artifact->notebook:`test-cascade`;
+                CREATE source:exclusive;
+                RELATE source:exclusive->reference->notebook:`test-cascade`;
+                CREATE source:shared;
+                RELATE source:shared->reference->notebook:`test-cascade`;
+                RELATE source:shared->reference->notebook:other;
+                CREATE source_embedding:a SET source = source:exclusive;
+                CREATE source_insight:a SET source = source:exclusive;
+                CREATE chat_session:a;
+                RELATE chat_session:a->refers_to->notebook:`test-cascade`;
+                """
+            )
 
-        result = db.query(query, _embedded_params(params))
+            result = db.query(query, _embedded_params(params))
 
-        assert isinstance(result, dict), result
-        assert result["deleted_notes"] == 1
-        assert result["deleted_sources"] == 1
-        assert result["unlinked_sources"] == 1
-        assert result["deleted_chat_session_ids"] == [RecordID("chat_session", "a")]
-        assert db.query("SELECT VALUE id FROM notebook") == [
-            RecordID("notebook", "other")
-        ]
-        assert db.query("SELECT VALUE id FROM note") == []
-        assert db.query("SELECT VALUE id FROM artifact") == []
-        assert db.query("SELECT VALUE id FROM source") == [RecordID("source", "shared")]
-        assert db.query("SELECT VALUE id FROM source_embedding") == []
-        assert db.query("SELECT VALUE id FROM source_insight") == []
-        assert len(db.query("SELECT VALUE id FROM reference")) == 1
-        assert db.query("SELECT VALUE id FROM chat_session") == []
-        assert db.query("SELECT VALUE id FROM refers_to") == []
+            assert isinstance(result, dict), result
+            assert result["deleted_notes"] == 1
+            assert result["deleted_sources"] == 1
+            assert result["unlinked_sources"] == 1
+            assert result["deleted_chat_session_ids"] == [
+                RecordID("chat_session", "a")
+            ]
+            assert db.query("SELECT VALUE id FROM notebook") == [
+                RecordID("notebook", "other")
+            ]
+            assert db.query("SELECT VALUE id FROM note") == []
+            assert db.query("SELECT VALUE id FROM artifact") == []
+            assert db.query("SELECT VALUE id FROM source") == [
+                RecordID("source", "shared")
+            ]
+            assert db.query("SELECT VALUE id FROM source_embedding") == []
+            assert db.query("SELECT VALUE id FROM source_insight") == []
+            assert db.query("SELECT in, out FROM reference") == [
+                {
+                    "in": RecordID("source", "shared"),
+                    "out": RecordID("notebook", "other"),
+                }
+            ]
+            assert db.query("SELECT VALUE id FROM chat_session") == []
+            assert db.query("SELECT VALUE id FROM refers_to") == []
 
 
 @pytest.mark.parametrize(
