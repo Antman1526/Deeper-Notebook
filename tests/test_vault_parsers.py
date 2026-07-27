@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -1031,6 +1032,179 @@ else:
     assert result["code"] == "projection_too_large"
     assert result["elapsed"] < 5.0
     assert rss_bytes < 350 * 1024 * 1024
+
+
+def test_one_mebibyte_useful_wikilink_document_is_accepted() -> None:
+    count = 95_000
+    raw = b"[[Target]] " * count
+
+    parsed = parse_document("useful-wiki.md", raw, format_mode="obsidian")
+
+    assert len(raw) == 1_045_000
+    assert len(parsed.links) == count
+
+
+def test_exact_wikilink_output_boundary_is_accepted() -> None:
+    raw = b"[[x]] " * 100_000
+
+    parsed = parse_document("exact-link-limit.md", raw, format_mode="obsidian")
+
+    assert len(parsed.links) == 100_000
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "wikilinks",
+        "wikilinks-9m",
+        "markdown",
+        "code",
+        "html",
+        "invalid",
+        "mixed",
+    ],
+)
+def test_single_line_transient_bombs_fail_with_bounded_rss(kind: str) -> None:
+    code = """
+import json
+import resource
+import sys
+import time
+from deeper_notebook.vault.parsers import VaultParseError, parse_document
+
+kind = sys.argv[1]
+raw = {
+    "wikilinks": b"[[Target]] " * 300_000,
+    "wikilinks-9m": (
+        (b"[[Target]] " * ((9 * 1024 * 1024 // 11) + 1))[: 9 * 1024 * 1024]
+    ),
+    "markdown": b"[label](target.md) " * 180_000,
+    "code": b"`x` " * 200_000,
+    "html": b"<i></i> " * 100_000,
+    "invalid": b"[[Outer [label](nested.md)]] " * 160_000,
+    "mixed": b"[[Target]] [label](target.md) " * 75_001,
+}[kind]
+started = time.monotonic()
+try:
+    parse_document(f"{kind}.md", raw, format_mode="obsidian")
+except VaultParseError as exc:
+    result = {
+        "code": exc.code,
+        "elapsed": time.monotonic() - started,
+        "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+    }
+    print(json.dumps(result))
+else:
+    raise SystemExit("transient bomb unexpectedly succeeded")
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code, kind],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    rss_bytes = result["rss"]
+    if sys.platform != "darwin":
+        rss_bytes *= 1024
+
+    assert result["code"] == "projection_too_large"
+    assert result["elapsed"] < 8.0
+    assert rss_bytes < 150 * 1024 * 1024
+
+
+def test_multibyte_single_line_offset_mapping_has_bounded_rss() -> None:
+    code = """
+import json
+import resource
+import time
+from deeper_notebook.vault.parsers import parse_document
+
+raw = ("é" * 4_000_000).encode()
+started = time.monotonic()
+parsed = parse_document("multibyte.md", raw, format_mode="markdown")
+print(json.dumps({
+    "blocks": len(parsed.blocks),
+    "elapsed": time.monotonic() - started,
+    "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    rss_bytes = result["rss"]
+    if sys.platform != "darwin":
+        rss_bytes *= 1024
+
+    assert result["blocks"] == 1
+    assert result["elapsed"] < 8.0
+    assert rss_bytes < 150 * 1024 * 1024
+
+
+def test_parser_scanners_do_not_stage_unbounded_transient_lists() -> None:
+    parser_source = (
+        Path(__file__).parents[1]
+        / "deeper_notebook"
+        / "vault"
+        / "parsers"
+        / "markdown.py"
+    ).read_text()
+    tree = ast.parse(parser_source)
+    scanner_names = {
+        "_iter_code_spans",
+        "_iter_html_spans",
+        "_iter_wikilinks",
+        "_iter_markdown_links",
+    }
+    scanners = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in scanner_names
+    ]
+
+    assert {node.name for node in scanners} == scanner_names
+    for scanner in scanners:
+        assert not any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append"
+            for node in ast.walk(scanner)
+        )
+
+    accumulator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ParseAccumulator"
+    )
+    permitted_output_appenders = {
+        "blocks": "add_block",
+        "links": "add_link",
+        "tasks": "add_task",
+        "embeds": "add_embed",
+    }
+    for method in (
+        node for node in accumulator.body if isinstance(node, ast.FunctionDef)
+    ):
+        for node in ast.walk(method):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append"
+                and isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id == "self"
+                and node.func.value.attr in permitted_output_appenders
+            ):
+                assert method.name == permitted_output_appenders[node.func.value.attr]
 
 
 def test_large_useful_logseq_document_stays_within_projection_budget() -> None:
