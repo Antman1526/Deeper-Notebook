@@ -23,7 +23,7 @@
 - Do not invoke the `brain-engine` Ralph loop.
 - Do not follow symlinks outside an approved root.
 - Do not log file content, secrets, absolute user-home paths in exported diagnostics, or frontmatter values classified as secrets.
-- A parse failure preserves the last valid projection and records a stale/invalid receipt.
+- A newer parse failure advances only `vault_file` invalid/stale provenance while preserving the last valid note graph; older failures are superseded and equal-timestamp hash conflicts require reconciliation.
 - A database failure never falls through to an external file write; Phase 1 has no external write path.
 - Durable projection completion and embedding completion are separate states.
 - Do not merge pages merely because normalized titles match across Obsidian and Logseq.
@@ -549,7 +549,7 @@ Add `tests/integration/test_vault_projection.py`, marked
 - `list_mounts() -> list[VaultMount]`
 - `get_mount(vault_id: str) -> VaultMount`
 - `project_document(vault, observation, parsed, operation_id) -> ProjectionResult`
-- `record_failure(vault_id, observation, operation_id, error_code) -> None`
+- `record_failure(vault_id, observation, operation_id, error_code) -> FailureResult`
 - `mark_missing(vault_id, relative_path, operation_id) -> None`
 - `list_files(vault_id, prefix, limit, offset) -> list[VaultFile]`
 - `get_page(vault_id, note_id) -> VaultPage`
@@ -642,7 +642,7 @@ Cover:
 - Mount state transitions `disconnected -> scanning -> ready-read-only`.
 - One operation ID per scan.
 - Stable unchanged files skip parsing and embedding.
-- Parse failures leave the previous projection and set `stale`/`degraded`.
+- Newer parse failures preserve the previous note graph while advancing file provenance to invalid/stale; equal-timestamp hash conflicts preserve both current file and graph and request reconciliation.
 - Watcher bursts debounce to one rescan.
 - Service shutdown stops and joins observers.
 - Startup with an unavailable root marks it unavailable and does not crash the API.
@@ -1036,7 +1036,7 @@ Phase 1 is complete only when:
 - Existing full-text/vector search can return mounted notes with relative-path provenance.
 - Grounded AI can cite a mounted page/block with relative-path and hash provenance and no absolute-root leakage.
 - The UI exposes only read-only interactions for external files.
-- Parse failures preserve the prior valid projection.
+- Parse failures preserve the prior valid note graph; a genuinely newer failed observation advances file provenance to invalid/stale.
 - Symlink, TOCTOU, encoding, oversize, and event-storm tests pass.
 - All 21 manifest records are imported as trust metadata and all 9 synthesis `derivedFrom` arrays survive.
 - Existing notebooks, research, Studio, Capture, podcasts, memory, and model workflows pass their regressions.

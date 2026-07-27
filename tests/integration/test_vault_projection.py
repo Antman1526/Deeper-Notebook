@@ -27,6 +27,7 @@ pytestmark = pytest.mark.integration_surreal
 ROOT = Path(__file__).resolve().parents[2]
 UP = ROOT / "deeper_notebook/database/migrations/32.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/32_down.surrealql"
+UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
 
 
 async def test_migration_creates_vault_projection_tables(clean_namespace):
@@ -83,6 +84,39 @@ async def test_migration_32_up_down_up_and_reapply_are_safe(clean_namespace):
     tables_after_up = up_head.get("tables") or {}
     assert "vault_mount" in tables_after_up
     assert "note" in tables_after_up
+
+
+async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
+    clean_namespace,
+):
+    await repo_query(
+        """
+        REMOVE INDEX IF EXISTS idx_note_vault_title_key ON TABLE note;
+        REMOVE FIELD IF EXISTS title_key ON TABLE note;
+        REMOVE FIELD IF EXISTS target_title_key ON TABLE note_link;
+        REMOVE INDEX IF EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record;
+        DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest
+            ON TABLE vault_trust_record COLUMNS manifest_id UNIQUE;
+        """
+    )
+
+    upgrade = UPGRADE.read_text(encoding="utf-8")
+    await repo_query(upgrade)
+    await repo_query(upgrade)
+
+    note_info = await repo_query("INFO FOR TABLE note;")
+    link_info = await repo_query("INFO FOR TABLE note_link;")
+    trust_info = await repo_query("INFO FOR TABLE vault_trust_record;")
+    note_info = note_info[0] if isinstance(note_info, list) else note_info
+    link_info = link_info[0] if isinstance(link_info, list) else link_info
+    trust_info = trust_info[0] if isinstance(trust_info, list) else trust_info
+    assert "title_key" in (note_info.get("fields") or {})
+    assert "idx_note_vault_title_key" in (note_info.get("indexes") or {})
+    assert "target_title_key" in (link_info.get("fields") or {})
+    trust_index = str((trust_info.get("indexes") or {})["idx_vault_trust_manifest"])
+    assert "vault_id" in trust_index
+    assert "manifest_relative_path" in trust_index
+    assert "manifest_id" in trust_index
 
 
 def _mount() -> VaultMount:
@@ -233,9 +267,13 @@ async def test_injected_mid_projection_failure_rolls_back_rows(clean_namespace):
     assert await repo_query("SELECT * FROM note_block;") == []
     assert await repo_query("SELECT * FROM note_link;") == []
     assert await repo_query("SELECT * FROM knowledge_task;") == []
+    files = await repo_query("SELECT * FROM vault_file;")
+    assert len(files) == 1
+    assert files[0]["parse_status"] == "invalid"
+    assert files[0]["content_hash"] == "a" * 64
     receipts = await repo_query("SELECT * FROM vault_sync_receipt;")
     assert len(receipts) == 1
-    assert receipts[0]["status"] == "failed"
+    assert receipts[0]["status"] == "stale-invalid"
 
 
 async def test_same_hash_is_idempotent_and_missing_preserves_projection(
@@ -384,7 +422,9 @@ async def test_task_dates_round_trip_as_utc_datetimes(clean_namespace):
         assert task[field].utcoffset() == timezone.utc.utcoffset(task[field])
 
 
-async def test_changed_projection_failure_preserves_prior_projection(clean_namespace):
+async def test_changed_projection_failure_stales_but_preserves_prior_graph(
+    clean_namespace,
+):
     await _create_mount()
     repository = VaultRepository(embedding_submitter=lambda *_args: None)
     await repository.project_document(
@@ -406,9 +446,12 @@ async def test_changed_projection_failure_preserves_prior_projection(clean_names
     file_row = (await repo_query("SELECT * FROM vault_file;"))[0]
     note_row = (await repo_query("SELECT * FROM note;"))[0]
     blocks = await repo_query("SELECT * FROM note_block ORDER BY position;")
-    assert file_row["content_hash"] == "a" * 64
-    assert file_row["parse_status"] == "parsed"
+    assert file_row["content_hash"] == "b" * 64
+    assert file_row["modified_ns"] == 200
+    assert file_row["parse_status"] == "invalid"
+    assert file_row["parse_error_code"] == "projection_failed"
     assert note_row["source_hash"] == "a" * 64
+    assert note_row["external_state"] == "stale"
     assert note_row["content"] == _document().markdown
     assert [row["parser_id"] for row in blocks] == ["heading", "task"]
 
@@ -560,12 +603,14 @@ class _DelayedOrLostResponseConnection:
         connection,
         *,
         delay_modified_ns: int | None = None,
+        delay_content_hash: str | None = None,
         lose_operation_id: str | None = None,
         query_started: asyncio.Event | None = None,
         query_terminal: asyncio.Event | None = None,
     ) -> None:
         self._connection = connection
         self._delay_modified_ns = delay_modified_ns
+        self._delay_content_hash = delay_content_hash
         self._lose_operation_id = lose_operation_id
         self._query_started = query_started
         self._query_terminal = query_terminal
@@ -577,6 +622,9 @@ class _DelayedOrLostResponseConnection:
         if (
             self._delay_modified_ns is not None
             and variables.get("observed_modified_ns") == self._delay_modified_ns
+        ) or (
+            self._delay_content_hash is not None
+            and variables.get("content_hash") == self._delay_content_hash
         ):
             await asyncio.sleep(0.05)
         try:
@@ -593,6 +641,7 @@ class _DelayedOrLostResponseConnection:
 def _ordered_connection_factory(
     *,
     delay_modified_ns: int | None = None,
+    delay_content_hash: str | None = None,
     lose_operation_id: str | None = None,
     query_started: asyncio.Event | None = None,
     query_terminal: asyncio.Event | None = None,
@@ -603,6 +652,7 @@ def _ordered_connection_factory(
             yield _DelayedOrLostResponseConnection(
                 connection,
                 delay_modified_ns=delay_modified_ns,
+                delay_content_hash=delay_content_hash,
                 lose_operation_id=lose_operation_id,
                 query_started=query_started,
                 query_terminal=query_terminal,
@@ -654,7 +704,51 @@ async def test_concurrent_stale_projection_and_lost_response_keep_newest(
     assert {row["status"] for row in receipts} == {"success", "superseded"}
 
 
-async def test_equal_timestamp_stale_failure_cannot_invalidate_other_hash(
+async def test_delayed_equal_timestamp_projection_conflicts_without_overwrite(
+    clean_namespace,
+):
+    await _create_mount()
+    repository = VaultRepository(
+        connection_factory=_ordered_connection_factory(
+            delay_content_hash="a" * 64,
+        ),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    delayed_a = asyncio.create_task(
+        repository.project_document(
+            _mount(),
+            _work("a" * 64, modified_ns=200),
+            _document("a" * 64),
+            "delayed-equal-a",
+        )
+    )
+    await asyncio.sleep(0)
+    b_result = await repository.project_document(
+        _mount(),
+        _work("b" * 64, modified_ns=200),
+        _document("b" * 64),
+        "current-equal-b",
+    )
+    a_result = await delayed_a
+
+    file_row = (await repo_query("SELECT * FROM vault_file;"))[0]
+    note_row = (await repo_query("SELECT * FROM note;"))[0]
+    receipts = await repo_query(
+        "SELECT operation_id, status, error_code FROM vault_sync_receipt;"
+    )
+    by_operation = {row["operation_id"]: row for row in receipts}
+    assert file_row["content_hash"] == "b" * 64
+    assert file_row["modified_ns"] == 200
+    assert note_row["source_hash"] == "b" * 64
+    assert b_result.status == "projected"
+    assert a_result.status == "conflict"
+    assert a_result.reconciliation_required is True
+    assert by_operation["delayed-equal-a"]["status"] == "conflict"
+    assert by_operation["delayed-equal-a"]["error_code"] == "reconciliation_required"
+
+
+async def test_equal_timestamp_failure_conflicts_without_invalidating_other_hash(
     clean_namespace,
 ):
     await _create_mount()
@@ -666,10 +760,10 @@ async def test_equal_timestamp_stale_failure_cannot_invalidate_other_hash(
         "current-success",
     )
 
-    await repository.record_failure(
+    result = await repository.record_failure(
         _mount().id,
         _work("a" * 64, modified_ns=200),
-        "stale-equal-timestamp-failure",
+        "conflicting-equal-timestamp-failure",
         "parse_failed",
     )
 
@@ -681,8 +775,59 @@ async def test_equal_timestamp_stale_failure_cannot_invalidate_other_hash(
     assert file_row["content_hash"] == "b" * 64
     assert file_row["parse_status"] == "parsed"
     assert file_row["deleted_state"] == "present"
-    assert by_operation["stale-equal-timestamp-failure"]["status"] == "superseded"
-    assert by_operation["stale-equal-timestamp-failure"]["error_code"] == "parse_failed"
+    assert result.status == "conflict"
+    assert result.reconciliation_required is True
+    assert by_operation["conflicting-equal-timestamp-failure"]["status"] == "conflict"
+    assert (
+        by_operation["conflicting-equal-timestamp-failure"]["error_code"]
+        == "reconciliation_required"
+    )
+
+
+async def test_newer_failure_marks_file_stale_and_preserves_last_valid_graph(
+    clean_namespace,
+):
+    await _create_mount()
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+    await repository.project_document(
+        _mount(),
+        _work("b" * 64, modified_ns=200),
+        _document("b" * 64),
+        "valid-before-newer-failure",
+    )
+    before_counts = {
+        table: len(await repo_query(f"SELECT * FROM {table};"))
+        for table in ("note", "note_block", "note_link", "knowledge_task")
+    }
+
+    result = await repository.record_failure(
+        _mount().id,
+        _work("c" * 64, modified_ns=300),
+        "newer-failure",
+        "parse_failed",
+    )
+
+    file_row = (await repo_query("SELECT * FROM vault_file;"))[0]
+    note_row = (await repo_query("SELECT * FROM note;"))[0]
+    receipt = (
+        await repo_query(
+            "SELECT * FROM vault_sync_receipt WHERE operation_id = 'newer-failure';"
+        )
+    )[0]
+    after_counts = {
+        table: len(await repo_query(f"SELECT * FROM {table};"))
+        for table in ("note", "note_block", "note_link", "knowledge_task")
+    }
+    assert file_row["content_hash"] == "c" * 64
+    assert file_row["modified_ns"] == 300
+    assert file_row["parse_status"] == "invalid"
+    assert file_row["parse_error_code"] == "parse_failed"
+    assert note_row["source_hash"] == "b" * 64
+    assert note_row["external_state"] == "stale"
+    assert before_counts == after_counts
+    assert result.status == "stale-invalid"
+    assert result.reconciliation_required is False
+    assert receipt["status"] == "stale-invalid"
 
 
 async def test_cancellation_waits_for_native_projection_and_embeds_once(
