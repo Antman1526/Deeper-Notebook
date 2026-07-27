@@ -18,11 +18,11 @@ from open_notebook import logging as onp_logging
 
 
 def test_default_log_dir_uses_home(monkeypatch, tmp_path):
-    """Default location is ~/.open-notebook-plus/logs without ONP_LOG_DIR."""
+    """Default location is ~/.deeper-notebook/logs without a log-dir override."""
     monkeypatch.delenv("ONP_LOG_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("USERPROFILE", raising=False)
-    assert onp_logging.default_log_dir() == tmp_path / ".open-notebook-plus" / "logs"
+    assert onp_logging.default_log_dir() == tmp_path / ".deeper-notebook" / "logs"
 
 
 def test_default_log_dir_respects_env(monkeypatch, tmp_path):

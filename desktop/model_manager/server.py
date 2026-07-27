@@ -20,11 +20,12 @@ except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
 from aiohttp import web
-from desktop.paths import user_home
+
+from desktop.data_root import active_data_root
 
 STATIC_DIR = Path(__file__).parent / "static"
 CATALOG_PATH = Path(__file__).parent / "catalog.json"
-_CONFIG_PATH = user_home() / ".open-notebook-plus" / "config.toml"
+_CONFIG_PATH = active_data_root() / "config.toml"
 
 _MIN_BYTES = 100_000
 

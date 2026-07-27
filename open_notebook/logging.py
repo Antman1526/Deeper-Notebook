@@ -28,6 +28,7 @@ from pathlib import Path
 from loguru import logger
 
 from deeper_notebook.environment import resolve_env
+from desktop.data_root import active_data_root
 
 _DEFAULT_ROTATION = "20 MB"
 _DEFAULT_RETENTION = "14 days"
@@ -86,7 +87,7 @@ def default_log_dir() -> Path:
         # mount/scrape it. If write fails (read-only fs), the caller
         # can set ONP_LOG_DIR explicitly.
         return Path("/var/log/open-notebook-plus")
-    return Path(home) / ".open-notebook-plus" / "logs"
+    return active_data_root() / "logs"
 
 
 def configure_logging(

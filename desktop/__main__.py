@@ -12,7 +12,8 @@ tricks are needed.
 from __future__ import annotations
 
 import sys
-from desktop.paths import user_home as _user_home
+
+from desktop.data_root import active_data_root
 
 
 def _emergency_log(exc: BaseException) -> None:
@@ -30,10 +31,7 @@ def _emergency_log(exc: BaseException) -> None:
     import datetime as _dt
     import os as _os
     import traceback as _traceback
-    from pathlib import Path as _Path
-
-    base = _user_home()
-    log_dir = base / ".open-notebook-plus" / "logs"
+    log_dir = active_data_root() / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "launcher.log"

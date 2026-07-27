@@ -273,7 +273,7 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
     launcher's 180s /readyz wait timed out → silent exit.
 
     The supervisor must inject DATA_FOLDER as an absolute path under
-    ~/.open-notebook-plus/data so the API can always write its sqlite-db
+    ~/.deeper-notebook/data so the API can always write its sqlite-db
     and uploads regardless of cwd writability.
     """
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
@@ -294,7 +294,7 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
             f"DATA_FOLDER must be absolute, got: {data_folder!r}"
         )
         # MUST point under the user's per-app dir so subsequent makedirs succeed.
-        assert ".open-notebook-plus" in data_folder
+        assert ".deeper-notebook" in data_folder
         assert Path(data_folder).name == "data"
         # MUST already exist (we mkdir it before populating session_env).
         assert Path(data_folder).is_dir(), (

@@ -17,7 +17,8 @@ import tarfile
 import zipfile
 from pathlib import Path
 from typing import Callable
-from desktop.paths import user_home
+
+from desktop.data_root import active_data_root
 
 # Max bytes kept in bootstrap-subprocess.log before truncation (P2-MED-19).
 # 5 MB is plenty for the heaviest install we run; rotating on next launch
@@ -133,8 +134,7 @@ def _interpreter_is_healthy(interpreter: Path) -> bool:
 
 
 def venv_dir() -> Path:
-    base = Path(os.environ.get("USERPROFILE") or os.environ["HOME"])
-    return base / ".open-notebook-plus" / "venv"
+    return active_data_root() / "venv"
 
 
 def venv_python() -> Path:
@@ -153,8 +153,7 @@ def _lock_hash(lock_path: Path) -> str:
 
 def _bootstrap_log_path() -> Path:
     """Append-only diagnostic log next to bootstrap.log (same dir)."""
-    base = user_home()
-    return base / ".open-notebook-plus" / "logs" / "bootstrap-subprocess.log"
+    return active_data_root() / "logs" / "bootstrap-subprocess.log"
 
 
 def _rotate_log_if_oversized(log_path: Path) -> None:
