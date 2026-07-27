@@ -63,6 +63,8 @@ describe('AppSidebar', () => {
 
     // In collapsed mode, app name shouldn't be visible (as text)
     expect(screen.queryByText('common.appName')).toBeNull()
-    expect(screen.getByAltText('Deeper Notebook')).toBeDefined()
+    expect(
+      screen.getByRole('img', { name: 'Deeper Notebook' }),
+    ).toBeInTheDocument()
   })
 })

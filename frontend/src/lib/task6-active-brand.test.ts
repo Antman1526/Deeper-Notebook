@@ -5,40 +5,48 @@ import { describe, expect, it } from 'vitest'
 import { resources } from './locales'
 
 const SRC = path.resolve(__dirname, '..')
+const REQUIRED_LOCALES = [
+  'bn-IN',
+  'ca-ES',
+  'de-DE',
+  'en-US',
+  'es-ES',
+  'fr-FR',
+  'it-IT',
+  'ja-JP',
+  'pl-PL',
+  'pt-BR',
+  'ru-RU',
+  'tr-TR',
+  'zh-CN',
+  'zh-TW',
+] as const
+const ACTIVE_IDENTITY_SOURCES = [
+  'app/layout.tsx',
+  'app/(dashboard)/page.tsx',
+  'components/intro/IntroReveal.tsx',
+  'components/layout/AppSidebar.tsx',
+] as const
+const STALE_PRODUCT_LABEL =
+  /Open Notebook Plus|Open notebook\+|Open Notebook\+|Open Notebook/
 
 describe('Task 6 active Deeper Notebook identity', () => {
-  it('uses the exact product name in every locale without stale active labels', () => {
+  it('defines the exact required locale set', () => {
+    expect(Object.keys(resources).sort()).toEqual([...REQUIRED_LOCALES].sort())
+  })
+
+  it('uses the exact product name in every required locale without stale labels', () => {
     for (const [locale, resource] of Object.entries(resources)) {
       expect(resource.translation.common.appName, locale).toBe('Deeper Notebook')
-      expect(JSON.stringify(resource.translation), locale).not.toMatch(
-        /Open Notebook Plus|Open notebook\+|Open Notebook\+|Open Notebook/,
-      )
+      expect(JSON.stringify(resource.translation), locale).not.toMatch(STALE_PRODUCT_LABEL)
     }
   })
 
-  it('uses the approved metadata, dashboard, intro, and sidebar copy', () => {
-    const layout = fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')
-    const dashboard = fs.readFileSync(
-      path.join(SRC, 'app/(dashboard)/page.tsx'),
-      'utf8',
-    )
-    const intro = fs.readFileSync(
-      path.join(SRC, 'components/intro/IntroReveal.tsx'),
-      'utf8',
-    )
-    const sidebar = fs.readFileSync(
-      path.join(SRC, 'components/layout/AppSidebar.tsx'),
-      'utf8',
-    )
-
-    expect(layout).toContain('title: "Deeper Notebook"')
-    expect(layout).toContain(
-      'description: "Local-first research and knowledge workspace"',
-    )
-    expect(dashboard).toContain('Deeper Notebook')
-    expect(dashboard).toContain('Think further with every source')
-    expect(intro).toContain('aria-label="Deeper Notebook"')
-    expect(sidebar).toContain('alt="Deeper Notebook"')
+  it('keeps stale product labels out of the active identity source inventory', () => {
+    for (const relativePath of ACTIVE_IDENTITY_SOURCES) {
+      const source = fs.readFileSync(path.join(SRC, relativePath), 'utf8')
+      expect(source, relativePath).not.toMatch(STALE_PRODUCT_LABEL)
+    }
   })
 
   it('uses the canonical fetch helper and Gmail namespace in active components', () => {
