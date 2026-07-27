@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-
 CANONICAL_LOCAL_EPISODE_PROFILE = "Deeper Notebook Local"
 LEGACY_LOCAL_EPISODE_PROFILE = "Open Notebook Plus Local"
 
