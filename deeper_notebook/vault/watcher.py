@@ -17,7 +17,7 @@ from deeper_notebook.vault.security import (
     secure_read,
 )
 
-ObservationState = Literal["pending", "ready", "retry", "missing"]
+ObservationState = Literal["pending", "ready", "retry"]
 ParseState = Literal["pending", "parsed", "failed", "missing"]
 EmbeddingState = Literal[
     "not_submitted", "pending", "embedded", "failed", "not_applicable"
@@ -59,7 +59,13 @@ class VaultObservationRepository(Protocol):
         self, observation: VaultFileObservation
     ) -> None: ...
 
-    async def mark_missing(self, vault_id: str, relative_path: str) -> None: ...
+    async def mark_missing(self, vault_id: str, relative_path: str) -> None:
+        """Atomically transition to missing and append its receipt once.
+
+        Implementations MUST be idempotent. Repeating this call for an already
+        missing path must not append another transition receipt.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +111,12 @@ class _StableObservation:
 
 
 class VaultWatcher:
-    """Require two stable observations and coalesce work by path and hash."""
+    """Require stable reads and coalesce by last committed projection hash.
+
+    ``known_projected_hashes`` contains only hashes whose complete projection
+    transaction committed successfully. A merely ready or queued observation
+    must never be supplied as a projected hash seed.
+    """
 
     def __init__(
         self,
@@ -115,7 +126,7 @@ class VaultWatcher:
         repository: VaultObservationRepository,
         stable_after_seconds: float = 2.0,
         known_paths: set[str] | None = None,
-        known_content_hashes: Mapping[str, str | None] | None = None,
+        known_projected_hashes: Mapping[str, str | None] | None = None,
         max_file_bytes: int | None = None,
     ) -> None:
         if stable_after_seconds < 2.0:
@@ -130,17 +141,13 @@ class VaultWatcher:
         self._known_paths = {
             self._validated_seed_path(relative) for relative in (known_paths or ())
         }
-        self._committed_hashes: dict[str, str] = {}
-        for relative, content_hash in (known_content_hashes or {}).items():
+        self._projected_hashes: dict[str, str] = {}
+        self._queued_hashes: dict[str, str] = {}
+        for relative, content_hash in (known_projected_hashes or {}).items():
             validated = self._validated_seed_path(relative)
             self._known_paths.add(validated)
             if content_hash is not None:
-                if (
-                    len(content_hash) != 64
-                    or any(character not in "0123456789abcdef" for character in content_hash)
-                ):
-                    raise ValueError("known content hashes must be lowercase SHA-256")
-                self._committed_hashes[validated] = content_hash
+                self._projected_hashes[validated] = self._validated_hash(content_hash)
         self._missing_paths: set[str] = set()
 
     async def scan(
@@ -148,6 +155,31 @@ class VaultWatcher:
     ) -> list[VaultWorkItem]:
         async with self._scan_lock:
             return await self._scan_locked(now_monotonic=now_monotonic)
+
+    async def acknowledge_projected(
+        self, relative_path: str, content_hash: str
+    ) -> bool:
+        """Acknowledge the exact queued hash after its projection commits."""
+
+        relative = self._validated_seed_path(relative_path)
+        validated_hash = self._validated_hash(content_hash)
+        async with self._scan_lock:
+            if self._queued_hashes.get(relative) != validated_hash:
+                return self._projected_hashes.get(relative) == validated_hash
+            self._projected_hashes[relative] = validated_hash
+            self._queued_hashes.pop(relative, None)
+            return True
+
+    async def release_queued(self, relative_path: str, content_hash: str) -> bool:
+        """Release the exact queued hash so a failed consumer can retry it."""
+
+        relative = self._validated_seed_path(relative_path)
+        validated_hash = self._validated_hash(content_hash)
+        async with self._scan_lock:
+            if self._queued_hashes.get(relative) != validated_hash:
+                return False
+            self._queued_hashes.pop(relative, None)
+            return True
 
     async def _scan_locked(
         self, *, now_monotonic: float | None
@@ -243,7 +275,10 @@ class VaultWatcher:
                 self._missing_paths.discard(relative)
                 continue
 
-            if self._committed_hashes.get(relative) == read.sha256:
+            if (
+                self._projected_hashes.get(relative) == read.sha256
+                or self._queued_hashes.get(relative) == read.sha256
+            ):
                 continue
             await self._record(
                 relative=relative,
@@ -255,7 +290,7 @@ class VaultWatcher:
                 modified_ns=read.modified_ns,
                 observed_at=now,
             )
-            self._committed_hashes[relative] = read.sha256
+            self._queued_hashes[relative] = read.sha256
             self._known_paths.add(relative)
             self._missing_paths.discard(relative)
             work.append(
@@ -275,28 +310,31 @@ class VaultWatcher:
             if relative in self._missing_paths:
                 continue
             await self._repository.mark_missing(self._vault_id, relative)
-            classification = classify_vault_path(relative)
-            await self._record(
-                relative=relative,
-                state="missing",
-                file_kind=classification.kind,
-                protected=classification.protected,
-                content_hash=None,
-                byte_size=None,
-                modified_ns=None,
-                observed_at=now,
-                parse_state="missing",
-            )
             self._missing_paths.add(relative)
             self._observations.pop(relative, None)
-            self._committed_hashes.pop(relative, None)
+            self._projected_hashes.pop(relative, None)
+            self._queued_hashes.pop(relative, None)
 
         return work
 
     @staticmethod
     def _validated_seed_path(relative: str) -> str:
-        classify_vault_path(relative)
+        classification = classify_vault_path(relative)
+        if not classification.indexable:
+            raise ValueError("seed paths must identify indexable vault files")
         return relative
+
+    @staticmethod
+    def _validated_hash(content_hash: str) -> str:
+        if (
+            not isinstance(content_hash, str)
+            or len(content_hash) != 64
+            or any(
+                character not in "0123456789abcdef" for character in content_hash
+            )
+        ):
+            raise ValueError("content hashes must be lowercase SHA-256")
+        return content_hash
 
     async def _record(
         self,
