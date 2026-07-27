@@ -278,6 +278,17 @@ def _is_lexically_unsafe_root(path: Path) -> bool:
         "/sys",
         "/run",
         "/boot",
+        "/private/etc",
+        "/private/tmp",
+        "/private/var/log",
+        "/private/var/db",
+        "/private/var/tmp",
+        "/private/var/run",
+        "/private/var/root",
+        "/private/var/audit",
+        "/private/var/at",
+        "/private/var/networkd",
+        "/private/var/protected",
     )
     if any(
         normalized == os.path.normcase(prefix)
@@ -589,15 +600,19 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
             relative_parts = (*prefix, name)
             relative = PurePosixPath(*relative_parts).as_posix()
             classification = classify_vault_path(relative)
+            if classification.kind in {"control", "connector", "temporary"}:
+                continue
             try:
                 entry_stat = entry.stat(follow_symlinks=False)
             except OSError as exc:
                 raise VaultSecurityError("unreadable") from exc
             if stat.S_ISLNK(entry_stat.st_mode):
+                if classification.indexable:
+                    raise VaultSecurityError("unsafe_symlink")
                 continue
             if stat.S_ISDIR(entry_stat.st_mode):
-                if classification.kind in {"control", "connector", "temporary"}:
-                    continue
+                if classification.indexable:
+                    raise VaultSecurityError("not_regular_file")
                 try:
                     child_fd = os.open(name, _directory_flags(), dir_fd=directory_fd)
                 except OSError as exc:
@@ -614,7 +629,15 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
                 finally:
                     os.close(child_fd)
                 continue
-            if not stat.S_ISREG(entry_stat.st_mode) or entry_stat.st_nlink != 1:
+            if not stat.S_ISREG(entry_stat.st_mode):
+                if classification.indexable:
+                    raise VaultSecurityError("not_regular_file")
+                continue
+            if entry_stat.st_nlink != 1:
+                if classification.indexable:
+                    raise VaultSecurityError("unsafe_hardlink")
+                continue
+            if not classification.indexable:
                 continue
             candidates.append(
                 SecureFileCandidate(

@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import shutil
+import socket
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,12 +22,18 @@ class MemoryObservationRepository:
     def __init__(self) -> None:
         self.observations: list[VaultFileObservation] = []
         self.missing: list[tuple[str, str]] = []
+        self.mark_missing_calls = 0
+        self._missing_state: set[tuple[str, str]] = set()
 
     async def record_observation(self, observation: VaultFileObservation) -> None:
         self.observations.append(observation)
 
     async def mark_missing(self, vault_id: str, relative_path: str) -> None:
-        self.missing.append((vault_id, relative_path))
+        self.mark_missing_calls += 1
+        key = (vault_id, relative_path)
+        if key not in self._missing_state:
+            self._missing_state.add(key)
+            self.missing.append(key)
 
 
 class FailingObservationRepository(MemoryObservationRepository):
@@ -34,6 +43,8 @@ class FailingObservationRepository(MemoryObservationRepository):
         self.cancel_record_state: str | None = None
         self.fail_mark_missing = False
         self.cancel_mark_missing = False
+        self.fail_after_mark_commit = False
+        self.cancel_after_mark_commit = False
 
     async def record_observation(self, observation: VaultFileObservation) -> None:
         if observation.state == self.cancel_record_state:
@@ -52,6 +63,12 @@ class FailingObservationRepository(MemoryObservationRepository):
             self.fail_mark_missing = False
             raise RuntimeError("repository unavailable")
         await super().mark_missing(vault_id, relative_path)
+        if self.cancel_after_mark_commit:
+            self.cancel_after_mark_commit = False
+            raise asyncio.CancelledError
+        if self.fail_after_mark_commit:
+            self.fail_after_mark_commit = False
+            raise RuntimeError("repository response lost")
 
 
 @pytest.fixture
@@ -158,7 +175,7 @@ async def test_restart_seeded_current_hash_dedupes_without_ready_work(
             vault_id="vault:test",
             approved_root=approved,
             repository=repository,
-            known_content_hashes={
+            known_projected_hashes={
                 "note.md": hashlib.sha256(content).hexdigest(),
             },
         )
@@ -185,7 +202,7 @@ async def test_deletion_marks_missing_without_deleting_projection(
         assert await watcher.scan(now_monotonic=5.0) == []
 
     assert repository.missing == [("vault:test", "note.md")]
-    assert repository.observations[-1].state == "missing"
+    assert not any(item.state == "missing" for item in repository.observations)
 
 
 @pytest.mark.asyncio
@@ -348,7 +365,7 @@ async def test_missing_repository_failures_retry_without_poisoning_state(
         repository.fail_mark_missing = True
         with pytest.raises(RuntimeError):
             await watcher.scan(now_monotonic=4.0)
-        repository.fail_record_state = "missing"
+        repository.fail_after_mark_commit = True
         with pytest.raises(RuntimeError):
             await watcher.scan(now_monotonic=5.0)
         await watcher.scan(now_monotonic=6.0)
@@ -356,10 +373,9 @@ async def test_missing_repository_failures_retry_without_poisoning_state(
         await watcher.scan(now_monotonic=7.0)
         work = await watcher.scan(now_monotonic=9.0)
     assert [item.content for item in work] == [b"body"]
-    assert repository.missing == [
-        ("vault:test", "note.md"),
-        ("vault:test", "note.md"),
-    ]
+    assert repository.missing == [("vault:test", "note.md")]
+    assert repository.mark_missing_calls == 2
+    assert not any(item.state == "missing" for item in repository.observations)
 
 
 @pytest.mark.asyncio
@@ -379,7 +395,7 @@ async def test_missing_repository_cancellations_retry_without_poisoning_state(
         repository.cancel_mark_missing = True
         with pytest.raises(asyncio.CancelledError):
             await watcher.scan(now_monotonic=4.0)
-        repository.cancel_record_state = "missing"
+        repository.cancel_after_mark_commit = True
         with pytest.raises(asyncio.CancelledError):
             await watcher.scan(now_monotonic=5.0)
         await watcher.scan(now_monotonic=6.0)
@@ -387,6 +403,9 @@ async def test_missing_repository_cancellations_retry_without_poisoning_state(
         await watcher.scan(now_monotonic=7.0)
         work = await watcher.scan(now_monotonic=9.0)
     assert [item.content for item in work] == [b"body"]
+    assert repository.missing == [("vault:test", "note.md")]
+    assert repository.mark_missing_calls == 2
+    assert not any(item.state == "missing" for item in repository.observations)
 
 
 @pytest.mark.asyncio
@@ -462,10 +481,208 @@ def test_constructor_rejects_noncanonical_seed_paths(
                 vault_id="vault:test",
                 approved_root=approved,
                 repository=repository,
-                known_content_hashes={invalid: None},
+                known_projected_hashes={invalid: None},
             )
     assert repository.observations == []
     assert repository.missing == []
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "brain-engine/config.json",
+        ".obsidian/workspace.json",
+        "note.md.tmp",
+        "image.png",
+    ],
+)
+def test_constructor_rejects_nonindexable_seed_paths(
+    vault_root: Path, invalid: str
+) -> None:
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        with pytest.raises(ValueError):
+            VaultWatcher(
+                vault_id="vault:test",
+                approved_root=approved,
+                repository=repository,
+                known_paths={invalid},
+            )
+        with pytest.raises(ValueError):
+            VaultWatcher(
+                vault_id="vault:test",
+                approved_root=approved,
+                repository=repository,
+                known_projected_hashes={invalid: None},
+            )
+    assert repository.observations == []
+    assert repository.missing == []
+
+
+@pytest.mark.asyncio
+async def test_unconsumed_ready_hash_is_not_a_projected_hash_seed(
+    vault_root: Path,
+) -> None:
+    content = b"ready but not projected"
+    (vault_root / "note.md").write_bytes(content)
+    repository = MemoryObservationRepository()
+    repository.unconsumed_ready_hash = hashlib.sha256(content).hexdigest()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+        )
+        await watcher.scan(now_monotonic=1.0)
+        work = await watcher.scan(now_monotonic=3.0)
+    assert [item.content for item in work] == [content]
+
+
+@pytest.mark.asyncio
+async def test_releasing_unconsumed_ready_hash_reemits_work(
+    vault_root: Path,
+) -> None:
+    content = b"consumer failed"
+    (vault_root / "note.md").write_bytes(content)
+    content_hash = hashlib.sha256(content).hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test", approved_root=approved, repository=repository
+        )
+        await watcher.scan(now_monotonic=1.0)
+        assert len(await watcher.scan(now_monotonic=3.0)) == 1
+        assert await watcher.release_queued("note.md", content_hash) is True
+        reemitted = await watcher.scan(now_monotonic=4.0)
+    assert [item.content for item in reemitted] == [content]
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_projection_dedupes_now_and_after_restart(
+    vault_root: Path,
+) -> None:
+    content = b"projected"
+    (vault_root / "note.md").write_bytes(content)
+    content_hash = hashlib.sha256(content).hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test", approved_root=approved, repository=repository
+        )
+        await watcher.scan(now_monotonic=1.0)
+        assert len(await watcher.scan(now_monotonic=3.0)) == 1
+        assert (
+            await watcher.acknowledge_projected("note.md", content_hash) is True
+        )
+        assert await watcher.scan(now_monotonic=4.0) == []
+
+        restarted = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+            known_projected_hashes={"note.md": content_hash},
+        )
+        await restarted.scan(now_monotonic=5.0)
+        assert await restarted.scan(now_monotonic=7.0) == []
+
+
+@pytest.mark.asyncio
+async def test_stale_ack_or_release_cannot_clobber_newer_queued_hash(
+    vault_root: Path,
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test", approved_root=approved, repository=repository
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        assert len(await watcher.scan(now_monotonic=6.0)) == 1
+
+        assert await watcher.acknowledge_projected("note.md", hash_a) is False
+        assert await watcher.release_queued("note.md", hash_a) is False
+        assert await watcher.scan(now_monotonic=7.0) == []
+        assert await watcher.release_queued("note.md", hash_b) is True
+        assert len(await watcher.scan(now_monotonic=8.0)) == 1
+
+
+@pytest.mark.asyncio
+async def test_indexed_file_becoming_hardlink_aborts_without_missing(
+    vault_root: Path,
+) -> None:
+    note = vault_root / "note.md"
+    note.write_bytes(b"body")
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test", approved_root=approved, repository=repository
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        note.unlink()
+        source = vault_root / "source.bin"
+        source.write_bytes(b"replacement")
+        os.link(source, note)
+        with pytest.raises(VaultSecurityError) as caught:
+            await watcher.scan(now_monotonic=4.0)
+    assert caught.value.code == "unsafe_hardlink"
+    assert repository.missing == []
+
+
+@pytest.mark.asyncio
+async def test_indexed_file_becoming_fifo_aborts_without_missing(
+    vault_root: Path,
+) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO unavailable")
+    note = vault_root / "note.md"
+    note.write_bytes(b"body")
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test", approved_root=approved, repository=repository
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        note.unlink()
+        os.mkfifo(note)
+        with pytest.raises(VaultSecurityError) as caught:
+            await watcher.scan(now_monotonic=4.0)
+    assert caught.value.code == "not_regular_file"
+    assert repository.missing == []
+
+
+@pytest.mark.asyncio
+async def test_indexed_file_becoming_socket_aborts_without_missing() -> None:
+    short_root = Path(tempfile.mkdtemp(prefix="dn-watch-", dir="/Users/Shared"))
+    note = short_root / "note.md"
+    note.write_bytes(b"body")
+    repository = MemoryObservationRepository()
+    server = socket.socket(socket.AF_UNIX)
+    try:
+        with approve_vault_root(short_root) as approved:
+            watcher = VaultWatcher(
+                vault_id="vault:test",
+                approved_root=approved,
+                repository=repository,
+            )
+            await watcher.scan(now_monotonic=1.0)
+            await watcher.scan(now_monotonic=3.0)
+            note.unlink()
+            server.bind(str(note))
+            with pytest.raises(VaultSecurityError) as caught:
+                await watcher.scan(now_monotonic=4.0)
+        assert caught.value.code == "not_regular_file"
+        assert repository.missing == []
+    finally:
+        server.close()
+        shutil.rmtree(short_root)
 
 
 @pytest.mark.asyncio

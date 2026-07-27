@@ -10,6 +10,7 @@ import pytest
 
 from deeper_notebook.vault.security import (
     VaultSecurityError,
+    _is_lexically_unsafe_root,
     approve_vault_root,
     classify_vault_path,
     secure_read,
@@ -107,6 +108,34 @@ def test_approved_root_rejects_broad_home_collections(
         with pytest.raises(VaultSecurityError) as caught:
             approve_vault_root(candidate)
         assert caught.value.code == "unsafe_root"
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/private/etc",
+        "/private/etc/ssh",
+        "/private/tmp",
+        "/private/tmp/deeper",
+        "/private/var/log",
+        "/private/var/log/deeper",
+        "/private/var/db",
+        "/private/var/db/deeper",
+        "/private/var/tmp",
+        "/private/var/tmp/deeper",
+        "/private/var/run",
+        "/private/var/run/deeper",
+        "/private/var/root",
+        "/private/var/audit",
+        "/private/var/at",
+        "/private/var/networkd",
+        "/private/var/protected",
+    ],
+)
+def test_canonical_macos_system_trees_and_descendants_are_unsafe(
+    candidate: str,
+) -> None:
+    assert _is_lexically_unsafe_root(Path(candidate)) is True
 
 
 def test_approved_root_fails_closed_without_descriptor_security(
@@ -312,7 +341,7 @@ def test_secure_read_never_blocks_on_fifo(vault_root: Path) -> None:
 
 
 def test_secure_read_rejects_socket() -> None:
-    short_root = Path(tempfile.mkdtemp(prefix="dn-vault-", dir="/private/tmp"))
+    short_root = Path(tempfile.mkdtemp(prefix="dn-vault-", dir="/Users/Shared"))
     socket_path = short_root / "socket.md"
     server = socket.socket(socket.AF_UNIX)
     server.bind(str(socket_path))
