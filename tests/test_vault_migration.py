@@ -15,6 +15,8 @@ from deeper_notebook.vault.contracts import (
 ROOT = Path(__file__).resolve().parents[1]
 UP = ROOT / "deeper_notebook/database/migrations/32.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/32_down.surrealql"
+UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
+UPGRADE_DOWN = ROOT / "deeper_notebook/database/migrations/33_down.surrealql"
 
 VAULT_TABLES = (
     "vault_mount",
@@ -110,6 +112,31 @@ def test_vault_down_migration_removes_only_vault_schema():
     for field in NOTE_FIELDS:
         assert f"REMOVE FIELD IF EXISTS {field} ON TABLE note;" in sql
     assert "REMOVE TABLE IF EXISTS vault_trust_record;" in sql
+
+
+def test_migration_33_repairs_already_recorded_v32_schema_idempotently():
+    sql = UPGRADE.read_text(encoding="utf-8")
+
+    assert "DEFINE FIELD IF NOT EXISTS title_key ON TABLE note" in sql
+    assert "DEFINE FIELD IF NOT EXISTS target_title_key ON TABLE note_link" in sql
+    assert "DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key" in sql
+    assert "REMOVE INDEX IF EXISTS idx_vault_trust_manifest" in sql
+    assert "COLUMNS vault_id, manifest_relative_path, manifest_id UNIQUE" in sql
+    defines = [
+        line.strip()
+        for line in sql.splitlines()
+        if line.strip().upper().startswith("DEFINE ")
+    ]
+    assert defines
+    assert all("IF NOT EXISTS" in statement.upper() for statement in defines)
+
+
+def test_migration_33_down_is_discoverable_and_non_destructive():
+    sql = UPGRADE_DOWN.read_text(encoding="utf-8")
+
+    assert sql.strip()
+    assert "REMOVE FIELD" not in sql
+    assert "REMOVE TABLE" not in sql
 
 
 def _document(**updates) -> ParsedDocument:
