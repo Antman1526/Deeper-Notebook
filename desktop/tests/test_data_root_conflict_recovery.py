@@ -234,6 +234,37 @@ def test_conflict_evidence_rejects_symlinked_or_foreign_recovery_root(
         assert (_tree_hash(canonical), _tree_hash(legacy)) == before
 
 
+def test_conflict_evidence_dirfd_refuses_visible_root_swap_without_redirect(
+    tmp_path: Path,
+) -> None:
+    canonical = tmp_path / ".deeper-notebook"
+    legacy = tmp_path / ".open-notebook-plus"
+    _seed(canonical, theme="research-core", source="canonical\n")
+    _seed(legacy, theme="light-blue", source="legacy\n")
+    before = (_tree_hash(canonical), _tree_hash(legacy))
+    decision = data_root.classify_roots(canonical, legacy)
+    recovery = tmp_path / ".deeper-notebook-recovery"
+    held = tmp_path / ".recovery-held"
+
+    def swap(stage: str, path: Path) -> None:
+        if stage == "recovery-opened":
+            path.rename(held)
+            path.symlink_to(canonical, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="identity-changed"):
+        data_root.write_conflict_recovery_evidence(
+            decision,
+            home=tmp_path,
+            _race_hook=swap,
+        )
+
+    assert not (canonical / "data-root-conflict-recovery.json").exists()
+    assert not (canonical / "logs" / "recovery.log").exists()
+    assert (held / "data-root-conflict-recovery.json").is_file()
+    assert (held / "logs" / "recovery.log").is_file()
+    assert (_tree_hash(canonical), _tree_hash(legacy)) == before
+
+
 def test_recovery_html_discloses_only_safe_root_summaries() -> None:
     payload = {
         "canonical": {
@@ -281,8 +312,20 @@ def test_recovery_window_uses_isolated_storage_and_existing_app_choices(
     )
     starts: list[dict[str, object]] = []
 
+    canonical = tmp_path / ".deeper-notebook"
+    canonical.mkdir()
+    recovery_root = tmp_path / ".deeper-notebook-recovery"
+    recovery_root.mkdir()
+    original_recovery = tmp_path / ".recovery-original"
+
     def start(**kwargs) -> None:
         starts.append(kwargs)
+        recovery_root.rename(original_recovery)
+        recovery_root.symlink_to(canonical, target_is_directory=True)
+        storage_path = Path(str(kwargs["storage_path"]))
+        assert storage_path.is_dir()
+        assert storage_path.parent != canonical
+        assert storage_path.parent != recovery_root
         assert loaded.handler is not None
         loaded.handler()
 
@@ -298,8 +341,6 @@ def test_recovery_window_uses_isolated_storage_and_existing_app_choices(
             AssertionError("recovery window resolved an ambiguous data root")
         ),
     )
-    recovery_root = tmp_path / ".deeper-notebook-recovery"
-    recovery_root.mkdir()
     app_recovery = SimpleNamespace(
         card_payload=lambda: {
             "show_recovery_card": True,
@@ -329,11 +370,11 @@ def test_recovery_window_uses_isolated_storage_and_existing_app_choices(
         storage_root=recovery_root,
     )
 
-    assert starts == [{
-        "private_mode": False,
-        "storage_path": str(recovery_root / "webview_data"),
-    }]
+    assert starts[0]["private_mode"] is False
+    storage_path = Path(str(starts[0]["storage_path"]))
+    assert storage_path.name.startswith("deeper-notebook-recovery-webview-")
+    assert not storage_path.exists()
     assert "Replace Old App" in evaluated[0]
     assert "Keep Both" in evaluated[0]
-    assert not (tmp_path / ".deeper-notebook").exists()
+    assert not (canonical / "webview_data").exists()
     assert not (tmp_path / ".open-notebook-plus").exists()

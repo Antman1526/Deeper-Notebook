@@ -145,6 +145,118 @@ def test_explicit_replacement_uses_recoverable_move_and_writes_one_receipt(
     assert decision.show_recovery_card is False
 
 
+def test_bridge_pre_move_receipt_failure_reports_confirmed_not_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop.window import _OnpJsApi
+
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    controller = app_migration.AppRecoveryController.detect(
+        applications_dir=applications,
+        data_root=tmp_path / ".deeper-notebook",
+        recycler=lambda path: path,
+    )
+    monkeypatch.setattr(
+        app_migration,
+        "_write_receipt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    result = _OnpJsApi(controller).replace_old_app(True)
+
+    assert result["ok"] is False
+    assert result["move_outcome"] == "not-moved"
+    assert "was not moved" in result["error"]
+    assert "verify" not in result["error"].lower()
+    assert legacy.is_dir()
+
+
+def test_bridge_post_trash_receipt_failure_reports_uncertain_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop.window import _OnpJsApi
+
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    trash = tmp_path / "Trash"
+
+    def recycle(source: Path) -> Path:
+        trash.mkdir()
+        destination = trash / source.name
+        shutil.move(source, destination)
+        return destination
+
+    controller = app_migration.AppRecoveryController.detect(
+        applications_dir=applications,
+        data_root=tmp_path / ".deeper-notebook",
+        recycler=recycle,
+    )
+    real_write = app_migration._write_receipt
+
+    def fail_completed(path: Path, receipt: dict[str, object]) -> None:
+        if receipt["status"] == "completed":
+            raise OSError("final receipt failed")
+        real_write(path, receipt)
+
+    monkeypatch.setattr(app_migration, "_write_receipt", fail_completed)
+
+    result = _OnpJsApi(controller).replace_old_app(True)
+
+    assert result["ok"] is False
+    assert result["move_outcome"] == "moved-receipt-uncertain"
+    assert "Verify the macOS Trash" in result["error"]
+    assert "was not moved" not in result["error"]
+    assert not legacy.exists()
+    assert (trash / legacy.name).is_dir()
+
+
+def test_app_receipt_dirfd_cannot_redirect_after_directory_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop.window import _OnpJsApi
+
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    canonical_data = tmp_path / ".deeper-notebook"
+    canonical_data.mkdir()
+    recovery = tmp_path / ".deeper-notebook-recovery"
+    recovery.mkdir()
+    held = tmp_path / ".recovery-held"
+    controller = app_migration.AppRecoveryController.detect(
+        applications_dir=applications,
+        data_root=recovery,
+        recycler=lambda path: path,
+    )
+    real_replace = app_migration.atomic_replace_json
+    raced = False
+
+    def swap_then_replace(directory, name, payload) -> None:
+        nonlocal raced
+        if payload["status"] == "started" and not raced:
+            raced = True
+            recovery.rename(held)
+            recovery.symlink_to(canonical_data, target_is_directory=True)
+        real_replace(directory, name, payload)
+
+    monkeypatch.setattr(
+        app_migration,
+        "atomic_replace_json",
+        swap_then_replace,
+    )
+
+    result = _OnpJsApi(controller).replace_old_app(True)
+
+    assert raced is True
+    assert result["move_outcome"] == "not-moved"
+    assert legacy.is_dir()
+    assert not (canonical_data / "app-bundle-replacement.json").exists()
+    assert (held / "app-bundle-replacement.json").is_file()
+
+
 def test_replacement_refuses_wrong_or_outside_exact_legacy_bundle(
     tmp_path: Path,
 ) -> None:

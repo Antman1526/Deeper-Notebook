@@ -13,6 +13,10 @@ from __future__ import annotations
 
 import html as _html
 import json as _json
+import os
+import shutil
+import stat
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -719,12 +723,21 @@ class _OnpJsApi:
             return {"ok": False, "error": "App recovery is unavailable."}
         try:
             receipt = self._app_recovery.replace_old_app(confirmed=bool(confirmed))
-        except Exception:
+        except Exception as error:
+            from desktop.app_migration import AppReplacementOutcomeError
+
+            if isinstance(error, AppReplacementOutcomeError):
+                return {
+                    "ok": False,
+                    "move_outcome": error.move_outcome,
+                    "error": error.user_message,
+                }
             return {
                 "ok": False,
+                "move_outcome": "move-uncertain",
                 "error": (
-                    "The old app was not moved. Nothing was deleted; "
-                    "relaunch Deeper Notebook to try again."
+                    "App replacement could not be confirmed. Verify the macOS "
+                    "Trash and Applications before trying again."
                 ),
             }
         return {"ok": True, "receipt": str(receipt)}
@@ -879,46 +892,88 @@ def open_data_root_recovery_window(
     """Open the isolated packaged recovery UI without resolving a data root."""
     import webview
 
-    storage_root = Path(storage_root)
-    if storage_root.is_symlink() or not storage_root.is_dir():
-        raise RuntimeError("unsafe recovery storage root")
-    storage_path = storage_root / "webview_data"
-    if storage_path.is_symlink():
+    # pywebview accepts only a pathname, not an already-open directory fd.
+    # Never derive that path from either ambiguous data root or the recovery
+    # metadata path. An unpredictable private system-temp directory cannot be
+    # redirected by swapping those visible paths and is removed on close.
+    del storage_root
+    storage_path = Path(
+        tempfile.mkdtemp(prefix="deeper-notebook-recovery-webview-")
+    )
+    storage_fd = os.open(
+        storage_path,
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0),
+    )
+    storage_stat = os.fstat(storage_fd)
+    getuid = getattr(os, "getuid", None)
+    if (
+        not stat.S_ISDIR(storage_stat.st_mode)
+        or (getuid is not None and storage_stat.st_uid != getuid())
+    ):
+        os.close(storage_fd)
+        shutil.rmtree(storage_path, ignore_errors=True)
         raise RuntimeError("unsafe recovery webview storage")
-    storage_path.mkdir(mode=0o700, parents=False, exist_ok=True)
+    os.fchmod(storage_fd, 0o700)
+    storage_stat = os.fstat(storage_fd)
+    visible_storage = os.stat(storage_path, follow_symlinks=False)
+    if (
+        stat.S_IMODE(storage_stat.st_mode) & 0o077
+        or not stat.S_ISDIR(visible_storage.st_mode)
+        or visible_storage.st_dev != storage_stat.st_dev
+        or visible_storage.st_ino != storage_stat.st_ino
+    ):
+        os.close(storage_fd)
+        shutil.rmtree(storage_path, ignore_errors=True)
+        raise RuntimeError("unsafe recovery webview storage identity")
+    for root_name in ("canonical", "legacy"):
+        summary = conflict_payload.get(root_name)
+        if not isinstance(summary, dict) or not summary.get("path"):
+            continue
+        product_root = Path(str(summary["path"])).absolute()
+        if storage_path == product_root or product_root in storage_path.parents:
+            os.close(storage_fd)
+            shutil.rmtree(storage_path, ignore_errors=True)
+            raise RuntimeError("recovery webview storage overlaps a data root")
 
-    api = _OnpJsApi(app_recovery)
-    window = webview.create_window(
-        "Deeper Notebook Recovery",
-        html=_data_root_recovery_html(conflict_payload),
-        width=1080,
-        height=760,
-        js_api=api,
-    )
-    api._window = window
-
-    def _on_loaded() -> None:
-        try:
-            window.evaluate_js(
-                _app_recovery_injection_js(api.get_app_recovery())
-            )
-        except Exception:
-            pass
-
-    window.events.loaded += _on_loaded
-    remove_termination_observer = _install_native_termination_observer(
-        lambda: None
-    )
     try:
+        api = _OnpJsApi(app_recovery)
+        window = webview.create_window(
+            "Deeper Notebook Recovery",
+            html=_data_root_recovery_html(conflict_payload),
+            width=1080,
+            height=760,
+            js_api=api,
+        )
+        api._window = window
+
+        def _on_loaded() -> None:
+            try:
+                window.evaluate_js(
+                    _app_recovery_injection_js(api.get_app_recovery())
+                )
+            except Exception:
+                pass
+
+        window.events.loaded += _on_loaded
+        remove_termination_observer = _install_native_termination_observer(
+            lambda: None
+        )
         try:
-            webview.start(
-                private_mode=False,
-                storage_path=str(storage_path),
-            )
-        except TypeError:
-            webview.start()
+            try:
+                webview.start(
+                    private_mode=False,
+                    storage_path=str(storage_path),
+                )
+            except TypeError:
+                webview.start()
+        finally:
+            remove_termination_observer()
     finally:
-        remove_termination_observer()
+        os.close(storage_fd)
+        shutil.rmtree(storage_path, ignore_errors=True)
 
 
 def open_window(url: str, on_close: Callable[[], None],
