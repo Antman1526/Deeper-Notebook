@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from deeper_notebook.database.async_migrate import (
+    AsyncMigrationManager,
+    get_latest_version,
+)
 from deeper_notebook.database.repository import (
     db_connection,
     ensure_record_id,
@@ -89,6 +93,11 @@ async def test_migration_32_up_down_up_and_reapply_are_safe(clean_namespace):
 async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     clean_namespace,
 ):
+    # Exact schema delta from 25bfea73 migration 32
+    # (SHA-256 f38236a6c41eec6e3695881d677ac42ced24ec57c0b899d068339d18f9251dae):
+    # title_key, target_title_key, the title-key index, and the composite trust
+    # index did not exist. Reconstruct that state without approximating any
+    # other part of the already-applied v32 schema.
     await repo_query(
         """
         REMOVE INDEX IF EXISTS idx_note_vault_title_key ON TABLE note;
@@ -99,10 +108,165 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
             ON TABLE vault_trust_record COLUMNS manifest_id UNIQUE;
         """
     )
+    await repo_query(
+        "DELETE type::thing('_sbl_migrations', $version);",
+        {"version": 33},
+    )
+    assert await get_latest_version() == 32
 
-    upgrade = UPGRADE.read_text(encoding="utf-8")
-    await repo_query(upgrade)
-    await repo_query(upgrade)
+    mount_a = ensure_record_id("vault_mount:migration_a")
+    mount_b = ensure_record_id("vault_mount:migration_b")
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": mount_a,
+            "data": {
+                "schema_version": 1,
+                "name": "Migration A",
+                "root_path": "/synthetic/migration-a",
+                "format_mode": "obsidian",
+                "status": "ready-read-only",
+                "watch_enabled": False,
+                "write_policy": "read-only",
+                "protected_globs": [],
+                "parser_version": "integration",
+            },
+        },
+    )
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": mount_b,
+            "data": {
+                "schema_version": 1,
+                "name": "Migration B",
+                "root_path": "/synthetic/migration-b",
+                "format_mode": "obsidian",
+                "status": "ready-read-only",
+                "watch_enabled": False,
+                "write_policy": "read-only",
+                "protected_globs": [],
+                "parser_version": "integration",
+            },
+        },
+    )
+
+    note_ids = {
+        name: ensure_record_id(f"note:migration_{name}")
+        for name in (
+            "a_source",
+            "a_beta",
+            "a_cafe_1",
+            "a_cafe_2",
+            "b_source",
+            "b_beta",
+            "b_only",
+        )
+    }
+    notes = (
+        ("a_source", mount_a, "Source A"),
+        ("a_cafe_1", mount_a, " Café "),
+        ("a_cafe_2", mount_a, "Ｃａｆｅ\u0301"),
+        ("b_source", mount_b, "Source B"),
+        ("b_beta", mount_b, "Beta SPACE"),
+        ("b_only", mount_b, "Only B"),
+    )
+    for name, vault_id, title in notes:
+        await repo_query(
+            "CREATE $id CONTENT $data;",
+            {
+                "id": note_ids[name],
+                "data": {
+                    "title": title,
+                    "content": f"content-{name}",
+                    "vault_id": vault_id,
+                    "source_format": "obsidian",
+                    "canonical_external": True,
+                    "source_hash": name.ljust(64, "0"),
+                    "external_state": "current",
+                },
+            },
+        )
+
+    link_ids = {
+        name: ensure_record_id(f"note_link:migration_{name}")
+        for name in ("a_unique", "a_duplicate", "a_cross", "b_unique")
+    }
+    seeded_links = (
+        (
+            "a_unique",
+            note_ids["a_source"],
+            "  beta \n  SPACE ",
+            note_ids["b_beta"],
+        ),
+        (
+            "a_duplicate",
+            note_ids["a_source"],
+            "  Ｃａｆｅ\u0301 ",
+            note_ids["a_cafe_1"],
+        ),
+        (
+            "a_cross",
+            note_ids["a_source"],
+            "Only\t B",
+            note_ids["b_only"],
+        ),
+        (
+            "b_unique",
+            note_ids["b_source"],
+            "Ｂｅｔａ  SPACE",
+            note_ids["a_beta"],
+        ),
+    )
+    for position, (name, source_note_id, target_text, wrong_target_id) in enumerate(
+        seeded_links
+    ):
+        await repo_query(
+            "CREATE $id CONTENT $data;",
+            {
+                "id": link_ids[name],
+                "data": {
+                    "schema_version": 1,
+                    "source_note_id": source_note_id,
+                    "target_note_id": wrong_target_id,
+                    "target_text": target_text,
+                    "link_kind": "wikilink",
+                    "resolved": True,
+                    "source_start": position * 10,
+                    "source_end": position * 10 + 5,
+                },
+            },
+        )
+
+    # The unique same-vault target appears after its link. Repair must use the
+    # authoritative database state and must not require an unchanged scan.
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": note_ids["a_beta"],
+            "data": {
+                "title": "  Ｂｅｔａ\t  SPACE ",
+                "content": "content-a_beta",
+                "vault_id": mount_a,
+                "source_format": "obsidian",
+                "canonical_external": True,
+                "source_hash": "a_beta".ljust(64, "0"),
+                "external_state": "current",
+            },
+        },
+    )
+    before_notes = {
+        str(row["id"]): row
+        for row in await repo_query("SELECT * FROM note ORDER BY id;")
+    }
+    before_links = {
+        str(row["id"]): row
+        for row in await repo_query("SELECT * FROM note_link ORDER BY id;")
+    }
+
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+    assert await get_latest_version() == 33
 
     note_info = await repo_query("INFO FOR TABLE note;")
     link_info = await repo_query("INFO FOR TABLE note_link;")
@@ -117,6 +281,58 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     assert "vault_id" in trust_index
     assert "manifest_relative_path" in trust_index
     assert "manifest_id" in trust_index
+
+    notes_after = {
+        str(row["id"]): row
+        for row in await repo_query("SELECT * FROM note ORDER BY id;")
+    }
+    links_after = {
+        str(row["id"]): row
+        for row in await repo_query("SELECT * FROM note_link ORDER BY id;")
+    }
+    assert notes_after[str(note_ids["a_beta"])]["title_key"] == "beta space"
+    assert notes_after[str(note_ids["a_cafe_1"])]["title_key"] == "café"
+    assert notes_after[str(note_ids["a_cafe_2"])]["title_key"] == "café"
+    assert links_after[str(link_ids["a_unique"])]["target_title_key"] == "beta space"
+    assert links_after[str(link_ids["a_unique"])]["target_note_id"] == str(
+        note_ids["a_beta"]
+    )
+    assert links_after[str(link_ids["a_unique"])]["resolved"] is True
+    assert links_after[str(link_ids["a_duplicate"])]["target_title_key"] == "café"
+    assert links_after[str(link_ids["a_duplicate"])].get("target_note_id") is None
+    assert links_after[str(link_ids["a_duplicate"])]["resolved"] is False
+    assert links_after[str(link_ids["a_cross"])]["target_title_key"] == "only b"
+    assert links_after[str(link_ids["a_cross"])].get("target_note_id") is None
+    assert links_after[str(link_ids["a_cross"])]["resolved"] is False
+    assert links_after[str(link_ids["b_unique"])]["target_note_id"] == str(
+        note_ids["b_beta"]
+    )
+    assert links_after[str(link_ids["b_unique"])]["resolved"] is True
+
+    for note_id, before in before_notes.items():
+        after = notes_after[note_id]
+        assert after["title"] == before["title"]
+        assert after["content"] == before["content"]
+        assert after["created"] == before["created"]
+        assert after["source_hash"] == before["source_hash"]
+    for link_id, before in before_links.items():
+        after = links_after[link_id]
+        assert after["target_text"] == before["target_text"]
+        assert after["source_note_id"] == before["source_note_id"]
+        assert after["created"] == before["created"]
+        assert after["source_start"] == before["source_start"]
+        assert after["source_end"] == before["source_end"]
+
+    await manager.runner.run_one_down()
+    assert await get_latest_version() == 32
+    await manager.run_migration_up()
+    assert await get_latest_version() == 33
+    assert await repo_query("SELECT * FROM note ORDER BY id;") == list(
+        notes_after.values()
+    )
+    assert await repo_query("SELECT * FROM note_link ORDER BY id;") == list(
+        links_after.values()
+    )
 
 
 def _mount() -> VaultMount:
