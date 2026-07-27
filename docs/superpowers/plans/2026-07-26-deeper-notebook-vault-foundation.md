@@ -261,7 +261,7 @@ DEFINE INDEX IF NOT EXISTS idx_note_block_parser ON TABLE note_block COLUMNS vau
 DEFINE INDEX IF NOT EXISTS idx_note_link_span ON TABLE note_link COLUMNS source_note_id, source_start, source_end UNIQUE;
 DEFINE INDEX IF NOT EXISTS idx_task_block ON TABLE knowledge_task COLUMNS block_id UNIQUE;
 DEFINE INDEX IF NOT EXISTS idx_vault_receipt_operation ON TABLE vault_sync_receipt COLUMNS operation_id, vault_file_id UNIQUE;
-DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record COLUMNS manifest_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record COLUMNS vault_id, manifest_relative_path, manifest_id UNIQUE;
 ```
 
 Add optional note fields:
@@ -604,9 +604,9 @@ manifest_relative_path: str
 
 Resolve the stale absolute `sourcePath` by stripping the manifest’s old `vaultRoot` and joining the relative suffix under the newly approved root. Confirm containment and content hash. If canonical source exists, link trust to it and do not import the generated copy as another note. Hash mismatch or missing source creates an unresolved trust record and receipt; it does not mutate the manifest.
 
-Trust import is idempotent on `manifest_id + content_hash`. Re-running the same
-manifest reports `unchanged=21`; a changed hash creates a new receipt and marks
-the trust record unresolved until the canonical source hash matches.
+Trust identity is scoped by `vault_id + manifest_relative_path + manifest_id`;
+`content_hash` and reviewed provenance determine idempotency. Re-running reports
+`unchanged=21`; a changed hash stays unresolved until the canonical hash matches.
 
 - [ ] **Step 6: Run repository tests and commit**
 
