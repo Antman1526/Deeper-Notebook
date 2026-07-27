@@ -1,5 +1,6 @@
 import asyncio
 import os
+import stat
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -54,6 +55,142 @@ from deeper_notebook.exceptions import (
     InvalidInputError,
 )
 from deeper_notebook.vault._projection_context import _projection_refresh_is_active
+
+
+class _UnsafeUploadCleanupError(OSError):
+    """The stored upload path cannot be unlinked without following names."""
+
+
+def _secure_upload_unlink_is_supported() -> bool:
+    """Return whether this platform exposes the required unlinkat primitives."""
+    supports_dir_fd = getattr(os, "supports_dir_fd", frozenset())
+    supports_follow_symlinks = getattr(
+        os,
+        "supports_follow_symlinks",
+        frozenset(),
+    )
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and os.open in supports_dir_fd
+        and os.stat in supports_dir_fd
+        and os.unlink in supports_dir_fd
+        and os.stat in supports_follow_symlinks
+    )
+
+
+def _verify_directory_identities(
+    identities: list[tuple[int, str, int, int]],
+) -> None:
+    """Ensure every visible child still names its pinned directory."""
+    for parent_fd, name, device, inode in identities:
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or current.st_dev != device
+            or current.st_ino != inode
+        ):
+            raise _UnsafeUploadCleanupError(
+                "upload-directory-identity-changed"
+            )
+
+
+def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
+    """Unlink one regular upload through pinned, no-follow descriptors.
+
+    Returns False when the stored file is already absent. Platforms without
+    descriptor-relative no-follow operations fail closed instead of falling
+    back to a race-prone pathname unlink.
+    """
+    if not _secure_upload_unlink_is_supported():
+        raise _UnsafeUploadCleanupError(
+            "secure-dir-fd-unlink-unavailable"
+        )
+
+    root = Path(os.path.abspath(os.fspath(uploads_root)))
+    candidate = Path(os.path.abspath(os.fspath(file_path)))
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise _UnsafeUploadCleanupError(
+            "upload-path-outside-root"
+        ) from exc
+    if not relative.parts or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
+        raise _UnsafeUploadCleanupError("upload-path-is-not-a-file")
+
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    file_flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    descriptors: list[int] = []
+    identities: list[tuple[int, str, int, int]] = []
+    file_fd: int | None = None
+    try:
+        anchor = root.anchor
+        if not anchor:
+            raise _UnsafeUploadCleanupError("upload-root-has-no-anchor")
+        current_fd = os.open(anchor, directory_flags)
+        descriptors.append(current_fd)
+        if not stat.S_ISDIR(os.fstat(current_fd).st_mode):
+            raise _UnsafeUploadCleanupError("upload-anchor-is-not-directory")
+
+        root_components = root.parts[1:]
+        parent_components = relative.parts[:-1]
+        for component in (*root_components, *parent_components):
+            parent_fd = current_fd
+            current_fd = os.open(
+                component,
+                directory_flags,
+                dir_fd=parent_fd,
+            )
+            descriptors.append(current_fd)
+            result = os.fstat(current_fd)
+            if not stat.S_ISDIR(result.st_mode):
+                raise _UnsafeUploadCleanupError(
+                    "upload-parent-is-not-directory"
+                )
+            identities.append(
+                (parent_fd, component, result.st_dev, result.st_ino)
+            )
+
+        _verify_directory_identities(identities)
+        name = relative.parts[-1]
+        try:
+            file_fd = os.open(name, file_flags, dir_fd=current_fd)
+        except FileNotFoundError:
+            return False
+        result = os.fstat(file_fd)
+        if not stat.S_ISREG(result.st_mode):
+            raise _UnsafeUploadCleanupError(
+                "upload-target-is-not-regular-file"
+            )
+
+        visible = os.stat(name, dir_fd=current_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(visible.st_mode)
+            or visible.st_dev != result.st_dev
+            or visible.st_ino != result.st_ino
+        ):
+            raise _UnsafeUploadCleanupError(
+                "upload-file-identity-changed"
+            )
+        _verify_directory_identities(identities)
+        os.unlink(name, dir_fd=current_fd)
+        return True
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 class ExternalNoteReadOnlyError(DeeperNotebookError):
@@ -826,38 +963,27 @@ class Source(ObjectModel):
     def _cleanup_uploaded_file(self) -> None:
         """Remove an owned upload without consulting queue or database state."""
 
-        # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)
-            # Defense-in-depth: only unlink files inside UPLOADS_FOLDER.
-            # Lazy import to avoid a circular dependency at module load.
             from deeper_notebook.config import UPLOADS_FOLDER as _uploads
+
             try:
-                uploads_root = Path(_uploads).resolve()
-                resolved = file_path.resolve()
-                inside_uploads = resolved.is_relative_to(uploads_root)
+                deleted = _secure_unlink_uploaded_file(
+                    file_path,
+                    Path(_uploads),
+                )
             except (OSError, ValueError) as exc:
                 logger.warning(
-                    f"Could not validate file_path for source {self.id} "
-                    f"({file_path}): {exc}; skipping file cleanup"
+                    f"Refusing to unlink unsafe file_path for source {self.id}: "
+                    f"{file_path} (uploads root: {_uploads}; reason: {exc}). "
+                    "Continuing with database deletion."
                 )
-                inside_uploads = False
-            if not inside_uploads:
-                logger.warning(
-                    f"Refusing to unlink file_path outside UPLOADS_FOLDER for "
-                    f"source {self.id}: {file_path} (uploads root: "
-                    f"{_uploads}). DB may be corrupted."
-                )
-            elif file_path.exists():
-                try:
-                    os.unlink(file_path)
-                    logger.info(f"Deleted file for source {self.id}: {file_path}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to delete file {file_path} for source {self.id}: {e}. "
-                        "Continuing with database deletion."
-                    )
             else:
+                if deleted:
+                    logger.info(
+                        f"Deleted file for source {self.id}: {file_path}"
+                    )
+                    return
                 logger.debug(
                     f"File {file_path} not found for source {self.id}, skipping cleanup"
                 )
