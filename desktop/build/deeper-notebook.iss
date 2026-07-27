@@ -1,5 +1,5 @@
 #define MyAppName "Deeper Notebook"
-#define MyAppVersion "0.8.94"
+#define MyAppVersion "0.8.95"
 #define MyAppPublisher "Antman1526"
 #define MyAppExeName "Deeper Notebook.exe"
 
@@ -30,6 +30,8 @@ Source: "dist\Deeper Notebook\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 [InstallDelete]
 ; Stable AppId upgrades remove the retired launcher name from the existing folder.
 Type: files; Name: "{app}\Open Notebook Plus.exe"
+; Remove only the exact retired per-user Start Menu shortcut.
+Type: files; Name: "{autoprograms}\Open Notebook Plus.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

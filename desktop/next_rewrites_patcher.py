@@ -59,6 +59,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 
 from desktop.data_root import active_data_root
@@ -248,13 +249,17 @@ def patch_rewrites_for_api_port(
         )
         frontend_dir = real_dir
 
-    # First: see if we can write to the bundle. If not, copy to a
-    # per-user writable location and patch there.
+    # A frozen bundle is signed even when its filesystem permissions allow
+    # writes. Patching it in place invalidates the macOS code-signing seal, so
+    # packaged runtimes always use a per-user copy. Development trees may
+    # still patch in place when writable.
     work_dir = frontend_dir
-    if not _is_writable(frontend_dir):
+    frozen_runtime = bool(getattr(sys, "frozen", False))
+    if frozen_runtime or not _is_writable(frontend_dir):
         log.info(
-            "Bundle frontend at %s is read-only; using writable copy",
-            frontend_dir,
+            "Frontend at %s requires a writable runtime copy "
+            "(frozen=%s)",
+            frontend_dir, frozen_runtime,
         )
         try:
             work_dir = _copy_to_writable(frontend_dir)

@@ -365,6 +365,10 @@ class Supervisor:
             **launcher_environment,
             **self.extra_env,
             "DATA_FOLDER": str(data_folder),
+            # The packaged API/worker import source files from the signed
+            # Resources/upstream tree. Rewriting their adjacent .pyc files at
+            # runtime invalidates the macOS bundle seal after first launch.
+            "PYTHONDONTWRITEBYTECODE": "1",
             # v0.8.40 — expose control plane to the API subprocess.
             # Empty string when the control server failed to start.
             "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
