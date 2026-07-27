@@ -416,6 +416,97 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     return base_js + voice_injector + memory_injector
 
 
+def _app_recovery_injection_js(payload: dict[str, object]) -> str:
+    """Render the packaged app's one-time, explicit bundle recovery card."""
+    encoded = _json.dumps(payload).replace("<", "\\u003c").replace(">", "\\u003e")
+    return f"""
+    (function() {{
+      var payload = {encoded};
+      var existing = document.getElementById('deeper-app-recovery-card');
+      if (!payload.show_recovery_card) {{
+        if (existing) existing.remove();
+        return;
+      }}
+      if (existing) return;
+
+      var card = document.createElement('section');
+      card.id = 'deeper-app-recovery-card';
+      card.setAttribute('role', 'alertdialog');
+      card.setAttribute('aria-label', payload.title);
+      card.style.cssText = [
+        'position:fixed', 'right:24px', 'bottom:24px', 'z-index:2147483647',
+        'width:min(430px,calc(100vw - 48px))', 'padding:20px',
+        'border:1px solid var(--border,#d8e5f5)', 'border-radius:14px',
+        'background:var(--card,#fff)', 'color:var(--card-foreground,#1a2b3c)',
+        'box-shadow:0 18px 55px rgba(15,23,42,.24)',
+        'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif'
+      ].join(';');
+
+      var title = document.createElement('h2');
+      title.textContent = payload.title;
+      title.style.cssText = 'font-size:17px;font-weight:700;margin:0 28px 8px 0';
+      var message = document.createElement('p');
+      message.textContent = payload.message;
+      message.style.cssText = 'font-size:14px;line-height:1.5;margin:0 0 16px';
+      var error = document.createElement('p');
+      error.hidden = true;
+      error.style.cssText = 'font-size:13px;color:#b91c1c;margin:0 0 12px';
+      var actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:10px;justify-content:flex-end';
+      var keep = document.createElement('button');
+      keep.type = 'button';
+      keep.textContent = payload.keep_label;
+      keep.style.cssText = 'padding:8px 12px;border:1px solid var(--border,#ccc);border-radius:8px;background:transparent;color:inherit';
+      var replace = document.createElement('button');
+      replace.type = 'button';
+      replace.textContent = payload.replace_label;
+      replace.style.cssText = 'padding:8px 12px;border:0;border-radius:8px;background:var(--primary,#2d7ff9);color:var(--primary-foreground,#fff);font-weight:600';
+      var dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.textContent = '×';
+      dismiss.setAttribute('aria-label', 'Keep both apps and dismiss');
+      dismiss.style.cssText = 'position:absolute;top:10px;right:12px;border:0;background:transparent;color:inherit;font-size:22px';
+
+      function keepBoth() {{
+        Promise.resolve(window.pywebview.api.keep_both()).finally(function() {{
+          card.remove();
+        }});
+      }}
+      keep.addEventListener('click', keepBoth);
+      dismiss.addEventListener('click', keepBoth);
+      replace.addEventListener('click', function() {{
+        if (!window.confirm(
+          'Move Open Notebook Plus.app to the macOS Trash? ' +
+          'Deeper Notebook.app will remain installed.'
+        )) return;
+        replace.disabled = true;
+        Promise.resolve(window.pywebview.api.replace_old_app(true))
+          .then(function(result) {{
+            if (result && result.ok) {{
+              card.remove();
+              return;
+            }}
+            throw new Error((result && result.error) || 'Replacement was refused.');
+          }})
+          .catch(function(reason) {{
+            error.textContent = String(reason && reason.message || reason);
+            error.hidden = false;
+            replace.disabled = false;
+          }});
+      }});
+
+      actions.appendChild(keep);
+      actions.appendChild(replace);
+      card.appendChild(dismiss);
+      card.appendChild(title);
+      card.appendChild(message);
+      card.appendChild(error);
+      card.appendChild(actions);
+      document.body.appendChild(card);
+    }})();
+    """
+
+
 def _fit_window_size(screen_w: int, screen_h: int,
                      min_w: int, min_h: int, frac: float = 0.9) -> tuple[int, int]:
     """v0.8.67j — Pure helper: size the window to `frac` of the usable
@@ -605,8 +696,34 @@ class _OnpJsApi:
     frees any stale ports on boot regardless.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, app_recovery=None) -> None:
         self._window = None  # set by open_window after create_window
+        self._app_recovery = app_recovery
+
+    def get_app_recovery(self) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"show_recovery_card": False}
+        return self._app_recovery.card_payload()
+
+    def keep_both(self) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"ok": True, "kept_both": True}
+        return self._app_recovery.keep_both()
+
+    def replace_old_app(self, confirmed: bool = False) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"ok": False, "error": "App recovery is unavailable."}
+        try:
+            receipt = self._app_recovery.replace_old_app(confirmed=bool(confirmed))
+        except Exception:
+            return {
+                "ok": False,
+                "error": (
+                    "The old app was not moved. Nothing was deleted; "
+                    "relaunch Deeper Notebook to try again."
+                ),
+            }
+        return {"ok": True, "receipt": str(receipt)}
 
     def relaunch(self) -> bool:  # pragma: no cover - exercised in-app only
         import os
@@ -640,6 +757,39 @@ class _OnpJsApi:
         return True
 
 
+def _install_native_termination_observer(
+    on_terminate: Callable[[], None],
+) -> Callable[[], None]:
+    """Run launcher cleanup when Cocoa terminates the whole application.
+
+    pywebview's ``window.events.closed`` covers a user closing the window, but
+    AppKit termination requests (including ``NSRunningApplication.terminate``)
+    can end the application without publishing that event. Observe the native
+    notification as a second entry into the same idempotent cleanup path.
+    """
+    try:
+        from AppKit import NSApplicationWillTerminateNotification
+        from Foundation import NSNotificationCenter
+
+        center = NSNotificationCenter.defaultCenter()
+        token = center.addObserverForName_object_queue_usingBlock_(
+            NSApplicationWillTerminateNotification,
+            None,
+            None,
+            lambda _notification: on_terminate(),
+        )
+    except Exception:
+        return lambda: None
+
+    def _remove() -> None:
+        try:
+            center.removeObserver_(token)
+        except Exception:
+            pass
+
+    return _remove
+
+
 def open_window(url: str, on_close: Callable[[], None],
                 title: str = "Deeper Notebook",
                 width: int = 1280, height: int = 800,
@@ -647,7 +797,9 @@ def open_window(url: str, on_close: Callable[[], None],
                 memory_url: str | None = None,
                 remind_openchronicle: bool = False,
                 stt_url: str | None = None,
-                tts_url: str | None = None) -> None:
+                tts_url: str | None = None,
+                app_recovery=None,
+                on_ready: Callable[[], None] | None = None) -> None:
     """Blocking — returns when the user closes the window.
 
     v0.7.152 — `stt_url` and `tts_url` are the dynamic per-launch endpoints
@@ -694,7 +846,7 @@ def open_window(url: str, on_close: Callable[[], None],
     splash_html = build_splash_html(url)
     # v0.8.81 — js_api bridge for window.pywebview.api.relaunch (DB repair
     # banner's "Repair & restart"). Window ref is set right after creation.
-    _onp_api = _OnpJsApi()
+    _onp_api = _OnpJsApi(app_recovery)
     window = webview.create_window(
         title, html=splash_html, width=win_w, height=win_h, js_api=_onp_api
     )
@@ -704,6 +856,17 @@ def open_window(url: str, on_close: Callable[[], None],
     # name has varied across pywebview versions, so never let its absence break
     # the window). Falls back to the window's own width/height at close time.
     _live = {"w": win_w, "h": win_h}
+    _cleanup_lock = threading.Lock()
+    _cleanup_started = False
+
+    def _notify_close_once() -> None:
+        nonlocal _cleanup_started
+        with _cleanup_lock:
+            if _cleanup_started:
+                return
+            _cleanup_started = True
+        on_close()
+
     try:
         def _on_resized(w, h):  # pragma: no cover - pywebview callback
             _live["w"], _live["h"] = int(w), int(h)
@@ -721,13 +884,15 @@ def open_window(url: str, on_close: Callable[[], None],
             )
         except Exception:
             pass
-        on_close()
+        _notify_close_once()
 
     window.events.closed += _on_closed
 
     _page_loaded = threading.Event()
+    _ready_notified = False
 
     def _on_loaded():
+        nonlocal _ready_notified
         # v0.8.68 — `loaded` fires for the splash, for WebKit's error page,
         # and for Next's warm-up 404 too (get_current_url() is None for
         # html= pages and reports the target URL even for failed loads, so
@@ -757,6 +922,15 @@ def open_window(url: str, on_close: Callable[[], None],
                                     stt_url=stt_url, tts_url=tts_url))
         except Exception:
             pass  # best-effort; never crash on theme injection
+        try:
+            window.evaluate_js(
+                _app_recovery_injection_js(_onp_api.get_app_recovery())
+            )
+        except Exception:
+            pass
+        if not _ready_notified and on_ready is not None:
+            _ready_notified = True
+            on_ready()
     window.events.loaded += _on_loaded
     _start_handoff_controller(window, url, _page_loaded, splash_html)
     # v0.8.73 — PERSIST the webview's cookie/localStorage store across launches.
@@ -779,8 +953,14 @@ def open_window(url: str, on_close: Callable[[], None],
     except Exception:
         _storage_path = None
     try:
-        webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
-    except TypeError:
-        # Defensive: if a future pywebview drops these kwargs, fall back so the
-        # app still launches (persistence degrades, but it won't crash).
-        webview.start()  # noqa: F821
+        remove_termination_observer = _install_native_termination_observer(
+            _notify_close_once
+        )
+        try:
+            webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
+        except TypeError:
+            # Defensive: if a future pywebview drops these kwargs, fall back so the
+            # app still launches (persistence degrades, but it won't crash).
+            webview.start()  # noqa: F821
+    finally:
+        remove_termination_observer()

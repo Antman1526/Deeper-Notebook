@@ -15,7 +15,7 @@ import plistlib
 import sys
 import tempfile
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -47,13 +47,35 @@ class AppReplacementDecision:
     show_recovery_card: bool = False
     action: str | None = None
     reason_code: str | None = None
+    snapshot: "AppReplacementSnapshot | None" = None
 
     def as_payload(self) -> dict[str, object]:
         """Return the desktop-controller recovery-card contract."""
-        payload = asdict(self)
-        for key in ("applications_dir", "legacy_app", "canonical_app", "receipt_path"):
-            payload[key] = str(payload[key])
-        return payload
+        return {
+            "state": self.state,
+            "applications_dir": str(self.applications_dir),
+            "legacy_app": str(self.legacy_app),
+            "canonical_app": str(self.canonical_app),
+            "receipt_path": str(self.receipt_path),
+            "show_recovery_card": self.show_recovery_card,
+            "action": self.action,
+            "reason_code": self.reason_code,
+        }
+
+
+@dataclass(frozen=True)
+class AppReplacementSnapshot:
+    """Filesystem identity captured when the user-facing card is created."""
+
+    applications_resolved: Path
+    applications_device: int
+    applications_inode: int
+    legacy_device: int
+    legacy_inode: int
+    canonical_device: int
+    canonical_inode: int
+    legacy_bundle_identifier: str
+    canonical_bundle_identifier: str
 
 
 class AppReplacementRefused(RuntimeError):
@@ -99,6 +121,86 @@ def _bundle_identifier(app: Path) -> str | None:
     return bundle_id if isinstance(bundle_id, str) else None
 
 
+def _safe_directory_identity(path: Path) -> tuple[Path, int, int] | None:
+    """Return resolved path/device/inode for an exact non-symlink directory."""
+    try:
+        stat_result = path.lstat()
+        if path.is_symlink() or not path.is_dir():
+            return None
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    return resolved, stat_result.st_dev, stat_result.st_ino
+
+
+def _safe_bundle_identity(
+    app: Path, applications_resolved: Path
+) -> tuple[int, int, str] | None:
+    """Validate each exact bundle component and capture its stable identity."""
+    contents = app / "Contents"
+    plist_path = contents / "Info.plist"
+    for component, expected_kind in (
+        (app, "directory"),
+        (contents, "directory"),
+        (plist_path, "file"),
+    ):
+        try:
+            component.lstat()
+        except OSError:
+            return None
+        if component.is_symlink():
+            return None
+        if expected_kind == "directory" and not component.is_dir():
+            return None
+        if expected_kind == "file" and not component.is_file():
+            return None
+    try:
+        if app.resolve(strict=True).parent != applications_resolved:
+            return None
+        stat_result = app.lstat()
+    except OSError:
+        return None
+    bundle_id = _bundle_identifier(app)
+    if bundle_id is None:
+        return None
+    return stat_result.st_dev, stat_result.st_ino, bundle_id
+
+
+def _capture_snapshot(
+    applications_dir: Path,
+    legacy_app: Path,
+    canonical_app: Path,
+) -> AppReplacementSnapshot | None:
+    root_identity = _safe_directory_identity(applications_dir)
+    if root_identity is None:
+        return None
+    applications_resolved, applications_device, applications_inode = root_identity
+    legacy_identity = _safe_bundle_identity(legacy_app, applications_resolved)
+    canonical_identity = _safe_bundle_identity(canonical_app, applications_resolved)
+    if legacy_identity is None or canonical_identity is None:
+        return None
+    legacy_device, legacy_inode, legacy_bundle_id = legacy_identity
+    canonical_device, canonical_inode, canonical_bundle_id = canonical_identity
+    return AppReplacementSnapshot(
+        applications_resolved=applications_resolved,
+        applications_device=applications_device,
+        applications_inode=applications_inode,
+        legacy_device=legacy_device,
+        legacy_inode=legacy_inode,
+        canonical_device=canonical_device,
+        canonical_inode=canonical_inode,
+        legacy_bundle_identifier=legacy_bundle_id,
+        canonical_bundle_identifier=canonical_bundle_id,
+    )
+
+
+def _snapshot_matches(
+    expected: AppReplacementSnapshot,
+    current: AppReplacementSnapshot | None,
+) -> bool:
+    return current == expected
+
+
 def detect_legacy_app_replacement(
     applications_dir: Path = Path("/Applications"),
     data_root: Path | None = None,
@@ -132,11 +234,30 @@ def detect_legacy_app_replacement(
             reason_code="bundles-do-not-coexist",
         )
 
-    legacy_bundle_id = _bundle_identifier(legacy_app)
-    canonical_bundle_id = _bundle_identifier(canonical_app)
+    if _safe_directory_identity(applications_dir) is None:
+        return AppReplacementDecision(
+            "refused",
+            applications_dir,
+            legacy_app,
+            canonical_app,
+            receipt_path,
+            reason_code="unsafe-applications-root",
+        )
+
+    snapshot = _capture_snapshot(applications_dir, legacy_app, canonical_app)
+    if snapshot is None:
+        return AppReplacementDecision(
+            "refused",
+            applications_dir,
+            legacy_app,
+            canonical_app,
+            receipt_path,
+            reason_code="unsafe-bundle-path",
+        )
+
     if (
-        legacy_bundle_id != COMPATIBLE_BUNDLE_ID
-        or canonical_bundle_id != COMPATIBLE_BUNDLE_ID
+        snapshot.legacy_bundle_identifier != COMPATIBLE_BUNDLE_ID
+        or snapshot.canonical_bundle_identifier != COMPATIBLE_BUNDLE_ID
     ):
         return AppReplacementDecision(
             "refused",
@@ -155,6 +276,7 @@ def detect_legacy_app_replacement(
         receipt_path,
         show_recovery_card=True,
         action=RECOVERY_ACTION,
+        snapshot=snapshot,
     )
 
 
@@ -216,6 +338,7 @@ def replace_legacy_app(
     applications_dir: Path = Path("/Applications"),
     data_root: Path | None = None,
     recycler: Callable[[Path], Path] | None = None,
+    expected_decision: AppReplacementDecision | None = None,
 ) -> Path:
     """Execute the explicitly approved, recoverable legacy-bundle replacement."""
     if data_root is None:
@@ -233,20 +356,35 @@ def replace_legacy_app(
     if _completed_receipt(receipt_path):
         raise AppReplacementRefused("legacy app replacement already completed")
 
-    decision = detect_legacy_app_replacement(applications_dir, data_root)
+    decision = expected_decision or detect_legacy_app_replacement(
+        applications_dir, data_root
+    )
     if decision.state != "recovery-available":
         raise AppReplacementRefused(
             "legacy app replacement is unavailable: "
             f"{decision.reason_code or decision.state}"
         )
-
-    # Revalidate immediately before the action, rather than trusting an older
-    # recovery-card decision.
     if (
-        _bundle_identifier(exact_legacy_app) != COMPATIBLE_BUNDLE_ID
-        or _bundle_identifier(decision.canonical_app) != COMPATIBLE_BUNDLE_ID
+        decision.applications_dir != applications_dir
+        or decision.legacy_app != exact_legacy_app
+        or decision.canonical_app != applications_dir / CANONICAL_APP_NAME
+        or decision.receipt_path != receipt_path
+        or decision.snapshot is None
     ):
-        raise AppReplacementRefused("bundle identifier changed before replacement")
+        raise AppReplacementRefused(
+            "application paths changed after confirmation"
+        )
+
+    def revalidate_confirmation() -> None:
+        current = _capture_snapshot(
+            applications_dir, exact_legacy_app, decision.canonical_app
+        )
+        if not _snapshot_matches(decision.snapshot, current):
+            raise AppReplacementRefused(
+                "application root or bundle changed after confirmation"
+            )
+
+    revalidate_confirmation()
 
     now = datetime.now(UTC).isoformat()
     receipt: dict[str, object] = {
@@ -261,6 +399,15 @@ def replace_legacy_app(
     _write_receipt(receipt_path, receipt)
 
     recycle = recycler or _native_macos_recycle
+    # Keep this identity check outside the recycler failure-receipt block:
+    # a confirmation-time race is a refused action, not an attempted move,
+    # and therefore must leave no receipt behind.
+    try:
+        revalidate_confirmation()
+    except AppReplacementRefused:
+        receipt_path.unlink(missing_ok=True)
+        raise
+
     try:
         trash_destination = _absolute(recycle(exact_legacy_app))
     except Exception as error:
@@ -297,6 +444,71 @@ def replace_legacy_app(
     return receipt_path
 
 
+@dataclass
+class AppRecoveryController:
+    """Production controller for the packaged app's one-time recovery card."""
+
+    decision: AppReplacementDecision
+    recycler: Callable[[Path], Path] | None = None
+    dismissed: bool = False
+
+    @classmethod
+    def detect(
+        cls,
+        *,
+        applications_dir: Path = Path("/Applications"),
+        data_root: Path | None = None,
+        recycler: Callable[[Path], Path] | None = None,
+    ) -> "AppRecoveryController":
+        return cls(
+            detect_legacy_app_replacement(applications_dir, data_root),
+            recycler=recycler,
+        )
+
+    def card_payload(self) -> dict[str, object]:
+        payload = self.decision.as_payload()
+        payload.update(
+            {
+                "show_recovery_card": (
+                    self.decision.show_recovery_card and not self.dismissed
+                ),
+                "title": "Two Deeper Notebook apps are installed",
+                "message": (
+                    "Open Notebook Plus.app and Deeper Notebook.app both exist. "
+                    "Replace Old App moves only Open Notebook Plus.app to the "
+                    "macOS Trash so it can be recovered later."
+                ),
+                "replace_label": "Replace Old App",
+                "keep_label": "Keep Both",
+            }
+        )
+        return payload
+
+    def keep_both(self) -> dict[str, object]:
+        """Hide this launch's card without touching either bundle or receipt."""
+        self.dismissed = True
+        return {"ok": True, "kept_both": True}
+
+    dismiss = keep_both
+
+    def replace_old_app(self, *, confirmed: bool) -> Path:
+        if not confirmed:
+            raise AppReplacementRefused("replacement requires explicit confirmation")
+        receipt_path = replace_legacy_app(
+            self.decision.legacy_app,
+            applications_dir=self.decision.applications_dir,
+            data_root=self.decision.receipt_path.parent,
+            recycler=self.recycler,
+            expected_decision=self.decision,
+        )
+        self.decision = detect_legacy_app_replacement(
+            self.decision.applications_dir,
+            self.decision.receipt_path.parent,
+        )
+        self.dismissed = False
+        return receipt_path
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -326,6 +538,7 @@ def main() -> int:
         decision.legacy_app,
         applications_dir=args.applications_dir,
         data_root=args.data_root,
+        expected_decision=decision,
     )
     print(receipt_path)
     return 0

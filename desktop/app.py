@@ -24,10 +24,12 @@ Phase order
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 import platform
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,6 +38,7 @@ from deeper_notebook.environment import resolve_env
 from desktop.data_root import active_data_root
 
 if TYPE_CHECKING:
+    from desktop.app_migration import AppRecoveryController
     from desktop.config import Config
     from desktop.launcher import Supervisor
     from desktop.progress import ProgressBus
@@ -168,10 +171,77 @@ class AppContext:
     openchronicle_available: bool = False
     commands_dst: "Path | None" = None
     memory_dashboard_port: int = 0
+    app_recovery: "AppRecoveryController | None" = None
 
 
 def _new_context() -> AppContext:
     return AppContext()
+
+
+def _phase_detect_app_recovery(
+    ctx: AppContext,
+    *,
+    applications_dir: Path = Path("/Applications"),
+    data_root: Path | None = None,
+    recycler=None,
+) -> None:
+    """Read-only startup detection for the renamed macOS application bundle."""
+    if sys.platform != "darwin":
+        return
+    from desktop.app_migration import AppRecoveryController
+
+    ctx.app_recovery = AppRecoveryController.detect(
+        applications_dir=applications_dir,
+        data_root=data_root,
+        recycler=recycler,
+    )
+
+
+_DESKTOP_READINESS_NAME = "desktop-readiness.json"
+
+
+def _clear_desktop_readiness_marker(log_dir: Path) -> None:
+    """Remove only this launcher's stale readiness marker."""
+    (log_dir / _DESKTOP_READINESS_NAME).unlink(missing_ok=True)
+
+
+def _write_desktop_readiness_marker(
+    log_dir: Path,
+    *,
+    api_url: str,
+    frontend_url: str,
+) -> Path:
+    """Atomically prove that the packaged webview rendered the real app."""
+    marker = log_dir / _DESKTOP_READINESS_NAME
+    payload = {
+        "schema_version": 1,
+        "status": "ready",
+        "pid": os.getpid(),
+        "api_url": api_url,
+        "frontend_url": frontend_url,
+        "window_marker": "__next_f",
+    }
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=log_dir,
+            prefix=f".{marker.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as marker_file:
+            temporary_path = Path(marker_file.name)
+            json.dump(payload, marker_file, sort_keys=True)
+            marker_file.write("\n")
+            marker_file.flush()
+            os.fsync(marker_file.fileno())
+        os.replace(temporary_path, marker)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    return marker
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +260,7 @@ def _phase_load_config(ctx: AppContext) -> None:
 
     log_dir = active_data_root() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+    _clear_desktop_readiness_marker(log_dir)
     ctx.log_dir = log_dir
 
     # v0.6.25 — wire `desktop.launcher`, `desktop.auto_register.*`,
@@ -1053,14 +1124,31 @@ def _phase_open_window(ctx: AppContext) -> None:
 
     try:
         def _close_runtime() -> None:
+            if ctx.log_dir is not None:
+                _clear_desktop_readiness_marker(ctx.log_dir)
             ctx.sv.stop_all()
             _stop_runtime(ctx)
+
+        def _window_ready() -> None:
+            assert ctx.log_dir is not None
+            _write_desktop_readiness_marker(
+                ctx.log_dir,
+                api_url=ctx.sv.session_env["INTERNAL_API_URL"],
+                frontend_url=ctx.sv.frontend_url,
+            )
+            ctx.progress_bus.publish(
+                "window.ready", "done", ctx.sv.frontend_url
+            )
 
         open_window(ctx.sv.frontend_url, on_close=_close_runtime,
                     theme=ctx.cfg.theme,
                     memory_url=memory_url, remind_openchronicle=remind,
-                    stt_url=stt_url, tts_url=tts_url)
+                    stt_url=stt_url, tts_url=tts_url,
+                    app_recovery=ctx.app_recovery,
+                    on_ready=_window_ready)
     finally:
+        if ctx.log_dir is not None:
+            _clear_desktop_readiness_marker(ctx.log_dir)
         ctx.sv.stop_all()
         _stop_runtime(ctx)
 
@@ -1085,6 +1173,7 @@ def run() -> int:
     covers everything between supervisor.start_all() and that finally.
     """
     ctx = _new_context()
+    _phase_detect_app_recovery(ctx)
     _phase_load_config(ctx)
     _phase_wizard_if_first_run(ctx)
     _phase_bootstrap_runtime(ctx)

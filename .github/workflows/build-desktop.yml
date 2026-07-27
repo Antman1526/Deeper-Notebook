@@ -193,6 +193,104 @@ jobs:
           test -d "dist/Deeper Notebook.app"
       - name: Install, launch, migrate, and recover in temporary roots
         run: |
+          descendants_of() {
+            local parent_pid="$1"
+            local child_pid
+            for child_pid in $(pgrep -P "$parent_pid" 2>/dev/null || true); do
+              printf '%s\n' "$child_pid"
+              descendants_of "$child_pid"
+            done
+          }
+          wait_for_packaged_ready() {
+            local launcher_pid="$1"
+            local marker_path="${2:-}"
+            local api_ready=""
+            local frontend_ready=""
+            local marker_ready=""
+            local attempt process_id port body
+            for attempt in $(seq 1 300); do
+              kill -0 "$launcher_pid" 2>/dev/null || {
+                echo "Packaged app exited before readiness." >&2
+                return 1
+              }
+              api_ready=""
+              frontend_ready=""
+              for process_id in "$launcher_pid" $(descendants_of "$launcher_pid"); do
+                for port in $(lsof -Pan -p "$process_id" -iTCP -sTCP:LISTEN -Fn 2>/dev/null |
+                  sed -nE 's/^n.*:([0-9]+)$/\1/p' | sort -u); do
+                  body=$(curl --max-time 2 -fsS "http://127.0.0.1:$port/readyz" 2>/dev/null || true)
+                  if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' <<< "$body"; then
+                    api_ready="http://127.0.0.1:$port"
+                  fi
+                  body=$(curl --max-time 2 -fsSL "http://127.0.0.1:$port/" 2>/dev/null || true)
+                  if grep -q '__next_f' <<< "$body"; then
+                    frontend_ready="http://127.0.0.1:$port/"
+                  fi
+                done
+              done
+              marker_ready="ready"
+              if test -n "$marker_path"; then
+                marker_ready=""
+                if test -f "$marker_path" && "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+                  'import json,sys; p=json.load(open(sys.argv[1])); assert p["status"]=="ready" and p["window_marker"]=="__next_f"' \
+                  "$marker_path"; then
+                  marker_ready="ready"
+                fi
+              fi
+              if test -n "$api_ready" && test -n "$frontend_ready" && test -n "$marker_ready"; then
+                printf 'API ready: %s\nFrontend ready: %s\n' "$api_ready" "$frontend_ready"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for packaged API/frontend/window readiness." >&2
+            return 1
+          }
+          graceful_stop_and_assert_clean() {
+            local launcher_pid="$1"
+            local scope_pattern="$2"
+            local descendants_file="$3"
+            descendants_of "$launcher_pid" | sort -u > "$descendants_file"
+            if ! "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+              'import sys; from AppKit import NSRunningApplication; app = NSRunningApplication.runningApplicationWithProcessIdentifier_(int(sys.argv[1])); raise SystemExit(0 if app is not None and app.terminate() else 1)' \
+              "$launcher_pid"; then
+              # Failure cleanup is bounded but never reclassified as a
+              # successful graceful shutdown.
+              kill -TERM "$launcher_pid"
+              echo "Native graceful shutdown request failed." >&2
+              return 1
+            fi
+            local attempt child_pid
+            for attempt in $(seq 1 90); do
+              kill -0 "$launcher_pid" 2>/dev/null || break
+              sleep 1
+            done
+            if kill -0 "$launcher_pid" 2>/dev/null; then
+              echo "Packaged app did not shut down gracefully." >&2
+              return 1
+            fi
+            if ! wait "$launcher_pid"; then
+              :
+            fi
+            local remaining_descendants=""
+            while read -r child_pid; do
+              if test -n "$child_pid" && kill -0 "$child_pid" 2>/dev/null; then
+                remaining_descendants="$remaining_descendants $child_pid"
+              fi
+            done < "$descendants_file"
+            ps eww -axo pid=,command= |
+              awk -v scope="$scope_pattern" '
+                index($0, "HOME=" scope " ") ||
+                index($0, "USERPROFILE=" scope " ") { print $1 }
+              ' |
+              sort -u > "$RUNNER_TEMP/remaining-sidecars.txt"
+            if test -n "$remaining_descendants" || test -s "$RUNNER_TEMP/remaining-sidecars.txt"; then
+              echo "Packaged sidecars remain after shutdown." >&2
+              printf 'Captured descendants:%s\n' "$remaining_descendants" >&2
+              cat "$RUNNER_TEMP/remaining-sidecars.txt" >&2
+              return 1
+            fi
+          }
           compat_home="$RUNNER_TEMP/compat-home"
           applications_dir="$RUNNER_TEMP/Applications"
           legacy_root="$compat_home/.open-notebook-plus"
@@ -202,12 +300,15 @@ jobs:
           shasum -a 256 "$legacy_root/data/synthetic-state" > "$RUNNER_TEMP/state-before.sha256"
           cp -R "$RUNNER_TEMP/legacy-source/dist/Open Notebook Plus.app" "$applications_dir/"
           HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$RUNNER_TEMP/legacy-venv/bin/python" -c \
+              'from desktop.config import default_config_path,load_or_create; load_or_create(default_config_path())'
+          HOME="$compat_home" USERPROFILE="$compat_home" \
             "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
           legacy_pid=$!
-          sleep 15
-          kill -0 "$legacy_pid"
-          kill "$legacy_pid"
-          wait "$legacy_pid" || true
+          wait_for_packaged_ready "$legacy_pid"
+          graceful_stop_and_assert_clean \
+            "$legacy_pid" "$compat_home" \
+            "$RUNNER_TEMP/legacy-descendants.txt"
           cp -R "dist/Deeper Notebook.app" "$applications_dir/"
           legacy_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Open Notebook Plus.app/Contents/Info.plist")
           canonical_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Deeper Notebook.app/Contents/Info.plist")
@@ -216,10 +317,11 @@ jobs:
           HOME="$compat_home" USERPROFILE="$compat_home" \
             "$applications_dir/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" &
           canonical_pid=$!
-          sleep 15
-          kill -0 "$canonical_pid"
-          kill "$canonical_pid"
-          wait "$canonical_pid" || true
+          wait_for_packaged_ready \
+            "$canonical_pid" "$canonical_root/logs/desktop-readiness.json"
+          graceful_stop_and_assert_clean \
+            "$canonical_pid" "$compat_home" \
+            "$RUNNER_TEMP/canonical-descendants.txt"
           shasum -a 256 "$canonical_root/data/synthetic-state" > "$RUNNER_TEMP/state-after.sha256"
           cut -d ' ' -f 1 "$RUNNER_TEMP/state-before.sha256" > "$RUNNER_TEMP/state-before.digest"
           cut -d ' ' -f 1 "$RUNNER_TEMP/state-after.sha256" > "$RUNNER_TEMP/state-after.digest"
@@ -272,19 +374,123 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Canonical installer build failed." }
           if (-not (Test-Path "dist\Deeper-Notebook-windows-x64.zip")) { throw "Canonical zip missing." }
           if (-not (Test-Path "dist\Deeper-Notebook-Setup-x64.exe")) { throw "Canonical installer missing." }
-      - name: Install legacy, seed state, and launch-probe
+      - name: Install legacy, readiness-probe, upgrade, and prove stable identity
         shell: pwsh
         run: |
+          function Get-DescendantProcessIds([int]$RootProcessId) {
+            $pending = [System.Collections.Generic.Queue[int]]::new()
+            $pending.Enqueue($RootProcessId)
+            $result = [System.Collections.Generic.List[int]]::new()
+            while ($pending.Count -gt 0) {
+              $parent = $pending.Dequeue()
+              $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parent")
+              foreach ($child in $children) {
+                $childId = [int]$child.ProcessId
+                $result.Add($childId)
+                $pending.Enqueue($childId)
+              }
+            }
+            return @($result)
+          }
+          function Wait-PackagedReady(
+            [System.Diagnostics.Process]$Process,
+            [string]$ReadyFile = ""
+          ) {
+            $deadline = [DateTime]::UtcNow.AddMinutes(5)
+            while ([DateTime]::UtcNow -lt $deadline) {
+              $Process.Refresh()
+              if ($Process.HasExited) { throw "Packaged app exited before readiness." }
+              $descendants = @(Get-DescendantProcessIds $Process.Id)
+              $processIds = @($Process.Id) + $descendants
+              $ports = @(
+                Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                  Where-Object { $processIds -contains $_.OwningProcess } |
+                  Select-Object -ExpandProperty LocalPort -Unique
+              )
+              $apiReady = $false
+              $frontendReady = $false
+              foreach ($port in $ports) {
+                try {
+                  $api = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 `
+                    -Uri "http://127.0.0.1:$port/readyz"
+                  if ($api.StatusCode -eq 200 -and $api.Content -match '"status"\s*:\s*"ready"') {
+                    $apiReady = $true
+                  }
+                } catch {}
+                try {
+                  $frontend = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 `
+                    -Uri "http://127.0.0.1:$port/"
+                  if ($frontend.StatusCode -eq 200 -and $frontend.Content -match "__next_f") {
+                    $frontendReady = $true
+                  }
+                } catch {}
+              }
+              $windowReady = $Process.MainWindowHandle -ne 0
+              $markerReady = [string]::IsNullOrEmpty($ReadyFile)
+              if (-not $markerReady -and (Test-Path $ReadyFile)) {
+                try {
+                  $marker = Get-Content $ReadyFile -Raw | ConvertFrom-Json
+                  $markerReady = (
+                    $marker.status -eq "ready" -and
+                    $marker.window_marker -eq "__next_f"
+                  )
+                } catch {
+                  $markerReady = $false
+                }
+              }
+              if ($apiReady -and $frontendReady -and $windowReady -and $markerReady) {
+                $script:PackagedDescendants = $descendants
+                return
+              }
+              Start-Sleep -Milliseconds 1000
+            }
+            throw "Timed out waiting for packaged API/frontend/window readiness."
+          }
+          function Stop-PackagedApp(
+            [System.Diagnostics.Process]$Process,
+            [int[]]$KnownDescendants,
+            [string]$ScopePath
+          ) {
+            if (-not $Process.CloseMainWindow()) {
+              throw "Packaged app exposed no graceful window shutdown."
+            }
+            if (-not $Process.WaitForExit(90000)) {
+              throw "Packaged app did not shut down gracefully."
+            }
+            Start-Sleep -Milliseconds 1000
+            foreach ($childId in $KnownDescendants) {
+              if (Get-Process -Id $childId -ErrorAction SilentlyContinue) {
+                throw "Packaged sidecar remains after shutdown: $childId"
+              }
+            }
+            $remaining = @(
+              Get-CimInstance Win32_Process |
+                Where-Object {
+                  $_.ProcessId -ne $PID -and
+                  $_.CommandLine -and
+                  $_.CommandLine.Contains($ScopePath)
+                }
+            )
+            if ($remaining.Count -ne 0) {
+              throw "Packaged sidecar command remains after shutdown."
+            }
+          }
           $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
           $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook Upgrade"
           $compatHome = Join-Path $env:RUNNER_TEMP "compat-home"
           $legacyRoot = Join-Path $compatHome ".open-notebook-plus"
+          $canonicalRoot = Join-Path $compatHome ".deeper-notebook"
+          $env:HOME = $compatHome
+          $env:USERPROFILE = $compatHome
           New-Item -ItemType Directory -Force -Path (Join-Path $legacyRoot "data") | Out-Null
           "synthetic-state" | Set-Content -NoNewline (Join-Path $legacyRoot "data\synthetic-state")
           (Get-FileHash (Join-Path $legacyRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
             Set-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")
-          $env:HOME = $compatHome
-          $env:USERPROFILE = $compatHome
+          $legacyPython = Join-Path $legacySource ".venv-build-win\Scripts\python.exe"
+          Push-Location $legacySource
+          & $legacyPython -c "from desktop.config import default_config_path,load_or_create; load_or_create(default_config_path())"
+          if ($LASTEXITCODE -ne 0) { throw "Legacy config seed failed." }
+          Pop-Location
           $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
           $legacyInstaller = Join-Path $legacySource "dist\Open-Notebook-Plus-Setup-x64.exe"
           $legacyInstall = Start-Process -FilePath $legacyInstaller -ArgumentList $arguments -Wait -PassThru
@@ -292,27 +498,25 @@ jobs:
           $legacyLauncher = Join-Path $installDir "Open Notebook Plus.exe"
           if (-not (Test-Path $legacyLauncher)) { throw "Legacy launcher missing." }
           $legacyProcess = Start-Process -FilePath $legacyLauncher -PassThru
-          Start-Sleep -Seconds 15
-          if ($legacyProcess.HasExited) { throw "Legacy launcher exited during probe." }
-          Stop-Process -Id $legacyProcess.Id -Force
-      - name: Upgrade to canonical installer and prove stable identity
-        shell: pwsh
-        run: |
-          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook Upgrade"
-          $compatHome = Join-Path $env:RUNNER_TEMP "compat-home"
-          $canonicalRoot = Join-Path $compatHome ".deeper-notebook"
-          $env:HOME = $compatHome
-          $env:USERPROFILE = $compatHome
-          $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
+          Wait-PackagedReady $legacyProcess
+          $legacyChildren = @($script:PackagedDescendants)
+          Stop-PackagedApp $legacyProcess $legacyChildren $legacyRoot
+
           $canonicalInstall = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $arguments -Wait -PassThru
           if ($canonicalInstall.ExitCode -ne 0) { throw "Canonical upgrade failed." }
           $canonicalLauncher = Join-Path $installDir "Deeper Notebook.exe"
           if (-not (Test-Path $canonicalLauncher)) { throw "Canonical launcher missing." }
           if (Test-Path (Join-Path $installDir "Open Notebook Plus.exe")) { throw "Retired launcher remains." }
+          $programs = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+          $canonicalShortcut = Join-Path $programs "Deeper Notebook.lnk"
+          $legacyShortcut = Join-Path $programs "Open Notebook Plus.lnk"
+          if (-not (Test-Path $canonicalShortcut)) { throw "Canonical Start Menu shortcut missing." }
+          if (Test-Path $legacyShortcut) { throw "Retired Start Menu shortcut remains." }
           $canonicalProcess = Start-Process -FilePath $canonicalLauncher -PassThru
-          Start-Sleep -Seconds 15
-          if ($canonicalProcess.HasExited) { throw "Canonical launcher exited during probe." }
-          Stop-Process -Id $canonicalProcess.Id -Force
+          $readyFile = Join-Path $canonicalRoot "logs\desktop-readiness.json"
+          Wait-PackagedReady $canonicalProcess $readyFile
+          $canonicalChildren = @($script:PackagedDescendants)
+          Stop-PackagedApp $canonicalProcess $canonicalChildren $canonicalRoot
           (Get-FileHash (Join-Path $canonicalRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
             Set-Content (Join-Path $env:RUNNER_TEMP "state-after.sha256")
           if ((Get-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")) -ne

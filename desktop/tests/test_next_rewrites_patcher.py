@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -106,3 +107,35 @@ def test_patch_real_dir_unchanged_path(tmp_path, monkeypatch):
     assert work == fe  # patched in place
     assert "localhost:51234" in (fe / "server.js").read_text()
     assert "localhost:5055" not in (fe / "server.js").read_text()
+
+
+def test_frozen_runtime_never_mutates_the_signed_frontend(
+    tmp_path, monkeypatch
+):
+    """A writable app bundle is still signed and must remain immutable."""
+    fe = tmp_path / "Deeper Notebook.app" / "Contents" / "Resources" / "frontend"
+    (fe / ".next").mkdir(parents=True)
+    (fe / "server.js").write_text('dest "http://localhost:5055/api"\n')
+    (fe / ".next" / "required-server-files.json").write_text(
+        "http://localhost:5055/x"
+    )
+    (fe / ".next" / "routes-manifest.json").write_text(
+        "http://localhost:5055/y"
+    )
+    source_before = {
+        rel: (fe / rel).read_bytes()
+        for rel in nrp.REWRITE_TARGET_FILES
+    }
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    work = nrp.patch_rewrites_for_api_port(fe, 51234)
+
+    assert work == home / ".deeper-notebook" / nrp.WRITABLE_COPY_NAME
+    assert work != fe
+    assert all((fe / rel).read_bytes() == source_before[rel] for rel in source_before)
+    assert not any(fe.rglob("*.orig"))
+    assert "localhost:51234" in (work / "server.js").read_text()

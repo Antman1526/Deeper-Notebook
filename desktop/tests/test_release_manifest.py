@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -273,3 +274,76 @@ def test_makefile_build_contract_is_portable_and_uses_canonical_outputs() -> Non
     assert "dist/Deeper Notebook.app" in makefile
     assert "dist/Deeper-Notebook-mac-<arch>.dmg" in makefile
     assert "/Applications/Deeper Notebook.app" in makefile
+
+
+def test_makefile_requires_a_deep_strict_codesign_verification() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    verify_lines = [
+        line for line in makefile.splitlines()
+        if "codesign" in line and "--verify" in line
+    ]
+
+    assert verify_lines, "the local package build must hard-gate the final seal"
+    assert any("--deep" in line and "--strict" in line for line in verify_lines)
+    assert all("|| true" not in line for line in verify_lines)
+    assert all("|" not in line for line in verify_lines)
+
+
+def test_installer_version_matches_the_canonical_desktop_version() -> None:
+    installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    version_source = (REPOSITORY_ROOT / "desktop" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    installer_match = re.search(
+        r'^#define MyAppVersion "([^"]+)"$', installer, re.MULTILINE
+    )
+    desktop_match = re.search(
+        r'^__version__ = "([^"]+)"$', version_source, re.MULTILINE
+    )
+
+    assert installer_match is not None
+    assert desktop_match is not None
+    assert installer_match.group(1) == desktop_match.group(1) == "0.8.95"
+
+
+def test_installer_removes_only_the_exact_retired_start_menu_shortcut() -> None:
+    installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    install_delete = installer.split("[InstallDelete]", 1)[1].split("[Icons]", 1)[0]
+    shortcut_cleanup = (
+        'Type: files; Name: "{autoprograms}\\Open Notebook Plus.lnk"'
+    )
+
+    assert shortcut_cleanup in install_delete
+    assert install_delete.count("{autoprograms}") == 1
+    assert "Open Notebook Plus" in shortcut_cleanup
+
+
+def test_compatibility_jobs_probe_real_readiness_then_leave_no_sidecars() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+    compatibility = workflow[workflow.index("  macos-compatibility-upgrade:") :]
+
+    assert "wait_for_packaged_ready" in compatibility
+    assert "Wait-PackagedReady" in compatibility
+    assert "__next_f" in compatibility
+    assert "/readyz" in compatibility
+    assert "desktop-readiness.json" in compatibility
+    assert "sleep 15" not in compatibility
+    assert "Start-Sleep -Seconds 15" not in compatibility
+    assert "NSRunningApplication" in compatibility
+    assert "kill -TERM" in compatibility  # bounded failure cleanup only
+    assert "CloseMainWindow()" in compatibility
+    assert "sidecar" in compatibility.lower()
+    assert "ps eww -axo pid=,command=" in compatibility
+    assert 'index($0, "HOME=" scope " ")' in compatibility
+    assert 'index($0, "USERPROFILE=" scope " ")' in compatibility
+    assert "remaining_descendants" in compatibility
+
+
+def test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+    compatibility = workflow[workflow.index("  windows-compatibility-upgrade:") :]
+
+    assert '$canonicalShortcut = Join-Path $programs "Deeper Notebook.lnk"' in compatibility
+    assert '$legacyShortcut = Join-Path $programs "Open Notebook Plus.lnk"' in compatibility
+    assert "Retired Start Menu shortcut remains" in compatibility
+    assert "Canonical Start Menu shortcut missing" in compatibility
