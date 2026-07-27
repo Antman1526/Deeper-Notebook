@@ -17,6 +17,7 @@ LEGACY_ACTIVITY_URN_PREFIX = "urn:open-notebook-plus:"
 PYTHON_DISTRIBUTION = "deeper-notebook"
 PYTHON_PACKAGE = "deeper_notebook"
 LEGACY_PYTHON_PACKAGE = "open_notebook"
+LEGACY_COMMAND_APP = LEGACY_PYTHON_PACKAGE
 MAC_APP_NAME = "Deeper Notebook.app"
 WINDOWS_EXE_NAME = "Deeper Notebook.exe"
 WINDOWS_INSTALLER_NAME = "Deeper-Notebook-Setup-x64.exe"

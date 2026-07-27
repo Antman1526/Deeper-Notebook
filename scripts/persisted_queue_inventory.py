@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
+
+LEGACY_QUEUE_APP = "open_notebook"
 
 
 def semantic_sort_key(entry: Mapping[str, object]) -> tuple[str, ...]:
@@ -53,12 +56,15 @@ def _keyword_or_positional(
 
 def production_python_paths(root: Path) -> list[Path]:
     """Return every tracked production Python file, excluding tests and shims."""
-    tracked = subprocess.run(
+    result = subprocess.run(
         ["git", "-C", str(root), "ls-files", "*.py"],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
-    ).stdout.splitlines()
+    )
+    if result.returncode != 0:
+        return []
+    tracked = result.stdout.splitlines()
     return [
         root / relative
         for relative in tracked
@@ -77,6 +83,7 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
         self.path = path
         self.function_stack: list[str] = []
         self.entries: list[dict[str, str]] = []
+        self.identifier_nodes: list[ast.expr] = []
 
     @property
     def symbol(self) -> str:
@@ -93,13 +100,12 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
                 continue
             if _call_name(decorator) != "command":
                 continue
-            app = _expression(
-                _keyword_or_positional(
-                    decorator,
-                    keywords={"app"},
-                    position=1,
-                )
+            app_node = _keyword_or_positional(
+                decorator,
+                keywords={"app"},
+                position=1,
             )
+            app = _expression(app_node)
             command_name = _expression(
                 _keyword_or_positional(
                     decorator,
@@ -112,6 +118,8 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
                     "persisted command registrations require explicit app "
                     f"and command names: {self.relative_path}:{node.lineno}"
                 )
+            assert app_node is not None
+            self.identifier_nodes.append(app_node)
             self.entries.append(
                 {
                     "kind": "registration",
@@ -150,13 +158,12 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
                 keywords=node.keywords,
             )
         if callee in {"submit_command", "submit_command_job"}:
-            app = _expression(
-                _keyword_or_positional(
-                    queue_call,
-                    keywords={"app", "app_name", "module_name"},
-                    position=0,
-                )
+            app_node = _keyword_or_positional(
+                queue_call,
+                keywords={"app", "app_name", "module_name"},
+                position=0,
             )
+            app = _expression(app_node)
             command_name = _expression(
                 _keyword_or_positional(
                     queue_call,
@@ -169,6 +176,8 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
                     "persisted command submissions require explicit app "
                     f"and command expressions: {self.relative_path}:{node.lineno}"
                 )
+            assert app_node is not None
+            self.identifier_nodes.append(app_node)
             self.entries.append(
                 {
                     "kind": "submission",
@@ -181,18 +190,19 @@ class _QueueInventoryVisitor(ast.NodeVisitor):
                 }
             )
         elif callee in {"_is_command_registered", "get_command_by_id"}:
-            command_id = _expression(
-                _keyword_or_positional(
-                    node,
-                    keywords={"command_id"},
-                    position=0,
-                )
+            command_id_node = _keyword_or_positional(
+                node,
+                keywords={"command_id"},
+                position=0,
             )
+            command_id = _expression(command_id_node)
             if command_id is None:
                 raise ValueError(
                     "persisted command lookups require an explicit identifier "
                     f"expression: {self.relative_path}:{node.lineno}"
                 )
+            assert command_id_node is not None
+            self.identifier_nodes.append(command_id_node)
             self.entries.append(
                 {
                     "kind": "lookup",
@@ -214,3 +224,74 @@ def production_queue_inventory(root: Path) -> list[dict[str, str]]:
         visitor.visit(tree)
         inventory.extend(visitor.entries)
     return sorted(inventory, key=semantic_sort_key)
+
+
+def _node_legacy_occurrences(
+    *,
+    relative_path: str,
+    source_lines: list[str],
+    node: ast.expr,
+) -> list[dict[str, object]]:
+    """Return scanner-identical legacy tokens contained by one queue argument."""
+    if node.end_lineno is None or node.end_col_offset is None:
+        raise ValueError(
+            f"queue identifier lacks a closed source range: {relative_path}"
+        )
+    occurrences: list[dict[str, object]] = []
+    for line_number in range(node.lineno, node.end_lineno + 1):
+        line = source_lines[line_number - 1]
+        start = node.col_offset if line_number == node.lineno else 0
+        end = (
+            node.end_col_offset
+            if line_number == node.end_lineno
+            else len(line)
+        )
+        cursor = line.find(LEGACY_QUEUE_APP, start, end)
+        while cursor >= 0:
+            occurrences.append(
+                {
+                    "path": relative_path,
+                    "pattern": LEGACY_QUEUE_APP,
+                    "source": "content",
+                    "line": line_number,
+                    "column": cursor + 1,
+                    "context_sha256": hashlib.sha256(
+                        line.encode("utf-8")
+                    ).hexdigest(),
+                }
+            )
+            cursor = line.find(
+                LEGACY_QUEUE_APP,
+                cursor + len(LEGACY_QUEUE_APP),
+                end,
+            )
+    return occurrences
+
+
+def production_queue_occurrence_inventory(
+    root: Path,
+) -> list[dict[str, object]]:
+    """Emit exact scanner identities owned by queue registration semantics."""
+    occurrences: list[dict[str, object]] = []
+    for path in production_python_paths(root):
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        visitor = _QueueInventoryVisitor(root, path)
+        visitor.visit(tree)
+        for node in visitor.identifier_nodes:
+            occurrences.extend(
+                _node_legacy_occurrences(
+                    relative_path=visitor.relative_path,
+                    source_lines=source.splitlines(),
+                    node=node,
+                )
+            )
+    return sorted(
+        occurrences,
+        key=lambda entry: (
+            str(entry["path"]),
+            int(entry["line"]),
+            int(entry["column"]),
+            str(entry["pattern"]),
+        ),
+    )
