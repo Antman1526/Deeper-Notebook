@@ -327,7 +327,7 @@ def ensure_venv(
             "Makefile build skipped `build-mac-lock`).\n\n"
             "Recover by force-rebuilding the venv on next launch:\n"
             f"    rm -rf {venv_dir()} {venv_marker()}\n"
-            "    open 'Open Notebook Plus.app'\n\n"
+            "    open 'Deeper Notebook.app'\n\n"
             "If the issue persists after rebuild, the bundled "
             "requirements.lock itself is broken — rebuild the bundle "
             "with `make build-mac` (which now includes the missing "

@@ -88,7 +88,7 @@ templates playground.
 ---
 
 ### `docker-compose-dev.yml` - Development Setup
-**Use this if:** You're contributing to Open Notebook or developing custom features
+**Use this if:** You're contributing to Deeper Notebook or developing custom features
 
 **Features:**
 - Hot-reload for code changes

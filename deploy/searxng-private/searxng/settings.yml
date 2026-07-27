@@ -1,5 +1,5 @@
 # Minimal SearXNG config for a PRIVATE, localhost-only instance used by
-# Open Notebook Plus's native web_search tool.
+# Deeper Notebook's native web_search tool.
 #
 # The two settings that matter for LLM web search:
 #   1. `search.formats` includes `json`  -> enables the JSON API the tool calls.

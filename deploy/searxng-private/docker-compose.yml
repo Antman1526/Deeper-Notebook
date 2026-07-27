@@ -1,4 +1,4 @@
-# Private, localhost-only SearXNG for Open Notebook Plus native web_search.
+# Private, localhost-only SearXNG for Deeper Notebook native web_search.
 #
 # Why: public SearXNG mirrors block the JSON API (HTTP 403/418/429), so the chat
 # `web_search` tool can't use them. This private instance ENABLES format=json and
@@ -8,7 +8,7 @@
 #   1. Generate a secret:   openssl rand -hex 32
 #      paste it into  searxng/settings.yml -> server.secret_key
 #   2. docker compose up -d
-#   3. In Open Notebook Plus .env:   SEARXNG_BASE_URL=http://127.0.0.1:8889/
+#   3. In Deeper Notebook .env:      SEARXNG_BASE_URL=http://127.0.0.1:8889/
 #      (restart the app so .env is reloaded)
 #   4. Test:  curl "http://127.0.0.1:8889/search?q=test&format=json"
 #

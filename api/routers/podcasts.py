@@ -886,7 +886,7 @@ async def suggest_episode(req: SuggestRequest):
       2. Score each preset by keyword hits in titles/topics.
       3. If the top score is ≥ 2, pick that preset.
       4. Otherwise default by volume: small → Quick Brief, large →
-         Deep Dive, mid → Open Notebook Plus Local (the safe default).
+         Deep Dive, mid → Deeper Notebook Local (the safe default).
     """
     # ---- 1. Resolve content from the request ----
     source_ids: list[str] = list(req.source_ids or [])
@@ -996,7 +996,7 @@ async def suggest_episode(req: SuggestRequest):
             chosen = "Deep Dive"
             reason = "Large content volume — long-form deep dive fits."
         else:
-            chosen = "Open Notebook Plus Local"
+            chosen = "Deeper Notebook Local"
             reason = "Balanced two-host format for mid-sized content."
         # If our default isn't available (user deleted everything but
         # one), fall back to whatever exists.

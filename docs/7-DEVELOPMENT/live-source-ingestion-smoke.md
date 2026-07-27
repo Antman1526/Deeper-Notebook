@@ -1,7 +1,7 @@
 # Live Source Ingestion Smoke
 
 Use this opt-in smoke when you need proof beyond fixture tests. It talks to a
-running native Open Notebook Plus API and verifies:
+running native Deeper Notebook API and verifies:
 
 1. A text, upload, or link source can be created through the real API.
 2. The background worker finishes processing it.
@@ -10,7 +10,7 @@ running native Open Notebook Plus API and verifies:
    setup without an embedding model.
 5. Optionally, source chat can stream an answer from that source.
 
-Open Notebook Plus should be running natively on the host. Do not use Docker
+Deeper Notebook should be running natively on the host. Do not use Docker
 for this proof.
 
 ## Basic Run

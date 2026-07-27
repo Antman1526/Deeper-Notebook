@@ -19,7 +19,8 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-noteboo
 
 **Option B: Use the official file from the repo**
 
-The official `docker-compose.yml` is in the root of our repository: [View on GitHub](https://github.com/lfnovo/open-notebook/blob/main/docker-compose.yml)
+The compatible upstream `docker-compose.yml` remains available from
+[lfnovo/open-notebook](https://github.com/lfnovo/open-notebook/blob/main/docker-compose.yml).
 
 Copy that file to your project folder.
 
@@ -105,7 +106,7 @@ Open browser to:
 http://localhost:8502
 ```
 
-You should see the Open Notebook interface!
+You should see the Deeper Notebook interface!
 
 ---
 
@@ -136,7 +137,7 @@ Your models are now available!
 3. Description: "Getting started"
 4. Click **Create**
 
-Done! You now have a fully working Open Notebook instance.
+Done! You now have a fully working Deeper Notebook instance.
 
 ---
 
@@ -355,5 +356,5 @@ For production use, see:
 ## Getting Help
 
 - **Discord**: [Community support](https://discord.gg/37XJPXfz2w)
-- **Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
+- **Issues**: [GitHub Issues](https://github.com/Antman1526/Deeper-Notebook/issues)
 - **Docs**: [Full documentation](../index.md)

@@ -1,6 +1,6 @@
 # Local-model tool-calling compatibility
 
-*Open Notebook Plus v0.8.10+*
+*Deeper Notebook v0.8.10+*
 
 The v0.8.0 Phase 2 MCP integration relies on the local chat model
 emitting OpenAI-style `tool_calls` when the user's question needs

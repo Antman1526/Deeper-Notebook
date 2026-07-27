@@ -250,7 +250,7 @@ worker-restart: worker-stop
 
 # === Service Management ===
 start-all:
-	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
+	@echo "🚀 Starting Deeper Notebook (Database + API + Worker + Frontend)..."
 	@echo "📊 Starting SurrealDB..."
 	# v0.7.140 — was docker-compose.dev.yml (didn't exist).
 	@docker compose -f docker-compose.yml up -d surrealdb
@@ -290,7 +290,7 @@ start-all:
 	cd frontend && npm run dev
 
 stop-all:
-	@echo "🛑 Stopping all Open Notebook services..."
+	@echo "🛑 Stopping all Deeper Notebook services..."
 	@pkill -f "next dev" || true
 	@pkill -f "surreal-commands-worker" || true
 	@pkill -f "run_api.py" || true
@@ -299,7 +299,7 @@ stop-all:
 	@echo "✅ All services stopped!"
 
 status:
-	@echo "📊 Open Notebook Service Status:"
+	@echo "📊 Deeper Notebook Service Status:"
 	@echo "Database (SurrealDB):"
 	@docker compose ps surrealdb 2>/dev/null || echo "  ❌ Not running"
 	@echo "API Backend:"

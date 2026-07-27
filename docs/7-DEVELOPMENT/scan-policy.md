@@ -1,6 +1,6 @@
 # Source Scan Policy
 
-Open Notebook Plus source scans should stay inside this repository:
+Deeper Notebook source scans should stay inside this repository:
 
 `/Users/Antman/Desktop/OpenNotebook/open-notebook-Plus`
 
@@ -34,7 +34,7 @@ Important ignored areas include:
 
 ## Safety Rules
 
-- Do not scan or document other projects while using the Open Notebook Plus knowledge-builder configuration.
+- Do not scan or document other projects while using the Deeper Notebook knowledge-builder configuration.
 - Do not include secrets, tokens, passwords, private keys, or `.env` values in generated notes.
 - Do not delete existing notes or source files during a scan.
 - Append dated updates under `BrainPulseKnowledge` instead of overwriting prior project knowledge.

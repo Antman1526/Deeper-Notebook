@@ -1,7 +1,7 @@
 # Safe Upstream Sync
 
-Open Notebook Plus tracks the original project as `upstream`, but Plus has
-desktop, local-model, Evidence Studio, and BrainPulseKnowledge changes that
+Deeper Notebook tracks the original Open Notebook project as `upstream`, but the
+downstream product has desktop, local-model, Evidence Studio, and BrainPulseKnowledge changes that
 must not be overwritten by a blind pull.
 
 Use this process when `lfnovo/open-notebook` has new updates.
@@ -18,7 +18,7 @@ The fetch URL stays active, so updates can still be pulled read-only.
 
 ## Standard Flow
 
-1. Finish or checkpoint current Plus work.
+1. Finish or checkpoint current Deeper Notebook work.
 2. Run the guard:
 
 ```bash
@@ -40,7 +40,7 @@ scripts/upstream_sync_guard.sh prepare
 
 ## Why A Separate Worktree
 
-The main `desktop-app` checkout often contains active Plus development. A
+The main checkout often contains active Deeper Notebook development. A
 separate worktree lets maintainers inspect upstream changes, resolve conflicts,
 and run tests without risking local work.
 
@@ -52,7 +52,7 @@ and run tests without risking local work.
   `git status --short`.
 - `changed-files.txt`: files changed by the upstream merge attempt.
 - `conflicted-files.txt`: files with unresolved git conflicts.
-- `protected-plus-path-changes.txt`: changes under Plus-critical areas that
+- `protected-plus-path-changes.txt`: changes under downstream-critical areas that
   need deliberate review before merge-back.
 - `upstream-deletions.txt`: deleted files surfaced by the merge attempt.
 
@@ -60,7 +60,7 @@ Treat `protected-plus-path-changes.txt` and `upstream-deletions.txt` as required
 review artifacts. Empty files are good news; non-empty files are not automatic
 failures, but each row needs an intentional keep/modify/delete decision.
 
-## Preserve These Plus Areas
+## Preserve These Downstream Areas
 
 During conflict resolution, protect these areas unless there is a deliberate
 replacement plan:

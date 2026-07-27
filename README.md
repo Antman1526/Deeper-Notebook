@@ -1,6 +1,9 @@
-# Open Notebook Plus
+# Deeper Notebook
 
-**A privacy-first, fully-local-capable alternative to Google NotebookLM.** Open Notebook Plus is a native desktop research notebook where you upload multi-modal sources (PDFs, audio, video, web pages, and raw text), generate AI notes and insights, chat with your sources, run semantic and multi-step "Ask" search across your whole library, and produce professional multi-speaker podcasts and instructor-ready Course Packs — all powered by **your** choice of AI provider, whether a cloud API or a fully-local llama.cpp / Ollama / MLX model so that no data ever leaves your machine. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook) that adds a native desktop launcher with bundled AI sidecars, offline/online smart-switching, staged podcast generation with outline review, a SkillOpt prompt optimizer, a closed-loop memory layer, a fail-closed cloud-privacy gate, Evidence Studio artifact generation, and a downstream-friendly update strategy on top of upstream.
+**Think further with every source.** Deeper Notebook is a privacy-first, fully-local-capable research notebook where you can upload multimodal sources, generate grounded notes and insights, chat with citations, search across your library, and produce podcasts and Course Packs with your choice of local or cloud AI. It is a substantially extended fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook), adding a native desktop launcher, bundled AI sidecars, offline/online smart switching, staged podcast generation, a SkillOpt prompt optimizer, closed-loop memory, a fail-closed cloud-privacy gate, Evidence Studio, and a downstream-friendly update strategy.
+
+The product uses the approved **Notebook Spark** visual identity with the
+teal-to-cyan **Research Core** colorway.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
@@ -11,7 +14,7 @@
 ![SurrealDB v2](https://img.shields.io/badge/SurrealDB-v2-ff5722)
 ![Tests](https://img.shields.io/badge/tests-2033%20backend%20%2B%20477%20frontend-success)
 
-> GitHub: **https://github.com/Antman1526/open-notebook-Plus** — a downstream fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
+> GitHub: **https://github.com/Antman1526/Deeper-Notebook** — a downstream fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
 
 ---
 
@@ -27,6 +30,7 @@
   - [Desktop app (macOS `.dmg`)](#desktop-app-macos-dmg)
   - [From source (development)](#from-source-development)
 - [Configuration](#configuration)
+- [Migrating from Open Notebook Plus](#migrating-from-open-notebook-plus)
 - [Running tests](#running-tests)
 - [Reconstruction documentation](#reconstruction-documentation)
 - [Project structure](#project-structure)
@@ -39,7 +43,7 @@
 
 ## What it is
 
-Open Notebook Plus is a desktop application for **source-grounded AI research**. You organize your work into *notebooks*; into each notebook you drop *sources* (documents, audio, video, web URLs, pasted text). The app extracts and chunks the content, embeds it into a vector store, and from then on every interaction — chat answers, generated notes, "Ask" syntheses, podcast scripts — is grounded in *your* sources, with interactive citation pills that link each claim back to the document it came from.
+Deeper Notebook is a desktop application for **source-grounded AI research**. You organize your work into *notebooks*; into each notebook you drop *sources* (documents, audio, video, web URLs, pasted text). The app extracts and chunks the content, embeds it into a vector store, and from then on every interaction — chat answers, generated notes, "Ask" syntheses, podcast scripts — is grounded in *your* sources, with interactive citation pills that link each claim back to the document it came from.
 
 The defining difference from NotebookLM is **ownership and locality**: your notebooks, sources, embeddings, chat history, and extracted memory live in a SurrealDB database on your own drive, behind a password you set, and the app can run **entirely offline** against a local GGUF chat model, a local embedding model, local speech-to-text, and local text-to-speech. Cloud providers (OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, xAI, Ollama, and more) are fully supported but strictly **opt-in**.
 
@@ -62,7 +66,7 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 - **Backward-compatible storage:** each new `output_payload` stores `schema_version`, the typed `document`, canonical `markdown`, the legacy `content` alias, and a compact validation receipt. Existing `{content: markdown}` artifacts continue to open, revise, export, and retain study progress without a migration. Structured PATCH edits are revalidated and re-rendered server-side so stale client Markdown cannot disagree with the document.
 - **Visual deliverables:** completed slide decks save an editable 16:9 `.pptx` plus a deterministic multipage `.pdf`; completed infographics save a `.png` plus a one-page `.pdf` in portrait, landscape, or square orientation. The PPTX keeps titles, bullets, speaker notes, visual direction, and citation markers as editable content. Visual files appear beside Markdown and JSON in the artifact viewer and are refreshed after a valid structured edit.
 - **Local Video Overview:** pair a completed Evidence Studio slide deck with a completed, timestamped Audio Overview to make a captioned 1920x1080 `.mp4`. The app re-renders the reviewed slide document locally, composes it with bundled FFmpeg, verifies the result before promotion, saves `.mp4` and `.vtt` beneath the app data folder, and streams them only through path-contained API routes. It never sends slides, narration, or captions to a hosted video service.
-- **Local, failure-isolated exports:** artifacts save beneath `~/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/` by default, or `OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR` when set. Rendering uses local Python libraries only, with no hosted office or image service. If an optional PPTX/PDF/PNG renderer fails, the validated artifact remains completed with its Markdown/JSON exports and a bounded warning; incomplete visual files are removed.
+- **Local, failure-isolated exports:** artifacts save beneath the compatibility integration path `~/BrainPulseKnowledge/open-notebook-plus-imports/evidence-studio/` by default, or `DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR` when set. The old export-path variable remains accepted during migration. Rendering uses local Python libraries only, with no hosted office or image service.
 - **Course Pack** is the richer successor to the old "training guide" label. It treats videos and audio as lesson segments, PDFs and docs as readings/reference modules, and links as external resources. The generated markdown includes audience, learning outcomes, prerequisite knowledge, source-readiness notes, module roadmap, timed lessons, hands-on exercises, facilitator notes, learner handouts, knowledge checks, final assessment, follow-up resources, and citation markers.
 - **Workflow approval gates** track context building, privacy review, model routing, and artifact generation. If selected sources are still processing, generation fails with a structured `sources_not_ready` response instead of producing thin material.
 
@@ -93,12 +97,12 @@ The defining difference from NotebookLM is **ownership and locality**: your note
 ### Production-grade operations
 - **Closed observability:** every response carries an `X-Request-ID`, every log line is request-correlated, and a Prometheus `/metrics` endpoint exposes request latency, DB query latency, slow-query counts, memory-recall fall-through reasons, checkpoint-prune cycles, and privacy-gate / tool-loop counters.
 - **Backup & restore** with atomic writes, an embedded SHA-256 manifest, and versioned bundle format; the desktop app also auto-exports the database on an interval.
-- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch. A **"Repair & restart"** button in the banner relaunches the app in one click (via a `window.ONP.relaunch` pywebview `js_api` bridge) so the boot-time repair runs without a manual quit-and-reopen.
+- **Self-healing database:** detects SurrealDB live-query corruption after an unclean shutdown and runs a backup-first auto-repair on the next launch. A **"Repair & restart"** button relaunches the app through the desktop bridge so the boot-time repair runs without a manual quit-and-reopen.
 
 ### NotebookLM-parity research UX (v0.8.x)
 A focused improvement cycle (benchmarked against Google NotebookLM and local-first rivals) added, verified, and shipped the following — each behind automated gates (backend pytest + `tsc` + `npm run build`), several confirmed live in the packaged app:
 
-- **Citation jump-to-highlight** — clicking a `[source]` citation opens the source reading pane and scrolls to + highlights the exact grounding passage (on-demand token-containment offset matching via `open_notebook/utils/citation_offsets.py`; `POST /sources/{id}/locate-passage`), turning citations from "reference" into "verify in one click."
+- **Citation jump-to-highlight** — clicking a `[source]` citation opens the source reading pane and scrolls to and highlights the exact grounding passage (on-demand token-containment offset matching via `deeper_notebook/utils/citation_offsets.py`; `POST /sources/{id}/locate-passage`), turning citations from "reference" into "verify in one click."
 - **Inline PDF rendering** — PDF sources render inline (react-pdf 10) with a **locally-bundled, offline pdfjs worker** (no CDN) and a graceful fall-back to extracted text.
 - **Interactive mind map** — a React Flow (`@xyflow/react`) radial graph of the notebook hub + its sources and notes, grounded in the existing `reference`/`artifact` edges (no schema change; `GET /notebooks/{id}/graph`); clicking a source node opens it.
 - **Discover sources** — an opt-in, privacy-preserving web-search-to-source dialog in the Sources panel: type a topic → review candidate URLs → add chosen results as link sources. Search only reaches the network when a provider key (`SERPER`/`TAVILY`/`SEARXNG`) is configured; otherwise the dialog shows a setup hint.
@@ -126,7 +130,7 @@ A focused improvement cycle (benchmarked against Google NotebookLM and local-fir
 
 ## Architecture
 
-Open Notebook Plus is a **three-tier application** (frontend / API / database) plus, in the desktop build, a **launcher** that supervises a set of **local AI sidecar processes**.
+Deeper Notebook is a **three-tier application** (frontend / API / database) plus, in the desktop build, a **launcher** that supervises a set of **local AI sidecar processes**.
 
 ```
 +-----------------------------------------------------------------------+
@@ -160,7 +164,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
 
 **Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 10 locales.
 
-**API (`api/` + `open_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic Markdown and visual renderers, and a backward-compatible payload envelope under `open_notebook/studio/`; `python-pptx` writes editable decks and Pillow writes self-contained slide/infographic PDF and PNG files. The flexible existing SurrealDB field holds the envelope, so no database migration is required. Long-running work (podcast generation, embedding rebuilds, prompt optimization, source ingestion) is dispatched to an async **surreal_commands** job queue and polled via the commands API.
+**API (`api/` + `deeper_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic Markdown and visual renderers, and a backward-compatible payload envelope under `deeper_notebook/studio/`; `python-pptx` writes editable decks and Pillow writes self-contained slide/infographic PDF and PNG files. Long-running work is dispatched to an async **surreal_commands** job queue and polled through the commands API.
 
 **Database (SurrealDB v2)** — A single engine providing graph relationships, document storage, vector search, and key-value storage. Domain records (Notebook, Source, Note, ChatSession, PodcastEpisode, Credential, memory tables) and their edges (`reference`, `artifact`, `refers_to`) all live here. Schema migrations run automatically on API startup via `AsyncMigrationManager`.
 
@@ -265,22 +269,22 @@ Selected ready sources → citation-marked context + artifact schema
 
 ### Desktop app (macOS `.dmg`)
 
-The recommended way to run Open Notebook Plus — no Docker, no terminal, with all AI sidecars bundled.
+The recommended way to run Deeper Notebook is the native app—no Docker, no terminal, with all AI sidecars bundled.
 
-1. Download the latest `.dmg` from [Releases](https://github.com/Antman1526/open-notebook-Plus/releases).
-2. Drag **Open Notebook Plus** into **Applications**.
+1. Download `Deeper-Notebook-mac-<arch>.dmg` from [Releases](https://github.com/Antman1526/Deeper-Notebook/releases).
+2. Drag **Deeper Notebook** into **Applications**.
 3. The build is unsigned, so the first launch needs **Right-click → Open** to clear macOS Gatekeeper.
 4. On first run the app boots its bundled SurrealDB + Node runtime, downloads the local model files it needs, and opens on a welcome splash before handing off to the main UI.
 
-> **Windows:** desktop builds are produced on a Windows host through GitHub Actions because PyInstaller is not a cross-compiler. The workflow packages `dist/Open-Notebook-Plus-windows-x64.zip`, containing `Open Notebook Plus.exe` and its bundled runtime folder. See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml) and [`desktop/build/post_build_windows.ps1`](desktop/build/post_build_windows.ps1).
+> **Windows:** desktop builds are produced on a Windows host because PyInstaller is not a cross-compiler. Releases provide `Deeper-Notebook-windows-x64.zip` with `Deeper Notebook.exe`, plus `Deeper-Notebook-Setup-x64.exe`.
 
 ### From source (development)
 
 Requirements: **Python 3.12**, [`uv`](https://github.com/astral-sh/uv), **Node 22+** with `npm`, and **SurrealDB v2**.
 
 ```bash
-git clone https://github.com/Antman1526/open-notebook-Plus
-cd open-notebook-Plus
+git clone https://github.com/Antman1526/Deeper-Notebook.git
+cd Deeper-Notebook
 
 # --- Backend ---
 uv sync                          # creates .venv and installs Python deps
@@ -299,7 +303,7 @@ make api                         # terminal 2: FastAPI on :5055
 make frontend                    # terminal 3: Next.js on :3000
 ```
 
-Then open **http://localhost:3000**, enter your `OPEN_NOTEBOOK_PASSWORD` if you set one, create a notebook, upload a source, and start chatting.
+Then open **http://localhost:3000**, enter your `DEEPER_NOTEBOOK_PASSWORD` if you set one, create a notebook, upload a source, and start chatting.
 
 > A self-host **Docker Compose** path also exists (`docker compose up -d`), exposing the legacy UI on `:8502`, the API on `:5055`, and metrics on `:5055/metrics`.
 
@@ -308,7 +312,8 @@ To build the macOS desktop app from source:
 ```bash
 make build-mac      # test → lockfile → build venv → Next.js build →
                     # fetch runtimes → PyInstaller → hdiutil dmg
-                    # Output: dist/Open Notebook Plus.app (+ .dmg, ~175 MB)
+                    # Outputs: dist/Deeper Notebook.app
+                    #          dist/Deeper-Notebook-mac-<arch>.dmg
 ```
 
 ---
@@ -330,10 +335,10 @@ SURREAL_NAMESPACE=open_notebook
 SURREAL_DATABASE=production
 
 # --- App auth & secret storage (required) ---
-OPEN_NOTEBOOK_PASSWORD=           # UI password gate
-OPEN_NOTEBOOK_ENCRYPTION_KEY=     # encrypts stored provider credentials
-# OPEN_NOTEBOOK_ENCRYPTION_KEYS=  # comma-separated new,old for key rotation
-# ONP_ENCRYPTION_KDF=pbkdf2       # optional: PBKDF2-HMAC-SHA256, 600k iter
+DEEPER_NOTEBOOK_PASSWORD=           # UI password gate
+DEEPER_NOTEBOOK_ENCRYPTION_KEY=     # encrypts stored provider credentials
+# DEEPER_NOTEBOOK_ENCRYPTION_KEYS=  # comma-separated new,old for key rotation
+# DN_ENCRYPTION_KDF=pbkdf2           # optional short canonical alias
 
 # --- Data location ---
 DATA_FOLDER=./data
@@ -344,33 +349,58 @@ TAVILY_API_KEY=
 SEARXNG_BASE_URL=
 
 # --- Optional: smart routing, privacy, memory, FSM (all default-off) ---
-OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=    # per-turn local/cloud routing
-ONP_PRIVACY_GATE=                 # keep secrets/PII on-device
-ONP_AGENT_FSM=                    # agent clarify/complete state machine
-ONP_MEMORY_RECALL_MODE=           # recent | semantic | auto
-ONP_MEMORY_KEEP_PER_TABLE=        # memory retention ceiling
-ONP_MEMORY_BATCH_TURNS=
-ONP_MEMORY_CONFIDENCE_FLOOR=
+DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT=  # per-turn local/cloud routing
+DN_PRIVACY_GATE=                 # keep secrets/PII on-device
+DN_AGENT_FSM=                    # agent clarify/complete state machine
+DN_MEMORY_RECALL_MODE=           # recent | semantic | auto
+DN_MEMORY_KEEP_PER_TABLE=        # memory retention ceiling
+DN_MEMORY_BATCH_TURNS=
+DN_MEMORY_CONFIDENCE_FLOOR=
 
 # --- Optional: offline / network behavior ---
-ONP_NET_PROBE_HOSTS=
-ONP_NETWORK_STATE_TTL_SEC=
+DN_NET_PROBE_HOSTS=
+DN_NETWORK_STATE_TTL_SEC=
 
 # --- Optional: observability & maintenance ---
-ONP_SLOW_QUERY_LOG_MS=500
-ONP_CHECKPOINT_KEEP_PER_THREAD=50
-ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS=24
+DN_SLOW_QUERY_LOG_MS=500
+DN_CHECKPOINT_KEEP_PER_THREAD=50
+DN_CHECKPOINT_PRUNE_INTERVAL_HOURS=24
 
 # --- Optional: podcast & prompt optimizer ---
-ONP_PODCAST_MAX_CONTENT_TOKENS=100000
-ONP_PROMPT_OPT_TIMEOUT_SEC=1800
+DN_PODCAST_MAX_CONTENT_TOKENS=100000
+DN_PROMPT_OPT_TIMEOUT_SEC=1800
 
 # --- Optional: desktop auto-export ---
-ONP_AUTO_EXPORT_HOURS=24
-ONP_AUTO_EXPORT_KEEP=7
+DN_AUTO_EXPORT_HOURS=24
+DN_AUTO_EXPORT_KEEP=7
 ```
 
 > **Never commit real secrets.** `.env` is gitignored; credentials entered in-app are stored encrypted in SurrealDB.
+
+---
+
+## Migrating from Open Notebook Plus
+
+Existing installations remain supported while Deeper Notebook becomes the
+canonical identity:
+
+| Setting | Canonical | Legacy compatibility |
+|---|---|---|
+| Long environment prefix | `DEEPER_NOTEBOOK_*` | `OPEN_NOTEBOOK_*` |
+| Short environment prefix | `DN_*` | `ONP_*` |
+| macOS/Linux data directory | `~/.deeper-notebook/` | `~/.open-notebook-plus/` |
+| Windows data directory | `%USERPROFILE%\.deeper-notebook` | `%USERPROFILE%\.open-notebook-plus` |
+
+Canonical variables win when both canonical and legacy names are set:
+`DEEPER_NOTEBOOK_*` → `DN_*` → `OPEN_NOTEBOOK_*` → `ONP_*`. Legacy variables
+remain readable and produce a deprecation notice that identifies only the
+variable name, never its value.
+
+Fresh profiles use the canonical data directory. A legacy-only profile is
+migrated only through the guarded receipt-and-validation flow. If both
+directories exist with different state, the app enters recovery mode and does
+not merge or write either directory automatically. Keep the legacy directory
+until the migration receipt and before/after hashes have been verified.
 
 ---
 
@@ -399,20 +429,21 @@ The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is w
 - [`PROJECT-DEEP-DIVE.md`](docs/recreation/PROJECT-DEEP-DIVE.md) — a dense AI-review brief: key code walkthrough, data flow, pain points, design trade-offs, and an **"Areas for Review"** prompt for an AI reviewer.
 - [`TECHNOLOGY-AUDIT.md`](docs/recreation/TECHNOLOGY-AUDIT.md) — an exhaustive technology inventory with each tool's specific role in this repo.
 
-These files are also mirrored to `~/Desktop/OpenNotebook/project-docs/` for loading into Open Notebook Plus itself as source material.
+These files can also be loaded into Deeper Notebook as source material.
 
 ---
 
 ## Project structure
 
 ```
-open-notebook-Plus/
+Deeper-Notebook/
 ├── api/                      # FastAPI app
 │   ├── main.py               # app factory, middleware, router registration
 │   └── routers/              # notebooks, sources, notes, chat, search,
 │                             #   podcasts, transformations, models,
 │                             #   credentials, mcp, gmail, system, ...
-├── open_notebook/            # backend core
+├── deeper_notebook/          # canonical backend core
+├── open_notebook/            # deprecated import-compatibility shim
 │   ├── graphs/               # LangGraph workflows:
 │   │   ├── source.py         #   ingestion: extract → embed → save
 │   │   ├── chat.py           #   conversational agent + memory recall
@@ -455,18 +486,18 @@ open-notebook-Plus/
 ├── tests/                    # backend test suite (+ tests/integration/)
 ├── pyproject.toml            # Python deps (managed by uv)
 ├── Makefile                  # database / api / frontend / test / build-mac
-└── desktop/CHANGELOG.md      # Plus-fork release history
+└── desktop/CHANGELOG.md      # historical downstream release record
 ```
 
 ---
 
 ## Privacy & local-first stance
 
-Open Notebook Plus is built so you can use a NotebookLM-class research tool **without sending your data to anyone**:
+Deeper Notebook is built so you can use a NotebookLM-class research tool **without sending your data to anyone**:
 
 - **Your data stays on your drive.** Notebooks, sources, embeddings, chat history, and extracted memory live in *your* SurrealDB, behind *your* password and encryption key.
 - **Fully local AI is a first-class path, not a fallback.** Bundled llama.cpp chat + embedding sidecars, a Whisper STT sidecar, and a Piper TTS sidecar mean ingestion, chat, search, memory, and even podcast audio can run with zero network calls. Cloud providers are opt-in.
-- **Fail-closed privacy gate.** With `ONP_PRIVACY_GATE` enabled, turns that contain detected secrets or PII are kept **on the local model** (or blocked) instead of being sent to a cloud provider, surfaced by an interactive "On-device" review badge with an explicit **"Re-ask allowing cloud"** consent action.
+- **Fail-closed privacy gate.** With `DN_PRIVACY_GATE` enabled, turns that contain detected secrets or PII are kept **on the local model** (or blocked) instead of being sent to a cloud provider, surfaced by an interactive "On-device" review badge with an explicit **"Re-ask allowing cloud"** consent action.
 - **Offline by choice or by circumstance.** Flip the Offline-mode toggle and the app runs fully local even when online; lose connectivity and cloud turns transparently fall back to local models instead of hanging.
 - **Encrypted credentials.** Cloud API keys are stored encrypted (Fernet, with an optional PBKDF2-HMAC-SHA256 KDF and key rotation), never in plaintext.
 
@@ -474,9 +505,9 @@ Open Notebook Plus is built so you can use a NotebookLM-class research tool **wi
 
 ## Contributing
 
-Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines and [`CLAUDE.md`](CLAUDE.md) for the architectural conventions this codebase follows (async-first patterns, edge-table query direction, fire-and-forget command submission, SSE disconnect handling, delete cascades, and the per-commit changelog + inline-comment versioning convention). Component-level guidance lives in the nested `CLAUDE.md` files under `frontend/`, `api/`, and `open_notebook/`.
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines and [`CLAUDE.md`](CLAUDE.md) for the architectural conventions this codebase follows. Component-level guidance lives in the nested `CLAUDE.md` files under `frontend/`, `api/`, and `deeper_notebook/`.
 
-Before opening a PR, run `make test` and the frontend Vitest suite and add tests for any behavior change. Plus-fork issues go to the [Plus issue tracker](https://github.com/Antman1526/open-notebook-Plus/issues); upstream issues go to [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook/issues).
+Before opening a PR, run `make test` and the frontend Vitest suite and add tests for any behavior change. Deeper Notebook issues go to the [downstream issue tracker](https://github.com/Antman1526/Deeper-Notebook/issues); upstream issues go to [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook/issues).
 
 ---
 
@@ -488,4 +519,4 @@ Released under the **MIT License** — see [`LICENSE`](LICENSE). Same license as
 
 ## Acknowledgements
 
-Open Notebook Plus is a downstream fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook); all upstream credit goes to [@lfnovo](https://github.com/lfnovo). The Plus delta — the native desktop launcher, local-AI sidecars, offline switching, staged podcasts, SkillOpt prompt optimizer, closed-loop memory, privacy gate, and the production-hardening run — is maintained by [@Antman1526](https://github.com/Antman1526). The prompt optimizer builds on Microsoft **SkillOpt** (MIT).
+Deeper Notebook is a downstream fork of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook); all upstream credit goes to [@lfnovo](https://github.com/lfnovo). The downstream native desktop, local-AI, privacy, memory, and research-workspace extensions are maintained by [@Antman1526](https://github.com/Antman1526). The prompt optimizer builds on Microsoft **SkillOpt** (MIT).

@@ -2,7 +2,7 @@
 #
 # ralph.sh — v0.8.67s
 #
-# An enhanced "Ralph Wiggum" autonomous AI agent loop for Open Notebook Plus.
+# An enhanced "Ralph Wiggum" autonomous AI agent loop for Deeper Notebook.
 # Runs an AI coding CLI (like Claude Code, opencode, or cursor) in a loop,
 # using a Product Requirements Document (prd.json) and progress log (progress.txt)
 # to track progress, resetting the context window on every iteration.

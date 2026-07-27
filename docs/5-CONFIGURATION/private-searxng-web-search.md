@@ -8,15 +8,15 @@ Kindly Web Search MCP server.
 ## What This Solves
 
 Public SearXNG instances almost always block automated JSON search with `403`,
-`418`, or `429`. (Open Notebook Plus's failover chain confirms this live — every
+`418`, or `429`. (Deeper Notebook's failover chain confirms this live — every
 public mirror it tries returns one of those.) A **private** instance with the
 JSON API enabled gives local LLMs a stable, keyless search endpoint with no
 dependence on public-instance rate limits.
 
-In Open Notebook Plus the flow is direct — no MCP server required:
+In Deeper Notebook the flow is direct — no MCP server required:
 
 ```text
-Open Notebook Plus chat -> native web_search tool -> Private SearXNG -> Search engines
+Deeper Notebook chat -> native web_search tool -> Private SearXNG -> Search engines
 ```
 
 The local LLM does not browse directly. The chat graph calls the `web_search`
@@ -24,9 +24,9 @@ tool, which returns cited, **untrusted** evidence for the model to reason over.
 
 ---
 
-## Option A — Open Notebook Plus native `web_search` (recommended)
+## Option A — Deeper Notebook native `web_search` (recommended)
 
-Open Notebook Plus already ships a built-in `web_search` tool (v0.8.64/65) that
+Deeper Notebook already ships a built-in `web_search` tool (v0.8.64/65) that
 reads `SEARXNG_BASE_URL` directly. You do **not** need an MCP server for this —
 just point it at your private instance.
 
@@ -59,7 +59,7 @@ curl "http://127.0.0.1:8889/search?q=Open%20Notebook%20Plus%20local%20LLM&format
 A JSON body with a `results` array means it works. (If you get HTML or an error,
 check that `search.formats` in `searxng/settings.yml` includes `json`.)
 
-### 3. Point Open Notebook Plus at it
+### 3. Point Deeper Notebook at it
 
 In your `.env` (project root), set:
 
@@ -92,10 +92,10 @@ the **same** private SearXNG, run the
 [Kindly Web Search MCP server](https://github.com/Shelpuk-AI-Technology-Consulting/kindly-web-search-mcp-server)
 and point it at `http://127.0.0.1:8889/`.
 
-> Note: Open Notebook Plus's own MCP registry connects to MCP servers over
+> Note: Deeper Notebook's own MCP registry connects to MCP servers over
 > **HTTP/streamable-http by URL**, not stdio. The stdio (`uvx`) entries below are
 > for tools that launch MCP servers as subprocesses (Claude Code, Cursor,
-> Antigravity). For Open Notebook Plus itself, prefer **Option A**.
+> Antigravity). For Deeper Notebook itself, prefer **Option A**.
 
 ### Generic MCP client entry (stdio)
 
@@ -232,7 +232,7 @@ exactly the same and adapt only the outer config shape.
 2. Generate a new `server.secret_key` (`openssl rand -hex 32`) for that project.
 3. Start SearXNG with `docker compose up -d`.
 4. Point that project at it:
-   - Open Notebook Plus: `SEARXNG_BASE_URL=http://127.0.0.1:8889/` in `.env`.
+   - Deeper Notebook: `SEARXNG_BASE_URL=http://127.0.0.1:8889/` in `.env`.
    - MCP tools: add the `kindly-web-search-private-searxng` entry.
 5. Put the private entry **before** any public fallback entries.
 6. Restart the app or agent so config is reloaded.

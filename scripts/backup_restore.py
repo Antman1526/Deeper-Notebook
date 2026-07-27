@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ONP v0.7.126 — Backup + restore for the Open Notebook Plus data
+"""Deeper Notebook v0.7.126 — Backup + restore for the Deeper Notebook data
 directory.
 
 Operators (and end users running the desktop bundle) need a way to:
@@ -13,7 +13,7 @@ a directory structure most users don't know about. v0.7.126 makes
 it `make backup` and `make restore PATH=…`.
 
 What gets backed up:
-  * SurrealDB data directory (~/.open-notebook-plus/db/  OR
+  * SurrealDB data directory (~/.deeper-notebook/db/  OR
     ./data/surreal/ in dev mode)
   * Uploaded source files (UPLOADS_FOLDER)
   * LangGraph SQLite checkpoints (LANGGRAPH_CHECKPOINT_FILE + sidecars)
@@ -65,13 +65,25 @@ def _resolve_data_root() -> Path:
     """Resolve the root path of the install's data directory.
 
     Honors:
-      * ONP_DATA_DIR env var (desktop bundle sets this to
-        ~/.open-notebook-plus/)
+      * DEEPER_NOTEBOOK_DATA_DIR (canonical), then DN_DATA_DIR
+      * OPEN_NOTEBOOK_DATA_DIR or ONP_DATA_DIR (deprecated compatibility)
       * Falls back to ./data/ for dev runs
 
     Both paths are validated to exist before we proceed.
     """
-    raw = os.environ.get("ONP_DATA_DIR", "").strip()
+    raw = next(
+        (
+            os.environ[name].strip()
+            for name in (
+                "DEEPER_NOTEBOOK_DATA_DIR",
+                "DN_DATA_DIR",
+                "OPEN_NOTEBOOK_DATA_DIR",
+                "ONP_DATA_DIR",
+            )
+            if os.environ.get(name, "").strip()
+        ),
+        "",
+    )
     if raw:
         return Path(raw).expanduser().resolve()
     # Dev fallback: project-relative ./data/
@@ -140,7 +152,7 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
     if not root.exists():
         raise RuntimeError(
             f"Data directory not found: {root}. Is the API running and "
-            "have you ever started it? Set ONP_DATA_DIR if your install "
+            "have you ever started it? Set DEEPER_NOTEBOOK_DATA_DIR if your install "
             "uses a non-default path."
         )
 
@@ -149,7 +161,8 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
     if not pairs:
         raise RuntimeError(
             f"Data directory at {root} contains no files to back up. "
-            "Either the install is empty, or the wrong ONP_DATA_DIR is set."
+            "Either the install is empty, or the wrong "
+            "DEEPER_NOTEBOOK_DATA_DIR is set."
         )
 
     # Pre-flight: total size check + huge-file warnings
@@ -165,7 +178,7 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
         raise RuntimeError(
             f"Data directory total is {_human_size(total_bytes)}; bundle "
             f"would exceed the {_human_size(_MAX_BUNDLE_BYTES)} safety cap. "
-            "Likely a misconfigured ONP_DATA_DIR pointing at a directory "
+            "Likely a misconfigured DEEPER_NOTEBOOK_DATA_DIR pointing at a directory "
             "outside the install, or unprocessed uploads bloating things."
         )
 
@@ -252,7 +265,7 @@ def restore(
     Args:
         bundle_path: Path to the gzipped tar produced by backup().
         data_root: Where to extract. Defaults to the same resolution
-            as backup() (ONP_DATA_DIR or ./data).
+            as backup() (DEEPER_NOTEBOOK_DATA_DIR, a deprecated alias, or ./data).
         force: Allow overwriting an existing data_root.
         verify_only: Read the manifest + compare SHA-256s but DON'T
             actually write anything. Useful for "is my backup intact?"
