@@ -1,5 +1,5 @@
 """
-Unit tests for the open_notebook.utils module.
+Unit tests for the deeper_notebook.utils module.
 
 This test suite focuses on testing utility functions that perform actual logic
 without heavy mocking - string processing, validation, and algorithms.

@@ -5,7 +5,7 @@ This module provides the ProviderConfig singleton model that stores multiple
 API key configurations per provider. Each ProviderCredential contains a complete
 set of configuration options for a provider (api_key, base_url, model, etc.).
 
-Encryption is enabled when OPEN_NOTEBOOK_ENCRYPTION_KEY environment variable
+Encryption is enabled when DEEPER_NOTEBOOK_ENCRYPTION_KEY environment variable
 is set. If not set, keys are stored as plain text with a warning logged.
 """
 
@@ -418,7 +418,7 @@ class ProviderConfig(RecordModel):
 
         SecretStr values are extracted, encrypted, and stored as strings.
         Encryption is performed using Fernet symmetric encryption if
-        OPEN_NOTEBOOK_ENCRYPTION_KEY is configured.
+        DEEPER_NOTEBOOK_ENCRYPTION_KEY is configured.
         """
         data = {"credentials": {}}
 

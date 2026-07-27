@@ -84,7 +84,7 @@ def test_submit_rejects_oversized_content(monkeypatch):
     import api.podcast_service as svc
     monkeypatch.setattr(svc.EpisodeProfile, "get_by_name", _fake_ep)
     monkeypatch.setattr(svc.SpeakerProfile, "get_by_name", _fake_sp)
-    monkeypatch.setenv("ONP_PODCAST_MAX_CONTENT_TOKENS", "100")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "100")
 
     with pytest.raises(InvalidInputError) as exc:
         _run(PodcastService.submit_generation_job(
@@ -97,7 +97,7 @@ def test_submit_rejects_oversized_content(monkeypatch):
 
 
 def test_budget_disabled_with_zero(monkeypatch):
-    """ONP_PODCAST_MAX_CONTENT_TOKENS=0 disables the check (content this
+    """DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS=0 disables the check (content this
     size then proceeds to job submission, which we stub to observe)."""
     from api.podcast_service import PodcastService
 
@@ -121,7 +121,7 @@ def test_budget_disabled_with_zero(monkeypatch):
     import api.podcast_service as svc
     monkeypatch.setattr(svc.EpisodeProfile, "get_by_name", _fake_ep)
     monkeypatch.setattr(svc.SpeakerProfile, "get_by_name", _fake_sp)
-    monkeypatch.setenv("ONP_PODCAST_MAX_CONTENT_TOKENS", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "0")
 
     reached = {}
 

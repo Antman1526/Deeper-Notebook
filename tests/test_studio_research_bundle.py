@@ -149,7 +149,7 @@ def test_bundle_verifies_hashes_and_detects_tampering(tmp_path: Path) -> None:
 def test_persistence_creates_immutable_research_bundle_with_svg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     artifact = _artifact()
     paths = persist_artifact_exports(artifact, "# Findings\n\nGrounded claim [S1].")
 

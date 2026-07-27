@@ -27,7 +27,7 @@ from deeper_notebook.exceptions import (
 # call sites. Newer langgraph raises NotImplementedError when those
 # internally call aget_tuple() against the sync SqliteSaver. The
 # lazy pattern works around aiosqlite capturing the event loop at
-# construct time; see open_notebook/graphs/chat.py for details.
+# construct time; see deeper_notebook/graphs/chat.py for details.
 from deeper_notebook.graphs.chat import get_async_graph
 from deeper_notebook.graphs.chat import graph as chat_graph
 from deeper_notebook.utils.graph_utils import get_session_message_count
@@ -42,7 +42,7 @@ router = APIRouter()
 # up since v0.7.47, but until now NOTHING in the chat path actually
 # submitted those jobs after a turn — so the memory feature was
 # entirely inert at runtime. Both /chat/execute and /chat/stream now
-# fire `open_notebook.memory_extract_turn` fire-and-forget after the
+# fire `deeper_notebook.memory_extract_turn` fire-and-forget after the
 # turn's session.save() succeeds.
 #
 # Best-effort: any failure is logged at debug and swallowed. The
@@ -88,7 +88,7 @@ async def _fire_memory_extract_turn(
 
     v0.7.83 — `model_override` is now plumbed through to the worker. The
     memory writer's LLM client previously always used the bundled chat
-    model (ONP_CHAT_MODEL_NAME env var or "default"). When the user
+    model (DEEPER_NOTEBOOK_CHAT_MODEL_NAME env var or "default"). When the user
     explicitly picked a different model for their chat session, the
     memory extractor still ran against the bundled model, producing
     facts that disagreed with the assistant's voice. Passing the
@@ -360,7 +360,7 @@ class ExecuteChatResponse(BaseModel):
         None,
         description=(
             "v0.8.60 — agent-FSM terminal state of the tool loop when "
-            "ONP_AGENT_FSM is on: 'complete', 'clarify' (the model paused to "
+            "DEEPER_NOTEBOOK_AGENT_FSM is on: 'complete', 'clarify' (the model paused to "
             "ask the user), or 'truncated' (hit the tool-iteration cap). None "
             "when the FSM is off."
         ),
@@ -891,7 +891,7 @@ async def execute_chat(request: ExecuteChatRequest):
                     detail=(
                         f"Chat timed out after {_chat_timeout}s. The model may "
                         "be loading, overloaded, or generating a very long "
-                        "response. Raise ONP_CHAT_TIMEOUT_SEC, switch to a "
+                        "response. Raise DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC, switch to a "
                         "faster model, or try /chat/stream for token-by-token "
                         "responses that surface progress immediately."
                     ),
@@ -923,7 +923,7 @@ async def execute_chat(request: ExecuteChatRequest):
         )
 
         # v0.8.1 — read smart-router decision (set by the chat-graph node
-        # when OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is on). Same dual dict /
+        # when DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT is on). Same dual dict /
         # Pydantic guard as messages above so a future LangGraph state
         # shape change doesn't silently drop the field.
         selected_provider = (

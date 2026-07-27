@@ -356,7 +356,7 @@ def test_notebook_mode_falls_back_to_single_note_when_outline_unparseable(
 def test_notebook_mode_single_note_when_multipage_disabled(
     client, patched_pipeline, monkeypatch
 ):
-    """v0.7.89 — ONP_STUDIO_NOTEBOOK_MULTIPAGE=false routes to the
+    """v0.7.89 — DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE=false routes to the
     legacy single-note path immediately, no outline call."""
     monkeypatch.setattr(studio_mod, "_MULTIPAGE_ENABLED", False)
     fake_chain = MagicMock()
@@ -675,8 +675,8 @@ def test_env_overrides_lift_studio_caps_for_cloud_users(monkeypatch):
     """Cloud users who configure a large-context model (or use cloud APIs)
     must be able to lift the caps via env vars without code changes."""
     import importlib
-    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "100000")
-    monkeypatch.setenv("ONP_STUDIO_MAX_COMBINED_CHARS", "500000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "100000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", "500000")
     # Re-import to pick up the env values (module-level constants)
     importlib.reload(studio_mod)
     try:
@@ -684,34 +684,34 @@ def test_env_overrides_lift_studio_caps_for_cloud_users(monkeypatch):
         assert studio_mod._MAX_COMBINED_CHARS == 500_000
     finally:
         # Restore module to default state for other tests
-        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
-        monkeypatch.delenv("ONP_STUDIO_MAX_COMBINED_CHARS", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", raising=False)
         importlib.reload(studio_mod)
 
 
 def test_invalid_env_var_falls_back_to_default(monkeypatch):
     """Garbage in the env var must not crash startup. Module load must
-    survive ONP_STUDIO_MAX_FILE_CHARS=banana with a warning + fallback."""
+    survive DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS=banana with a warning + fallback."""
     import importlib
-    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "banana")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "banana")
     importlib.reload(studio_mod)
     try:
         # Falls back to default (15_000)
         assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE == 15_000
     finally:
-        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", raising=False)
         importlib.reload(studio_mod)
 
 
 def test_negative_env_var_falls_back_to_default(monkeypatch):
     """A negative value (typo, miscalc) must not produce an invalid cap."""
     import importlib
-    monkeypatch.setenv("ONP_STUDIO_MAX_FILE_CHARS", "-1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "-1")
     importlib.reload(studio_mod)
     try:
         assert studio_mod._MAX_EXTRACT_CHARS_PER_FILE == 15_000
     finally:
-        monkeypatch.delenv("ONP_STUDIO_MAX_FILE_CHARS", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", raising=False)
         importlib.reload(studio_mod)
 
 
@@ -730,8 +730,8 @@ def test_context_overflow_error_includes_local_model_hint():
         exc, notebook_id="notebook:abc", source_count=3,
     )
     assert "context window" in detail.lower()
-    assert "ONP_STUDIO_MAX_FILE_CHARS" in detail
-    assert "ONP_STUDIO_MAX_COMBINED_CHARS" in detail
+    assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" in detail
+    assert "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS" in detail
     assert "notebook:abc" in detail  # user can still recover content
 
 
@@ -743,7 +743,7 @@ def test_generic_error_omits_local_model_hint():
         exc, notebook_id="notebook:abc", source_count=1,
     )
     # No misleading local-model advice
-    assert "ONP_STUDIO_MAX_FILE_CHARS" not in detail
+    assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" not in detail
     # But still includes notebook_id for recovery
     assert "notebook:abc" in detail
 
@@ -762,7 +762,7 @@ def test_overflow_error_pattern_matching_is_case_insensitive():
         detail = studio_mod._studio_generation_error_detail(
             exc, notebook_id="notebook:x", source_count=1,
         )
-        assert "ONP_STUDIO_MAX_FILE_CHARS" in detail, (
+        assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" in detail, (
             f"pattern not matched for {msg!r}"
         )
 
@@ -825,7 +825,7 @@ def test_page_timeout_becomes_warning_other_pages_ship(
     # The Slow Page failure shows up as a warning naming the page AND
     # pointing at the timeout env knob (actionable, per v0.7.93 design)
     assert any(
-        "Slow Page" in w and "ONP_STUDIO_PAGE_TIMEOUT_SEC" in w
+        "Slow Page" in w and "DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC" in w
         for w in body["warnings"]
     ), body["warnings"]
 
@@ -858,7 +858,7 @@ def test_outline_timeout_returns_504_with_actionable_detail(
     assert r.status_code == 504, r.text
     detail = r.json()["detail"]
     assert "timed out" in detail.lower()
-    assert "ONP_STUDIO_OUTLINE_TIMEOUT_SEC" in detail
+    assert "DEEPER_NOTEBOOK_STUDIO_OUTLINE_TIMEOUT_SEC" in detail
     # User can still recover their uploaded sources
     assert "notebook:" in detail
 
@@ -866,7 +866,7 @@ def test_outline_timeout_returns_504_with_actionable_detail(
 def test_parallel_pages_env_knob_changes_generation_strategy(
     client, patched_pipeline, monkeypatch,
 ):
-    """v0.7.92 — with ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES=true, all pages
+    """v0.7.92 — with DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES=true, all pages
     are generated concurrently (asyncio.gather) instead of in a for-loop.
     Verifies the knob actually changes behavior — sequential calls happen
     one at a time (in_flight peaks at 1); parallel calls overlap

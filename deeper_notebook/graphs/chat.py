@@ -28,7 +28,7 @@ from deeper_notebook.ai.provision import (
 from deeper_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from deeper_notebook.domain.notebook import Notebook
 from deeper_notebook.environment import resolve_env
-from deeper_notebook.exceptions import OpenNotebookError
+from deeper_notebook.exceptions import DeeperNotebookError
 from deeper_notebook.utils import clean_thinking_content
 from deeper_notebook.utils.error_classifier import classify_error
 from deeper_notebook.utils.memory_recall import (
@@ -113,9 +113,9 @@ def _schedule_chat_evaluation(
 # SqliteSaver checkpointer, and the `add_messages` reducer is append-only:
 # every prior turn lives in `state["messages"]` and would be concatenated
 # into the prompt at every call without trimming. v0.7.13 factored the
-# logic into open_notebook.utils.message_history so the same protection
+# logic into deeper_notebook.utils.message_history so the same protection
 # applies to source_chat.py too. The chat-graph-specific env var is
-# `ONP_CHAT_HISTORY_CHAR_CAP` (default 12_000 chars ≈ 3,000 tokens).
+# `DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP` (default 12_000 chars ≈ 3,000 tokens).
 
 
 def _trim_message_history(messages: list) -> list:
@@ -136,7 +136,7 @@ class ThreadState(TypedDict):
     model_override: Optional[str]
     # v0.8.1 — Smart-router decision plumbed back to /chat/execute so the
     # HTTP response can include `selected_provider` ("local"/"cloud"). The
-    # node sets this when OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is on; otherwise
+    # node sets this when DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT is on; otherwise
     # it stays None and the response field is omitted/None.
     selected_provider: Optional[str]
     selected_model_id: Optional[str]
@@ -148,7 +148,7 @@ class ThreadState(TypedDict):
     privacy_gated: Optional[bool]
     privacy_categories: Optional[list]
     # v0.8.60 — agent-FSM terminal state for the tool loop ("complete",
-    # "clarify", "truncated") when ONP_AGENT_FSM is on; None otherwise.
+    # "clarify", "truncated") when DEEPER_NOTEBOOK_AGENT_FSM is on; None otherwise.
     agent_state: Optional[str]
     # v0.8.1 Item 3 — list of MCP tool-call records made during this
     # turn. Reset per turn (call_model_with_messages clears it before
@@ -431,7 +431,7 @@ async def _resolve_chat_tools(
 
 
 # v0.8.60 — Phase 5.3c-full. Lightweight agent-FSM integration for the chat
-# tool loop, gated by ONP_AGENT_FSM (default off). The loop already terminates
+# tool loop, gated by DEEPER_NOTEBOOK_AGENT_FSM (default off). The loop already terminates
 # when the model stops calling tools; we don't change that. Instead, when
 # enabled, we (a) tell the model it MAY end its turn by declaring a state, and
 # (b) classify the terminal state (clarify / complete / truncated) from the
@@ -459,7 +459,7 @@ def _agent_max_iterations(default: int = 4) -> int:
 
 
 def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
-    """v0.8.66 (audit MCP-3) — parse ONP_MCP_TOOL_TIMEOUT_SEC ONCE, guarded.
+    """v0.8.66 (audit MCP-3) — parse DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC ONCE, guarded.
     The previous inline `float(os.environ.get(...))` ran inside the per-tool-call
     loop and was unguarded: a malformed value raised ValueError that crashed the
     whole batch (misattributed to the tool), and `0`/negative produced an
@@ -558,7 +558,7 @@ async def bind_mcp_and_run_tool_loop(
     from langchain_core.messages import ToolMessage
 
     # v0.8.66 (audit A-3) — resolve the iteration cap: an explicit caller arg
-    # wins, else the ONP_AGENT_MAX_ITERATIONS env knob, else 4.
+    # wins, else the DEEPER_NOTEBOOK_AGENT_MAX_ITERATIONS env knob, else 4.
     if max_iterations is None:
         max_iterations = _agent_max_iterations()
 
@@ -713,7 +713,7 @@ async def bind_mcp_and_run_tool_loop(
                 # (slow web fetch, server stuck, network black hole)
                 # used to block the entire chat turn. /chat/execute
                 # was bounded by the v0.7.99 outer wrap
-                # (ONP_CHAT_TIMEOUT_SEC, default 300s) but /chat/stream
+                # (DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC, default 300s) but /chat/stream
                 # only halts on client disconnect — a hung tool froze
                 # the user's stream indefinitely. asyncio.wait_for
                 # raises TimeoutError, which the existing except
@@ -833,7 +833,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         # recency (saves an embed round trip); above that it does
         # semantic search against the user's current message and
         # falls back to recency on any failure. Override via
-        # ONP_MEMORY_RECALL_MODE = recent | semantic | auto.
+        # DEEPER_NOTEBOOK_MEMORY_RECALL_MODE = recent | semantic | auto.
         last_user_text = ""
         for m in reversed(state.get("messages", [])):
             if getattr(m, "type", None) == "human":
@@ -931,7 +931,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         # into the tool loop. When the user unticks "SearXNG" in the
         # chat UI, the next turn binds without that server's tools.
         # v0.8.60 — capture the agent-FSM terminal state (clarify/complete/
-        # truncated) when ONP_AGENT_FSM is on. Empty dict when off.
+        # truncated) when DEEPER_NOTEBOOK_AGENT_FSM is on. Empty dict when off.
         agent_state_out: dict = {}
         # v0.8.68 — mid-turn offline retry (spec §3 "mid-turn failure leg").
         # A captive portal / mid-session drop passes the TCP probe or the
@@ -997,7 +997,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         # so the /chat/execute router (api/routers/chat.py) can surface
         # `selected_provider` in ExecuteChatResponse. Keys are absent
         # when smart routing didn't run (model_override path or
-        # OPEN_NOTEBOOK_AUTO_ROUTE_CHAT off) — callers treat absence as
+        # DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT off) — callers treat absence as
         # None.
         # v0.8.1 Item 3 — include MCP tool-call captures. None when no
         # MCP calls were made this turn (empty captures list → None).
@@ -1010,11 +1010,11 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             # v0.8.58 — privacy-gate decision (None when the gate didn't act).
             "privacy_gated": selection_out.get("privacy_gated"),
             "privacy_categories": selection_out.get("privacy_categories"),
-            # v0.8.60 — agent-FSM terminal state (None when ONP_AGENT_FSM off).
+            # v0.8.60 — agent-FSM terminal state (None when DEEPER_NOTEBOOK_AGENT_FSM off).
             "agent_state": agent_state_out.get("agent_state"),
             "mcp_tool_calls": mcp_captures if mcp_captures else None,
         }
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)
@@ -1025,7 +1025,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
 # The previous direct sqlite3.connect created a separate connection
 # in each graph module and ran without WAL or busy_timeout — concurrent
 # chat sessions could hit "database is locked". See the
-# open_notebook.utils.sqlite_checkpoint docstring for the full
+# deeper_notebook.utils.sqlite_checkpoint docstring for the full
 # rationale.
 conn = get_checkpoint_connection(LANGGRAPH_CHECKPOINT_FILE)
 memory = SqliteSaver(conn)
@@ -1089,7 +1089,7 @@ async def get_async_graph():
     persistence backend. Both savers point at the SAME on-disk SQLite
     file (LANGGRAPH_CHECKPOINT_FILE) — checkpoints written through
     one are visible to reads through the other, courtesy of SQLite
-    WAL mode (configured in open_notebook.utils.sqlite_checkpoint).
+    WAL mode (configured in deeper_notebook.utils.sqlite_checkpoint).
     """
     global _async_graph, _async_aio_conn
     if _async_graph is not None:

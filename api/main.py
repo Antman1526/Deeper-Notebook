@@ -74,11 +74,11 @@ from deeper_notebook.database.async_migrate import AsyncMigrationManager
 from deeper_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    DeeperNotebookError,
     ExternalServiceError,
     InvalidInputError,
     NetworkError,
     NotFoundError,
-    OpenNotebookError,
     RateLimitError,
 )
 from deeper_notebook.identity import DESCRIPTION, PRODUCT_NAME
@@ -223,7 +223,7 @@ async def lifespan(app: FastAPI):
     # v0.7.14 — configure rotated file logging before anything else, so
     # startup errors (migrations, encryption checks) land in a file the
     # user can `tail`. Default sink: ~/.deeper-notebook/logs/api.log
-    # Honors ONP_LOG_DIR, ONP_LOG_LEVEL, ONP_LOG_JSON.
+    # Honors DEEPER_NOTEBOOK_LOG_DIR, DEEPER_NOTEBOOK_LOG_LEVEL, DEEPER_NOTEBOOK_LOG_JSON.
     log_dir = configure_logging("api")
 
     # Startup: Security checks
@@ -231,18 +231,18 @@ async def lifespan(app: FastAPI):
 
     # Security check: Encryption key
     # v0.7.24 — also honor the v0.7.17 plural rotation env var. A user
-    # who has finished rotation and only has OPEN_NOTEBOOK_ENCRYPTION_KEYS
+    # who has finished rotation and only has DEEPER_NOTEBOOK_ENCRYPTION_KEYS
     # set was getting a spurious "encryption will fail" warning pointing
     # at the wrong variable.
     has_singular = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env))
     has_plural = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env))
     if not (has_singular or has_plural):
         logger.warning(
-            "Neither OPEN_NOTEBOOK_ENCRYPTION_KEY nor "
-            "OPEN_NOTEBOOK_ENCRYPTION_KEYS is set. "
+            "Neither DEEPER_NOTEBOOK_ENCRYPTION_KEY nor "
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEYS is set. "
             "API key encryption will fail until one is configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret> for a single "
-            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for "
+            "Set DEEPER_NOTEBOOK_ENCRYPTION_KEY=<secret> for a single "
+            "key, or DEEPER_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for "
             "rotation."
         )
 
@@ -490,7 +490,7 @@ async def lifespan(app: FastAPI):
     # when resuming). After a year of moderate use on a single-user
     # install, the file is hundreds of MB. The prune loop keeps the
     # N most recent checkpoints per thread (default 50) and runs
-    # every ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS (default 24).
+    # every DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS (default 24).
     # Non-fatal if it fails to start — chat still works, just grows.
     checkpoint_prune_stop_event: asyncio.Event = asyncio.Event()
     checkpoint_prune_task: asyncio.Task | None = None
@@ -672,7 +672,7 @@ else:
 # the DANGEROUS combination: CORS=* AND no password set. In that state
 # *any* origin on the internet can hit the API with credential-less
 # requests and read every notebook/source/note. The password
-# middleware short-circuits at startup if `OPEN_NOTEBOOK_PASSWORD` is
+# middleware short-circuits at startup if `DEEPER_NOTEBOOK_PASSWORD` is
 # unset (auth becomes a no-op), so CORS=* + no-password = open API
 # wide open to the world. This is a foot-gun the README warns about
 # but it's worth surfacing at process boot too — operators tail logs.
@@ -690,14 +690,14 @@ _password_is_set = bool(resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secre
 # default desktop configuration as a security incident.
 if CORS_IS_DEFAULT_WILDCARD and not _password_is_set:
     logger.warning(
-        "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD is "
+        "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND DEEPER_NOTEBOOK_PASSWORD is "
         "unset. Any origin can call this API without credentials. ANYONE "
         "with the API URL can read/write every notebook. This is fine ONLY "
         "for local development (desktop fork binds to 127.0.0.1, so this "
         "is the expected state). For ANY exposed deployment (Docker, "
         "Kubernetes, public IP), set BOTH: "
         "CORS_ORIGINS=https://your-frontend.example.com AND "
-        "OPEN_NOTEBOOK_PASSWORD=<strong-password>."
+        "DEEPER_NOTEBOOK_PASSWORD=<strong-password>."
     )
 
 # Middleware order matters — Starlette wraps in REVERSE order of registration.
@@ -736,10 +736,10 @@ app.add_middleware(
         # hangs on "Loading..." indefinitely. See incident on 2026-05-20.
         "/api/healthz/deep",
         # v0.8.40d — launcher → API env-refresh has its own auth via
-        # the OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN bearer header (the
+        # the DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN bearer header (the
         # same secret the launcher control plane uses, scoped to the
         # parent↔child trust boundary). The launcher doesn't have the
-        # user-facing OPEN_NOTEBOOK_PASSWORD so it can't satisfy the
+        # user-facing DEEPER_NOTEBOOK_PASSWORD so it can't satisfy the
         # password middleware — the endpoint enforces its own typed
         # auth instead.
         "/api/system/env-refresh",
@@ -819,7 +819,7 @@ app.add_middleware(RequestIDMiddleware)
 # v0.8.66 (audit S-4) — env-gated rate limiter. Registered just BEFORE CORS, so
 # CORS stays outermost (preflight OPTIONS bypass) while rate-limiting still runs
 # BEFORE PasswordAuth — catching auth brute-force + download/discover
-# cost-amplification. DEFAULT OFF (ONP_RATE_LIMIT_PER_MIN unset/0) → zero change
+# cost-amplification. DEFAULT OFF (DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN unset/0) → zero change
 # to the single-user local-first desktop path.
 app.add_middleware(RateLimitMiddleware)
 
@@ -928,8 +928,11 @@ async def external_service_error_handler(request: Request, exc: ExternalServiceE
     )
 
 
-@app.exception_handler(OpenNotebookError)
-async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
+@app.exception_handler(DeeperNotebookError)
+async def deeper_notebook_error_handler(
+    request: Request,
+    exc: DeeperNotebookError,
+):
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)},
@@ -1166,7 +1169,7 @@ async def metrics(request: Request):
       - By default the endpoint is auth-exempt (still in
         PasswordAuthMiddleware excluded_paths) so a default install
         works with Prometheus out of the box.
-      - Set ONP_METRICS_AUTH_TOKEN=<random-secret> to require a
+      - Set DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN=<random-secret> to require a
         bearer token: scrapers must send `Authorization: Bearer
         <token>`. The token is compared with `secrets.compare_digest`
         to keep timing-attacks out. The Authorization header is

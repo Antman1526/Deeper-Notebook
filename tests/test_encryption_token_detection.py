@@ -28,7 +28,7 @@ from deeper_notebook.utils.encryption import (
 
 
 def _set_key(monkeypatch, key="test-key"):
-    monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", key)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", key)
     # Reset the lazy-init cache between tests
     from deeper_notebook.utils import encryption
     encryption._ENCRYPTION_KEY = None

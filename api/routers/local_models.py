@@ -6,7 +6,7 @@ so launcher.log captures verified-working status.
 
 v0.8.38 — also exposes per-sidecar stderr tail + classified hint
 via /healthz/sidecars/{kind}/log. The launcher (v0.8.38) writes
-the rolling tail to {OPEN_NOTEBOOK_LAUNCHER_LOG_DIR}/supervisor.{kind}.tail;
+the rolling tail to {DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR}/supervisor.{kind}.tail;
 this router reads it on demand.
 """
 from __future__ import annotations
@@ -125,8 +125,8 @@ async def local_models_inventory():
     file size).
 
     The model dir is resolved from environment in this order:
-      1. `OPEN_NOTEBOOK_MODEL_DIR` (explicit override)
-      2. The launcher-exported `OPEN_NOTEBOOK_MODEL_DIR_DEFAULT` (set
+      1. `DEEPER_NOTEBOOK_MODEL_DIR` (explicit override)
+      2. The launcher-exported `DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT` (set
          in `desktop/launcher.py` session_env in v0.8.39 — but
          falling back gracefully when running the API standalone)
       3. `~/Desktop/AI_Models` (matches `desktop/config.py:default_model_dir`
@@ -891,7 +891,7 @@ async def local_models_manifest_row_preview(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -921,7 +921,7 @@ async def local_models_manifest_row_apply(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -959,7 +959,7 @@ async def local_models_reveal(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -1028,7 +1028,7 @@ async def local_models_set_launch_default(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     rows = await asyncio.to_thread(enumerate_models, model_dir)
@@ -1099,7 +1099,7 @@ async def local_models_benchmark_start(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     roles = body.get("roles") if isinstance(body, dict) else None
@@ -1200,7 +1200,7 @@ async def local_models_download(body: dict):
     two concurrent downloaders would cause.
 
     The target directory is resolved the same way as `inventory` above
-    (OPEN_NOTEBOOK_MODEL_DIR > launcher default > POSIX default).
+    (DEEPER_NOTEBOOK_MODEL_DIR > launcher default > POSIX default).
     """
     from pathlib import Path as _Path
 
@@ -1254,7 +1254,7 @@ async def local_models_download(body: dict):
     if not raw:
         raise HTTPException(
             status_code=500,
-            detail="No model directory configured. Set OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="No model directory configured. Set DEEPER_NOTEBOOK_MODEL_DIR.",
         )
     model_root = _Path(raw).expanduser().resolve()
     dest_dir = model_root
@@ -1301,7 +1301,7 @@ async def local_models_snapshot_install(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -1500,7 +1500,7 @@ async def sidecar_log(kind: str):
         "available": true|false }
 
     `available: false` means we couldn't find a tail file — either the
-    launcher hasn't run yet, OPEN_NOTEBOOK_LAUNCHER_LOG_DIR isn't set
+    launcher hasn't run yet, DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR isn't set
     (the API is running outside the desktop launcher), or this
     sidecar kind never spawned (`embed` on a CPU-only install).
 
@@ -1613,7 +1613,7 @@ async def local_models_set_active(body: dict):
     if not raw_dir:
         raise HTTPException(
             status_code=500,
-            detail="No model directory configured. Set OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="No model directory configured. Set DEEPER_NOTEBOOK_MODEL_DIR.",
         )
     model_dir = _Path(raw_dir).resolve()
     # Path-traversal guard at the API edge. The launcher does the
@@ -1711,7 +1711,7 @@ async def sidecar_restart(kind: str):
     Flow:
       1. Validate `kind` against the same allowlist
          (`_KIND_TO_SUPERVISOR`) the log endpoint uses.
-      2. Read `OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL` + `_TOKEN` from env
+      2. Read `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL` + `_TOKEN` from env
          (set by the launcher via session_env at boot).
       3. POST `{kind}` to the launcher's `/restart_sidecar` with the
          token in the Authorization header. The launcher kills the

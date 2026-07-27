@@ -2,7 +2,7 @@
  * Auth-aware fetch for Deeper Notebook product-owned endpoints.
  *
  * The product components historically used raw fetch calls. That
- * works in the desktop bundle (which leaves OPEN_NOTEBOOK_PASSWORD unset and
+ * works in the desktop bundle (which leaves DEEPER_NOTEBOOK_PASSWORD unset and
  * so PasswordAuthMiddleware no-ops), but breaks in any deployment that sets
  * a password — every onp/* call returns 401 because the request has no
  * Authorization header.

@@ -32,7 +32,7 @@ WORKDIR /app
 
 # Copy dependency files and minimal package structure first for better layer caching
 COPY pyproject.toml uv.lock ./
-COPY open_notebook/__init__.py ./open_notebook/__init__.py
+COPY deeper_notebook/__init__.py ./deeper_notebook/__init__.py
 
 # Install dependencies with optimizations (this layer will be cached unless dependencies change)
 RUN uv sync --frozen --no-dev
@@ -100,7 +100,7 @@ COPY --from=builder /app/tiktoken-cache /app/tiktoken-cache
 # Ensure uv uses the existing venv without attempting network operations
 ENV UV_NO_SYNC=1
 ENV VIRTUAL_ENV=/app/.venv
-# Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
+# Point the app at the pre-baked tiktoken encoding (see deeper_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 
 # v0.8.67u — Set Playwright browsers path and pre-install Chromium + OS dependencies for crawl4ai.

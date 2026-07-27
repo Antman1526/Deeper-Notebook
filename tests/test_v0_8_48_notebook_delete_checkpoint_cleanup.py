@@ -58,7 +58,7 @@ class _FakeGraph:
 async def test_cleanup_calls_delete_thread_per_session(monkeypatch):
     cp = _FakeCheckpointer()
     monkeypatch.setattr(
-        "open_notebook.graphs.chat.chat_graph", _FakeGraph(cp), raising=False
+        "deeper_notebook.graphs.chat.chat_graph", _FakeGraph(cp), raising=False
     )
     n = await nb_router._cleanup_checkpoint_threads(
         ["chat_session:a", "chat_session:b"], context="test"
@@ -73,7 +73,7 @@ async def test_cleanup_is_best_effort_and_continues_past_failure(monkeypatch):
     NOT raise (the SurrealDB rows are already gone)."""
     cp = _FakeCheckpointer(boom={"chat_session:boom"})
     monkeypatch.setattr(
-        "open_notebook.graphs.chat.chat_graph", _FakeGraph(cp), raising=False
+        "deeper_notebook.graphs.chat.chat_graph", _FakeGraph(cp), raising=False
     )
     n = await nb_router._cleanup_checkpoint_threads(
         ["chat_session:a", "chat_session:boom", "chat_session:c"], context="test"
@@ -93,7 +93,7 @@ async def test_cleanup_noop_when_checkpointer_lacks_delete_thread(monkeypatch):
     """An older/alternate checkpointer without delete_thread → no-op, no
     crash."""
     monkeypatch.setattr(
-        "open_notebook.graphs.chat.chat_graph",
+        "deeper_notebook.graphs.chat.chat_graph",
         _FakeGraph(object()),  # plain object has no delete_thread
         raising=False,
     )

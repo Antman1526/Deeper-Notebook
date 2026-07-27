@@ -308,7 +308,7 @@ class TestGetModelErrorDiscrimination:
         from deeper_notebook.exceptions import ConfigurationError
 
         with patch(
-            "open_notebook.ai.models.Model.get",
+            "deeper_notebook.ai.models.Model.get",
             AsyncMock(return_value=None),
         ):
             with pytest.raises(ConfigurationError, match="not found"):
@@ -322,14 +322,14 @@ class TestGetModelErrorDiscrimination:
             NotFoundError,
         )
         with patch(
-            "open_notebook.ai.models.Model.get",
+            "deeper_notebook.ai.models.Model.get",
             AsyncMock(side_effect=NotFoundError("model:foo")),
         ):
             with pytest.raises(ConfigurationError, match="not found"):
                 await ModelManager().get_model("model:foo")
 
     @pytest.mark.asyncio
-    async def test_unexpected_exception_maps_to_open_notebook_error(self):
+    async def test_unexpected_exception_maps_to_deeper_notebook_error(self):
         """A DB pool timeout / connection refused / generic exception
         from Model.get is operational, not configuration — must surface
         as OpenNotebookError so the user doesn't go re-creating
@@ -338,7 +338,7 @@ class TestGetModelErrorDiscrimination:
         from deeper_notebook.exceptions import OpenNotebookError
 
         with patch(
-            "open_notebook.ai.models.Model.get",
+            "deeper_notebook.ai.models.Model.get",
             AsyncMock(side_effect=RuntimeError("connection refused")),
         ):
             with pytest.raises(OpenNotebookError, match="connection refused"):
@@ -352,7 +352,7 @@ class TestGetModelErrorDiscrimination:
         from deeper_notebook.exceptions import RateLimitError
 
         with patch(
-            "open_notebook.ai.models.Model.get",
+            "deeper_notebook.ai.models.Model.get",
             AsyncMock(side_effect=RateLimitError("rate limited")),
         ):
             with pytest.raises(RateLimitError, match="rate limited"):
@@ -371,7 +371,7 @@ class TestGetModelErrorDiscrimination:
         fake_model.type = None
 
         with patch(
-            "open_notebook.ai.models.Model.get",
+            "deeper_notebook.ai.models.Model.get",
             AsyncMock(return_value=fake_model),
         ):
             with pytest.raises(ConfigurationError) as exc_info:

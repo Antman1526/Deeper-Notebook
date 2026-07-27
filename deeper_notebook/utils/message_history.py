@@ -157,7 +157,7 @@ def trim_message_history(
     # v0.7.66 — apply per-message cap FIRST. Previously a single
     # >100k-char paste survived because we "always keep the most
     # recent message"; the always-keep rule is still correct, but
-    # the kept message needs to fit on its own. ONP_CHAT_MESSAGE_CHAR_CAP
+    # the kept message needs to fit on its own. DEEPER_NOTEBOOK_CHAT_MESSAGE_CHAR_CAP
     # lets capable hardware raise it.
     per_msg_cap = _env_int(
         per_message_cap_env, default_per_message_cap, minimum=minimum_cap

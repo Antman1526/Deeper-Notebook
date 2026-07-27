@@ -61,7 +61,7 @@ _PRUNE_HIGH_WATER = 1.5  # prune from extract_turn only when a table > keep*this
 # --------------------------------------------------------------- batching (v0.8.54)
 #
 # Phase 5.1b. By default the extractor runs one LLM call per chat turn. With
-# ONP_MEMORY_BATCH_TURNS=N>1 the worker buffers turns per session and runs ONE
+# DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS=N>1 the worker buffers turns per session and runs ONE
 # extraction over the combined transcript every N turns (and drains the buffer
 # at session end), collapsing O(turns) extraction calls to O(turns/N) and
 # giving the model whole-conversation context. DEFAULT 1 → exactly the prior
@@ -82,7 +82,7 @@ _MAX_BUFFERED_SESSIONS = 512
 
 
 def _batch_turns() -> int:
-    """Read ONP_MEMORY_BATCH_TURNS; default 1 (no batching). Invalid / <1
+    """Read DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS; default 1 (no batching). Invalid / <1
     values fall back to 1 so a typo can't silently disable extraction."""
     raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS") or "").strip()
     if not raw:
@@ -95,7 +95,7 @@ def _batch_turns() -> int:
 
 
 def _keep_per_table() -> int:
-    """Read ONP_MEMORY_KEEP_PER_TABLE; fall back to the default on
+    """Read DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE; fall back to the default on
     missing/invalid/non-positive values."""
     raw = (resolve_env("DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE") or "").strip()
     if not raw:
@@ -195,7 +195,7 @@ _BACKEND_DOWN_EXC_NAMES = frozenset({
 # Phase 5.1c. The extract prompt already asks the model for a `confidence`
 # (0.0-1.0) on each fact/preference, but it was ignored: apply_tool_call never
 # read it and surreal_store always persisted 1.0. Now we (a) drop candidates
-# below ONP_MEMORY_CONFIDENCE_FLOOR and (b) persist the real score (via
+# below DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR and (b) persist the real score (via
 # metadata) so retention/recall can rank by it later. DEFAULT floor 0.0 → keep
 # everything (unchanged); a missing/garbled score is treated as 1.0 so we never
 # silently drop a fact just because the model omitted the number.
@@ -337,7 +337,7 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
                  user_text: str, assistant_text: str) -> None:
     """Run the per-turn extractor; write any tool calls into memory.
 
-    v0.8.54 — when ONP_MEMORY_BATCH_TURNS=N>1, buffer this turn and only run
+    v0.8.54 — when DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS=N>1, buffer this turn and only run
     the extraction once N turns have accumulated (drained at session end via
     flush_session_buffer). Default 1 → immediate single-turn extraction,
     identical to the prior behaviour.

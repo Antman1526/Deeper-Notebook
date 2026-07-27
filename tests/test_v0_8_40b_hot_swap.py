@@ -192,7 +192,7 @@ def test_set_active_rejects_outside_model_dir(app, tmp_path, monkeypatch):
     rogue_gguf = rogue / "evil.gguf"
     rogue_gguf.write_bytes(b"x" * 100)
 
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     with TestClient(app) as client:
         resp = client.post(
             "/api/local-models/set-active",
@@ -207,9 +207,9 @@ def test_set_active_503_when_no_control_url(app, tmp_path, monkeypatch):
     model_dir.mkdir()
     gguf = model_dir / "x.gguf"
     gguf.write_bytes(b"y" * 100)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", raising=False)
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
 
     with TestClient(app) as client:
         resp = client.post(
@@ -228,10 +228,10 @@ def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
     model_dir.mkdir()
     gguf = model_dir / "new-chat-q4.gguf"
     gguf.write_bytes(b"z" * 256)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     active_aliases = (
         "DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL",
-        "OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL",
+        "DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL",
     )
     for name in active_aliases:
         monkeypatch.delenv(name, raising=False)
@@ -246,8 +246,8 @@ def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
     srv.start()
     try:
         srv.register_callback("hot_swap_chat", _cb)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
 
         with TestClient(app) as client:
             resp = client.post(
@@ -274,7 +274,7 @@ def test_set_active_launcher_rejection_maps_to_400(app, tmp_path, monkeypatch):
     model_dir.mkdir()
     gguf = model_dir / "bad.gguf"
     gguf.write_bytes(b"q" * 32)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
 
     def _cb(_p: str) -> tuple[bool, str]:
         return False, "GGUF metadata read failed — file likely corrupted"
@@ -283,8 +283,8 @@ def test_set_active_launcher_rejection_maps_to_400(app, tmp_path, monkeypatch):
     srv.start()
     try:
         srv.register_callback("hot_swap_chat", _cb)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
 
         with TestClient(app) as client:
             resp = client.post(

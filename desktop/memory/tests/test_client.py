@@ -10,7 +10,7 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints(monkeypat
         surreal_user="root", surreal_password="x" * 24,
     )
     # v0.6.14 — ensure the env var doesn't bleed in from the test runner.
-    monkeypatch.delenv("ONP_CHAT_MODEL_NAME", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_MODEL_NAME", raising=False)
     with patch("desktop.memory.client.Memory") as mem0_cls:
         build_memory_client(
             cfg=fake_cfg,
@@ -38,10 +38,10 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints(monkeypat
 
 
 def test_build_memory_client_respects_onp_chat_model_name_env(monkeypatch):
-    """v0.6.14 regression: ONP_CHAT_MODEL_NAME override flows through to
+    """v0.6.14 regression: DEEPER_NOTEBOOK_CHAT_MODEL_NAME override flows through to
     mem0's LLM config. Without this the hardcoded Hermes-3 name persists."""
     fake_cfg = MagicMock(surreal_user="root", surreal_password="x" * 24)
-    monkeypatch.setenv("ONP_CHAT_MODEL_NAME", "Qwen3.6-35B-A3B-Q4_K_M")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_MODEL_NAME", "Qwen3.6-35B-A3B-Q4_K_M")
     with patch("desktop.memory.client.Memory") as mem0_cls:
         build_memory_client(
             cfg=fake_cfg,

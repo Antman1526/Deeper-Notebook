@@ -17,32 +17,32 @@ from desktop.launcher import _startup_timeout
 
 
 def test_default_when_env_unset(monkeypatch):
-    monkeypatch.delenv("ONP_SURREAL_TCP_TIMEOUT", raising=False)
-    assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", raising=False)
+    assert _startup_timeout("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
 
 
 def test_valid_override_is_honored(monkeypatch):
-    monkeypatch.setenv("ONP_SURREAL_TCP_TIMEOUT", "150")
-    assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0) == 150.0
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", "150")
+    assert _startup_timeout("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", 90.0) == 150.0
 
 
 def test_whitespace_is_stripped(monkeypatch):
-    monkeypatch.setenv("ONP_SIDECAR_TCP_TIMEOUT", "  45.5  ")
-    assert _startup_timeout("ONP_SIDECAR_TCP_TIMEOUT", 90.0) == 45.5
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT", "  45.5  ")
+    assert _startup_timeout("DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT", 90.0) == 45.5
 
 
 @pytest.mark.parametrize("bad", ["", "abc", "1e3x", "nan-ish", "  "])
 def test_unparseable_falls_back_to_default(monkeypatch, bad):
-    monkeypatch.setenv("ONP_SURREAL_TCP_TIMEOUT", bad)
-    assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", bad)
+    assert _startup_timeout("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
 
 
 @pytest.mark.parametrize("nonpos", ["0", "-1", "-30.0"])
 def test_non_positive_falls_back_to_default(monkeypatch, nonpos):
     # A zero/negative ceiling would make _wait_tcp give up instantly — never
     # allow an override to be *more* fragile than the default.
-    monkeypatch.setenv("ONP_SURREAL_TCP_TIMEOUT", nonpos)
-    assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", nonpos)
+    assert _startup_timeout("DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
 
 
 def test_surreal_default_raised_above_old_30s(monkeypatch):

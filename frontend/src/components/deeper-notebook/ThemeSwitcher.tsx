@@ -19,6 +19,7 @@
 import { useEffect, useState } from 'react'
 
 import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
+import { readStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -83,15 +84,9 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     // v0.5.9 — localStorage fallback so the dropdown doesn't flicker to
     // the default while waiting for the API response.
     try {
-      const cached = localStorage.getItem('dn-theme')
+      const cached = readStoredTheme(localStorage)
       if (cached) {
         setActiveTheme(cached)
-        return
-      }
-      const legacyCached = localStorage.getItem('onp-theme')
-      if (legacyCached) {
-        localStorage.setItem('dn-theme', legacyCached)
-        setActiveTheme(legacyCached)
         return
       }
     } catch {
@@ -107,8 +102,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     setActiveTheme(themeId)
     // v0.5.9 — also write localStorage so a subsequent navigation that races
     // the injection still shows the right swatch in the dropdown.
-    try { localStorage.setItem('dn-theme', themeId) } catch { /* noop */ }
-    try { localStorage.setItem('onp-theme', themeId) } catch { /* noop */ }
+    try { writeStoredTheme(localStorage, themeId) } catch { /* noop */ }
     const w = window as DeeperNotebookWindow & Window
     const themeBridge = w.DN ?? w.ONP
     if (themeBridge?.setTheme) {

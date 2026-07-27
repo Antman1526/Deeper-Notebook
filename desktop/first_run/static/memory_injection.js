@@ -1,8 +1,8 @@
 // Injected into the main UI to add a "Memory" link to upstream's Settings page,
 // and to surface a one-time OpenChronicle install reminder when applicable.
 (function () {
-  if (window.__ONP_MEMORY_INJECTED) return;
-  window.__ONP_MEMORY_INJECTED = true;
+  if (window.__DEEPER_NOTEBOOK_MEMORY_INJECTED) return;
+  window.__DEEPER_NOTEBOOK_MEMORY_INJECTED = true;
 
   function injectMemoryLink() {
     const settingsContainer = document.querySelector(
@@ -11,7 +11,7 @@
     if (!settingsContainer || settingsContainer.querySelector('.onp-memory-link')) return;
     const link = document.createElement('a');
     link.className = 'onp-memory-link';
-    link.href = (window.ONP_MEMORY_URL || '#');
+    link.href = (window.DEEPER_NOTEBOOK_MEMORY_URL || '#');
     link.textContent = '🧠 Memory';
     link.target = '_blank';
     Object.assign(link.style, {
@@ -25,7 +25,7 @@
   observer.observe(document.body, { childList: true, subtree: true });
   injectMemoryLink();
 
-  if (window.ONP_REMIND_OPENCHRONICLE) {
+  if (window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE) {
     if (window.showToast) {
       window.showToast(
         'OpenChronicle not detected. Install for ambient memory →',

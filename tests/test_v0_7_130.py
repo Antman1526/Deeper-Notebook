@@ -237,7 +237,7 @@ class TestPodcastsPagination:
 
 class TestSettingsObservability:
     """v0.7.130 — GET /settings/observability returns env-derived
-    read-only view of ONP_* observability/security knobs."""
+    read-only view of DEEPER_NOTEBOOK_* observability/security knobs."""
 
     def _make_client(self):
         from fastapi import FastAPI
@@ -250,14 +250,14 @@ class TestSettingsObservability:
         return TestClient(app)
 
     def test_defaults_when_no_env_set(self, monkeypatch):
-        # Wipe all ONP_* env that could affect this test
+        # Wipe all DEEPER_NOTEBOOK_* env that could affect this test
         for k in (
-            "ONP_SLOW_QUERY_LOG_MS",
-            "ONP_ENCRYPTION_KDF",
-            "ONP_CHECKPOINT_KEEP_PER_THREAD",
-            "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS",
-            "ONP_DB_POOL_SIZE",
-            "ONP_DB_POOL_DISABLED",
+            "DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS",
+            "DEEPER_NOTEBOOK_ENCRYPTION_KDF",
+            "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD",
+            "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS",
+            "DEEPER_NOTEBOOK_DB_POOL_SIZE",
+            "DEEPER_NOTEBOOK_DB_POOL_DISABLED",
         ):
             monkeypatch.delenv(k, raising=False)
 
@@ -274,12 +274,12 @@ class TestSettingsObservability:
         assert data["metrics_endpoint_path"] == "/metrics"
 
     def test_env_values_round_trip(self, monkeypatch):
-        monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "750")
-        monkeypatch.setenv("ONP_ENCRYPTION_KDF", "pbkdf2")
-        monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "100")
-        monkeypatch.setenv("ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS", "6")
-        monkeypatch.setenv("ONP_DB_POOL_SIZE", "16")
-        monkeypatch.setenv("ONP_DB_POOL_DISABLED", "true")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "750")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "pbkdf2")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "100")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS", "6")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "16")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_DISABLED", "true")
 
         client = self._make_client()
         r = client.get("/settings/observability")
@@ -296,8 +296,8 @@ class TestSettingsObservability:
         """A typo in .env shouldn't crash the endpoint — the helper
         warns + returns the default. This is a defensive-coding
         regression test for `_env_int`."""
-        monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "not-a-number")
-        monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "also-bad")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "not-a-number")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "also-bad")
 
         client = self._make_client()
         r = client.get("/settings/observability")
@@ -309,13 +309,13 @@ class TestSettingsObservability:
     def test_bool_parsing_case_insensitive(self, monkeypatch):
         # Exhaustive matrix for the truthy set defined in _env_bool
         for truthy in ("1", "true", "TRUE", "True", "yes", "YES", "on", "ON"):
-            monkeypatch.setenv("ONP_DB_POOL_DISABLED", truthy)
+            monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_DISABLED", truthy)
             client = self._make_client()
             r = client.get("/settings/observability")
             assert r.json()["db_pool_disabled"] is True, f"{truthy!r} should be truthy"
 
         for falsy in ("0", "false", "no", "off", "garbage", ""):
-            monkeypatch.setenv("ONP_DB_POOL_DISABLED", falsy)
+            monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_DISABLED", falsy)
             client = self._make_client()
             r = client.get("/settings/observability")
             assert r.json()["db_pool_disabled"] is False, f"{falsy!r} should be falsy"

@@ -77,7 +77,7 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
             ])
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client._open_session",
+        "deeper_notebook.mcp.client._open_session",
         lambda url, headers=None: _FakeSession(),
     )
 
@@ -126,7 +126,7 @@ def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
             return _Result()
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client._open_session",
+        "deeper_notebook.mcp.client._open_session",
         lambda url, headers=None: _FakeSession(),
     )
 
@@ -160,7 +160,7 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
             ]})()
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client._open_session",
+        "deeper_notebook.mcp.client._open_session",
         lambda url, headers=None: FakeSession(),
     )
     client = MCPClient(url="http://127.0.0.1:8742/mcp")
@@ -182,7 +182,7 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
     exposes `search`/`think`/`find_trajectory`, not `web_search`/
     `fetch_url`."""
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         lambda: __import__("asyncio").Future(),
     )
     from deeper_notebook.graphs.chat import _resolve_chat_tools
@@ -379,7 +379,7 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
             }, "required": ["query"]},
         }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
     )
 
@@ -387,7 +387,7 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
         return [{"id": "mcp_server:1", "name": "test",
                  "url": "http://CACHE-TEST-URL", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
     )
 
@@ -425,7 +425,7 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
         call_count["n"] += 1
         raise ConnectionError("MCP server unreachable")
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_raise,
     )
 
@@ -433,7 +433,7 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
         return [{"id": "mcp_server:1", "name": "broken",
                  "url": "http://BROKEN-URL", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
     )
 
@@ -467,7 +467,7 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
         return [{"id": "mcp_server:1", "name": "test",
                  "url": "http://EXTRACT-TEST-URL", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
     )
 
@@ -479,14 +479,14 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
             }, "required": ["query"]},
         }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
     )
 
     async def fake_call_tool(self, name, args):
         return {"text": f"called {name} with {args}", "blocks": []}
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
@@ -546,7 +546,7 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
         return [{"id": "mcp_server:1", "name": "test",
                  "url": "http://x", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers", fake_list_enabled,
+        "deeper_notebook.mcp.registry.list_enabled_servers", fake_list_enabled,
     )
 
     # v0.8.11 — discovery is now via list_tools_full (returns schemas).
@@ -554,11 +554,11 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
     async def fake_list_tools_raise(self):
         raise ConnectionError("MCP server unreachable")
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_raise,
     )
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tool_names",
+        "deeper_notebook.mcp.client.MCPClient.list_tool_names",
         fake_list_tools_raise,
     )
 
@@ -590,7 +590,7 @@ def test_mcp_registry_lists_enabled_servers(monkeypatch):
              "url": "http://127.0.0.1:8743/mcp", "enabled": False},
         ]
     monkeypatch.setattr(
-        "open_notebook.database.repository.repo_query",
+        "deeper_notebook.database.repository.repo_query",
         _fake_repo_query,
     )
     import asyncio
@@ -605,7 +605,7 @@ def test_mcp_registry_lists_enabled_servers(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # Task 9 — /api/mcp CRUD router
-# Auth note: conftest.py sets OPEN_NOTEBOOK_PASSWORD="" so the middleware
+# Auth note: conftest.py sets DEEPER_NOTEBOOK_PASSWORD="" so the middleware
 # skips auth for all tests — no Authorization header needed.
 # ---------------------------------------------------------------------------
 
@@ -714,7 +714,7 @@ def test_list_enabled_servers_sorts_by_priority(monkeypatch):
         return ordered_rows
 
     monkeypatch.setattr(
-        "open_notebook.database.repository.repo_query",
+        "deeper_notebook.database.repository.repo_query",
         _fake_repo_query,
     )
     import asyncio
@@ -783,7 +783,7 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
         return {"text": "fake search result"}
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
@@ -825,7 +825,7 @@ def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
         return {"text": "result"}
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
@@ -862,7 +862,7 @@ def test_resolve_chat_tools_truncates_long_text(monkeypatch):
         return {"text": long_text}
 
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
@@ -911,7 +911,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         return [{"id": "mcp_server:1", "name": "test",
                  "url": "http://x", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list,
     )
 
@@ -919,7 +919,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
     async def fake_call_tool(self, name, args):
         return {"text": f"executed {name} with {args}"}
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
@@ -938,7 +938,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
             },
         }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
     )
 
@@ -1039,14 +1039,14 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
         return [{"id": "mcp_server:1", "name": "test",
                  "url": "http://x", "enabled": True}]
     monkeypatch.setattr(
-        "open_notebook.mcp.registry.list_enabled_servers",
+        "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list,
     )
 
     async def fake_call_tool(self, name, args):
         return {"text": "result"}
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.call_tool",
+        "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
     # v0.8.10 / v0.8.11 — stub list_tools_full discovery
@@ -1061,7 +1061,7 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
             },
         }]
     monkeypatch.setattr(
-        "open_notebook.mcp.client.MCPClient.list_tools_full",
+        "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
     )
 

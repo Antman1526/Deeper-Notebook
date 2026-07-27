@@ -1,70 +1,74 @@
-class OpenNotebookError(Exception):
+class DeeperNotebookError(Exception):
     """Base exception class for Deeper Notebook errors."""
 
     pass
 
 
-class DatabaseOperationError(OpenNotebookError):
+OpenNotebookError = DeeperNotebookError
+"""Deprecated public alias retained for existing integrations."""
+
+
+class DatabaseOperationError(DeeperNotebookError):
     """Raised when a database operation fails."""
 
     pass
 
 
-class UnsupportedTypeException(OpenNotebookError):
+class UnsupportedTypeException(DeeperNotebookError):
     """Raised when an unsupported type is provided."""
 
     pass
 
 
-class InvalidInputError(OpenNotebookError):
+class InvalidInputError(DeeperNotebookError):
     """Raised when invalid input is provided."""
 
     pass
 
 
-class NotFoundError(OpenNotebookError):
+class NotFoundError(DeeperNotebookError):
     """Raised when a requested resource is not found."""
 
     pass
 
 
-class AuthenticationError(OpenNotebookError):
+class AuthenticationError(DeeperNotebookError):
     """Raised when there's an authentication problem."""
 
     pass
 
 
-class ConfigurationError(OpenNotebookError):
+class ConfigurationError(DeeperNotebookError):
     """Raised when there's a configuration problem."""
 
     pass
 
 
-class ExternalServiceError(OpenNotebookError):
+class ExternalServiceError(DeeperNotebookError):
     """Raised when an external service (e.g., AI model) fails."""
 
     pass
 
 
-class RateLimitError(OpenNotebookError):
+class RateLimitError(DeeperNotebookError):
     """Raised when a rate limit is exceeded."""
 
     pass
 
 
-class FileOperationError(OpenNotebookError):
+class FileOperationError(DeeperNotebookError):
     """Raised when a file operation fails."""
 
     pass
 
 
-class NetworkError(OpenNotebookError):
+class NetworkError(DeeperNotebookError):
     """Raised when a network operation fails."""
 
     pass
 
 
-class NoTranscriptFound(OpenNotebookError):
+class NoTranscriptFound(DeeperNotebookError):
     """Raised when no transcript is found for a video."""
 
     pass

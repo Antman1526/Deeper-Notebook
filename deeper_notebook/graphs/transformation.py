@@ -12,7 +12,7 @@ from deeper_notebook.ai.provision import provision_langchain_model
 from deeper_notebook.domain.notebook import Source
 from deeper_notebook.domain.transformation import DefaultPrompts, Transformation
 from deeper_notebook.environment import resolve_env
-from deeper_notebook.exceptions import ExternalServiceError, OpenNotebookError
+from deeper_notebook.exceptions import DeeperNotebookError, ExternalServiceError
 from deeper_notebook.utils import clean_thinking_content
 from deeper_notebook.utils.error_classifier import classify_error
 from deeper_notebook.utils.text_utils import extract_text_content
@@ -42,7 +42,7 @@ def _transform_node_timeout_sec() -> float:
         val = float(raw)
         if val <= 0:
             logger.warning(
-                "ONP_TRANSFORM_NODE_TIMEOUT_SEC={} must be positive; "
+                "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC={} must be positive; "
                 "using default {}s",
                 raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
             )
@@ -50,7 +50,7 @@ def _transform_node_timeout_sec() -> float:
         return val
     except ValueError:
         logger.warning(
-            "ONP_TRANSFORM_NODE_TIMEOUT_SEC={!r} not a float; using "
+            "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC={!r} not a float; using "
             "default {}s",
             raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
         )
@@ -68,7 +68,7 @@ def _transform_node_timeout_sec() -> float:
 # Default 12,000 chars ≈ 3,000 tokens leaves ample headroom in a 16k
 # context after 8192-token output reservation + system prompt. Users
 # on larger-context models (Hermes-3 @ 131k, Qwen 2.5 @ 32k+) can raise
-# the cap via `ONP_TRANSFORMATION_INPUT_CAP` without code edits.
+# the cap via `DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP` without code edits.
 _TRANSFORMATION_INPUT_CAP_DEFAULT = 12_000
 _TRUNCATION_MARKER = "\n\n[... transformation input truncated for context budget ...]"
 
@@ -105,7 +105,7 @@ def _truncate_transformation_input(content: str) -> str:
         return content
     logger.warning(
         f"Transformation input truncated from {len(content)} to {cap} chars "
-        f"(set ONP_TRANSFORMATION_INPUT_CAP to raise the limit)"
+        f"(set DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP to raise the limit)"
     )
     return content[:cap] + _TRUNCATION_MARKER
 
@@ -171,7 +171,7 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
             raise ExternalServiceError(
                 f"Transformation graph: LLM call timed out after "
                 f"{timeout:.0f}s. Try a smaller/faster model, raise "
-                f"ONP_TRANSFORM_NODE_TIMEOUT_SEC, or check that the "
+                f"DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC, or check that the "
                 f"provider is responsive."
             ) from exc
 
@@ -185,7 +185,7 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         return {
             "output": cleaned_content,
         }
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)

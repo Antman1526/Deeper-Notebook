@@ -215,7 +215,7 @@ def test_bulk_vectorize_continues_after_submit_failure(
 def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
     client, patched_domain, monkeypatch,
 ):
-    """v0.7.110 — Notebooks larger than ONP_BULK_VECTORIZE_MAX_SOURCES
+    """v0.7.110 — Notebooks larger than DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES
     get clamped to the cap with a warning. v0.7.137 reframed this as
     a `limit` clamp: the default request `limit=500` is clamped down
     to the env cap, sources beyond `offset + effective_limit` aren't
@@ -224,7 +224,7 @@ def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
 
     Without the cap a 10k-source notebook would pin the request
     submitting 10k commands."""
-    monkeypatch.setenv("ONP_BULK_VECTORIZE_MAX_SOURCES", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES", "3")
     sources = [
         _make_source(
             f"source:{i}", f"Source {i}", full_text="x",
@@ -248,7 +248,7 @@ def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
     # (M); clamped". Both mention how to escape: raise the env var
     # or paginate.
     assert any(
-        "clamped" in w and "ONP_BULK_VECTORIZE_MAX_SOURCES" in w
+        "clamped" in w and "DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES" in w
         for w in body["warnings"]
     ), body["warnings"]
     # Per-source entries reflect only the processed subset

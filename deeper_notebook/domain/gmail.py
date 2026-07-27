@@ -2,7 +2,7 @@
 
 ONP is single-user so we use a fixed record id 'gmail_integration:singleton'.
 OAuth tokens are encrypted with the same Fernet key used for Credential records
-(`OPEN_NOTEBOOK_ENCRYPTION_KEY`) so they're never readable from a raw DB dump.
+(`DEEPER_NOTEBOOK_ENCRYPTION_KEY`) so they're never readable from a raw DB dump.
 
 The token-expiry math is approximate: Google access tokens are valid for ~1h.
 We store `token_expires_at` and refresh proactively when ~5 min away from expiry.
@@ -64,7 +64,7 @@ _CACHE_TTL_S = 30.0
 # for the FIRST set of concurrent callers. Lazy-constructed because
 # `asyncio.Lock()` doesn't need a running event loop in Python 3.10+
 # but lazy init mirrors the v0.8.35b pattern in
-# `open_notebook/ai/provision.py` for the same reasons.
+# `deeper_notebook/ai/provision.py` for the same reasons.
 _CACHE_LOCK: "asyncio.Lock | None" = None
 
 
@@ -116,7 +116,7 @@ def _fernet() -> Optional[Fernet]:
     except Exception as exc:
         # v0.8.28 — log the failure. Pre-v0.8.28 this swallowed the
         # exception silently and the caller (_enc) raised
-        # "OPEN_NOTEBOOK_ENCRYPTION_KEY not set; cannot encrypt Gmail
+        # "DEEPER_NOTEBOOK_ENCRYPTION_KEY not set; cannot encrypt Gmail
         # tokens" — a misleading message because the key WAS set,
         # Fernet construction just failed (cryptography library bug,
         # binary-garbage env var, etc.). Without this log the operator
@@ -125,7 +125,7 @@ def _fernet() -> Optional[Fernet]:
         # security-boundary failure even if it's edge-case-y.
         logger.warning(
             "_fernet: Fernet construction failed despite "
-            "OPEN_NOTEBOOK_ENCRYPTION_KEY being set. The downstream "
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY being set. The downstream "
             "RuntimeError saying the key is unset is misleading — the "
             # v0.8.66 (audit E-2) — loguru uses {}-style formatting, not
             # printf %s; with "%s" the exception detail was silently dropped.
@@ -143,7 +143,7 @@ def _enc(v: Optional[str]) -> Optional[str]:
         # Should never happen in production — wizard sets encryption_key.
         # If it does happen we'd rather fail loudly than store plaintext.
         raise RuntimeError(
-            "OPEN_NOTEBOOK_ENCRYPTION_KEY not set; cannot encrypt Gmail tokens. "
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEY not set; cannot encrypt Gmail tokens. "
             "Did the wizard run?"
         )
     return f.encrypt(v.encode()).decode()

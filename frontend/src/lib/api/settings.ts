@@ -15,7 +15,7 @@ export const settingsApi = {
   // v0.7.136 — Read-only observability snapshot. Backend endpoint
   // GET /settings/observability landed in v0.7.130; this client
   // surface closes the loop so operators can see their effective
-  // ONP_* config from inside the UI. UIs should refetch on demand
+  // DEEPER_NOTEBOOK_* config from inside the UI. UIs should refetch on demand
   // (no aggressive caching) — operators can change .env between
   // requests, and a stale display would mislead them.
   getObservability: async () => {

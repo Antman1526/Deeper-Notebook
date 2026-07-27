@@ -252,7 +252,7 @@ class Supervisor:
         self.openchronicle_port: int = 0
         # v0.8.7 — resolved chat-LLM n_ctx, computed once at start_all
         # time so BOTH session_env (for the router's
-        # OPEN_NOTEBOOK_LOCAL_N_CTX) and _spawn_llamacpp_chat
+        # DEEPER_NOTEBOOK_LOCAL_N_CTX) and _spawn_llamacpp_chat
         # (--n_ctx argv) read from the same value. Pre-v0.8.7 the
         # resolution lived inside _spawn_llamacpp_chat — too late to
         # propagate into session_env, which is built earlier — so the
@@ -331,7 +331,7 @@ class Supervisor:
         data_folder = active_data_root() / "data"
         data_folder.mkdir(parents=True, exist_ok=True)
         # v0.8.7 — Resolve chat-LLM n_ctx HERE, before session_env is
-        # built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
+        # built, so DEEPER_NOTEBOOK_LOCAL_N_CTX can carry the actual
         # ceiling the sidecar will use (env-override, GGUF-autodetect,
         # or capped fallback). The router (provision.py) reads that
         # env at chat-turn time; previously it always defaulted to
@@ -442,7 +442,7 @@ class Supervisor:
             # what the launcher had auto-detected (e.g. Hermes-3
             # native 131k → sidecar bound at 131k, but router only
             # gave it ~31k of headroom before flipping to cloud).
-            # An explicit OPEN_NOTEBOOK_LOCAL_N_CTX already in
+            # An explicit DEEPER_NOTEBOOK_LOCAL_N_CTX already in
             # os.environ wins (v0.8.5 precedence chain in provision.py
             # reads it first), so this is the GGUF-autodetect channel
             # rather than an override.
@@ -780,7 +780,7 @@ class Supervisor:
         # persisted live-query state can corrupt and block the next worker's
         # db.live("command") with "key already exists" — the source-processing
         # outage that needed a full DB re-import to repair. Default 8 s; raise via
-        # ONP_SHUTDOWN_GRACE_SECS for large databases.
+        # DEEPER_NOTEBOOK_SHUTDOWN_GRACE_SECS for large databases.
         try:
             _grace = float(resolve_env("DEEPER_NOTEBOOK_SHUTDOWN_GRACE_SECS", "8") or 8)
         except ValueError:
@@ -1070,13 +1070,13 @@ class Supervisor:
         #   2. Tunability — operators with constrained RAM (a 16 GB
         #      Mac running a 14B local model + 5 concurrent
         #      embed/insight/podcast jobs) can lower via
-        #      ONP_WORKER_MAX_TASKS env without code edits.
+        #      DEEPER_NOTEBOOK_WORKER_MAX_TASKS env without code edits.
         max_tasks_raw = resolve_env("DEEPER_NOTEBOOK_WORKER_MAX_TASKS", "5")
         try:
             max_tasks = max(1, min(int(max_tasks_raw), 32))
         except ValueError:
             log.warning(
-                "ONP_WORKER_MAX_TASKS=%r is not an int; using default 5",
+                "DEEPER_NOTEBOOK_WORKER_MAX_TASKS=%r is not an int; using default 5",
                 max_tasks_raw,
             )
             max_tasks = 5
@@ -1203,8 +1203,8 @@ class Supervisor:
     def _start_periodic_export(self, surreal_port: int) -> None:
         """v0.8.67m — Periodically export the RUNNING SurrealDB to
         ~/onp-backups so a corruption or accidental delete is recoverable.
-        Default every 24h, keep the newest 7; tunable via ONP_AUTO_EXPORT_HOURS
-        (0 disables) and ONP_AUTO_EXPORT_KEEP. Sleeps the interval FIRST, so it
+        Default every 24h, keep the newest 7; tunable via DEEPER_NOTEBOOK_AUTO_EXPORT_HOURS
+        (0 disables) and DEEPER_NOTEBOOK_AUTO_EXPORT_KEEP. Sleeps the interval FIRST, so it
         never adds boot I/O and is inert in fast-finishing tests. Failures log
         and retry next interval — never crash the supervisor."""
         if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
@@ -1469,7 +1469,7 @@ class Supervisor:
           2. Update `self.chat_llm_path` so the next spawn reads it.
           3. Re-resolve `chat_llm_n_ctx` from the new GGUF's metadata
              (so subsequent restarts in this session use the right
-             context length, even if the OPEN_NOTEBOOK_LOCAL_N_CTX
+             context length, even if the DEEPER_NOTEBOOK_LOCAL_N_CTX
              env var seen by the API stays at the OLD value — that
              mismatch is non-fatal but worth documenting; see
              v0.8.40b CHANGELOG entry).
@@ -1479,7 +1479,7 @@ class Supervisor:
         returned, never raised — control plane needs to serialize them.
 
         Known limitations (acceptable for v0.8.40b, deferred):
-          - OPEN_NOTEBOOK_LOCAL_N_CTX in the API subprocess env is
+          - DEEPER_NOTEBOOK_LOCAL_N_CTX in the API subprocess env is
             NOT updated. If the new GGUF has a SMALLER n_ctx than the
             old, the router might still route prompts that fit the
             old context to local; the new sidecar then returns 400
@@ -1520,7 +1520,7 @@ class Supervisor:
         # _spawn_llamacpp_chat reads chat_llm_n_ctx via env or
         # _resolve_chat_llm_n_ctx; we update the attribute here so
         # future restarts of THIS sidecar in THIS session use the
-        # right value. The API's view of OPEN_NOTEBOOK_LOCAL_N_CTX
+        # right value. The API's view of DEEPER_NOTEBOOK_LOCAL_N_CTX
         # is stale until app relaunch — documented limitation.
         try:
             self.chat_llm_n_ctx = self._resolve_chat_llm_n_ctx()
@@ -1576,7 +1576,7 @@ class Supervisor:
         """v0.8.40d — POST `vars` to the API's /system/env-refresh
         endpoint so it mutates os.environ in the running process.
 
-        Auth: reuse `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` (same secret
+        Auth: reuse `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN` (same secret
         the API uses for its launcher-control-plane calls; symmetric
         trust boundary).
 
@@ -1666,7 +1666,7 @@ class Supervisor:
         running Hermes-3 (131k native) hit `400 context_length_exceeded`
         after selecting 2-3 sources for a chat (21k tokens combined).
         Auto-detection means the cap matches what the model file
-        actually advertises, capped by `ONP_CHAT_LLM_CTX_MAX` for RAM
+        actually advertises, capped by `DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX` for RAM
         safety.
 
         Returns `fallback` on any error — the launcher must never
@@ -1722,7 +1722,7 @@ class Supervisor:
     @staticmethod
     def _default_ctx_max() -> int:
         """v0.8.67i — RAM-aware default ceiling for the chat-LLM context
-        window, used only when ONP_CHAT_LLM_CTX_MAX is NOT explicitly set.
+        window, used only when DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX is NOT explicitly set.
 
         A llama.cpp KV cache for an 8B model costs ~0.125 MiB/token, so a
         98304-token window ≈ 12 GiB. On Apple Silicon (unified memory)
@@ -1736,7 +1736,7 @@ class Supervisor:
         large all-sources chat context (e.g. ~72K tokens for a 26-source
         notebook) failed with context_length_exceeded even on a 64 GB Mac
         whose model (Hermes-3, 131072 native) could easily hold it. An
-        explicit ONP_CHAT_LLM_CTX_MAX (or ONP_CHAT_LLM_CTX) always wins
+        explicit DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX (or DEEPER_NOTEBOOK_CHAT_LLM_CTX) always wins
         over this default — see _resolve_chat_llm_n_ctx.
         """
         default = 32768
@@ -1811,14 +1811,14 @@ class Supervisor:
 
     def _resolve_chat_llm_n_ctx(self) -> int:
         """v0.8.7 — Resolve the chat-LLM n_ctx ONCE, before session_env
-        is built, so OPEN_NOTEBOOK_LOCAL_N_CTX can carry the actual
+        is built, so DEEPER_NOTEBOOK_LOCAL_N_CTX can carry the actual
         ceiling the sidecar will use.
 
         Precedence (mirrors the original v0.7.206 logic that used to
         live inline in _spawn_llamacpp_chat):
-          1. `ONP_CHAT_LLM_CTX` explicit override (validated as int ≥ 512).
+          1. `DEEPER_NOTEBOOK_CHAT_LLM_CTX` explicit override (validated as int ≥ 512).
           2. GGUF metadata `<arch>.context_length`, capped at
-             `ONP_CHAT_LLM_CTX_MAX` (default 32768).
+             `DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX` (default 32768).
           3. The cap value if either the env or the GGUF read fails.
 
         Returns 0 only when no chat_llm_path is configured at all
@@ -1828,7 +1828,7 @@ class Supervisor:
         `llama_cpp.server --n_ctx <N>`.
         """
         # v0.8.67i — RAM-aware default ceiling (was hardcoded 32768). An
-        # explicit ONP_CHAT_LLM_CTX_MAX still wins; otherwise scale to total
+        # explicit DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX still wins; otherwise scale to total
         # unified memory so capable Macs chat over large source selections
         # without the user setting any env var.
         # v0.8.67l — then step DOWN if AVAILABLE memory right now can't hold the
@@ -1852,13 +1852,13 @@ class Supervisor:
                 n_ctx_int = int(env_n_ctx)
                 if n_ctx_int < 512:
                     log.warning(
-                        "ONP_CHAT_LLM_CTX=%s too low (<512); using %d instead",
+                        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=%s too low (<512); using %d instead",
                         env_n_ctx, ctx_max,
                     )
                     n_ctx_int = ctx_max
             except ValueError:
                 log.warning(
-                    "ONP_CHAT_LLM_CTX=%r is not an int; using %d",
+                    "DEEPER_NOTEBOOK_CHAT_LLM_CTX=%r is not an int; using %d",
                     env_n_ctx, ctx_max,
                 )
                 n_ctx_int = ctx_max
@@ -1866,7 +1866,7 @@ class Supervisor:
 
         # No explicit override — try to read the GGUF's native context
         # length and use min(native, ctx_max). If no chat_llm_path is
-        # configured, fall back to ctx_max so OPEN_NOTEBOOK_LOCAL_N_CTX
+        # configured, fall back to ctx_max so DEEPER_NOTEBOOK_LOCAL_N_CTX
         # in session_env still gets a sane value (the chat sidecar
         # won't actually spawn, but the router won't crash trying to
         # cast a stale env value either).
@@ -1879,7 +1879,7 @@ class Supervisor:
         n_ctx_int = min(n_ctx_int, ctx_max)
         log.info(
             "llamacpp_chat: n_ctx=%d (auto-detected, capped at "
-            "ONP_CHAT_LLM_CTX_MAX=%d). Override with ONP_CHAT_LLM_CTX.",
+            "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=%d). Override with DEEPER_NOTEBOOK_CHAT_LLM_CTX.",
             n_ctx_int, ctx_max,
         )
         return n_ctx_int
@@ -1935,20 +1935,20 @@ class Supervisor:
         #      gives 11k of headroom over the v0.7.205 failure case while
         #      only doubling KV-cache RAM (~2 GB → ~4 GB for an 8B model).
         #
-        #   2. **Auto-detect from GGUF metadata** when ONP_CHAT_LLM_CTX is
+        #   2. **Auto-detect from GGUF metadata** when DEEPER_NOTEBOOK_CHAT_LLM_CTX is
         #      not explicitly set. The GGUF file's `llama.context_length`
         #      metadata field tells us the model's native max. Cap that at
-        #      `ONP_CHAT_LLM_CTX_MAX` (default 32768) to avoid runaway RAM
+        #      `DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX` (default 32768) to avoid runaway RAM
         #      on models that advertise 131k. Users who explicitly set
-        #      ONP_CHAT_LLM_CTX retain full control.
+        #      DEEPER_NOTEBOOK_CHAT_LLM_CTX retain full control.
         #
         # Constrained-hardware users with low VRAM can lower via
-        # `ONP_CHAT_LLM_CTX=8192`; users on a Mac Studio with 64GB+ can
-        # raise via `ONP_CHAT_LLM_CTX_MAX=65536` (or set
-        # `ONP_CHAT_LLM_CTX=65536` to skip auto-detection entirely).
+        # `DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192`; users on a Mac Studio with 64GB+ can
+        # raise via `DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=65536` (or set
+        # `DEEPER_NOTEBOOK_CHAT_LLM_CTX=65536` to skip auto-detection entirely).
         # v0.8.7 — n_ctx is now resolved once in start_all() via
         # _resolve_chat_llm_n_ctx() and stored on self.chat_llm_n_ctx so
-        # session_env can export it as OPEN_NOTEBOOK_LOCAL_N_CTX before
+        # session_env can export it as DEEPER_NOTEBOOK_LOCAL_N_CTX before
         # any subprocess is spawned. The original v0.7.206 resolution
         # logic lives in _resolve_chat_llm_n_ctx; this method just
         # reads the cached result.

@@ -12,7 +12,7 @@ tests pin:
   - lazy growth up to the cap
   - blocking when at cap
   - broken connections are dropped, not returned
-  - ONP_DB_POOL_DISABLED falls back to per-query behavior
+  - DEEPER_NOTEBOOK_DB_POOL_DISABLED falls back to per-query behavior
   - close_pool() drains everything
 """
 from __future__ import annotations
@@ -91,25 +91,25 @@ async def fresh_pool():
 # ---------------------------------------------------------------------------
 
 def test_pool_size_default_is_4(monkeypatch):
-    monkeypatch.delenv("ONP_DB_POOL_SIZE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", raising=False)
     assert repo._db_pool_size() == 4
 
 
 def test_pool_size_respects_env(monkeypatch):
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "8")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "8")
     assert repo._db_pool_size() == 8
 
 
 def test_pool_size_falls_back_on_garbage(monkeypatch):
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "not-a-number")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "not-a-number")
     assert repo._db_pool_size() == 4
 
 
 def test_pool_size_falls_back_outside_range(monkeypatch):
     """Below min (1) or above max (32) → default."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "0")
     assert repo._db_pool_size() == 4
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "100")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "100")
     assert repo._db_pool_size() == 4
 
 
@@ -169,7 +169,7 @@ async def test_pool_grows_lazily_up_to_cap(
     monkeypatch, fake_async_surreal, fresh_pool
 ):
     """Concurrent acquires force new connections up to the cap."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "3")
 
     seen_ids = set()
     # Capture all three in flight at once so the pool MUST grow to 3.
@@ -193,7 +193,7 @@ async def test_pool_grows_lazily_up_to_cap(
 @pytest.mark.asyncio
 async def test_pool_blocks_at_cap(monkeypatch, fake_async_surreal, fresh_pool):
     """A 4th acquire at cap=3 must wait until someone releases."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "2")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "2")
 
     proceed = asyncio.Event()
     fourth_started = asyncio.Event()
@@ -255,10 +255,10 @@ async def test_exception_in_block_marks_connection_broken(
 async def test_pool_disabled_opens_and_closes_per_call(
     monkeypatch, fake_async_surreal, fresh_pool
 ):
-    """ONP_DB_POOL_DISABLED=1 means every acquire creates a NEW client
+    """DEEPER_NOTEBOOK_DB_POOL_DISABLED=1 means every acquire creates a NEW client
     and closes it on release (legacy behavior). Useful for debugging
     a pool-related regression."""
-    monkeypatch.setenv("ONP_DB_POOL_DISABLED", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_DISABLED", "1")
 
     async with repo.db_connection() as c1:
         first_id = c1.id
@@ -282,7 +282,7 @@ async def test_close_pool_closes_all_idle_connections(
 ):
     """After close_pool(), every previously-pooled client is closed
     and the pool state is reset."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "3")
 
     held: list = []
     proceed = asyncio.Event()

@@ -8,7 +8,7 @@ What this pins:
   * offset/limit defaults preserve pre-v0.7.137 behavior
   * offset+limit correctly slice the source list
   * has_more flag toggles based on remaining items
-  * limit > ONP_BULK_VECTORIZE_MAX_SOURCES is clamped with warning
+  * limit > DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES is clamped with warning
   * negative offset / limit < 1 / limit > 2000 are rejected (422)
   * X-Total-Count / X-Offset / X-Limit response headers match
 """
@@ -56,11 +56,11 @@ def _make_client(notebook: _FakeNotebook | None):
     # test, so we manage them manually).
     patchers = [
         patch(
-            "open_notebook.domain.notebook.Notebook.get",
+            "deeper_notebook.domain.notebook.Notebook.get",
             AsyncMock(return_value=notebook),
         ),
         patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             AsyncMock(return_value=MagicMock()),  # truthy = configured
         ),
         # The handler imports commands.embedding_commands inside a
@@ -75,13 +75,13 @@ def _make_client(notebook: _FakeNotebook | None):
         # The handler calls Source.vectorize() in the loop — short-
         # circuit that.
         patch(
-            "open_notebook.domain.notebook.Source.vectorize",
+            "deeper_notebook.domain.notebook.Source.vectorize",
             AsyncMock(return_value="command:fake_id"),
         ),
         # has_embeddings() is checked when only_missing=True. Force
         # False so every source gets queued (simpler test math).
         patch(
-            "open_notebook.domain.notebook.Source.has_embeddings",
+            "deeper_notebook.domain.notebook.Source.has_embeddings",
             AsyncMock(return_value=False),
             create=True,
         ),
@@ -196,7 +196,7 @@ class TestVectorizePaginationOffsetSlicing:
 class TestVectorizeLimitClamping:
     def test_limit_above_env_cap_is_clamped_with_warning(self, monkeypatch):
         """limit=2000 with default cap=500 → clamp to 500 + warning."""
-        monkeypatch.setenv("ONP_BULK_VECTORIZE_MAX_SOURCES", "500")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES", "500")
         nb = _FakeNotebook(source_count=1500)
         client, patchers = _make_client(nb)
         try:
@@ -214,8 +214,8 @@ class TestVectorizeLimitClamping:
             _stop(patchers)
 
     def test_env_cap_can_be_raised(self, monkeypatch):
-        """Operators with bigger notebooks can raise ONP_BULK_VECTORIZE_MAX_SOURCES."""
-        monkeypatch.setenv("ONP_BULK_VECTORIZE_MAX_SOURCES", "1500")
+        """Operators with bigger notebooks can raise DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES."""
+        monkeypatch.setenv("DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES", "1500")
         nb = _FakeNotebook(source_count=1500)
         client, patchers = _make_client(nb)
         try:

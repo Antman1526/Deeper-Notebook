@@ -104,9 +104,9 @@ async def test_add_web_source_tool_uses_crawl4ai(monkeypatch):
     
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped by Crawl4AI")
-    monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
     monkeypatch.setattr(
-        "open_notebook.research.safe_fetch.fetch_public_url",
+        "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.crawl")),
     )
     
@@ -116,7 +116,7 @@ async def test_add_web_source_tool_uses_crawl4ai(monkeypatch):
     mock_source.save = AsyncMock()
     mock_source.add_to_notebook = AsyncMock()
     mock_source.vectorize = AsyncMock()
-    monkeypatch.setattr("open_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
+    monkeypatch.setattr("deeper_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
     
     tool = build_add_web_source_tool("notebook:111")
     res = await tool.coroutine(url="https://test.crawl", title="Crawl Test")
@@ -135,18 +135,18 @@ async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
     monkeypatch.setattr(ContentSettings, "get_instance", AsyncMock(return_value=settings))
     
     # Mock extract_url_with_crawl4ai to fail
-    monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", AsyncMock(return_value=None))
+    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", AsyncMock(return_value=None))
     
     # The fallback remains checked URL ingestion, not content-core URL fetches.
     mock_fallback_res = MagicMock()
     mock_fallback_res.content = "Simple Scraped Content"
     mock_fallback_res.title = "Fallback Title"
     monkeypatch.setattr(
-        "open_notebook.graphs.source._extract_checked_url",
+        "deeper_notebook.graphs.source._extract_checked_url",
         AsyncMock(return_value=mock_fallback_res),
     )
     monkeypatch.setattr(
-        "open_notebook.research.safe_fetch.fetch_public_url",
+        "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.crawl")),
     )
     
@@ -155,7 +155,7 @@ async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
     mock_source.save = AsyncMock()
     mock_source.add_to_notebook = AsyncMock()
     mock_source.vectorize = AsyncMock()
-    monkeypatch.setattr("open_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
+    monkeypatch.setattr("deeper_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
     
     tool = build_add_web_source_tool("notebook:111")
     res = await tool.coroutine(url="https://test.crawl", title="Crawl Test")
@@ -174,9 +174,9 @@ async def test_source_graph_node_uses_crawl4ai(monkeypatch):
     
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped inside graph")
-    monkeypatch.setattr("open_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
     monkeypatch.setattr(
-        "open_notebook.research.safe_fetch.fetch_public_url",
+        "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.graph.url")),
     )
     

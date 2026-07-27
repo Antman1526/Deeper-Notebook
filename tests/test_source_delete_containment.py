@@ -43,7 +43,7 @@ async def test_source_delete_refuses_path_outside_uploads(tmp_path, monkeypatch)
     # Patch UPLOADS_FOLDER on the config module so the lazy import inside
     # Source.delete sees our test value
     monkeypatch.setattr(
-        "open_notebook.config.UPLOADS_FOLDER", str(uploads),
+        "deeper_notebook.config.UPLOADS_FOLDER", str(uploads),
     )
 
     source = Source(
@@ -54,10 +54,10 @@ async def test_source_delete_refuses_path_outside_uploads(tmp_path, monkeypatch)
 
     # Stub the parent class's delete() so we don't hit SurrealDB
     with patch(
-        "open_notebook.domain.notebook.ObjectModel.delete",
+        "deeper_notebook.domain.notebook.ObjectModel.delete",
         new=AsyncMock(return_value=True),
     ), patch(
-        "open_notebook.domain.notebook.repo_query",
+        "deeper_notebook.domain.notebook.repo_query",
         new=AsyncMock(return_value=[]),
     ):
         await source.delete()
@@ -81,7 +81,7 @@ async def test_source_delete_does_remove_file_inside_uploads(tmp_path, monkeypat
     real_file.write_bytes(b"pdf content")
 
     monkeypatch.setattr(
-        "open_notebook.config.UPLOADS_FOLDER", str(uploads),
+        "deeper_notebook.config.UPLOADS_FOLDER", str(uploads),
     )
 
     source = Source(
@@ -91,10 +91,10 @@ async def test_source_delete_does_remove_file_inside_uploads(tmp_path, monkeypat
     )
 
     with patch(
-        "open_notebook.domain.notebook.ObjectModel.delete",
+        "deeper_notebook.domain.notebook.ObjectModel.delete",
         new=AsyncMock(return_value=True),
     ), patch(
-        "open_notebook.domain.notebook.repo_query",
+        "deeper_notebook.domain.notebook.repo_query",
         new=AsyncMock(return_value=[]),
     ):
         await source.delete()
@@ -115,7 +115,7 @@ async def test_source_delete_handles_dotdot_traversal_in_db(tmp_path, monkeypatc
     victim.write_text("api-key-data")
 
     monkeypatch.setattr(
-        "open_notebook.config.UPLOADS_FOLDER", str(uploads),
+        "deeper_notebook.config.UPLOADS_FOLDER", str(uploads),
     )
 
     # An attacker-crafted file_path that LOOKS like it's inside uploads
@@ -130,10 +130,10 @@ async def test_source_delete_handles_dotdot_traversal_in_db(tmp_path, monkeypatc
     )
 
     with patch(
-        "open_notebook.domain.notebook.ObjectModel.delete",
+        "deeper_notebook.domain.notebook.ObjectModel.delete",
         new=AsyncMock(return_value=True),
     ), patch(
-        "open_notebook.domain.notebook.repo_query",
+        "deeper_notebook.domain.notebook.repo_query",
         new=AsyncMock(return_value=[]),
     ):
         await source.delete()
@@ -150,10 +150,10 @@ async def test_source_delete_skips_when_asset_is_none(monkeypatch):
     cleanly. Don't crash on a None reference."""
     source = Source(id="source:no-asset", asset=None, title="No file")
     with patch(
-        "open_notebook.domain.notebook.ObjectModel.delete",
+        "deeper_notebook.domain.notebook.ObjectModel.delete",
         new=AsyncMock(return_value=True),
     ), patch(
-        "open_notebook.domain.notebook.repo_query",
+        "deeper_notebook.domain.notebook.repo_query",
         new=AsyncMock(return_value=[]),
     ):
         result = await source.delete()  # should not raise

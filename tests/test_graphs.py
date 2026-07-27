@@ -1,5 +1,5 @@
 """
-Unit tests for the open_notebook.graphs module.
+Unit tests for the deeper_notebook.graphs module.
 
 This test suite focuses on testing graph structures, tools, and validation
 without heavy mocking of the actual processing logic.
@@ -175,7 +175,7 @@ class TestSaveSourceTitlePreservation:
     """Test save_source node preserves user-set titles (#670)."""
 
     @pytest.mark.asyncio
-    @patch("open_notebook.graphs.source.Source.get")
+    @patch("deeper_notebook.graphs.source.Source.get")
     async def test_custom_title_preserved(self, mock_get):
         """User-set title is NOT overwritten by content_state.title."""
         from deeper_notebook.graphs.source import save_source
@@ -204,7 +204,7 @@ class TestSaveSourceTitlePreservation:
         mock_source.save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("open_notebook.graphs.source.Source.get")
+    @patch("deeper_notebook.graphs.source.Source.get")
     async def test_placeholder_title_replaced(self, mock_get):
         """Placeholder 'Processing...' title IS replaced by extracted title."""
         from deeper_notebook.graphs.source import save_source
@@ -233,7 +233,7 @@ class TestSaveSourceTitlePreservation:
         mock_source.save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("open_notebook.graphs.source.Source.get")
+    @patch("deeper_notebook.graphs.source.Source.get")
     async def test_none_title_replaced(self, mock_get):
         """None title IS replaced by extracted title."""
         from deeper_notebook.graphs.source import save_source
@@ -262,7 +262,7 @@ class TestSaveSourceTitlePreservation:
         mock_source.save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("open_notebook.graphs.source.Source.get")
+    @patch("deeper_notebook.graphs.source.Source.get")
     async def test_empty_title_replaced(self, mock_get):
         """Empty string title IS replaced by extracted title."""
         from deeper_notebook.graphs.source import save_source

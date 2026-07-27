@@ -17,7 +17,7 @@ from deeper_notebook.exceptions import (
     NotFoundError,
 )
 
-# v0.7.192 — Lazy async-graph getter. See open_notebook/graphs/chat.py
+# v0.7.192 — Lazy async-graph getter. See deeper_notebook/graphs/chat.py
 # for the full rationale on the lazy/aiosqlite pattern.
 from deeper_notebook.graphs.source_chat import get_async_source_chat_graph
 from deeper_notebook.graphs.source_chat import source_chat_graph as source_chat_graph

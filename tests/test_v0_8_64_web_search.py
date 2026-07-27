@@ -22,9 +22,9 @@ _ALL_ENV = (
     "SERPER_API_KEY",
     "TAVILY_API_KEY",
     "SEARXNG_BASE_URL",
-    "ONP_WEB_SEARCH_PROVIDER",
-    "ONP_WEB_SEARCH_MAX_RESULTS",
-    "ONP_WEB_SEARCH_TIMEOUT_SEC",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC",
 )
 
 
@@ -121,7 +121,7 @@ def test_whitespace_only_value_is_unset(monkeypatch):
 def test_provider_override_respected(monkeypatch):
     monkeypatch.setenv("SERPER_API_KEY", "k")
     monkeypatch.setenv("TAVILY_API_KEY", "k")
-    monkeypatch.setenv("ONP_WEB_SEARCH_PROVIDER", "tavily")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER", "tavily")
     assert ws.active_provider() == "tavily"
 
 
@@ -129,7 +129,7 @@ def test_stale_override_ignored_when_provider_unconfigured(monkeypatch):
     # Override names searxng, but only serper is configured → fall back to serper
     # rather than silently disabling the working key.
     monkeypatch.setenv("SERPER_API_KEY", "k")
-    monkeypatch.setenv("ONP_WEB_SEARCH_PROVIDER", "searxng")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER", "searxng")
     assert ws.active_provider() == "serper"
 
 
@@ -138,29 +138,29 @@ def test_stale_override_ignored_when_provider_unconfigured(monkeypatch):
 
 def test_max_results_default_and_clamp(monkeypatch):
     assert ws._max_results() == 5
-    monkeypatch.setenv("ONP_WEB_SEARCH_MAX_RESULTS", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS", "3")
     assert ws._max_results() == 3
-    monkeypatch.setenv("ONP_WEB_SEARCH_MAX_RESULTS", "9999")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS", "9999")
     assert ws._max_results() == 20  # ceiling
-    monkeypatch.setenv("ONP_WEB_SEARCH_MAX_RESULTS", "garbage")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS", "garbage")
     assert ws._max_results() == 5  # falls back
 
 
 def test_timeout_default_and_clamp(monkeypatch):
     assert ws._timeout_sec() == 10.0
-    monkeypatch.setenv("ONP_WEB_SEARCH_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC", "0.1")
     assert ws._timeout_sec() == 1.0  # floor
-    monkeypatch.setenv("ONP_WEB_SEARCH_TIMEOUT_SEC", "nope")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC", "nope")
     assert ws._timeout_sec() == 10.0
 
 
 def test_total_budget_default_and_clamp(monkeypatch):
     assert ws._total_budget_sec() == 25.0
-    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_TOTAL_BUDGET_SEC", "5")
     assert ws._total_budget_sec() == 5.0
-    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "9999")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_TOTAL_BUDGET_SEC", "9999")
     assert ws._total_budget_sec() == 120.0  # ceiling
-    monkeypatch.setenv("ONP_WEB_SEARCH_TOTAL_BUDGET_SEC", "garbage")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_TOTAL_BUDGET_SEC", "garbage")
     assert ws._total_budget_sec() == 25.0  # falls back
 
 
@@ -316,7 +316,7 @@ def test_provider_chain_auto_is_full_failover(monkeypatch):
 def test_provider_chain_override_searxng_is_all_urls_only(monkeypatch):
     monkeypatch.setenv("SERPER_API_KEY", "k")
     monkeypatch.setenv("SEARXNG_BASE_URL", "https://a.example/,https://b.example/")
-    monkeypatch.setenv("ONP_WEB_SEARCH_PROVIDER", "searxng")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER", "searxng")
     chain = ws._provider_chain()
     assert chain == [
         ("searxng", "https://a.example/"),
@@ -509,7 +509,7 @@ async def test_loop_omits_web_search_without_key(monkeypatch):
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "open_notebook.tools.opencode.opencode_enabled", lambda: False
+        "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
     # no provider env → tool absent → with no MCP tools either, bind never runs
     model = _RecordingModel([_FakeAIMessage([])])
@@ -523,7 +523,7 @@ async def test_loop_omits_web_search_when_disabled_by_picker(monkeypatch):
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "open_notebook.tools.opencode.opencode_enabled", lambda: False
+        "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
     monkeypatch.setenv("SERPER_API_KEY", "k")  # key set...
     model = _RecordingModel([_FakeAIMessage([])])

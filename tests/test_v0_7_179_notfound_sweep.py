@@ -149,7 +149,7 @@ def test_forward_guard_domain_get_implies_notfounderror_import():
     that swallows 404s silently with no awareness of the pattern.
 
     Approximate detection: if the file imports any name from
-    `open_notebook.domain.*` AND has `await SomeModel.get(` calls,
+    `deeper_notebook.domain.*` AND has `await SomeModel.get(` calls,
     require `NotFoundError` to be importable from somewhere.
     """
     routers_dir = ROOT / "api" / "routers"

@@ -60,7 +60,7 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail=(
                         f"Vector search timed out after {_search_timeout:.0f}s. "
                         "The embedding model may be slow, or the database "
-                        "pool is overloaded. Raise ONP_SEARCH_TIMEOUT_SEC."
+                        "pool is overloaded. Raise DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC."
                     ),
                 )
         else:
@@ -81,7 +81,7 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail=(
                         f"Text search timed out after {_search_timeout:.0f}s. "
                         "The database pool may be overloaded. Raise "
-                        "ONP_SEARCH_TIMEOUT_SEC."
+                        "DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC."
                     ),
                 )
 

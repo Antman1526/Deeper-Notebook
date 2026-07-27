@@ -7,7 +7,7 @@ Covers:
     (so each notebook ID doesn't blow up cardinality)
   * 5xx responses are still recorded (not lost to the exception path)
   * /metrics itself is excluded from request-timing capture
-  * Slow-query counter records when ONP_SLOW_QUERY_LOG_MS exceeded
+  * Slow-query counter records when DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS exceeded
   * Memory-recall fall-through counter records reason-labeled events
 """
 from __future__ import annotations
@@ -185,11 +185,11 @@ def test_metrics_endpoint_excluded_from_request_timing(app_with_metrics):
 
 def test_slow_query_counter_increments_when_threshold_exceeded(monkeypatch):
     """v0.7.124 — repo_query bumps onp_db_slow_queries_total when a
-    query exceeds ONP_SLOW_QUERY_LOG_MS. Matches the v0.7.120 log
+    query exceeds DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS. Matches the v0.7.120 log
     line one-for-one."""
     from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "10")
 
     class _FakeConn:
         async def query(self, q, vars=None):
@@ -217,7 +217,7 @@ def test_slow_query_counter_silent_under_threshold(monkeypatch):
     the slow counter."""
     from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "5000")  # 5s — never exceeded
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "5000")  # 5s — never exceeded
 
     class _FakeConn:
         async def query(self, q, vars=None):
@@ -246,7 +246,7 @@ def test_memory_recall_embed_timeout_bumps_counter(monkeypatch):
     we bump the fall-through counter with reason='embed_timeout'.
     Operators watching the counter can see when the embedding model
     is unhealthy and chat is silently degrading."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "0.1")
 
     class _HangingEmbed:
         async def aembed(self, texts):
@@ -276,7 +276,7 @@ def test_memory_recall_query_timeout_bumps_counter(monkeypatch):
     """v0.7.124 — When _safe_select times out, bump counter with
     reason='query_timeout'. Separate from the embed-timeout label so
     operators can tell WHICH part of recall is broken."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "0.1")
 
     async def _hanging_query(q, params):
         await asyncio.sleep(5)

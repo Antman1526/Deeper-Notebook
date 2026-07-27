@@ -133,7 +133,7 @@ async def update_settings(settings_update: SettingsUpdate):
 # -------------------------------------------------------------------- #
 # v0.7.130 — Observability read-only view
 #
-# Exposes the current ONP_* env-derived configuration so the UI can
+# Exposes the current DEEPER_NOTEBOOK_* env-derived configuration so the UI can
 # show "your install is running with these flags" without parsing
 # environment variables client-side. All values are read-only at the
 # API level — operators flip them by editing .env + restarting, the
@@ -158,34 +158,34 @@ class ObservabilityResponse(BaseModel):
 
     slow_query_log_ms: Optional[int] = Field(
         default=None,
-        description="ONP_SLOW_QUERY_LOG_MS — queries exceeding this duration "
+        description="DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS — queries exceeding this duration "
         "are logged at WARNING and increment db_slow_queries_total. "
         "None / unset = disabled.",
     )
     encryption_kdf: str = Field(
         default="raw",
-        description="ONP_ENCRYPTION_KDF — 'raw' (legacy direct-Fernet) or "
+        description="DEEPER_NOTEBOOK_ENCRYPTION_KDF — 'raw' (legacy direct-Fernet) or "
         "'pbkdf2' (PBKDF2-HMAC-SHA256 600k iterations with deterministic "
         "salt). New credentials use this; old credentials decrypt under "
         "whichever KDF they were saved with via MultiFernet matrix.",
     )
     checkpoint_keep_per_thread: int = Field(
         default=50,
-        description="ONP_CHECKPOINT_KEEP_PER_THREAD — most-recent checkpoints "
+        description="DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD — most-recent checkpoints "
         "to retain per LangGraph thread on the periodic prune.",
     )
     checkpoint_prune_interval_hours: int = Field(
         default=24,
-        description="ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS — how often the "
+        description="DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS — how often the "
         "background prune loop fires.",
     )
     db_pool_size: int = Field(
         default=4,
-        description="ONP_DB_POOL_SIZE — max concurrent SurrealDB connections.",
+        description="DEEPER_NOTEBOOK_DB_POOL_SIZE — max concurrent SurrealDB connections.",
     )
     db_pool_disabled: bool = Field(
         default=False,
-        description="ONP_DB_POOL_DISABLED — bypasses pool, opens fresh "
+        description="DEEPER_NOTEBOOK_DB_POOL_DISABLED — bypasses pool, opens fresh "
         "connection per query (debugging only).",
     )
     metrics_endpoint_path: str = Field(

@@ -54,7 +54,7 @@ def test_health_cache_single_flight_under_concurrency(monkeypatch):
 
     import deeper_notebook.health.local_models as health_mod
     monkeypatch.setattr(health_mod, "probe_all_local_models", _slow_probe)
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
     async def _drive() -> list[bool]:
         # Fire 5 concurrent calls. Without single-flight, all 5 see
@@ -106,7 +106,7 @@ def test_health_cache_single_flight_does_not_serialize_cache_hits(monkeypatch):
 
     import deeper_notebook.health.local_models as health_mod
     monkeypatch.setattr(health_mod, "probe_all_local_models", _probe_should_not_run)
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
     async def _drive() -> list[bool]:
         return await asyncio.gather(*[

@@ -57,7 +57,7 @@ async def list_mcp_recommendations():
     """v0.8.41 — Curated MCP server recommendations.
 
     Static list maintained in
-    `open_notebook/mcp/recommendations.py:RECOMMENDATIONS`. Mirrors the
+    `deeper_notebook/mcp/recommendations.py:RECOMMENDATIONS`. Mirrors the
     shape of the v0.8.39b GGUF recommendations endpoint — frontend
     renders each as a one-click "Connect" card on the MCP settings
     page. The user has to install the server externally (Docker, npm,

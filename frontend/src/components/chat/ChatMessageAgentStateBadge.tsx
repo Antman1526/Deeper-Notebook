@@ -4,7 +4,7 @@
  * ChatMessageAgentStateBadge.tsx — v0.8.62 (Phase 5.3c UI)
  *
  * Small chip rendered next to an AI message when the agent-FSM
- * (backend v0.8.60, ONP_AGENT_FSM) reports a non-"complete" terminal
+ * (backend v0.8.60, DEEPER_NOTEBOOK_AGENT_FSM) reports a non-"complete" terminal
  * state for the chat tool loop:
  *   - "clarify"   → the model PAUSED to ask the user a question
  *   - "truncated" → the loop hit the tool-iteration cap (answer may be

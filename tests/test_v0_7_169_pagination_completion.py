@@ -60,7 +60,7 @@ async def test_get_chat_sessions_accepts_limit_and_offset():
     nb.id = "notebook:abc"
 
     with patch(
-        "open_notebook.domain.notebook.repo_query", new=fake_repo_query
+        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
     ):
         await nb.get_chat_sessions(limit=50, offset=25)
 
@@ -89,7 +89,7 @@ async def test_get_chat_sessions_without_args_is_unbounded():
     nb.id = "notebook:abc"
 
     with patch(
-        "open_notebook.domain.notebook.repo_query", new=fake_repo_query
+        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
     ):
         await nb.get_chat_sessions()
 

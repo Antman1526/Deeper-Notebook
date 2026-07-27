@@ -34,7 +34,7 @@ def _rpc_timeout(default: float = 30.0) -> float:
 
 def _env_headers() -> Optional[dict[str, str]]:
     """v0.8.66 (audit MCP-4) — optional auth header for protected MCP servers.
-    `ONP_MCP_AUTH_HEADER="Authorization: Bearer <token>"` (a single
+    `DEEPER_NOTEBOOK_MCP_AUTH_HEADER="Authorization: Bearer <token>"` (a single
     `Name: value` pair) makes auth'd streamable-http servers usable without a
     registry-schema change. Returns None when unset."""
     raw = (resolve_env("DEEPER_NOTEBOOK_MCP_AUTH_HEADER") or "").strip()

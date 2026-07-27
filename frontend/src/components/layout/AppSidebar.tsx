@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
+import { readDesktopVersion } from '@/lib/desktop-version'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
@@ -470,7 +471,7 @@ export function AppSidebar() {
             </div>
           )}
 
-          {/* v0.7.210 — Version badge. Source: `window.ONP_VERSION`
+          {/* v0.7.210 — Version badge. Source: the desktop version bridge
               injected by desktop/window.py at page load (read from
               desktop/__init__.py:__version__). Falls back to the
               /api/version endpoint when running in dev mode outside
@@ -487,7 +488,7 @@ export function AppSidebar() {
             >
               v{
                 typeof window !== 'undefined'
-                  ? ((window as { ONP_VERSION?: string }).ONP_VERSION || '—')
+                  ? (readDesktopVersion(window) || '—')
                   : '—'
               }
             </div>

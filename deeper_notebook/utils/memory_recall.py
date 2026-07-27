@@ -21,7 +21,7 @@ node now calls `recall_memory(query=last_user_text)` — a thin
 orchestrator that picks `relevant` once memory tables grow past
 ~10 rows (otherwise recency is fine and saves an embed round trip),
 with `auto` / `recent` / `semantic` overrides via
-`ONP_MEMORY_RECALL_MODE`. ANY failure in the semantic path falls
+`DEEPER_NOTEBOOK_MEMORY_RECALL_MODE`. ANY failure in the semantic path falls
 through to the recency path so chat never breaks because the
 embedder is misconfigured.
 """
@@ -58,7 +58,7 @@ _MAX_PREFERENCES = 10
 _MAX_EPISODES = 2
 
 # Episode recall defaults ON (parity with facts/preferences, which have
-# no gate). Set ONP_MEMORY_RECALL_EPISODES=0 to suppress — useful if a
+# no gate). Set DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES=0 to suppress — useful if a
 # user finds old-conversation summaries resurfacing unhelpful, or to
 # claw back the ~1k chars of system-prompt budget on a tiny local model.
 _DEFAULT_EPISODE_RECALL = True
@@ -181,7 +181,7 @@ async def recall_relevant_memory(
     # v0.7.113 — wrap the embed call in wait_for. recall_relevant_memory
     # runs on the chat hot path (every user turn); a stuck embedding
     # model (cold-start, OOM, misconfigured base_url) would otherwise
-    # hold up chat for up to ONP_CHAT_TIMEOUT_SEC (300s default before
+    # hold up chat for up to DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC (300s default before
     # v0.7.99's outer wrap fires). 5s default keeps chat snappy; on
     # timeout we fall through to recency recall which is DB-only.
     _recall_embed_timeout = float(
@@ -317,25 +317,25 @@ async def _count_memory_rows() -> int:
 
 # v0.7.133 — Outer budget for the whole memory-recall flow.
 #
-# Background: the existing per-step timeouts are ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC
-# (default 5s) + ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC (default 5s). The
+# Background: the existing per-step timeouts are DEEPER_NOTEBOOK_MEMORY_RECALL_EMBED_TIMEOUT_SEC
+# (default 5s) + DEEPER_NOTEBOOK_MEMORY_RECALL_QUERY_TIMEOUT_SEC (default 5s). The
 # semantic path does 1 embed + 2 queries (facts + preferences) and can
 # fall through to a recency-only path that does 2 more queries. Worst
 # case: 5 + 5 + 5 + 5 + 5 = 25s before chat sees an empty memory section,
-# and ONP_CHAT_TIMEOUT_SEC won't fire until later.
+# and DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC won't fire until later.
 #
 # Area for Review #2 asked: should this be a single budget instead of
 # stacked timeouts? Answer: BOTH. Keep the per-step timeouts as defense
 # in depth (they're useful when the embedder is hung but mem0 is fine —
 # you get fast fall-through to query-only without paying the embed wait),
-# and add an outer wall via ONP_MEMORY_RECALL_BUDGET_SEC (default 12s)
+# and add an outer wall via DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC (default 12s)
 # so total recall NEVER exceeds the budget.
 #
 # 12s default chosen because:
 #   * Healthy hot path: ~200ms embed + ~100ms × 2 queries = under 1s.
 #   * Worst legit case: cold embedder + cold DB pool — maybe 8s.
 #   * 12s leaves headroom but caps the absolute worst-case at well
-#     under ONP_CHAT_TIMEOUT_SEC (300s default), so chat still has time
+#     under DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC (300s default), so chat still has time
 #     to actually do something useful with what memory it does have.
 _DEFAULT_RECALL_BUDGET_SEC = 12.0
 
@@ -348,14 +348,14 @@ def _recall_budget_sec() -> float:
         val = float(raw)
         if val <= 0:
             logger.warning(
-                "ONP_MEMORY_RECALL_BUDGET_SEC={} must be positive; "
+                "DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC={} must be positive; "
                 "using default {}s", raw, _DEFAULT_RECALL_BUDGET_SEC,
             )
             return _DEFAULT_RECALL_BUDGET_SEC
         return val
     except ValueError:
         logger.warning(
-            "ONP_MEMORY_RECALL_BUDGET_SEC={!r} not a float; using default {}s",
+            "DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC={!r} not a float; using default {}s",
             raw, _DEFAULT_RECALL_BUDGET_SEC,
         )
         return _DEFAULT_RECALL_BUDGET_SEC
@@ -365,7 +365,7 @@ async def recall_memory(
     query: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Orchestrator. Picks semantic vs recency based on
-    ONP_MEMORY_RECALL_MODE or row-count.
+    DEEPER_NOTEBOOK_MEMORY_RECALL_MODE or row-count.
 
     Modes:
       - "recent"  → always use recall_recent_memory()
@@ -374,7 +374,7 @@ async def recall_memory(
       - "auto" (default) → semantic if rows > _SEMANTIC_THRESHOLD,
         else recency. Empty `query` always uses recency.
 
-    v0.7.133 — Wrapped in an outer ONP_MEMORY_RECALL_BUDGET_SEC budget
+    v0.7.133 — Wrapped in an outer DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC budget
     (default 12s). Per-step timeouts (embed: 5s, query: 5s) still apply
     individually, but the budget guarantees the whole orchestration
     completes within the bound regardless of how steps cascade. On

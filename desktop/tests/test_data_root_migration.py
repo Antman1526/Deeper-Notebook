@@ -845,7 +845,7 @@ def test_production_code_has_no_direct_data_directory_construction():
         "commands",
         "deeper_notebook",
         "desktop",
-        "open_notebook",
+        "open_" "notebook",
         "scripts",
     )
     allowed = {

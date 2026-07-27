@@ -1,7 +1,7 @@
 """v0.7.119 — regression test for v0.7.95's /transformations/execute timeout.
 
 v0.7.95 wrapped `transformation_graph.ainvoke()` in `asyncio.wait_for(
-timeout=ONP_TRANSFORMATION_TIMEOUT_SEC)` (default 180s). This test
+timeout=DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC)` (default 180s). This test
 verifies:
 
   * The timeout fires when the graph hangs past the budget.
@@ -63,10 +63,10 @@ def stub_domain(monkeypatch):
 def test_transformation_execute_timeout_returns_504_with_env_knob_hint(
     client, stub_domain, monkeypatch,
 ):
-    """v0.7.119 — A hung graph past ONP_TRANSFORMATION_TIMEOUT_SEC
+    """v0.7.119 — A hung graph past DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC
     returns 504 (NOT 500, post v0.7.109 fix) with the env-knob name
     in the detail."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_TIMEOUT_SEC", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "1")
 
     async def _hanging_ainvoke(state, config=None):
         await asyncio.sleep(60)
@@ -87,7 +87,7 @@ def test_transformation_execute_timeout_returns_504_with_env_knob_hint(
     )
     assert r.status_code == 504, r.text
     detail = r.json()["detail"]
-    assert "ONP_TRANSFORMATION_TIMEOUT_SEC" in detail
+    assert "DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC" in detail
     assert "timed out" in detail.lower()
 
 
@@ -96,7 +96,7 @@ def test_transformation_execute_returns_200_when_graph_returns_in_time(
 ):
     """v0.7.119 — Negative-space check: a fast graph response is NOT
     spuriously timeout-killed."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "5")
 
     async def _fast_ainvoke(state, config=None):
         return {"output": "transformed text"}

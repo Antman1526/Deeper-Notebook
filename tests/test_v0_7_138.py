@@ -31,27 +31,27 @@ import pytest
 
 class TestAskNodeTimeout:
     """v0.7.138 — Each ask-graph node now bounds its LLM call with
-    ONP_ASK_NODE_TIMEOUT_SEC (default 120s)."""
+    DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC (default 120s)."""
 
     def test_default_timeout(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
-        monkeypatch.delenv("ONP_ASK_NODE_TIMEOUT_SEC", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", raising=False)
         assert _ask_node_timeout_sec() == 120.0
 
     def test_env_override(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
-        monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "30")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "30")
         assert _ask_node_timeout_sec() == 30.0
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
-        monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "not-a-float")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "not-a-float")
         assert _ask_node_timeout_sec() == 120.0
 
     def test_zero_or_negative_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
         for v in ("0", "-1", "-0.5"):
-            monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", v)
+            monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", v)
             assert _ask_node_timeout_sec() == 120.0
 
     @pytest.mark.asyncio
@@ -63,7 +63,7 @@ class TestAskNodeTimeout:
         from deeper_notebook.exceptions import ExternalServiceError
         from deeper_notebook.graphs.ask import _ask_invoke
 
-        monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "0.05")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "0.05")
 
         hung_model = MagicMock()
         async def _hang(*args, **kwargs):
@@ -82,7 +82,7 @@ class TestAskNodeTimeout:
         """Non-hung path: _ask_invoke is a transparent passthrough."""
         from deeper_notebook.graphs.ask import _ask_invoke
 
-        monkeypatch.setenv("ONP_ASK_NODE_TIMEOUT_SEC", "10")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "10")
 
         fake_result = MagicMock()
         fake_result.content = "expected response"
@@ -101,7 +101,7 @@ class TestAskNodeTimeout:
 
 class TestRunTransformationTimeout:
     """v0.7.138 — Worker-side transformation now bounded by
-    ONP_TRANSFORMATION_TIMEOUT_SEC (default 180s)."""
+    DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC (default 180s)."""
 
     @pytest.mark.asyncio
     async def test_timeout_raises_runtime_error_for_retry(self, monkeypatch):
@@ -111,7 +111,7 @@ class TestRunTransformationTimeout:
         from commands.source_commands import run_transformation_command
         from commands.source_commands import RunTransformationInput
 
-        monkeypatch.setenv("ONP_TRANSFORMATION_TIMEOUT_SEC", "0.05")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "0.05")
 
         # Mock Source.get + Transformation.get to return non-None.
         fake_source = MagicMock()
@@ -138,7 +138,7 @@ class TestRunTransformationTimeout:
                     )
                 )
             assert "timed out" in str(exc_info.value)
-            assert "ONP_TRANSFORMATION_TIMEOUT_SEC" in str(exc_info.value)
+            assert "DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_fast_transformation_succeeds(self, monkeypatch):
@@ -146,7 +146,7 @@ class TestRunTransformationTimeout:
         from commands.source_commands import run_transformation_command
         from commands.source_commands import RunTransformationInput
 
-        monkeypatch.setenv("ONP_TRANSFORMATION_TIMEOUT_SEC", "30")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "30")
 
         fake_source = MagicMock()
         fake_transformation = MagicMock()
@@ -177,7 +177,7 @@ class TestRunTransformationTimeout:
 
 class TestPodcastGenerationTimeout:
     """v0.7.138 — Podcast generation now bounded by
-    ONP_PODCAST_GENERATION_TIMEOUT_SEC (default 1800s = 30 min).
+    DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC (default 1800s = 30 min).
 
     Since @command retry=max_attempts=1, a hang previously meant the
     worker slot was lost until process restart. The timeout caps it
@@ -193,7 +193,7 @@ class TestPodcastGenerationTimeout:
         when asyncio.wait_for fires TimeoutError, the wrapper catches
         + re-raises as RuntimeError naming the timeout value.
         """
-        monkeypatch.setenv("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "0.05")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "0.05")
 
         # Sanity-check: the helper isn't directly importable but the
         # behavior is: simulate the same wait_for + re-raise pattern.
@@ -202,7 +202,7 @@ class TestPodcastGenerationTimeout:
 
         import os as _os
         timeout = float(
-            _os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
+            _os.environ.get("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
             or 1800
         )
         with pytest.raises(asyncio.TimeoutError):
@@ -240,7 +240,7 @@ class TestAllModelFlowsHaveTimeouts:
 
     def test_run_transformation_worker_has_timeout(self):
         src = self._read("commands/source_commands.py")
-        assert "ONP_TRANSFORMATION_TIMEOUT_SEC" in src
+        assert "DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC" in src
         assert "asyncio.wait_for" in src
 
     def test_podcast_generation_worker_has_timeout(self):
@@ -249,7 +249,7 @@ class TestAllModelFlowsHaveTimeouts:
         # (run_graph_with_stages raises asyncio.TimeoutError past the
         # deadline). Accept either mechanism; the env knob must remain.
         src = self._read("commands/podcast_commands.py")
-        assert "ONP_PODCAST_GENERATION_TIMEOUT_SEC" in src
+        assert "DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC" in src
         assert (
             "asyncio.wait_for" in src
             or "deadline=time.monotonic() + _podcast_timeout" in src
@@ -263,10 +263,10 @@ class TestAllModelFlowsHaveTimeouts:
         valid; this test confirms one of them is present so a
         future refactor can't accidentally drop both."""
         src = self._read("api/routers/chat.py")
-        assert "ONP_CHAT_TIMEOUT_SEC" in src
+        assert "DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC" in src
         assert "asyncio.wait_for" in src
 
     def test_transformation_router_has_timeout(self):
         src = self._read("api/routers/transformations.py")
-        assert "ONP_TRANSFORMATION_TIMEOUT_SEC" in src
+        assert "DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC" in src
         assert "asyncio.wait_for" in src

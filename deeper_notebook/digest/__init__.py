@@ -18,7 +18,7 @@ from deeper_notebook.domain.gmail import GmailIntegration
 # v0.8.27 — Substrings in SurrealDB error messages that indicate a
 # SCHEMA / QUERY-SYNTAX problem (genuine bug — should log at WARNING).
 # Mirrors the same set used by `_safe_select` in
-# open_notebook/utils/memory_recall.py (v0.8.19). Keeping the lists
+# deeper_notebook/utils/memory_recall.py (v0.8.19). Keeping the lists
 # aligned so a future SurrealDB upgrade only needs one place updated.
 _SCHEMA_ERROR_SUBSTRINGS = (
     "Parse error",
@@ -236,7 +236,7 @@ async def _safe_query(query: str, vars: dict) -> list[dict]:
             logger.warning(
                 "digest _safe_query: SCHEMA ERROR — section will be "
                 "omitted from digest, FIX the query in "
-                "open_notebook/digest/__init__.py. error={}",
+                "deeper_notebook/digest/__init__.py. error={}",
                 exc,
             )
         else:

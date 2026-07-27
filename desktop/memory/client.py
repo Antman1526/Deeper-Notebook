@@ -30,7 +30,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     lenient about model names) or 404s (when strict). Matches the same
     fix already applied in memory_commands.py.
 
-    Override via ONP_CHAT_MODEL_NAME env var; default "default" works
+    Override via DEEPER_NOTEBOOK_CHAT_MODEL_NAME env var; default "default" works
     against llama-cpp-python's permissive OpenAI-compatible server.
     """
     if Memory is None:

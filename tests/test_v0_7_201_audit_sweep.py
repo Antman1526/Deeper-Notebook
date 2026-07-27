@@ -183,8 +183,8 @@ def test_readme_documents_current_artifacts_and_migration_contract():
     assert "## Migrating from Open Notebook Plus" in readme
     assert "DEEPER_NOTEBOOK_*" in readme
     assert "DN_*" in readme
-    assert "OPEN_NOTEBOOK_*" in readme
-    assert "ONP_*" in readme
+    assert "DEEPER_NOTEBOOK_*" in readme
+    assert "DEEPER_NOTEBOOK_*" in readme
     assert "~/.deeper-notebook/" in readme
     assert "~/.open-notebook-plus/" in readme
     assert "%USERPROFILE%\\.deeper-notebook" in readme

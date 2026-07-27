@@ -87,6 +87,15 @@ def test_every_pre_move_legacy_import_resolves_to_canonical_object(
     )
 
 
+def test_legacy_exception_name_is_an_alias_of_the_canonical_base():
+    from deeper_notebook.exceptions import (
+        DeeperNotebookError,
+        OpenNotebookError,
+    )
+
+    assert OpenNotebookError is DeeperNotebookError
+
+
 def test_legacy_first_import_resolves_to_canonical_module_object():
     script = """
 import importlib

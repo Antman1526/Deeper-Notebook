@@ -14,10 +14,8 @@ This module wires loguru to:
   - configurable level via DEEPER_NOTEBOOK_LOG_LEVEL (default INFO)
   - optional JSON sink via DEEPER_NOTEBOOK_LOG_JSON=1 for log aggregators
 
-Deprecated aliases remain fallback-only during migration:
-OPEN_NOTEBOOK_LOG_DIR / ONP_LOG_DIR, OPEN_NOTEBOOK_LOG_LEVEL /
-ONP_LOG_LEVEL, and OPEN_NOTEBOOK_LOG_JSON / ONP_LOG_JSON. Canonical
-DEEPER_NOTEBOOK_* names always take precedence.
+Legacy environment spellings remain fallback-only through the central
+resolver. Canonical DEEPER_NOTEBOOK_* names always take precedence.
 
 Each process calls `configure_logging("api" | "launcher" | "worker" | ...)`
 at startup. The stderr sink is preserved so docker/systemd users still
@@ -84,8 +82,7 @@ def default_log_dir() -> Path:
     `/var/log/open-notebook-plus` directory is honored only when the
     canonical directory does not yet exist, preserving upgrades without
     making the legacy path the default. Operators should override with
-    DEEPER_NOTEBOOK_LOG_DIR; OPEN_NOTEBOOK_LOG_DIR and ONP_LOG_DIR are
-    deprecated fallback aliases.
+    DEEPER_NOTEBOOK_LOG_DIR; deprecated spellings are handled centrally.
     """
     raw = resolve_env("DEEPER_NOTEBOOK_LOG_DIR")
     if raw:

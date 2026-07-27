@@ -162,7 +162,7 @@ class TestV0822MigrationSanitization:
     # does not intercept that local import — we must patch the source
     # module path instead. This is the same shape as v0.7.96's lazy-
     # import patch fix in test_provider_config.py.
-    @patch("open_notebook.domain.provider_config.ProviderConfig")
+    @patch("deeper_notebook.domain.provider_config.ProviderConfig")
     @patch("api.credentials_service.require_encryption_key")
     async def test_migrate_from_provider_config_sanitizes_exception(
         self, mock_require, mock_provider_config, mock_get_by_provider, client,

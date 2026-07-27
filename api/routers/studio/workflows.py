@@ -160,7 +160,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Defaults sized for local 7B-9B models with 8k-32k context. Cloud users
-# can raise these via env vars (e.g. ONP_STUDIO_MAX_COMBINED_CHARS=200000).
+# can raise these via env vars (e.g. DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS=200000).
 _MAX_EXTRACT_CHARS_PER_FILE = _env_int(
     "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000,
 )
@@ -254,8 +254,8 @@ def _studio_generation_error_detail(
             "Looks like the model's context window was exceeded. Smaller "
             "local models (Hermes-3 8k, Llama-3.2-3B 4k) can't fit large "
             "documents. Try uploading fewer/smaller files, or tighten the "
-            "caps via ONP_STUDIO_MAX_FILE_CHARS / "
-            "ONP_STUDIO_MAX_COMBINED_CHARS, or pick a chat model with a "
+            "caps via DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS / "
+            "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS, or pick a chat model with a "
             "larger context window in Settings → Models. "
         )
     return (
@@ -734,7 +734,7 @@ async def studio_generate(
                 warnings.append(
                     f"Parsing {label!r} timed out after {_extract_timeout:.0f}s. "
                     "The source may be inaccessible, malformed, or password-protected. "
-                    "Raise ONP_STUDIO_EXTRACT_TIMEOUT_SEC or provide a cleaner source."
+                    "Raise DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC or provide a cleaner source."
                 )
                 return
             text = (processed.content or "").strip()
@@ -1121,7 +1121,7 @@ async def _generate_outline(
             detail=(
                 f"Outline generation timed out after {_OUTLINE_TIMEOUT_SEC}s. "
                 "The chat model may be loading or overloaded. Try again, or "
-                "raise ONP_STUDIO_OUTLINE_TIMEOUT_SEC. "
+                "raise DEEPER_NOTEBOOK_STUDIO_OUTLINE_TIMEOUT_SEC. "
                 f"Notebook {notebook_id} was created and contains your "
                 f"{source_count} uploaded source(s)."
             ),
@@ -1255,7 +1255,7 @@ async def _generate_all_pages(
             )
             warnings.append(
                 f"Page {i} ({page_spec['title']!r}) timed out after "
-                f"{_PAGE_TIMEOUT_SEC}s. Raise ONP_STUDIO_PAGE_TIMEOUT_SEC, "
+                f"{_PAGE_TIMEOUT_SEC}s. Raise DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC, "
                 "or switch to a faster chat model."
             )
         else:
@@ -1365,7 +1365,7 @@ async def _dispatch_notebook_mode(
          the Overview first in the notebook UI.
 
     The legacy single-note path remains reachable via the
-    ONP_STUDIO_NOTEBOOK_MULTIPAGE=false env var or whenever the
+    DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE=false env var or whenever the
     outline pass returns un-parseable JSON. That keeps the user shielded
     from regressions during the rollout window.
 
@@ -1491,7 +1491,7 @@ async def _dispatch_notebook_mode(
 
 
 # v0.7.89 — Pre-v0.7.89 single-note path, preserved as a fallback. Reached
-# when ONP_STUDIO_NOTEBOOK_MULTIPAGE=false OR when the outline pass returns
+# when DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE=false OR when the outline pass returns
 # un-parseable JSON. Identical to the original v0.7.0 implementation.
 async def _dispatch_notebook_mode_singlenote(
     *,
@@ -1530,7 +1530,7 @@ async def _dispatch_notebook_mode_singlenote(
             detail=(
                 f"Notebook generation timed out after {_PAGE_TIMEOUT_SEC}s. "
                 "The chat model may be loading or overloaded. Raise "
-                "ONP_STUDIO_PAGE_TIMEOUT_SEC, switch to a faster model, "
+                "DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC, switch to a faster model, "
                 f"or try again. Notebook {notebook_id} was created and "
                 f"contains your {len(source_ids)} uploaded source(s)."
             ),

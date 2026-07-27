@@ -61,7 +61,7 @@ def _disable_db_autorepair(monkeypatch):
     would otherwise touch the real ~/.open-notebook-plus (read worker.log, set
     the repair flag, spawn a temp surreal). Disable both during tests; their
     own logic is covered by test_db_repair.py."""
-    monkeypatch.setenv("ONP_DISABLE_DB_AUTOREPAIR", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR", "1")
     # v0.8.67l — _available_ram_bytes() shells out to `vm_stat`, and
     # subprocess.run uses subprocess.Popen internally. Tests that mock
     # subprocess.Popen with a finite iterator (e.g. stop_all child accounting)

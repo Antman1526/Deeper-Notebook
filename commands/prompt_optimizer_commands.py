@@ -186,7 +186,7 @@ async def optimize_prompt_command(
             raise RuntimeError(
                 f"Prompt optimization timed out after {timeout:.0f}s. Use "
                 f"fewer/shorter sources or local models, or raise "
-                f"ONP_PROMPT_OPT_TIMEOUT_SEC."
+                f"DEEPER_NOTEBOOK_PROMPT_OPT_TIMEOUT_SEC."
             ) from exc
 
         elapsed = time.time() - start

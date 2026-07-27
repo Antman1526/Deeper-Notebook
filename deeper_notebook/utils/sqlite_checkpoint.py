@@ -2,7 +2,7 @@
 
 v0.7.32 — closes a race that the prior audit flagged:
 
-  open_notebook/graphs/chat.py and source_chat.py each did:
+  deeper_notebook/graphs/chat.py and source_chat.py each did:
       conn = sqlite3.connect(LANGGRAPH_CHECKPOINT_FILE, check_same_thread=False)
       memory = SqliteSaver(conn)
 
