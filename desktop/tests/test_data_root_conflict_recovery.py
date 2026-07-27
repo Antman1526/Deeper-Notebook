@@ -322,10 +322,7 @@ def test_recovery_window_uses_isolated_storage_and_existing_app_choices(
         starts.append(kwargs)
         recovery_root.rename(original_recovery)
         recovery_root.symlink_to(canonical, target_is_directory=True)
-        storage_path = Path(str(kwargs["storage_path"]))
-        assert storage_path.is_dir()
-        assert storage_path.parent != canonical
-        assert storage_path.parent != recovery_root
+        assert kwargs == {"private_mode": True}
         assert loaded.handler is not None
         loaded.handler()
 
@@ -370,10 +367,7 @@ def test_recovery_window_uses_isolated_storage_and_existing_app_choices(
         storage_root=recovery_root,
     )
 
-    assert starts[0]["private_mode"] is False
-    storage_path = Path(str(starts[0]["storage_path"]))
-    assert storage_path.name.startswith("deeper-notebook-recovery-webview-")
-    assert not storage_path.exists()
+    assert starts == [{"private_mode": True}]
     assert "Replace Old App" in evaluated[0]
     assert "Keep Both" in evaluated[0]
     assert not (canonical / "webview_data").exists()

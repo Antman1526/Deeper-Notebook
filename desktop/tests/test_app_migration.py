@@ -8,6 +8,7 @@ import shutil
 import sys
 import threading
 import types
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -196,10 +197,10 @@ def test_bridge_post_trash_receipt_failure_reports_uncertain_completion(
     )
     real_write = app_migration._write_receipt
 
-    def fail_completed(path: Path, receipt: dict[str, object]) -> None:
+    def fail_completed(directory, path: Path, receipt: dict[str, object]) -> None:
         if receipt["status"] == "completed":
             raise OSError("final receipt failed")
-        real_write(path, receipt)
+        real_write(directory, path, receipt)
 
     monkeypatch.setattr(app_migration, "_write_receipt", fail_completed)
 
@@ -251,10 +252,94 @@ def test_app_receipt_dirfd_cannot_redirect_after_directory_open(
     result = _OnpJsApi(controller).replace_old_app(True)
 
     assert raced is True
-    assert result["move_outcome"] == "not-moved"
+    assert result["move_outcome"] == "move-uncertain"
     assert legacy.is_dir()
     assert not (canonical_data / "app-bundle-replacement.json").exists()
-    assert (held / "app-bundle-replacement.json").is_file()
+    assert not (held / "app-bundle-replacement.json").exists()
+
+
+def test_replacement_holds_one_receipt_directory_handle_for_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    trash = tmp_path / "Trash"
+    real_open = app_migration.open_owned_directory
+    opens = 0
+
+    @contextmanager
+    def counted_open(path: Path):
+        nonlocal opens
+        opens += 1
+        with real_open(path) as directory:
+            yield directory
+
+    def recycle(source: Path) -> Path:
+        trash.mkdir()
+        destination = trash / source.name
+        shutil.move(source, destination)
+        return destination
+
+    monkeypatch.setattr(app_migration, "open_owned_directory", counted_open)
+
+    replace_legacy_app(
+        legacy,
+        applications_dir=applications,
+        data_root=data_root,
+        recycler=recycle,
+    )
+
+    assert opens == 1
+
+
+def test_receipt_cleanup_unlink_stays_on_held_dirfd_after_symlink_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    recovery = tmp_path / ".deeper-notebook-recovery"
+    recovery.mkdir()
+    held = tmp_path / ".recovery-held"
+    canonical = tmp_path / ".deeper-notebook"
+    canonical.mkdir()
+    canonical_receipt = canonical / "app-bundle-replacement.json"
+    canonical_receipt.write_text('{"sentinel": true}\\n', encoding="utf-8")
+    real_write = app_migration._write_receipt
+    raced = False
+
+    def swap_after_started(*args, **kwargs) -> None:
+        nonlocal raced
+        receipt = args[-1]
+        real_write(*args, **kwargs)
+        if receipt["status"] == "started" and not raced:
+            raced = True
+            recovery.rename(held)
+            recovery.symlink_to(canonical, target_is_directory=True)
+            legacy.rename(applications / "Original Legacy.app")
+            _app(
+                applications,
+                "Open Notebook Plus.app",
+                COMPATIBLE_BUNDLE_ID,
+            )
+
+    monkeypatch.setattr(app_migration, "_write_receipt", swap_after_started)
+
+    with pytest.raises(Exception):
+        replace_legacy_app(
+            legacy,
+            applications_dir=applications,
+            data_root=recovery,
+            recycler=lambda path: path,
+        )
+
+    assert raced is True
+    assert canonical_receipt.read_text(encoding="utf-8") == (
+        '{"sentinel": true}\\n'
+    )
+    assert not (held / "app-bundle-replacement.json").exists()
 
 
 def test_replacement_refuses_wrong_or_outside_exact_legacy_bundle(
@@ -449,11 +534,10 @@ def test_replacement_refuses_bundle_swap_at_final_trash_boundary_without_receipt
     original_write = app_migration._write_receipt
     raced = False
 
-    def swap_after_started_receipt(
-        receipt_path: Path, receipt: dict[str, object]
-    ) -> None:
+    def swap_after_started_receipt(*args, **kwargs) -> None:
         nonlocal raced
-        original_write(receipt_path, receipt)
+        receipt = args[-1]
+        original_write(*args, **kwargs)
         if receipt["status"] == "started" and not raced:
             raced = True
             legacy.rename(applications / "Original Legacy.app")
