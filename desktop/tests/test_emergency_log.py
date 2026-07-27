@@ -22,7 +22,7 @@ import pytest
 
 def test_emergency_log_writes_to_launcher_log(tmp_path, monkeypatch):
     """Plant a fake HOME; verify _emergency_log writes the exception to
-    ~/.deeper-notebook/logs/launcher.log."""
+    the non-conflicting recovery log."""
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
@@ -31,7 +31,9 @@ def test_emergency_log_writes_to_launcher_log(tmp_path, monkeypatch):
     except RuntimeError as exc:
         _emergency_log(exc)
 
-    log_path = tmp_path / ".deeper-notebook" / "logs" / "launcher.log"
+    log_path = (
+        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
+    )
     assert log_path.exists()
     text = log_path.read_text()
     assert "EARLY-INIT FAILURE" in text
@@ -45,7 +47,9 @@ def test_emergency_log_appends_to_existing_file(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
-    log_path = tmp_path / ".deeper-notebook" / "logs" / "launcher.log"
+    log_path = (
+        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
+    )
     log_path.parent.mkdir(parents=True)
     log_path.write_text("PREVIOUS-LOG-CONTENT\n")
 
@@ -79,7 +83,7 @@ def test_emergency_log_creates_logs_dir_if_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
 
-    log_dir = tmp_path / ".deeper-notebook" / "logs"
+    log_dir = tmp_path / ".deeper-notebook-recovery" / "logs"
     assert not log_dir.exists()  # fresh
 
     try:
@@ -91,19 +95,43 @@ def test_emergency_log_creates_logs_dir_if_missing(tmp_path, monkeypatch):
     assert (log_dir / "launcher.log").exists()
 
 
-def test_emergency_log_falls_back_when_data_root_resolution_fails(
-    monkeypatch, capsys
+def test_emergency_log_does_not_reenter_failed_data_root_resolution(
+    tmp_path, monkeypatch
 ):
     from desktop import __main__ as entrypoint
 
     def blocked_root():
-        raise RuntimeError("rollback requires operator action")
+        raise AssertionError("emergency logging reentered the failed resolver")
 
-    monkeypatch.setattr(entrypoint, "active_data_root", blocked_root)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr("desktop.data_root.active_data_root", blocked_root)
 
     original = RuntimeError("simulated early failure")
     entrypoint._emergency_log(original)
 
-    captured = capsys.readouterr()
-    assert "Launcher early-init failure" in captured.err
-    assert "simulated early failure" in captured.err
+    log_path = (
+        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
+    )
+    assert "simulated early failure" in log_path.read_text(encoding="utf-8")
+    assert not (tmp_path / ".deeper-notebook").exists()
+    assert not (tmp_path / ".open-notebook-plus").exists()
+
+
+def test_emergency_log_refuses_symlinked_recovery_directory(
+    tmp_path, monkeypatch, capsys
+):
+    from desktop import __main__ as entrypoint
+
+    canonical = tmp_path / ".deeper-notebook"
+    canonical.mkdir()
+    (tmp_path / ".deeper-notebook-recovery").symlink_to(
+        canonical,
+        target_is_directory=True,
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    entrypoint._emergency_log(RuntimeError("do not follow recovery link"))
+
+    assert not (canonical / "logs" / "launcher.log").exists()
+    assert "Launcher early-init failure" in capsys.readouterr().err

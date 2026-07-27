@@ -31,6 +31,7 @@ def _attach_fake_sv(ctx) -> MagicMock:
 def _patch_pre_phases(mp):
     """Stub out all pre-supervisor phases — they require real config/disk/etc."""
     for name in [
+        "_phase_detect_data_root_recovery",
         "_phase_load_config",
         "_phase_wizard_if_first_run",
         "_phase_bootstrap_runtime",
