@@ -3,6 +3,8 @@
 -- Migration 32 was exercised locally before its ordering correction landed.
 -- Reassert the canonical fields and indexes so those databases converge with
 -- a fresh install without deleting projection data.
+-- The async migration runner then performs a bounded, idempotent Python data
+-- repair before recording version 33.
 
 DEFINE FIELD IF NOT EXISTS title_key ON TABLE note TYPE option<string>;
 DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key ON TABLE note COLUMNS vault_id, title_key;

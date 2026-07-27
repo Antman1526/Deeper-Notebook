@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import re
-import unicodedata
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
@@ -28,6 +27,7 @@ from deeper_notebook.vault._projection_context import (
     _activate_projection_refresh,
 )
 from deeper_notebook.vault.contracts import ParsedDocument, VaultFormat, VaultState
+from deeper_notebook.vault.normalization import canonical_title_key
 from deeper_notebook.vault.security import (
     ApprovedVaultRoot,
     VaultSecurityError,
@@ -252,10 +252,6 @@ def _receipt_field(value: str, *, name: str, max_length: int) -> str:
     ):
         raise ValueError(f"invalid_receipt_{name}")
     return value
-
-
-def _title_key(value: str) -> str:
-    return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
 def _task_datetime(value: date | None) -> datetime | None:
@@ -628,7 +624,7 @@ class VaultRepository:
         }
         note_data = {
             "title": parsed.title,
-            "title_key": _title_key(parsed.title),
+            "title_key": canonical_title_key(parsed.title),
             "note_type": "human",
             "content": parsed.markdown,
             "vault_id": _db_id(vault.id),
@@ -698,14 +694,14 @@ class VaultRepository:
                 "target_note_id": None,
                 "target_block_id": None,
                 **link,
-                "target_title_key": _title_key(target_text),
+                "target_title_key": canonical_title_key(target_text),
                 "resolved": False,
             }
             persisted_links.append(
                 {
                     "record_id": _db_id(link_id),
                     "data": link_data,
-                    "target_title": _title_key(target_text),
+                    "target_title": canonical_title_key(target_text),
                 }
             )
 

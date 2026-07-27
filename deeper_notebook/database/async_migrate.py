@@ -8,6 +8,7 @@ from typing import List
 
 from loguru import logger
 
+from .migration_33_vault_backfill import run_python_migration_hook
 from .repository import db_connection, repo_query
 
 
@@ -16,9 +17,10 @@ class AsyncMigration:
     Handles individual migration operations with async support.
     """
 
-    def __init__(self, sql: str) -> None:
+    def __init__(self, sql: str, *, version: int | None = None) -> None:
         """Initialize migration with SQL content."""
         self.sql = sql
+        self.version = version
 
     @classmethod
     def from_file(cls, file_path: str) -> "AsyncMigration":
@@ -32,13 +34,16 @@ class AsyncMigration:
                 if line and not line.startswith("--"):
                     lines.append(line)
             sql = " ".join(lines)
-            return cls(sql)
+            version = int(Path(file_path).stem.split("_", maxsplit=1)[0])
+            return cls(sql, version=version)
 
     async def run(self, bump: bool = True) -> None:
         """Run the migration."""
         try:
             async with db_connection() as connection:
                 await connection.query(self.sql)
+                if bump and self.version is not None:
+                    await run_python_migration_hook(self.version, connection)
 
             if bump:
                 await bump_version()
@@ -143,7 +148,8 @@ class AsyncMigrationManager:
         files = sorted(
             (p for p in mig_dir.iterdir() if p.suffix == ".surrealql"),
             key=lambda p: int(re.match(r"(\d+)", p.stem).group(1))  # type: ignore[union-attr]
-            if re.match(r"(\d+)", p.stem) else 999999,
+            if re.match(r"(\d+)", p.stem)
+            else 999999,
         )
         ups_by_n: dict[int, AsyncMigration] = {}
         downs_by_n: dict[int, AsyncMigration] = {}
@@ -245,8 +251,8 @@ async def get_all_versions() -> list[dict]:
         msg = str(exc)
         if "Table missing" in msg or "table does not exist" in msg:
             logger.debug(
-                "get_all_versions: _sbl_migrations table missing "
-                "(bootstrap case): {}", exc,
+                "get_all_versions: _sbl_migrations table missing (bootstrap case): {}",
+                exc,
             )
         else:
             logger.warning(
