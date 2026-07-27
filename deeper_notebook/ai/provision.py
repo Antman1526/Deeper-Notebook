@@ -45,7 +45,7 @@ def _truthy_env(name: str) -> bool:
 async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bool:
     """v0.8.0 — TTL-cached health lookup for the chat sidecar.
 
-    Reads the sidecar base URL from OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL (set by
+    Reads the sidecar base URL from DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL (set by
     desktop/app.py _phase_auto_register at launch). If the env var is unset the
     probe has no target and returns False immediately — this is the safe
     "no local model configured" path.
@@ -160,18 +160,25 @@ async def provision_langchain_chat_model(
     """v0.8.0 — Smart-routed chat provisioning.
 
     Wraps provision_langchain_model with pick_provider when
-    OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is truthy (1/true/yes/on).
+    DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT is truthy (1/true/yes/on).
     Falls back to the plain default-chat path otherwise so the
     change is opt-in and backward-compatible.
 
     Env knobs (all optional):
-      OPEN_NOTEBOOK_AUTO_ROUTE_CHAT      — enable smart routing (default: off)
+      DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT      — enable smart routing (default: off)
       DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID  — SurrealDB model ID for local chat
-      OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID  — SurrealDB model ID for cloud chat
-                                           (falls back to DefaultModels.default_chat_model)
-      OPEN_NOTEBOOK_LOCAL_N_CTX          — local model context window (default: 32768)
-      OPEN_NOTEBOOK_CHAT_PROVIDER        — override: auto | local | cloud (default: auto)
-      OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL  — sidecar base URL for health probe
+      DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID  — SurrealDB model ID for cloud chat
+      DEEPER_NOTEBOOK_LOCAL_N_CTX          — local context window (default: 32768)
+      DEEPER_NOTEBOOK_CHAT_PROVIDER        — auto | local | cloud (default: auto)
+      DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL  — sidecar base URL for health probe
+
+    Deprecated aliases accepted during migration:
+      OPEN_NOTEBOOK_AUTO_ROUTE_CHAT, OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID,
+      OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID, OPEN_NOTEBOOK_LOCAL_N_CTX,
+      OPEN_NOTEBOOK_CHAT_PROVIDER, and OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL.
+      The ONP_* spellings for registered short settings, including
+      ONP_CHAT_LLM_CTX, are also deprecated aliases. Canonical
+      DEEPER_NOTEBOOK_* variables always win.
 
     v0.8.1 — optional `selection_out` dict that, when smart routing is
     enabled, is populated with `selected_provider` ("local"/"cloud") and
@@ -182,7 +189,7 @@ async def provision_langchain_chat_model(
     """
     # v0.8.37 — UI toggle takes effect when the env var is unset. Env var
     # precedence preserved for back-compat + ops overrides: if an operator
-    # set OPEN_NOTEBOOK_AUTO_ROUTE_CHAT explicitly (even to "0"), respect it.
+    # set DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT explicitly (even to "0"), respect it.
     # Otherwise consult DefaultModels.auto_route_enabled (the new Settings
     # toggle). Net effect: power-users keep their env-driven setup;
     # UI-driven users get a click-to-enable workflow.
@@ -227,7 +234,7 @@ async def provision_langchain_chat_model(
         # default_chat_model. The v0.8.0 code fell back to default_chat_model
         # which silently routed oversized prompts to a local model when the
         # operator's chat default was itself local and
-        # OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID was unset. With auto_route_cloud
+        # DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID was unset. With auto_route_cloud
         # absent we leave cloud_model_id as None so pick_provider falls through
         # to its "no cloud configured" branch — transparent local-only
         # behavior — instead of masquerading a local model as cloud.
@@ -236,15 +243,15 @@ async def provision_langchain_chat_model(
 
     # v0.8.5 — read EITHER env var so the router stays in sync with
     # the actual sidecar config. Pre-v0.8.5 this only read
-    # OPEN_NOTEBOOK_LOCAL_N_CTX (default 32768), but the launcher's
-    # _spawn_llamacpp_chat reads `ONP_CHAT_LLM_CTX` (also default
+    # DEEPER_NOTEBOOK_LOCAL_N_CTX (default 32768), but the launcher's
+    # _spawn_llamacpp_chat reads DEEPER_NOTEBOOK_CHAT_LLM_CTX (also default
     # 32768). Same concept, different names. An operator running
-    # `ONP_CHAT_LLM_CTX=8192` for low-RAM mode would get the sidecar
+    # DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192 for low-RAM mode would get the sidecar
     # bound at 8k context while the router still thought it had 32k
     # headroom — long prompts got routed to local, llama.cpp returned
     # 400 context_length_exceeded.
-    # Precedence: OPEN_NOTEBOOK_LOCAL_N_CTX wins (explicit router knob),
-    # ONP_CHAT_LLM_CTX is the v0.8.5 fallback, 32768 is the final default.
+    # Precedence: DEEPER_NOTEBOOK_LOCAL_N_CTX wins (explicit router knob),
+    # DEEPER_NOTEBOOK_CHAT_LLM_CTX is the v0.8.5 fallback, and 32768 is final.
     # Both share the same default so most operators see no change. A
     # follow-on (v0.8.6) should propagate the GGUF-auto-detected value
     # through env so even unset operators with high-capacity GGUFs
@@ -309,7 +316,8 @@ async def provision_langchain_chat_model(
         reply_headroom_tokens=_reply_headroom,
     )
     # v0.8.51 — Phase 5.2a fail-closed privacy gate. When enabled
-    # (ONP_PRIVACY_GATE, default off) and the router picked CLOUD, scan the
+    # (DEEPER_NOTEBOOK_PRIVACY_GATE, default off) and the router picked CLOUD,
+    # scan the
     # outbound content for structured secrets/PII; if found, keep the turn
     # on the local model (or block when no local model exists) so sensitive
     # data never leaves the machine. No-op when the gate is off — zero

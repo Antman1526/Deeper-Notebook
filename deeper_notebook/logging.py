@@ -11,8 +11,13 @@ This module wires loguru to:
   - rotation: 20 MB per file
   - retention: 14 days
   - compression: zstd (or gzip on platforms without zstandard)
-  - configurable level via ONP_LOG_LEVEL (default INFO)
-  - optional JSON sink via ONP_LOG_JSON=1 for log aggregators
+  - configurable level via DEEPER_NOTEBOOK_LOG_LEVEL (default INFO)
+  - optional JSON sink via DEEPER_NOTEBOOK_LOG_JSON=1 for log aggregators
+
+Deprecated aliases remain fallback-only during migration:
+OPEN_NOTEBOOK_LOG_DIR / ONP_LOG_DIR, OPEN_NOTEBOOK_LOG_LEVEL /
+ONP_LOG_LEVEL, and OPEN_NOTEBOOK_LOG_JSON / ONP_LOG_JSON. Canonical
+DEEPER_NOTEBOOK_* names always take precedence.
 
 Each process calls `configure_logging("api" | "launcher" | "worker" | ...)`
 at startup. The stderr sink is preserved so docker/systemd users still
@@ -23,11 +28,12 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from pathlib import Path
 
 from loguru import logger
 
-from deeper_notebook.environment import resolve_env
+from deeper_notebook.environment import LegacyEnvironmentWarning, resolve_env
 from desktop.data_root import active_data_root
 
 _DEFAULT_ROTATION = "20 MB"
@@ -36,6 +42,8 @@ _DEFAULT_LEVEL = "INFO"
 # loguru only accepts stdlib-known compression names; gzip is always
 # available. (zstd would need a different rotation/compression mechanism.)
 _DEFAULT_COMPRESSION = "gz"
+_CANONICAL_CONTAINER_LOG_DIR = Path("/var/log/deeper-notebook")
+_LEGACY_CONTAINER_LOG_DIR = Path("/var/log/open-notebook-plus")
 
 # v0.7.120 — Custom log format with request_id column for correlation.
 # The RequestIDMiddleware (api/middleware/request_id.py) calls
@@ -72,21 +80,30 @@ def default_log_dir() -> Path:
     to the pre-v0.7.14 stderr-only behavior that `docker logs`
     captured cleanly.
 
-    Now the Docker-style fallback prefers `/var/log/open-notebook-plus`
-    (the conventional container log location). If that path isn't
-    writable (e.g. read-only filesystem), the caller can override via
-    ONP_LOG_DIR.
+    The container fallback uses `/var/log/deeper-notebook`. An existing
+    `/var/log/open-notebook-plus` directory is honored only when the
+    canonical directory does not yet exist, preserving upgrades without
+    making the legacy path the default. Operators should override with
+    DEEPER_NOTEBOOK_LOG_DIR; OPEN_NOTEBOOK_LOG_DIR and ONP_LOG_DIR are
+    deprecated fallback aliases.
     """
     raw = resolve_env("DEEPER_NOTEBOOK_LOG_DIR")
     if raw:
         return Path(raw).expanduser()
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
     if not home:
-        # Container fallback: use /var/log/<app>. This is the
-        # conventional Linux container log location; ops folk know to
-        # mount/scrape it. If write fails (read-only fs), the caller
-        # can set ONP_LOG_DIR explicitly.
-        return Path("/var/log/open-notebook-plus")
+        if (
+            _LEGACY_CONTAINER_LOG_DIR.exists()
+            and not _CANONICAL_CONTAINER_LOG_DIR.exists()
+        ):
+            warnings.warn(
+                f"{_LEGACY_CONTAINER_LOG_DIR} is deprecated; migrate logs to "
+                f"{_CANONICAL_CONTAINER_LOG_DIR}.",
+                LegacyEnvironmentWarning,
+                stacklevel=2,
+            )
+            return _LEGACY_CONTAINER_LOG_DIR
+        return _CANONICAL_CONTAINER_LOG_DIR
     return active_data_root() / "logs"
 
 
@@ -106,7 +123,7 @@ def configure_logging(
         component: Short tag used in the filename (e.g. "api", "launcher",
             "worker"). Lowercased and sanitized.
         log_dir: Override directory; defaults to default_log_dir().
-        level: Override level; defaults to ONP_LOG_LEVEL or INFO.
+        level: Override level; defaults to DEEPER_NOTEBOOK_LOG_LEVEL or INFO.
         rotation: loguru rotation policy. Default "20 MB".
         retention: loguru retention policy. Default "14 days".
         keep_stderr: When True (default), preserve a stderr sink for
@@ -114,7 +131,7 @@ def configure_logging(
             release builds if you only want files.
         json_sink: When True, emit a parallel `.jsonl` file with
             `serialize=True` for log-aggregator consumption. Defaults
-            to ONP_LOG_JSON=1.
+            to DEEPER_NOTEBOOK_LOG_JSON=1.
 
     Returns:
         The resolved log directory (useful for tests / docs).

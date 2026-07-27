@@ -409,9 +409,9 @@ If you're unsure, it's perfectly fine to:
 
 ---
 
-## Plus-Specific Hardening Reference (v0.7.88 → v0.7.118)
+## Deeper Notebook Hardening Reference (v0.7.88 → v0.7.118)
 
-This section is specific to the **open-notebook-Plus** desktop fork
+This section is specific to the **Deeper Notebook** desktop fork
 (not upstream). It surfaces the surface area added by the v0.7.88+
 hardening run so a new maintainer can answer "what knobs do I have
 when something breaks in prod?" without grepping the CHANGELOG.
@@ -420,21 +420,30 @@ when something breaks in prod?" without grepping the CHANGELOG.
 
 | Symptom | Likely cause | Knob / fix |
 |---|---|---|
-| Studio request hangs forever | Local LLM stuck mid-eval | `ONP_STUDIO_PAGE_TIMEOUT_SEC` (default 180) |
-| Studio "outline" pass times out | Outline JSON model slow | `ONP_STUDIO_OUTLINE_TIMEOUT_SEC` (default 90) |
-| File-upload parse hangs | Pathological PDF / encrypted file | `ONP_STUDIO_EXTRACT_TIMEOUT_SEC` (default 60) |
-| Non-streaming `/chat/execute` times out | Local chat model slow | `ONP_CHAT_TIMEOUT_SEC` (default 300) |
-| Memory recall slowing chat | Stuck embedder or DB pool | `ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC`, `_QUERY_TIMEOUT_SEC` (5s each) |
-| `POST /notes` hangs on auto-title | Stuck title model | `ONP_NOTE_TITLE_TIMEOUT_SEC` (default 60) — falls back to first line |
-| `POST /transformations/execute` hangs | Stuck transformation graph | `ONP_TRANSFORMATION_TIMEOUT_SEC` (default 180) |
-| Settings UI "Test connection" hangs | Provider-specific slowness | `ONP_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>` (per-provider) |
-| `POST /credentials/{id}/discover` hangs | Provider list-models slow | `ONP_DISCOVER_MODELS_TIMEOUT_SEC` (default 30) |
-| `/search` hangs | DB pool saturated | `ONP_SEARCH_TIMEOUT_SEC` (default 60) |
-| Bulk vectorize floods worker | Notebook with too many sources | `ONP_BULK_VECTORIZE_MAX_SOURCES` (default 500) |
-| Async command submission hangs | Stuck SurrealDB pool | `ONP_SUBMIT_COMMAND_TIMEOUT_SEC` (default 10) |
+| Studio request hangs forever | Local LLM stuck mid-eval | `DN_STUDIO_PAGE_TIMEOUT_SEC` (default 180) |
+| Studio "outline" pass times out | Outline JSON model slow | `DN_STUDIO_OUTLINE_TIMEOUT_SEC` (default 90) |
+| File-upload parse hangs | Pathological PDF / encrypted file | `DN_STUDIO_EXTRACT_TIMEOUT_SEC` (default 60) |
+| Non-streaming `/chat/execute` times out | Local chat model slow | `DN_CHAT_TIMEOUT_SEC` (default 300) |
+| Memory recall slowing chat | Stuck embedder or DB pool | `DN_MEMORY_RECALL_EMBED_TIMEOUT_SEC`, `DN_MEMORY_RECALL_QUERY_TIMEOUT_SEC` (5s each) |
+| `POST /notes` hangs on auto-title | Stuck title model | `DN_NOTE_TITLE_TIMEOUT_SEC` (default 60) — falls back to first line |
+| `POST /transformations/execute` hangs | Stuck transformation graph | `DN_TRANSFORMATION_TIMEOUT_SEC` (default 180) |
+| Settings UI "Test connection" hangs | Provider-specific slowness | `DN_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>` (per-provider) |
+| `POST /credentials/{id}/discover` hangs | Provider list-models slow | `DN_DISCOVER_MODELS_TIMEOUT_SEC` (default 30) |
+| `/search` hangs | DB pool saturated | `DN_SEARCH_TIMEOUT_SEC` (default 60) |
+| Bulk vectorize floods worker | Notebook with too many sources | `DN_BULK_VECTORIZE_MAX_SOURCES` (default 500) |
+| Async command submission hangs | Stuck SurrealDB pool | `DN_SUBMIT_COMMAND_TIMEOUT_SEC` (default 10) |
 
 Full env-knob reference + per-provider connection-test defaults:
-[`docs/5-CONFIGURATION/onp-env-reference.md`](../5-CONFIGURATION/onp-env-reference.md).
+[`Deeper Notebook environment reference`](../5-CONFIGURATION/onp-env-reference.md).
+
+### Deprecated environment aliases
+
+The `ONP_*` names shown in older runbooks remain accepted only as migration
+aliases for their `DN_*` equivalents. `OPEN_NOTEBOOK_*` is likewise deprecated
+in favor of `DEEPER_NOTEBOOK_*`. Resolution always prefers
+`DEEPER_NOTEBOOK_*`, then `DN_*`, then the two legacy spellings. Update active
+operator configuration to canonical names; retain a legacy spelling only while
+validating an upgrade.
 
 ### Health-check endpoints
 
@@ -495,7 +504,7 @@ no real SurrealDB or LLM is needed. Real-DB integration tests are
 intentionally deferred — they'd need a test-infra setup that's its
 own project.
 
-### Release checklist (Plus-specific)
+### Release checklist (Deeper Notebook)
 
 Before tagging a `v0.7.NN` release:
 
