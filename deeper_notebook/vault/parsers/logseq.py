@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from datetime import date
 
 from deeper_notebook.vault.contracts import ParsedTask
 from deeper_notebook.vault.parsers.common import (
@@ -18,6 +17,7 @@ from deeper_notebook.vault.parsers.common import (
 from deeper_notebook.vault.parsers.markdown import (
     ParseAccumulator,
     parse_iso_date,
+    semantic_visible_text,
     split_property_value,
 )
 
@@ -26,11 +26,6 @@ _PROPERTY = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]{1,128})::[ \t]*(.*)$")
 _TASK = re.compile(
     r"^(TODO|DOING|DONE|CANCELED|CANCELLED|NOW|LATER|WAITING)\b[ \t]*(.*)$"
 )
-_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
-_MARKER = re.compile(
-    r"^[ \t]*(SCHEDULED|DEADLINE|COMPLETED|CLOSED):[ \t]*(.*)$",
-    re.IGNORECASE,
-)
 _INLINE_MARKER = re.compile(
     r"\b(SCHEDULED|DEADLINE|COMPLETED|CLOSED):[ \t]*"
     r"(<[^>\r\n]{1,256}>|\[[^\]\r\n]{1,256}\])",
@@ -38,6 +33,10 @@ _INLINE_MARKER = re.compile(
 )
 _PRIORITY = re.compile(r"\[#([A-Za-z0-9_-]{1,32})\]")
 _RECURRENCE = re.compile(r"(?:\.\+|\+\+|\+)\d+[hdwmy]\b", re.IGNORECASE)
+_SEMANTIC_PROPERTY = re.compile(
+    r"^[ \t]*([A-Za-z0-9_.-]{1,128})::[ \t]*(.*)$",
+    re.MULTILINE,
+)
 _STATUS = {
     "TODO": "todo",
     "DOING": "doing",
@@ -54,15 +53,11 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
     accumulator = ParseAccumulator(relative_path=relative_path, source=source)
     block_stack: list[tuple[int, str]] = []
     block_by_id = {}
-    task_by_block: dict[str, ParsedTask] = {}
     page_properties_open = True
     fence_marker: tuple[str, int] | None = None
     scan_jobs: list[tuple[SourceLine, str | None]] = []
 
     for line in source.body_lines():
-        if not line.content.strip():
-            continue
-        fence_match = _FENCE.match(line.content)
         if fence_marker is not None:
             parent_id = block_stack[-1][1] if block_stack else None
             block = make_block(
@@ -73,15 +68,12 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
                 line=line,
                 plain_text=line.content,
             )
-            accumulator.blocks.append(block)
-            if (
-                fence_match is not None
-                and fence_match.group(1)[0] == fence_marker[0]
-                and len(fence_match.group(1)) >= fence_marker[1]
-            ):
+            accumulator.add_block(block)
+            if _is_fence_closer(line.content, fence_marker):
                 fence_marker = None
             continue
-        if fence_match is not None:
+        fence_opener = _fence_opener(line.content)
+        if fence_opener is not None:
             parent_id = block_stack[-1][1] if block_stack else None
             block = make_block(
                 relative_path=relative_path,
@@ -91,8 +83,10 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
                 line=line,
                 plain_text=line.content,
             )
-            accumulator.blocks.append(block)
-            fence_marker = (fence_match.group(1)[0], len(fence_match.group(1)))
+            accumulator.add_block(block)
+            fence_marker = fence_opener
+            continue
+        if not line.content.strip():
             continue
         property_match = _PROPERTY.match(line.content)
         block_match = _BLOCK.match(line.content)
@@ -114,24 +108,9 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
                 key = property_match.group(2)
                 value = split_property_value(property_match.group(3))
                 owner.properties[key] = value
-                task = task_by_block.get(owner_id)
                 lowered = key.lower()
                 if lowered == "id" and isinstance(value, str):
                     owner.stable_source_id = value
-                elif lowered == "priority" and task is not None:
-                    task.priority = str(value)
-                elif lowered in {"tags", "tag"} and task is not None:
-                    task.tags = _property_tags(value)
-                scan_jobs.append((line, owner_id))
-                continue
-
-        marker_match = _MARKER.match(line.content)
-        if marker_match and accumulator.blocks:
-            indent = _leading_indent(line.content)
-            owner_id = _owner_at_indent(block_stack, indent)
-            task = task_by_block.get(owner_id or "")
-            if task is not None:
-                _apply_task_marker(task, marker_match.group(1), marker_match.group(2))
                 scan_jobs.append((line, owner_id))
                 continue
 
@@ -162,37 +141,34 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
             stable_source_id=stable_source_id,
             task_state=status,
         )
-        accumulator.blocks.append(block)
+        accumulator.add_block(block)
         block_by_id[block.parser_id] = block
         block_stack.append((indent, block.parser_id))
 
         if status:
-            task_text = task_match.group(2)
-            priority = _extract_priority(task_text)
-            recurrence = _extract_recurrence(task_text)
             task = ParsedTask(
                 block_parser_id=block.parser_id,
                 status=status,
-                priority=priority,
-                recurrence=recurrence,
                 tags=[],
             )
-            for marker in _INLINE_MARKER.finditer(task_text):
-                _apply_task_marker(task, marker.group(1), marker.group(2))
-            accumulator.tasks.append(task)
-            task_by_block[block.parser_id] = task
+            accumulator.add_task(task)
 
         scan_jobs.append((line, block.parser_id))
 
-    _scan_queued_regions(accumulator, scan_jobs)
+    semantic_by_block = _scan_queued_regions(accumulator, scan_jobs)
+    tags_by_block: dict[str, list[str]] = {}
+    for link in accumulator.links:
+        if link.link_kind == "tag" and link.source_block_parser_id is not None:
+            tags_by_block.setdefault(link.source_block_parser_id, []).append(
+                link.target_text
+            )
     for task in accumulator.tasks:
-        extracted_tags = [
-            link.target_text
-            for link in accumulator.links
-            if link.link_kind == "tag"
-            and link.source_block_parser_id == task.block_parser_id
-        ]
-        task.tags = ordered_unique(task.tags + extracted_tags)
+        semantic = semantic_by_block.get(task.block_parser_id, "")
+        _hydrate_task_metadata(
+            task,
+            semantic,
+            tags_by_block.get(task.block_parser_id, []),
+        )
     accumulator.tags = ordered_unique(accumulator.tags)
     return accumulator
 
@@ -200,9 +176,10 @@ def parse_logseq(relative_path: str, source: DecodedSource) -> ParseAccumulator:
 def _scan_queued_regions(
     accumulator: ParseAccumulator,
     jobs: list[tuple[SourceLine, str | None]],
-) -> None:
+) -> dict[str, str]:
     current_lines: list[SourceLine] = []
     current_block_id: str | None = None
+    semantic_regions: dict[str, list[str]] = {}
 
     def flush() -> None:
         if not current_lines:
@@ -215,6 +192,10 @@ def _scan_queued_regions(
             content=markdown.rstrip("\r\n"),
         )
         accumulator.scan_inline(region, current_block_id)
+        if current_block_id is not None:
+            semantic_regions.setdefault(current_block_id, []).append(
+                semantic_visible_text(region.content)
+            )
 
     for line, block_id in jobs:
         if current_lines and (
@@ -227,6 +208,56 @@ def _scan_queued_regions(
             current_block_id = block_id
         current_lines.append(line)
     flush()
+    return {
+        block_id: "\n".join(regions) for block_id, regions in semantic_regions.items()
+    }
+
+
+def _fence_opener(content: str) -> tuple[str, int] | None:
+    stripped = content.lstrip(" \t")
+    if not stripped or stripped[0] not in {"`", "~"}:
+        return None
+    marker = stripped[0]
+    run_end = 1
+    while run_end < len(stripped) and stripped[run_end] == marker:
+        run_end += 1
+    if run_end < 3:
+        return None
+    info = stripped[run_end:]
+    if marker == "`" and "`" in info:
+        return None
+    return marker, run_end
+
+
+def _is_fence_closer(content: str, opener: tuple[str, int]) -> bool:
+    stripped = content.lstrip(" \t")
+    marker, minimum_length = opener
+    if not stripped or stripped[0] != marker:
+        return False
+    run_end = 1
+    while run_end < len(stripped) and stripped[run_end] == marker:
+        run_end += 1
+    return run_end >= minimum_length and not stripped[run_end:].strip()
+
+
+def _hydrate_task_metadata(
+    task: ParsedTask,
+    semantic: str,
+    projected_tags: list[str],
+) -> None:
+    task.priority = _extract_priority(semantic)
+    task.recurrence = _extract_recurrence(semantic)
+    property_tags: list[str] = []
+    for matched in _SEMANTIC_PROPERTY.finditer(semantic):
+        key = matched.group(1).lower()
+        value = matched.group(2)
+        if key == "priority":
+            task.priority = value.strip() or task.priority
+        elif key in {"tags", "tag"}:
+            property_tags.extend(_property_tags(split_property_value(value)))
+    for marker in _INLINE_MARKER.finditer(semantic):
+        _apply_task_marker(task, marker.group(1), marker.group(2))
+    task.tags = ordered_unique(property_tags + projected_tags)
 
 
 def _owner_at_indent(

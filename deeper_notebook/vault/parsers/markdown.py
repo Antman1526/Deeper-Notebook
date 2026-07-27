@@ -48,6 +48,11 @@ _RAW_HTML_CONTENT_TAGS = frozenset({"code", "pre", "script", "style"})
 _MAX_WIKILINK_TARGET_CHARS = 4096
 _MAX_MARKDOWN_LABEL_CHARS = 1024
 _MAX_MARKDOWN_TARGET_CHARS = 4096
+_MAX_BLOCKS = 50_000
+_MAX_LINKS = 100_000
+_MAX_TASKS = 50_000
+_MAX_EMBEDS = 50_000
+_MAX_PROJECTED_OBJECTS = 150_000
 
 _MD = MarkdownIt("commonmark", options_update={"html": True})
 
@@ -97,6 +102,37 @@ class ProtectedRanges:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanContext:
+    """Inline source plus forward-computed backslash escape parity."""
+
+    text: str
+    escaped: bytearray
+
+    @classmethod
+    def from_text(cls, text: str) -> "ScanContext":
+        escaped = bytearray(len(text))
+        odd_slashes = False
+        for index, character in enumerate(text):
+            escaped[index] = odd_slashes
+            if character == "\\":
+                odd_slashes = not odd_slashes
+            else:
+                odd_slashes = False
+        return cls(text=text, escaped=escaped)
+
+    def is_escaped(self, position: int) -> bool:
+        return 0 <= position < len(self.escaped) and bool(self.escaped[position])
+
+
+@dataclass(frozen=True, slots=True)
+class WikiCandidate:
+    start: int
+    end: int
+    embedded: bool
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
 class ByteOffsetMapper:
     source_start: int
     offsets: tuple[int, ...] | None
@@ -133,21 +169,53 @@ class ParseAccumulator:
     tags: list[str] = field(default_factory=list)
     title: str | None = None
 
+    def _reserve(self, kind: str) -> None:
+        limits = {
+            "block": (len(self.blocks), _MAX_BLOCKS),
+            "link": (len(self.links), _MAX_LINKS),
+            "task": (len(self.tasks), _MAX_TASKS),
+            "embed": (len(self.embeds), _MAX_EMBEDS),
+        }
+        count, limit = limits[kind]
+        total = len(self.blocks) + len(self.links) + len(self.tasks) + len(self.embeds)
+        if count >= limit or total >= _MAX_PROJECTED_OBJECTS:
+            fail("projection_too_large")
+
+    def add_block(self, block: ParsedBlock) -> None:
+        self._reserve("block")
+        self.blocks.append(block)
+
+    def add_link(self, link: ParsedLink) -> None:
+        self._reserve("link")
+        self.links.append(link)
+
+    def add_task(self, task: ParsedTask) -> None:
+        self._reserve("task")
+        self.tasks.append(task)
+
+    def add_embed(self, embed: ParsedEmbed) -> None:
+        self._reserve("embed")
+        self.embeds.append(embed)
+
     def scan_inline(self, source_text: SourceText, block_id: str | None) -> None:
         text = source_text.content
+        scan = ScanContext.from_text(text)
         byte_offsets = ByteOffsetMapper.from_source(source_text)
-        occupied = list(_literal_spans(text))
+        occupied = list(_literal_spans(scan))
         literals = ProtectedRanges.from_ranges(occupied)
+        wiki_candidates, invalid_wiki_ranges = _scan_wikilinks(scan, literals)
+        occupied.extend(invalid_wiki_ranges)
+        initial_protected = ProtectedRanges.from_ranges(occupied)
 
         for start, end, embedded, label, raw_target in _iter_markdown_links(
-            text, literals
+            scan, initial_protected
         ):
             target = _markdown_target(raw_target)
             if not target:
                 continue
             occupied.append((start, end))
             span_start, span_end = byte_offsets.span(start, end)
-            self.links.append(
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -158,7 +226,7 @@ class ParseAccumulator:
                 )
             )
             if embedded:
-                self.embeds.append(
+                self.add_embed(
                     ParsedEmbed(
                         source_block_parser_id=block_id,
                         target_text=target,
@@ -167,13 +235,14 @@ class ParseAccumulator:
                     )
                 )
 
+        protected = ProtectedRanges.from_ranges(occupied)
         for matched in _LOGSEQ_EMBED.finditer(text):
-            if _is_escaped(text, matched.start()) or literals.overlaps(*matched.span()):
+            if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
             occupied.append(matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target, heading, target_block, _alias = _split_wikilink(matched.group(1))
-            self.links.append(
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -184,7 +253,7 @@ class ParseAccumulator:
                     source_end=span_end,
                 )
             )
-            self.embeds.append(
+            self.add_embed(
                 ParsedEmbed(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -195,13 +264,14 @@ class ParseAccumulator:
                 )
             )
 
+        protected = ProtectedRanges.from_ranges(occupied)
         for matched in _LOGSEQ_BLOCK_EMBED.finditer(text):
-            if _is_escaped(text, matched.start()) or literals.overlaps(*matched.span()):
+            if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
             occupied.append(matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target = matched.group(1)
-            self.links.append(
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -211,7 +281,7 @@ class ParseAccumulator:
                     source_end=span_end,
                 )
             )
-            self.embeds.append(
+            self.add_embed(
                 ParsedEmbed(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -222,24 +292,26 @@ class ParseAccumulator:
             )
 
         protected = ProtectedRanges.from_ranges(occupied)
-        for start, end, embedded, value in _iter_wikilinks(text, protected):
-            occupied.append((start, end))
-            target, heading, target_block, alias = _split_wikilink(value)
-            span_start, span_end = byte_offsets.span(start, end)
-            self.links.append(
+        for candidate in wiki_candidates:
+            if protected.overlaps(candidate.start, candidate.end):
+                continue
+            occupied.append((candidate.start, candidate.end))
+            target, heading, target_block, alias = _split_wikilink(candidate.value)
+            span_start, span_end = byte_offsets.span(candidate.start, candidate.end)
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
                     target_heading=heading,
                     target_block=target_block,
                     alias=alias,
-                    link_kind="embed" if embedded else "wikilink",
+                    link_kind="embed" if candidate.embedded else "wikilink",
                     source_start=span_start,
                     source_end=span_end,
                 )
             )
-            if embedded:
-                self.embeds.append(
+            if candidate.embedded:
+                self.add_embed(
                     ParsedEmbed(
                         source_block_parser_id=block_id,
                         target_text=target,
@@ -252,14 +324,12 @@ class ParseAccumulator:
 
         protected = ProtectedRanges.from_ranges(occupied)
         for matched in _LOGSEQ_BLOCK_REF.finditer(text):
-            if _is_escaped(text, matched.start()) or protected.overlaps(
-                *matched.span()
-            ):
+            if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
             occupied.append(matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target = matched.group(1)
-            self.links.append(
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
@@ -273,15 +343,14 @@ class ParseAccumulator:
         protected = ProtectedRanges.from_ranges(occupied)
         for matched in _TAG.finditer(text):
             if (
-                _is_escaped(text, matched.start())
+                scan.is_escaped(matched.start())
                 or protected.overlaps(*matched.span())
                 or _is_priority_marker(text, matched.start(), matched.end())
             ):
                 continue
             span_start, span_end = byte_offsets.span(*matched.span())
             tag = matched.group(1)
-            self.tags.append(tag)
-            self.links.append(
+            self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=tag,
@@ -290,6 +359,7 @@ class ParseAccumulator:
                     source_end=span_end,
                 )
             )
+            self.tags.append(tag)
 
 
 @dataclass(slots=True)
@@ -409,7 +479,7 @@ def parse_markdown_blocks(
                 heading_path=_current_heading_path(heading_stack),
             )
             if task_state:
-                accumulator.tasks.append(
+                accumulator.add_task(
                     ParsedTask(
                         block_parser_id=block.parser_id,
                         status=task_state,
@@ -461,7 +531,7 @@ def _append_block(
         task_state=task_state,
         heading_path=heading_path,
     )
-    accumulator.blocks.append(block)
+    accumulator.add_block(block)
     return block
 
 
@@ -527,18 +597,19 @@ def _close_container(containers: list[ContainerContext], expected_kind: str) -> 
             return
 
 
-def _literal_spans(text: str) -> list[tuple[int, int]]:
-    spans = _code_spans(text)
-    spans.extend(_html_spans(text))
+def _literal_spans(scan: ScanContext) -> list[tuple[int, int]]:
+    spans = _code_spans(scan)
+    spans.extend(_html_spans(scan))
     return spans
 
 
-def _code_spans(text: str) -> list[tuple[int, int]]:
+def _code_spans(scan: ScanContext) -> list[tuple[int, int]]:
+    text = scan.text
     pending: dict[int, tuple[int, int]] = {}
     spans: list[tuple[int, int]] = []
     cursor = 0
     while cursor < len(text):
-        if text[cursor] != "`" or _is_escaped(text, cursor):
+        if text[cursor] != "`" or scan.is_escaped(cursor):
             cursor += 1
             continue
         end = cursor + 1
@@ -554,7 +625,8 @@ def _code_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _html_spans(text: str) -> list[tuple[int, int]]:
+def _html_spans(scan: ScanContext) -> list[tuple[int, int]]:
+    text = scan.text
     spans: list[tuple[int, int]] = []
     lowered = text.lower()
     cursor = 0
@@ -562,12 +634,30 @@ def _html_spans(text: str) -> list[tuple[int, int]]:
         opening = text.find("<", cursor)
         if opening < 0:
             break
-        if _is_escaped(text, opening):
+        if scan.is_escaped(opening):
             cursor = opening + 1
             continue
         if text.startswith("<!--", opening):
             closing = text.find("-->", opening + 4)
             end = len(text) if closing < 0 else closing + 3
+            spans.append((opening, end))
+            cursor = end
+            continue
+        if text.startswith("<![CDATA[", opening):
+            closing = text.find("]]>", opening + 9)
+            end = len(text) if closing < 0 else closing + 3
+            spans.append((opening, end))
+            cursor = end
+            continue
+        if text.startswith("<?", opening):
+            closing = text.find("?>", opening + 2)
+            end = len(text) if closing < 0 else closing + 2
+            spans.append((opening, end))
+            cursor = end
+            continue
+        if text.startswith("<!", opening):
+            closing = text.find(">", opening + 2)
+            end = len(text) if closing < 0 else closing + 1
             spans.append((opening, end))
             cursor = end
             continue
@@ -581,18 +671,25 @@ def _html_spans(text: str) -> list[tuple[int, int]]:
         is_self_closing = text[opening:end].rstrip().endswith("/>")
         if tag in _RAW_HTML_CONTENT_TAGS and not is_closing and not is_self_closing:
             closing_start = lowered.find(f"</{tag}", end)
-            if closing_start >= 0:
+            if closing_start < 0:
+                end = len(text)
+            else:
                 closing_end = text.find(">", closing_start + len(tag) + 2)
-                if closing_end >= 0:
-                    end = closing_end + 1
+                end = len(text) if closing_end < 0 else closing_end + 1
         spans.append((opening, end))
         cursor = end
     return spans
 
 
-def _iter_wikilinks(text: str, protected: ProtectedRanges):
-    """Yield wiki links in one forward-only pass over the source."""
+def _scan_wikilinks(
+    scan: ScanContext,
+    protected: ProtectedRanges,
+) -> tuple[list[WikiCandidate], list[tuple[int, int]]]:
+    """Find valid wiki links and fail-closed malformed outer ranges."""
 
+    text = scan.text
+    candidates: list[WikiCandidate] = []
+    invalid_ranges: list[tuple[int, int]] = []
     cursor = 0
     length = len(text)
     while cursor + 1 < length:
@@ -603,46 +700,81 @@ def _iter_wikilinks(text: str, protected: ProtectedRanges):
         if text[cursor] != "[" or text[cursor + 1] != "[":
             cursor += 1
             continue
-        if _is_escaped(text, cursor):
+        if scan.is_escaped(cursor):
             cursor += 2
             continue
 
         embedded = cursor > 0 and text[cursor - 1] == "!"
-        escaped_bang = embedded and _is_escaped(text, cursor - 1)
+        escaped_bang = embedded and scan.is_escaped(cursor - 1)
         if escaped_bang:
             cursor += 2
             continue
         start = cursor - 1 if embedded else cursor
         target_start = cursor + 2
-        scan = target_start
+        position = target_start
         limit = min(length, target_start + _MAX_WIKILINK_TARGET_CHARS + 2)
-        while scan + 1 < limit:
-            protected_region = protected.containing(scan)
+        nested_depth = 0
+        malformed = False
+        closed = False
+        while position + 1 < limit:
+            protected_region = protected.containing(position)
             if protected_region is not None:
-                scan = protected_region[1]
-                break
-            if text[scan] in "\r\n":
+                malformed = True
+                position = protected_region[1]
+                continue
+            if text[position] in "\r\n":
                 break
             if (
-                text[scan] == "]"
-                and text[scan + 1] == "]"
-                and not _is_escaped(text, scan)
+                text[position] == "["
+                and text[position + 1] == "["
+                and not scan.is_escaped(position)
             ):
-                end = scan + 2
-                yield start, end, embedded, text[target_start:scan]
+                malformed = True
+                nested_depth += 1
+                position += 2
+                continue
+            if (
+                text[position] == "]"
+                and text[position + 1] == "]"
+                and not scan.is_escaped(position)
+            ):
+                if nested_depth:
+                    nested_depth -= 1
+                    position += 2
+                    continue
+                end = position + 2
+                if malformed:
+                    invalid_ranges.append((start, end))
+                else:
+                    candidates.append(
+                        WikiCandidate(
+                            start=start,
+                            end=end,
+                            embedded=embedded,
+                            value=text[target_start:position],
+                        )
+                    )
                 cursor = end
+                closed = True
                 break
-            scan += 1
-        else:
-            scan = limit
+            if text[position] in "[]" and not scan.is_escaped(position):
+                malformed = True
+            position += 1
 
-        if cursor < target_start:
-            cursor = max(scan, target_start)
+        if not closed:
+            invalid_end = max(position, target_start)
+            if invalid_end <= start:
+                invalid_end = min(length, start + 2)
+            invalid_ranges.append((start, invalid_end))
+            cursor = invalid_end
+
+    return candidates, invalid_ranges
 
 
-def _iter_markdown_links(text: str, protected: ProtectedRanges):
+def _iter_markdown_links(context: ScanContext, protected: ProtectedRanges):
     """Yield links and images with bounded, forward-only label/target scans."""
 
+    text = context.text
     cursor = 0
     length = len(text)
     while cursor < length:
@@ -652,7 +784,7 @@ def _iter_markdown_links(text: str, protected: ProtectedRanges):
             continue
         embedded = text[cursor] == "!" and cursor + 1 < length
         opening = cursor + 1 if embedded else cursor
-        if text[opening] != "[" or _is_escaped(text, cursor):
+        if text[opening] != "[" or context.is_escaped(cursor):
             cursor += 1
             continue
         if opening + 1 < length and text[opening + 1] == "[":
@@ -665,9 +797,13 @@ def _iter_markdown_links(text: str, protected: ProtectedRanges):
         closing_label: int | None = None
         label_depth = 0
         while scan < label_limit:
+            protected_region = protected.containing(scan)
+            if protected_region is not None:
+                scan = protected_region[1]
+                continue
             if text[scan] in "\r\n":
                 break
-            if not _is_escaped(text, scan):
+            if not context.is_escaped(scan):
                 if text[scan] == "[":
                     label_depth += 1
                     if label_depth > 32:
@@ -696,7 +832,7 @@ def _iter_markdown_links(text: str, protected: ProtectedRanges):
         while scan < target_limit:
             if text[scan] in "\r\n":
                 break
-            if _is_escaped(text, scan):
+            if context.is_escaped(scan):
                 scan += 1
             elif quote is not None:
                 if text[scan] == quote:
@@ -719,7 +855,9 @@ def _iter_markdown_links(text: str, protected: ProtectedRanges):
             continue
 
         end = closing_target + 1
-        if protected.overlaps(cursor, end):
+        if protected.overlaps(cursor, label_start) or protected.overlaps(
+            closing_label, end
+        ):
             cursor = end
             continue
         yield (
@@ -771,13 +909,19 @@ def _markdown_target(raw: str) -> str:
     return stripped
 
 
-def _is_escaped(text: str, position: int) -> bool:
-    slashes = 0
-    cursor = position - 1
-    while cursor >= 0 and text[cursor] == "\\":
-        slashes += 1
-        cursor -= 1
-    return slashes % 2 == 1
+def semantic_visible_text(text: str) -> str:
+    """Blank literal code/HTML spans while preserving character positions."""
+
+    scan = ScanContext.from_text(text)
+    spans = ProtectedRanges.from_ranges(_literal_spans(scan)).ranges
+    if not spans:
+        return text
+    characters = list(text)
+    for start, end in spans:
+        for index in range(start, end):
+            if characters[index] not in "\r\n":
+                characters[index] = " "
+    return "".join(characters)
 
 
 def _is_priority_marker(text: str, start: int, end: int) -> bool:
@@ -813,5 +957,6 @@ __all__ = [
     "ParseAccumulator",
     "parse_iso_date",
     "parse_markdown_blocks",
+    "semantic_visible_text",
     "split_property_value",
 ]
