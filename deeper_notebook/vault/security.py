@@ -6,6 +6,7 @@ import errno
 import hashlib
 import os
 import stat
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import TracebackType
@@ -233,16 +234,24 @@ def _open_absolute_directory_chain(path: Path) -> tuple[int, ...]:
         raise
 
 
+def _policy_path_key(path: Path | str) -> str:
+    """Normalize a path for conservative filesystem security comparisons."""
+
+    normalized = os.path.normcase(os.path.normpath(os.fspath(path)))
+    return unicodedata.normalize("NFC", normalized).casefold()
+
+
 def _is_lexically_unsafe_root(path: Path) -> bool:
-    normalized = os.path.normcase(str(path))
-    homes = {os.path.normcase(str(Path.home()))}
+    normalized = _policy_path_key(path)
+    homes = {Path.home()}
     if pwd is not None:
         try:
-            homes.add(os.path.normcase(pwd.getpwuid(os.getuid()).pw_dir))
+            homes.add(Path(pwd.getpwuid(os.getuid()).pw_dir))
         except (KeyError, OSError):
             pass
+    home_keys = {_policy_path_key(home) for home in homes}
     exact_forbidden = {
-        os.path.normcase(value)
+        _policy_path_key(value)
         for value in (
             os.path.sep,
             "/Users",
@@ -251,13 +260,13 @@ def _is_lexically_unsafe_root(path: Path) -> bool:
             "/private/var",
         )
     }
-    exact_forbidden.update(homes)
+    exact_forbidden.update(home_keys)
     for home in homes:
         exact_forbidden.update(
             {
-                os.path.join(home, "Desktop"),
-                os.path.join(home, "Documents"),
-                os.path.join(home, "Downloads"),
+                _policy_path_key(home / "Desktop"),
+                _policy_path_key(home / "Documents"),
+                _policy_path_key(home / "Downloads"),
             }
         )
     if normalized in exact_forbidden:
@@ -291,9 +300,10 @@ def _is_lexically_unsafe_root(path: Path) -> bool:
         "/private/var/networkd",
         "/private/var/protected",
     )
+    separator = _policy_path_key(os.path.sep)
     if any(
-        normalized == os.path.normcase(prefix)
-        or normalized.startswith(os.path.normcase(prefix) + os.path.sep)
+        normalized == _policy_path_key(prefix)
+        or normalized.startswith(_policy_path_key(prefix) + separator)
         for prefix in system_trees
     ):
         return True
