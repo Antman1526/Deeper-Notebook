@@ -19,7 +19,8 @@ CATEGORIES = (
     "migration_documentation",
     "unexpected_active_identity",
 )
-PATTERNS = (
+ALLOWLIST_SCHEMA_VERSION = 3
+LEGACY_PATTERNS = (
     "Open Notebook Plus",
     "Open Notebook",
     "Open notebook+",
@@ -35,25 +36,86 @@ PATTERNS = (
     "components/onp",
     "/api/onp",
 )
+_SAFE_NESTED_APPROVALS = frozenset(
+    {
+        ("Open Notebook Plus", "Open Notebook"),
+    }
+)
 
 OccurrenceKey = tuple[str, str, str, int | None, int, str]
 
 
 @dataclass(frozen=True)
+class Rationale:
+    path: str
+    source: str
+    line: int | None
+    column: int
+    context_sha256: str
+    explanation: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "source": self.source,
+            "line": self.line,
+            "column": self.column,
+            "context_sha256": self.context_sha256,
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True)
 class Approval:
     category: str
-    reason: str
+    rationale: Rationale
 
 
 Allowlist = Mapping[OccurrenceKey, Approval]
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_OCCURRENCE_FIELDS = (
-    "source",
-    "line",
-    "column",
-    "context_sha256",
+_TOP_LEVEL_FIELDS = frozenset(
+    {
+        "schema_version",
+        "persisted_queue_identifiers",
+        "entries",
+    }
+)
+_ENTRY_FIELDS = frozenset(
+    {
+        "path",
+        "pattern",
+        "source",
+        "line",
+        "column",
+        "context_sha256",
+        "category",
+        "rationale",
+    }
+)
+_RATIONALE_FIELDS = frozenset(
+    {
+        "path",
+        "source",
+        "line",
+        "column",
+        "context_sha256",
+        "explanation",
+    }
 )
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
+_MIN_EXPLANATION_CHARS = 48
+_MIN_EXPLANATION_WORDS = 8
+_GENERIC_EXPLANATIONS = frozenset(
+    {
+        "compatibility behavior is intentionally preserved.",
+        "historical product name retained for accuracy.",
+        (
+            "historical reference retained for accuracy and migration "
+            "compatibility."
+        ),
+        "this legacy reference is retained for compatibility.",
+    }
+)
 
 
 def context_sha256(context: str) -> str:
@@ -98,28 +160,77 @@ def classify_match(key: OccurrenceKey, allowlist: Allowlist) -> str:
 
 
 def patterns_for_path(path: str, allowlist: Allowlist) -> tuple[str, ...]:
-    """Return global audit patterns plus custom allowlist patterns for this path."""
-    custom_patterns = (
-        key[1]
-        for key in allowlist
-        if key[0] == path and key[1] not in PATTERNS
-    )
-    return tuple(dict.fromkeys((*PATTERNS, *custom_patterns)))
+    """Return the scanner's immutable, built-in legacy-pattern policy."""
+    del path, allowlist
+    return LEGACY_PATTERNS
 
 
 def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
     """Load approvals pinned to exact path/content occurrences."""
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema_version") != 2:
-        raise ValueError("allowlist schema_version must be 2")
+    if not isinstance(payload, dict):
+        raise ValueError("allowlist must be an object")
+    if frozenset(payload) != _TOP_LEVEL_FIELDS:
+        raise ValueError(
+            "allowlist must contain exactly the schema_version, "
+            "persisted_queue_identifiers, and entries fields"
+        )
+    if payload.get("schema_version") != ALLOWLIST_SCHEMA_VERSION:
+        raise ValueError(
+            f"allowlist schema_version must be {ALLOWLIST_SCHEMA_VERSION}"
+        )
+    persisted_identifiers = payload.get("persisted_queue_identifiers")
+    if not isinstance(persisted_identifiers, list):
+        raise ValueError(
+            "allowlist persisted_queue_identifiers must be a list"
+        )
+    queue_identifier_fields = {
+        "registration": frozenset(
+            {"kind", "path", "symbol", "callee", "app", "command"}
+        ),
+        "submission": frozenset(
+            {
+                "kind",
+                "path",
+                "symbol",
+                "callee",
+                "app",
+                "command",
+                "invocation",
+            }
+        ),
+    }
+    for identifier in persisted_identifiers:
+        if not isinstance(identifier, dict):
+            raise ValueError(
+                "each persisted queue identifier must be an object"
+            )
+        expected_fields = queue_identifier_fields.get(identifier.get("kind"))
+        if (
+            expected_fields is None
+            or frozenset(identifier) != expected_fields
+            or not all(
+                isinstance(value, str) and value
+                for value in identifier.values()
+            )
+        ):
+            raise ValueError(
+                "persisted queue identifiers must use the exact registration "
+                "or submission field schema"
+            )
     entries = payload.get("entries")
     if not isinstance(entries, list):
         raise ValueError("allowlist must contain an 'entries' list")
 
     allowlist: dict[OccurrenceKey, Approval] = {}
+    explanations: set[str] = set()
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError("each allowlist entry must be an object")
+        if frozenset(entry) != _ENTRY_FIELDS:
+            raise ValueError(
+                "allowlist entries must contain exactly the documented fields"
+            )
         allowlisted_path = entry.get("path")
         pattern = entry.get("pattern")
         source = entry.get("source")
@@ -127,11 +238,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
         column = entry.get("column")
         digest = entry.get("context_sha256")
         category = entry.get("category")
-        reason = entry.get("reason")
-        if not all(field in entry for field in _OCCURRENCE_FIELDS):
-            raise ValueError(
-                "allowlist entries require source, line, column, and context_sha256"
-            )
+        rationale = entry.get("rationale")
         if not all(
             isinstance(value, str)
             for value in (
@@ -140,12 +247,16 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 source,
                 digest,
                 category,
-                reason,
             )
         ):
             raise ValueError(
-                "allowlist path, pattern, source, context_sha256, category, "
-                "and reason must be strings; line and column must also be present"
+                "allowlist path, pattern, source, context_sha256, and category "
+                "must be strings"
+            )
+        if pattern not in LEGACY_PATTERNS:
+            raise ValueError(
+                "allowlist pattern must be one of the scanner's built-in "
+                "legacy patterns"
             )
         if source not in {"path", "content"}:
             raise ValueError("allowlist source must be 'path' or 'content'")
@@ -163,18 +274,51 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             raise ValueError("allowlist column must be a positive integer")
         if not _SHA256_RE.fullmatch(digest):
             raise ValueError("allowlist context_sha256 must be 64 lowercase hex chars")
-        if not reason.strip():
-            raise ValueError("allowlist reason must be nonempty")
-        anchor = occurrence_anchor(
+        if not isinstance(rationale, dict):
+            raise ValueError("allowlist rationale must be an object")
+        if frozenset(rationale) != _RATIONALE_FIELDS:
+            raise ValueError(
+                "allowlist rationale must contain exactly path, source, line, "
+                "column, context_sha256, and explanation"
+            )
+        rationale_location = (
+            rationale.get("path"),
+            rationale.get("source"),
+            rationale.get("line"),
+            rationale.get("column"),
+            rationale.get("context_sha256"),
+        )
+        if rationale_location != (
             allowlisted_path,
             source,
             line,
             column,
-        )
-        if anchor not in reason:
+            digest,
+        ):
             raise ValueError(
-                f"allowlist reason must name exact occurrence anchor {anchor}"
+                "allowlist rationale location and context hash must exactly "
+                "match its occurrence"
             )
+        explanation = rationale.get("explanation")
+        if not isinstance(explanation, str):
+            raise ValueError("allowlist rationale explanation must be a string")
+        normalized_explanation = " ".join(explanation.split())
+        if (
+            len(normalized_explanation) < _MIN_EXPLANATION_CHARS
+            or len(normalized_explanation.split()) < _MIN_EXPLANATION_WORDS
+            or normalized_explanation.casefold() in _GENERIC_EXPLANATIONS
+        ):
+            raise ValueError(
+                "allowlist rationale requires a meaningful explanation of at "
+                f"least {_MIN_EXPLANATION_CHARS} characters and "
+                f"{_MIN_EXPLANATION_WORDS} words"
+            )
+        duplicate_key = normalized_explanation.casefold()
+        if duplicate_key in explanations:
+            raise ValueError(
+                "allowlist rationale contains a duplicate explanation"
+            )
+        explanations.add(duplicate_key)
         if category not in CATEGORIES[:-1]:
             raise ValueError(f"invalid allowlist category: {category}")
         if "*" in allowlisted_path:
@@ -189,7 +333,17 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
         )
         if key in allowlist:
             raise ValueError(f"duplicate allowlist entry: {key}")
-        allowlist[key] = Approval(category=category, reason=reason)
+        allowlist[key] = Approval(
+            category=category,
+            rationale=Rationale(
+                path=allowlisted_path,
+                source=source,
+                line=line,
+                column=column,
+                context_sha256=digest,
+                explanation=normalized_explanation,
+            ),
+        )
     return allowlist
 
 
@@ -321,7 +475,7 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
             ]
             for pattern, start, end in occurrences:
                 if any(
-                    pattern != context_pattern
+                    (context_pattern, pattern) in _SAFE_NESTED_APPROVALS
                     and context_start <= start
                     and end <= context_end
                     for context_pattern, context_start, context_end in allowed_contexts
@@ -345,13 +499,13 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
             "column": key[4],
             "context_sha256": key[5],
             "category": approval.category,
-            "reason": approval.reason,
+            "rationale": approval.rationale.as_dict(),
         }
         for key, approval in allowlist.items()
         if key not in matched_allowlist
     ]
     return {
-        "schema_version": 2,
+        "schema_version": ALLOWLIST_SCHEMA_VERSION,
         "categories": categorized,
         "summary": {
             category: len(matches) for category, matches in categorized.items()
