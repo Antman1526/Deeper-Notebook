@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from deeper_notebook.environment import SETTINGS
 from desktop.launcher import _startup_timeout
 
 
@@ -44,7 +45,11 @@ def test_non_positive_falls_back_to_default(monkeypatch, nonpos):
     assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT", 90.0) == 90.0
 
 
-def test_surreal_default_raised_above_old_30s():
+def test_surreal_default_raised_above_old_30s(monkeypatch):
     # The historical hard gate was 30 s; the new default must be strictly more
     # generous so a post-update slow-but-alive SurrealDB start isn't aborted.
-    assert _startup_timeout("ONP_SURREAL_TCP_TIMEOUT_UNSET_XYZ", 90.0) > 30.0
+    canonical = "DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT"
+    for alias in SETTINGS[canonical].precedence:
+        monkeypatch.delenv(alias, raising=False)
+
+    assert _startup_timeout(canonical, 90.0) > 30.0
