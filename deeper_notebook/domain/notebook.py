@@ -9,44 +9,6 @@ from surreal_commands import submit_command
 
 from deeper_notebook.environment import resolve_env
 
-# v0.7.133 — Notebook delete bulk-SQL threshold (Area for Review #4).
-_DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD = 25
-
-
-def _notebook_delete_bulk_threshold() -> int:
-    """Return the note-count threshold above which `Notebook.delete()`
-    switches from per-note gather to bulk-SQL. Configurable via
-    `DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD`. Defaults to 25.
-
-    Rationale for the default: with DEEPER_NOTEBOOK_DB_POOL_SIZE=4 (default), 25
-    concurrent per-note DELETEs serialize into ~6-7 round-trip batches.
-    Bulk does it in 3 statements total, so the breakeven is somewhere
-    in the 10-25 range depending on pool latency. 25 is the safer
-    default — bigger speedup with no observability loss on small
-    notebooks where the per-note log lines actually help.
-
-    Set to 1 (or 0) to force bulk on every delete; set to a huge
-    number to force the per-note path. Useful for debugging.
-    """
-    raw = (resolve_env("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD") or "").strip()
-    if not raw:
-        return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
-    try:
-        val = int(raw)
-        if val < 0:
-            logger.warning(
-                "DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD={} negative; using default {}",
-                raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
-            )
-            return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
-        return val
-    except ValueError:
-        logger.warning(
-            "DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD={!r} not an int; using "
-            "default {}", raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
-        )
-        return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
-
 
 def _is_command_registered(command_id: str) -> bool:
     """v0.7.133 — Check whether a surreal-commands command is in the
@@ -74,11 +36,14 @@ def _is_command_registered(command_id: str) -> bool:
     """
     try:
         from surreal_commands import registry
+
         return registry.get_command_by_id(command_id) is not None
     except Exception:
         # Registry API change, attribute missing, or surreal_commands
         # absent. Fail-closed.
         return False
+
+
 from surrealdb import RecordID
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
@@ -88,7 +53,7 @@ from deeper_notebook.exceptions import (
     DeeperNotebookError,
     InvalidInputError,
 )
-from deeper_notebook.vault import _projection_refresh_is_active
+from deeper_notebook.vault._projection_context import _projection_refresh_is_active
 
 
 class ExternalNoteReadOnlyError(DeeperNotebookError):
@@ -300,276 +265,220 @@ class Notebook(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def delete(self, delete_exclusive_sources: bool = False) -> dict[str, int]:
-        """
-        Delete notebook with cascade deletion of notes and optional source deletion.
+    async def delete(self, delete_exclusive_sources: bool = False) -> dict[str, Any]:
+        """Atomically delete this notebook and all database-owned descendants.
 
-        Args:
-            delete_exclusive_sources: If True, also delete sources that belong
-                                     only to this notebook. Default is False.
+        The hydrated note list is used only as an optimistic snapshot. The
+        transaction re-reads the persisted rows, verifies the exact note set,
+        and rejects file-canonical projections before its first destructive
+        statement. A mismatch or external note raises via ``THROW`` and
+        SurrealDB rolls the complete cascade back.
 
-        Returns:
-            Dict with counts: deleted_notes, deleted_sources, unlinked_sources
+        Worker cancellation and uploaded-file cleanup are deliberately outside
+        the database transaction. They run best-effort only after commit, and
+        the source cleanup boundary refuses to unlink anything outside the
+        configured uploads directory.
         """
         if self.id is None:
             raise InvalidInputError("Cannot delete notebook without an ID")
 
         try:
             notebook_id = ensure_record_id(self.id)
-            deleted_notes = 0
-            deleted_sources = 0
-            unlinked_sources = 0
-
-            # 1. Get and delete all notes linked to this notebook.
-            #
-            # v0.7.107 — parallelize per-note deletes. For v0.7.89
-            # multi-page notebooks with N notes, the old sequential loop
-            # was N+1 round-trips serialized; with asyncio.gather they
-            # interleave concurrently against the connection pool.
-            # Each note.delete() still runs its own cascade (artifact
-            # edges + note_embedding rows, per v0.7.76), so we retain
-            # the per-note observability without the sequential wait.
-            # return_exceptions=True keeps one failed note from
-            # cancelling the others — a partial cleanup is still
-            # better than aborting halfway and leaving orphan rows.
-            #
-            # v0.7.133 — Bulk-SQL path for notebooks above the
-            # DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD (default 25) note
-            # threshold (Area for Review #4). Even with gather, the
-            # per-note path is N concurrent DELETEs hitting a
-            # connection pool of size 4 (DEEPER_NOTEBOOK_DB_POOL_SIZE default) —
-            # they queue up. For a 100-note notebook that's 100 ÷ 4 =
-            # ~25 round-trip-batches serialized, plus per-call overhead.
-            # The bulk path does 3 SurrealQL statements regardless of N.
-            #
-            # Trade-off: bulk loses the per-note observability log line
-            # ("note X failed to delete"). For small notebooks that's a
-            # diagnostic loss not worth the speedup; for large notebooks
-            # the speedup is huge AND a per-note log per failure was
-            # always noise. Threshold is tunable.
-            import asyncio as _asyncio_for_delete  # local alias avoids name shadowing
             notes = await self.get_notes()
-            if notes:
-                # Canonical external notes are projections of files that remain
-                # the source of truth. Abort the whole cascade before its bulk
-                # fast path or any per-note delete can mutate the database.
-                if any(
-                    getattr(note, "canonical_external", False) is True
-                    for note in notes
-                ):
-                    raise ExternalNoteReadOnlyError()
-                bulk_threshold = _notebook_delete_bulk_threshold()
-                if len(notes) > bulk_threshold:
-                    deleted_notes = await self._bulk_delete_notes(notes)
-                else:
-                    results = await _asyncio_for_delete.gather(
-                        *(note.delete() for note in notes),
-                        return_exceptions=True,
-                    )
-                    for note, result in zip(notes, results):
-                        if isinstance(result, BaseException):
-                            logger.warning(
-                                "Notebook delete: note {} failed to delete: {}",
-                                note.id, result,
-                            )
-                            # Skip counting failed deletes; the top-level
-                            # `DELETE artifact WHERE out=$notebook_id`
-                            # below will at least unlink the orphan.
-                            continue
-                        deleted_notes += 1
-            logger.info(f"Deleted {deleted_notes} notes for notebook {self.id}")
+            sources = await self.get_sources()
+            expected_note_ids = [
+                ensure_record_id(note.id) for note in notes if note.id is not None
+            ]
 
-            # Delete artifact relationships
-            await repo_query(
-                "DELETE artifact WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
+            rows = await repo_query(
+                """
+                BEGIN TRANSACTION;
 
-            # 2. Handle sources
-            if delete_exclusive_sources:
-                # Find sources with count of references to OTHER notebooks
-                # If assigned_others = 0, source is exclusive to this notebook
-                source_counts = await repo_query(
-                    """
-                    SELECT
+                IF (SELECT
                         id,
-                        count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                    FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
-                    """,
-                    {"notebook_id": notebook_id},
-                )
+                        canonical_external,
+                        external_state
+                    FROM note
+                    WHERE id IN (SELECT VALUE in FROM artifact
+                        WHERE out = $notebook_id)
+                ).any(|$note|
+                    $note.canonical_external = true
+                    OR ($note.external_state != NONE
+                        AND $note.external_state != NULL)
+                ) {
+                    THROW "external_note_read_only";
+                };
+                IF (SELECT VALUE in FROM artifact
+                        WHERE out = $notebook_id).len() != $expected_note_count
+                    OR NOT ((SELECT VALUE in FROM artifact
+                        WHERE out = $notebook_id)
+                        CONTAINSALL $expected_note_ids)
+                    OR NOT ($expected_note_ids CONTAINSALL
+                        (SELECT VALUE in FROM artifact
+                            WHERE out = $notebook_id))
+                {
+                    THROW "notebook_note_set_changed";
+                };
+                IF (SELECT
+                        id,
+                        canonical_external,
+                        external_state
+                    FROM note
+                    WHERE id IN (SELECT VALUE in FROM artifact
+                        WHERE out = $notebook_id)
+                ).len() != $expected_note_count {
+                    THROW "notebook_note_set_changed";
+                };
 
-                for src in source_counts:
-                    source_id = src.get("id")
-                    if source_id and src.get("assigned_others", 0) == 0:
-                        # Exclusive source - delete it
-                        try:
-                            source = await Source.get(str(source_id))
-                            await source.delete()
-                            deleted_sources += 1
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to delete exclusive source {source_id}: {e}"
-                            )
-                    else:
-                        unlinked_sources += 1
-            else:
-                # Just count sources that will be unlinked
-                source_result = await repo_query(
-                    "SELECT count() as count FROM reference WHERE out = $notebook_id GROUP ALL",
-                    {"notebook_id": notebook_id},
-                )
-                unlinked_sources = source_result[0]["count"] if source_result else 0
+                LET $current_note_ids = SELECT VALUE in
+                    FROM artifact
+                    WHERE out = $notebook_id;
+                LET $source_rows = SELECT
+                        id,
+                        count(->reference[WHERE out != $notebook_id].out)
+                            AS assigned_others
+                    FROM (
+                        SELECT VALUE <-reference.in AS sources
+                        FROM $notebook_id
+                    )[0];
+                LET $exclusive_source_ids = IF $delete_exclusive_sources {
+                    $source_rows
+                        .filter(|$source| $source.assigned_others = 0)
+                        .map(|$source| $source.id)
+                } ELSE {
+                    []
+                };
+                LET $source_count = $source_rows.len();
+                LET $chat_session_ids = SELECT VALUE in
+                    FROM refers_to
+                    WHERE out = $notebook_id;
 
-            # Delete reference relationships (unlink all sources)
-            await repo_query(
-                "DELETE reference WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-            logger.info(
-                f"Unlinked {unlinked_sources} sources, deleted {deleted_sources} "
-                f"exclusive sources for notebook {self.id}"
-            )
+                DELETE note WHERE id IN $current_note_ids;
+                DELETE artifact WHERE in IN $current_note_ids;
+                DELETE artifact WHERE out = $notebook_id;
+                DELETE source_embedding WHERE source IN $exclusive_source_ids;
+                DELETE source_insight WHERE source IN $exclusive_source_ids;
+                DELETE reference WHERE in IN $exclusive_source_ids;
+                DELETE source WHERE id IN $exclusive_source_ids;
+                DELETE reference WHERE out = $notebook_id;
+                DELETE refers_to WHERE out = $notebook_id;
+                DELETE chat_session WHERE id IN $chat_session_ids;
+                DELETE $notebook_id;
 
-            # v0.7.61 — cascade-delete chat sessions linked via the
-            # refers_to edge. Without this, chat_session records survive
-            # with a dangling notebook reference: they show up in any
-            # "all sessions" listing and any attempt to open them
-            # returns a 404 indefinitely because the parent notebook is
-            # gone. The associated LangGraph SQLite checkpoint blobs are
-            # left behind (they're keyed by session id, no FK to clean
-            # up automatically) but become unreachable; we accept that
-            # as orphaned storage rather than complicate the cascade
-            # further.
-            #
-            # Order matters: delete the edge first so the session record
-            # delete can't race a parallel "open session" call.
-            chat_session_ids = await repo_query(
-                "SELECT VALUE in FROM refers_to WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
+                LET $result = {
+                    deleted_notes: $current_note_ids.len(),
+                    deleted_sources: $exclusive_source_ids.len(),
+                    unlinked_sources: IF $delete_exclusive_sources {
+                        $source_count - $exclusive_source_ids.len()
+                    } ELSE {
+                        $source_count
+                    },
+                    deleted_chat_session_ids: $chat_session_ids,
+                    exclusive_source_ids: $exclusive_source_ids
+                };
+                RETURN $result;
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "notebook_id": notebook_id,
+                    "expected_note_ids": expected_note_ids,
+                    "expected_note_count": len(notes),
+                    "delete_exclusive_sources": delete_exclusive_sources,
+                },
             )
-            await repo_query(
-                "DELETE refers_to WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-            # v0.8.48 — stringify the cascade-deleted session ids so the
-            # caller (the notebooks API router) can clean up each one's
-            # LangGraph checkpoint thread. The domain layer must NOT import
-            # the chat graph / checkpointer (layering), so we surface the
-            # ids and let the API layer — which already owns the
-            # checkpointer in the single-session delete path
-            # (api/routers/chat.py v0.7.171) — do the cleanup. Without
-            # this, notebook deletes leaked checkpoint blobs forever:
-            # `prune_old_checkpoints` only trims the OLDEST snapshots
-            # WITHIN a thread that exceeds the per-thread retention (50),
-            # so a deleted session's <50-checkpoint thread is never
-            # touched. The thread_id IS the str() form of the session id.
+            result = self._extract_delete_result(rows)
+            # Preserve the exact domain-to-router checkpoint-cleanup contract.
             deleted_chat_session_ids = (
-                [str(cid) for cid in chat_session_ids] if chat_session_ids else []
+                [str(value) for value in result["deleted_chat_session_ids"]]
+                if result["deleted_chat_session_ids"]
+                else []
             )
-            if chat_session_ids:
-                # v0.7.184 — Was `DELETE $ids` with the ids list bound
-                # as the entire post-DELETE expression. That isn't valid
-                # SurrealQL: DELETE wants a table reference / record-id
-                # expression / WHERE clause, NOT an array bound straight
-                # to the verb position. The query silently no-op'd (or
-                # errored, depending on driver version), so cascade
-                # delete leaked every chat_session row that ever pointed
-                # at a deleted notebook. Backend audit finding #1.
-                # The correct form binds the id list to a WHERE-IN.
-                await repo_query(
-                    "DELETE chat_session WHERE id IN $ids",
-                    {"ids": chat_session_ids},
-                )
-                logger.info(
-                    f"Deleted {len(chat_session_ids)} chat session(s) for "
-                    f"notebook {self.id}"
-                )
+            exclusive_source_ids = {
+                str(value) for value in result["exclusive_source_ids"]
+            }
 
-            # 3. Delete the notebook record itself
-            await super().delete()
-            logger.info(f"Deleted notebook {self.id}")
+            if exclusive_source_ids:
+                for source in sources:
+                    if source.id is None or str(source.id) not in exclusive_source_ids:
+                        continue
+                    try:
+                        await source._cleanup_external_resources()
+                    except Exception as exc:
+                        logger.warning(
+                            "Post-commit cleanup failed for source {}: {}",
+                            source.id,
+                            exc,
+                        )
 
+            logger.info(
+                "Deleted notebook {} atomically: {} notes, {} exclusive "
+                "sources, {} unlinked sources, {} chat sessions",
+                self.id,
+                result["deleted_notes"],
+                result["deleted_sources"],
+                result["unlinked_sources"],
+                len(deleted_chat_session_ids),
+            )
             return {
-                "deleted_notes": deleted_notes,
-                "deleted_sources": deleted_sources,
-                "unlinked_sources": unlinked_sources,
-                # v0.8.48 — surface the cascade-deleted session ids for
-                # caller-side checkpoint cleanup (see above).
+                "deleted_notes": result["deleted_notes"],
+                "deleted_sources": result["deleted_sources"],
+                "unlinked_sources": result["unlinked_sources"],
                 "deleted_chat_session_ids": deleted_chat_session_ids,
             }
 
         except ExternalNoteReadOnlyError:
             raise
         except Exception as e:
+            if "external_note_read_only" in str(e):
+                raise ExternalNoteReadOnlyError() from e
             logger.error(f"Error deleting notebook {self.id}: {e}")
             logger.exception(e)
             raise DatabaseOperationError(f"Failed to delete notebook: {e}")
 
-    async def _bulk_delete_notes(self, notes: list["Note"]) -> int:
-        """v0.7.133 — Bulk-SQL cascade-delete for notes in this notebook.
+    @staticmethod
+    def _extract_delete_result(rows: Any) -> dict[str, Any]:
+        """Find and validate the transaction's final structured result."""
 
-        Two statements, regardless of N notes (v0.8.66 — was three; the
-        `note_embedding` step was dropped, see D-1 below). Rows are deleted
-        FIRST so a partial failure can't strand searchable orphan note rows:
-          1. DELETE note     WHERE id IN $note_ids             (rows; embedding
-                                                                is a column on
-                                                                the row)
-          2. DELETE artifact WHERE in IN $note_ids             (edges)
+        required = {
+            "deleted_notes",
+            "deleted_sources",
+            "unlinked_sources",
+            "deleted_chat_session_ids",
+            "exclusive_source_ids",
+        }
 
-        Trade-offs vs the per-note gather path:
-          + 3 round-trips total instead of ~N/pool_size batches.
-          + No per-note connection-pool contention.
-          - Lose per-note "note X failed to delete" log line — if a
-            single statement fails, the entire batch fails.
-          - Bypasses any per-note logic Note.delete() might add in
-            future. Currently Note.delete() does exactly the same
-            DELETE statements we're issuing here, just per-note.
-            Worth a code review if Note.delete() ever grows
-            per-note side effects (e.g., file cleanup).
+        def candidates(value: Any):
+            if isinstance(value, dict):
+                yield value
+                for nested in value.values():
+                    yield from candidates(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    yield from candidates(nested)
 
-        Returns the count of notes successfully deleted (i.e. that
-        existed before this call). Best-effort: any failure logs and
-        returns 0 — the surrounding `Notebook.delete()` then proceeds
-        with edge cleanup (DELETE artifact WHERE out=$notebook_id),
-        which at minimum unlinks the orphans.
-        """
-        note_ids = [ensure_record_id(n.id) for n in notes if n.id]
-        if not note_ids:
-            return 0
-        try:
-            # v0.8.66 (audit D-1 + D-5):
-            #  • D-1 — removed the dead `DELETE note_embedding` step.
-            #    `note_embedding` is a PHANTOM table (no migration defines it);
-            #    note embeddings live in the `note.embedding` column and are
-            #    removed when the row is deleted. The statement was a no-op and
-            #    the comment misled maintainers into thinking the table existed.
-            #  • D-5 — delete the note ROWS *before* the artifact edges, so a
-            #    partial failure can't leave searchable note rows whose edges
-            #    were already removed (orphans). If the edge delete then fails,
-            #    the leftover edges are swept by the notebook-level
-            #    `DELETE artifact WHERE out=$notebook_id` cleanup in delete().
-            await repo_query(
-                "DELETE note WHERE id IN $note_ids",
-                {"note_ids": note_ids},
+        result = next(
+            (
+                candidate
+                for candidate in candidates(rows)
+                if required <= candidate.keys()
+            ),
+            None,
+        )
+        if result is None:
+            raise DatabaseOperationError(
+                "Notebook delete transaction returned no result"
             )
-            await repo_query(
-                "DELETE artifact WHERE in IN $note_ids",
-                {"note_ids": note_ids},
-            )
-            logger.info(
-                "Bulk-deleted {} notes for notebook {}",
-                len(note_ids), self.id,
-            )
-            return len(note_ids)
-        except Exception as e:
-            logger.warning(
-                "Bulk delete of {} notes failed for notebook {}: {}. "
-                "Outer Notebook.delete() will still unlink artifact "
-                "edges (DELETE artifact WHERE out=$notebook_id).",
-                len(note_ids), self.id, e,
-            )
-            return 0
+        for key in ("deleted_notes", "deleted_sources", "unlinked_sources"):
+            if not isinstance(result[key], int) or isinstance(result[key], bool):
+                raise DatabaseOperationError(
+                    f"Notebook delete transaction returned invalid {key}"
+                )
+        for key in ("deleted_chat_session_ids", "exclusive_source_ids"):
+            if not isinstance(result[key], list):
+                raise DatabaseOperationError(
+                    f"Notebook delete transaction returned invalid {key}"
+                )
+        return result
 
 
 class Asset(BaseModel):
@@ -879,23 +788,9 @@ class Source(ObjectModel):
 
         return data
 
-    async def delete(self) -> bool:
-        """Delete source and clean up associated file, embeddings, and insights.
+    async def _cleanup_external_resources(self) -> None:
+        """Best-effort worker and upload cleanup with no database mutation."""
 
-        v0.6.34 — verifies the file_path is INSIDE UPLOADS_FOLDER before
-        unlinking.
-
-        v0.7.32 — also cancels any in-flight processing command. Without
-        this, deleting a source mid-embed left the worker running
-        against a now-dead source, writing fresh source_embedding rows
-        pointing at the deleted source. Orphan data + wasted GPU.
-        """
-        # v0.7.32 — cancel any in-flight worker command FIRST so the
-        # worker doesn't race us to write embeddings on a source we're
-        # about to delete. Best-effort: if the cancel fails (command
-        # already completed, surreal_commands API change, etc.), we
-        # continue with deletion — the legacy orphan-data path is no
-        # worse than before this fix.
         if self.command:
             try:
                 from surreal_commands import get_command_status
@@ -961,6 +856,19 @@ class Source(ObjectModel):
                 logger.debug(
                     f"File {file_path} not found for source {self.id}, skipping cleanup"
                 )
+
+    async def delete(self) -> bool:
+        """Delete source and clean up associated file, embeddings, and insights.
+
+        v0.6.34 — verifies the file_path is INSIDE UPLOADS_FOLDER before
+        unlinking.
+
+        v0.7.32 — also cancels any in-flight processing command. Without
+        this, deleting a source mid-embed left the worker running
+        against a now-dead source, writing fresh source_embedding rows
+        pointing at the deleted source. Orphan data + wasted GPU.
+        """
+        await self._cleanup_external_resources()
 
         # Delete associated embeddings and insights to prevent orphaned records
         source_id = ensure_record_id(self.id)

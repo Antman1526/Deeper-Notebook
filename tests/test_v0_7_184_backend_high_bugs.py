@@ -35,7 +35,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -50,12 +49,12 @@ def _read_source(rel: str) -> str:
 
 def test_notebook_delete_uses_valid_surrealql_for_chat_cascade():
     """v0.7.184: the chat-session cascade-delete query must bind
-    `$ids` inside a `WHERE id IN $ids` clause. The pre-fix
+    captured transaction IDs inside a `WHERE id IN ...` clause. The pre-fix
     `DELETE $ids` was invalid SurrealQL and silently leaked every
     chat_session row tied to a deleted notebook."""
     src = _read_source("deeper_notebook/domain/notebook.py")
     # The new, correct form is present.
-    assert "DELETE chat_session WHERE id IN $ids" in src, (
+    assert "DELETE chat_session WHERE id IN $chat_session_ids" in src, (
         "v0.7.184 regression: chat-session cascade-delete reverted "
         "to invalid SurrealQL. Every deleted notebook will leak its "
         "chat_session rows again."
