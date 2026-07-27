@@ -1,0 +1,4 @@
+---
+value: !!python/object/apply:os.system ['echo unsafe']
+---
+body
