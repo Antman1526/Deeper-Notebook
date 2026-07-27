@@ -5,7 +5,9 @@ Run: uv run python desktop/resources/make_icon.py
 
 from __future__ import annotations
 
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -19,6 +21,7 @@ ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = ROOT.parents[1]
 CANONICAL_MARK = REPOSITORY_ROOT / "brand/deeper-notebook-mark.svg"
 FRONTEND_FAVICON = REPOSITORY_ROOT / "frontend/src/app/favicon.ico"
+ICONUTIL = Path("/usr/bin/iconutil")
 
 SIZE = 1024
 SCALE = SIZE // 256
@@ -31,6 +34,18 @@ PALETTE: dict[str, RGBA] = {
     "light": (204, 251, 241, 255),
 }
 ICO_SIZES = (16, 32, 48, 64, 128, 256)
+ICONSET_FILES = (
+    ("icon_16x16.png", 16),
+    ("icon_16x16@2x.png", 32),
+    ("icon_32x32.png", 32),
+    ("icon_32x32@2x.png", 64),
+    ("icon_128x128.png", 128),
+    ("icon_128x128@2x.png", 256),
+    ("icon_256x256.png", 256),
+    ("icon_256x256@2x.png", 512),
+    ("icon_512x512.png", 512),
+    ("icon_512x512@2x.png", 1024),
+)
 
 
 def _validate_canonical_mark() -> None:
@@ -277,12 +292,35 @@ def render_frame(master: Image.Image, size: int) -> Image.Image:
 
 
 def write_mac_icns(master: Image.Image, destination: Path) -> None:
-    """Write deterministic ICNS representations with Pillow."""
-    frames = [
-        render_frame(master, size)
-        for size in (32, 64, 128, 256, 512)
-    ]
-    master.save(destination, format="ICNS", append_images=frames)
+    """Package the complete native ten-file iconset with macOS iconutil."""
+    if sys.platform != "darwin":
+        raise RuntimeError("macOS is required to generate the native ICNS iconset")
+    if not ICONUTIL.is_file():
+        raise RuntimeError(f"macOS iconutil is unavailable at {ICONUTIL}")
+
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="deeper-notebook-",
+        suffix=".iconset",
+        dir=destination.parent,
+    ) as iconset_directory:
+        iconset = Path(iconset_directory)
+        for filename, size in ICONSET_FILES:
+            render_frame(master, size).save(iconset / filename)
+        subprocess.run(
+            [
+                str(ICONUTIL),
+                "-c",
+                "icns",
+                str(iconset),
+                "-o",
+                str(destination),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
 def _write_ico(image: Image.Image, destination: Path) -> None:
@@ -323,9 +361,13 @@ def generate_assets(
         "ico": output_dir / "icon.ico",
         "favicon": favicon_path,
     }
+    if sys.platform != "darwin":
+        paths.pop("icns")
+
     master = render_master()
     master.save(paths["png"])
-    write_mac_icns(master, paths["icns"])
+    if "icns" in paths:
+        write_mac_icns(master, paths["icns"])
     write_win_ico(master, paths["ico"])
     write_frontend_favicon(master, paths["favicon"])
     return paths
@@ -334,8 +376,8 @@ def generate_assets(
 def main() -> None:
     print("Rendering Notebook Spark master 1024x1024 ...")
     generated = generate_assets(ROOT, FRONTEND_FAVICON)
-    for label in ("png", "icns", "ico", "favicon"):
-        print(f"  {label:>7} -> {generated[label]}")
+    for label, path in generated.items():
+        print(f"  {label:>7} -> {path}")
 
 
 if __name__ == "__main__":
