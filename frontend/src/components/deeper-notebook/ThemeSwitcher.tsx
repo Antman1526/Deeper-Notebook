@@ -3,7 +3,7 @@
  * ONP themes. Live-switching via window.ONP.setTheme (defined by the
  * desktop wrapper's theme-injection JS in desktop/window.py).
  *
- * Shadow-layer component — see components/onp/README.md.
+ * Shadow-layer component — see components/deeper-notebook/README.md.
  *
  * Live-switch flow:
  *   1. User clicks a theme in the dropdown

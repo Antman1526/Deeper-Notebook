@@ -69,7 +69,7 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
         : 'Gmail connected')
     : 'Sign in with Gmail'
 
-  const iconColor = connected ? 'var(--onp-success, #14B870)' : 'currentColor'
+  const iconColor = connected ? 'var(--dn-success, #14B870)' : 'currentColor'
 
   return (
     <Button

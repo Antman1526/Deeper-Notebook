@@ -20,7 +20,7 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
   if (source.status === 'new' || source.status === 'queued' || source.status === 'running') {
     return {
       label: source.status === 'queued' ? 'Queued' : 'Processing',
-      className: 'border-[var(--onp-info)] text-[var(--onp-info)]',
+      className: 'border-[var(--dn-info)] text-[var(--dn-info)]',
       blocksGeneration: true,
     }
   }
@@ -28,7 +28,7 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
   if (!source.embedded) {
     return {
       label: 'Not embedded',
-      className: 'border-[var(--onp-warning)] text-[var(--onp-warning)]',
+      className: 'border-[var(--dn-warning)] text-[var(--dn-warning)]',
       blocksGeneration: true,
     }
   }
@@ -44,14 +44,14 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
   if (source.extraction_quality === 'low_text') {
     return {
       label: 'Low text',
-      className: 'border-[var(--onp-warning)] text-[var(--onp-warning)]',
+      className: 'border-[var(--dn-warning)] text-[var(--dn-warning)]',
       blocksGeneration: false,
     }
   }
 
   return {
     label: 'Ready',
-    className: 'border-[var(--onp-success)] text-[var(--onp-success)]',
+    className: 'border-[var(--dn-success)] text-[var(--dn-success)]',
     blocksGeneration: false,
   }
 }

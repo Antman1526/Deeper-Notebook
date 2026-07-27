@@ -2,7 +2,7 @@
  * Open notebook+ shadow component layer. See ./README.md for the pattern.
  *
  * Import from this barrel so upstream-page edits are one-line:
- *   import { ReasoningSlotCard } from '@/components/onp'
+ *   import { ReasoningSlotCard } from '@/components/deeper-notebook'
  */
 
 export { ReasoningSlotCard } from './ReasoningSlotCard'

@@ -155,7 +155,7 @@ export function RunTimeline({
   return (
     <section
       aria-label="Run timeline"
-      className="border-b bg-[var(--onp-surface-raised)] px-4 py-3"
+      className="border-b bg-[var(--dn-surface-raised)] px-4 py-3"
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -169,7 +169,7 @@ export function RunTimeline({
           variant="outline"
           className={cn(
             'bg-background/80 text-[0.7rem]',
-            isStreaming && 'border-[var(--onp-info)] text-[var(--onp-info)]',
+            isStreaming && 'border-[var(--dn-info)] text-[var(--dn-info)]',
           )}
         >
           {isStreaming ? 'running' : 'idle'}
@@ -182,7 +182,7 @@ export function RunTimeline({
             key={label}
             className={cn(
               'min-w-0 rounded-md border bg-background/80 px-2.5 py-2',
-              active && 'border-[var(--onp-accent-strong)] bg-[var(--onp-accent-soft)]',
+              active && 'border-[var(--dn-accent-strong)] bg-[var(--dn-accent-soft)]',
             )}
           >
             <div className="flex items-center gap-1.5 text-[0.7rem] font-medium text-muted-foreground">

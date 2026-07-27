@@ -16,8 +16,8 @@ export function CitationCoverageBadge({ citationCount }: { citationCount: number
       className={cn(
         'text-[0.68rem]',
         hasCitations
-          ? 'border-[var(--onp-evidence)] text-[var(--onp-evidence)]'
-          : 'border-[var(--onp-warning)] text-[var(--onp-warning)]',
+          ? 'border-[var(--dn-evidence)] text-[var(--dn-evidence)]'
+          : 'border-[var(--dn-warning)] text-[var(--dn-warning)]',
       )}
     >
       {citationLabel(citationCount)}

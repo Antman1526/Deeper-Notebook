@@ -54,8 +54,8 @@ vi.mock('@/components/chat/McpToolPicker', () => ({
   McpToolPicker: () => <div data-testid="mcp-tool-picker" />,
 }))
 
-vi.mock('@/components/onp', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@/components/onp')
+vi.mock('@/components/deeper-notebook', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/components/deeper-notebook')
   return {
     ...actual,
     RunTimeline: () => <div data-testid="run-timeline" />,

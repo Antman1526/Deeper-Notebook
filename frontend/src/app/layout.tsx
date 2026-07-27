@@ -3,8 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 // ONP shadow-layer design tokens — layered on top of shadcn variables. See
-// components/onp/README.md for the pattern.
-import "@/components/onp/tokens.css";
+// components/deeper-notebook/README.md for the pattern.
+import "@/components/deeper-notebook/tokens.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";

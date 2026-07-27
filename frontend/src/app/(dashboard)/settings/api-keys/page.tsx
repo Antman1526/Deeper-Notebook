@@ -47,8 +47,8 @@ import {
 import { Credential, CreateCredentialRequest, UpdateCredentialRequest } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
 import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog, OsaurusDetectionBanner, SmartRoutingPanel } from '@/components/settings'
-// ONP shadow-layer components (see frontend/src/components/onp/README.md)
-import { ReasoningSlotCard, GmailIntegration } from '@/components/onp'
+// ONP shadow-layer components (see frontend/src/components/deeper-notebook/README.md)
+import { ReasoningSlotCard, GmailIntegration } from '@/components/deeper-notebook'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
 
 // v0.7.46 — type + constants moved to ./constants.tsx so the page and

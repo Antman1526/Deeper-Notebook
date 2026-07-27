@@ -229,7 +229,7 @@ export function IntroReveal() {
               variants={fadeUp(reduce)}
               className="text-5xl font-semibold tracking-tight sm:text-6xl"
             >
-              Open Notebook<span className="onp-aurora-text">+</span>
+              Open Notebook<span className="dn-aurora-text">+</span>
             </motion.h1>
 
             <motion.p variants={fadeUp(reduce)} className="mt-3 text-lg text-[#c5c9ef]">
