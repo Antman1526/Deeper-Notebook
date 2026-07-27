@@ -52,7 +52,7 @@ def test_active_repository_has_no_stale_component_onp_paths() -> None:
     ]
 
     assert unexpected == [], (
-        "Unclassified active components/onp references remain:\n"
+        f"Unclassified active {LEGACY_COMPONENT_PATH} references remain:\n"
         + "\n".join(unexpected)
     )
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,6 +35,20 @@ REQUIRED_ICNS_REPRESENTATIONS = {
     (512, 512, 1),
     (512, 512, 2),
 }
+REQUIRED_ICONSET_FILES = {
+    "icon_16x16.png": (16, 16),
+    "icon_16x16@2x.png": (32, 32),
+    "icon_32x32.png": (32, 32),
+    "icon_32x32@2x.png": (64, 64),
+    "icon_128x128.png": (128, 128),
+    "icon_128x128@2x.png": (256, 256),
+    "icon_256x256.png": (256, 256),
+    "icon_256x256@2x.png": (512, 512),
+    "icon_512x512.png": (512, 512),
+    "icon_512x512@2x.png": (1024, 1024),
+}
+ICONUTIL = shutil.which("iconutil")
+CAN_EXTRACT_NATIVE_ICNS = sys.platform == "darwin" and ICONUTIL is not None
 APPROVED_PALETTE = {
     "deep": (7, 27, 29, 255),
     "dark_teal": (15, 118, 110, 255),
@@ -202,9 +219,13 @@ def test_generation_is_deterministic_and_matches_committed_artifacts(
 ) -> None:
     first, second = generated_assets
 
-    assert first.keys() == COMMITTED_ARTIFACTS.keys()
-    assert second.keys() == COMMITTED_ARTIFACTS.keys()
-    for name, committed in COMMITTED_ARTIFACTS.items():
+    expected_names = set(COMMITTED_ARTIFACTS)
+    if not CAN_EXTRACT_NATIVE_ICNS:
+        expected_names.remove("icns")
+    assert set(first) == expected_names
+    assert set(second) == expected_names
+    for name in expected_names:
+        committed = COMMITTED_ARTIFACTS[name]
         first_bytes = first[name].read_bytes()
         second_bytes = second[name].read_bytes()
         assert hashlib.sha256(first_bytes).digest() == hashlib.sha256(
@@ -228,6 +249,10 @@ def test_every_required_ico_frame_contains_the_mark(
             _assert_spark_visible(frame)
 
 
+@pytest.mark.skipif(
+    not CAN_EXTRACT_NATIVE_ICNS,
+    reason="native ICNS generation requires macOS iconutil",
+)
 def test_every_generated_icns_representation_contains_the_mark(
     generated_assets,
 ) -> None:
@@ -239,6 +264,80 @@ def test_every_generated_icns_representation_contains_the_mark(
             frame = icon.icns.getimage(representation)
             _assert_brand_content(frame, require_transparency=True)
             _assert_spark_visible(frame)
+
+
+@pytest.mark.skipif(
+    not CAN_EXTRACT_NATIVE_ICNS,
+    reason="native ICNS iconset extraction requires macOS iconutil",
+)
+def test_native_icns_round_trip_contains_the_exact_ten_file_iconset(
+    generated_assets,
+    tmp_path,
+) -> None:
+    first, second = generated_assets
+    artifacts = {
+        "first": first["icns"],
+        "second": second["icns"],
+        "committed": COMMITTED_ARTIFACTS["icns"],
+    }
+
+    for label, artifact in artifacts.items():
+        extracted = tmp_path / f"{label}.iconset"
+        subprocess.run(
+            [ICONUTIL, "-c", "iconset", str(artifact), "-o", str(extracted)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        files = {}
+        for path in extracted.iterdir():
+            if path.is_file():
+                with Image.open(path) as image:
+                    files[path.name] = image.size
+                    _assert_brand_content(image, require_transparency=True)
+                    _assert_spark_visible(image)
+        assert files == REQUIRED_ICONSET_FILES, label
+
+
+def test_mac_icns_writer_rejects_non_macos_hosts(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(make_icon.sys, "platform", "linux")
+
+    with pytest.raises(RuntimeError, match="macOS"):
+        make_icon.write_mac_icns(
+            make_icon.render_master(),
+            tmp_path / "icon.icns",
+        )
+
+
+def test_mac_icns_writer_requires_iconutil(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(make_icon.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        make_icon,
+        "ICONUTIL",
+        tmp_path / "missing-iconutil",
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="iconutil"):
+        make_icon.write_mac_icns(
+            make_icon.render_master(),
+            tmp_path / "icon.icns",
+        )
+
+
+def test_non_macos_generation_skips_the_native_icns(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(make_icon.sys, "platform", "linux")
+
+    generated = make_icon.generate_assets(
+        tmp_path / "desktop",
+        tmp_path / "frontend/favicon.ico",
+    )
+
+    assert generated.keys() == {"png", "ico", "favicon"}
+    assert all(path.is_file() for path in generated.values())
 
 
 def test_generated_png_contains_the_full_resolution_mark(generated_assets) -> None:
