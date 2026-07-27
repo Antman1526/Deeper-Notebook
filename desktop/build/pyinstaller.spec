@@ -7,18 +7,23 @@
 #   and the open_notebook compatibility shim ship as DATA and are run by the
 #   user-venv python, not the frozen binary.
 # - uv binary + python-build-standalone are bundled in desktop/bin/ so the
-#   launcher can provision ~/.open-notebook-plus/venv on first launch.
+#   launcher can provision the canonical desktop data-root venv on first launch.
 # - requirements.lock is bundled so bootstrap knows what to install.
 import sys
 from pathlib import Path
-
-from desktop.build.package_layout import pyinstaller_upstream_package_datas
 
 # SPECPATH is the directory holding this .spec file (i.e. desktop/build/).
 # ROOT = desktop/
 # PROJECT_ROOT = repo root
 ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
+# The PyInstaller console script starts with its own bin directory at
+# ``sys.path[0]``.  Add the checked-out source root before importing the shared
+# package-layout helper so builds do not depend on ``desktop`` being installed
+# as a distribution package.
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from desktop.build.package_layout import pyinstaller_upstream_package_datas
 
 # v0.8.70 — derive the app version from desktop/__init__.py instead of the old
 # hardcoded "0.1.0" in the Info.plist (which left every built .app reporting
@@ -85,6 +90,8 @@ hiddenimports = [
     # producing the exact silent-crash symptom the user hit on rebuild.
     "desktop.singleton",
     "desktop.next_rewrites_patcher",
+    # One-time renamed-bundle recovery card/action contract.
+    "desktop.app_migration",
 ]
 
 # ---------------------------------------------------------------------------
@@ -193,33 +200,33 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="Open Notebook Plus",
+    name="Deeper Notebook",
     console=False,
     icon=str(ROOT / "resources" / ("icon.icns" if is_mac else "icon.ico")),
 )
 
 coll = COLLECT(
     exe, a.binaries, a.datas,
-    name="Open Notebook Plus",
+    name="Deeper Notebook",
 )
 
 if is_mac:
     app = BUNDLE(
         coll,
-        name="Open Notebook Plus.app",
+        name="Deeper Notebook.app",
         icon=str(ROOT / "resources" / "icon.icns"),
+        # Compatibility identifier: intentionally pinned for this release.
+        # A future bundle-ID change requires signed packaged-upgrade proof and
+        # explicit macOS permission-migration notes.
         bundle_identifier="com.antman1526.open-notebook-plus",
         info_plist={
             # v0.8.70 — was hardcoded "0.1.0". Now tracks desktop/__init__.py.
             "CFBundleShortVersionString": APP_VERSION,
             "CFBundleVersion": APP_VERSION,
-            # v0.8.65f — user-facing display name. The .app filename + bundle
-            # identifier stay (filesystem/identity), but Finder/Dock/menu bar
-            # use these, so the app shows as "Open notebook+".
-            "CFBundleName": "Open notebook+",
-            "CFBundleDisplayName": "Open notebook+",
+            "CFBundleName": "Deeper Notebook",
+            "CFBundleDisplayName": "Deeper Notebook",
             "NSHighResolutionCapable": True,
             "NSMicrophoneUsageDescription":
-                "Open notebook+ uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
+                "Deeper Notebook uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
         },
     )

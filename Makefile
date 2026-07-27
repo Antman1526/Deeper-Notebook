@@ -321,7 +321,7 @@ export-docs:
 # here is what GitHub Actions would build on a tag push.
 #
 # One-shot:
-#   make build-mac                      # full clean build, produces dist/Open Notebook Plus.app + .dmg
+#   make build-mac                      # full build, produces dist/Deeper Notebook.app + .dmg
 #
 # Iterative (re-run individual stages):
 #   make build-mac-venv                 # set up .build-venv with pinned deps
@@ -338,7 +338,7 @@ export-docs:
 #   make build-mac BUILD_PYTHON=/opt/homebrew/bin/python3.12
 #
 # To install the .app after building:
-#   make build-mac-install              # copies dist/Open\ Notebook\ Plus.app → /Applications
+#   make build-mac-install              # copies dist/Deeper\ Notebook.app → /Applications
 
 .PHONY: build-mac build-mac-test build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg build-mac-clean build-mac-distclean build-mac-install
 
@@ -349,6 +349,7 @@ BUILD_PY     := $(BUILD_VENV)/bin/python
 BUILD_PYINSTALLER := $(BUILD_VENV)/bin/pyinstaller
 
 # Detect CPU arch (arm64 vs x86_64) — drives the DMG filename.
+# Canonical artifact contract: dist/Deeper-Notebook-mac-<arch>.dmg
 BUILD_ARCH := $(shell uname -m)
 
 # v0.8.67k — codesigning identity for the bundle re-seal. Defaults to '-'
@@ -357,17 +358,17 @@ BUILD_ARCH := $(shell uname -m)
 # reset its TCC (Files & Folders) permissions each time — the cause of the
 # iCloud/Desktop "scandir wedge" seen in the field. Set a STABLE identity to
 # fix that: run `bash scripts/create-signing-identity.sh` once, then build with
-#   make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+#   make build-mac ONP_CODESIGN_IDENTITY="Deeper Notebook Local"
 ONP_CODESIGN_IDENTITY ?= -
 
 build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
 	@echo ""
 	@echo "✅ macOS build complete:"
-	@echo "    dist/Open Notebook Plus.app"
-	@echo "    dist/Open-Notebook-Plus-mac-$(BUILD_ARCH).dmg"
+	@echo "    dist/Deeper Notebook.app"
+	@echo "    dist/Deeper-Notebook-mac-$(BUILD_ARCH).dmg"
 	@echo ""
-	@echo "Run with:  open 'dist/Open Notebook Plus.app'"
-	@echo "Tail logs: tail -F ~/.open-notebook-plus/logs/*.log"
+	@echo "Run with:  open 'dist/Deeper Notebook.app'"
+	@echo "Tail logs: tail -F ~/.deeper-notebook/logs/*.log"
 
 # Stage 0: precondition — fast unit suite. Catches regressions before we
 # spend 15+ min on a build that's going to be DOA. Uses the test venv (3.14)
@@ -378,7 +379,7 @@ build-mac-test:
 	# is the LAST command's (tail, always 0), so a failing test suite could NOT
 	# fail the build (the "Stage 0 precondition" was toothless). Run pytest
 	# directly so its non-zero exit aborts `build-mac`.
-	@/Users/Antman/Desktop/OpenNotebook/.venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q
+	@uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q
 	@# v0.8.67k — ALSO gate the backend suite. Previously the precondition ran
 	@# only desktop/tests/, so a regression in api/ or open_notebook/ (e.g. the
 	@# chat-stream overflow handling) could ship in a build with zero coverage.
@@ -399,7 +400,7 @@ build-mac-test:
 # import time ("ModuleNotFoundError: No module named 'prometheus_client'"),
 # and the launcher timed out waiting for /readyz.
 #
-# The user-facing symptom: `Open Notebook Plus.app` opens, shows
+# The user-facing symptom: the desktop app opens, shows
 # a splash, then silently quits after ~3 minutes with no UI ever
 # appearing.
 #
@@ -450,7 +451,7 @@ build-mac-runtimes:
 	@echo "⬇️  Fetching bundled runtimes (surreal / node / uv / python-standalone)..."
 	@$(BUILD_PY) desktop/build/fetch_runtimes.py
 
-# Stage 4: PyInstaller — produces dist/Open Notebook Plus.app from desktop/build/pyinstaller.spec.
+# Stage 4: PyInstaller — produces dist/Deeper Notebook.app from desktop/build/pyinstaller.spec.
 #
 # v0.7.146 — Re-seal the bundle with `codesign --force --deep --sign -`
 # AFTER PyInstaller finishes. Background:
@@ -463,7 +464,7 @@ build-mac-runtimes:
 #   own multi-pass writes — invalidates the seal. The Gatekeeper
 #   verdict on the user's first rebuild was:
 #
-#     spctl -a -vvv "Open Notebook Plus.app"
+#     spctl -a -vvv "Deeper Notebook.app"
 #     → a sealed resource is missing or invalid
 #
 #   When a Gatekeeper seal is broken, macOS silently kills the binary
@@ -479,23 +480,23 @@ build-mac-pyinstaller:
 	@echo "🔧 Running PyInstaller (this is the slow step, ~5-10 min)..."
 	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
 	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign $(ONP_CODESIGN_IDENTITY))..."
-	@codesign --force --deep --sign "$(ONP_CODESIGN_IDENTITY)" "dist/Open Notebook Plus.app"
+	@codesign --force --deep --sign "$(ONP_CODESIGN_IDENTITY)" "dist/Deeper Notebook.app"
 	@echo "   Verifying seal..."
-	@spctl -a -vvv "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || \
+	@spctl -a -vvv "dist/Deeper Notebook.app" 2>&1 | sed 's/^/   /' || \
 		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);" && \
 		echo "   the seal itself is valid, run codesign -v to confirm."
-	@codesign -v "dist/Open Notebook Plus.app" 2>&1 | sed 's/^/   /' || true
+	@codesign -v "dist/Deeper Notebook.app" 2>&1 | sed 's/^/   /' || true
 
 # Stage 5: wrap the .app into a .dmg via hdiutil. Unsigned — first launch needs
-# right-click → Open OR `xattr -dr com.apple.quarantine dist/Open\ Notebook\ Plus.app`.
+# right-click → Open OR `xattr -dr com.apple.quarantine dist/Deeper\ Notebook.app`.
 build-mac-dmg:
 	@echo "💾 Building .dmg..."
 	@bash desktop/build/post_build_mac.sh
 
 # Convenience: copy the built .app to /Applications.
 build-mac-install:
-	@if [ ! -d "dist/Open Notebook Plus.app" ]; then \
-		echo "❌ dist/Open Notebook Plus.app not found. Run 'make build-mac' first."; \
+	@if [ ! -d "dist/Deeper Notebook.app" ]; then \
+		echo "❌ dist/Deeper Notebook.app not found. Run 'make build-mac' first."; \
 		exit 1; \
 	fi
 	@echo "📥 Installing to /Applications..."
@@ -504,18 +505,18 @@ build-mac-install:
 	@# left zombie Next.js frontend servers on stale ports (the app's webview
 	@# then showed "This page couldn't load"). Graceful quit first, wait, then
 	@# force-kill any stragglers so the cp lands on a clean slate.
-	@echo "⏹  Quitting any running Open Notebook Plus first…"
-	@osascript -e 'quit app "Open Notebook Plus"' 2>/dev/null || true
-	@for i in $$(seq 1 20); do pgrep -f '/Applications/Open Notebook Plus.app/Contents/MacOS' >/dev/null 2>&1 || break; sleep 1; done
-	@pkill -9 -f '/Applications/Open Notebook Plus.app' 2>/dev/null || true
+	@echo "⏹  Quitting any running Deeper Notebook first…"
+	@osascript -e 'quit app "Deeper Notebook"' 2>/dev/null || true
+	@for i in $$(seq 1 20); do pgrep -f '/Applications/Deeper Notebook.app/Contents/MacOS' >/dev/null 2>&1 || break; sleep 1; done
+	@pkill -9 -f '/Applications/Deeper Notebook.app' 2>/dev/null || true
 	@pkill -9 -f 'surreal-darwin' 2>/dev/null || true
 	@pkill -9 -f 'llama_cpp.server' 2>/dev/null || true
 	@pkill -9 -f 'surreal_commands.cli.worker' 2>/dev/null || true
 	@sleep 2
-	@rm -rf "/Applications/Open Notebook Plus.app"
-	@cp -R "dist/Open Notebook Plus.app" /Applications/
-	@xattr -dr com.apple.quarantine "/Applications/Open Notebook Plus.app" || true
-	@echo "✅ Installed. Launch with: open '/Applications/Open Notebook Plus.app'"
+	@rm -rf "/Applications/Deeper Notebook.app"
+	@cp -R "dist/Deeper Notebook.app" /Applications/
+	@xattr -dr com.apple.quarantine "/Applications/Deeper Notebook.app" || true
+	@echo "✅ Installed. Launch with: open '/Applications/Deeper Notebook.app'"
 
 # Remove PyInstaller artifacts and the build venv. Keeps fetched runtimes
 # (downloading them again is the slowest step).

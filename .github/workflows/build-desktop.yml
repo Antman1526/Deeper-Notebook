@@ -33,16 +33,16 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
-      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
-          cp dist/Open-Notebook-Plus-mac-arm64.dmg release/
-          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
-          shasum -a 256 release/Open-Notebook-Plus-mac-arm64.dmg > release/SHA256SUMS
+          cp dist/Deeper-Notebook-mac-arm64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
+          shasum -a 256 release/Deeper-Notebook-mac-arm64.dmg > release/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-mac-arm64
+          name: Deeper-Notebook-mac-arm64
           path: release/
 
   build-mac-x86_64:
@@ -71,16 +71,16 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
-      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
-          cp dist/Open-Notebook-Plus-mac-x86_64.dmg release/
-          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
-          shasum -a 256 release/Open-Notebook-Plus-mac-x86_64.dmg > release/SHA256SUMS
+          cp dist/Deeper-Notebook-mac-x86_64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
+          shasum -a 256 release/Deeper-Notebook-mac-x86_64.dmg > release/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-mac-x86_64
+          name: Deeper-Notebook-mac-x86_64
           path: release/
 
   build-windows-x64:
@@ -111,29 +111,30 @@ jobs:
       - run: cd frontend; npm ci; npm run lint; npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
-      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: pwsh desktop/build/post_build_windows.ps1
       - name: Install Inno Setup 6.7.1
         run: choco install innosetup --version=6.7.1 --no-progress --yes
       - name: Build Windows setup package
         shell: pwsh
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop/build/open-notebook-plus.iss'
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop/build/deeper-notebook.iss'
       - name: Smoke test installed Windows package
         shell: pwsh
         run: |
-          $installDir = Join-Path $env:RUNNER_TEMP "Open Notebook Plus"
+          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook"
           $installerArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
-          $installProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          $installProcess = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
           if ($installProcess.ExitCode -ne 0) { throw "Installer failed with exit code $($installProcess.ExitCode)." }
-          $launcher = Join-Path $installDir "Open Notebook Plus.exe"
+          $launcher = Join-Path $installDir "Deeper Notebook.exe"
           if (-not (Test-Path $launcher)) { throw "Installed launcher not found: $launcher" }
           $process = Start-Process -FilePath $launcher -PassThru
           Start-Sleep -Seconds 15
           if ($process.HasExited) { throw "Installed launcher exited during smoke probe." }
           Stop-Process -Id $process.Id -Force
-          $upgradeProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
-          if ($upgradeProcess.ExitCode -ne 0) { throw "Upgrade-path install failed with exit code $($upgradeProcess.ExitCode)." }
-          if (-not (Test-Path $launcher)) { throw "Launcher not found after upgrade-path install: $launcher" }
+          # This is a same-version repair test, not a legacy-to-canonical upgrade test.
+          $repairProcess = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          if ($repairProcess.ExitCode -ne 0) { throw "Repair install failed with exit code $($repairProcess.ExitCode)." }
+          if (-not (Test-Path $launcher)) { throw "Launcher not found after repair install: $launcher" }
           $uninstaller = Join-Path $installDir "unins000.exe"
           if (-not (Test-Path $uninstaller)) { throw "Uninstaller not found: $uninstaller" }
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
@@ -143,19 +144,198 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release/windows-zip, release/windows-setup | Out-Null
-          Copy-Item dist/Open-Notebook-Plus-windows-x64.zip release/windows-zip/
-          python desktop/build/release_manifest.py --artifact release/windows-zip/Open-Notebook-Plus-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
-          (Get-FileHash release/windows-zip/Open-Notebook-Plus-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-windows-x64.zip" | Set-Content release/windows-zip/SHA256SUMS
-          Copy-Item dist/Open-Notebook-Plus-Setup-x64.exe release/windows-setup/
-          python desktop/build/release_manifest.py --artifact release/windows-setup/Open-Notebook-Plus-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
-          (Get-FileHash release/windows-setup/Open-Notebook-Plus-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-Setup-x64.exe" | Set-Content release/windows-setup/SHA256SUMS
+          Copy-Item dist/Deeper-Notebook-windows-x64.zip release/windows-zip/
+          python desktop/build/release_manifest.py --artifact release/windows-zip/Deeper-Notebook-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
+          (Get-FileHash release/windows-zip/Deeper-Notebook-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-windows-x64.zip" | Set-Content release/windows-zip/SHA256SUMS
+          Copy-Item dist/Deeper-Notebook-Setup-x64.exe release/windows-setup/
+          python desktop/build/release_manifest.py --artifact release/windows-setup/Deeper-Notebook-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
+          (Get-FileHash release/windows-setup/Deeper-Notebook-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-Setup-x64.exe" | Set-Content release/windows-setup/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-windows-x64
+          name: Deeper-Notebook-windows-x64
           path: release/
 
+  macos-compatibility-upgrade:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+      - name: Create exact legacy baseline worktree
+        run: git worktree add "$RUNNER_TEMP/legacy-source" 7888102
+      - name: Build approved legacy baseline in its own worktree
+        run: |
+          python -m venv "$RUNNER_TEMP/legacy-venv"
+          "$RUNNER_TEMP/legacy-venv/bin/pip" install -r "$RUNNER_TEMP/legacy-source/desktop/requirements.txt"
+          "$RUNNER_TEMP/legacy-venv/bin/pip" install -e "$RUNNER_TEMP/legacy-source"
+          cd "$RUNNER_TEMP/legacy-source/frontend"
+          npm ci
+          npm run build
+          cd "$RUNNER_TEMP/legacy-source"
+          "$RUNNER_TEMP/legacy-venv/bin/python" desktop/build/fetch_runtimes.py
+          "$RUNNER_TEMP/legacy-venv/bin/pyinstaller" desktop/build/pyinstaller.spec --noconfirm
+          test -d "dist/Open Notebook Plus.app"
+      - name: Build canonical bundle separately
+        run: |
+          python -m venv "$RUNNER_TEMP/canonical-venv"
+          "$RUNNER_TEMP/canonical-venv/bin/pip" install -r desktop/requirements.txt
+          "$RUNNER_TEMP/canonical-venv/bin/pip" install -e .
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
+          "$RUNNER_TEMP/canonical-venv/bin/python" desktop/build/fetch_runtimes.py
+          "$RUNNER_TEMP/canonical-venv/bin/pyinstaller" desktop/build/pyinstaller.spec --noconfirm
+          test -d "dist/Deeper Notebook.app"
+      - name: Install, launch, migrate, and recover in temporary roots
+        run: |
+          compat_home="$RUNNER_TEMP/compat-home"
+          applications_dir="$RUNNER_TEMP/Applications"
+          legacy_root="$compat_home/.open-notebook-plus"
+          canonical_root="$compat_home/.deeper-notebook"
+          mkdir -p "$applications_dir" "$legacy_root/data"
+          printf 'synthetic-state\n' > "$legacy_root/data/synthetic-state"
+          shasum -a 256 "$legacy_root/data/synthetic-state" > "$RUNNER_TEMP/state-before.sha256"
+          cp -R "$RUNNER_TEMP/legacy-source/dist/Open Notebook Plus.app" "$applications_dir/"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
+          legacy_pid=$!
+          sleep 15
+          kill -0 "$legacy_pid"
+          kill "$legacy_pid"
+          wait "$legacy_pid" || true
+          cp -R "dist/Deeper Notebook.app" "$applications_dir/"
+          legacy_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Open Notebook Plus.app/Contents/Info.plist")
+          canonical_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Deeper Notebook.app/Contents/Info.plist")
+          test "$legacy_bundle_id" = "com.antman1526.open-notebook-plus"
+          test "$canonical_bundle_id" = "$legacy_bundle_id"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$applications_dir/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" &
+          canonical_pid=$!
+          sleep 15
+          kill -0 "$canonical_pid"
+          kill "$canonical_pid"
+          wait "$canonical_pid" || true
+          shasum -a 256 "$canonical_root/data/synthetic-state" > "$RUNNER_TEMP/state-after.sha256"
+          cut -d ' ' -f 1 "$RUNNER_TEMP/state-before.sha256" > "$RUNNER_TEMP/state-before.digest"
+          cut -d ' ' -f 1 "$RUNNER_TEMP/state-after.sha256" > "$RUNNER_TEMP/state-after.digest"
+          diff "$RUNNER_TEMP/state-before.digest" "$RUNNER_TEMP/state-after.digest"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$RUNNER_TEMP/canonical-venv/bin/python" -m desktop.app_migration replace \
+              --applications-dir "$applications_dir" \
+              --data-root "$canonical_root" \
+              --approve
+          test ! -e "$applications_dir/Open Notebook Plus.app"
+          test -d "$applications_dir/Deeper Notebook.app"
+          test "$(find "$applications_dir" -maxdepth 1 -name '*.app' | wc -l | tr -d ' ')" = "1"
+          test -f "$canonical_root/app-bundle-replacement.json"
+
+  windows-compatibility-upgrade:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+      - name: Install pinned Inno Setup
+        run: choco install innosetup --version=6.7.1 --no-progress --yes
+      - name: Create exact legacy baseline worktree
+        shell: pwsh
+        run: git worktree add (Join-Path $env:RUNNER_TEMP "legacy-source") 7888102
+      - name: Build approved legacy baseline in its own worktree
+        shell: pwsh
+        run: |
+          $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
+          pwsh -File (Join-Path $legacySource "desktop\build\build_windows.ps1")
+          if ($LASTEXITCODE -ne 0) { throw "Legacy baseline build failed." }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (Join-Path $legacySource "desktop\build\open-notebook-plus.iss")
+          if ($LASTEXITCODE -ne 0) { throw "Legacy installer build failed." }
+          $legacyInstaller = Join-Path $legacySource "dist\Open-Notebook-Plus-Setup-x64.exe"
+          if (-not (Test-Path $legacyInstaller)) { throw "Legacy installer missing." }
+          (Get-FileHash $legacyInstaller -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "legacy-installer.sha256")
+      - name: Build canonical installer separately
+        shell: pwsh
+        run: |
+          pwsh -File desktop\build\build_windows.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Canonical build failed." }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\build\deeper-notebook.iss
+          if ($LASTEXITCODE -ne 0) { throw "Canonical installer build failed." }
+          if (-not (Test-Path "dist\Deeper-Notebook-windows-x64.zip")) { throw "Canonical zip missing." }
+          if (-not (Test-Path "dist\Deeper-Notebook-Setup-x64.exe")) { throw "Canonical installer missing." }
+      - name: Install legacy, seed state, and launch-probe
+        shell: pwsh
+        run: |
+          $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
+          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook Upgrade"
+          $compatHome = Join-Path $env:RUNNER_TEMP "compat-home"
+          $legacyRoot = Join-Path $compatHome ".open-notebook-plus"
+          New-Item -ItemType Directory -Force -Path (Join-Path $legacyRoot "data") | Out-Null
+          "synthetic-state" | Set-Content -NoNewline (Join-Path $legacyRoot "data\synthetic-state")
+          (Get-FileHash (Join-Path $legacyRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")
+          $env:HOME = $compatHome
+          $env:USERPROFILE = $compatHome
+          $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
+          $legacyInstaller = Join-Path $legacySource "dist\Open-Notebook-Plus-Setup-x64.exe"
+          $legacyInstall = Start-Process -FilePath $legacyInstaller -ArgumentList $arguments -Wait -PassThru
+          if ($legacyInstall.ExitCode -ne 0) { throw "Legacy install failed." }
+          $legacyLauncher = Join-Path $installDir "Open Notebook Plus.exe"
+          if (-not (Test-Path $legacyLauncher)) { throw "Legacy launcher missing." }
+          $legacyProcess = Start-Process -FilePath $legacyLauncher -PassThru
+          Start-Sleep -Seconds 15
+          if ($legacyProcess.HasExited) { throw "Legacy launcher exited during probe." }
+          Stop-Process -Id $legacyProcess.Id -Force
+      - name: Upgrade to canonical installer and prove stable identity
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook Upgrade"
+          $compatHome = Join-Path $env:RUNNER_TEMP "compat-home"
+          $canonicalRoot = Join-Path $compatHome ".deeper-notebook"
+          $env:HOME = $compatHome
+          $env:USERPROFILE = $compatHome
+          $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
+          $canonicalInstall = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $arguments -Wait -PassThru
+          if ($canonicalInstall.ExitCode -ne 0) { throw "Canonical upgrade failed." }
+          $canonicalLauncher = Join-Path $installDir "Deeper Notebook.exe"
+          if (-not (Test-Path $canonicalLauncher)) { throw "Canonical launcher missing." }
+          if (Test-Path (Join-Path $installDir "Open Notebook Plus.exe")) { throw "Retired launcher remains." }
+          $canonicalProcess = Start-Process -FilePath $canonicalLauncher -PassThru
+          Start-Sleep -Seconds 15
+          if ($canonicalProcess.HasExited) { throw "Canonical launcher exited during probe." }
+          Stop-Process -Id $canonicalProcess.Id -Force
+          (Get-FileHash (Join-Path $canonicalRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "state-after.sha256")
+          if ((Get-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")) -ne
+              (Get-Content (Join-Path $env:RUNNER_TEMP "state-after.sha256"))) {
+            throw "Synthetic state hash changed during upgrade."
+          }
+          # The stable AppId must own exactly one Windows uninstall entry.
+          $uninstallRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+          $stableAppId = "572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842"
+          $entries = @(Get-ChildItem $uninstallRoot | Where-Object { $_.PSChildName -like "*$stableAppId*" })
+          if ($entries.Count -ne 1) { throw "Expected one stable AppId uninstall entry; found $($entries.Count)." }
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed." }
+          if (Test-Path $installDir) { throw "Temporary install directory remains." }
+
   release:
-    needs: [build-mac-arm64, build-mac-x86_64, build-windows-x64]
+    needs:
+      - build-mac-arm64
+      - build-mac-x86_64
+      - build-windows-x64
+      - macos-compatibility-upgrade
+      - windows-compatibility-upgrade
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -164,6 +344,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Open-Notebook-Plus-mac-arm64/**
-            dist/Open-Notebook-Plus-mac-x86_64/**
-            dist/Open-Notebook-Plus-windows-x64/**
+            dist/Deeper-Notebook-mac-arm64/**
+            dist/Deeper-Notebook-mac-x86_64/**
+            dist/Deeper-Notebook-windows-x64/**
