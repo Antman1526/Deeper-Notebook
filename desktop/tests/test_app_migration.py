@@ -703,3 +703,52 @@ def test_phase_waits_for_inflight_callback_cleanup_before_returning(
     assert phase_errors == []
     assert supervisor_stops == [True]
     assert runtime_stops == [True]
+
+
+def test_tray_quit_and_destroy_close_callback_share_one_runtime_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import tray as desktop_tray
+
+    supervisor_stops: list[bool] = []
+    provider_stops: list[bool] = []
+    captured_callbacks: dict[str, object] = {}
+    quit_errors: list[BaseException] = []
+    ctx = desktop_app._new_context()
+    ctx.sv = SimpleNamespace(
+        stop_all=lambda: supervisor_stops.append(True),
+    )
+    ctx.model_provider_runtime = SimpleNamespace(
+        stop=lambda: provider_stops.append(True),
+    )
+    ctx.log_dir = tmp_path / "logs"
+    ctx.log_dir.mkdir()
+
+    def capture_tray(**callbacks) -> None:
+        captured_callbacks.update(callbacks)
+
+    class Window:
+        def destroy(self) -> None:
+            desktop_app._stop_app_runtime_once(ctx)
+
+    webview = types.ModuleType("webview")
+    webview.windows = [Window()]
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    monkeypatch.setattr(desktop_tray, "install_tray", capture_tray)
+
+    desktop_app._phase_install_tray(ctx)
+
+    def invoke_quit() -> None:
+        try:
+            captured_callbacks["on_quit"]()
+        except BaseException as exc:
+            quit_errors.append(exc)
+
+    quit_thread = threading.Thread(target=invoke_quit)
+    quit_thread.start()
+    quit_thread.join(timeout=2)
+
+    assert not quit_thread.is_alive(), "tray Quit deadlocked with close callback"
+    assert quit_errors == []
+    assert supervisor_stops == [True]
+    assert provider_stops == [True]
