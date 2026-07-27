@@ -4,11 +4,31 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_PATH = ROOT / "scripts" / "rebrand-allowlist.json"
+InventoryEntry = TypeVar("InventoryEntry", bound=Mapping[str, object])
+
+
+def _semantic_sort_key(entry: Mapping[str, object]) -> tuple[str, ...]:
+    return (
+        str(entry.get("kind") or ""),
+        str(entry.get("path") or ""),
+        str(entry.get("symbol") or ""),
+        str(entry.get("callee") or ""),
+        str(entry.get("invocation") or ""),
+        str(entry.get("app") or ""),
+        str(entry.get("command") or ""),
+    )
+
+
+def _sorted_inventory(
+    entries: Iterable[InventoryEntry],
+) -> list[InventoryEntry]:
+    return sorted(entries, key=_semantic_sort_key)
 
 
 def _expression(node: ast.expr | None) -> str | None:
@@ -75,7 +95,7 @@ def _registration_inventory() -> list[dict[str, str | None]]:
                         "command": _expression(command_name),
                     }
                 )
-    return sorted(registrations, key=lambda entry: tuple(entry.values()))
+    return _sorted_inventory(registrations)
 
 
 class _SubmissionVisitor(ast.NodeVisitor):
@@ -149,15 +169,12 @@ def _submission_inventory() -> list[dict[str, str | None]]:
         visitor = _SubmissionVisitor(path)
         visitor.visit(tree)
         submissions.extend(visitor.entries)
-    return sorted(submissions, key=lambda entry: tuple(entry.values()))
+    return _sorted_inventory(submissions)
 
 
 def _allowlisted_inventory() -> list[dict[str, Any]]:
     payload = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
-    return sorted(
-        payload["persisted_queue_identifiers"],
-        key=lambda entry: tuple(entry.values()),
-    )
+    return _sorted_inventory(payload["persisted_queue_identifiers"])
 
 
 def test_persisted_queue_identifier_allowlist_matches_exact_ast_inventory():
@@ -177,3 +194,35 @@ def test_all_fixed_queue_registrations_and_submissions_keep_legacy_app_id():
     assert fixed_apps == {"open_notebook"}
     assert len(_registration_inventory()) == 16
     assert len(_submission_inventory()) == 13
+
+
+def test_inventory_comparison_ignores_json_member_order_but_not_semantics():
+    registration = {
+        "kind": "registration",
+        "path": "commands/example.py",
+        "symbol": "example_command",
+        "callee": "command",
+        "app": "open_notebook",
+        "command": "example",
+    }
+    submission = {
+        "kind": "submission",
+        "path": "api/example.py",
+        "symbol": "submit_example",
+        "callee": "submit_command",
+        "invocation": "to_thread",
+        "app": "open_notebook",
+        "command": "example",
+    }
+    reordered = [
+        dict(reversed(tuple(registration.items()))),
+        dict(reversed(tuple(submission.items()))),
+    ]
+
+    assert _sorted_inventory([registration, submission]) == _sorted_inventory(
+        reordered
+    )
+    reordered[1]["app"] = "deeper_notebook"
+    assert _sorted_inventory([registration, submission]) != _sorted_inventory(
+        reordered
+    )
