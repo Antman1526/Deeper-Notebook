@@ -398,10 +398,8 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     memory_js = _memory_injection_js()
-    # v0.7.210 — surface the running ONP version to the frontend so
-    # the user can see which build they have. The frontend's
-    # AppSidebar footer reads `window.ONP_VERSION` and renders it as
-    # a tiny badge ("v0.7.210"). Source of truth: desktop/__init__.py.
+    # v0.7.210 — surface the running version to the frontend through the
+    # canonical bridge plus a deterministic legacy mirror.
     try:
         from desktop import __version__ as _onp_version
     except Exception:
@@ -413,7 +411,8 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
         f"{('true' if remind_openchronicle else 'false')};"
         "window.ONP_REMIND_OPENCHRONICLE = "
         "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;"
-        f"window.ONP_VERSION = {_json.dumps(_onp_version)};"
+        f"window.DEEPER_NOTEBOOK_VERSION = {_json.dumps(_onp_version)};"
+        "window.ONP_VERSION = window.DEEPER_NOTEBOOK_VERSION;"
     )
     memory_injector = f"""
     (function() {{
