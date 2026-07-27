@@ -1,0 +1,16 @@
+{
+  "vaultRoot": "/stale/machine/vault",
+  "records": [
+    {
+      "manifestId": "manifest-alpha",
+      "sourcePath": "/stale/machine/vault/sources/alpha.md",
+      "status": "approved",
+      "reviewer": "owner",
+      "reviewedAt": "2026-07-27T00:00:00+00:00",
+      "sourceType": "markdown",
+      "evidenceClass": "source",
+      "contentHash": "332b38d0775248ac056ecf1bd3c708d96be35d5b1cbc5ed81bb4ab7b7d80d914",
+      "derivedFrom": []
+    }
+  ]
+}

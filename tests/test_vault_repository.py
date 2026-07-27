@@ -1,0 +1,783 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from deeper_notebook.vault.contracts import (
+    ParsedBlock,
+    ParsedDocument,
+    ParsedLink,
+    ParsedTask,
+)
+from deeper_notebook.vault.repository import (
+    ProjectionResult,
+    VaultMount,
+    VaultRepository,
+)
+from deeper_notebook.vault.security import approve_vault_root
+from deeper_notebook.vault.trust import TrustManifestError, parse_trust_manifest
+from deeper_notebook.vault.watcher import VaultWorkItem
+
+
+class QueryRecorder:
+    def __init__(
+        self,
+        *,
+        existing_file: dict[str, Any] | None = None,
+        notes: list[dict[str, Any]] | None = None,
+        fail_on: str | None = None,
+        trust_records: dict[str, dict[str, Any]] | None = None,
+        lost_response_after_commit: bool = False,
+        reconciliation_proof: dict[str, Any] | None = None,
+    ) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.existing_file = existing_file
+        self.notes = notes or []
+        self.fail_on = fail_on
+        self.trust_records = trust_records if trust_records is not None else {}
+        self.lost_response_after_commit = lost_response_after_commit
+        self.reconciliation_proof = reconciliation_proof
+        self.receipts_created = 0
+
+    async def query(
+        self, statement: str, variables: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        variables = variables or {}
+        compact = " ".join(statement.split())
+        self.calls.append((compact, variables))
+        if "RETURN { receipt:" in compact:
+            return [self.reconciliation_proof] if self.reconciliation_proof else []
+        if self.fail_on and self.fail_on in compact:
+            raise RuntimeError("synthetic database failure")
+        if "LET $unchanged =" in compact:
+            unchanged = bool(
+                self.existing_file
+                and self.existing_file.get("content_hash") == variables["content_hash"]
+                and self.existing_file.get("parse_status") == "parsed"
+                and self.existing_file.get("deleted_state") == "present"
+            )
+            self.receipts_created += 1
+            if self.lost_response_after_commit:
+                raise ConnectionError("synthetic lost response")
+            return [{"projection_status": ("unchanged" if unchanged else "projected")}]
+        if "LET $transitioned =" in compact:
+            transitioned = not (
+                self.existing_file
+                and self.existing_file.get("deleted_state") == "missing"
+            )
+            self.receipts_created += int(transitioned)
+            return [{"transitioned": transitioned}]
+        if "LET $changed_count =" in compact:
+            trust = variables["trust_0"]
+            prior = self.trust_records.get(trust["manifest_id"])
+            semantic_fields = (
+                "content_hash",
+                "resolution_state",
+                "canonical_relative_path",
+                "manifest_relative_path",
+                "derived_from",
+            )
+            unchanged = bool(
+                prior
+                and str(prior.get("vault_id")) == str(trust["vault_id"])
+                and all(
+                    prior.get(field) == trust.get(field) for field in semantic_fields
+                )
+            )
+            if not unchanged:
+                self.trust_records[trust["manifest_id"]] = {
+                    "id": variables["trust_id_0"],
+                    **trust,
+                }
+                self.receipts_created += 1
+            return [
+                {
+                    "changed": 0 if unchanged else 1,
+                    "unchanged": 1 if unchanged else 0,
+                    "resolved": variables["resolved_count"],
+                    "unresolved": variables["unresolved_count"],
+                }
+            ]
+        if "SELECT * FROM vault_file" in compact:
+            return [self.existing_file] if self.existing_file else []
+        if "SELECT id, title FROM note" in compact:
+            return self.notes
+        if "RETURN AFTER" in compact and "vault_sync_receipt" in compact:
+            return [{"id": variables.get("receipt_id"), **variables.get("receipt", {})}]
+        return []
+
+
+class ConnectionSequence:
+    def __init__(self, *connections: QueryRecorder) -> None:
+        self.connections = list(connections)
+        self.opened: list[QueryRecorder] = []
+
+    @asynccontextmanager
+    async def __call__(self):
+        connection = self.connections.pop(0)
+        self.opened.append(connection)
+        yield connection
+
+
+def _mount(root_path: str = "/synthetic/approved-vault") -> VaultMount:
+    return VaultMount(
+        id="vault_mount:test",
+        name="Synthetic",
+        root_path=root_path,
+        format_mode="obsidian",
+        status="ready-read-only",
+        watch_enabled=True,
+        write_policy="read-only",
+        protected_globs=[],
+        parser_version="test-parser",
+    )
+
+
+def _work(
+    *,
+    relative_path: str = "Pages/Alpha.md",
+    content_hash: str = "a" * 64,
+) -> VaultWorkItem:
+    return VaultWorkItem(
+        vault_id="vault_mount:test",
+        relative_path=relative_path,
+        file_kind="markdown",
+        protected=False,
+        content=b"# Alpha\n- [ ] Task [[Beta]]",
+        content_hash=content_hash,
+        byte_size=28,
+        modified_ns=123,
+    )
+
+
+def _document(
+    *,
+    relative_path: str = "Pages/Alpha.md",
+    content_hash: str = "a" * 64,
+) -> ParsedDocument:
+    markdown = "# Alpha\n- [ ] Task [[Beta]]"
+    return ParsedDocument(
+        relative_path=relative_path,
+        source_format="obsidian",
+        title="Alpha",
+        markdown=markdown,
+        content_hash=content_hash,
+        newline="lf",
+        blocks=[
+            ParsedBlock(
+                parser_id="heading",
+                position=0,
+                block_kind="heading",
+                markdown="# Alpha",
+                plain_text="Alpha",
+                source_start=0,
+                source_end=7,
+            ),
+            ParsedBlock(
+                parser_id="task",
+                position=1,
+                block_kind="task",
+                markdown="- [ ] Task [[Beta]]",
+                plain_text="Task Beta",
+                task_state="todo",
+                source_start=8,
+                source_end=len(markdown.encode()),
+            ),
+        ],
+        links=[
+            ParsedLink(
+                source_block_parser_id="task",
+                target_text="Beta",
+                link_kind="wikilink",
+                source_start=19,
+                source_end=27,
+            )
+        ],
+        tasks=[ParsedTask(block_parser_id="task", status="todo")],
+    )
+
+
+@pytest.mark.asyncio
+async def test_projection_is_one_ordered_transaction_and_embeds_after_commit():
+    connection = QueryRecorder(notes=[{"id": "note:beta", "title": "Beta"}])
+    connections = ConnectionSequence(connection)
+    embedding_calls: list[tuple[str, str, dict[str, str]]] = []
+
+    async def embed(app: str, command: str, payload: dict[str, str]) -> None:
+        assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
+        embedding_calls.append((app, command, payload))
+
+    repository = VaultRepository(
+        connection_factory=connections,
+        embedding_submitter=embed,
+    )
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-1"
+    )
+
+    assert result == ProjectionResult(
+        vault_file_id=result.vault_file_id,
+        note_id=result.note_id,
+        status="projected",
+        parse_state="parsed",
+        embedding_state="pending",
+    )
+    assert len(connection.calls) == 1
+    transaction = connection.calls[0][0]
+    assert transaction.startswith("BEGIN TRANSACTION;")
+    assert "COMMIT TRANSACTION;" in transaction
+    ordered_fragments = [
+        "UPSERT $vault_file_id CONTENT $vault_file",
+        "UPSERT $note_id CONTENT $note",
+        "DELETE note_block",
+        "DELETE note_link",
+        "DELETE knowledge_task",
+        "UPSERT $block.record_id CONTENT $block.data",
+        "UPSERT $link.record_id CONTENT $link.data",
+        "UPSERT $task.record_id CONTENT $task.data",
+        "UPDATE $link.record_id SET",
+        "UPDATE $vault_file_id SET parse_status",
+        "UPDATE $note_id SET external_state",
+        "CREATE $receipt_id CONTENT $receipt",
+    ]
+    positions = [transaction.index(fragment) for fragment in ordered_fragments]
+    assert positions == sorted(positions)
+    assert "artifact" not in transaction.casefold()
+    assert "before_hash = $existing_file.content_hash" in transaction
+    assert embedding_calls == [
+        ("open_notebook", "embed_note", {"note_id": result.note_id})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_unchanged_hash_only_appends_one_unchanged_receipt():
+    existing = {
+        "id": "vault_file:existing",
+        "content_hash": "a" * 64,
+        "parse_status": "parsed",
+        "deleted_state": "present",
+    }
+    connection = QueryRecorder(existing_file=existing)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-unchanged"
+    )
+
+    assert result.status == "unchanged"
+    assert len(connection.calls) == 1
+    assert connection.receipts_created == 1
+    assert connection.calls[0][1]["unchanged_receipt"]["status"] == "unchanged"
+    assert connection.calls[0][1]["unchanged_receipt"]["after_hash"] == "a" * 64
+    assert "before_hash = $existing_file.content_hash" in connection.calls[0][0]
+
+
+@pytest.mark.asyncio
+async def test_changed_projection_receipt_binds_prior_and_current_hashes_atomically():
+    existing = {
+        "id": "vault_file:existing",
+        "content_hash": "a" * 64,
+        "parse_status": "parsed",
+        "deleted_state": "present",
+    }
+    connection = QueryRecorder(existing_file=existing)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+    await repository.project_document(
+        _mount(),
+        _work(content_hash="b" * 64),
+        _document(content_hash="b" * 64),
+        "operation-changed",
+    )
+
+    transaction, variables = connection.calls[0]
+    assert variables["success_receipt"]["after_hash"] == "b" * 64
+    assert "before_hash = $existing_file.content_hash" in transaction
+
+
+def test_atomic_repository_paths_never_split_begin_and_commit_rpcs():
+    source = Path(VaultRepository.project_document.__code__.co_filename).read_text(
+        encoding="utf-8"
+    )
+    assert 'self._query(connection, "BEGIN TRANSACTION;")' not in source
+    assert 'self._query(connection, "COMMIT TRANSACTION;")' not in source
+
+
+@pytest.mark.asyncio
+async def test_projection_failure_cancels_and_records_bounded_receipt_separately():
+    failed = QueryRecorder(fail_on="FOR $link IN $links")
+    reconciliation = QueryRecorder()
+    failure_receipt = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(failed, reconciliation, failure_receipt),
+        embedding_submitter=lambda *_args: None,
+        failure_receipt_timeout=0.5,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic database failure"):
+        await repository.project_document(
+            _mount(), _work(), _document(), "operation-failed"
+        )
+
+    assert len(failed.calls) == 1
+    assert len(reconciliation.calls) == 1
+    assert len(failure_receipt.calls) == 1
+    assert failure_receipt.calls[0][0].startswith("BEGIN TRANSACTION;")
+    assert "COMMIT TRANSACTION;" in failure_receipt.calls[0][0]
+    variables = failure_receipt.calls[0][1]
+    serialized = json.dumps(variables, default=str)
+    assert "# Alpha" not in serialized
+    assert "/Users/" not in serialized
+    assert variables["receipt"]["error_code"] == "projection_failed"
+
+
+@pytest.mark.asyncio
+async def test_lost_response_after_commit_reconciles_without_failure_overwrite():
+    primary = QueryRecorder(lost_response_after_commit=True)
+    reconciliation = QueryRecorder(
+        reconciliation_proof={
+            "receipt": {
+                "status": "success",
+                "after_hash": "a" * 64,
+            },
+            "file": {
+                "content_hash": "a" * 64,
+                "parse_status": "parsed",
+                "deleted_state": "present",
+            },
+            "note": {
+                "source_hash": "a" * 64,
+                "external_state": "current",
+            },
+        }
+    )
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(primary, reconciliation),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-lost-response"
+    )
+
+    assert result.status == "projected"
+    assert len(primary.calls) == 1
+    assert len(reconciliation.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_issues_cancel_and_never_embeds():
+    class CancellingRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "FOR $link IN $links" in compact:
+                self.calls.append((compact, variables or {}))
+                raise asyncio.CancelledError
+            return await super().query(statement, variables)
+
+    connection = CancellingRecorder()
+    embedded = False
+
+    async def embed(*_args):
+        nonlocal embedded
+        embedded = True
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=embed,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await repository.project_document(
+            _mount(), _work(), _document(), "operation-cancelled"
+        )
+
+    assert len(connection.calls) == 1
+    assert embedded is False
+
+
+@pytest.mark.asyncio
+async def test_failed_parse_receipt_preserves_projection_and_redacts_source():
+    existing = {
+        "id": "vault_file:existing",
+        "content_hash": "a" * 64,
+        "parse_status": "parsed",
+        "deleted_state": "present",
+    }
+    connection = QueryRecorder(existing_file=existing)
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    await repository.record_failure(
+        "vault_mount:test",
+        _work(),
+        "operation-parse-failed",
+        "frontmatter-invalid:/Users/private:# Secret",
+    )
+
+    statements = [statement for statement, _ in connection.calls]
+    assert all("DELETE note" not in statement for statement in statements)
+    assert all("DELETE note_block" not in statement for statement in statements)
+    serialized = json.dumps(connection.calls, default=str)
+    assert "# Secret" not in serialized
+    assert "/Users/private" not in serialized
+    assert "frontmatter-invalid" in serialized
+
+
+@pytest.mark.asyncio
+async def test_missing_is_atomic_transition_idempotent_and_supports_late_resurrection():
+    current = {
+        "id": "vault_file:existing",
+        "content_hash": "a" * 64,
+        "parse_status": "parsed",
+        "deleted_state": "present",
+    }
+    first = QueryRecorder(existing_file=current)
+    already_missing = QueryRecorder(
+        existing_file={**current, "parse_status": "missing", "deleted_state": "missing"}
+    )
+    resurrected = QueryRecorder(existing_file=current)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(first, already_missing, resurrected)
+    )
+
+    await repository.mark_missing("vault_mount:test", "Pages/Alpha.md", "missing-1")
+    await repository.mark_missing(
+        "vault_mount:test", "Pages/Alpha.md", "missing-repeat"
+    )
+    await repository.mark_missing(
+        "vault_mount:test", "Pages/Alpha.md", "missing-corrective"
+    )
+
+    assert first.receipts_created == 1
+    assert already_missing.receipts_created == 0
+    assert resurrected.receipts_created == 1
+    for recorder in (first, resurrected):
+        assert len(recorder.calls) == 1
+        transaction = recorder.calls[0][0]
+        assert transaction.startswith("BEGIN TRANSACTION;")
+        assert "COMMIT TRANSACTION;" in transaction
+        assert "external_state = 'stale'" in transaction
+        assert "DELETE" not in transaction
+
+
+@pytest.mark.asyncio
+async def test_link_resolution_is_scoped_to_same_mount_and_never_artifact():
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+    await repository.project_document(_mount(), _work(), _document(), "operation-links")
+
+    resolution = connection.calls[0]
+    assert "WHERE vault_id = $vault_id" in resolution[0]
+    assert str(resolution[1]["vault_id"]) == "vault_mount:test"
+    assert all(
+        "artifact" not in statement.casefold() for statement, _ in connection.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_embedding_failure_is_post_commit_and_does_not_change_projection_state():
+    connection = QueryRecorder()
+
+    async def broken_embed(*_args):
+        raise ValueError("sensitive submission detail")
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=broken_embed,
+    )
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-embed-failure"
+    )
+
+    assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
+    assert result.parse_state == "parsed"
+    assert result.embedding_state == "pending"
+    assert all(
+        "CANCEL TRANSACTION" not in statement for statement, _ in connection.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_commit_embedding_cancellation_propagates_after_durable_commit():
+    connection = QueryRecorder()
+
+    async def cancelled_embed(*_args):
+        raise asyncio.CancelledError
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=cancelled_embed,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await repository.project_document(
+            _mount(), _work(), _document(), "operation-embed-cancelled"
+        )
+
+    assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
+    assert all(
+        "CANCEL TRANSACTION" not in statement for statement, _ in connection.calls
+    )
+
+
+def test_receipts_are_append_and_list_only():
+    public = {name for name in dir(VaultRepository) if not name.startswith("_")}
+    assert {"append_receipt", "list_receipts"} <= public
+    assert (
+        not {
+            "update_receipt",
+            "delete_receipt",
+            "update_external_file",
+            "delete_external_file",
+        }
+        & public
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_only_vault_links_and_same_mount_notes():
+    class GraphRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            variables = variables or {}
+            self.calls.append((compact, variables))
+            if "FROM note_link" in compact:
+                return [
+                    {
+                        "id": "note_link:alpha-beta",
+                        "source_note_id": "note:alpha",
+                        "target_note_id": "note:beta",
+                        "target_text": "Beta",
+                        "link_kind": "wikilink",
+                        "resolved": True,
+                    }
+                ]
+            if "FROM note WHERE" in compact:
+                return [
+                    {"id": "note:alpha", "title": "Alpha"},
+                    {"id": "note:beta", "title": "Beta"},
+                ]
+            return []
+
+    connection = GraphRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection, connection)
+    )
+    graph = await repository.graph("vault_mount:test", "note:alpha", depth=1, limit=10)
+
+    assert {node["id"] for node in graph.nodes} == {"note:alpha", "note:beta"}
+    assert graph.edges == [
+        {
+            "id": "note_link:alpha-beta",
+            "source": "note:alpha",
+            "target": "note:beta",
+            "kind": "wikilink",
+        }
+    ]
+    assert all(
+        "artifact" not in statement.casefold() for statement, _ in connection.calls
+    )
+    assert all("vault_id = $vault_id" in statement for statement, _ in connection.calls)
+
+
+@pytest.mark.asyncio
+async def test_trust_manifest_is_contained_hashed_and_idempotent():
+    vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
+    root = approve_vault_root(vault_root)
+    records: dict[str, dict[str, Any]] = {}
+
+    first = QueryRecorder(trust_records=records)
+    second = QueryRecorder(trust_records=records)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(first, second),
+        approved_roots={"vault_mount:test": root},
+    )
+    try:
+        imported = await repository.import_trust_manifest(
+            "vault_mount:test", "brain-engine/trust.json"
+        )
+        unchanged = await repository.import_trust_manifest(
+            "vault_mount:test", "brain-engine/trust.json"
+        )
+    finally:
+        root.close()
+
+    assert imported.resolved == 1
+    assert imported.unresolved == 0
+    assert imported.changed == 1
+    assert unchanged.unchanged == 1
+    assert unchanged.changed == 0
+    trust = records["manifest-alpha"]
+    assert str(trust["vault_id"]) == "vault_mount:test"
+    assert trust["canonical_relative_path"] == "sources/alpha.md"
+    assert trust["resolution_state"] == "resolved"
+    assert trust["manifest_relative_path"] == "brain-engine/trust.json"
+    assert trust["status"] == "approved"
+    assert trust["derived_from"] == []
+    all_calls = [*first.calls, *second.calls]
+    assert all(
+        not (
+            "UPSERT $note_id" in statement
+            and variables.get("note", {}).get("vault_file_id")
+        )
+        for statement, variables in all_calls
+    )
+    assert first.receipts_created == 1
+    assert second.receipts_created == 0
+
+
+@pytest.mark.asyncio
+async def test_changed_trust_hash_updates_record_and_stays_unresolved():
+    vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "unresolved"
+    root = approve_vault_root(vault_root)
+    old_record = {
+        "id": "vault_trust_record:existing",
+        "manifest_id": "manifest-alpha",
+        "content_hash": "7b47b84df5787c002d234d9c5a4bb80c90ca40f44efbb8034a5349c084ebf29c",
+    }
+
+    records = {"manifest-alpha": old_record}
+    connection = QueryRecorder(trust_records=records)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        approved_roots={"vault_mount:test": root},
+    )
+    try:
+        result = await repository.import_trust_manifest(
+            "vault_mount:test", "brain-engine/trust.json"
+        )
+    finally:
+        root.close()
+
+    assert result.changed == 1
+    assert result.unresolved == 1
+    trust_record = connection.calls[0][1]["trust_0"]
+    assert trust_record["resolution_state"] == "unresolved"
+    assert trust_record["derived_from"] == ["source-1"]
+    assert connection.receipts_created == 1
+
+
+@pytest.mark.asyncio
+async def test_same_trust_hash_transitions_unresolved_to_resolved_with_receipt():
+    vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
+    root = approve_vault_root(vault_root)
+    prior = {
+        "id": "vault_trust_record:existing",
+        "manifest_id": "manifest-alpha",
+        "vault_id": "vault_mount:test",
+        "canonical_relative_path": "sources/alpha.md",
+        "content_hash": (
+            "332b38d0775248ac056ecf1bd3c708d96be35d5b1cbc5ed81bb4ab7b7d80d914"
+        ),
+        "resolution_state": "unresolved",
+    }
+
+    records = {"manifest-alpha": prior}
+    connection = QueryRecorder(trust_records=records)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        approved_roots={"vault_mount:test": root},
+    )
+    try:
+        result = await repository.import_trust_manifest(
+            "vault_mount:test", "brain-engine/trust.json"
+        )
+    finally:
+        root.close()
+
+    assert result.changed == 1
+    assert result.unchanged == 0
+    trust = connection.calls[0][1]["trust_0"]
+    assert trust["resolution_state"] == "resolved"
+    assert connection.receipts_created == 1
+
+
+@pytest.mark.asyncio
+async def test_trust_import_rejects_non_connector_json_before_database_access():
+    vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
+    root = approve_vault_root(vault_root)
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(),
+        approved_roots={"vault_mount:test": root},
+    )
+    try:
+        with pytest.raises(ValueError, match="invalid_trust_manifest_path"):
+            await repository.import_trust_manifest(
+                "vault_mount:test", "sources/trust.json"
+            )
+    finally:
+        root.close()
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        (b"{" + b" " * (1024 * 1024) + b"}", "manifest_too_large"),
+        (
+            json.dumps(
+                {
+                    "vaultRoot": "/old/root",
+                    "records": [{}] * 1001,
+                }
+            ).encode(),
+            "too_many_records",
+        ),
+        (
+            json.dumps(
+                {
+                    "vaultRoot": "/old/root",
+                    "records": [
+                        {
+                            "manifestId": "x" * 513,
+                            "sourcePath": "/old/root/source.md",
+                            "status": "approved",
+                            "reviewer": "owner",
+                            "reviewedAt": "2026-07-27T00:00:00+00:00",
+                            "sourceType": "markdown",
+                            "evidenceClass": "source",
+                            "contentHash": "a" * 64,
+                            "derivedFrom": [],
+                        }
+                    ],
+                }
+            ).encode(),
+            "manifest_id_too_long",
+        ),
+        (
+            json.dumps(
+                {
+                    "vaultRoot": "/old/root",
+                    "records": [
+                        {
+                            "manifestId": "alpha",
+                            "sourcePath": "/old/root/source.md",
+                            "status": "approved",
+                            "reviewer": "owner",
+                            "reviewedAt": "2026-07-27T00:00:00+00:00",
+                            "sourceType": "markdown",
+                            "evidenceClass": "source",
+                            "contentHash": "a" * 64,
+                            "derivedFrom": ["source"] * 257,
+                        }
+                    ],
+                }
+            ).encode(),
+            "too_many_derived_from",
+        ),
+    ],
+)
+def test_trust_manifest_parser_enforces_explicit_budgets(payload: bytes, code: str):
+    with pytest.raises(TrustManifestError) as caught:
+        parse_trust_manifest(payload)
+    assert caught.value.code == code

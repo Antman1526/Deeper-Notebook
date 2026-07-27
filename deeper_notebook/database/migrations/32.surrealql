@@ -138,8 +138,10 @@ DEFINE INDEX IF NOT EXISTS idx_vault_receipt_vault ON TABLE vault_sync_receipt C
 DEFINE TABLE IF NOT EXISTS vault_trust_record SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS schema_version ON TABLE vault_trust_record TYPE int DEFAULT 1;
 DEFINE FIELD IF NOT EXISTS manifest_id ON TABLE vault_trust_record TYPE string;
+DEFINE FIELD IF NOT EXISTS vault_id ON TABLE vault_trust_record TYPE option<record<vault_mount>>;
 DEFINE FIELD IF NOT EXISTS vault_file_id ON TABLE vault_trust_record TYPE option<record<vault_file>>;
 DEFINE FIELD IF NOT EXISTS note_id ON TABLE vault_trust_record TYPE option<record<note>>;
+DEFINE FIELD IF NOT EXISTS canonical_relative_path ON TABLE vault_trust_record TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS status ON TABLE vault_trust_record TYPE string DEFAULT "approved" ASSERT $value = "approved";
 DEFINE FIELD IF NOT EXISTS resolution_state ON TABLE vault_trust_record TYPE string DEFAULT "unresolved" ASSERT $value IN ["resolved", "unresolved"];
 DEFINE FIELD IF NOT EXISTS reviewer ON TABLE vault_trust_record TYPE option<string>;
@@ -148,6 +150,7 @@ DEFINE FIELD IF NOT EXISTS source_type ON TABLE vault_trust_record TYPE string;
 DEFINE FIELD IF NOT EXISTS evidence_class ON TABLE vault_trust_record TYPE string;
 DEFINE FIELD IF NOT EXISTS content_hash ON TABLE vault_trust_record TYPE string;
 DEFINE FIELD IF NOT EXISTS derived_from ON TABLE vault_trust_record TYPE array<string> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS manifest_relative_path ON TABLE vault_trust_record TYPE string;
 DEFINE FIELD IF NOT EXISTS created ON TABLE vault_trust_record TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
 DEFINE FIELD IF NOT EXISTS updated ON TABLE vault_trust_record TYPE datetime DEFAULT time::now() VALUE time::now();
 DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record COLUMNS manifest_id UNIQUE;

@@ -1,19 +1,1459 @@
-"""Internal repository boundary for external-vault projections."""
+"""Atomic persistence boundary for read-only external-vault projections."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+import asyncio
+import inspect
+import re
+import unicodedata
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
+from datetime import datetime, timezone
+from typing import Any, Literal, Protocol
 
+from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
+from surreal_commands import submit_command as _submit_command
+from surrealdb import RecordID
+
+from deeper_notebook.database.repository import (
+    db_connection,
+    ensure_record_id,
+    parse_record_ids,
+)
+from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.vault._projection_context import (
     _PROJECTION_CAPABILITY,
     _activate_projection_refresh,
 )
+from deeper_notebook.vault.contracts import ParsedDocument, VaultFormat, VaultState
+from deeper_notebook.vault.security import (
+    ApprovedVaultRoot,
+    VaultSecurityError,
+    approve_vault_root,
+    classify_vault_path,
+    secure_read,
+)
+from deeper_notebook.vault.trust import (
+    MAX_MANIFEST_BYTES,
+    TrustManifestEntry,
+    parse_trust_manifest,
+)
+from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
 
 
 @contextmanager
-def _projection_note_refresh() -> Iterator[None]:
+def _projection_note_refresh():
     """Grant note-refresh authority only inside the vault repository."""
 
     with _activate_projection_refresh(_PROJECTION_CAPABILITY):
         yield
+
+
+class _Connection(Protocol):
+    async def query(
+        self,
+        statement: str,
+        variables: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+
+ConnectionFactory = Callable[[], AbstractAsyncContextManager[_Connection]]
+EmbeddingSubmitter = Callable[
+    [str, str, dict[str, str]],
+    Awaitable[Any] | Any,
+]
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class VaultMountCreate(_Model):
+    name: str
+    root_path: str
+    format_mode: VaultFormat
+    status: VaultState = "disconnected"
+    parent_vault_id: str | None = None
+    watch_enabled: bool = False
+    write_policy: Literal["read-only", "guarded-write"] = "read-only"
+    protected_globs: list[str] = Field(default_factory=list)
+    parser_version: str
+
+
+class VaultMount(VaultMountCreate):
+    id: str
+
+
+class VaultFile(_Model):
+    id: str
+    vault_id: str
+    relative_path: str
+    file_kind: str
+    format: str
+    content_hash: str | None = None
+    size_bytes: int = 0
+    modified_ns: int = 0
+    encoding: str | None = None
+    parse_status: str
+    parse_error_code: str | None = None
+    deleted_state: Literal["present", "missing"]
+
+
+class VaultLink(_Model):
+    id: str
+    source_note_id: str
+    source_block_id: str | None = None
+    target_note_id: str | None = None
+    target_block_id: str | None = None
+    target_text: str
+    target_heading: str | None = None
+    target_block: str | None = None
+    alias: str | None = None
+    link_kind: str
+    resolved: bool = False
+
+
+class VaultPage(_Model):
+    note: dict[str, Any]
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    outgoing_links: list[VaultLink] = Field(default_factory=list)
+    backlinks: list[VaultLink] = Field(default_factory=list)
+
+
+class VaultGraph(_Model):
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VaultSyncReceipt(_Model):
+    id: str | None = None
+    operation_id: str
+    vault_id: str
+    vault_file_id: str
+    operation: str
+    source: str = "vault-indexer"
+    before_hash: str | None = None
+    after_hash: str | None = None
+    observed_modified_ns: int | None = None
+    parser_version: str
+    policy_decision: str = "read-only"
+    status: str
+    error_code: str | None = None
+    rollback_path: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+
+
+class ProjectionResult(_Model):
+    vault_file_id: str
+    note_id: str
+    status: Literal["projected", "unchanged"]
+    parse_state: Literal["parsed"]
+    embedding_state: Literal["pending"]
+
+
+class VaultTrustRecord(_Model):
+    id: str | None = None
+    manifest_id: str
+    vault_id: str | None
+    vault_file_id: str | None = None
+    note_id: str | None = None
+    canonical_relative_path: str | None
+    status: Literal["approved"]
+    resolution_state: Literal["resolved", "unresolved"]
+    reviewer: str
+    reviewed_at: datetime
+    source_type: str
+    evidence_class: Literal["source", "synthesis"]
+    content_hash: str
+    derived_from: list[str]
+    manifest_relative_path: str
+
+
+class TrustImportResult(_Model):
+    changed: int = 0
+    unchanged: int = 0
+    resolved: int = 0
+    unresolved: int = 0
+
+
+class VaultTrustSummary(_Model):
+    total: int = 0
+    resolved: int = 0
+    unresolved: int = 0
+
+
+_SAFE_CODE = re.compile(r"^[a-zA-Z0-9_.-]+")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _record_key(kind: str, *parts: str) -> str:
+    joined = "\x1f".join((kind, *parts))
+    return uuid.uuid5(uuid.NAMESPACE_URL, joined).hex
+
+
+def _record_id(table: str, *parts: str) -> str:
+    return f"{table}:{_record_key(table, *parts)}"
+
+
+def _db_id(value: str) -> RecordID:
+    return ensure_record_id(value)
+
+
+def _safe_error_code(value: str) -> str:
+    match = _SAFE_CODE.match(value)
+    return (match.group(0) if match else "vault_error")[:64]
+
+
+def _title_key(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+async def _default_embedding_submitter(
+    app: str,
+    command: str,
+    payload: dict[str, str],
+) -> Any:
+    return await asyncio.to_thread(
+        _submit_command,
+        LEGACY_COMMAND_APP,
+        "embed_note",
+        payload,
+    )
+
+
+class VaultRepository:
+    """Persist projections without acquiring any filesystem write authority."""
+
+    def __init__(
+        self,
+        *,
+        connection_factory: ConnectionFactory | None = None,
+        embedding_submitter: EmbeddingSubmitter | None = None,
+        approved_roots: dict[str, ApprovedVaultRoot] | None = None,
+        failure_receipt_timeout: float = 2.0,
+    ) -> None:
+        self._connection_factory = connection_factory or db_connection
+        self._embedding_submitter = embedding_submitter or _default_embedding_submitter
+        self._approved_roots = approved_roots or {}
+        self._failure_receipt_timeout = failure_receipt_timeout
+
+    async def _query(
+        self,
+        connection: _Connection,
+        statement: str,
+        variables: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        result = await connection.query(statement, variables)
+        if isinstance(result, str):
+            raise RuntimeError("database query failed")
+        parsed = parse_record_ids(result)
+        return parsed if isinstance(parsed, list) else [parsed]
+
+    async def create_mount(self, request: VaultMountCreate) -> VaultMount:
+        mount_id = _record_id("vault_mount", request.root_path)
+        data = request.model_dump()
+        if data["parent_vault_id"]:
+            data["parent_vault_id"] = _db_id(data["parent_vault_id"])
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "CREATE $mount_id CONTENT $mount RETURN AFTER;",
+                {"mount_id": _db_id(mount_id), "mount": data},
+            )
+        return VaultMount(id=mount_id, **(rows[0] if rows else request.model_dump()))
+
+    async def list_mounts(self) -> list[VaultMount]:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT * FROM vault_mount ORDER BY name;",
+            )
+        return [VaultMount.model_validate(row) for row in rows]
+
+    async def get_mount(self, vault_id: str) -> VaultMount:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT * FROM $vault_id;",
+                {"vault_id": _db_id(vault_id)},
+            )
+        if not rows:
+            raise LookupError("vault_mount_not_found")
+        return VaultMount.model_validate(rows[0])
+
+    async def project_document(
+        self,
+        vault: VaultMount,
+        observation: VaultWorkItem,
+        parsed: ParsedDocument,
+        operation_id: str,
+    ) -> ProjectionResult:
+        if (
+            observation.vault_id != vault.id
+            or observation.relative_path != parsed.relative_path
+            or observation.content_hash != parsed.content_hash
+        ):
+            raise ValueError("projection_input_mismatch")
+
+        vault_file_id = _record_id("vault_file", vault.id, observation.relative_path)
+        note_id = _record_id("note", vault_file_id)
+        started_at = _now()
+        variables = self._projection_variables(
+            vault=vault,
+            observation=observation,
+            parsed=parsed,
+            operation_id=operation_id,
+            vault_file_id=vault_file_id,
+            note_id=note_id,
+            started_at=started_at,
+        )
+        rows: list[dict[str, Any]]
+        try:
+            with _projection_note_refresh():
+                async with self._connection_factory() as connection:
+                    rows = await self._query(
+                        connection,
+                        self._projection_transaction(),
+                        variables,
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            reconciled_status = await self._reconcile_projection_commit(
+                operation_id=operation_id,
+                observation=observation,
+                vault_file_id=vault_file_id,
+                note_id=note_id,
+            )
+            if reconciled_status is None:
+                await self._record_projection_failure_bounded(
+                    vault=vault,
+                    observation=observation,
+                    operation_id=operation_id,
+                    vault_file_id=vault_file_id,
+                    before_hash=None,
+                    started_at=started_at,
+                )
+                raise
+            rows = [{"projection_status": reconciled_status}]
+
+        outcome = next(
+            (
+                row
+                for row in reversed(rows)
+                if isinstance(row, dict) and row.get("projection_status")
+            ),
+            {},
+        )
+        unchanged = outcome.get("projection_status") == "unchanged"
+        if not unchanged:
+            try:
+                submitted = self._embedding_submitter(
+                    LEGACY_COMMAND_APP,
+                    "embed_note",
+                    {"note_id": note_id},
+                )
+                if inspect.isawaitable(submitted):
+                    await submitted
+            except Exception as exc:
+                logger.warning(
+                    "Vault embedding submission failed for note {} ({})",
+                    note_id,
+                    type(exc).__name__,
+                )
+
+        return ProjectionResult(
+            vault_file_id=vault_file_id,
+            note_id=note_id,
+            status="unchanged" if unchanged else "projected",
+            parse_state="parsed",
+            embedding_state="pending",
+        )
+
+    async def _reconcile_projection_commit(
+        self,
+        *,
+        operation_id: str,
+        observation: VaultWorkItem,
+        vault_file_id: str,
+        note_id: str,
+    ) -> Literal["projected", "unchanged"] | None:
+        receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
+
+        async def reconcile() -> Literal["projected", "unchanged"] | None:
+            async with self._connection_factory() as connection:
+                rows = await self._query(
+                    connection,
+                    """
+                    RETURN {
+                        receipt: (SELECT * FROM $receipt_id LIMIT 1)[0],
+                        file: (SELECT * FROM $vault_file_id LIMIT 1)[0],
+                        note: (SELECT * FROM $note_id LIMIT 1)[0]
+                    };
+                    """,
+                    {
+                        "receipt_id": _db_id(receipt_id),
+                        "vault_file_id": _db_id(vault_file_id),
+                        "note_id": _db_id(note_id),
+                    },
+                )
+            proof = rows[-1] if rows else {}
+            receipt = proof.get("receipt") or {}
+            file_row = proof.get("file") or {}
+            note_row = proof.get("note") or {}
+            status = receipt.get("status")
+            if (
+                status not in {"success", "unchanged"}
+                or receipt.get("after_hash") != observation.content_hash
+                or file_row.get("content_hash") != observation.content_hash
+                or file_row.get("parse_status") != "parsed"
+                or file_row.get("deleted_state") != "present"
+                or note_row.get("source_hash") != observation.content_hash
+                or note_row.get("external_state") != "current"
+            ):
+                return None
+            return "unchanged" if status == "unchanged" else "projected"
+
+        try:
+            return await asyncio.wait_for(
+                reconcile(),
+                timeout=self._failure_receipt_timeout,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Vault commit reconciliation failed ({})",
+                type(exc).__name__,
+            )
+            return None
+
+    def _projection_variables(
+        self,
+        *,
+        vault: VaultMount,
+        observation: VaultWorkItem,
+        parsed: ParsedDocument,
+        operation_id: str,
+        vault_file_id: str,
+        note_id: str,
+        started_at: datetime,
+    ) -> dict[str, Any]:
+        file_data = {
+            "schema_version": 1,
+            "vault_id": _db_id(vault.id),
+            "relative_path": observation.relative_path,
+            "file_kind": observation.file_kind,
+            "format": parsed.source_format,
+            "content_hash": observation.content_hash,
+            "size_bytes": observation.byte_size,
+            "modified_ns": observation.modified_ns,
+            "encoding": parsed.encoding,
+            "parse_status": "pending",
+            "parse_error_code": None,
+            "deleted_state": "present",
+        }
+        note_data = {
+            "title": parsed.title,
+            "note_type": "human",
+            "content": parsed.markdown,
+            "vault_id": _db_id(vault.id),
+            "vault_file_id": _db_id(vault_file_id),
+            "source_format": parsed.source_format,
+            "canonical_external": True,
+            "properties": parsed.properties,
+            "tags": parsed.tags,
+            "source_hash": parsed.content_hash,
+            "external_state": "current",
+        }
+        block_ids = {
+            block.parser_id: _record_id("note_block", vault_file_id, block.parser_id)
+            for block in parsed.blocks
+        }
+        blocks: list[dict[str, Any]] = []
+        for block in parsed.blocks:
+            block_id = block_ids[block.parser_id]
+            block_data = {
+                "schema_version": 1,
+                "note_id": _db_id(note_id),
+                "vault_file_id": _db_id(vault_file_id),
+                "parser_id": block.parser_id,
+                "parent_block_id": (
+                    _db_id(block_ids[block.parent_parser_id])
+                    if block.parent_parser_id
+                    else None
+                ),
+                "position": block.position,
+                "stable_source_id": block.stable_source_id,
+                "block_kind": block.block_kind,
+                "markdown": block.markdown,
+                "plain_text": block.plain_text,
+                "properties": block.properties,
+                "task_state": block.task_state,
+                "heading_path": block.heading_path,
+                "source_start": block.source_start,
+                "source_end": block.source_end,
+            }
+            blocks.append({"record_id": _db_id(block_id), "data": block_data})
+
+        persisted_links: list[dict[str, Any]] = []
+        links: list[dict[str, Any]] = [link.model_dump() for link in parsed.links]
+        links.extend(
+            {
+                **embed.model_dump(),
+                "alias": None,
+                "link_kind": "embed",
+            }
+            for embed in parsed.embeds
+        )
+        for link in links:
+            link_id = _record_id(
+                "note_link",
+                note_id,
+                str(link["source_start"]),
+                str(link["source_end"]),
+            )
+            source_parser_id = link.pop("source_block_parser_id")
+            target_text = link["target_text"]
+            link_data = {
+                "schema_version": 1,
+                "source_note_id": _db_id(note_id),
+                "source_block_id": (
+                    _db_id(block_ids[source_parser_id]) if source_parser_id else None
+                ),
+                "target_note_id": None,
+                "target_block_id": None,
+                **link,
+                "resolved": False,
+            }
+            persisted_links.append(
+                {
+                    "record_id": _db_id(link_id),
+                    "data": link_data,
+                    "target_title": _title_key(target_text),
+                }
+            )
+
+        tasks: list[dict[str, Any]] = []
+        for task in parsed.tasks:
+            block_id = block_ids[task.block_parser_id]
+            task_id = _record_id("knowledge_task", block_id)
+            task_data = {
+                "schema_version": 1,
+                "note_id": _db_id(note_id),
+                "block_id": _db_id(block_id),
+                **task.model_dump(),
+            }
+            task_data.pop("block_parser_id")
+            tasks.append({"record_id": _db_id(task_id), "data": task_data})
+
+        success_receipt = self._receipt_data(
+            operation_id=operation_id,
+            vault=vault,
+            vault_file_id=vault_file_id,
+            operation="project",
+            status="success",
+            before_hash=None,
+            after_hash=observation.content_hash,
+            observed_modified_ns=observation.modified_ns,
+            started_at=started_at,
+        )
+        unchanged_receipt = {
+            **success_receipt,
+            "status": "unchanged",
+        }
+        receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
+        return {
+            "vault_id": _db_id(vault.id),
+            "vault_file_id": _db_id(vault_file_id),
+            "note_id": _db_id(note_id),
+            "relative_path": observation.relative_path,
+            "content_hash": observation.content_hash,
+            "vault_file": file_data,
+            "note": note_data,
+            "blocks": blocks,
+            "links": persisted_links,
+            "tasks": tasks,
+            "receipt_id": _db_id(receipt_id),
+            "success_receipt": success_receipt,
+            "unchanged_receipt": unchanged_receipt,
+        }
+
+    @staticmethod
+    def _projection_transaction() -> str:
+        return """
+        BEGIN TRANSACTION;
+        LET $existing_file = (
+            SELECT * FROM vault_file
+            WHERE vault_id = $vault_id
+            AND relative_path = $relative_path
+            LIMIT 1
+        )[0];
+        LET $unchanged = $existing_file != NONE
+            AND $existing_file.content_hash = $content_hash
+            AND $existing_file.parse_status = 'parsed'
+            AND $existing_file.deleted_state = 'present';
+        IF !$unchanged {
+            UPSERT $vault_file_id CONTENT $vault_file;
+            UPSERT $note_id CONTENT $note;
+            DELETE note_block WHERE vault_file_id = $vault_file_id;
+            DELETE note_link WHERE source_note_id = $note_id;
+            DELETE knowledge_task WHERE note_id = $note_id;
+            FOR $block IN $blocks {
+                UPSERT $block.record_id CONTENT $block.data;
+            };
+            FOR $link IN $links {
+                UPSERT $link.record_id CONTENT $link.data;
+            };
+            FOR $task IN $tasks {
+                UPSERT $task.record_id CONTENT $task.data;
+            };
+            FOR $link IN $links {
+                UPDATE $link.record_id SET
+                    target_note_id = (
+                        SELECT VALUE id FROM note
+                        WHERE vault_id = $vault_id
+                        AND string::lowercase(title) = $link.target_title
+                        LIMIT 1
+                    )[0],
+                    resolved = target_note_id != NONE;
+            };
+            UPDATE $vault_file_id SET
+                parse_status = 'parsed',
+                parse_error_code = NONE,
+                indexed_at = time::now(),
+                deleted_state = 'present';
+            UPDATE $note_id SET external_state = 'current';
+        };
+        LET $receipt = IF $unchanged {
+            $unchanged_receipt
+        } ELSE {
+            $success_receipt
+        };
+        CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+        UPDATE $receipt_id SET before_hash = $existing_file.content_hash;
+        RETURN {
+            projection_status: IF $unchanged {
+                'unchanged'
+            } ELSE {
+                'projected'
+            }
+        };
+        COMMIT TRANSACTION;
+        """
+
+    def _receipt_data(
+        self,
+        *,
+        operation_id: str,
+        vault: VaultMount,
+        vault_file_id: str,
+        operation: str,
+        status: str,
+        before_hash: str | None,
+        after_hash: str | None,
+        observed_modified_ns: int | None,
+        started_at: datetime,
+        error_code: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "operation_id": operation_id,
+            "vault_id": _db_id(vault.id),
+            "vault_file_id": _db_id(vault_file_id),
+            "operation": operation,
+            "source": "vault-indexer",
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+            "observed_modified_ns": observed_modified_ns,
+            "parser_version": vault.parser_version,
+            "policy_decision": "read-only",
+            "status": status,
+            "error_code": error_code,
+            "rollback_path": None,
+            "started_at": started_at,
+            "completed_at": _now(),
+        }
+
+    async def _create_receipt(
+        self, connection: _Connection, receipt: dict[str, Any]
+    ) -> None:
+        receipt_id = _record_id(
+            "vault_sync_receipt",
+            str(receipt["operation_id"]),
+            str(receipt["vault_file_id"]),
+        )
+        await self._query(
+            connection,
+            "CREATE $receipt_id CONTENT $receipt RETURN AFTER; -- vault_sync_receipt",
+            {
+                "receipt_id": _db_id(receipt_id),
+                "receipt": receipt,
+            },
+        )
+
+    async def _record_projection_failure_bounded(
+        self,
+        *,
+        vault: VaultMount,
+        observation: VaultWorkItem,
+        operation_id: str,
+        vault_file_id: str,
+        before_hash: str | None,
+        started_at: datetime,
+    ) -> None:
+        async def record() -> None:
+            receipt = self._receipt_data(
+                operation_id=operation_id,
+                vault=vault,
+                vault_file_id=vault_file_id,
+                operation="project",
+                status="failed",
+                before_hash=before_hash,
+                after_hash=observation.content_hash,
+                observed_modified_ns=observation.modified_ns,
+                started_at=started_at,
+                error_code="projection_failed",
+            )
+            receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
+            variables = {
+                "vault_file_id": _db_id(vault_file_id),
+                "vault_id": _db_id(vault.id),
+                "relative_path": observation.relative_path,
+                "file_kind": observation.file_kind,
+                "format": "markdown",
+                "content_hash": observation.content_hash,
+                "size_bytes": observation.byte_size or 0,
+                "modified_ns": observation.modified_ns or 0,
+                "error_code": "projection_failed",
+                "receipt_id": _db_id(receipt_id),
+                "receipt": receipt,
+            }
+            async with self._connection_factory() as connection:
+                await self._query(
+                    connection,
+                    """
+                    BEGIN TRANSACTION;
+                    LET $committed_receipt = (
+                        SELECT * FROM $receipt_id
+                        WHERE status IN ['success', 'unchanged']
+                        LIMIT 1
+                    )[0];
+                    IF $committed_receipt = NONE {
+                        UPSERT $vault_file_id MERGE {
+                            schema_version: 1,
+                            vault_id: $vault_id,
+                            relative_path: $relative_path,
+                            file_kind: $file_kind,
+                            format: $format,
+                            content_hash: $content_hash,
+                            size_bytes: $size_bytes,
+                            modified_ns: $modified_ns,
+                            parse_status: 'invalid',
+                            parse_error_code: $error_code,
+                            deleted_state: 'present'
+                        };
+                        CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+                    };
+                    COMMIT TRANSACTION;
+                    """,
+                    variables,
+                )
+
+        try:
+            await asyncio.wait_for(
+                record(),
+                timeout=self._failure_receipt_timeout,
+            )
+        except BaseException as exc:
+            logger.warning(
+                "Vault failure receipt was not persisted ({})",
+                type(exc).__name__,
+            )
+
+    async def record_failure(
+        self,
+        vault_id: str,
+        observation: VaultWorkItem | VaultFileObservation,
+        operation_id: str,
+        error_code: str,
+    ) -> None:
+        vault_file_id = _record_id("vault_file", vault_id, observation.relative_path)
+        safe_code = _safe_error_code(error_code)
+        vault = VaultMount(
+            id=vault_id,
+            name="vault",
+            root_path="/redacted",
+            format_mode="markdown",
+            status="degraded",
+            parser_version="unknown",
+        )
+        receipt = self._receipt_data(
+            operation_id=operation_id,
+            vault=vault,
+            vault_file_id=vault_file_id,
+            operation="parse",
+            status="failed",
+            before_hash=None,
+            after_hash=observation.content_hash,
+            observed_modified_ns=observation.modified_ns,
+            started_at=_now(),
+            error_code=safe_code,
+        )
+        variables = {
+            "vault_id": _db_id(vault_id),
+            "vault_file_id": _db_id(vault_file_id),
+            "relative_path": observation.relative_path,
+            "file_kind": observation.file_kind,
+            "content_hash": observation.content_hash,
+            "size_bytes": observation.byte_size or 0,
+            "modified_ns": observation.modified_ns or 0,
+            "error_code": safe_code,
+            "receipt_id": _db_id(
+                _record_id(
+                    "vault_sync_receipt",
+                    operation_id,
+                    vault_file_id,
+                )
+            ),
+            "receipt": receipt,
+        }
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                UPSERT $vault_file_id MERGE {
+                    schema_version: 1,
+                    vault_id: $vault_id,
+                    relative_path: $relative_path,
+                    file_kind: $file_kind,
+                    format: 'markdown',
+                    content_hash: $content_hash,
+                    size_bytes: $size_bytes,
+                    modified_ns: $modified_ns,
+                    parse_status: 'invalid',
+                    parse_error_code: $error_code,
+                    deleted_state: 'present'
+                };
+                CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+                COMMIT TRANSACTION;
+                """,
+                variables,
+            )
+
+    async def mark_missing(
+        self,
+        vault_id: str,
+        relative_path: str,
+        operation_id: str,
+    ) -> None:
+        vault_file_id = _record_id("vault_file", vault_id, relative_path)
+        vault = VaultMount(
+            id=vault_id,
+            name="vault",
+            root_path="/redacted",
+            format_mode="markdown",
+            status="stale",
+            parser_version="unknown",
+        )
+        receipt = self._receipt_data(
+            operation_id=operation_id,
+            vault=vault,
+            vault_file_id=vault_file_id,
+            operation="missing",
+            status="success",
+            before_hash=None,
+            after_hash=None,
+            observed_modified_ns=None,
+            started_at=_now(),
+        )
+        variables = {
+            "vault_id": _db_id(vault_id),
+            "vault_file_id": _db_id(vault_file_id),
+            "relative_path": relative_path,
+            "receipt_id": _db_id(
+                _record_id("vault_sync_receipt", operation_id, vault_file_id)
+            ),
+            "receipt": receipt,
+        }
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                LET $existing_file = (
+                    SELECT * FROM vault_file
+                    WHERE vault_id = $vault_id
+                    AND relative_path = $relative_path
+                    LIMIT 1
+                )[0];
+                LET $transitioned = $existing_file = NONE
+                    OR $existing_file.deleted_state != 'missing';
+                IF $transitioned {
+                    IF $existing_file = NONE {
+                        UPSERT $vault_file_id CONTENT {
+                            schema_version: 1,
+                            vault_id: $vault_id,
+                            relative_path: $relative_path,
+                            file_kind: 'markdown',
+                            format: 'markdown',
+                            content_hash: NONE,
+                            size_bytes: 0,
+                            modified_ns: 0,
+                            encoding: NONE,
+                            parse_status: 'missing',
+                            parse_error_code: NONE,
+                            deleted_state: 'missing'
+                        };
+                    } ELSE {
+                        UPDATE $vault_file_id SET
+                            parse_status = 'missing',
+                            deleted_state = 'missing';
+                    };
+                    UPDATE note SET external_state = 'stale'
+                    WHERE vault_id = $vault_id
+                    AND vault_file_id = $vault_file_id;
+                    CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+                };
+                COMMIT TRANSACTION;
+                RETURN { transitioned: $transitioned };
+                """,
+                variables,
+            )
+
+    async def list_files(
+        self,
+        vault_id: str,
+        prefix: str,
+        limit: int,
+        offset: int,
+    ) -> list[VaultFile]:
+        self._validate_page(limit, offset)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM vault_file
+                WHERE vault_id = $vault_id
+                AND string::starts_with(relative_path, $prefix)
+                ORDER BY relative_path LIMIT $limit START $offset;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "prefix": prefix,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+        return [VaultFile.model_validate(row) for row in rows]
+
+    async def get_page(self, vault_id: str, note_id: str) -> VaultPage:
+        async with self._connection_factory() as connection:
+            notes = await self._query(
+                connection,
+                "SELECT * FROM $note_id WHERE vault_id = $vault_id;",
+                {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
+            )
+            if not notes:
+                raise LookupError("vault_note_not_found")
+            blocks = await self._query(
+                connection,
+                "SELECT * FROM note_block WHERE note_id = $note_id ORDER BY position;",
+                {"note_id": _db_id(note_id)},
+            )
+            tasks = await self._query(
+                connection,
+                "SELECT * FROM knowledge_task WHERE note_id = $note_id;",
+                {"note_id": _db_id(note_id)},
+            )
+            outgoing = await self._link_rows(
+                connection, vault_id, note_id, outgoing=True
+            )
+            incoming = await self._link_rows(
+                connection, vault_id, note_id, outgoing=False
+            )
+        return VaultPage(
+            note=notes[0],
+            blocks=blocks,
+            tasks=tasks,
+            outgoing_links=[VaultLink.model_validate(row) for row in outgoing],
+            backlinks=[VaultLink.model_validate(row) for row in incoming],
+        )
+
+    async def _link_rows(
+        self,
+        connection: _Connection,
+        vault_id: str,
+        note_id: str,
+        *,
+        outgoing: bool,
+    ) -> list[dict[str, Any]]:
+        field = "source_note_id" if outgoing else "target_note_id"
+        return await self._query(
+            connection,
+            f"""
+            SELECT * FROM note_link
+            WHERE {field} = $note_id
+            AND source_note_id IN (
+                SELECT VALUE id FROM note WHERE vault_id = $vault_id
+            );
+            """,
+            {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
+        )
+
+    async def backlinks(self, vault_id: str, note_id: str) -> list[VaultLink]:
+        async with self._connection_factory() as connection:
+            rows = await self._link_rows(connection, vault_id, note_id, outgoing=False)
+        return [VaultLink.model_validate(row) for row in rows]
+
+    async def outgoing_links(self, vault_id: str, note_id: str) -> list[VaultLink]:
+        async with self._connection_factory() as connection:
+            rows = await self._link_rows(connection, vault_id, note_id, outgoing=True)
+        return [VaultLink.model_validate(row) for row in rows]
+
+    async def graph(
+        self,
+        vault_id: str,
+        center_note_id: str,
+        depth: int,
+        limit: int,
+    ) -> VaultGraph:
+        if depth < 0 or limit <= 0:
+            raise ValueError("invalid_graph_bounds")
+        seen = {center_note_id}
+        frontier = {center_note_id}
+        edge_rows: dict[str, dict[str, Any]] = {}
+        async with self._connection_factory() as connection:
+            for _ in range(depth):
+                if not frontier or len(seen) >= limit:
+                    break
+                rows = await self._query(
+                    connection,
+                    """
+                    SELECT * FROM note_link
+                    WHERE (
+                        source_note_id IN $frontier
+                        OR target_note_id IN $frontier
+                    )
+                    AND source_note_id IN (
+                        SELECT VALUE id FROM note WHERE vault_id = $vault_id
+                    )
+                    LIMIT $limit;
+                    """,
+                    {
+                        "vault_id": _db_id(vault_id),
+                        "frontier": [_db_id(note) for note in frontier],
+                        "limit": limit,
+                    },
+                )
+                next_frontier: set[str] = set()
+                for row in rows:
+                    source = str(row["source_note_id"])
+                    target_value = row.get("target_note_id")
+                    if not target_value:
+                        continue
+                    target = str(target_value)
+                    edge_rows[str(row["id"])] = row
+                    for candidate in (source, target):
+                        if candidate not in seen and len(seen) < limit:
+                            seen.add(candidate)
+                            next_frontier.add(candidate)
+                frontier = next_frontier
+            note_rows = await self._query(
+                connection,
+                """
+                SELECT id, title, source_format, external_state
+                FROM note WHERE vault_id = $vault_id AND id IN $note_ids;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "note_ids": [_db_id(note) for note in seen],
+                },
+            )
+        nodes = [
+            {
+                "id": str(row["id"]),
+                "title": row.get("title"),
+                "source_format": row.get("source_format"),
+                "external_state": row.get("external_state"),
+            }
+            for row in note_rows
+        ]
+        edges = [
+            {
+                "id": str(row["id"]),
+                "source": str(row["source_note_id"]),
+                "target": str(row["target_note_id"]),
+                "kind": row["link_kind"],
+            }
+            for row in edge_rows.values()
+        ]
+        return VaultGraph(nodes=nodes, edges=edges)
+
+    async def append_receipt(self, receipt: VaultSyncReceipt) -> VaultSyncReceipt:
+        data = receipt.model_dump(exclude={"id"})
+        data["vault_id"] = _db_id(receipt.vault_id)
+        data["vault_file_id"] = _db_id(receipt.vault_file_id)
+        receipt_id = _record_id(
+            "vault_sync_receipt",
+            receipt.operation_id,
+            receipt.vault_file_id,
+        )
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "receipt_id": _db_id(receipt_id),
+                    "receipt": data,
+                },
+            )
+        return receipt
+
+    async def list_receipts(
+        self,
+        vault_id: str,
+        limit: int,
+        offset: int,
+    ) -> list[VaultSyncReceipt]:
+        self._validate_page(limit, offset)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM vault_sync_receipt
+                WHERE vault_id = $vault_id
+                ORDER BY started_at DESC LIMIT $limit START $offset;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+        return [VaultSyncReceipt.model_validate(row) for row in rows]
+
+    async def import_trust_manifest(
+        self,
+        vault_id: str,
+        manifest_relative_path: str,
+    ) -> TrustImportResult:
+        supplied_root = self._approved_roots.get(vault_id)
+        if supplied_root is not None:
+            return await self._import_trust_from_root(
+                vault_id, manifest_relative_path, supplied_root
+            )
+        vault = await self.get_mount(vault_id)
+        with approve_vault_root(vault.root_path) as approved:
+            return await self._import_trust_from_root(
+                vault_id, manifest_relative_path, approved
+            )
+
+    async def _import_trust_from_root(
+        self,
+        vault_id: str,
+        manifest_relative_path: str,
+        root: ApprovedVaultRoot,
+    ) -> TrustImportResult:
+        classification = classify_vault_path(manifest_relative_path)
+        if (
+            classification.kind != "connector"
+            or not manifest_relative_path.casefold().endswith(".json")
+        ):
+            raise ValueError("invalid_trust_manifest_path")
+        manifest_read = secure_read(
+            root,
+            manifest_relative_path,
+            max_bytes=MAX_MANIFEST_BYTES,
+        )
+        manifest = parse_trust_manifest(manifest_read.content)
+        resolutions: list[
+            tuple[TrustManifestEntry, Literal["resolved", "unresolved"], Any | None]
+        ] = []
+        for entry in manifest.entries:
+            canonical_read = None
+            try:
+                candidate = secure_read(root, entry.canonical_relative_path)
+                if candidate.sha256 == entry.content_hash:
+                    canonical_read = candidate
+                    resolution: Literal["resolved", "unresolved"] = "resolved"
+                else:
+                    resolution = "unresolved"
+            except VaultSecurityError:
+                resolution = "unresolved"
+            resolutions.append((entry, resolution, canonical_read))
+
+        manifest_file_id = _record_id("vault_file", vault_id, manifest_relative_path)
+        resolved = sum(state == "resolved" for _, state, _ in resolutions)
+        unresolved = len(resolutions) - resolved
+        variables: dict[str, Any] = {
+            "vault_id": _db_id(vault_id),
+            "manifest_file_id": _db_id(manifest_file_id),
+            "manifest_file": {
+                "schema_version": 1,
+                "vault_id": _db_id(vault_id),
+                "relative_path": manifest_relative_path,
+                "file_kind": "connector",
+                "format": "json",
+                "content_hash": manifest_read.sha256,
+                "size_bytes": manifest_read.byte_size,
+                "modified_ns": manifest_read.modified_ns,
+                "encoding": "utf-8",
+                "parse_status": "unsupported",
+                "parse_error_code": None,
+                "deleted_state": "present",
+            },
+        }
+        statements = [
+            "BEGIN TRANSACTION;",
+            (
+                "LET $existing_manifest = (SELECT * FROM vault_file "
+                "WHERE id = $manifest_file_id LIMIT 1)[0];"
+            ),
+            "UPSERT $manifest_file_id CONTENT $manifest_file;",
+        ]
+        changed_expressions: list[str] = []
+        for index, (entry, resolution, canonical_read) in enumerate(resolutions):
+            suffix = str(index)
+            trust_name = f"trust_{suffix}"
+            prior_name = f"prior_{suffix}"
+            changed_name = f"changed_{suffix}"
+            canonical_file_id: str | None = None
+            trust_id = _record_id("vault_trust_record", entry.manifest_id)
+            if canonical_read is not None:
+                canonical_file_id = _record_id(
+                    "vault_file", vault_id, entry.canonical_relative_path
+                )
+            trust_record = {
+                "schema_version": 1,
+                "manifest_id": entry.manifest_id,
+                "vault_id": _db_id(vault_id),
+                "vault_file_id": (
+                    _db_id(canonical_file_id) if canonical_file_id else None
+                ),
+                "note_id": None,
+                "canonical_relative_path": entry.canonical_relative_path,
+                "status": "approved",
+                "resolution_state": resolution,
+                "reviewer": entry.reviewer,
+                "reviewed_at": entry.reviewed_at,
+                "source_type": entry.source_type,
+                "evidence_class": entry.evidence_class,
+                "content_hash": entry.content_hash,
+                "derived_from": list(entry.derived_from),
+                "manifest_relative_path": manifest_relative_path,
+            }
+            variables.update(
+                {
+                    f"manifest_id_{suffix}": entry.manifest_id,
+                    f"trust_id_{suffix}": _db_id(trust_id),
+                    trust_name: trust_record,
+                }
+            )
+            statements.extend(
+                [
+                    (
+                        f"LET ${prior_name} = (SELECT * FROM vault_trust_record "
+                        f"WHERE manifest_id = $manifest_id_{suffix} LIMIT 1)[0];"
+                    ),
+                    (
+                        f"LET ${changed_name} = ${prior_name} = NONE "
+                        f"OR ${prior_name}.content_hash != ${trust_name}.content_hash "
+                        f"OR ${prior_name}.resolution_state != "
+                        f"${trust_name}.resolution_state "
+                        f"OR ${prior_name}.vault_id != ${trust_name}.vault_id "
+                        f"OR ${prior_name}.canonical_relative_path != "
+                        f"${trust_name}.canonical_relative_path "
+                        f"OR ${prior_name}.manifest_relative_path != "
+                        f"${trust_name}.manifest_relative_path "
+                        f"OR ${prior_name}.derived_from != ${trust_name}.derived_from "
+                        f"OR ${prior_name}.reviewer != ${trust_name}.reviewer "
+                        f"OR ${prior_name}.reviewed_at != ${trust_name}.reviewed_at "
+                        f"OR ${prior_name}.source_type != ${trust_name}.source_type "
+                        f"OR ${prior_name}.evidence_class != "
+                        f"${trust_name}.evidence_class;"
+                    ),
+                    f"IF ${changed_name} {{",
+                ]
+            )
+            if canonical_read is not None and canonical_file_id is not None:
+                variables.update(
+                    {
+                        f"canonical_file_id_{suffix}": _db_id(canonical_file_id),
+                        f"canonical_file_{suffix}": {
+                            "schema_version": 1,
+                            "vault_id": _db_id(vault_id),
+                            "relative_path": entry.canonical_relative_path,
+                            "file_kind": "trusted-source",
+                            "format": entry.source_type,
+                            "content_hash": canonical_read.sha256,
+                            "size_bytes": canonical_read.byte_size,
+                            "modified_ns": canonical_read.modified_ns,
+                            "encoding": None,
+                            "parse_status": "unsupported",
+                            "parse_error_code": None,
+                            "deleted_state": "present",
+                        },
+                    }
+                )
+                statements.append(
+                    f"UPSERT $canonical_file_id_{suffix} "
+                    f"MERGE $canonical_file_{suffix};"
+                )
+            statements.extend(
+                [
+                    f"UPSERT $trust_id_{suffix} CONTENT ${trust_name};",
+                    "};",
+                ]
+            )
+            changed_expressions.append(f"IF ${changed_name} {{ 1 }} ELSE {{ 0 }}")
+        changed_expression = " + ".join(changed_expressions) or "0"
+        statements.extend(
+            [
+                f"LET $changed_count = {changed_expression};",
+                f"LET $unchanged_count = {len(resolutions)} - $changed_count;",
+            ]
+        )
+        vault = VaultMount(
+            id=vault_id,
+            name="vault",
+            root_path="/redacted",
+            format_mode="markdown",
+            status="ready-read-only",
+            parser_version="trust-importer",
+        )
+        operation_id = f"trust-{uuid.uuid4().hex}"
+        receipt = self._receipt_data(
+            operation_id=operation_id,
+            vault=vault,
+            vault_file_id=manifest_file_id,
+            operation="import_trust",
+            status="unresolved" if unresolved else "success",
+            before_hash=None,
+            after_hash=manifest_read.sha256,
+            observed_modified_ns=manifest_read.modified_ns,
+            started_at=_now(),
+        )
+        variables.update(
+            {
+                "receipt_id": _db_id(
+                    _record_id("vault_sync_receipt", operation_id, manifest_file_id)
+                ),
+                "receipt": receipt,
+                "resolved_count": resolved,
+                "unresolved_count": unresolved,
+            }
+        )
+        statements.extend(
+            [
+                "IF $changed_count > 0 {",
+                ("CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt"),
+                (
+                    "UPDATE $receipt_id SET before_hash = "
+                    "$existing_manifest.content_hash;"
+                ),
+                "};",
+                (
+                    "RETURN { changed: $changed_count, "
+                    "unchanged: $unchanged_count, resolved: $resolved_count, "
+                    "unresolved: $unresolved_count };"
+                ),
+                "COMMIT TRANSACTION;",
+            ]
+        )
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "\n".join(statements),
+                variables,
+            )
+        outcome = next(
+            (
+                row
+                for row in reversed(rows)
+                if isinstance(row, dict) and "changed" in row
+            ),
+            None,
+        )
+        if outcome is None:
+            raise RuntimeError("trust_import_outcome_missing")
+        return TrustImportResult.model_validate(outcome)
+
+    async def list_trust_records(
+        self,
+        vault_id: str,
+        limit: int,
+        offset: int,
+    ) -> list[VaultTrustRecord]:
+        self._validate_page(limit, offset)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM vault_trust_record
+                WHERE vault_id = $vault_id
+                ORDER BY manifest_id LIMIT $limit START $offset;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+        return [VaultTrustRecord.model_validate(row) for row in rows]
+
+    async def trust_summary(self, vault_id: str) -> VaultTrustSummary:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT
+                    count() AS total,
+                    math::sum(if resolution_state = 'resolved' then 1 else 0 end)
+                        AS resolved,
+                    math::sum(if resolution_state = 'unresolved' then 1 else 0 end)
+                        AS unresolved
+                FROM vault_trust_record
+                WHERE vault_id = $vault_id GROUP ALL;
+                """,
+                {"vault_id": _db_id(vault_id)},
+            )
+        return VaultTrustSummary.model_validate(rows[0] if rows else {})
+
+    @staticmethod
+    def _validate_page(limit: int, offset: int) -> None:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit <= 0
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+        ):
+            raise ValueError("invalid_pagination")
+
+
+__all__ = [
+    "ProjectionResult",
+    "TrustImportResult",
+    "VaultFile",
+    "VaultGraph",
+    "VaultLink",
+    "VaultMount",
+    "VaultMountCreate",
+    "VaultPage",
+    "VaultRepository",
+    "VaultSyncReceipt",
+    "VaultTrustRecord",
+    "VaultTrustSummary",
+]
