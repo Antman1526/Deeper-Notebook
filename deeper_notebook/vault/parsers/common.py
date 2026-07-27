@@ -12,6 +12,7 @@ from datetime import date, datetime
 from typing import Any, NoReturn
 
 import yaml
+from yaml.events import AliasEvent
 
 from deeper_notebook.vault.contracts import ParsedBlock
 
@@ -32,6 +33,7 @@ _SAFE_MESSAGES = {
     "frontmatter_alias": "YAML aliases are not accepted.",
     "frontmatter_not_json_safe": "YAML frontmatter contains an unsupported value.",
     "invalid_format_mode": "Vault format mode is invalid.",
+    "invalid_document": "Markdown structure could not be projected safely.",
 }
 
 
@@ -48,6 +50,22 @@ class SourceLine:
     """One decoded line plus its exact offsets in the original byte stream."""
 
     number: int
+    source_start: int
+    source_end: int
+    markdown: str
+    content: str
+
+    def span_for_chars(self, start: int, end: int) -> tuple[int, int]:
+        prefix = self.markdown[:start].encode("utf-8")
+        matched = self.markdown[start:end].encode("utf-8")
+        source_start = self.source_start + len(prefix)
+        return source_start, source_start + len(matched)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRegion:
+    """A possibly multiline source slice with original byte coordinates."""
+
     source_start: int
     source_end: int
     markdown: str
@@ -194,7 +212,14 @@ def _parse_frontmatter(raw: bytes, bom_size: int) -> tuple[dict[str, Any], int]:
         fail("frontmatter_too_large")
     try:
         frontmatter_text = frontmatter_bytes.decode("utf-8")
+        if any(
+            isinstance(event, AliasEvent)
+            for event in yaml.parse(frontmatter_text, Loader=yaml.SafeLoader)
+        ):
+            fail("frontmatter_alias")
         loaded = yaml.safe_load(frontmatter_text)
+    except VaultParseError:
+        raise
     except RecursionError:
         fail("frontmatter_too_deep")
     except (UnicodeDecodeError, yaml.YAMLError, TypeError, ValueError):
@@ -292,7 +317,7 @@ def make_block(
     parent_id: str | None,
     position: int,
     block_kind: str,
-    line: SourceLine,
+    line: SourceLine | SourceRegion,
     plain_text: str,
     properties: dict[str, Any] | None = None,
     stable_source_id: str | None = None,
@@ -347,6 +372,7 @@ def ordered_unique(values: list[str]) -> list[str]:
 __all__ = [
     "DecodedSource",
     "SourceLine",
+    "SourceRegion",
     "VaultParseError",
     "decode_source",
     "explicit_block_id",

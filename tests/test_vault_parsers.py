@@ -155,6 +155,46 @@ def test_logseq_block_embed_preserves_target_block() -> None:
     )
 
 
+def test_logseq_supports_common_workflow_markers() -> None:
+    raw = (
+        b"- NOW Active\n"
+        b"- LATER Planned\n"
+        b"- WAITING Delegated\n"
+        b"- CANCELLED Duplicate spelling\n"
+    )
+
+    parsed = parse_document("markers.md", raw, format_mode="logseq")
+
+    assert [task.status for task in parsed.tasks] == [
+        "doing",
+        "todo",
+        "todo",
+        "canceled",
+    ]
+    assert [block.task_state for block in parsed.blocks] == [
+        "doing",
+        "todo",
+        "todo",
+        "canceled",
+    ]
+
+
+def test_logseq_multiline_code_span_does_not_project_inner_syntax() -> None:
+    raw = (
+        b"- TODO Keep real task ``literal starts\n"
+        b"  [[Hidden Link]] #hidden-tag``\n"
+        b"- NOW [[Visible Link]] #visible-tag\n"
+    )
+
+    parsed = parse_document("logseq-code.md", raw, format_mode="logseq")
+
+    assert [task.status for task in parsed.tasks] == ["todo", "doing"]
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Visible Link"]
+    assert parsed.tags == ["visible-tag"]
+
+
 def test_parse_is_read_only_and_deterministic(tmp_path: Path) -> None:
     path = tmp_path / "complete.md"
     path.write_bytes(fixture_bytes("obsidian/complete.md"))
@@ -212,6 +252,16 @@ def test_typed_yaml_frontmatter_is_json_safe() -> None:
     }
 
 
+def test_yaml_scalar_anchor_without_alias_is_accepted() -> None:
+    parsed = parse_document(
+        "anchor.md",
+        b"---\nvalue: &stable anchored\n---\nbody\n",
+        format_mode="obsidian",
+    )
+
+    assert parsed.properties["value"] == "anchored"
+
+
 @pytest.mark.parametrize(
     ("raw", "code"),
     [
@@ -232,6 +282,18 @@ def test_typed_yaml_frontmatter_is_json_safe() -> None:
         ),
         (
             b"---\nrecursive: &node [*node]\n---\nbody\n",
+            "frontmatter_alias",
+        ),
+        (
+            b"---\nfirst: &value secret\nsecond: *value\n---\nbody\n",
+            "frontmatter_alias",
+        ),
+        (
+            b"---\nfirst: &value 42\nsecond: *value\n---\nbody\n",
+            "frontmatter_alias",
+        ),
+        (
+            b"---\nfirst: &value 2026-07-27\nsecond: *value\n---\nbody\n",
             "frontmatter_alias",
         ),
     ],
@@ -412,6 +474,205 @@ def test_worst_case_link_and_task_input_is_bounded() -> None:
     assert time.monotonic() - started < 2.0
     assert parsed.blocks
     assert parsed.links == []
+
+
+def test_literal_regions_and_escaped_syntax_do_not_create_semantics() -> None:
+    raw = (
+        b"# Real heading\n\n"
+        b"`[[Inline Code]] #inline-code`\n\n"
+        b"``Code with ` and [[Multi\n"
+        b"Line]] #multiline-code``\n\n"
+        b"\\[[Escaped Wiki]] \\#escaped-tag\n"
+        b"\\# Escaped heading\n"
+        b"\\- [ ] Escaped task\n\n"
+        b"```markdown\n"
+        b"[[Fenced Code]] #fenced-code\n"
+        b"- [ ] Fenced task\n"
+        b"# Fenced heading\n"
+        b"```\n\n"
+        b"    [[Indented Code]] #indented-code\n"
+        b"    - [ ] Indented task\n\n"
+        b"<pre>[[Raw HTML]] #raw-html</pre>\n\n"
+        b"<!DOCTYPE [[Declaration]]>\n"
+        b"<?processor [[Instruction]]?>\n"
+        b"<![CDATA[[[CData]]]]>\n\n"
+        b"[[Real Link]] #real-tag\n"
+    )
+
+    parsed = parse_document("literals.md", raw, format_mode="obsidian")
+
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Real Link"]
+    assert parsed.tags == ["real-tag"]
+    assert parsed.tasks == []
+    assert [
+        block.plain_text for block in parsed.blocks if block.block_kind == "heading"
+    ] == ["Real heading"]
+    assert "[[Fenced Code]]" in parsed.markdown
+    assert any(
+        block.block_kind == "code" and "[[Fenced Code]]" in block.markdown
+        for block in parsed.blocks
+    )
+
+
+def test_escaped_image_and_link_destinations_are_not_nested_semantics() -> None:
+    raw = (
+        b"\\![[Escaped Image]] \\[[Escaped Link]]\n"
+        b'[label](target-[[not-a-wikilink]].md "#not-a-tag")\n'
+        b"![alt](asset-[[not-a-wikilink]].png)\n"
+    )
+
+    parsed = parse_document("escaped.md", raw, format_mode="obsidian")
+
+    assert not any(
+        link.target_text in {"Escaped Image", "Escaped Link", "not-a-wikilink"}
+        for link in parsed.links
+    )
+    assert {link.target_text for link in parsed.links} == {
+        "target-[[not-a-wikilink]].md",
+        "asset-[[not-a-wikilink]].png",
+    }
+    assert parsed.tags == []
+
+
+def test_markdown_links_support_bounded_nested_labels_targets_and_titles() -> None:
+    raw = (
+        b'[outer [nested]](folder/a_(b).md "Title (#not-a-tag)")\n'
+        b"[escaped](folder/a_\\).md)\n"
+    )
+
+    parsed = parse_document("markdown-links.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == [
+        "folder/a_(b).md",
+        "folder/a_\\).md",
+    ]
+    assert parsed.links[0].alias == "outer [nested]"
+    assert parsed.tags == []
+
+
+def test_neutral_markdown_uses_semantic_block_boundaries_and_exact_spans() -> None:
+    raw = (
+        b"# Heading\n\n"
+        b"First paragraph line\n"
+        b"continues on line two.\n\n"
+        b"> Quoted line one\n"
+        b"> quoted line two\n\n"
+        b"- parent item\n"
+        b"  continuation\n"
+        b"  - nested item\n\n"
+        b"```text\n"
+        b"literal\n"
+        b"```\n"
+    )
+
+    parsed = parse_document("blocks.md", raw, format_mode="markdown")
+
+    paragraph = next(
+        block for block in parsed.blocks if block.markdown.startswith("First paragraph")
+    )
+    assert (
+        paragraph.markdown == b"First paragraph line\ncontinues on line two.\n".decode()
+    )
+    assert raw[paragraph.source_start : paragraph.source_end] == (
+        paragraph.markdown.encode()
+    )
+    quote = next(block for block in parsed.blocks if block.block_kind == "blockquote")
+    nested = [
+        block
+        for block in parsed.blocks
+        if block.block_kind == "list-item" and "nested item" in block.markdown
+    ]
+    assert quote.parent_parser_id is not None
+    assert nested and nested[-1].parent_parser_id is not None
+    code = next(
+        block
+        for block in parsed.blocks
+        if block.block_kind == "code" and "literal" in block.markdown
+    )
+    assert code.markdown == "```text\nliteral\n```\n"
+    for block in parsed.blocks:
+        expected = hashlib.sha256(
+            (
+                f"blocks.md\0{block.parent_parser_id or ''}\0{block.position}"
+                f"\0{block.block_kind}\0{block.markdown}"
+            ).encode()
+        ).hexdigest()[:24]
+        assert block.parser_id == expected
+        assert raw[block.source_start : block.source_end] == block.markdown.encode()
+    for index, block in enumerate(parsed.blocks):
+        for other in parsed.blocks[index + 1 :]:
+            assert (
+                block.source_end <= other.source_start
+                or other.source_end <= block.source_start
+            )
+
+
+def test_multiline_semantic_spans_remain_exact_with_bom_crlf_and_multibyte() -> None:
+    raw = (
+        b"\xef\xbb\xbf# Caf\xc3\xa9\r\n\r\n"
+        b"R\xc3\xa9sum\xc3\xa9 line one\r\n"
+        b"continues [[M\xc3\xa9thode]].\r\n"
+    )
+
+    parsed = parse_document("bom-crlf.md", raw, format_mode="obsidian")
+
+    paragraph = next(
+        block
+        for block in parsed.blocks
+        if block.markdown.startswith("R\u00e9sum\u00e9")
+    )
+    assert paragraph.markdown == (
+        "R\u00e9sum\u00e9 line one\r\ncontinues [[M\u00e9thode]].\r\n"
+    )
+    assert raw[paragraph.source_start : paragraph.source_end].decode() == (
+        paragraph.markdown
+    )
+    link = next(link for link in parsed.links if link.target_text == "M\u00e9thode")
+    assert raw[link.source_start : link.source_end].decode() == "[[M\u00e9thode]]"
+
+
+def test_dense_unmatched_wikilinks_scale_linearly() -> None:
+    timings: list[float] = []
+    for size in (100_000, 500_000, 1_000_000):
+        raw = (b"[[" * ((size - 1) // 2)) + b"\n"
+        started = time.monotonic()
+        parsed = parse_document(
+            f"dense-{size}.md",
+            raw,
+            format_mode="obsidian",
+            max_markdown_bytes=2_000_000,
+        )
+        timings.append(time.monotonic() - started)
+        assert parsed.links == []
+
+    assert timings[-1] < 4.0
+    assert timings[-1] <= max(0.05, timings[0]) * 20
+
+
+def test_near_default_limit_dense_unmatched_wikilinks_remain_bounded() -> None:
+    raw = (b"[[" * ((9 * 1024 * 1024) // 2)) + b"\n"
+    started = time.monotonic()
+
+    parsed = parse_document("dense-9m.md", raw, format_mode="obsidian")
+
+    assert parsed.links == []
+    assert time.monotonic() - started < 8.0
+
+
+def test_many_semantic_blocks_scale_without_rebuilding_line_maps() -> None:
+    timings: list[float] = []
+    for count in (1_000, 5_000):
+        raw = (
+            "\n\n".join(f"paragraph {index}" for index in range(count)) + "\n"
+        ).encode()
+        started = time.monotonic()
+        parsed = parse_document("many-blocks.md", raw, format_mode="markdown")
+        timings.append(time.monotonic() - started)
+        assert len(parsed.blocks) == count
+
+    assert timings[-1] <= max(0.1, timings[0]) * 10
 
 
 def test_parsing_never_changes_process_working_directory(tmp_path: Path) -> None:
