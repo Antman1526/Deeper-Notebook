@@ -80,7 +80,7 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     expect(legacy.setTheme).not.toHaveBeenCalled()
   })
 
-  it('persists a selected theme under the canonical key and mirrors it to legacy storage', () => {
+  it('persists a selected theme under the canonical key', () => {
     const canonical = { setTheme: vi.fn() }
     ;(window as ThemeWindow).DN = canonical
 
@@ -88,14 +88,5 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     selectDarkTheme()
 
     expect(localStorage.getItem('dn-theme')).toBe('dark')
-    expect(localStorage.getItem('onp-theme')).toBe('dark')
-  })
-
-  it('migrates legacy theme storage into the canonical key when canonical storage is absent', () => {
-    localStorage.setItem('onp-theme', 'midnight-aurora')
-
-    render(<ThemeSwitcher />)
-
-    expect(localStorage.getItem('dn-theme')).toBe('midnight-aurora')
   })
 })

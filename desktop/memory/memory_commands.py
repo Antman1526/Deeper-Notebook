@@ -162,7 +162,7 @@ def _build_clients(model_override: str | None = None):
     return llm, mem_client
 
 
-@command(name="memory_extract_turn")
+@command(name="memory_extract_turn", app="open_notebook")
 def memory_extract_turn(chat_session_id: str, user_text: str,
                          assistant_text: str,
                          model_override: str | None = None) -> dict:
@@ -186,7 +186,7 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
         return {"ok": False, "error": str(e)}
 
 
-@command(name="memory_summarize_session")
+@command(name="memory_summarize_session", app="open_notebook")
 def memory_summarize_session(chat_session_id: str, transcript: str,
                               model_override: str | None = None) -> dict:
     """Per-session episode summarizer.

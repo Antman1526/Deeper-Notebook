@@ -13,6 +13,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from scripts.persisted_queue_inventory import production_queue_inventory
+except ModuleNotFoundError:
+    from persisted_queue_inventory import production_queue_inventory
+
 CATEGORIES = (
     "compatibility_alias",
     "upstream_reference",
@@ -293,7 +298,10 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "Domain singleton records must remain addressable under their "
             "persisted identifiers until an idempotent record migration ships."
         ),
-        "proof": "tests/test_domain.py::TestContentSettings",
+        "proof": (
+            "tests/test_product_identity.py::"
+            "test_runtime_record_contract_has_exact_behavioral_inventory"
+        ),
     },
     "surreal-namespace-identifier-v1": {
         "kind": "persisted_identifier",
@@ -376,7 +384,19 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
         ),
         "proof": (
             "desktop/tests/test_window.py::"
-            "test_injection_supports_both_stt_and_tts_simultaneously"
+            "test_desktop_bridge_producer_consumer_contract_is_canonical_first"
+        ),
+    },
+    "compose-service-identifier-v1": {
+        "kind": "external_protocol",
+        "owner": "container-runtime",
+        "retention_reason": (
+            "Operator support commands must retain the real Compose service "
+            "identifier while visible product branding remains canonical."
+        ),
+        "proof": (
+            "tests/test_product_identity.py::"
+            "test_installation_issue_log_command_names_existing_compose_service"
         ),
     },
     "legacy-artifact-probe-v1": {
@@ -569,6 +589,7 @@ _KIND_PROOF_PATHS = {
     "external_protocol": frozenset(
         {
             "desktop/tests/test_window.py",
+            "tests/test_product_identity.py",
             "tests/test_task6_active_product.py",
         }
     ),
@@ -684,7 +705,10 @@ _KIND_SCOPE_EXACT_PATHS = {
     ),
     "external_protocol": frozenset(
         {
+            ".github/ISSUE_TEMPLATE/installation_issue.yml",
             "api/routers/exports.py",
+            "desktop/first_run/static/memory_injection.js",
+            "desktop/first_run/static/voice_injection.js",
             "desktop/tests/test_window.py",
             "desktop/window.py",
             "deeper_notebook/studio/exporters/research_bundle.py",
@@ -752,7 +776,6 @@ _KIND_SCOPE_PREFIXES = {
         "fixtures/",
         "tests/",
         "desktop/tests/",
-        "frontend/src/",
     ),
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
@@ -1445,6 +1468,17 @@ def _validate_compatibility_proof(
 
 
 def _scope_path_allowed(kind: str, path: str) -> bool:
+    if kind == "regression_fixture":
+        return (
+            path.startswith("tests/")
+            or path.startswith("desktop/tests/")
+            or path.startswith("fixtures/")
+            or path.startswith("frontend/tests/")
+            or (
+                path.startswith("frontend/src/")
+                and ".test." in Path(path).name
+            )
+        )
     if path in _KIND_SCOPE_EXACT_PATHS.get(kind, frozenset()):
         return True
     return any(
@@ -1576,13 +1610,7 @@ def _compatibility_is_forbidden(
         return True
     if "/locales/" in f"/{path}":
         return True
-    if (
-        (
-            path.startswith("frontend/src/components/")
-            or path.startswith("frontend/src/app/")
-        )
-        and ".test." not in path
-    ):
+    if path.startswith("frontend/src/") and ".test." not in Path(path).name:
         return True
     if (
         path.startswith("tests/")
@@ -1757,9 +1785,12 @@ def compatibility_contract_for_occurrence(
         return None
 
     if pattern in {"OPEN_NOTEBOOK_", "ONP_"}:
-        if path == "desktop/window.py":
-            return "desktop-bridge-v1"
-        if path == "frontend/src/lib/desktop-version.ts":
+        if path in {
+            "desktop/window.py",
+            "desktop/first_run/static/memory_injection.js",
+            "desktop/first_run/static/voice_injection.js",
+            "frontend/src/lib/desktop-version.ts",
+        }:
             return "desktop-bridge-v1"
         if path == "scripts/backup_restore.py":
             return "data-root-migration-v1"
@@ -1932,6 +1963,9 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 "invocation",
             }
         ),
+        "lookup": frozenset(
+            {"kind", "path", "symbol", "callee", "command_id"}
+        ),
     }
     for identifier in persisted_identifiers:
         if not isinstance(identifier, dict):
@@ -1948,8 +1982,8 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             )
         ):
             raise ValueError(
-                "persisted queue identifiers must use the exact registration "
-                "or submission field schema"
+                "persisted queue identifiers must use the exact registration, "
+                "submission, or lookup field schema"
             )
     raw_contracts = payload.get("compatibility_contracts")
     if not isinstance(raw_contracts, dict):
@@ -2432,6 +2466,7 @@ def regenerate_allowlist(
         raise ValueError(
             "allowlist regeneration requires persisted identifiers and entries"
         )
+    persisted_identifiers = production_queue_inventory(root.resolve())
 
     category_sets: dict[tuple[str, str], set[str]] = {}
     for entry in entries:
@@ -2445,16 +2480,20 @@ def regenerate_allowlist(
                 "allowlist regeneration entries require path, pattern, and category"
             )
         category_sets.setdefault((path, pattern), set()).add(category)
+    split_category_policy_keys = {
+        (".github/ISSUE_TEMPLATE/installation_issue.yml", "open_notebook"),
+    }
     ambiguous = {
         key: categories
         for key, categories in category_sets.items()
-        if len(categories) != 1
+        if len(categories) != 1 and key not in split_category_policy_keys
     }
     if ambiguous:
         raise ValueError(f"ambiguous category policies: {ambiguous}")
     category_policy = {
         key: next(iter(categories))
         for key, categories in category_sets.items()
+        if key not in split_category_policy_keys
     }
     category_policy.update(_CATEGORY_OVERRIDES)
 
@@ -2477,7 +2516,29 @@ def regenerate_allowlist(
         ),
     ):
         policy_key = (match["path"], match["pattern"])
-        category = category_policy.get(policy_key)
+        compose_service_occurrence = False
+        if (
+            match["path"] == ".github/ISSUE_TEMPLATE/installation_issue.yml"
+            and match["pattern"] == "open_notebook"
+            and match["source"] == "content"
+            and isinstance(match.get("line"), int)
+        ):
+            issue_line = (
+                root
+                / ".github/ISSUE_TEMPLATE/installation_issue.yml"
+            ).read_text(encoding="utf-8").splitlines()[int(match["line"]) - 1]
+            compose_service_occurrence = (
+                "docker compose logs -f open_notebook" in issue_line
+            )
+        category = (
+            "compatibility_alias"
+            if compose_service_occurrence
+            else (
+                "upstream_reference"
+                if policy_key in split_category_policy_keys
+                else category_policy.get(policy_key)
+            )
+        )
         match_path = Path(str(match["path"]))
         if category is None:
             if compatibility_contract_for_occurrence(match) is not None:
@@ -2503,11 +2564,16 @@ def regenerate_allowlist(
             elif (
                 match["path"] in _UPSTREAM_REFERENCE_PATHS
                 and match["pattern"] == "open_notebook"
+                and not compose_service_occurrence
             ):
                 category = "upstream_reference"
         compatibility_contract: str | None = None
         if category == "compatibility_alias":
-            compatibility_contract = compatibility_contract_for_occurrence(match)
+            compatibility_contract = (
+                "compose-service-identifier-v1"
+                if compose_service_occurrence
+                else compatibility_contract_for_occurrence(match)
+            )
             if compatibility_contract is None:
                 path_group = str(match["path"]).split("/", 1)[0]
                 group_key = (path_group, str(match["pattern"]))

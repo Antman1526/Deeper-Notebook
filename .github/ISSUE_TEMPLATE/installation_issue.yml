@@ -57,7 +57,7 @@ body:
         **How to get logs:**
         - Docker single container: `docker logs open-notebook`
         - Docker Compose: `docker compose logs -f`
-        - Specific service: `docker compose logs -f deeper_notebook`
+        - Specific service: `docker compose logs -f open_notebook`
       placeholder: |
         Paste your logs here. Include the full error message and stack trace if available.
       render: shell

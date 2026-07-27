@@ -11,7 +11,9 @@
     if (!settingsContainer || settingsContainer.querySelector('.onp-memory-link')) return;
     const link = document.createElement('a');
     link.className = 'onp-memory-link';
-    link.href = (window.DEEPER_NOTEBOOK_MEMORY_URL || '#');
+    link.href = (
+      window.DEEPER_NOTEBOOK_MEMORY_URL || window.ONP_MEMORY_URL || '#'
+    );
     link.textContent = '🧠 Memory';
     link.target = '_blank';
     Object.assign(link.style, {
@@ -25,7 +27,12 @@
   observer.observe(document.body, { childList: true, subtree: true });
   injectMemoryLink();
 
-  if (window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE) {
+  const remindOpenChronicle = (
+    window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE
+    ?? window.ONP_REMIND_OPENCHRONICLE
+    ?? false
+  );
+  if (remindOpenChronicle) {
     if (window.showToast) {
       window.showToast(
         'OpenChronicle not detected. Install for ambient memory →',
