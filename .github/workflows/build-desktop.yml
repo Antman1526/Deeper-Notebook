@@ -18,6 +18,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -31,6 +33,7 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
@@ -53,6 +56,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -66,6 +71,7 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
@@ -90,6 +96,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -103,6 +111,7 @@ jobs:
       - run: cd frontend; npm ci; npm run lint; npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Open Notebook Plus"
       - run: pwsh desktop/build/post_build_windows.ps1
       - name: Install Inno Setup 6.7.1
         run: choco install innosetup --version=6.7.1 --no-progress --yes
