@@ -2,7 +2,7 @@
 Pytest configuration file.
 
 This file ensures that the project root is in the Python path,
-allowing tests to import from the api and open_notebook modules.
+allowing tests to import from the API and Deeper Notebook modules.
 """
 
 import os
@@ -14,7 +14,7 @@ import pytest
 # Ensure password auth is disabled for tests BEFORE any imports
 # The PasswordAuthMiddleware skips auth when this env var is not set
 # Set to empty string instead of deleting to prevent it from being reloaded
-os.environ["OPEN_NOTEBOOK_PASSWORD"] = ""
+os.environ["DEEPER_NOTEBOOK_PASSWORD"] = ""
 
 # Load environment variables from .env file
 # This must be done BEFORE any imports that depend on environment variables
@@ -46,9 +46,9 @@ _WEB_SEARCH_ENV_VARS = (
     "SERPER_API_KEY",
     "TAVILY_API_KEY",
     "SEARXNG_BASE_URL",
-    "ONP_WEB_SEARCH_PROVIDER",
-    "ONP_WEB_SEARCH_MAX_RESULTS",
-    "ONP_WEB_SEARCH_TIMEOUT_SEC",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC",
 )
 
 

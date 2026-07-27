@@ -237,7 +237,7 @@ async def test_orchestrator_empty_query_uses_recency(monkeypatch, stub_recalls):
     """Even in semantic / auto mode, an empty query has no embedding signal
     so we should fall through to recency rather than embedding the empty
     string (which would either fail or produce nonsense scores)."""
-    monkeypatch.delenv("ONP_MEMORY_RECALL_MODE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", raising=False)
     recent_marker, _ = stub_recalls
     result = await memory_recall.recall_memory(query="")
     assert result == recent_marker
@@ -247,9 +247,9 @@ async def test_orchestrator_empty_query_uses_recency(monkeypatch, stub_recalls):
 
 @pytest.mark.asyncio
 async def test_orchestrator_recent_mode_forces_recency(monkeypatch, stub_recalls):
-    """`ONP_MEMORY_RECALL_MODE=recent` always returns recency, even with a
+    """`DEEPER_NOTEBOOK_MEMORY_RECALL_MODE=recent` always returns recency, even with a
     query and a populated DB."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_MODE", "recent")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", "recent")
     recent_marker, _ = stub_recalls
     result = await memory_recall.recall_memory(query="anything")
     assert result == recent_marker
@@ -257,8 +257,8 @@ async def test_orchestrator_recent_mode_forces_recency(monkeypatch, stub_recalls
 
 @pytest.mark.asyncio
 async def test_orchestrator_semantic_mode_forces_semantic(monkeypatch, stub_recalls):
-    """`ONP_MEMORY_RECALL_MODE=semantic` always uses the semantic path."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_MODE", "semantic")
+    """`DEEPER_NOTEBOOK_MEMORY_RECALL_MODE=semantic` always uses the semantic path."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", "semantic")
     _, relevant_marker = stub_recalls
     result = await memory_recall.recall_memory(query="what do I prefer?")
     assert result == relevant_marker
@@ -269,7 +269,7 @@ async def test_orchestrator_semantic_falls_back_to_recency(monkeypatch, stub_rec
     """If the semantic path returns empty (the documented signal for
     "embed failed / no matches"), the orchestrator falls back to
     recency rather than returning an empty memory block."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_MODE", "semantic")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", "semantic")
     recent_marker, _ = stub_recalls
 
     async def empty_relevant(query):
@@ -286,7 +286,7 @@ async def test_orchestrator_auto_picks_recency_below_threshold(
 ):
     """Below _SEMANTIC_THRESHOLD rows, auto mode uses recency — no embed
     round trip needed for small memory stores."""
-    monkeypatch.delenv("ONP_MEMORY_RECALL_MODE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", raising=False)
     recent_marker, _ = stub_recalls
     stub_count["count"] = memory_recall._SEMANTIC_THRESHOLD  # exactly at threshold
     result = await memory_recall.recall_memory(query="anything")
@@ -298,7 +298,7 @@ async def test_orchestrator_auto_picks_semantic_above_threshold(
     monkeypatch, stub_recalls, stub_count
 ):
     """Above _SEMANTIC_THRESHOLD rows, auto mode switches to semantic."""
-    monkeypatch.delenv("ONP_MEMORY_RECALL_MODE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", raising=False)
     _, relevant_marker = stub_recalls
     stub_count["count"] = memory_recall._SEMANTIC_THRESHOLD + 1
     result = await memory_recall.recall_memory(query="anything")
@@ -311,7 +311,7 @@ async def test_orchestrator_unknown_mode_falls_through_to_auto(
 ):
     """An unrecognized env-var value should not crash — orchestrator
     drops to auto behavior (which then picks recency below threshold)."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_MODE", "definitely-not-a-mode")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_MODE", "definitely-not-a-mode")
     recent_marker, _ = stub_recalls
     stub_count["count"] = 0
     result = await memory_recall.recall_memory(query="anything")
@@ -333,7 +333,7 @@ def test_recall_relevant_memory_falls_through_on_embed_timeout(
     embedding model is stuck (cold-start, OOM, misconfigured base_url),
     chat must NOT block waiting for it — recall_relevant_memory returns
     {} so the orchestrator falls through to recency recall (DB-only)."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "0.1")
 
     class _HangingEmbedModel:
         async def aembed(self, texts):
@@ -361,7 +361,7 @@ def test_recall_relevant_memory_completes_when_embed_returns_in_time(
 ):
     """v0.7.113 — negative-space check: a fast embed call must NOT be
     spuriously timeout-killed."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EMBED_TIMEOUT_SEC", "5")
 
     class _FastEmbedModel:
         async def aembed(self, texts):
@@ -402,7 +402,7 @@ def test_safe_select_returns_empty_on_query_timeout(monkeypatch):
     fires two queries, recall_relevant fires two more). An overloaded
     connection pool must NOT stall chat; _safe_select returns [] on
     timeout so the caller treats it the same as a missing table."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "0.1")
 
     async def _hanging_query(q, params):
         await _asyncio_for_timeout_test.sleep(5)
@@ -420,7 +420,7 @@ def test_safe_select_returns_empty_on_query_timeout(monkeypatch):
 def test_safe_select_returns_results_when_query_fast(monkeypatch):
     """v0.7.114 — negative-space check: a fast query is NOT
     spuriously timeout-killed."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_QUERY_TIMEOUT_SEC", "5")
 
     async def _fast_query(q, params):
         return [{"text": "ok"}]
@@ -600,7 +600,7 @@ def test_safe_select_keeps_table_missing_at_debug(monkeypatch):
 def test_recall_recent_includes_episodes_by_default(monkeypatch):
     """Default ON: recall_recent_memory queries memory_episode and
     returns an `episodes` list alongside facts/preferences."""
-    monkeypatch.delenv("ONP_MEMORY_RECALL_EPISODES", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES", raising=False)
     captured: list[str] = []
 
     async def _capture(q, params):
@@ -621,9 +621,9 @@ def test_recall_recent_includes_episodes_by_default(monkeypatch):
 
 
 def test_recall_recent_skips_episodes_when_disabled(monkeypatch):
-    """ONP_MEMORY_RECALL_EPISODES=0 → no memory_episode query, empty
+    """DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES=0 → no memory_episode query, empty
     episodes list (facts/preferences unaffected)."""
-    monkeypatch.setenv("ONP_MEMORY_RECALL_EPISODES", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES", "0")
     captured: list[str] = []
 
     async def _capture(q, params):
@@ -643,13 +643,13 @@ def test_recall_recent_skips_episodes_when_disabled(monkeypatch):
 
 def test_episode_recall_enabled_parsing(monkeypatch):
     from deeper_notebook.utils import memory_recall
-    monkeypatch.delenv("ONP_MEMORY_RECALL_EPISODES", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES", raising=False)
     assert memory_recall._episode_recall_enabled() is True
     for off in ("0", "false", "no", "off", "OFF", "False"):
-        monkeypatch.setenv("ONP_MEMORY_RECALL_EPISODES", off)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES", off)
         assert memory_recall._episode_recall_enabled() is False
     for on in ("1", "true", "yes", "anything-else"):
-        monkeypatch.setenv("ONP_MEMORY_RECALL_EPISODES", on)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_EPISODES", on)
         assert memory_recall._episode_recall_enabled() is True
 
 

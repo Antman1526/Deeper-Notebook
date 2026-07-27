@@ -50,7 +50,7 @@ def _read_source(rel: str) -> str:
 
 
 def test_chat_module_exports_lazy_async_graph_factory():
-    """v0.7.192: open_notebook.graphs.chat must export
+    """v0.7.192: deeper_notebook.graphs.chat must export
     `get_async_graph` — the lazy factory that returns the
     AsyncSqliteSaver-backed twin. The lazy pattern is required
     because aiosqlite.connect() captures the event loop at

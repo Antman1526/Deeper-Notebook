@@ -68,7 +68,7 @@ def _get_chat_ram_ceiling_gb() -> float:
       128 GB+   → ceiling = 32.0 GB (Qwen3.6-35B-A3B still wins)
 
     Env var override:
-      ONP_CHAT_RAM_GB_CEILING=N    pins to N GB regardless of system RAM
+      DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING=N    pins to N GB regardless of system RAM
     """
     env = resolve_env("DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING")
     if env:
@@ -217,7 +217,7 @@ def pick_chat_llm_file(
     Same scoring as the `chat` recipe used by the DefaultModels assigner,
     so the loaded model matches what gets assigned. Used by app.py instead
     of the legacy `Hermes-3*.gguf` glob — that hardcoded selection made
-    `ONP_CHAT_RAM_GB_CEILING` ineffective for the actual chat experience
+    `DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING` ineffective for the actual chat experience
     (the assignment slot would change, but the loaded model wouldn't).
 
     Fallback: if no chat-kind model fits the ceiling, return the smallest
@@ -226,10 +226,10 @@ def pick_chat_llm_file(
     """
     if not gguf_dir.exists():
         return None
-    # v0.8.67h — explicit pin. ONP_CHAT_LLM_GGUF forces a specific chat GGUF
+    # v0.8.67h — explicit pin. DEEPER_NOTEBOOK_CHAT_LLM_GGUF forces a specific chat GGUF
     # (by filename, with or without the .gguf suffix, case-insensitive) instead
     # of the heuristic scorer below. Addresses "the loaded chat model doesn't
-    # match what I picked" — e.g. ONP_CHAT_LLM_GGUF=Qwen3.5-9B-Q4_K_M.gguf pins
+    # match what I picked" — e.g. DEEPER_NOTEBOOK_CHAT_LLM_GGUF=Qwen3.5-9B-Q4_K_M.gguf pins
     # Qwen over the auto-pick. If unset, or the named file isn't present, we fall
     # through to the scorer so the sidecar always spawns with *something*.
     _pin = (resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_GGUF") or "").strip()

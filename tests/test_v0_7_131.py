@@ -1,7 +1,7 @@
 """v0.7.131 regression tests covering deferred-item improvements:
 
   * Request-ID middleware character-set validation (Area for Review #25)
-  * /metrics optional bearer-token auth via ONP_METRICS_AUTH_TOKEN (#19)
+  * /metrics optional bearer-token auth via DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN (#19)
   * Integration suite dynamic table-discovery helper (#17) — pure unit
     tests of the _discover_tables shape-parsing logic; the real
     INFO FOR DB exercise happens in the integration suite itself
@@ -118,7 +118,7 @@ class TestMetricsAuth:
     """v0.7.131 — Area for Review #19.
 
     Default: unauthenticated (no env var set). Set
-    ONP_METRICS_AUTH_TOKEN to require Authorization: Bearer <token>.
+    DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN to require Authorization: Bearer <token>.
     """
 
     def _make_client(self):
@@ -137,16 +137,16 @@ class TestMetricsAuth:
         return TestClient(app)
 
     def test_no_token_set_endpoint_open(self, monkeypatch):
-        """Backward compatibility: with no ONP_METRICS_AUTH_TOKEN,
+        """Backward compatibility: with no DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN,
         /metrics works without any auth header."""
-        monkeypatch.delenv("ONP_METRICS_AUTH_TOKEN", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", raising=False)
         client = self._make_client()
         r = client.get("/metrics")
         assert r.status_code == 200
         assert "onp_http_requests_total" in r.text or "process_" in r.text
 
     def test_token_set_no_header_rejected(self, monkeypatch):
-        monkeypatch.setenv("ONP_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
         client = self._make_client()
         r = client.get("/metrics")
         assert r.status_code == 401
@@ -155,13 +155,13 @@ class TestMetricsAuth:
         assert "Bearer" in r.headers.get("WWW-Authenticate", "")
 
     def test_token_set_wrong_token_rejected(self, monkeypatch):
-        monkeypatch.setenv("ONP_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
         client = self._make_client()
         r = client.get("/metrics", headers={"Authorization": "Bearer wrong-token"})
         assert r.status_code == 401
 
     def test_token_set_correct_token_accepted(self, monkeypatch):
-        monkeypatch.setenv("ONP_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
         client = self._make_client()
         r = client.get(
             "/metrics",
@@ -172,7 +172,7 @@ class TestMetricsAuth:
 
     def test_malformed_header_rejected(self, monkeypatch):
         """No 'Bearer ' prefix → 401, even if the literal token follows."""
-        monkeypatch.setenv("ONP_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
         client = self._make_client()
         # Common mistakes a hand-written scraper might make:
         for bad in (
@@ -185,9 +185,9 @@ class TestMetricsAuth:
 
     def test_empty_token_env_treated_as_unset(self, monkeypatch):
         """An empty-string env var should NOT enable auth — that would
-        be a footgun where setting `ONP_METRICS_AUTH_TOKEN=` in .env
+        be a footgun where setting `DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN=` in .env
         accidentally locks down /metrics. Treat empty == unset."""
-        monkeypatch.setenv("ONP_METRICS_AUTH_TOKEN", "")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "")
         client = self._make_client()
         r = client.get("/metrics")
         assert r.status_code == 200
@@ -222,7 +222,7 @@ class TestDiscoverTablesShapeParsing:
             "scopes": {},
         }]
         with patch(
-            "open_notebook.database.repository.repo_query",
+            "deeper_notebook.database.repository.repo_query",
             AsyncMock(return_value=fake_rows),
         ):
             tables = await _discover_tables()
@@ -234,7 +234,7 @@ class TestDiscoverTablesShapeParsing:
         # Older SurrealDB returned the alias key `tb`.
         fake_rows = [{"tb": {"notebook": "...", "source": "..."}}]
         with patch(
-            "open_notebook.database.repository.repo_query",
+            "deeper_notebook.database.repository.repo_query",
             AsyncMock(return_value=fake_rows),
         ):
             tables = await _discover_tables()
@@ -255,7 +255,7 @@ class TestDiscoverTablesShapeParsing:
             },
         }]
         with patch(
-            "open_notebook.database.repository.repo_query",
+            "deeper_notebook.database.repository.repo_query",
             AsyncMock(return_value=fake_rows),
         ):
             tables = await _discover_tables()
@@ -266,7 +266,7 @@ class TestDiscoverTablesShapeParsing:
         from tests.integration.conftest import _discover_tables
         for empty in ([], [{"tables": {}}], [{}]):
             with patch(
-                "open_notebook.database.repository.repo_query",
+                "deeper_notebook.database.repository.repo_query",
                 AsyncMock(return_value=empty),
             ):
                 tables = await _discover_tables()

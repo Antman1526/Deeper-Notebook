@@ -54,7 +54,7 @@ async def test_cache_hit_skips_db_query_within_ttl():
         "frequency": "daily",
     }
     with patch(
-        "open_notebook.domain.gmail.repo_query",
+        "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(return_value=[fake_row]),
     ) as mock_query:
         first = await GmailIntegration.get()
@@ -88,10 +88,10 @@ async def test_save_invalidates_cache():
     fake_row_after = {"email_address": "new@example.com", "enabled": True}
 
     with patch(
-        "open_notebook.domain.gmail.repo_query",
+        "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(side_effect=[[fake_row_before], [fake_row_after]]),
     ) as mock_query, patch(
-        "open_notebook.domain.gmail.repo_upsert",
+        "deeper_notebook.domain.gmail.repo_upsert",
         new=AsyncMock(return_value=None),
     ):
         first = await GmailIntegration.get()
@@ -120,7 +120,7 @@ async def test_timeout_returns_default_instance():
         await asyncio.sleep(10.0)
         return [{"email_address": "would_have_returned"}]
 
-    with patch("open_notebook.domain.gmail.repo_query", new=_slow_query), \
+    with patch("deeper_notebook.domain.gmail.repo_query", new=_slow_query), \
          patch.object(gmail_mod, "_QUERY_TIMEOUT_S", 0.05):
         result = await GmailIntegration.get()
 
@@ -137,7 +137,7 @@ async def test_empty_db_result_is_still_cached():
     cached too — otherwise the user hits the slow query on every page
     load until they actually OAuth-connect Gmail."""
     with patch(
-        "open_notebook.domain.gmail.repo_query",
+        "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(return_value=None),
     ) as mock_query:
         first = await GmailIntegration.get()

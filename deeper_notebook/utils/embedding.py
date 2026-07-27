@@ -38,7 +38,7 @@ def _get_embedding_batch_size() -> int:
         return value
     except ValueError:
         logger.warning(
-            "Invalid OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE='{}'; falling back to 50",
+            "Invalid DEEPER_NOTEBOOK_EMBEDDING_BATCH_SIZE='{}'; falling back to 50",
             raw,
         )
         return 50

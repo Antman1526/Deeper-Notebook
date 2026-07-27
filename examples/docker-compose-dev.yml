@@ -11,7 +11,7 @@ services:
     pull_policy: always
     user: root
     restart: always
-  open_notebook:
+  deeper_notebook:
     build:
       context: .
       dockerfile: Dockerfile

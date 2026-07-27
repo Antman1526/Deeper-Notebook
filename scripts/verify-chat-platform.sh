@@ -22,7 +22,7 @@
 # CONFIGURATION (env vars)
 #   API_URL             Default: http://127.0.0.1:5055
 #   API_PASSWORD        Default: value of DEEPER_NOTEBOOK_PASSWORD, then the
-#                                deprecated OPEN_NOTEBOOK_PASSWORD alias, or
+#                                deprecated DEEPER_NOTEBOOK_PASSWORD alias, or
 #                                open-notebook-change-me if that is also unset
 #   NOTEBOOK_ID         Required — see USAGE above
 #
@@ -45,7 +45,7 @@ set -euo pipefail
 # Config
 # ---------------------------------------------------------------------------
 API_URL="${API_URL:-http://127.0.0.1:5055}"
-API_PASSWORD="${API_PASSWORD:-${DEEPER_NOTEBOOK_PASSWORD:-${OPEN_NOTEBOOK_PASSWORD:-open-notebook-change-me}}}"
+API_PASSWORD="${API_PASSWORD:-${DEEPER_NOTEBOOK_PASSWORD:-${DEEPER_NOTEBOOK_PASSWORD:-open-notebook-change-me}}}"
 AUTH_HEADER="Authorization: Bearer ${API_PASSWORD}"
 
 # ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ REQUIRED ENV
 OPTIONAL ENV
   API_URL         API base URL (default: http://127.0.0.1:5055)
   API_PASSWORD    Bearer token (default: $DEEPER_NOTEBOOK_PASSWORD, deprecated
-                  $OPEN_NOTEBOOK_PASSWORD, or open-notebook-change-me)
+                  $DEEPER_NOTEBOOK_PASSWORD, or open-notebook-change-me)
 
 STEPS
   1. GET  /api/local-models/health  → overall != "down"
@@ -91,7 +91,7 @@ if [[ -z "${NOTEBOOK_ID:-}" ]]; then
     echo "❌  NOTEBOOK_ID is required."
     echo ""
     echo "  Find it with:"
-    echo "    curl -s -H \"Authorization: Bearer \$OPEN_NOTEBOOK_PASSWORD\" \\"
+    echo "    curl -s -H \"Authorization: Bearer \$DEEPER_NOTEBOOK_PASSWORD\" \\"
     echo "         \${API_URL:-http://127.0.0.1:5055}/api/notebooks | jq -r '.[0].id'"
     echo ""
     echo "  Then re-run:"

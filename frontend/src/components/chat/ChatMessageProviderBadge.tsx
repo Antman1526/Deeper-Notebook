@@ -27,7 +27,7 @@
  *
  * Companion to:
  *   - api/routers/chat.py `_stream_chat_events` done event
- *   - open_notebook/ai/provision.py `provision_langchain_chat_model`
+ *   - deeper_notebook/ai/provision.py `provision_langchain_chat_model`
  *   - scripts/verify-chat-platform.sh Steps 4+5
  */
 

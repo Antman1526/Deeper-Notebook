@@ -41,12 +41,12 @@ def test_missing_file_returns_empty(tmp_path, monkeypatch):
 
 def test_simple_read(tmp_path, monkeypatch):
     """Case 2: present file with two whitelisted keys is read correctly."""
-    _write(tmp_path, "ONP_CHAT_LLM_CTX=8192\nONP_CHAT_LLM_CTX_MAX=32768\n")
+    _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path",
                         lambda: tmp_path / ".open-notebook-plus" / "launcher.env")
     from desktop.launcher_prefs import get_prefs
     prefs = get_prefs()
-    assert prefs == {"ONP_CHAT_LLM_CTX": "8192", "ONP_CHAT_LLM_CTX_MAX": "32768"}
+    assert prefs == {"DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192", "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "32768"}
 
 
 def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
@@ -54,46 +54,46 @@ def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
     original = (
         "# launcher.env — managed by Open Notebook Plus\n"
         "\n"
-        "ONP_CHAT_LLM_CTX=4096\n"
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=4096\n"
     )
     path = _write(tmp_path, original)
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop import launcher_prefs as lp
-    lp.update_prefs({"ONP_CHAT_LLM_CTX_MAX": "65536"})
+    lp.update_prefs({"DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "65536"})
     new_text = path.read_text()
     # Original comment and blank line preserved
     assert "# launcher.env" in new_text
     # Existing legacy keys are accepted, then written back canonically.
-    assert "DN_CHAT_LLM_CTX=4096" in new_text
-    assert "DN_CHAT_LLM_CTX_MAX=65536" in new_text
+    assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX=4096" in new_text
+    assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=65536" in new_text
 
 
 def test_none_value_removes_key(tmp_path, monkeypatch):
     """Case 4: update_prefs({KEY: None}) removes the key from the file."""
-    path = _write(tmp_path, "ONP_CHAT_LLM_CTX=8192\nONP_CHAT_LLM_CTX_MAX=32768\n")
+    path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop import launcher_prefs as lp
-    result = lp.update_prefs({"ONP_CHAT_LLM_CTX_MAX": None})
-    assert "ONP_CHAT_LLM_CTX_MAX" not in result
-    assert "ONP_CHAT_LLM_CTX_MAX" not in path.read_text()
-    assert result == {"DN_CHAT_LLM_CTX": "8192"}
+    result = lp.update_prefs({"DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": None})
+    assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX" not in result
+    assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX" not in path.read_text()
+    assert result == {"DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192"}
 
 
 def test_env_wins_on_merge(tmp_path, monkeypatch):
     """Case 5: merge_with_env must NOT overwrite keys already in env."""
-    path = _write(tmp_path, "ONP_CHAT_LLM_CTX=99999\n")
+    path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=99999\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import merge_with_env
 
-    env = {"ONP_CHAT_LLM_CTX": "4096"}  # pre-existing shell env value
+    env = {"DEEPER_NOTEBOOK_CHAT_LLM_CTX": "4096"}  # pre-existing shell env value
     merge_with_env(env)
     # Shell value must NOT have been overwritten
-    assert env["ONP_CHAT_LLM_CTX"] == "4096"
+    assert env["DEEPER_NOTEBOOK_CHAT_LLM_CTX"] == "4096"
 
 
 def test_malformed_line_raises(tmp_path, monkeypatch):
     """Case 6: a non-comment, non-blank line without '=' raises ValueError."""
-    path = _write(tmp_path, "ONP_CHAT_LLM_CTX=8192\nNOT_A_VALID_LINE\n")
+    path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nNOT_A_VALID_LINE\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import get_prefs
     with pytest.raises(ValueError, match="expected KEY=VALUE"):
@@ -112,13 +112,13 @@ def test_update_prefs_rejects_unknown_key(tmp_path, monkeypatch):
 
 def test_merge_with_env_fills_missing_keys(tmp_path, monkeypatch):
     """File value fills in when key is absent from env."""
-    path = _write(tmp_path, "ONP_CHAT_LLM_CTX=16384\n")
+    path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=16384\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import merge_with_env
 
     env: dict[str, str] = {}
     merge_with_env(env)
-    assert env.get("ONP_CHAT_LLM_CTX") == "16384"
+    assert env.get("DEEPER_NOTEBOOK_CHAT_LLM_CTX") == "16384"
 
 
 # ---------------------------------------------------------------------------
@@ -136,16 +136,16 @@ def test_get_prefs_filters_non_whitelist_keys(tmp_path, monkeypatch):
     the docstring promise of a 'strict whitelist'."""
     path = _write(
         tmp_path,
-        "ONP_CHAT_LLM_CTX=16384\n"
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=16384\n"
         "MY_SECRET=should-not-leak\n"
-        "OPEN_NOTEBOOK_LOCAL_N_CTX=32768\n",
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX=32768\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import get_prefs
 
     result = get_prefs()
-    assert "ONP_CHAT_LLM_CTX" in result
-    assert "OPEN_NOTEBOOK_LOCAL_N_CTX" in result
+    assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX" in result
+    assert "DEEPER_NOTEBOOK_LOCAL_N_CTX" in result
     assert "MY_SECRET" not in result, (
         "v0.8.8: non-whitelist keys must be filtered out of get_prefs() — "
         "otherwise they leak through the API endpoint"
@@ -158,7 +158,7 @@ def test_merge_with_env_skips_non_whitelist_keys(tmp_path, monkeypatch):
     at launcher startup. Second-line defense matching get_prefs."""
     path = _write(
         tmp_path,
-        "ONP_CHAT_LLM_CTX=8192\n"
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\n"
         "MY_SECRET=should-not-leak\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
@@ -166,7 +166,7 @@ def test_merge_with_env_skips_non_whitelist_keys(tmp_path, monkeypatch):
 
     env: dict[str, str] = {}
     merge_with_env(env)
-    assert env.get("ONP_CHAT_LLM_CTX") == "8192"
+    assert env.get("DEEPER_NOTEBOOK_CHAT_LLM_CTX") == "8192"
     assert "MY_SECRET" not in env, (
         "v0.8.8: non-whitelist keys must NOT be injected into env — "
         "otherwise a hand-edited launcher.env can pollute os.environ"
@@ -184,9 +184,9 @@ def test_merge_with_env_logs_warning_on_malformed_file(
     startup."""
     path = _write(
         tmp_path,
-        "ONP_CHAT_LLM_CTX=8192\n"
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\n"
         "this is not a valid line\n"   # missing '='
-        "OPEN_NOTEBOOK_LOCAL_N_CTX=32768\n",
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX=32768\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     import logging
@@ -214,9 +214,9 @@ def test_update_prefs_writes_only_canonical_winners(tmp_path, monkeypatch):
     path = _write(
         tmp_path,
         "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/canonical/model.gguf\n"
-        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/legacy/model.gguf\n"
+        "ONP_LOCAL_DRAFT_MODEL_PATH=/legacy/model.gguf\n"
         "DN_CHAT_LLM_CTX=32768\n"
-        "ONP_CHAT_LLM_CTX=8192\n",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop import launcher_prefs as lp
@@ -226,10 +226,10 @@ def test_update_prefs_writes_only_canonical_winners(tmp_path, monkeypatch):
 
     assert result == {
         "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH": "/canonical/model.gguf",
-        "DN_CHAT_LLM_CTX": "32768",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192",
     }
-    assert "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=" not in text
-    assert "ONP_CHAT_LLM_CTX=" not in text
+    assert "ONP_LOCAL_DRAFT_MODEL_PATH=" not in text
+    assert "DN_CHAT_LLM_CTX=" not in text
 
 
 def test_legacy_launcher_pref_remains_accepted_and_is_canonicalized(
@@ -242,5 +242,7 @@ def test_legacy_launcher_pref_remains_accepted_and_is_canonicalized(
 
     result = lp.update_prefs({})
 
-    assert result == {"DN_CHAT_LLM_CTX_MAX": "65536"}
-    assert path.read_text(encoding="utf-8") == "DN_CHAT_LLM_CTX_MAX=65536\n"
+    assert result == {"DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "65536"}
+    assert path.read_text(encoding="utf-8") == (
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=65536\n"
+    )

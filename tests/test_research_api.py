@@ -73,9 +73,9 @@ def test_create_discovers_normalized_candidates_then_pauses(monkeypatch) -> None
         ]
 
     monkeypatch.setattr(
-        "open_notebook.research.discovery.web_search_enabled", lambda: True
+        "deeper_notebook.research.discovery.web_search_enabled", lambda: True
     )
-    monkeypatch.setattr("open_notebook.research.discovery.run_web_search", fake_search)
+    monkeypatch.setattr("deeper_notebook.research.discovery.run_web_search", fake_search)
     with _client(monkeypatch, store) as client:
         response = client.post(
             "/api/notebooks/notebook:one/research-runs",
@@ -127,7 +127,7 @@ def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
 
     monkeypatch.setattr(research_router, "validate_outbound_url", validated)
     monkeypatch.setattr(research_router, "ingest_approved_sources", imported)
-    monkeypatch.setattr("open_notebook.research.analysis.Source.get", source_get)
+    monkeypatch.setattr("deeper_notebook.research.analysis.Source.get", source_get)
     with _client(monkeypatch, store) as client:
         response = client.post(
             "/api/notebooks/notebook:one/research-runs/research_run:one/approve",

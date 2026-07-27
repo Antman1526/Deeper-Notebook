@@ -82,7 +82,7 @@ class PodcastEpisodeResponse(BaseModel):
     job_status: Optional[str] = None
     error_message: Optional[str] = None
     # v0.8.68 — per-stage progress / outline-review state (see
-    # GENERATION_STAGES in open_notebook/podcasts/models.py).
+    # GENERATION_STAGES in deeper_notebook/podcasts/models.py).
     generation_stage: Optional[str] = None
 
 

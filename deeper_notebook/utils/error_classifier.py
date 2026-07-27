@@ -10,14 +10,14 @@ from loguru import logger
 from deeper_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    DeeperNotebookError,
     ExternalServiceError,
     NetworkError,
-    OpenNotebookError,
     RateLimitError,
 )
 
 # Classification rules: (keywords, exception_class, user_message or None to pass through)
-_CLASSIFICATION_RULES: list[tuple[list[str], type[OpenNotebookError], str | None]] = [
+_CLASSIFICATION_RULES: list[tuple[list[str], type[DeeperNotebookError], str | None]] = [
     # Authentication errors
     (
         ["authentication", "unauthorized", "invalid api key", "invalid_api_key", "401"],
@@ -99,7 +99,7 @@ _CLASSIFICATION_RULES: list[tuple[list[str], type[OpenNotebookError], str | None
 ]
 
 
-def classify_error(exception: BaseException) -> tuple[type[OpenNotebookError], str]:
+def classify_error(exception: BaseException) -> tuple[type[DeeperNotebookError], str]:
     """
     Classify a raw exception into a user-friendly error type and message.
 

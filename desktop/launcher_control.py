@@ -12,10 +12,10 @@ Design choices:
     into a launcher that's overwhelmingly sync (Supervisor + Popen).
   - **Bind to 127.0.0.1 only** — never expose this to the network.
   - **Random port** — discovered at start-up, exported to the API via
-    `OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL`. No clash on multiple-launch
+    `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL`. No clash on multiple-launch
     machines.
   - **Bearer-token auth** — random 32-byte token generated per session,
-    exported via `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`. Both env vars
+    exported via `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`. Both env vars
     are scoped to the API subprocess via session_env. Any other
     process on 127.0.0.1 that lacks the token (browser tab, local
     web server, etc.) gets a 401 even if it guesses the port.

@@ -108,7 +108,7 @@ def test_theme_ids_are_in_lockstep_with_api_allowlist():
     API theme router independently allowlists which theme strings the
     canonical endpoint will accept and persist. If they drift, a theme
     shown in the picker would be rejected on save (or vice-versa). Pin them
-    together. (The frontend ThemeSwitcher:ONP_THEMES is the third copy — kept in
+    together. (The frontend ThemeSwitcher:DEEPER_NOTEBOOK_THEMES is the third copy — kept in
     sync by code review, since it can't be imported here.)"""
     from api.routers.deeper_notebook import _VALID_THEMES
 

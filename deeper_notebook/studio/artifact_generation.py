@@ -1,6 +1,6 @@
 """Compatibility facade for the legacy Evidence Studio generation module.
 
-New code should import ``open_notebook.studio.generation``. This module keeps
+New code should import ``deeper_notebook.studio.generation``. This module keeps
 the legacy function names and router monkeypatch targets stable for one release
 cycle while forwarding execution to the split implementation.
 """

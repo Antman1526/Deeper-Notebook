@@ -60,7 +60,7 @@ _LOW_EXTRACTED_TEXT_CHARS = 200
 
 
 def _source_upload_max_bytes() -> int:
-    """Resolve the upload cap from ONP_SOURCE_UPLOAD_MAX_BYTES.
+    """Resolve the upload cap from DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES.
 
     Defensive parsing: garbage or below-minimum values fall back to the
     default with a logged warning. Returns the active cap in bytes.
@@ -72,7 +72,7 @@ def _source_upload_max_bytes() -> int:
         val = int(raw)
         if val < _SOURCE_UPLOAD_MIN_BYTES:
             logger.warning(
-                f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw} is below minimum "
+                f"DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES={raw} is below minimum "
                 f"{_SOURCE_UPLOAD_MIN_BYTES}; using default "
                 f"{_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
             )
@@ -80,7 +80,7 @@ def _source_upload_max_bytes() -> int:
         return val
     except ValueError:
         logger.warning(
-            f"ONP_SOURCE_UPLOAD_MAX_BYTES={raw!r} is not an int; using "
+            f"DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES={raw!r} is not an int; using "
             f"default {_SOURCE_UPLOAD_MAX_BYTES_DEFAULT}"
         )
         return _SOURCE_UPLOAD_MAX_BYTES_DEFAULT
@@ -675,7 +675,7 @@ async def create_source(
             # the local disk via multi-GB uploads. Default 500 MB matches
             # the typical "very large PDF / dataset / book" ceiling
             # while leaving room for local-deploy disk constraints.
-            # Env override: ONP_SOURCE_UPLOAD_MAX_BYTES.
+            # Env override: DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES.
             max_bytes = _source_upload_max_bytes()
             try:
                 file_path = await save_uploaded_file(
@@ -1741,7 +1741,7 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         # showing up to the client as 500. The local `if not source:
         # raise HTTPException(404)` guards above never trigger because
         # `Source.get()` raises NotFoundError instead of returning None
-        # (see open_notebook/domain/base.py:183).
+        # (see deeper_notebook/domain/base.py:183).
         raise
     except Exception as e:
         logger.error(f"Error starting insight generation for source {source_id}: {e}")

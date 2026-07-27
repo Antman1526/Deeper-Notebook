@@ -4,7 +4,7 @@ list. Three discrete fixes:
 1. **Worker `--max-tasks` explicit** in the launcher spawn so the
    intent (5 concurrent tasks) is locked in source instead of
    depending on the surreal-commands default. Tunable via
-   `ONP_WORKER_MAX_TASKS` env, clamped to 1-32.
+   `DEEPER_NOTEBOOK_WORKER_MAX_TASKS` env, clamped to 1-32.
 
 2. **Missing-GGUF startup warnings** surfaced via the ProgressBus
    so the user can see why local chat / embed silently isn't
@@ -38,10 +38,10 @@ def _src(rel: str) -> str:
 def test_worker_spawn_passes_max_tasks_flag():
     """v0.7.211 — `_spawn_worker` must include `--max-tasks` in
     its arg list so the worker's 5-task-concurrency default is
-    explicit and tunable via ONP_WORKER_MAX_TASKS."""
+    explicit and tunable via DEEPER_NOTEBOOK_WORKER_MAX_TASKS."""
     src = _src("desktop/launcher.py")
     assert '"--max-tasks", str(max_tasks)' in src
-    assert 'ONP_WORKER_MAX_TASKS' in src
+    assert 'DEEPER_NOTEBOOK_WORKER_MAX_TASKS' in src
     # Clamped to [1, 32] so a fat-fingered "0" or "1000" can't
     # destabilise the worker.
     assert "max(1, min(int(max_tasks_raw), 32))" in src

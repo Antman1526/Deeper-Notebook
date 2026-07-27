@@ -6,7 +6,7 @@ PII — names, postal addresses, health/financial details in prose — that rege
 can't match.
 
 Design choices:
-  * **Pluggable endpoint, not a bundled model.** Point `ONP_PRIVACY_CLASSIFIER_URL`
+  * **Pluggable endpoint, not a bundled model.** Point `DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL`
     at any local OpenAI-compatible server (a dedicated small classifier, or the
     existing chat sidecar). Leaner than shipping a fixed ~2.8 GB GGUF and fits
     the project's local-first / BYO-model ethos. Unset → this layer is off and
@@ -46,7 +46,7 @@ _MAX_CLASSIFY_CHARS = 8000
 _JSON_ARRAY_RE = re.compile(r"\[.*?\]", re.DOTALL)
 
 
-# v0.8.59 — Phase 5.2b-2. Sentinel values for ONP_PRIVACY_CLASSIFIER_URL that
+# v0.8.59 — Phase 5.2b-2. Sentinel values for DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL that
 # mean "reuse the running local chat sidecar as the classifier" — so the model
 # PII layer works out-of-box without provisioning a second model. The sidecar's
 # OpenAI-compatible base is the same shape (/chat/completions) the classifier

@@ -82,7 +82,7 @@ DATA_DIR="${DATA_HOME}/surreal_data"
 CONFIG="${DATA_HOME}/config.toml"
 BACKUP_DIR="${HOME}/deeper-notebook-backups"
 NS="open_notebook"; DB="open_notebook"
-PORT="${DEEPER_NOTEBOOK_REPAIR_PORT:-${DN_REPAIR_PORT:-${OPEN_NOTEBOOK_REPAIR_PORT:-${ONP_REPAIR_PORT:-18799}}}}"
+PORT="${DEEPER_NOTEBOOK_REPAIR_PORT:-${DN_REPAIR_PORT:-${DEEPER_NOTEBOOK_REPAIR_PORT:-${DEEPER_NOTEBOOK_REPAIR_PORT:-18799}}}}"
 TS="$(date +%Y%m%d-%H%M%S)"
 
 # 1) Refuse to run against a live instance.

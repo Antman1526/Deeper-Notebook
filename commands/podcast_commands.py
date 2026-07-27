@@ -403,7 +403,7 @@ async def generate_podcast_command(
         # `max_attempts: 1` means there's no retry — a hang is forever
         # unless we cap it).
         #
-        # Tunable via ONP_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
+        # Tunable via DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
         # propagates as a regular exception → @command framework
         # marks the episode as failed → episode.delete() cleanup
         # path below fires, including the empty-output-dir sweep.
@@ -458,7 +458,7 @@ async def generate_podcast_command(
                 f"episode {input_data.episode_name!r} while in stage "
                 f"'{episode.generation_stage or 'startup'}'. The provider "
                 f"for that stage may be hung or significantly slower than "
-                f"expected. Raise ONP_PODCAST_GENERATION_TIMEOUT_SEC if it "
+                f"expected. Raise DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC if it "
                 f"legitimately needs more time, or check provider health."
             ) from exc
         except Exception:

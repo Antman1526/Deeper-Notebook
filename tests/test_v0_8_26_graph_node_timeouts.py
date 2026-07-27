@@ -17,12 +17,12 @@ an outer timeout (v0.7.95), but the graph-internal invocation does
 not — that's the gap this fix closes.
 
 The prompt graph (used by notes router for title generation) had the
-same shape and shares the same env knob now (ONP_TRANSFORM_NODE_TIMEOUT_SEC).
+same shape and shares the same env knob now (DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC).
 
 Tests:
 1. transformation graph times out and surfaces ExternalServiceError
 2. prompt graph times out and surfaces ExternalServiceError
-3. _transform_node_timeout_sec parses ONP_TRANSFORM_NODE_TIMEOUT_SEC
+3. _transform_node_timeout_sec parses DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC
 4. invalid env values fall back to 180s default with a warning
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ def test_v0826_timeout_default_is_180_seconds(monkeypatch):
     """Default is 180s — more generous than the v0.7.138 ask graph's
     120s because transformations run over capped source content
     (~3000 tokens), not just a short query."""
-    monkeypatch.delenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", raising=False)
 
     from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
@@ -51,8 +51,8 @@ def test_v0826_timeout_default_is_180_seconds(monkeypatch):
 
 
 def test_v0826_timeout_respects_env_var(monkeypatch):
-    """Setting ONP_TRANSFORM_NODE_TIMEOUT_SEC overrides the default."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "30.5")
+    """Setting DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC overrides the default."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "30.5")
 
     from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
@@ -62,7 +62,7 @@ def test_v0826_timeout_respects_env_var(monkeypatch):
 def test_v0826_timeout_falls_back_on_garbage_value(monkeypatch, caplog):
     """Malformed env value (e.g. 'fast') must fall back to the default
     with a logged warning — not crash the graph at module import."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "fast")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "fast")
 
     from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
@@ -71,7 +71,7 @@ def test_v0826_timeout_falls_back_on_garbage_value(monkeypatch, caplog):
 
 def test_v0826_timeout_falls_back_on_negative_value(monkeypatch):
     """Negative timeouts make no sense — fall back to default."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "-5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "-5")
 
     from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
@@ -92,7 +92,7 @@ async def test_v0826_transformation_graph_times_out(monkeypatch):
     ainvoke sleeps for 5s, longer than the timeout, asserting the
     wait_for fires.
     """
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
 
     from deeper_notebook.graphs import transformation as tg_mod
 
@@ -133,7 +133,7 @@ async def test_v0826_transformation_graph_times_out(monkeypatch):
     assert "timed out" in msg.lower(), (
         f"Expected timeout message; got {msg!r}"
     )
-    assert "ONP_TRANSFORM_NODE_TIMEOUT_SEC" in msg, (
+    assert "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC" in msg, (
         f"Timeout message must name the env knob so the operator "
         f"knows how to raise it; got {msg!r}"
     )
@@ -149,7 +149,7 @@ async def test_v0826_prompt_graph_times_out(monkeypatch):
     """v0.8.26 — prompt graph shares the same timeout knob as
     transformation graph. A wedged chain.ainvoke here pins whatever
     invoked the prompt graph (e.g. notes router title generation)."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
 
     from deeper_notebook.graphs import prompt as pg_mod
 
@@ -177,7 +177,7 @@ async def test_v0826_prompt_graph_times_out(monkeypatch):
 
     msg = str(exc_info.value)
     assert "timed out" in msg.lower()
-    assert "ONP_TRANSFORM_NODE_TIMEOUT_SEC" in msg
+    assert "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC" in msg
     # And it identifies which graph timed out so the operator can
     # debug — distinguishes transformation vs prompt failures.
     assert "Prompt graph" in msg, (

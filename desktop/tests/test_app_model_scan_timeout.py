@@ -4,7 +4,7 @@ Regression for the boot-hang: `pick_chat_llm_file` runs `os.scandir` on the
 launch's main thread, and a stalling model folder (iCloud-evicted / TCC-gated
 Desktop, sleeping external drive) can block `open()` UNINTERRUPTIBLY and hang the
 whole app. `_scan_chat_llm_with_timeout` runs it in a daemon thread and gives up
-after ONP_MODEL_SCAN_TIMEOUT seconds, returning None (degraded local chat) so the
+after DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT seconds, returning None (degraded local chat) so the
 app still boots.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ def test_fast_scan_returns_result(monkeypatch):
 
 
 def test_slow_scan_times_out_to_none_without_hanging(monkeypatch):
-    monkeypatch.setenv("ONP_MODEL_SCAN_TIMEOUT", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT", "1")
 
     def slow(_d):
         time.sleep(6)  # simulates a wedged scandir/open
@@ -36,7 +36,7 @@ def test_slow_scan_times_out_to_none_without_hanging(monkeypatch):
 
 
 def test_garbage_env_falls_back_to_default(monkeypatch):
-    monkeypatch.setenv("ONP_MODEL_SCAN_TIMEOUT", "not-a-number")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT", "not-a-number")
     monkeypatch.setattr(asg, "pick_chat_llm_file", lambda d: "OK")
     assert app._scan_chat_llm_with_timeout("/x") == "OK"
 

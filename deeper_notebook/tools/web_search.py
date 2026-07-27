@@ -4,7 +4,7 @@ Background
 ----------
 Until now this fork's only web-search path was an MCP server the user had to
 stand up themselves (the curated SearXNG / Crawl4AI recommendations in
-``open_notebook/mcp/recommendations.py``). Users coming from upstream search
+``deeper_notebook/mcp/recommendations.py``). Users coming from upstream search
 tools expect to drop a provider API key into ``.env`` and immediately get web
 search in chat. This module adds exactly that: a built-in ``web_search`` tool
 the chat model can call, backed by whichever provider key is present.
@@ -23,10 +23,10 @@ Env var             Provider                            Notes
 
 No key / URL → :func:`web_search_enabled` is ``False`` → the tool is never
 bound → **zero behaviour change**. This is the project's "default-off"
-contract without a separate ``ONP_*`` flag: *key-presence is the opt-in*.
+contract without a separate ``DEEPER_NOTEBOOK_*`` flag: *key-presence is the opt-in*.
 
 When several are set, precedence is Serper > Tavily > SearXNG, overridable via
-``ONP_WEB_SEARCH_PROVIDER=serper|tavily|searxng`` (a stale override naming an
+``DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER=serper|tavily|searxng`` (a stale override naming an
 unconfigured provider is ignored, so it can't disable a perfectly good key).
 
 Safety
@@ -70,7 +70,7 @@ _DEFAULT_TIMEOUT_SEC = 10.0
 _MAX_RESULTS_CEILING = 20
 _TIMEOUT_CEILING_SEC = 60.0
 # v0.8.65 — total wall-clock budget across the whole failover chain. Kept under
-# the chat loop's per-tool-call timeout (ONP_MCP_TOOL_TIMEOUT_SEC, default 30s)
+# the chat loop's per-tool-call timeout (DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC, default 30s)
 # so web_search self-bounds + returns a graceful empty rather than being hard-
 # killed mid-attempt. Each attempt gets min(per-attempt timeout, remaining
 # budget) so a slow/hanging early instance can't starve a fast later one.
@@ -106,7 +106,7 @@ def _provider_chain() -> list[tuple[str, str | None]]:
 
     v0.8.65 — web search is now a *failover chain*, not a single provider:
 
-    - With a valid ``ONP_WEB_SEARCH_PROVIDER`` override → only that provider
+    - With a valid ``DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER`` override → only that provider
       (SearXNG still expands to ALL its configured URLs for per-instance
       failover).
     - Otherwise (auto, or a stale override naming an unconfigured provider) →
@@ -291,7 +291,7 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
         is accepted as-is rather than spending quota on the next paid provider.
 
     The whole chain is bounded by a total wall-clock budget
-    (``ONP_WEB_SEARCH_TOTAL_BUDGET_SEC``, default 25s, kept under the chat
+    (``DEEPER_NOTEBOOK_WEB_SEARCH_TOTAL_BUDGET_SEC``, default 25s, kept under the chat
     loop's 30s per-tool-call timeout) and each attempt gets
     ``min(per-attempt timeout, remaining budget)`` so a slow/hanging early
     instance can't starve a fast later one or freeze the chat turn.

@@ -19,11 +19,11 @@ Two fixes:
      for an 8B model (~2 GB → ~4 GB) but gives 11k of headroom
      over the v0.7.205-era failure case.
 
-  2. Auto-detect from GGUF metadata when ONP_CHAT_LLM_CTX is
+  2. Auto-detect from GGUF metadata when DEEPER_NOTEBOOK_CHAT_LLM_CTX is
      not explicitly set. The GGUF file's `<arch>.context_length`
-     field tells us the native max; cap at ONP_CHAT_LLM_CTX_MAX
+     field tells us the native max; cap at DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX
      (default 32768) for RAM safety. Capable users can raise
-     the cap via env or override per-spawn with ONP_CHAT_LLM_CTX.
+     the cap via env or override per-spawn with DEEPER_NOTEBOOK_CHAT_LLM_CTX.
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_launcher_default_n_ctx_floor_is_32768():
 
 
 def test_launcher_supports_gguf_context_autodetect():
-    """v0.7.206 — when ONP_CHAT_LLM_CTX is NOT explicitly set,
+    """v0.7.206 — when DEEPER_NOTEBOOK_CHAT_LLM_CTX is NOT explicitly set,
     the launcher must call `_detect_gguf_context_length()` to
     read the model's native context window from GGUF metadata."""
     src = _src("desktop/launcher.py")

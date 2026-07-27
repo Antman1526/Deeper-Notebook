@@ -148,7 +148,7 @@ def app():
 
 
 def test_downloads_list_endpoint_reconciles_and_lists(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     (tmp_path / "hermes.gguf.part").write_bytes(b"h" * 2048)
     _write_sidecar(tmp_path, "hermes.gguf", "r/hermes", 8192, job_id="jh")
 
@@ -167,7 +167,7 @@ def test_downloads_list_endpoint_reconciles_and_lists(app, monkeypatch, tmp_path
 
 
 def test_downloads_list_endpoint_empty_when_no_parts(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     with TestClient(app) as client:
         resp = client.get("/api/local-models/downloads")
     assert resp.status_code == 200

@@ -134,7 +134,7 @@ def test_role_routing_endpoint_uses_inventory(app, monkeypatch, tmp_path):
     gguf = tmp_path / "GGUF" / "Qwen3-Coder-30B-A3B-Q4_K_M.gguf"
     gguf.parent.mkdir()
     gguf.write_bytes(b"y" * 4096)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")
@@ -168,7 +168,7 @@ def test_role_routing_endpoint_attaches_manifest_matches(app, monkeypatch, tmp_p
             + "` | MLX | downloaded - verified | coding and agent workflows |",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")
@@ -209,7 +209,7 @@ def test_role_routing_endpoint_reports_unmatched_manifest_entries(app, monkeypat
             + "` | MLX | missing from scan | should be checked |",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")
@@ -248,7 +248,7 @@ def test_role_routing_endpoint_returns_manifest_reconciliation(app, monkeypatch,
             f"| Reasoning - Mac MLX | backup | `missing/Curated-Model-4bit` | `{missing_repo}` | MLX | missing from scan | should be checked |",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")
@@ -307,7 +307,7 @@ def test_role_routing_endpoint_reports_manifest_alignment_counts(app, monkeypatc
             score=99.0,
         )
     ])
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")
@@ -331,7 +331,7 @@ def test_role_routing_endpoint_reports_manifest_alignment_counts(app, monkeypatc
 
 def test_role_routing_endpoint_missing_dir(app, monkeypatch, tmp_path):
     missing = tmp_path / "missing"
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(missing))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(missing))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/role-routing")

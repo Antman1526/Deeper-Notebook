@@ -59,7 +59,7 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
     assert ctx.extra_env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
     assert ctx.extra_env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     assert (
-        ctx.extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"]
+        ctx.extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"]
         == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
     )
     assert ctx.model_provider_runtime is not None
@@ -92,7 +92,7 @@ def test_phase_select_provider_uses_default_mlx_model_when_config_blank(
     _phase_select_provider(ctx)
 
     assert FakeMlxProvider.started == ["MLX/default-model"]
-    assert ctx.extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] == "MLX/default-model"
+    assert ctx.extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] == "MLX/default-model"
     _stop_runtime(ctx)
 
 
@@ -116,7 +116,7 @@ def test_phase_auto_register_passes_mlx_runtime_to_auto_register(monkeypatch, tm
     )
     ctx.extra_env = {
         "OPENAI_COMPATIBLE_BASE_URL": "http://127.0.0.1:51231/v1",
-        "OPEN_NOTEBOOK_ACTIVE_MLX_MODEL": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+        "DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL": "MLX/mlx-community__North-Mini-Code-1.0-6bit",
     }
     ctx.sv = SimpleNamespace(
         session_env={"INTERNAL_API_URL": "http://127.0.0.1:5055"},

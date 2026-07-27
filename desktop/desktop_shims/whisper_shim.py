@@ -37,7 +37,7 @@ def build_app(model: Any) -> FastAPI:
 
     # v0.7.207 — OpenAI-compatible `/v1/models` discovery endpoint.
     # The connection_tester probes this on every credential test
-    # (see open_notebook/ai/connection_tester.py:_test_openai_compatible_
+    # (see deeper_notebook/ai/connection_tester.py:_test_openai_compatible_
     # connection — `GET {base_url}/models`). Without this route the
     # Whisper credential test in the UI reported "Server returned
     # status 404" even though the shim was alive and accepting

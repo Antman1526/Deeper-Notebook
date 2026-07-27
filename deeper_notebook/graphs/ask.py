@@ -16,8 +16,8 @@ from deeper_notebook.ai.provision import provision_langchain_model
 from deeper_notebook.domain.notebook import vector_search
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import (
+    DeeperNotebookError,
     ExternalServiceError,
-    OpenNotebookError,
 )
 from deeper_notebook.graphs.agent_fsm import AgentState  # v0.8.53 — Phase 5.3b
 from deeper_notebook.utils import clean_thinking_content
@@ -77,7 +77,7 @@ def _ask_node_timeout_sec() -> float:
         val = float(raw)
         if val <= 0:
             logger.warning(
-                "ONP_ASK_NODE_TIMEOUT_SEC={} must be positive; using default {}s",
+                "DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC={} must be positive; using default {}s",
                 raw,
                 _DEFAULT_ASK_NODE_TIMEOUT_SEC,
             )
@@ -85,7 +85,7 @@ def _ask_node_timeout_sec() -> float:
         return val
     except ValueError:
         logger.warning(
-            "ONP_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default {}s",
+            "DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC={!r} not a float; using default {}s",
             raw,
             _DEFAULT_ASK_NODE_TIMEOUT_SEC,
         )
@@ -111,7 +111,7 @@ async def _ask_invoke(model, payload, *, node: str):
         raise ExternalServiceError(
             f"Ask graph: {node!r} node LLM call timed out after "
             f"{timeout:.0f}s. Try a smaller/faster model, raise "
-            f"ONP_ASK_NODE_TIMEOUT_SEC, or check that the provider "
+            f"DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC, or check that the provider "
             f"is responsive."
         ) from exc
 
@@ -120,7 +120,7 @@ async def _ask_invoke(model, payload, *, node: str):
 # The graph fans out the strategy's searches and then synthesizes a final
 # answer. When NONE of the searches returned grounded content, asking the LLM
 # to "synthesize" means writing from an empty context — precisely the case
-# where weak local models confidently hallucinate. When ONP_AGENT_FSM is on we
+# where weak local models confidently hallucinate. When DEEPER_NOTEBOOK_AGENT_FSM is on we
 # instead declare CLARIFY (per the agent_fsm state vocabulary) and ask the user
 # to refine, rather than emit an ungrounded answer. Default OFF → unchanged.
 _AGENT_FSM_CLARIFY_MESSAGE = (
@@ -275,7 +275,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         strategy = parser.parse(cleaned_content)
 
         return {"strategy": strategy}
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)
@@ -327,7 +327,7 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         ai_message = await _ask_invoke(model, system_prompt, node="provide_answer")
         ai_content = extract_text_content(ai_message.content)
         return {"answers": [clean_thinking_content(ai_content)]}
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)
@@ -364,7 +364,7 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
         # synthesizes across multiple sub-answers and is typically the
         # slowest node in the graph; the default 120s budget should
         # cover it, but operators with bigger contexts can raise
-        # ONP_ASK_NODE_TIMEOUT_SEC.
+        # DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC.
         ai_message = await _ask_invoke(model, system_prompt, node="write_final_answer")
         final_content = extract_text_content(ai_message.content)
         cleaned_answer = clean_thinking_content(final_content)
@@ -373,7 +373,7 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
         if _agent_fsm_enabled():
             result["agent_state"] = AgentState.COMPLETE.value
         return result
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)

@@ -41,7 +41,7 @@ async def test_recall_relevant_memory_hnsw_operator(monkeypatch):
             return FakeEmbedModel()
 
     monkeypatch.setattr(
-        "open_notebook.ai.models.model_manager",
+        "deeper_notebook.ai.models.model_manager",
         FakeModelManager(),
     )
     monkeypatch.setattr(memory_recall, "_safe_select", _mock_safe_select)

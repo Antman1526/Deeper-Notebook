@@ -1,7 +1,7 @@
 // v0.7.136 — Read-only operator-facing observability card.
 //
 // Renders the GET /settings/observability snapshot (backend endpoint
-// added v0.7.130) so operators can see the effective ONP_* env vars
+// added v0.7.130) so operators can see the effective DEEPER_NOTEBOOK_* env vars
 // their running process is using. Pairs with:
 //   * /metrics   — Prometheus scrape target
 //   * /healthz/deep — per-subsystem deep probe

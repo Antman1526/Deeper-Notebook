@@ -16,7 +16,7 @@ class TestModelCreation:
     """Test suite for Model Creation endpoint."""
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("deeper_notebook.database.repository.repo_query")
     @patch("api.routers.models.Model.save")
     async def test_create_duplicate_model_same_case(
         self, mock_save, mock_repo_query, client
@@ -45,7 +45,7 @@ class TestModelCreation:
         )
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("deeper_notebook.database.repository.repo_query")
     @patch("api.routers.models.Model.save")
     async def test_create_duplicate_model_different_case(
         self, mock_save, mock_repo_query, client
@@ -74,7 +74,7 @@ class TestModelCreation:
         )
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("deeper_notebook.database.repository.repo_query")
     async def test_create_same_model_name_different_provider(
         self, mock_repo_query, client
     ):
@@ -96,7 +96,7 @@ class TestModelCreation:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("deeper_notebook.database.repository.repo_query")
     async def test_create_same_model_name_different_type(self, mock_repo_query, client):
         """Test that creating a model with same name but different type is allowed."""
         from deeper_notebook.ai.models import Model

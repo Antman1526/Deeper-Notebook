@@ -16,9 +16,9 @@ _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD = 25
 def _notebook_delete_bulk_threshold() -> int:
     """Return the note-count threshold above which `Notebook.delete()`
     switches from per-note gather to bulk-SQL. Configurable via
-    `ONP_NOTEBOOK_DELETE_BULK_THRESHOLD`. Defaults to 25.
+    `DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD`. Defaults to 25.
 
-    Rationale for the default: with ONP_DB_POOL_SIZE=4 (default), 25
+    Rationale for the default: with DEEPER_NOTEBOOK_DB_POOL_SIZE=4 (default), 25
     concurrent per-note DELETEs serialize into ~6-7 round-trip batches.
     Bulk does it in 3 statements total, so the breakeven is somewhere
     in the 10-25 range depending on pool latency. 25 is the safer
@@ -35,14 +35,14 @@ def _notebook_delete_bulk_threshold() -> int:
         val = int(raw)
         if val < 0:
             logger.warning(
-                "ONP_NOTEBOOK_DELETE_BULK_THRESHOLD={} negative; using default {}",
+                "DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD={} negative; using default {}",
                 raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
             )
             return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
         return val
     except ValueError:
         logger.warning(
-            "ONP_NOTEBOOK_DELETE_BULK_THRESHOLD={!r} not an int; using "
+            "DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD={!r} not an int; using "
             "default {}", raw, _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD,
         )
         return _DEFAULT_NOTEBOOK_DELETE_BULK_THRESHOLD
@@ -320,10 +320,10 @@ class Notebook(ObjectModel):
             # better than aborting halfway and leaving orphan rows.
             #
             # v0.7.133 — Bulk-SQL path for notebooks above the
-            # ONP_NOTEBOOK_DELETE_BULK_THRESHOLD (default 25) note
+            # DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD (default 25) note
             # threshold (Area for Review #4). Even with gather, the
             # per-note path is N concurrent DELETEs hitting a
-            # connection pool of size 4 (ONP_DB_POOL_SIZE default) —
+            # connection pool of size 4 (DEEPER_NOTEBOOK_DB_POOL_SIZE default) —
             # they queue up. For a 100-note notebook that's 100 ÷ 4 =
             # ~25 round-trip-batches serialized, plus per-call overhead.
             # The bulk path does 3 SurrealQL statements regardless of N.
@@ -1069,7 +1069,7 @@ class Note(ObjectModel):
             # registry directly via `registry.get_command_by_id()` —
             # returns None if the command isn't registered, no
             # exception. Cleaner intent + no string brittleness.
-            if not _is_command_registered("open_notebook.embed_note"):
+            if not _is_command_registered("deeper_notebook.embed_note"):
                 logger.warning(
                     f"embed_note not in surreal-commands registry — "
                     f"note {self.id} saved without embedding. Embedding "

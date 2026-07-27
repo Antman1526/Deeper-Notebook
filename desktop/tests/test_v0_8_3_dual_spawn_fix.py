@@ -18,7 +18,7 @@ v0.7.193 wired `auto_register` to prefer `sv.chat_llm_port` (the
 Supervisor's port) over the env-var URL. From that point on, path #1
 was dead code — it brought up a server nobody routed traffic to.
 
-v0.8.2 Item A wired `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` into path
+v0.8.2 Item A wired `DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` into path
 #1 (LlamaCppProvider.start), so operators following the v0.8.2 docs
 were setting the env var correctly but seeing no speedup, because the
 LIVE spawn (path #2) never read those env vars.
@@ -30,8 +30,8 @@ LIVE spawn (path #2) never read those env vars.
   `pick_default_model`, `list_models` — are still useful) but no longer
   triggers a duplicate subprocess.
 - `Supervisor._spawn_llamacpp_chat` now reads
-  `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` and
-  `OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT` and extends its `args` with
+  `DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` and
+  `DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT` and extends its `args` with
   `--model_draft <path>` and (when both are set) `--n_predict_draft <N>`.
   The v0.8.2 docs URLs and env var names are preserved, so existing
   operators get the feature for the first time without touching their
@@ -142,7 +142,7 @@ def _chat_args(spawned):
 def test_supervisor_spawn_appends_model_draft_when_env_set(
     cfg, tmp_path, monkeypatch,
 ):
-    """v0.8.3 — `OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` must reach
+    """v0.8.3 — `DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` must reach
     `Supervisor._spawn_llamacpp_chat`'s argv. Pre-v0.8.3 the env var
     was read by `LlamaCppProvider.start()` only — i.e. the deprecated
     spawn path that auto_register hadn't routed traffic to since
@@ -150,8 +150,8 @@ def test_supervisor_spawn_appends_model_draft_when_env_set(
     """
     draft = tmp_path / "draft_small.gguf"
     draft.write_bytes(b"x" * (2 * 1024 * 1024))
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", raising=False)
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)
@@ -180,8 +180,8 @@ def test_supervisor_spawn_appends_n_predict_draft_when_both_env_set(
     not just the deprecated provider path."""
     draft = tmp_path / "draft.gguf"
     draft.write_bytes(b"x" * (2 * 1024 * 1024))
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "16")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "16")
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)
@@ -205,8 +205,8 @@ def test_supervisor_spawn_omits_draft_flags_when_env_unset(
     argv must NOT contain `--model_draft` or `--n_predict_draft`.
     Guards against accidentally enabling speculative decoding for
     operators who haven't opted in."""
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", raising=False)
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", raising=False)
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)
@@ -230,7 +230,7 @@ def test_supervisor_spawn_skips_draft_when_path_missing(
     loads; operator just doesn't get the speedup. Same MIN_GGUF_BYTES
     guard semantics as the main-model loop."""
     monkeypatch.setenv(
-        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
         str(tmp_path / "does_not_exist.gguf"),
     )
 
@@ -256,7 +256,7 @@ def test_supervisor_spawn_skips_draft_when_path_too_small(
     working with the unaccelerated sidecar."""
     tiny = tmp_path / "lfs_pointer.gguf"
     tiny.write_bytes(b"version https://git-lfs.github.com/spec/v1\n")
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(tiny))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(tiny))
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)
@@ -274,11 +274,11 @@ def test_supervisor_spawn_drops_n_predict_without_draft(
     cfg, tmp_path, monkeypatch,
 ):
     """v0.8.3 — n_predict_draft is meaningless without a draft model.
-    A bare OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT env (no path) must NOT
+    A bare DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT env (no path) must NOT
     cause a stray `--n_predict_draft` in argv (llama_cpp.server would
     reject the argv at parse time)."""
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", raising=False)
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "32")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "32")
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)
@@ -298,13 +298,13 @@ def test_supervisor_spawn_drops_n_predict_without_draft(
 def test_supervisor_spawn_handles_malformed_n_predict_env(
     cfg, tmp_path, monkeypatch, caplog,
 ):
-    """v0.8.3 — garbage in OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT must
+    """v0.8.3 — garbage in DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT must
     NOT crash the spawn. Log a warning + drop the flag; main model
     + draft model still load."""
     draft = tmp_path / "draft.gguf"
     draft.write_bytes(b"x" * (2 * 1024 * 1024))
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "not-an-int")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH", str(draft))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT", "not-an-int")
 
     spawned: list[list[str]] = []
     _stub_io(monkeypatch, spawned)

@@ -10,7 +10,7 @@ Fixes:
 
   1. `desktop/__init__.py:__version__` synced to v0.7.210.
   2. `api/main.py` exposes `GET /api/version` (auth-excluded).
-  3. `desktop/window.py` injects `window.ONP_VERSION` so the
+  3. `desktop/window.py` injects its compatibility version global so the
      frontend can render it.
   4. `frontend/src/components/layout/AppSidebar.tsx` adds a
      tiny version badge in the sidebar footer.
@@ -104,10 +104,11 @@ def test_window_injects_onp_version_global():
 
 
 def test_sidebar_renders_version_badge():
-    """v0.7.210 — AppSidebar must render the version badge from
-    `window.ONP_VERSION` (or `—` fallback on SSR)."""
+    """v0.7.210 — AppSidebar renders the normalized desktop version bridge."""
     src = _src("frontend/src/components/layout/AppSidebar.tsx")
-    assert "ONP_VERSION" in src
+    bridge = _src("frontend/src/lib/desktop-version.ts")
+    assert "readDesktopVersion(window)" in src
+    assert "DEEPER_NOTEBOOK_VERSION || bridge.ONP_VERSION" in bridge
     assert "v0.7.210 — Version badge" in src
     # The badge is hidden when collapsed (matches the existing
     # sidebar pattern for footer chrome).

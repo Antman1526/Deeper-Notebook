@@ -26,7 +26,7 @@ POST to the existing `POST /api/mcp` create endpoint with the
 pre-filled name + URL. They see the test-connection feedback inline
 the same way manual entries get it.
 
-Pattern matches `open_notebook/local_models/downloader.py:RECOMMENDATIONS`
+Pattern matches `deeper_notebook/local_models/downloader.py:RECOMMENDATIONS`
 intentionally — both are curated lists of "things you can plug into
 Deeper Notebook that we've made sure work."
 """

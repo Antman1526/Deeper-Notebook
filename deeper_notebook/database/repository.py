@@ -29,9 +29,9 @@ T = TypeVar("T", dict[str, Any], list[dict[str, Any]])
 #     block on the queue.
 #   - On release: put the client back. If the client raised mid-query,
 #     mark it dead and let the pool create a fresh one next time.
-#   - Disable via ONP_DB_POOL_DISABLED=1 for debugging or to fall back
+#   - Disable via DEEPER_NOTEBOOK_DB_POOL_DISABLED=1 for debugging or to fall back
 #     to the old per-query behavior.
-#   - Pool size via ONP_DB_POOL_SIZE (default 4). Local use rarely
+#   - Pool size via DEEPER_NOTEBOOK_DB_POOL_SIZE (default 4). Local use rarely
 #     needs more; the chat graph + background workers usually share
 #     less than 4 concurrent connections.
 # ---------------------------------------------------------------------------
@@ -49,14 +49,14 @@ def _db_pool_size() -> int:
         val = int(raw)
         if val < _DB_POOL_MIN or val > _DB_POOL_MAX:
             logger.warning(
-                f"ONP_DB_POOL_SIZE={raw} outside [{_DB_POOL_MIN}, "
+                f"DEEPER_NOTEBOOK_DB_POOL_SIZE={raw} outside [{_DB_POOL_MIN}, "
                 f"{_DB_POOL_MAX}]; using default {_DB_POOL_SIZE_DEFAULT}"
             )
             return _DB_POOL_SIZE_DEFAULT
         return val
     except ValueError:
         logger.warning(
-            f"ONP_DB_POOL_SIZE={raw!r} not an int; using default "
+            f"DEEPER_NOTEBOOK_DB_POOL_SIZE={raw!r} not an int; using default "
             f"{_DB_POOL_SIZE_DEFAULT}"
         )
         return _DB_POOL_SIZE_DEFAULT
@@ -353,7 +353,7 @@ async def db_connection():
     The interface is unchanged for callers — every `async with
     db_connection() as conn:` site continues to work — but the
     underlying client is now reused across calls, eliminating
-    per-query handshake overhead. Set ONP_DB_POOL_DISABLED=1 to
+    per-query handshake overhead. Set DEEPER_NOTEBOOK_DB_POOL_DISABLED=1 to
     fall back to the pre-pool per-query open/close behavior for
     debugging.
 
@@ -424,7 +424,7 @@ async def repo_query(
 
     v0.7.120 — Slow-query observability. Times every query; logs a
     WARNING when the elapsed wall time exceeds
-    ONP_SLOW_QUERY_LOG_MS (default 500ms). Without this, the v0.7.114
+    DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS (default 500ms). Without this, the v0.7.114
     memory-recall timeouts that just return `[]` silently are
     invisible — operators can't tell which query is timing out vs
     which is fast-but-frequently-empty. Truncates the logged query to

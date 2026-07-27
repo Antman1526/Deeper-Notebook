@@ -26,7 +26,7 @@ pruning is atomic and fast even on a multi-GB checkpoint DB. SQLite
 
 The function is safe to call concurrently with LangGraph reads:
 SQLite's WAL journal mode (set in
-`open_notebook/utils/sqlite_checkpoint.py`) serializes writers but
+`deeper_notebook/utils/sqlite_checkpoint.py`) serializes writers but
 allows concurrent readers, and our DELETE acquires a short write
 lock that yields back as soon as the transaction commits.
 """
@@ -59,14 +59,14 @@ def _keep_per_thread() -> int:
         n = int(raw)
         if n < 1:
             logger.warning(
-                "ONP_CHECKPOINT_KEEP_PER_THREAD={} is < 1; using default {}",
+                "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD={} is < 1; using default {}",
                 raw, _DEFAULT_KEEP_PER_THREAD,
             )
             return _DEFAULT_KEEP_PER_THREAD
         return n
     except ValueError:
         logger.warning(
-            "ONP_CHECKPOINT_KEEP_PER_THREAD={!r} is not an integer; using default {}",
+            "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD={!r} is not an integer; using default {}",
             raw, _DEFAULT_KEEP_PER_THREAD,
         )
         return _DEFAULT_KEEP_PER_THREAD
@@ -263,7 +263,7 @@ async def run_prune_loop(stop_event, *, interval_hours: Optional[float] = None) 
     event is set.
 
     Mirrors the digest_scheduler's lifespan pattern (see
-    `open_notebook/digest/scheduler.py`). Safe to cancel mid-sleep.
+    `deeper_notebook/digest/scheduler.py`). Safe to cancel mid-sleep.
     """
     import asyncio
 

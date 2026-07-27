@@ -1,5 +1,5 @@
 """
-Unit tests for the open_notebook.utils.embedding module.
+Unit tests for the deeper_notebook.utils.embedding module.
 
 Tests embedding generation and mean pooling functionality.
 """
@@ -127,7 +127,7 @@ class TestGenerateEmbeddings:
         from unittest.mock import AsyncMock, patch
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -143,7 +143,7 @@ class TestGenerateEmbeddings:
         mock_model.aembed = AsyncMock(return_value=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
@@ -180,7 +180,7 @@ class TestGenerateEmbedding:
         mock_model.aembed = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
@@ -206,7 +206,7 @@ class TestGenerateEmbedding:
         )
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
@@ -227,7 +227,7 @@ class TestGenerateEmbedding:
         mock_model.aembed = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
@@ -257,7 +257,7 @@ class TestGenerateEmbedding:
         mock_model.aembed = AsyncMock(side_effect=lambda batch: make_embeddings(batch))
 
         with patch(
-            "open_notebook.ai.models.model_manager.get_embedding_model",
+            "deeper_notebook.ai.models.model_manager.get_embedding_model",
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
@@ -289,11 +289,11 @@ class TestGenerateEmbedding:
 
         with (
             patch(
-                "open_notebook.ai.models.model_manager.get_embedding_model",
+                "deeper_notebook.ai.models.model_manager.get_embedding_model",
                 new_callable=AsyncMock,
                 return_value=mock_model,
             ),
-            patch("open_notebook.utils.embedding.EMBEDDING_RETRY_DELAY", 0),
+            patch("deeper_notebook.utils.embedding.EMBEDDING_RETRY_DELAY", 0),
         ):
             result = await generate_embeddings(texts)
             assert result == [[0.1, 0.2], [0.3, 0.4]]
@@ -313,11 +313,11 @@ class TestGenerateEmbedding:
 
         with (
             patch(
-                "open_notebook.ai.models.model_manager.get_embedding_model",
+                "deeper_notebook.ai.models.model_manager.get_embedding_model",
                 new_callable=AsyncMock,
                 return_value=mock_model,
             ),
-            patch("open_notebook.utils.embedding.EMBEDDING_RETRY_DELAY", 0),
+            patch("deeper_notebook.utils.embedding.EMBEDDING_RETRY_DELAY", 0),
         ):
             with pytest.raises(RuntimeError, match="Failed to generate embeddings"):
                 await generate_embeddings(texts)

@@ -424,12 +424,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("ONP_API_BASE_URL", "http://127.0.0.1:5055"),
+        default=os.environ.get("DEEPER_NOTEBOOK_API_BASE_URL", "http://127.0.0.1:5055"),
         help="Running native API base URL. Default: %(default)s",
     )
     parser.add_argument("--api-prefix", default="/api")
-    parser.add_argument("--token", default=os.environ.get("ONP_API_TOKEN"))
-    parser.add_argument("--notebook-id", default=os.environ.get("ONP_SMOKE_NOTEBOOK_ID"))
+    parser.add_argument("--token", default=os.environ.get("DEEPER_NOTEBOOK_API_TOKEN"))
+    parser.add_argument("--notebook-id", default=os.environ.get("DEEPER_NOTEBOOK_SMOKE_NOTEBOOK_ID"))
     parser.add_argument("--title")
     parser.add_argument("--content")
     parser.add_argument(

@@ -11,7 +11,7 @@ Covers:
   * Multi-thread: each thread's cap is independent
   * Orphan writes (whose checkpoint_id no longer exists) are cascaded
   * Returns counts that match what was actually deleted
-  * Env-knob ONP_CHECKPOINT_KEEP_PER_THREAD honored
+  * Env-knob DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD honored
   * Invalid env value falls back to default with a warning
 """
 from __future__ import annotations
@@ -208,11 +208,11 @@ def test_prune_cascades_orphan_writes(tmp_path):
 
 
 def test_prune_honors_env_knob(tmp_path, monkeypatch):
-    """v0.7.125 — ONP_CHECKPOINT_KEEP_PER_THREAD env var sets the
+    """v0.7.125 — DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD env var sets the
     retention cap when no explicit `keep_per_thread` is passed."""
     from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
-    monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "3")
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 20})
@@ -228,7 +228,7 @@ def test_prune_falls_back_on_invalid_env(tmp_path, monkeypatch, caplog):
     default (50) with a warning, NOT crash the pruning loop."""
     from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
-    monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "not-a-number")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "not-a-number")
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 100})
@@ -244,7 +244,7 @@ def test_prune_negative_env_falls_back_to_default(tmp_path, monkeypatch):
     rejected with a warning + default-fallback."""
     from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
-    monkeypatch.setenv("ONP_CHECKPOINT_KEEP_PER_THREAD", "-5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", "-5")
 
     path = tmp_path / "checkpoints.sqlite"
     _make_checkpoint_db(path, {"thread-A": 100})

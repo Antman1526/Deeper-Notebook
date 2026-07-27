@@ -130,7 +130,7 @@ _REGISTRY_LOCK: "asyncio.Lock | None" = None
 
 def _get_registry_lock() -> asyncio.Lock:
     """Lazy-init asyncio.Lock for the jobs dict. Same lazy-construct
-    pattern as `open_notebook/ai/provision.py:_get_health_cache_lock`
+    pattern as `deeper_notebook/ai/provision.py:_get_health_cache_lock`
     so we don't capture an event loop at import time."""
     global _REGISTRY_LOCK
     if _REGISTRY_LOCK is None:

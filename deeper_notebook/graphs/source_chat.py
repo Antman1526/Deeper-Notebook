@@ -21,7 +21,7 @@ from deeper_notebook.ai.provision import (
 from deeper_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from deeper_notebook.domain.notebook import Source, SourceInsight
 from deeper_notebook.environment import resolve_env
-from deeper_notebook.exceptions import OpenNotebookError
+from deeper_notebook.exceptions import DeeperNotebookError
 from deeper_notebook.utils import clean_thinking_content
 from deeper_notebook.utils.context_builder import ContextBuilder
 from deeper_notebook.utils.error_classifier import classify_error
@@ -119,7 +119,7 @@ async def call_model_with_source_context(
     """
     try:
         return await _call_model_with_source_context_inner(state, config)
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)
@@ -381,7 +381,7 @@ def _format_source_context(context_data: dict) -> str:
             logger.warning(
                 f"Source-chat insights truncated: kept {len(capped_insights)}/"
                 f"{len(all_insights)} insights (cap={max_insights}). "
-                f"Set ONP_SOURCE_CHAT_MAX_INSIGHTS to raise."
+                f"Set DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS to raise."
             )
             context_parts.append(
                 f"_[{dropped_count} additional insights elided for context budget]_"
@@ -416,7 +416,7 @@ def _format_source_context(context_data: dict) -> str:
 # v0.7.32 — shared WAL-tuned, integrity-checked checkpoint connection.
 # Both this module and chat.py target the same DB file; the shared
 # helper returns the SAME connection so we don't race two writers.
-# See open_notebook.utils.sqlite_checkpoint docstring for details.
+# See deeper_notebook.utils.sqlite_checkpoint docstring for details.
 conn = get_checkpoint_connection(LANGGRAPH_CHECKPOINT_FILE)
 memory = SqliteSaver(conn)
 
@@ -431,7 +431,7 @@ source_chat_state.add_edge("source_chat_agent", END)
 source_chat_graph = source_chat_state.compile(checkpointer=memory)
 
 
-# v0.7.192 — Lazy async-graph initializer. See open_notebook/graphs/chat.py
+# v0.7.192 — Lazy async-graph initializer. See deeper_notebook/graphs/chat.py
 # for the full rationale on the lazy/threading-lock pattern (aiosqlite
 # captures the event loop at construct time, so we can't build at
 # module load).

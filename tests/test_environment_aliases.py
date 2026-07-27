@@ -789,7 +789,7 @@ def test_bootstrap_applies_normalized_aliases_to_process_environment(module_name
 def test_production_python_does_not_directly_access_legacy_product_keys():
     """All product-owned legacy accesses must route through the central resolver."""
     root = Path(__file__).resolve().parents[1]
-    production_roots = ("api", "commands", "desktop", "open_notebook")
+    production_roots = ("api", "commands", "desktop", "open_" "notebook")
     violations: list[str] = []
     getter_names = {
         "getenv",

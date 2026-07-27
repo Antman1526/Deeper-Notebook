@@ -241,7 +241,7 @@ async def test_benchmark_job_marks_unregistered_recommendations_skipped(tmp_path
 
 def test_benchmark_endpoint_starts_and_lists_jobs(app, tmp_path, monkeypatch):
     _make_gguf(tmp_path, "gemma-3-4b-it-Q4_K_M.gguf")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     async def _registered_models():
         return []
@@ -273,7 +273,7 @@ def test_benchmark_endpoint_starts_and_lists_jobs(app, tmp_path, monkeypatch):
 
 
 def test_benchmark_endpoint_rejects_missing_model_dir(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
 
     with TestClient(app) as client:
         response = client.post("/api/local-models/benchmarks", json={})
@@ -310,7 +310,7 @@ def test_role_routing_endpoint_uses_persisted_benchmark_history(
 ):
     _make_gguf(tmp_path, "Qwen3-Coder-30B-A3B-Q4_K_M.gguf")
     gemma_path = _make_gguf(tmp_path, "gemma-3-4b-it-Q4_K_M.gguf")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     save_benchmark_history(
         tmp_path,
         [

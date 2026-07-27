@@ -81,9 +81,9 @@ describe('LauncherPrefsPage', () => {
 
     const [payload] = mockMutate.mock.calls[0]
     // Only the changed field should be in the diff.
-    expect(payload.prefs).toHaveProperty('DN_CHAT_LLM_CTX', '8192')
+    expect(payload.prefs).toHaveProperty('DEEPER_NOTEBOOK_CHAT_LLM_CTX', '8192')
     // Unchanged fields must NOT be present.
-    expect(payload.prefs).not.toHaveProperty('DN_CHAT_LLM_CTX_MAX')
+    expect(payload.prefs).not.toHaveProperty('DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX')
     expect(payload.prefs).not.toHaveProperty('DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH')
   })
 
@@ -132,8 +132,8 @@ describe('LauncherPrefsPage', () => {
       'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
       'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
       'DEEPER_NOTEBOOK_LOCAL_N_CTX',
-      'DN_CHAT_LLM_CTX',
-      'DN_CHAT_LLM_CTX_MAX',
+      'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+      'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
     ])
 
     const [payload] = mockMutate.mock.calls[0]
@@ -146,8 +146,8 @@ describe('LauncherPrefsPage', () => {
     mockData.prefs = {
       DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/canonical/draft.gguf',
       DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT: '10',
-      DN_CHAT_LLM_CTX: '16384',
-      DN_CHAT_LLM_CTX_MAX: '65536',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '16384',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX: '65536',
     }
 
     render(<LauncherPrefsPage />)
@@ -158,12 +158,12 @@ describe('LauncherPrefsPage', () => {
     expect(screen.getByTestId('n-ctx-max')).toHaveValue(65536)
   })
 
-  it('falls back to legacy-only GET preferences', () => {
+  it('reads canonical GET preferences returned by the backend registry', () => {
     mockData.prefs = {
-      OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/legacy/draft.gguf',
-      OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT: '6',
-      ONP_CHAT_LLM_CTX: '8192',
-      ONP_CHAT_LLM_CTX_MAX: '32768',
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/legacy/draft.gguf',
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT: '6',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '8192',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX: '32768',
     }
 
     render(<LauncherPrefsPage />)
@@ -174,12 +174,10 @@ describe('LauncherPrefsPage', () => {
     expect(screen.getByTestId('n-ctx-max')).toHaveValue(32768)
   })
 
-  it('prefers canonical GET preferences when both aliases are present', () => {
+  it('renders canonical draft and context preferences together', () => {
     mockData.prefs = {
       DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/canonical/draft.gguf',
-      OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/legacy/draft.gguf',
-      DN_CHAT_LLM_CTX: '32768',
-      ONP_CHAT_LLM_CTX: '8192',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '32768',
     }
 
     render(<LauncherPrefsPage />)

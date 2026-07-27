@@ -99,18 +99,18 @@ def test_detect_multiple_categories_sorted_unique():
 
 @pytest.mark.parametrize("on", ["on", "1", "true", "yes", "local", "LOCAL-ONLY"])
 def test_gate_enabled_truthy(monkeypatch, on):
-    monkeypatch.setenv("ONP_PRIVACY_GATE", on)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_GATE", on)
     assert pg._privacy_gate_enabled() is True
 
 
 @pytest.mark.parametrize("off", ["", "off", "0", "false", "no", "nonsense"])
 def test_gate_disabled(monkeypatch, off):
-    monkeypatch.setenv("ONP_PRIVACY_GATE", off)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_GATE", off)
     assert pg._privacy_gate_enabled() is False
 
 
 def test_gate_default_off(monkeypatch):
-    monkeypatch.delenv("ONP_PRIVACY_GATE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_PRIVACY_GATE", raising=False)
     assert pg._privacy_gate_enabled() is False
 
 
@@ -168,7 +168,7 @@ def test_gate_on_cloud_sensitive_no_local_blocks():
 
 
 def test_gate_reads_env_when_mode_none(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_GATE", "on")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_GATE", "on")
     out = pg.apply_privacy_gate(
         CLOUD, content="ssn 123-45-6789", local_model_id="model:local",
         cloud_model_id="model:cloud",  # mode=None → read env

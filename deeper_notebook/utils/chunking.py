@@ -40,20 +40,20 @@ def _get_chunk_size() -> int:
             chunk_size = int(chunk_size_str)
             if chunk_size < 100:
                 logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is too small. "
+                    f"DEEPER_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is too small. "
                     f"Using minimum value of 100."
                 )
                 return 100
             if chunk_size > 8192:
                 logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is very large. "
+                    f"DEEPER_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is very large. "
                     f"This may cause issues with some embedding models."
                 )
             logger.info(f"Using custom chunk size: {chunk_size} tokens")
             return chunk_size
         except ValueError:
             logger.warning(
-                f"Invalid OPEN_NOTEBOOK_CHUNK_SIZE value: '{chunk_size_str}'. "
+                f"Invalid DEEPER_NOTEBOOK_CHUNK_SIZE value: '{chunk_size_str}'. "
                 f"Using default: 400"
             )
     return 400
@@ -67,13 +67,13 @@ def _get_chunk_overlap(chunk_size: int) -> int:
             overlap = int(overlap_str)
             if overlap < 0:
                 logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be negative. "
+                    f"DEEPER_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be negative. "
                     f"Using 0."
                 )
                 return 0
             if overlap >= chunk_size:
                 logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be >= chunk size ({chunk_size}). "
+                    f"DEEPER_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be >= chunk size ({chunk_size}). "
                     f"Using 15% of chunk size: {int(chunk_size * 0.15)}"
                 )
                 return int(chunk_size * 0.15)
@@ -81,7 +81,7 @@ def _get_chunk_overlap(chunk_size: int) -> int:
             return overlap
         except ValueError:
             logger.warning(
-                f"Invalid OPEN_NOTEBOOK_CHUNK_OVERLAP value: '{overlap_str}'. "
+                f"Invalid DEEPER_NOTEBOOK_CHUNK_OVERLAP value: '{overlap_str}'. "
                 f"Using default: 15% of chunk size"
             )
     return int(chunk_size * 0.15)
@@ -103,13 +103,13 @@ def _get_min_chunk_size() -> int:
         value = int(raw)
         if value < 0:
             logger.warning(
-                f"OPEN_NOTEBOOK_MIN_CHUNK_SIZE ({value}) cannot be negative. Using 0."
+                f"DEEPER_NOTEBOOK_MIN_CHUNK_SIZE ({value}) cannot be negative. Using 0."
             )
             return 0
         return value
     except ValueError:
         logger.warning(
-            f"Invalid OPEN_NOTEBOOK_MIN_CHUNK_SIZE value: '{raw}'. Using default: 5"
+            f"Invalid DEEPER_NOTEBOOK_MIN_CHUNK_SIZE value: '{raw}'. Using default: 5"
         )
         return 5
 

@@ -1,7 +1,7 @@
 """v0.8.54 — Phase 5.1b: batched memory extraction.
 
 By default the extractor runs one LLM call per turn. With
-ONP_MEMORY_BATCH_TURNS=N>1 the worker buffers turns per session and runs ONE
+DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS=N>1 the worker buffers turns per session and runs ONE
 extraction over the combined transcript every N turns (and drains the buffer
 at session end). These tests mock the LLM + mem0 client — no live services.
 Default (batch=1) must be byte-for-byte the prior per-turn behaviour.
@@ -56,7 +56,7 @@ def _clear_buffers():
 
 
 def test_batch_turns_default(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_BATCH_TURNS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", raising=False)
     assert writer_mod._batch_turns() == 1
 
 
@@ -65,7 +65,7 @@ def test_batch_turns_default(monkeypatch):
     ("0", 1), ("-2", 1), ("garbage", 1), ("", 1),
 ])
 def test_batch_turns_parsing(monkeypatch, val, expected):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", val)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", val)
     assert writer_mod._batch_turns() == expected
 
 
@@ -75,7 +75,7 @@ def test_batch_turns_parsing(monkeypatch, val, expected):
 
 
 def test_default_extracts_every_turn(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_BATCH_TURNS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", raising=False)
     llm, mem = _FakeLLM(), _FakeMemClient()
     for i in range(3):
         writer_mod.extract_turn(
@@ -95,7 +95,7 @@ def test_default_extracts_every_turn(monkeypatch):
 
 
 def test_buffers_until_threshold(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "3")
     llm, mem = _FakeLLM(), _FakeMemClient()
 
     writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
@@ -120,7 +120,7 @@ def test_buffers_until_threshold(monkeypatch):
 
 
 def test_flush_at_session_end_drains_buffer(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "5")
     llm, mem = _FakeLLM(), _FakeMemClient()
 
     writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
@@ -143,7 +143,7 @@ def test_flush_at_session_end_drains_buffer(monkeypatch):
 
 
 def test_buffers_isolated_per_session(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "3")
     llm, mem = _FakeLLM(), _FakeMemClient()
     writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="A",
                             user_text="a0", assistant_text="x")
@@ -155,7 +155,7 @@ def test_buffers_isolated_per_session(monkeypatch):
 
 
 def test_batched_flush_writes_facts(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "2")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "2")
     llm, mem = _FakeLLM(output=_FACT_OUTPUT), _FakeMemClient()
     writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
                             user_text="u0", assistant_text="a0")
@@ -167,7 +167,7 @@ def test_batched_flush_writes_facts(monkeypatch):
 
 
 def test_flush_noop_when_buffer_empty(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "3")
     llm, mem = _FakeLLM(), _FakeMemClient()
     # No buffered turns → flush is a no-op (no extraction call).
     writer_mod.flush_session_buffer(llm=llm, mem_client=mem, chat_session_id="none")
@@ -182,7 +182,7 @@ def test_flush_noop_when_buffer_empty(monkeypatch):
 def test_threshold_flush_removes_session_key(monkeypatch):
     """After a threshold flush, the session key must be DELETED, not left as an
     empty list that lingers forever once the session ends."""
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "2")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "2")
     llm, mem = _FakeLLM(), _FakeMemClient()
     writer_mod.extract_turn(llm=llm, mem_client=mem, chat_session_id="s1",
                             user_text="u0", assistant_text="a0")
@@ -196,7 +196,7 @@ def test_threshold_flush_removes_session_key(monkeypatch):
 def test_buffer_map_bounded_for_abandoned_sessions(monkeypatch):
     """Abandoned sessions (buffered below threshold, never flushed) must not
     grow the map without bound — oldest entries are evicted past the cap."""
-    monkeypatch.setenv("ONP_MEMORY_BATCH_TURNS", "100")  # never flushes
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS", "100")  # never flushes
     monkeypatch.setattr(writer_mod, "_MAX_BUFFERED_SESSIONS", 5)
     llm, mem = _FakeLLM(), _FakeMemClient()
     for i in range(20):

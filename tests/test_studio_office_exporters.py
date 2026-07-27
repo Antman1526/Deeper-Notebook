@@ -262,7 +262,7 @@ def test_xlsx_exports_typed_rows_source_markers_and_validated_chart(
 def test_persistence_attaches_office_exports_for_validated_documents(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     report = _report()
     artifact = StudioArtifact(
         id="studio_artifact:office-report",

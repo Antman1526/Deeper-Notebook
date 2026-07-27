@@ -156,7 +156,7 @@ api:
 #                          — restore from a bundle. REFUSES if data dir is
 #                            non-empty unless FORCE=1 is also set.
 #
-# All three honor ONP_DATA_DIR so users with a custom install path don't
+# All three honor DEEPER_NOTEBOOK_DATA_DIR so users with a custom install path don't
 # need to think about which directory to back up.
 
 OUT ?= backups/onp-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz
@@ -220,13 +220,13 @@ test-integration:
 ##   make benchmark-models
 ##
 ## Single-model run:
-##   ONP_BENCHMARK_ONLY="My OpenAI gpt-4o-mini" make benchmark-models
+##   DEEPER_NOTEBOOK_BENCHMARK_ONLY="My OpenAI gpt-4o-mini" make benchmark-models
 ##
 ## Custom per-call timeout (default 90s):
-##   ONP_BENCHMARK_PER_CALL_TIMEOUT_SEC=180 make benchmark-models
+##   DEEPER_NOTEBOOK_BENCHMARK_PER_CALL_TIMEOUT_SEC=180 make benchmark-models
 .PHONY: benchmark-models
 benchmark-models:
-	@echo "Benchmarking models at $${ONP_BENCHMARK_API_BASE:-http://localhost:5055}..."
+	@echo "Benchmarking models at $${DEEPER_NOTEBOOK_BENCHMARK_API_BASE:-http://localhost:5055}..."
 	@echo "Requires API + worker + SurrealDB to be running. Use \`make status\` to verify."
 	uv run --env-file .env python scripts/benchmark_models.py --output benchmark-report.md
 	@echo ""
@@ -273,7 +273,7 @@ start-all:
 	done
 	@echo "🔧 Starting API backend..."
 	# v0.7.140 — added --env-file .env (was missing). Without it,
-	# run_api.py didn't see OPEN_NOTEBOOK_ENCRYPTION_KEY +
+	# run_api.py didn't see DEEPER_NOTEBOOK_ENCRYPTION_KEY +
 	# SURREAL_URL / SURREAL_PASSWORD from .env (which the worker
 	# line below already loads correctly). Symptom: API came up
 	# but credential decryption failed on the first auth call.
@@ -358,8 +358,8 @@ BUILD_ARCH := $(shell uname -m)
 # reset its TCC (Files & Folders) permissions each time — the cause of the
 # iCloud/Desktop "scandir wedge" seen in the field. Set a STABLE identity to
 # fix that: run `bash scripts/create-signing-identity.sh` once, then build with
-#   make build-mac ONP_CODESIGN_IDENTITY="Deeper Notebook Local"
-ONP_CODESIGN_IDENTITY ?= -
+#   make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY="Deeper Notebook Local"
+DEEPER_NOTEBOOK_CODESIGN_IDENTITY ?= -
 
 build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build-mac-runtimes build-mac-pyinstaller build-mac-dmg
 	@echo ""
@@ -381,7 +381,7 @@ build-mac-test:
 	# directly so its non-zero exit aborts `build-mac`.
 	@uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q
 	@# v0.8.67k — ALSO gate the backend suite. Previously the precondition ran
-	@# only desktop/tests/, so a regression in api/ or open_notebook/ (e.g. the
+	@# only desktop/tests/, so a regression in api/ or deeper_notebook/ (e.g. the
 	@# chat-stream overflow handling) could ship in a build with zero coverage.
 	@# Run the backend suite via the repo .venv (uv run, py3.12) the same way
 	@# `make test` does; integration tests (need a live SurrealDB) stay excluded.
@@ -479,8 +479,8 @@ build-mac-runtimes:
 build-mac-pyinstaller:
 	@echo "🔧 Running PyInstaller (this is the slow step, ~5-10 min)..."
 	@$(BUILD_PYINSTALLER) desktop/build/pyinstaller.spec --noconfirm
-	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign $(ONP_CODESIGN_IDENTITY))..."
-	@codesign --force --deep --sign "$(ONP_CODESIGN_IDENTITY)" "dist/Deeper Notebook.app"
+	@echo "🔏 Re-sealing bundle (codesign --force --deep --sign $(DEEPER_NOTEBOOK_CODESIGN_IDENTITY))..."
+	@codesign --force --deep --sign "$(DEEPER_NOTEBOOK_CODESIGN_IDENTITY)" "dist/Deeper Notebook.app"
 	@echo "   Verifying seal..."
 	@spctl -a -vvv "dist/Deeper Notebook.app" 2>&1 | sed 's/^/   /' || \
 		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);" && \

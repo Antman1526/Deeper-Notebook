@@ -7,7 +7,7 @@ instructions:
   Deploy the template, open the generated EasyPanel domain, and log in with the
   configured Open Notebook password. Configure AI providers from Settings > API
   Keys after the first login. If the password field is left blank, a random
-  password is generated and stored as OPEN_NOTEBOOK_PASSWORD in the app service
+  password is generated and stored as DEEPER_NOTEBOOK_PASSWORD in the app service
   environment.
 changeLog:
   - date: 2026-06-19

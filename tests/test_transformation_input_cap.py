@@ -1,6 +1,6 @@
 """v0.7.10 — regression tests for transformation input cap.
 
-`open_notebook.graphs.transformation.run_transformation` used to pass
+`deeper_notebook.graphs.transformation.run_transformation` used to pass
 `source.full_text` (or `input_text`) into the LLM prompt with no upper
 bound. Combined with `max_tokens=8192`, a modest 50 KB source already
 overflowed a 16k-context local server (the v0.7.8 default), throwing
@@ -20,7 +20,7 @@ from deeper_notebook.graphs import transformation
 
 def test_short_input_passes_through(monkeypatch):
     """Input under the cap is returned unchanged — no marker, no warning."""
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
     text = "A short article body."
     out = transformation._truncate_transformation_input(text)
     assert out == text
@@ -29,7 +29,7 @@ def test_short_input_passes_through(monkeypatch):
 
 def test_oversize_input_is_truncated_with_marker(monkeypatch):
     """Default cap is 12_000 chars. A 30 KB input gets sliced and marked."""
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
     text = "X" * 30_000
     out = transformation._truncate_transformation_input(text)
     assert len(out) == 12_000 + len(transformation._TRUNCATION_MARKER)
@@ -39,8 +39,8 @@ def test_oversize_input_is_truncated_with_marker(monkeypatch):
 
 
 def test_env_var_raises_cap(monkeypatch):
-    """ONP_TRANSFORMATION_INPUT_CAP lets capable-hardware users raise the cap."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_INPUT_CAP", "50000")
+    """DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP lets capable-hardware users raise the cap."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", "50000")
     text = "Y" * 30_000
     # 30k now fits under 50k cap → no truncation
     out = transformation._truncate_transformation_input(text)
@@ -49,7 +49,7 @@ def test_env_var_raises_cap(monkeypatch):
 
 def test_env_var_lowers_cap(monkeypatch):
     """Low-RAM users can shrink the cap."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_INPUT_CAP", "1000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", "1000")
     text = "Z" * 5000
     out = transformation._truncate_transformation_input(text)
     assert len(out) == 1000 + len(transformation._TRUNCATION_MARKER)
@@ -58,7 +58,7 @@ def test_env_var_lowers_cap(monkeypatch):
 
 def test_invalid_env_var_falls_back(monkeypatch):
     """Garbage value falls back to default (12_000) with a warning."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_INPUT_CAP", "not-an-int")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", "not-an-int")
     text = "Q" * 30_000
     out = transformation._truncate_transformation_input(text)
     # Default applied
@@ -68,7 +68,7 @@ def test_invalid_env_var_falls_back(monkeypatch):
 def test_too_low_env_var_falls_back(monkeypatch):
     """Below 500 chars is almost certainly a typo — fall back to default
     rather than ship a useless one-paragraph input."""
-    monkeypatch.setenv("ONP_TRANSFORMATION_INPUT_CAP", "100")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", "100")
     text = "Q" * 30_000
     out = transformation._truncate_transformation_input(text)
     assert len(out) == 12_000 + len(transformation._TRUNCATION_MARKER)
@@ -76,7 +76,7 @@ def test_too_low_env_var_falls_back(monkeypatch):
 
 def test_exact_cap_size_not_truncated(monkeypatch):
     """Input at exactly the cap boundary is not truncated — `<=`, not `<`."""
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
     text = "A" * 12_000
     out = transformation._truncate_transformation_input(text)
     assert out == text
@@ -84,7 +84,7 @@ def test_exact_cap_size_not_truncated(monkeypatch):
 
 
 def test_empty_input_is_unchanged(monkeypatch):
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
     assert transformation._truncate_transformation_input("") == ""
 
 
@@ -96,7 +96,7 @@ def test_empty_input_is_unchanged(monkeypatch):
 async def test_run_transformation_applies_cap_to_input_text(monkeypatch):
     """When state["input_text"] is oversized, the LLM payload's
     HumanMessage gets the truncated version, not the raw text."""
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
 
     sent_payloads: list = []
 
@@ -155,7 +155,7 @@ async def test_run_transformation_applies_cap_to_source_full_text(monkeypatch):
     """When input_text isn't provided, source.full_text takes the same
     truncation path — this is the more common production case (running
     transformations on uploaded PDFs etc)."""
-    monkeypatch.delenv("ONP_TRANSFORMATION_INPUT_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORMATION_INPUT_CAP", raising=False)
 
     sent_payloads: list = []
     insights_added: list = []

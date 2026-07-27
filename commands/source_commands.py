@@ -324,7 +324,7 @@ async def run_transformation_command(
 
         # Run transformation graph (includes LLM call + insight creation).
         #
-        # v0.7.138 — bounded by ONP_TRANSFORMATION_TIMEOUT_SEC (default
+        # v0.7.138 — bounded by DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC (default
         # 180s, same env var as the HTTP-side /transformations/execute
         # endpoint). Without this, a hung chat model pinned the worker
         # slot indefinitely; surreal_commands retry would eventually
@@ -356,7 +356,7 @@ async def run_transformation_command(
                 f"Transformation graph timed out after {_xform_timeout}s "
                 f"for source {input_data.source_id} / transformation "
                 f"{input_data.transformation_id}. Worker will retry; "
-                f"raise ONP_TRANSFORMATION_TIMEOUT_SEC if your model "
+                f"raise DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC if your model "
                 f"legitimately needs more time."
             ) from exc
 
