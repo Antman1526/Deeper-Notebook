@@ -9,7 +9,7 @@ import unicodedata
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any, Literal, Protocol
 
 from loguru import logger
@@ -130,19 +130,40 @@ class VaultGraph(_Model):
 
 class VaultSyncReceipt(_Model):
     id: str | None = None
-    operation_id: str
+    operation_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
     vault_id: str
     vault_file_id: str
-    operation: str
-    source: str = "vault-indexer"
+    operation: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
+    source: str = Field(
+        default="vault-indexer",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
     before_hash: str | None = None
     after_hash: str | None = None
     observed_modified_ns: int | None = None
-    parser_version: str
+    parser_version: str = Field(min_length=1, max_length=128)
     policy_decision: str = "read-only"
-    status: str
-    error_code: str | None = None
-    rollback_path: str | None = None
+    status: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
+    error_code: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
+    rollback_path: Literal[None] = None
     started_at: datetime
     completed_at: datetime | None = None
 
@@ -150,7 +171,7 @@ class VaultSyncReceipt(_Model):
 class ProjectionResult(_Model):
     vault_file_id: str
     note_id: str
-    status: Literal["projected", "unchanged"]
+    status: Literal["projected", "unchanged", "superseded"]
     parse_state: Literal["parsed"]
     embedding_state: Literal["pending"]
 
@@ -187,6 +208,7 @@ class VaultTrustSummary(_Model):
 
 
 _SAFE_CODE = re.compile(r"^[a-zA-Z0-9_.-]+")
+_SAFE_RECEIPT_FIELD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 
 def _now() -> datetime:
@@ -211,8 +233,35 @@ def _safe_error_code(value: str) -> str:
     return (match.group(0) if match else "vault_error")[:64]
 
 
+def _receipt_field(value: str, *, name: str, max_length: int) -> str:
+    if (
+        not value
+        or len(value) > max_length
+        or _SAFE_RECEIPT_FIELD.fullmatch(value) is None
+    ):
+        raise ValueError(f"invalid_receipt_{name}")
+    return value
+
+
 def _title_key(value: str) -> str:
     return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+def _task_datetime(value: date | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
+
+async def _await_task_terminal(task: asyncio.Task[Any]) -> Any:
+    """Wait through caller cancellation without cancelling a durable side effect."""
+
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            continue
+    return task.result()
 
 
 async def _default_embedding_submitter(
@@ -295,6 +344,11 @@ class VaultRepository:
         parsed: ParsedDocument,
         operation_id: str,
     ) -> ProjectionResult:
+        operation_id = _receipt_field(
+            operation_id,
+            name="operation_id",
+            max_length=128,
+        )
         if (
             observation.vault_id != vault.id
             or observation.relative_path != parsed.relative_path
@@ -314,18 +368,33 @@ class VaultRepository:
             note_id=note_id,
             started_at=started_at,
         )
-        rows: list[dict[str, Any]]
-        try:
+
+        async def execute_projection() -> list[dict[str, Any]]:
             with _projection_note_refresh():
                 async with self._connection_factory() as connection:
-                    rows = await self._query(
+                    return await self._query(
                         connection,
                         self._projection_transaction(),
                         variables,
                     )
+
+        query_task = asyncio.create_task(execute_projection())
+        cancelled = False
+        query_error: Exception | None = None
+        try:
+            rows = await asyncio.shield(query_task)
         except asyncio.CancelledError:
-            raise
-        except Exception:
+            cancelled = True
+            try:
+                rows = await _await_task_terminal(query_task)
+            except Exception as exc:
+                rows = []
+                query_error = exc
+        except Exception as exc:
+            rows = []
+            query_error = exc
+
+        if query_error is not None:
             reconciled_status = await self._reconcile_projection_commit(
                 operation_id=operation_id,
                 observation=observation,
@@ -341,7 +410,9 @@ class VaultRepository:
                     before_hash=None,
                     started_at=started_at,
                 )
-                raise
+                if cancelled:
+                    raise asyncio.CancelledError from None
+                raise query_error
             rows = [{"projection_status": reconciled_status}]
 
         outcome = next(
@@ -352,30 +423,84 @@ class VaultRepository:
             ),
             {},
         )
-        unchanged = outcome.get("projection_status") == "unchanged"
-        if not unchanged:
+        projection_status = outcome.get("projection_status")
+        if projection_status not in {"projected", "unchanged", "superseded"}:
+            if cancelled:
+                raise asyncio.CancelledError from None
+            raise RuntimeError("projection_outcome_missing")
+        if projection_status == "projected":
+            cancelled = await self._submit_embedding_after_commit(
+                note_id,
+                cancellation_pending=cancelled,
+            )
+        if cancelled:
+            raise asyncio.CancelledError from None
+
+        return ProjectionResult(
+            vault_file_id=vault_file_id,
+            note_id=note_id,
+            status=projection_status,
+            parse_state="parsed",
+            embedding_state="pending",
+        )
+
+    async def _submit_embedding_after_commit(
+        self,
+        note_id: str,
+        *,
+        cancellation_pending: bool,
+    ) -> bool:
+        async def submit() -> None:
+            submitted = self._embedding_submitter(
+                LEGACY_COMMAND_APP,
+                "embed_note",
+                {"note_id": note_id},
+            )
+            if inspect.isawaitable(submitted):
+                await submitted
+
+        task = asyncio.create_task(submit())
+        if cancellation_pending:
             try:
-                submitted = self._embedding_submitter(
-                    LEGACY_COMMAND_APP,
-                    "embed_note",
-                    {"note_id": note_id},
-                )
-                if inspect.isawaitable(submitted):
-                    await submitted
+                await _await_task_terminal(task)
+            except asyncio.CancelledError:
+                pass
             except Exception as exc:
                 logger.warning(
                     "Vault embedding submission failed for note {} ({})",
                     note_id,
                     type(exc).__name__,
                 )
-
-        return ProjectionResult(
-            vault_file_id=vault_file_id,
-            note_id=note_id,
-            status="unchanged" if unchanged else "projected",
-            parse_state="parsed",
-            embedding_state="pending",
-        )
+            return True
+        try:
+            await asyncio.shield(task)
+            return False
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if (
+                task.done()
+                and task.cancelled()
+                and not (current and current.cancelling())
+            ):
+                raise
+            try:
+                await _await_task_terminal(task)
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.warning(
+                    "Vault embedding submission failed for note {} ({})",
+                    note_id,
+                    type(exc).__name__,
+                )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Vault embedding submission failed for note {} ({})",
+                note_id,
+                type(exc).__name__,
+            )
+            return False
 
     async def _reconcile_projection_commit(
         self,
@@ -384,10 +509,10 @@ class VaultRepository:
         observation: VaultWorkItem,
         vault_file_id: str,
         note_id: str,
-    ) -> Literal["projected", "unchanged"] | None:
+    ) -> Literal["projected", "unchanged", "superseded"] | None:
         receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
 
-        async def reconcile() -> Literal["projected", "unchanged"] | None:
+        async def reconcile() -> Literal["projected", "unchanged", "superseded"] | None:
             async with self._connection_factory() as connection:
                 rows = await self._query(
                     connection,
@@ -409,6 +534,16 @@ class VaultRepository:
             file_row = proof.get("file") or {}
             note_row = proof.get("note") or {}
             status = receipt.get("status")
+            if status == "superseded":
+                if (
+                    receipt.get("after_hash") == observation.content_hash
+                    and file_row.get("parse_status") == "parsed"
+                    and file_row.get("deleted_state") == "present"
+                    and note_row.get("external_state") == "current"
+                    and file_row.get("content_hash") == note_row.get("source_hash")
+                ):
+                    return "superseded"
+                return None
             if (
                 status not in {"success", "unchanged"}
                 or receipt.get("after_hash") != observation.content_hash
@@ -460,6 +595,7 @@ class VaultRepository:
         }
         note_data = {
             "title": parsed.title,
+            "title_key": _title_key(parsed.title),
             "note_type": "human",
             "content": parsed.markdown,
             "vault_id": _db_id(vault.id),
@@ -529,6 +665,7 @@ class VaultRepository:
                 "target_note_id": None,
                 "target_block_id": None,
                 **link,
+                "target_title_key": _title_key(target_text),
                 "resolved": False,
             }
             persisted_links.append(
@@ -550,6 +687,8 @@ class VaultRepository:
                 **task.model_dump(),
             }
             task_data.pop("block_parser_id")
+            for field in ("scheduled", "due", "completed"):
+                task_data[field] = _task_datetime(task_data[field])
             tasks.append({"record_id": _db_id(task_id), "data": task_data})
 
         success_receipt = self._receipt_data(
@@ -567,6 +706,10 @@ class VaultRepository:
             **success_receipt,
             "status": "unchanged",
         }
+        superseded_receipt = {
+            **success_receipt,
+            "status": "superseded",
+        }
         receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
         return {
             "vault_id": _db_id(vault.id),
@@ -574,6 +717,8 @@ class VaultRepository:
             "note_id": _db_id(note_id),
             "relative_path": observation.relative_path,
             "content_hash": observation.content_hash,
+            "observed_modified_ns": observation.modified_ns,
+            "started_at": started_at,
             "vault_file": file_data,
             "note": note_data,
             "blocks": blocks,
@@ -582,6 +727,7 @@ class VaultRepository:
             "receipt_id": _db_id(receipt_id),
             "success_receipt": success_receipt,
             "unchanged_receipt": unchanged_receipt,
+            "superseded_receipt": superseded_receipt,
         }
 
     @staticmethod
@@ -594,13 +740,41 @@ class VaultRepository:
             AND relative_path = $relative_path
             LIMIT 1
         )[0];
-        LET $unchanged = $existing_file != NONE
+        LET $existing_note = (SELECT * FROM $note_id LIMIT 1)[0];
+        LET $current_success = (
+            SELECT * FROM vault_sync_receipt
+            WHERE vault_file_id = $vault_file_id
+            AND status IN ['success', 'unchanged']
+            AND after_hash = $existing_file.content_hash
+            ORDER BY started_at DESC
+            LIMIT 1
+        )[0];
+        LET $superseded = IF $existing_file = NONE {
+            false
+        } ELSE {
+            $existing_file.content_hash != $content_hash
+            AND $existing_file.parse_status = 'parsed'
+            AND $existing_file.deleted_state = 'present'
+            AND $current_success != NONE
+            AND (
+                $existing_file.modified_ns > $observed_modified_ns
+                OR (
+                    $existing_file.modified_ns = $observed_modified_ns
+                    AND $current_success.started_at > $started_at
+                )
+            )
+        };
+        LET $unchanged = IF $existing_file = NONE {
+            false
+        } ELSE {
+            !$superseded
             AND $existing_file.content_hash = $content_hash
             AND $existing_file.parse_status = 'parsed'
-            AND $existing_file.deleted_state = 'present';
-        IF !$unchanged {
-            UPSERT $vault_file_id CONTENT $vault_file;
-            UPSERT $note_id CONTENT $note;
+            AND $existing_file.deleted_state = 'present'
+        };
+        IF !$unchanged AND !$superseded {
+            UPSERT $vault_file_id MERGE $vault_file;
+            UPSERT $note_id MERGE $note;
             DELETE note_block WHERE vault_file_id = $vault_file_id;
             DELETE note_link WHERE source_note_id = $note_id;
             DELETE knowledge_task WHERE note_id = $note_id;
@@ -613,15 +787,29 @@ class VaultRepository:
             FOR $task IN $tasks {
                 UPSERT $task.record_id CONTENT $task.data;
             };
-            FOR $link IN $links {
-                UPDATE $link.record_id SET
-                    target_note_id = (
-                        SELECT VALUE id FROM note
-                        WHERE vault_id = $vault_id
-                        AND string::lowercase(title) = $link.target_title
-                        LIMIT 1
-                    )[0],
-                    resolved = target_note_id != NONE;
+            FOR $affected_link IN (
+                SELECT * FROM note_link
+                WHERE source_note_id IN (
+                    SELECT VALUE id FROM note WHERE vault_id = $vault_id
+                )
+                AND (
+                    source_note_id = $note_id
+                    OR target_title_key = $existing_note.title_key
+                    OR target_title_key = $note.title_key
+                )
+            ) {
+                LET $targets = (
+                    SELECT VALUE id FROM note
+                    WHERE vault_id = $vault_id
+                    AND title_key = $affected_link.target_title_key
+                );
+                UPDATE $affected_link.id SET
+                    target_note_id = IF array::len($targets) = 1 {
+                        $targets[0]
+                    } ELSE {
+                        NONE
+                    },
+                    resolved = array::len($targets) = 1;
             };
             UPDATE $vault_file_id SET
                 parse_status = 'parsed',
@@ -630,20 +818,27 @@ class VaultRepository:
                 deleted_state = 'present';
             UPDATE $note_id SET external_state = 'current';
         };
-        LET $receipt = IF $unchanged {
-            $unchanged_receipt
+        IF $superseded {
+            CREATE $receipt_id CONTENT $superseded_receipt; -- vault_sync_receipt
         } ELSE {
-            $success_receipt
-        };
-        CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
-        UPDATE $receipt_id SET before_hash = $existing_file.content_hash;
-        RETURN {
-            projection_status: IF $unchanged {
-                'unchanged'
+            IF $unchanged {
+                CREATE $receipt_id CONTENT $unchanged_receipt;
             } ELSE {
-                'projected'
-            }
+                CREATE $receipt_id CONTENT $success_receipt;
+            };
         };
+        UPDATE $receipt_id SET before_hash = $existing_file.content_hash;
+        LET $changed_status = IF $superseded {
+            'superseded'
+        } ELSE {
+            'projected'
+        };
+        LET $projection_status = IF $unchanged {
+            'unchanged'
+        } ELSE {
+            $changed_status
+        };
+        RETURN { projection_status: $projection_status };
         COMMIT TRANSACTION;
         """
 
@@ -661,20 +856,36 @@ class VaultRepository:
         started_at: datetime,
         error_code: str | None = None,
     ) -> dict[str, Any]:
+        safe_operation_id = _receipt_field(
+            operation_id,
+            name="operation_id",
+            max_length=128,
+        )
+        safe_operation = _receipt_field(
+            operation,
+            name="operation",
+            max_length=32,
+        )
+        safe_status = _receipt_field(
+            status,
+            name="status",
+            max_length=32,
+        )
+        safe_error = _safe_error_code(error_code) if error_code is not None else None
         return {
             "schema_version": 1,
-            "operation_id": operation_id,
+            "operation_id": safe_operation_id,
             "vault_id": _db_id(vault.id),
             "vault_file_id": _db_id(vault_file_id),
-            "operation": operation,
+            "operation": safe_operation,
             "source": "vault-indexer",
             "before_hash": before_hash,
             "after_hash": after_hash,
             "observed_modified_ns": observed_modified_ns,
             "parser_version": vault.parser_version,
             "policy_decision": "read-only",
-            "status": status,
-            "error_code": error_code,
+            "status": safe_status,
+            "error_code": safe_error,
             "rollback_path": None,
             "started_at": started_at,
             "completed_at": _now(),
@@ -697,6 +908,62 @@ class VaultRepository:
             },
         )
 
+    @staticmethod
+    def _failure_transaction() -> str:
+        return """
+        BEGIN TRANSACTION;
+        LET $operation_committed = (
+            SELECT * FROM $receipt_id
+            WHERE status IN ['success', 'unchanged']
+            LIMIT 1
+        )[0];
+        LET $existing_file = (SELECT * FROM $vault_file_id LIMIT 1)[0];
+        LET $current_success = (
+            SELECT * FROM vault_sync_receipt
+            WHERE vault_file_id = $vault_file_id
+            AND status IN ['success', 'unchanged']
+            AND after_hash = $existing_file.content_hash
+            ORDER BY started_at DESC
+            LIMIT 1
+        )[0];
+        LET $superseded = $existing_file != NONE
+            AND $existing_file.parse_status = 'parsed'
+            AND $existing_file.deleted_state = 'present'
+            AND $current_success != NONE
+            AND $current_success.after_hash = $existing_file.content_hash;
+        IF $operation_committed = NONE {
+            IF !$superseded {
+                UPSERT $vault_file_id MERGE {
+                    schema_version: 1,
+                    vault_id: $vault_id,
+                    relative_path: $relative_path,
+                    file_kind: $file_kind,
+                    format: $format,
+                    content_hash: $content_hash,
+                    size_bytes: $size_bytes,
+                    modified_ns: $modified_ns,
+                    parse_status: 'invalid',
+                    parse_error_code: $error_code,
+                    deleted_state: 'present'
+                };
+            };
+            LET $receipt = IF $superseded {
+                $superseded_receipt
+            } ELSE {
+                $failed_receipt
+            };
+            CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
+        };
+        RETURN {
+            failure_status: IF $operation_committed != NONE {
+                'committed'
+            } ELSE {
+                IF $superseded { 'superseded' } ELSE { 'failed' }
+            }
+        };
+        COMMIT TRANSACTION;
+        """
+
     async def _record_projection_failure_bounded(
         self,
         *,
@@ -708,7 +975,7 @@ class VaultRepository:
         started_at: datetime,
     ) -> None:
         async def record() -> None:
-            receipt = self._receipt_data(
+            failed_receipt = self._receipt_data(
                 operation_id=operation_id,
                 vault=vault,
                 vault_file_id=vault_file_id,
@@ -720,6 +987,10 @@ class VaultRepository:
                 started_at=started_at,
                 error_code="projection_failed",
             )
+            superseded_receipt = {
+                **failed_receipt,
+                "status": "superseded",
+            }
             receipt_id = _record_id("vault_sync_receipt", operation_id, vault_file_id)
             variables = {
                 "vault_file_id": _db_id(vault_file_id),
@@ -732,36 +1003,13 @@ class VaultRepository:
                 "modified_ns": observation.modified_ns or 0,
                 "error_code": "projection_failed",
                 "receipt_id": _db_id(receipt_id),
-                "receipt": receipt,
+                "failed_receipt": failed_receipt,
+                "superseded_receipt": superseded_receipt,
             }
             async with self._connection_factory() as connection:
                 await self._query(
                     connection,
-                    """
-                    BEGIN TRANSACTION;
-                    LET $committed_receipt = (
-                        SELECT * FROM $receipt_id
-                        WHERE status IN ['success', 'unchanged']
-                        LIMIT 1
-                    )[0];
-                    IF $committed_receipt = NONE {
-                        UPSERT $vault_file_id MERGE {
-                            schema_version: 1,
-                            vault_id: $vault_id,
-                            relative_path: $relative_path,
-                            file_kind: $file_kind,
-                            format: $format,
-                            content_hash: $content_hash,
-                            size_bytes: $size_bytes,
-                            modified_ns: $modified_ns,
-                            parse_status: 'invalid',
-                            parse_error_code: $error_code,
-                            deleted_state: 'present'
-                        };
-                        CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
-                    };
-                    COMMIT TRANSACTION;
-                    """,
+                    self._failure_transaction(),
                     variables,
                 )
 
@@ -770,7 +1018,7 @@ class VaultRepository:
                 record(),
                 timeout=self._failure_receipt_timeout,
             )
-        except BaseException as exc:
+        except Exception as exc:
             logger.warning(
                 "Vault failure receipt was not persisted ({})",
                 type(exc).__name__,
@@ -783,6 +1031,11 @@ class VaultRepository:
         operation_id: str,
         error_code: str,
     ) -> None:
+        operation_id = _receipt_field(
+            operation_id,
+            name="operation_id",
+            max_length=128,
+        )
         vault_file_id = _record_id("vault_file", vault_id, observation.relative_path)
         safe_code = _safe_error_code(error_code)
         vault = VaultMount(
@@ -793,7 +1046,7 @@ class VaultRepository:
             status="degraded",
             parser_version="unknown",
         )
-        receipt = self._receipt_data(
+        failed_receipt = self._receipt_data(
             operation_id=operation_id,
             vault=vault,
             vault_file_id=vault_file_id,
@@ -805,11 +1058,16 @@ class VaultRepository:
             started_at=_now(),
             error_code=safe_code,
         )
+        superseded_receipt = {
+            **failed_receipt,
+            "status": "superseded",
+        }
         variables = {
             "vault_id": _db_id(vault_id),
             "vault_file_id": _db_id(vault_file_id),
             "relative_path": observation.relative_path,
             "file_kind": observation.file_kind,
+            "format": "markdown",
             "content_hash": observation.content_hash,
             "size_bytes": observation.byte_size or 0,
             "modified_ns": observation.modified_ns or 0,
@@ -821,29 +1079,13 @@ class VaultRepository:
                     vault_file_id,
                 )
             ),
-            "receipt": receipt,
+            "failed_receipt": failed_receipt,
+            "superseded_receipt": superseded_receipt,
         }
         async with self._connection_factory() as connection:
             await self._query(
                 connection,
-                """
-                BEGIN TRANSACTION;
-                UPSERT $vault_file_id MERGE {
-                    schema_version: 1,
-                    vault_id: $vault_id,
-                    relative_path: $relative_path,
-                    file_kind: $file_kind,
-                    format: 'markdown',
-                    content_hash: $content_hash,
-                    size_bytes: $size_bytes,
-                    modified_ns: $modified_ns,
-                    parse_status: 'invalid',
-                    parse_error_code: $error_code,
-                    deleted_state: 'present'
-                };
-                CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
-                COMMIT TRANSACTION;
-                """,
+                self._failure_transaction(),
                 variables,
             )
 
@@ -853,6 +1095,11 @@ class VaultRepository:
         relative_path: str,
         operation_id: str,
     ) -> None:
+        operation_id = _receipt_field(
+            operation_id,
+            name="operation_id",
+            max_length=128,
+        )
         vault_file_id = _record_id("vault_file", vault_id, relative_path)
         vault = VaultMount(
             id=vault_id,
@@ -921,8 +1168,8 @@ class VaultRepository:
                     AND vault_file_id = $vault_file_id;
                     CREATE $receipt_id CONTENT $receipt; -- vault_sync_receipt
                 };
-                COMMIT TRANSACTION;
                 RETURN { transitioned: $transitioned };
+                COMMIT TRANSACTION;
                 """,
                 variables,
             )
@@ -994,6 +1241,7 @@ class VaultRepository:
         *,
         outgoing: bool,
     ) -> list[dict[str, Any]]:
+        await self._require_note_in_vault(connection, vault_id, note_id)
         field = "source_note_id" if outgoing else "target_note_id"
         return await self._query(
             connection,
@@ -1002,10 +1250,30 @@ class VaultRepository:
             WHERE {field} = $note_id
             AND source_note_id IN (
                 SELECT VALUE id FROM note WHERE vault_id = $vault_id
+            )
+            AND (
+                target_note_id = NONE
+                OR target_note_id IN (
+                    SELECT VALUE id FROM note WHERE vault_id = $vault_id
+                )
             );
             """,
             {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
         )
+
+    async def _require_note_in_vault(
+        self,
+        connection: _Connection,
+        vault_id: str,
+        note_id: str,
+    ) -> None:
+        rows = await self._query(
+            connection,
+            "SELECT VALUE id FROM $note_id WHERE vault_id = $vault_id;",
+            {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
+        )
+        if not rows:
+            raise LookupError("vault_note_not_found")
 
     async def backlinks(self, vault_id: str, note_id: str) -> list[VaultLink]:
         async with self._connection_factory() as connection:
@@ -1030,6 +1298,7 @@ class VaultRepository:
         frontier = {center_note_id}
         edge_rows: dict[str, dict[str, Any]] = {}
         async with self._connection_factory() as connection:
+            await self._require_note_in_vault(connection, vault_id, center_note_id)
             for _ in range(depth):
                 if not frontier or len(seen) >= limit:
                     break
@@ -1044,6 +1313,10 @@ class VaultRepository:
                     AND source_note_id IN (
                         SELECT VALUE id FROM note WHERE vault_id = $vault_id
                     )
+                    AND target_note_id IN (
+                        SELECT VALUE id FROM note WHERE vault_id = $vault_id
+                    )
+                    AND resolved = true
                     LIMIT $limit;
                     """,
                     {
@@ -1097,13 +1370,15 @@ class VaultRepository:
         return VaultGraph(nodes=nodes, edges=edges)
 
     async def append_receipt(self, receipt: VaultSyncReceipt) -> VaultSyncReceipt:
-        data = receipt.model_dump(exclude={"id"})
-        data["vault_id"] = _db_id(receipt.vault_id)
-        data["vault_file_id"] = _db_id(receipt.vault_file_id)
+        validated = VaultSyncReceipt.model_validate(receipt.model_dump())
+        data = validated.model_dump(exclude={"id"})
+        data["rollback_path"] = None
+        data["vault_id"] = _db_id(validated.vault_id)
+        data["vault_file_id"] = _db_id(validated.vault_file_id)
         receipt_id = _record_id(
             "vault_sync_receipt",
-            receipt.operation_id,
-            receipt.vault_file_id,
+            validated.operation_id,
+            validated.vault_file_id,
         )
         async with self._connection_factory() as connection:
             await self._query(
@@ -1118,7 +1393,7 @@ class VaultRepository:
                     "receipt": data,
                 },
             )
-        return receipt
+        return validated
 
     async def list_receipts(
         self,
@@ -1198,6 +1473,7 @@ class VaultRepository:
         unresolved = len(resolutions) - resolved
         variables: dict[str, Any] = {
             "vault_id": _db_id(vault_id),
+            "manifest_relative_path": manifest_relative_path,
             "manifest_file_id": _db_id(manifest_file_id),
             "manifest_file": {
                 "schema_version": 1,
@@ -1220,7 +1496,7 @@ class VaultRepository:
                 "LET $existing_manifest = (SELECT * FROM vault_file "
                 "WHERE id = $manifest_file_id LIMIT 1)[0];"
             ),
-            "UPSERT $manifest_file_id CONTENT $manifest_file;",
+            "UPSERT $manifest_file_id MERGE $manifest_file;",
         ]
         changed_expressions: list[str] = []
         for index, (entry, resolution, canonical_read) in enumerate(resolutions):
@@ -1229,7 +1505,12 @@ class VaultRepository:
             prior_name = f"prior_{suffix}"
             changed_name = f"changed_{suffix}"
             canonical_file_id: str | None = None
-            trust_id = _record_id("vault_trust_record", entry.manifest_id)
+            trust_id = _record_id(
+                "vault_trust_record",
+                vault_id,
+                manifest_relative_path,
+                entry.manifest_id,
+            )
             if canonical_read is not None:
                 canonical_file_id = _record_id(
                     "vault_file", vault_id, entry.canonical_relative_path
@@ -1264,7 +1545,9 @@ class VaultRepository:
                 [
                     (
                         f"LET ${prior_name} = (SELECT * FROM vault_trust_record "
-                        f"WHERE manifest_id = $manifest_id_{suffix} LIMIT 1)[0];"
+                        f"WHERE vault_id = $vault_id "
+                        f"AND manifest_relative_path = $manifest_relative_path "
+                        f"AND manifest_id = $manifest_id_{suffix} LIMIT 1)[0];"
                     ),
                     (
                         f"LET ${changed_name} = ${prior_name} = NONE "
@@ -1312,7 +1595,7 @@ class VaultRepository:
                 )
             statements.extend(
                 [
-                    f"UPSERT $trust_id_{suffix} CONTENT ${trust_name};",
+                    f"UPSERT $trust_id_{suffix} MERGE ${trust_name};",
                     "};",
                 ]
             )
