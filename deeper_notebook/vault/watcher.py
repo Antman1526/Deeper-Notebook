@@ -54,10 +54,15 @@ class VaultWorkItem:
     embedding_state: EmbeddingState = "not_submitted"
 
 
+@dataclass(frozen=True, slots=True)
+class VaultHandoffResult:
+    accepted: bool
+    corrective_work: tuple[VaultWorkItem, ...] = ()
+    missing_corrected: bool = False
+
+
 class VaultObservationRepository(Protocol):
-    async def record_observation(
-        self, observation: VaultFileObservation
-    ) -> None: ...
+    async def record_observation(self, observation: VaultFileObservation) -> None: ...
 
     async def mark_missing(self, vault_id: str, relative_path: str) -> None:
         """Atomically transition to missing and append its receipt once.
@@ -110,6 +115,19 @@ class _StableObservation:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _CurrentObserved:
+    generation: int
+    work: VaultWorkItem | None
+    missing: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _InFlight:
+    content_hash: str
+    generation: int
+
+
 class VaultWatcher:
     """Require stable reads and coalesce by last committed projection hash.
 
@@ -138,11 +156,12 @@ class VaultWatcher:
         self._max_file_bytes = max_file_bytes
         self._scan_lock = asyncio.Lock()
         self._observations: dict[str, _StableObservation] = {}
+        self._current_observed: dict[str, _CurrentObserved] = {}
         self._known_paths = {
             self._validated_seed_path(relative) for relative in (known_paths or ())
         }
         self._projected_hashes: dict[str, str] = {}
-        self._queued_hashes: dict[str, str] = {}
+        self._in_flight: dict[str, _InFlight] = {}
         for relative, content_hash in (known_projected_hashes or {}).items():
             validated = self._validated_seed_path(relative)
             self._known_paths.add(validated)
@@ -150,40 +169,93 @@ class VaultWatcher:
                 self._projected_hashes[validated] = self._validated_hash(content_hash)
         self._missing_paths: set[str] = set()
 
-    async def scan(
-        self, *, now_monotonic: float | None = None
-    ) -> list[VaultWorkItem]:
+    async def scan(self, *, now_monotonic: float | None = None) -> list[VaultWorkItem]:
         async with self._scan_lock:
             return await self._scan_locked(now_monotonic=now_monotonic)
 
     async def acknowledge_projected(
         self, relative_path: str, content_hash: str
-    ) -> bool:
+    ) -> VaultHandoffResult:
         """Acknowledge the exact queued hash after its projection commits."""
 
         relative = self._validated_seed_path(relative_path)
         validated_hash = self._validated_hash(content_hash)
         async with self._scan_lock:
-            if self._queued_hashes.get(relative) != validated_hash:
-                return self._projected_hashes.get(relative) == validated_hash
-            self._projected_hashes[relative] = validated_hash
-            self._queued_hashes.pop(relative, None)
-            return True
+            in_flight = self._in_flight.get(relative)
+            if in_flight is None:
+                if self._projected_hashes.get(relative) != validated_hash:
+                    return VaultHandoffResult(accepted=False)
+                corrective = await self._corrective_scan_with_handoff_rollback()
+                return VaultHandoffResult(
+                    accepted=True, corrective_work=tuple(corrective)
+                )
+            if in_flight.content_hash != validated_hash:
+                return VaultHandoffResult(accepted=False)
 
-    async def release_queued(self, relative_path: str, content_hash: str) -> bool:
+            current = self._current_observed.get(relative)
+            if current is not None and current.missing:
+                await self._repository.mark_missing(self._vault_id, relative)
+                self._in_flight.pop(relative, None)
+                self._projected_hashes.pop(relative, None)
+                return VaultHandoffResult(
+                    accepted=True,
+                    missing_corrected=True,
+                )
+
+            projected_before = dict(self._projected_hashes)
+            in_flight_before = dict(self._in_flight)
+            self._projected_hashes[relative] = validated_hash
+            self._in_flight.pop(relative, None)
+            corrective = await self._corrective_scan_with_handoff_rollback(
+                projected_before=projected_before,
+                in_flight_before=in_flight_before,
+            )
+            return VaultHandoffResult(accepted=True, corrective_work=tuple(corrective))
+
+    async def release_queued(
+        self, relative_path: str, content_hash: str
+    ) -> VaultHandoffResult:
         """Release the exact queued hash so a failed consumer can retry it."""
 
         relative = self._validated_seed_path(relative_path)
         validated_hash = self._validated_hash(content_hash)
         async with self._scan_lock:
-            if self._queued_hashes.get(relative) != validated_hash:
-                return False
-            self._queued_hashes.pop(relative, None)
-            return True
+            in_flight = self._in_flight.get(relative)
+            if in_flight is None or in_flight.content_hash != validated_hash:
+                return VaultHandoffResult(accepted=False)
+            projected_before = dict(self._projected_hashes)
+            in_flight_before = dict(self._in_flight)
+            self._in_flight.pop(relative, None)
+            corrective = await self._corrective_scan_with_handoff_rollback(
+                projected_before=projected_before,
+                in_flight_before=in_flight_before,
+            )
+            return VaultHandoffResult(accepted=True, corrective_work=tuple(corrective))
 
-    async def _scan_locked(
-        self, *, now_monotonic: float | None
+    async def _corrective_scan_with_handoff_rollback(
+        self,
+        *,
+        projected_before: dict[str, str] | None = None,
+        in_flight_before: dict[str, _InFlight] | None = None,
     ) -> list[VaultWorkItem]:
+        """Run a corrective scan without losing handoff state on interruption."""
+
+        projected_snapshot = (
+            dict(self._projected_hashes)
+            if projected_before is None
+            else projected_before
+        )
+        in_flight_snapshot = (
+            dict(self._in_flight) if in_flight_before is None else in_flight_before
+        )
+        try:
+            return await self._scan_locked(now_monotonic=None)
+        except BaseException:
+            self._projected_hashes = projected_snapshot
+            self._in_flight = in_flight_snapshot
+            raise
+
+    async def _scan_locked(self, *, now_monotonic: float | None) -> list[VaultWorkItem]:
         now = time.monotonic() if now_monotonic is None else now_monotonic
         candidates = list_secure_candidates(self._root)
         current_paths: set[str] = set()
@@ -212,6 +284,7 @@ class VaultWatcher:
                 )
                 self._known_paths.add(relative)
                 self._missing_paths.discard(relative)
+                self._remember_unknown_present(relative)
                 continue
             if now - prior.first_seen_at < self._stable_after_seconds:
                 await self._record(
@@ -275,11 +348,52 @@ class VaultWatcher:
                 self._missing_paths.discard(relative)
                 continue
 
-            if (
-                self._projected_hashes.get(relative) == read.sha256
-                or self._queued_hashes.get(relative) == read.sha256
-            ):
+            work_item = VaultWorkItem(
+                vault_id=self._vault_id,
+                relative_path=relative,
+                file_kind=classification.kind,  # type: ignore[arg-type]
+                protected=classification.protected,
+                content=read.content,
+                content_hash=read.sha256,
+                byte_size=read.byte_size,
+                modified_ns=read.modified_ns,
+            )
+            current = self._current_observed.get(relative)
+            current_hash = (
+                current.work.content_hash
+                if current is not None and current.work is not None
+                else None
+            )
+            in_flight = self._in_flight.get(relative)
+            if in_flight is not None:
+                if current_hash != read.sha256:
+                    await self._record(
+                        relative=relative,
+                        state="pending",
+                        file_kind=classification.kind,
+                        protected=classification.protected,
+                        content_hash=read.sha256,
+                        byte_size=read.byte_size,
+                        modified_ns=read.modified_ns,
+                        observed_at=now,
+                    )
+                    self._remember_current(relative, work_item)
                 continue
+            if self._projected_hashes.get(relative) == read.sha256:
+                if current_hash != read.sha256:
+                    await self._record(
+                        relative=relative,
+                        state="pending",
+                        file_kind=classification.kind,
+                        protected=classification.protected,
+                        content_hash=read.sha256,
+                        byte_size=read.byte_size,
+                        modified_ns=read.modified_ns,
+                        observed_at=now,
+                    )
+                    self._remember_current(relative, work_item)
+                continue
+
             await self._record(
                 relative=relative,
                 state="ready",
@@ -290,21 +404,14 @@ class VaultWatcher:
                 modified_ns=read.modified_ns,
                 observed_at=now,
             )
-            self._queued_hashes[relative] = read.sha256
+            generation = self._remember_current(relative, work_item)
+            self._in_flight[relative] = _InFlight(
+                content_hash=read.sha256,
+                generation=generation,
+            )
             self._known_paths.add(relative)
             self._missing_paths.discard(relative)
-            work.append(
-                VaultWorkItem(
-                    vault_id=self._vault_id,
-                    relative_path=relative,
-                    file_kind=classification.kind,  # type: ignore[arg-type]
-                    protected=classification.protected,
-                    content=read.content,
-                    content_hash=read.sha256,
-                    byte_size=read.byte_size,
-                    modified_ns=read.modified_ns,
-                )
-            )
+            work.append(work_item)
 
         for relative in sorted(self._known_paths - current_paths):
             if relative in self._missing_paths:
@@ -313,9 +420,36 @@ class VaultWatcher:
             self._missing_paths.add(relative)
             self._observations.pop(relative, None)
             self._projected_hashes.pop(relative, None)
-            self._queued_hashes.pop(relative, None)
+            self._remember_missing(relative)
 
         return work
+
+    def _next_generation(self, relative: str) -> int:
+        current = self._current_observed.get(relative)
+        return 1 if current is None else current.generation + 1
+
+    def _remember_current(self, relative: str, work: VaultWorkItem) -> int:
+        generation = self._next_generation(relative)
+        self._current_observed[relative] = _CurrentObserved(
+            generation=generation,
+            work=work,
+            missing=False,
+        )
+        return generation
+
+    def _remember_unknown_present(self, relative: str) -> None:
+        self._current_observed[relative] = _CurrentObserved(
+            generation=self._next_generation(relative),
+            work=None,
+            missing=False,
+        )
+
+    def _remember_missing(self, relative: str) -> None:
+        self._current_observed[relative] = _CurrentObserved(
+            generation=self._next_generation(relative),
+            work=None,
+            missing=True,
+        )
 
     @staticmethod
     def _validated_seed_path(relative: str) -> str:
@@ -329,9 +463,7 @@ class VaultWatcher:
         if (
             not isinstance(content_hash, str)
             or len(content_hash) != 64
-            or any(
-                character not in "0123456789abcdef" for character in content_hash
-            )
+            or any(character not in "0123456789abcdef" for character in content_hash)
         ):
             raise ValueError("content hashes must be lowercase SHA-256")
         return content_hash
@@ -370,6 +502,7 @@ class VaultWatcher:
 
 __all__ = [
     "VaultFileObservation",
+    "VaultHandoffResult",
     "VaultObservationRepository",
     "VaultWatcher",
     "VaultWorkItem",
