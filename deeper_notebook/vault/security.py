@@ -241,7 +241,13 @@ def _policy_path_key(path: Path | str) -> str:
     return unicodedata.normalize("NFC", normalized).casefold()
 
 
+def _has_network_root_prefix(path: Path | str) -> bool:
+    return os.fspath(path).startswith(("//", "\\\\"))
+
+
 def _is_lexically_unsafe_root(path: Path) -> bool:
+    if _has_network_root_prefix(path):
+        return True
     normalized = _policy_path_key(path)
     homes = {Path.home()}
     if pwd is not None:
@@ -311,7 +317,7 @@ def _is_lexically_unsafe_root(path: Path) -> bool:
     drive, tail = os.path.splitdrive(str(path))
     if drive and tail in {"", os.path.sep}:
         return True
-    return str(path).startswith(("\\\\", "//")) and len(path.parts) <= 2
+    return False
 
 
 def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
@@ -321,6 +327,8 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
         raise VaultSecurityError("unsupported_platform")
 
     expanded_text = os.path.expanduser(os.fspath(root))
+    if _has_network_root_prefix(expanded_text):
+        raise VaultSecurityError("unsafe_root")
     expanded = Path(expanded_text)
     if not expanded.is_absolute() or ".." in expanded.parts:
         raise VaultSecurityError("invalid_root")
