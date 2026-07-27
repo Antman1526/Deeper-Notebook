@@ -19,7 +19,39 @@ Cross-suite pollution background — RESOLVED in v0.7.183:
   `desktop/dl_scripts/`. There's no namespace collision to fix
   with sys.path tricks — the fix is at the source.
 """
+import os
+from pathlib import Path
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_data_root_home(tmp_path, monkeypatch):
+    """Keep every desktop test's resolver inside its own temporary home."""
+    test_home = tmp_path
+    monkeypatch.setenv("HOME", str(test_home))
+    monkeypatch.setenv("USERPROFILE", str(test_home))
+
+    from desktop import data_root
+
+    original_resolve = data_root.resolve_data_root
+    allowed_root = tmp_path.resolve()
+
+    def guarded_resolve(*, home=None, failure_injector=None):
+        candidate = (
+            Path(home)
+            if home is not None
+            else Path(os.environ["HOME"])
+        ).resolve()
+        assert candidate.is_relative_to(allowed_root), (
+            f"test attempted data-root resolution outside {allowed_root}: "
+            f"{candidate}"
+        )
+        return original_resolve(
+            home=home, failure_injector=failure_injector
+        )
+
+    monkeypatch.setattr(data_root, "resolve_data_root", guarded_resolve)
 
 
 @pytest.fixture(autouse=True)
