@@ -14,9 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from scripts.persisted_queue_inventory import production_queue_inventory
+    from scripts.persisted_queue_inventory import (
+        production_queue_inventory,
+        production_queue_occurrence_inventory,
+    )
 except ModuleNotFoundError:
-    from persisted_queue_inventory import production_queue_inventory
+    from persisted_queue_inventory import (
+        production_queue_inventory,
+        production_queue_occurrence_inventory,
+    )
 
 CATEGORIES = (
     "compatibility_alias",
@@ -81,6 +87,9 @@ _CATEGORY_OVERRIDES = {
         "migration_documentation"
     ),
     ("deeper_notebook/logging.py", "ONP_"): "migration_documentation",
+    ("scripts/persisted_queue_inventory.py", "open_notebook"): (
+        "migration_documentation"
+    ),
 }
 
 OccurrenceKey = tuple[str, str, str, int | None, int, str]
@@ -780,6 +789,19 @@ _KIND_SCOPE_PREFIXES = {
     ),
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
+_PINNED_SELECTOR_INVENTORY_SHA256 = (
+    "2ebad42ca0a44ff2484b40b6e96fd57d3f9c1f59953caf8ce927e8c1c710c08a"
+)
+_SEMANTIC_SELECTOR_PATHS = frozenset(
+    {
+        "frontend/src/lib/api/deeper-notebook.ts",
+        "frontend/src/lib/api/onp.ts",
+        "frontend/src/lib/features.ts",
+        "frontend/src/lib/theme-storage.ts",
+        "tests/test_persisted_queue_identifiers.py",
+        "tests/test_product_identity.py",
+    }
+)
 _MIN_EXPLANATION_CHARS = 48
 _MIN_EXPLANATION_WORDS = 8
 _GENERIC_EXPLANATIONS = frozenset(
@@ -1605,6 +1627,7 @@ def _compatibility_is_forbidden(
     source: str,
     line: int | None,
     contract_kind: str | None = None,
+    canonical_contract: str | None = None,
 ) -> bool:
     path_obj = Path(path)
     if path_obj.suffix.lower() in {".md", ".mdx", ".rst"}:
@@ -1612,14 +1635,6 @@ def _compatibility_is_forbidden(
     if "/locales/" in f"/{path}":
         return True
     if path.startswith("frontend/src/") and ".test." not in Path(path).name:
-        canonical_contract = compatibility_contract_for_occurrence(
-            {
-                "path": path,
-                "pattern": pattern,
-                "source": source,
-                "line": line,
-            }
-        )
         if canonical_contract not in {
             "desktop-bridge-v1",
             "frontend-env-alias-v1",
@@ -1652,332 +1667,310 @@ def _compatibility_is_forbidden(
     )
 
 
-def compatibility_contract_for_occurrence(
+def _selector_key(
     occurrence: Mapping[str, object],
-) -> str | None:
-    """Return only a proof-backed compatibility group for an occurrence."""
+) -> OccurrenceKey | None:
     path = occurrence.get("path")
     pattern = occurrence.get("pattern")
-    if not isinstance(path, str) or not isinstance(pattern, str):
-        return None
-    path_obj = Path(path)
-    if path_obj.suffix.lower() in {".md", ".mdx", ".rst"}:
-        return None
-    if "/locales/" in f"/{path}":
-        return None
+    source = occurrence.get("source")
+    line = occurrence.get("line")
+    column = occurrence.get("column")
+    digest = occurrence.get("context_sha256")
     if (
-        path == ".github/ISSUE_TEMPLATE/installation_issue.yml"
-        and pattern == "open_notebook"
-        and occurrence.get("source") == "content"
-        and occurrence.get("context_sha256")
-        == "71c06c2b6d121192c42e44a6295208529d40bf7792e1c4a407ed68050528ab0d"
+        not isinstance(path, str)
+        or not isinstance(pattern, str)
+        or not isinstance(source, str)
+        or (line is not None and not isinstance(line, int))
+        or not isinstance(column, int)
+        or not isinstance(digest, str)
     ):
-        return "compose-service-identifier-v1"
-    if path.startswith("frontend/src/") and ".test." not in Path(path).name:
-        if path == "frontend/src/lib/features.ts" and pattern == "ONP_":
-            return "frontend-env-alias-v1"
-        if (
-            path == "frontend/src/lib/theme-storage.ts"
-            and pattern == "onp-theme"
-        ):
-            return "theme-storage-migration-v1"
-        if (
-            path == "frontend/src/lib/desktop-version.ts"
-            and pattern == "ONP_"
-        ):
-            return "desktop-bridge-v1"
-        if path in {
-            "frontend/src/lib/api/deeper-notebook.ts",
-            "frontend/src/lib/api/onp.ts",
-        } and pattern in {
-            "/api/onp",
-            "/onp/",
-            "onpFetch",
-        }:
-            return "legacy-api-route-v1"
         return None
-    if path == "tests/test_product_identity.py":
-        return "rebrand-audit-regression-v1"
-    if pattern == "onp-theme":
-        if path in {
-            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
-            "tests/test_task5_brand_namespace.py",
-        }:
-            return "theme-storage-migration-v1"
-        return None
-    if (
-        path.startswith("fixtures/")
-        and pattern in _VISIBLE_IDENTITY_PATTERNS
+    return (path, pattern, source, line, column, digest)
+
+
+def _selector_occurrences_for_path(
+    root: Path,
+    relative_path: str,
+) -> list[dict[str, object]]:
+    target = root / relative_path
+    if not target.is_file():
+        return []
+    occurrences: list[dict[str, object]] = []
+    for pattern, start, _end in _pattern_occurrences(
+        relative_path,
+        LEGACY_PATTERNS,
     ):
-        return "legacy-test-fixture-v1"
-
-    is_test = (
-        path.startswith("tests/")
-        or path.startswith("desktop/tests/")
-        or "/tests/" in path
-        or ".test." in path
-    )
-    if is_test:
-        if (
-            path
-            == "frontend/src/components/settings/SmartRoutingPanel.test.tsx"
-            and pattern in {"OPEN_NOTEBOOK_", "ONP_"}
-        ):
-            return "frontend-canonical-help-regression-v1"
-        if pattern in {
-            "OPEN_NOTEBOOK_",
-            "ONP_",
-        }:
-            if path in {
-                "desktop/tests/test_window.py",
-                "frontend/src/lib/desktop-version.test.ts",
-                "tests/test_v0_7_210_version_and_reaper.py",
-            }:
-                return "desktop-bridge-v1"
-            if path == "tests/test_backup_restore_v0_7_126.py":
-                return "data-root-migration-v1"
-            if path == "tests/test_logging_config.py":
-                return "container-log-fallback-v1"
-            if path == "desktop/tests/test_launcher_prefs.py":
-                return "launcher-pref-env-migration-v1"
-            if path in {
-                "frontend/src/lib/features.test.ts",
-                "frontend/src/lib/features-build-contract.test.ts",
-            }:
-                return "frontend-env-alias-v1"
-            if path == "tests/test_environment_aliases.py":
-                return "env-alias-v1"
-            return None
-        if (
-            pattern == "open_notebook"
-            and path == "tests/test_python_import_compatibility.py"
-        ):
-            return "python-import-shim-v1"
-        if (
-            pattern == "open_notebook"
-            and path == "tests/test_canonical_diagnostics.py"
-        ):
-            return "legacy-test-fixture-v1"
-        if (
-            pattern == "open_notebook"
-            and path == "tests/test_persisted_queue_identifiers.py"
-        ):
-            return "persisted-queue-identifier-v1"
-        if (
-            pattern == "open_notebook"
-            and path == "tests/test_v0_8_68_prompt_optimizer.py"
-        ):
-            return "persisted-queue-identifier-v1"
-        if pattern == "open_notebook" and path in {
-            "tests/test_domain.py",
-            "tests/test_embedding_commands.py",
-            "tests/test_evidence_studio_artifact_api.py",
-            "tests/test_research_graph.py",
-        }:
-            line = occurrence.get("line")
-            if path == "tests/test_domain.py" and line == 382:
-                return "runtime-record-identifier-v1"
-            return "persisted-queue-identifier-v1"
-        if pattern == "open_notebook" and path in {
-            "desktop/memory/tests/test_register.py",
-            "tests/integration/conftest.py",
-        }:
-            return "surreal-namespace-identifier-v1"
-        if pattern == "open_notebook" and path in {
-            "tests/fixtures/legacy_import_modules.txt",
-            "tests/test_environment_aliases.py",
-            "tests/test_package_artifact_contract.py",
-        }:
-            return "python-import-shim-v1"
-        if pattern == "OpenNotebook":
-            if path == "tests/test_filesystem_router.py":
-                return "export-directory-fallback-v1"
-            if path == "desktop/tests/test_release_manifest.py":
-                return "legacy-artifact-probe-v1"
-            if path in {
-                "tests/test_python_import_compatibility.py",
-                "tests/test_v0_7_139.py",
-            }:
-                return "python-symbol-compat-v1"
-            return None
-        if pattern in {"/api/onp", "/onp/", "onpFetch", "components/onp"}:
-            return "legacy-api-route-v1"
-        if path == "tests/test_python_import_compatibility.py":
-            return "python-import-shim-v1"
-        if path == "desktop/tests/test_data_root_migration.py":
-            return "data-root-migration-v1"
-        if path == "desktop/tests/test_data_root_conflict_recovery.py":
-            return (
-                "installer-upgrade-v1"
-                if pattern == "Open Notebook Plus"
-                else "data-root-migration-v1"
-            )
-        if path == "desktop/tests/test_emergency_log.py":
-            return "data-root-migration-v1"
-        if path == "desktop/tests/test_release_manifest.py":
-            return (
-                "installer-upgrade-v1"
-                if pattern in {"open-notebook-plus", "Open Notebook Plus"}
-                else "legacy-artifact-probe-v1"
-            )
-        if path == "tests/test_task6_active_product.py":
-            if pattern in {"/api/onp", "/onp/", "onpFetch"}:
-                return "legacy-api-route-v1"
-            if pattern in {"open-notebook-plus", "Open Notebook Plus"}:
-                return "external-format-v1"
-        if path in _PROVEN_LEGACY_TEST_FIXTURE_PATHS and pattern in {
-            "Open Notebook Plus",
-            "Open Notebook",
-            "Open notebook+",
-            "open-notebook-Plus",
-            "open-notebook-plus",
-            "--onp-",
-        }:
-            return "legacy-test-fixture-v1"
-        return None
-
-    if pattern in {"OPEN_NOTEBOOK_", "ONP_"}:
-        if path in {
-            "desktop/window.py",
-            "desktop/first_run/static/memory_injection.js",
-            "desktop/first_run/static/voice_injection.js",
-            "frontend/src/lib/desktop-version.ts",
-        }:
-            return "desktop-bridge-v1"
-        if path == "scripts/backup_restore.py":
-            return "data-root-migration-v1"
-        if path in {
-            "frontend/package.json",
-            "frontend/scripts/verify-feature-env-build.mjs",
-            "frontend/src/lib/features.ts",
-            "frontend/tests/build-contract/package.json",
-        }:
-            return "frontend-env-alias-v1"
-        if path == "deeper_notebook/environment.py":
-            return "env-alias-v1"
-        return None
-    if pattern == "open_notebook":
-        if path == "deeper_notebook/identity.py":
-            return "central-legacy-identity-v1"
-        if path in {
-            "deeper_notebook/database/migrations/1.surrealql",
-            "deeper_notebook/database/migrations/1_down.surrealql",
-            "deeper_notebook/database/migrations/5.surrealql",
-            "deeper_notebook/database/migrations/11.surrealql",
-            "deeper_notebook/database/migrations/11_down.surrealql",
-            "deeper_notebook/database/migrations/18.surrealql",
-            "deeper_notebook/database/migrations/18_down.surrealql",
-        }:
-            return "database-record-identifier-v1"
-        if path in {
-            "api/command_service.py",
-            "api/podcast_service.py",
-            "api/routers/chat.py",
-            "api/routers/commands.py",
-            "api/routers/embedding.py",
-            "api/routers/embedding_rebuild.py",
-            "api/routers/sources.py",
-            "api/routers/studio/common.py",
-            "api/routers/transformations.py",
-            "commands/embedding_commands.py",
-            "commands/example_commands.py",
-            "commands/podcast_commands.py",
-            "commands/prompt_optimizer_commands.py",
-            "commands/source_commands.py",
-            "commands/studio_commands.py",
-            "desktop/memory/memory_commands.py",
-            "deeper_notebook/domain/notebook.py",
-            "deeper_notebook/research/graph.py",
-        }:
-            return "persisted-queue-identifier-v1"
-        if path in {
-            "deeper_notebook/ai/models.py",
-            "deeper_notebook/domain/content_settings.py",
-            "deeper_notebook/domain/provider_config.py",
-            "deeper_notebook/domain/transformation.py",
-            "deeper_notebook/graphs/source.py",
-        }:
-            return "runtime-record-identifier-v1"
-        if path == "api/routers/exports.py":
-            return "external-format-v1"
-        if path in {
-            ".github/workflows/test.yml",
-            "desktop/db_repair.py",
-            "desktop/memory/_register.py",
-            "desktop/memory/client.py",
-            "desktop/memory/surreal_store.py",
-            "scripts/repair_desktop_db.sh",
-        }:
-            return "surreal-namespace-identifier-v1"
-        if path == "desktop/launcher.py":
-            line = occurrence.get("line")
-            if isinstance(line, int) and line <= 250:
-                return "python-import-shim-v1"
-            return "surreal-namespace-identifier-v1"
-        if (
-            path == "pyproject.toml"
-            or path.startswith("open_notebook/")
-            or path
-            in {
-                ".codex-scanignore",
-                "desktop/bootstrap.py",
-                "desktop/build/package_layout.py",
-                "desktop/build/pyinstaller.spec",
-                "desktop/build/verify_package_contents.py",
+        occurrences.append(
+            {
+                "path": relative_path,
+                "pattern": pattern,
+                "source": "path",
+                "line": None,
+                "column": start + 1,
+                "context_sha256": context_sha256(relative_path),
             }
+        )
+    lines = _text_lines(target)
+    if lines is None:
+        return occurrences
+    for line_number, context in enumerate(lines, start=1):
+        for pattern, start, _end in _pattern_occurrences(
+            context,
+            LEGACY_PATTERNS,
         ):
-            return "python-import-shim-v1"
+            occurrences.append(
+                {
+                    "path": relative_path,
+                    "pattern": pattern,
+                    "source": "content",
+                    "line": line_number,
+                    "column": start + 1,
+                    "context_sha256": context_sha256(context),
+                }
+            )
+    identities = {
+        (
+            occurrence["path"],
+            occurrence["source"],
+            occurrence.get("line"),
+            occurrence["column"],
+            occurrence["context_sha256"],
+            occurrence["pattern"],
+        )
+        for occurrence in occurrences
+    }
+    return [
+        occurrence
+        for occurrence in occurrences
+        if not any(
+            occurrence["pattern"] == nested
+            and (
+                occurrence["path"],
+                occurrence["source"],
+                occurrence.get("line"),
+                occurrence["column"],
+                occurrence["context_sha256"],
+                broader,
+            )
+            in identities
+            for broader, nested in _SAFE_NESTED_APPROVALS
+        )
+    ]
+
+
+def _pinned_selector_inventory(root: Path) -> dict[OccurrenceKey, str]:
+    """Load the reviewed exact selector set only when its digest is unchanged."""
+    allowlist_path = root / "scripts" / "rebrand-allowlist.json"
+    try:
+        payload = json.loads(allowlist_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    selectors: dict[OccurrenceKey, str] = {}
+    encoded_identities: list[list[object]] = []
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("category") != "compatibility_alias"
+        ):
+            continue
+        rationale = entry.get("rationale")
+        contract = (
+            rationale.get("compatibility_contract")
+            if isinstance(rationale, dict)
+            else None
+        )
+        key = _selector_key(entry)
+        if not isinstance(contract, str) or key is None:
+            return {}
+        if key[0] in _SEMANTIC_SELECTOR_PATHS:
+            continue
+        if (
+            contract == "persisted-queue-identifier-v1"
+            and not key[0].startswith("tests/")
+        ):
+            continue
+        selectors[key] = contract
+        encoded_identities.append([*key, contract])
+    encoded_identities.sort(
+        key=lambda identity: tuple(
+            "" if value is None else str(value) for value in identity
+        )
+    )
+    digest = hashlib.sha256(
+        json.dumps(
+            encoded_identities,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    if digest != _PINNED_SELECTOR_INVENTORY_SHA256:
+        return {}
+    return selectors
+
+
+def _frontend_semantic_selectors(
+    root: Path,
+) -> dict[OccurrenceKey, str]:
+    selectors: dict[OccurrenceKey, str] = {}
+
+    features_path = "frontend/src/lib/features.ts"
+    features_target = root / features_path
+    if features_target.is_file():
+        source = features_target.read_text(encoding="utf-8")
+        suffixes = {
+            "EVIDENCE_STUDIO",
+            "MODEL_FLEET",
+            "RESEARCH_RUNS",
+            "VISUAL_REFRESH",
+        }
+        expected_names = {
+            f"NEXT_PUBLIC_{prefix}_{suffix}"
+            for prefix in ("DN", "ONP")
+            for suffix in suffixes
+        }
+        references = re.findall(
+            r"process\.env\.(NEXT_PUBLIC_(?:DN|ONP)_[A-Z0-9_]+)",
+            source,
+        )
+        if len(references) == 8 and set(references) == expected_names:
+            for occurrence in _selector_occurrences_for_path(
+                root,
+                features_path,
+            ):
+                key = _selector_key(occurrence)
+                if key is not None and occurrence["pattern"] == "ONP_":
+                    line = source.splitlines()[int(occurrence["line"]) - 1]
+                    if any(
+                        f"process.env.NEXT_PUBLIC_ONP_{suffix}" in line
+                        for suffix in suffixes
+                    ):
+                        selectors[key] = "frontend-env-alias-v1"
+
+    theme_path = "frontend/src/lib/theme-storage.ts"
+    theme_target = root / theme_path
+    if theme_target.is_file():
+        source = theme_target.read_text(encoding="utf-8")
+        required_operations = {
+            "const LEGACY_THEME_KEY = 'onp-theme'",
+            "storage.getItem(LEGACY_THEME_KEY)",
+            "storage.setItem(CANONICAL_THEME_KEY, legacy)",
+            "storage.setItem(LEGACY_THEME_KEY, theme)",
+        }
+        if all(operation in source for operation in required_operations):
+            lines = source.splitlines()
+            for occurrence in _selector_occurrences_for_path(root, theme_path):
+                key = _selector_key(occurrence)
+                if (
+                    key is not None
+                    and occurrence["pattern"] == "onp-theme"
+                    and lines[int(occurrence["line"]) - 1].strip()
+                    == "const LEGACY_THEME_KEY = 'onp-theme'"
+                ):
+                    selectors[key] = "theme-storage-migration-v1"
+
+    canonical_api_path = "frontend/src/lib/api/deeper-notebook.ts"
+    canonical_target = root / canonical_api_path
+    if canonical_target.is_file():
+        source = canonical_target.read_text(encoding="utf-8")
+        exact_export = "export const onpFetch = deeperNotebookFetch"
+        if source.splitlines().count(exact_export) == 1:
+            for occurrence in _selector_occurrences_for_path(
+                root,
+                canonical_api_path,
+            ):
+                key = _selector_key(occurrence)
+                if key is not None and occurrence["pattern"] == "onpFetch":
+                    line = source.splitlines()[int(occurrence["line"]) - 1]
+                    if line == exact_export:
+                        selectors[key] = "legacy-api-route-v1"
+
+    legacy_api_path = "frontend/src/lib/api/onp.ts"
+    legacy_target = root / legacy_api_path
+    if legacy_target.is_file():
+        source = legacy_target.read_text(encoding="utf-8")
+        exact_module_alias = (
+            "/** @deprecated Use deeperNotebookFetch from ./deeper-notebook. */\n"
+            "export {\n"
+            "  deeperNotebookFetch,\n"
+            "  deeperNotebookFetch as onpFetch,\n"
+            "} from './deeper-notebook'\n"
+        )
+        if source == exact_module_alias:
+            for occurrence in _selector_occurrences_for_path(
+                root,
+                legacy_api_path,
+            ):
+                key = _selector_key(occurrence)
+                if key is not None and occurrence["pattern"] in {
+                    "/api/onp",
+                    "onpFetch",
+                }:
+                    selectors[key] = "legacy-api-route-v1"
+    return selectors
+
+
+def compatibility_selector_inventory(
+    root: Path,
+) -> dict[OccurrenceKey, str]:
+    """Return the closed exact occurrence inventory for compatibility code."""
+    root = root.resolve()
+    selectors = _pinned_selector_inventory(root)
+    semantic_groups: list[tuple[list[dict[str, object]], str]] = [
+        (
+            production_queue_occurrence_inventory(root),
+            "persisted-queue-identifier-v1",
+        ),
+        (
+            _selector_occurrences_for_path(
+                root,
+                "tests/test_persisted_queue_identifiers.py",
+            ),
+            "persisted-queue-identifier-v1",
+        ),
+        (
+            _selector_occurrences_for_path(
+                root,
+                "tests/test_product_identity.py",
+            ),
+            "rebrand-audit-regression-v1",
+        ),
+    ]
+    semantic = _frontend_semantic_selectors(root)
+    for occurrences, contract in semantic_groups:
+        for occurrence in occurrences:
+            key = _selector_key(occurrence)
+            if key is not None:
+                semantic[key] = contract
+    for key, contract in semantic.items():
+        previous = selectors.setdefault(key, contract)
+        if previous != contract:
+            raise ValueError(
+                "compatibility selector collision requires explicit review"
+            )
+    return selectors
+
+
+def compatibility_contract_for_occurrence(
+    occurrence: Mapping[str, object],
+    *,
+    root: Path | None = None,
+    selectors: Mapping[OccurrenceKey, str] | None = None,
+) -> str | None:
+    """Return the contract only for a construct-exact occurrence identity."""
+    key = _selector_key(occurrence)
+    if key is None:
         return None
-    if pattern == "OpenNotebook":
-        if path == "api/routers/filesystem.py":
-            return "export-directory-fallback-v1"
-        if path == "deeper_notebook/exceptions.py":
-            return "python-symbol-compat-v1"
-        return None
-    if pattern in {"/api/onp", "/onp/", "onpFetch", "components/onp"}:
-        return "legacy-api-route-v1"
-    if path == "desktop/window.py" and pattern == "ONP_":
-        return "desktop-bridge-v1"
-    if path == "desktop/app_migration.py":
-        return (
-            "installer-upgrade-v1"
-            if pattern == "Open Notebook Plus"
-            else "data-root-migration-v1"
+    if selectors is None:
+        selector_root = (
+            root.resolve()
+            if root is not None
+            else Path(__file__).resolve().parents[1]
         )
-    if path == "desktop/data_root.py":
-        return "data-root-migration-v1"
-    if path == "deeper_notebook/identity.py":
-        return "central-legacy-identity-v1"
-    if path == "deeper_notebook/podcasts/profile_names.py":
-        return "podcast-profile-identifier-v1"
-    if path == "deeper_notebook/local_models/benchmarks.py":
-        return "benchmark-history-fallback-v1"
-    if path == "deeper_notebook/logging.py":
-        return "container-log-fallback-v1"
-    if path in {
-        "deeper_notebook/studio/exporters/research_bundle.py",
-        "deeper_notebook/studio/generation/persistence.py",
-        "api/routers/studio/artifacts.py",
-    }:
-        return "external-format-v1"
-    if path in {"desktop/window.py", "desktop/paths.py"}:
-        return "installer-upgrade-v1"
-    if path == "scripts/repair_desktop_db.sh":
-        return (
-            "installer-upgrade-v1"
-            if pattern == "Open Notebook Plus"
-            else "data-root-migration-v1"
-        )
-    if (
-        path.startswith("desktop/build/")
-        or path.startswith(".github/workflows/")
-    ):
-        return (
-            "installer-upgrade-v1"
-            if pattern in {"open-notebook-plus", "Open Notebook Plus"}
-            else "legacy-artifact-probe-v1"
-        )
-    return None
+        selectors = compatibility_selector_inventory(selector_root)
+    return selectors.get(key)
 
 
 def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
@@ -2042,6 +2035,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
         raise ValueError("allowlist compatibility_contracts must be an object")
     contracts: dict[str, dict[str, object]] = {}
     root = _allowlist_root(path)
+    selectors: Mapping[OccurrenceKey, str] | None = None
     for contract_id, contract in raw_contracts.items():
         if (
             not isinstance(contract_id, str)
@@ -2225,7 +2219,13 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                     "compatibility_alias requires a structured compatibility "
                     "contract"
                 )
-            canonical_contract = compatibility_contract_for_occurrence(entry)
+            if selectors is None:
+                selectors = compatibility_selector_inventory(root)
+            canonical_contract = compatibility_contract_for_occurrence(
+                entry,
+                root=root,
+                selectors=selectors,
+            )
             if canonical_contract != compatibility_contract:
                 raise ValueError(
                     "compatibility entry must use its exact canonical "
@@ -2250,6 +2250,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 source,
                 line,
                 str(contracts[compatibility_contract]["kind"]),
+                canonical_contract,
             ):
                 raise ValueError(
                     "active UI, documentation, or default identifier cannot "
@@ -2365,8 +2366,19 @@ def _pattern_occurrences(
     )
 
 
-def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
+def audit_repository(
+    root: Path,
+    allowlist: Allowlist,
+    *,
+    selectors: Mapping[OccurrenceKey, str] | None = None,
+) -> dict[str, object]:
     """Scan tracked path names and UTF-8 text contents for legacy references."""
+    root = root.resolve()
+    selector_inventory = (
+        selectors
+        if selectors is not None
+        else compatibility_selector_inventory(root)
+    )
     categorized: dict[str, list[dict[str, object]]] = {
         category: [] for category in CATEGORIES
     }
@@ -2380,7 +2392,11 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
         approval = allowlist.get(key)
         if approval is None or category != "compatibility_alias":
             return category
-        canonical_contract = compatibility_contract_for_occurrence(occurrence)
+        canonical_contract = compatibility_contract_for_occurrence(
+            occurrence,
+            root=root,
+            selectors=selector_inventory,
+        )
         if canonical_contract != approval.rationale.compatibility_contract:
             return "unexpected_active_identity"
         return category
@@ -2544,6 +2560,7 @@ def regenerate_allowlist(
     allowlist_path: Path,
 ) -> dict[str, object]:
     """Regenerate exact approvals and semantic rationales deterministically."""
+    root = root.resolve()
     payload = json.loads(allowlist_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("allowlist must be an object")
@@ -2556,7 +2573,8 @@ def regenerate_allowlist(
         raise ValueError(
             "allowlist regeneration requires persisted identifiers and entries"
         )
-    persisted_identifiers = production_queue_inventory(root.resolve())
+    persisted_identifiers = production_queue_inventory(root)
+    selectors = compatibility_selector_inventory(root)
 
     category_sets: dict[tuple[str, str], set[str]] = {}
     for entry in entries:
@@ -2587,7 +2605,7 @@ def regenerate_allowlist(
     }
     category_policy.update(_CATEGORY_OVERRIDES)
 
-    report = audit_repository(root.resolve(), {})
+    report = audit_repository(root, {}, selectors=selectors)
     raw_matches = report["categories"]["unexpected_active_identity"]
     assert isinstance(raw_matches, list)
     matches = _without_safe_nested_matches(raw_matches)
@@ -2607,7 +2625,11 @@ def regenerate_allowlist(
     ):
         policy_key = (match["path"], match["pattern"])
         compose_service_occurrence = (
-            compatibility_contract_for_occurrence(match)
+            compatibility_contract_for_occurrence(
+                match,
+                root=root,
+                selectors=selectors,
+            )
             == "compose-service-identifier-v1"
         )
         category = (
@@ -2621,7 +2643,14 @@ def regenerate_allowlist(
         )
         match_path = Path(str(match["path"]))
         if category is None:
-            if compatibility_contract_for_occurrence(match) is not None:
+            if (
+                compatibility_contract_for_occurrence(
+                    match,
+                    root=root,
+                    selectors=selectors,
+                )
+                is not None
+            ):
                 category = "compatibility_alias"
             elif match_path.suffix.lower() in {".md", ".mdx", ".rst"}:
                 category = "migration_documentation"
@@ -2652,7 +2681,11 @@ def regenerate_allowlist(
             compatibility_contract = (
                 "compose-service-identifier-v1"
                 if compose_service_occurrence
-                else compatibility_contract_for_occurrence(match)
+                else compatibility_contract_for_occurrence(
+                    match,
+                    root=root,
+                    selectors=selectors,
+                )
             )
             if compatibility_contract is None:
                 path_group = str(match["path"]).split("/", 1)[0]
@@ -2663,7 +2696,7 @@ def regenerate_allowlist(
                 continue
             used_contracts.add(compatibility_contract)
         explanation = semantic_explanation_for_occurrence(
-            root.resolve(),
+            root,
             match,
             category,
         )

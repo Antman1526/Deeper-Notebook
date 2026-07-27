@@ -9,6 +9,7 @@ from typing import Protocol
 from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
+from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.research.repository import ResearchRunRepository
 from deeper_notebook.research.state import (
     ResearchRun,
@@ -59,7 +60,7 @@ class ResearchWorkflow:
             return run
         command_id = await asyncio.to_thread(
             self._command_submitter,
-            "open_notebook",
+            LEGACY_COMMAND_APP,
             "run_research",
             {"research_run_id": run_id},
         )

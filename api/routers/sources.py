@@ -39,6 +39,7 @@ from deeper_notebook.domain.notebook import Asset, Notebook, Source
 from deeper_notebook.domain.transformation import Transformation
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.identity import LEGACY_COMMAND_APP
 
 router = APIRouter()
 
@@ -903,7 +904,7 @@ async def create_source(
                 # be called from an already-running event loop (FastAPI)
                 result = await asyncio.to_thread(
                     execute_command_sync,
-                    "open_notebook",  # app name
+                    LEGACY_COMMAND_APP,
                     "process_source",  # command name
                     command_input.model_dump(),
                     timeout=300,  # 5 minute timeout for sync processing

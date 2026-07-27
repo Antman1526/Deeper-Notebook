@@ -5,7 +5,7 @@ launch by desktop/app.py:_phase_register_memory_commands.
 
 Discovery: surreal-commands imports any module passed via --import-modules.
 Each @command-decorated function is registered as
-    open_notebook.<function_name>
+    <persisted_app_identifier>.<function_name>
 """
 from __future__ import annotations
 

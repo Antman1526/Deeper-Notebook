@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.persisted_queue_inventory import (
     production_queue_inventory,
+    production_queue_occurrence_inventory,
     semantic_sort_key,
 )
 
@@ -49,6 +50,39 @@ def test_production_queue_inventory_has_exact_shape_and_legacy_mappings():
         ("_is_command_registered", "open_notebook.embed_note"),
         ("get_command_by_id", "command_id"),
     }
+
+
+def test_queue_compatibility_occurrences_come_only_from_ast_inventory():
+    payload = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    allowlisted = {
+        (
+            entry["path"],
+            entry["pattern"],
+            entry["source"],
+            entry["line"],
+            entry["column"],
+            entry["context_sha256"],
+        )
+        for entry in payload["entries"]
+        if entry["category"] == "compatibility_alias"
+        and entry["rationale"]["compatibility_contract"]
+        == "persisted-queue-identifier-v1"
+        and not entry["path"].startswith("tests/")
+    }
+    actual = {
+        (
+            entry["path"],
+            entry["pattern"],
+            entry["source"],
+            entry["line"],
+            entry["column"],
+            entry["context_sha256"],
+        )
+        for entry in production_queue_occurrence_inventory(ROOT)
+    }
+
+    assert len(actual) == 37
+    assert actual == allowlisted
 
 
 def test_live_registry_matches_every_fixed_registration_after_imports():
