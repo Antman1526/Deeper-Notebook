@@ -30,6 +30,7 @@ import os
 import platform
 import sys
 import tempfile
+import threading
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -172,6 +173,18 @@ class AppContext:
     commands_dst: "Path | None" = None
     memory_dashboard_port: int = 0
     app_recovery: "AppRecoveryController | None" = None
+    _cleanup_lock: threading.Lock = dataclasses.field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
+    _cleanup_complete: threading.Event = dataclasses.field(
+        default_factory=threading.Event, repr=False, compare=False
+    )
+    _cleanup_started: bool = dataclasses.field(
+        default=False, repr=False, compare=False
+    )
+    _cleanup_owner_thread_id: int | None = dataclasses.field(
+        default=None, repr=False, compare=False
+    )
 
 
 def _new_context() -> AppContext:
@@ -203,6 +216,34 @@ _DESKTOP_READINESS_NAME = "desktop-readiness.json"
 def _clear_desktop_readiness_marker(log_dir: Path) -> None:
     """Remove only this launcher's stale readiness marker."""
     (log_dir / _DESKTOP_READINESS_NAME).unlink(missing_ok=True)
+
+
+def _stop_app_runtime_once(ctx: AppContext) -> None:
+    """Tear down owned processes once and wait for an in-flight owner."""
+    caller_thread_id = threading.get_ident()
+    owns_cleanup = False
+    with ctx._cleanup_lock:
+        if not ctx._cleanup_started:
+            ctx._cleanup_started = True
+            ctx._cleanup_owner_thread_id = caller_thread_id
+            owns_cleanup = True
+        elif ctx._cleanup_owner_thread_id == caller_thread_id:
+            return
+
+    if not owns_cleanup:
+        ctx._cleanup_complete.wait()
+        return
+
+    try:
+        if ctx.log_dir is not None:
+            _clear_desktop_readiness_marker(ctx.log_dir)
+        if ctx.sv is not None:
+            ctx.sv.stop_all()
+    finally:
+        try:
+            _stop_runtime(ctx)
+        finally:
+            ctx._cleanup_complete.set()
 
 
 def _write_desktop_readiness_marker(
@@ -1089,8 +1130,6 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
 def _phase_open_window(ctx: AppContext) -> None:
     """Open the main PyWebView window. Blocks until the window is closed."""
-    import threading
-
     from desktop.window import open_window
 
     assert ctx.sv is not None
@@ -1124,22 +1163,6 @@ def _phase_open_window(ctx: AppContext) -> None:
         if piper_port else None
     )
 
-    cleanup_lock = threading.Lock()
-    cleanup_dispatched = False
-
-    def _close_runtime_once() -> None:
-        nonlocal cleanup_dispatched
-        with cleanup_lock:
-            if cleanup_dispatched:
-                return
-            cleanup_dispatched = True
-        try:
-            if ctx.log_dir is not None:
-                _clear_desktop_readiness_marker(ctx.log_dir)
-            ctx.sv.stop_all()
-        finally:
-            _stop_runtime(ctx)
-
     try:
         def _window_ready() -> None:
             assert ctx.log_dir is not None
@@ -1152,14 +1175,14 @@ def _phase_open_window(ctx: AppContext) -> None:
                 "window.ready", "done", ctx.sv.frontend_url
             )
 
-        open_window(ctx.sv.frontend_url, on_close=_close_runtime_once,
+        open_window(ctx.sv.frontend_url, on_close=lambda: _stop_app_runtime_once(ctx),
                     theme=ctx.cfg.theme,
                     memory_url=memory_url, remind_openchronicle=remind,
                     stt_url=stt_url, tts_url=tts_url,
                     app_recovery=ctx.app_recovery,
                     on_ready=_window_ready)
     finally:
-        _close_runtime_once()
+        _stop_app_runtime_once(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1202,11 +1225,9 @@ def run() -> int:
         _phase_install_tray(ctx)
         _phase_open_window(ctx)
     except BaseException:
-        if ctx.sv is not None:
-            try:
-                ctx.sv.stop_all()
-            except Exception:
-                pass  # don't mask the original error
-        _stop_runtime(ctx)
+        try:
+            _stop_app_runtime_once(ctx)
+        except Exception:
+            pass  # don't mask the original error
         raise
     return 0

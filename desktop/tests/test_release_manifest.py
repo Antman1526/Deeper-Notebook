@@ -352,7 +352,7 @@ def test_legacy_macos_probe_requires_a_visible_window_owned_by_legacy_pid() -> N
     assert "kCGWindowOwnerName" in compatibility
     assert (
         'wait_for_pid_visible_window "$legacy_pid" '
-        '"Open Notebook Plus" "Open Notebook Plus"'
+        '"Open Notebook Plus" "Open notebook+"'
     ) in compatibility
     assert compatibility.index(
         'wait_for_pid_visible_window "$legacy_pid"'
