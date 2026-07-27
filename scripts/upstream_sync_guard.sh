@@ -12,7 +12,7 @@ SYNC_BRANCH="${SYNC_BRANCH:-integrate/${UPSTREAM_REMOTE}-${UPSTREAM_BRANCH}-${DA
 WORKTREE_DIR="${WORKTREE_DIR:-../deeper-notebook-upstream-sync-${DATE_STAMP}}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-output/upstream-sync/${DATE_STAMP}}"
 
-PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|deeper_notebook/(local_models/|database/migrations/|domain/)|open_notebook/|frontend/src/components/deeper-notebook/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
+PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|deeper_notebook/(local_models/|database/migrations/|domain/)|deeper_notebook/|frontend/src/components/deeper-notebook/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
 
 usage() {
   cat <<'USAGE'
@@ -154,7 +154,7 @@ prepare_worktree() {
     echo "  cd frontend && npm test -- --run src/components/deeper-notebook/ArtifactRail.test.tsx src/app/'(dashboard)'/settings/local-models/page.test.tsx"
     echo "  cd frontend && npx tsc --noEmit && npm run lint"
     echo "  PORT=3100 NEXT_PUBLIC_API_URL=http://127.0.0.1:5055 npm run start"
-    echo "  ONP_BASE_URL=http://127.0.0.1:3100 ONP_FIXTURE_API_PORT=5055 node output/playwright/onp-visual-smoke.mjs"
+    echo "  DEEPER_NOTEBOOK_BASE_URL=http://127.0.0.1:3100 DEEPER_NOTEBOOK_FIXTURE_API_PORT=5055 node output/playwright/onp-visual-smoke.mjs"
   )
 }
 

@@ -62,7 +62,7 @@ def _init_sync_fixture(tmp_path: Path) -> tuple[Path, Path]:
     _write(repo, "README.md", "base\n")
     _write(repo, "api/routers/studio.py", "base\n")
     _write(repo, "deeper_notebook/database/migrations/23.surrealql", "base\n")
-    _write(repo, "open_notebook/database/migrations/23.surrealql", "base\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "base\n")
     _write(repo, "frontend/src/lib/api/sources.ts", "base\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "base")
@@ -71,7 +71,7 @@ def _init_sync_fixture(tmp_path: Path) -> tuple[Path, Path]:
     _git(repo, "checkout", "-b", "upstream-main")
     _write(repo, "api/routers/studio.py", "upstream\n")
     _write(repo, "deeper_notebook/database/migrations/23.surrealql", "upstream\n")
-    _write(repo, "open_notebook/database/migrations/23.surrealql", "upstream\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "upstream\n")
     _write(repo, "frontend/src/lib/api/sources.ts", "upstream\n")
     _git(repo, "commit", "-am", "upstream protected changes")
     _git(repo, "push", "upstream", "upstream-main:main")
@@ -148,7 +148,7 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
     ).read_text(encoding="utf-8")
     assert "api/routers/studio.py" in protected_changes
     assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes
-    assert "open_notebook/database/migrations/23.surrealql" in protected_changes
+    assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes
     assert "frontend/src/lib/api/sources.ts" in protected_changes
     assert (snapshot_dir / "conflicted-files.txt").read_text(encoding="utf-8") == ""
 

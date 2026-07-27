@@ -14,7 +14,7 @@ Design goals (in priority order):
      volume stays clean across runs.
 
   3. **No new fixtures in the hot path.** The fixture sets env vars
-     and relies on the same `open_notebook.database.repository` pool
+     and relies on the same `deeper_notebook.database.repository` pool
      the production code uses. That way every SurrealQL regression
      these tests catch is one the production code can hit too.
 
@@ -87,7 +87,7 @@ def pytest_collection_modifyitems(config, items):  # type: ignore[no-untyped-def
 
 
 def _resolve_url() -> str:
-    """Mirror open_notebook.database.repository.get_database_url() defaults
+    """Mirror deeper_notebook.database.repository.get_database_url() defaults
     for the integration suite. We don't import that function directly
     because it has side effects on first call (and we want tests to be
     able to override SURREAL_URL via env before the repo module touches

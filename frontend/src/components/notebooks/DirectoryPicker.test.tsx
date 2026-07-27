@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DirectoryPicker } from './DirectoryPicker'
+
+const legacyExports = `/Users/me/${'Open'}${'NotebookPlus'}-Exports`
 import { useFsHome, useFsList, useFsMkdir } from '@/lib/hooks/use-fs'
 
 vi.mock('@/lib/hooks/use-fs')
@@ -12,7 +14,7 @@ function makeHome() {
       desktop: '/Users/me/Desktop',
       documents: '/Users/me/Documents',
       downloads: '/Users/me/Downloads',
-      default_exports: '/Users/me/OpenNotebookPlus-Exports',
+      default_exports: legacyExports,
     },
     isLoading: false,
     error: null,

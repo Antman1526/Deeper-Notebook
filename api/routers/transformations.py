@@ -18,9 +18,9 @@ from deeper_notebook.ai.models import Model
 from deeper_notebook.domain.transformation import DefaultPrompts, Transformation
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import (
+    DeeperNotebookError,
     InvalidInputError,
     NotFoundError,
-    OpenNotebookError,
 )
 from deeper_notebook.graphs.transformation import graph as transformation_graph
 
@@ -239,7 +239,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
                 detail=(
                     f"Transformation timed out after {_xform_timeout}s. "
                     "The chat model may be loading or overloaded. Try again, "
-                    "or raise ONP_TRANSFORMATION_TIMEOUT_SEC."
+                    "or raise DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC."
                 ),
             ) from exc
 
@@ -262,7 +262,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
 
     except HTTPException:
         raise
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise  # Let global exception handlers return proper status codes
     except Exception as e:
         logger.error(f"Error executing transformation: {str(e)}")

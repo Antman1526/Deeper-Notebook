@@ -52,7 +52,7 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
     # this graph mirrors). Without the bound, a wedged provider
     # pins whatever caller invoked the prompt graph (notes
     # router's title-generation flow, etc.). Shares the
-    # ONP_TRANSFORM_NODE_TIMEOUT_SEC knob with transformation.py.
+    # DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC knob with transformation.py.
     timeout = _transform_node_timeout_sec()
     try:
         response = await asyncio.wait_for(
@@ -62,7 +62,7 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
         raise ExternalServiceError(
             f"Prompt graph: LLM call timed out after {timeout:.0f}s. "
             f"Try a smaller/faster model, raise "
-            f"ONP_TRANSFORM_NODE_TIMEOUT_SEC, or check that the "
+            f"DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC, or check that the "
             f"provider is responsive."
         ) from exc
 

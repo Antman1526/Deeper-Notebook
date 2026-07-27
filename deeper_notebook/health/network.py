@@ -1,13 +1,13 @@
 """v0.8.68 — process-wide network-state service.
 
 Answers "does this machine currently have internet?" for the offline
-gate (open_notebook/ai/offline_gate.py), the web_search tool, the Gmail
+gate (deeper_notebook/ai/offline_gate.py), the web_search tool, the Gmail
 digest scheduler, and GET /api/system/network-status.
 
 Design (spec 2026-06-11):
-  - 2s TCP probe to two well-known hosts (override: ONP_NET_PROBE_HOSTS),
+  - 2s TCP probe to two well-known hosts (override: DEEPER_NOTEBOOK_NET_PROBE_HOSTS),
     run via asyncio.to_thread so the event loop never blocks.
-  - TTL cache (default 20s, ONP_NETWORK_STATE_TTL_SEC) with a single-flight
+  - TTL cache (default 20s, DEEPER_NOTEBOOK_NETWORK_STATE_TTL_SEC) with a single-flight
     lock — concurrent cache-misses share one probe (same pattern as
     provision.py's _health_cache_lock, v0.8.35).
   - Passive updates: report_network_failure()/report_network_success()

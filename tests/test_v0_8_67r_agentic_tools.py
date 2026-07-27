@@ -83,7 +83,7 @@ async def test_add_web_source_tool_execution(monkeypatch):
     # The tool delegates URL work to the same checked source-graph helper as
     # normal ingestion, so this remains hermetic without a network request.
     mock_extract_fn = AsyncMock(return_value=mock_extracted)
-    monkeypatch.setattr("open_notebook.graphs.source._extract_checked_url", mock_extract_fn)
+    monkeypatch.setattr("deeper_notebook.graphs.source._extract_checked_url", mock_extract_fn)
     
     # Mock Source object
     mock_source_instance = MagicMock()
@@ -93,7 +93,7 @@ async def test_add_web_source_tool_execution(monkeypatch):
     mock_source_instance.vectorize = AsyncMock()
     
     mock_source_class = MagicMock(return_value=mock_source_instance)
-    monkeypatch.setattr("open_notebook.tools.add_web_source.Source", mock_source_class)
+    monkeypatch.setattr("deeper_notebook.tools.add_web_source.Source", mock_source_class)
     
     # Build tool and run
     captures = []
@@ -142,7 +142,7 @@ class _RecordingModel:
 @pytest.mark.asyncio
 async def test_loop_binds_opencode_when_enabled(monkeypatch):
     monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr("open_notebook.tools.opencode.opencode_enabled", lambda: True)
+    monkeypatch.setattr("deeper_notebook.tools.opencode.opencode_enabled", lambda: True)
     
     model = _RecordingModel([_FakeAIMessage([])])
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=2)
@@ -152,7 +152,7 @@ async def test_loop_binds_opencode_when_enabled(monkeypatch):
 @pytest.mark.asyncio
 async def test_loop_binds_add_web_source_when_notebook_id_present(monkeypatch):
     monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr("open_notebook.tools.opencode.opencode_enabled", lambda: False)
+    monkeypatch.setattr("deeper_notebook.tools.opencode.opencode_enabled", lambda: False)
     
     model = _RecordingModel([_FakeAIMessage([])])
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=2, notebook_id="notebook:123")

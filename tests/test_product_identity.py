@@ -40,6 +40,47 @@ AUDIT_SCRIPT = ROOT / "scripts" / "rebrand_audit.py"
 ALLOWLIST_PATH = ROOT / "scripts" / "rebrand-allowlist.json"
 
 
+def _materialize_test_contracts(
+    entries: list[dict[str, object]],
+    contracts: dict[str, dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    materialized: dict[str, dict[str, object]] = {}
+    referenced_contracts = {
+        entry["rationale"].get("compatibility_contract")
+        for entry in entries
+        if isinstance(entry.get("rationale"), dict)
+    }
+    for contract_id, contract in contracts.items():
+        if contract_id not in referenced_contracts:
+            continue
+        owned_entries = [
+            entry
+            for entry in entries
+            if entry["rationale"]["compatibility_contract"] == contract_id
+        ]
+        complete = dict(contract)
+        complete.setdefault(
+            "scope",
+            {
+                "paths": sorted(
+                    {str(entry["path"]) for entry in owned_entries}
+                ),
+                "patterns": sorted(
+                    {str(entry["pattern"]) for entry in owned_entries}
+                ),
+                "sources": sorted(
+                    {str(entry["source"]) for entry in owned_entries}
+                ),
+            },
+        )
+        complete.setdefault(
+            "coverage_sha256",
+            _test_coverage_digest(owned_entries, contract_id),
+        )
+        materialized[contract_id] = complete
+    return materialized
+
+
 def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
     has_compatibility = any(
         entry.get("category") == "compatibility_alias"
@@ -48,20 +89,26 @@ def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
     path.write_text(
         json.dumps(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "persisted_queue_identifiers": [],
                 "compatibility_contracts": (
-                    {
-                        "test-compatibility-v1": {
-                            "kind": "regression_fixture",
-                            "owner": "rebrand-audit-tests",
-                            "retention_reason": (
-                                "The focused audit fixture exercises a "
-                                "specific compatibility validation branch."
-                            ),
-                            "proof": "static:rebrand-audit-schema-v1",
-                        }
-                    }
+                    _materialize_test_contracts(
+                        entries,
+                        {
+                            "test-compatibility-v1": {
+                                "kind": "regression_fixture",
+                                "owner": "rebrand-audit-tests",
+                                "retention_reason": (
+                                    "The focused audit fixture exercises a "
+                                    "specific compatibility validation branch."
+                                ),
+                                "proof": (
+                                    "static:"
+                                    "regression-fixture-contract-v1"
+                                ),
+                            }
+                        },
+                    )
                     if has_compatibility
                     else {}
                 ),
@@ -76,14 +123,17 @@ def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
 def _write_contract_allowlist(
     path: Path,
     entries: list[dict[str, object]],
-    contracts: dict[str, dict[str, str]],
+    contracts: dict[str, dict[str, object]],
 ) -> Path:
     path.write_text(
         json.dumps(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "persisted_queue_identifiers": [],
-                "compatibility_contracts": contracts,
+                "compatibility_contracts": _materialize_test_contracts(
+                    entries,
+                    contracts,
+                ),
                 "entries": entries,
             }
         ),
@@ -588,15 +638,15 @@ def _contract_entry(
     }
 
 
-def _valid_contract(**overrides: str) -> dict[str, str]:
-    contract = {
+def _valid_contract(**overrides: object) -> dict[str, object]:
+    contract: dict[str, object] = {
         "kind": "env_alias",
         "owner": "runtime-configuration",
         "retention_reason": (
             "Existing operator environments need a deprecation window while "
             "canonical settings take precedence."
         ),
-        "proof": "static:rebrand-audit-schema-v1",
+        "proof": "static:env-alias-contract-fixture-v1",
     }
     contract.update(overrides)
     return contract
@@ -658,6 +708,252 @@ def test_allowlist_rejects_unvalidated_compatibility_proof(tmp_path):
 
     with pytest.raises(ValueError, match="tracked proof reference"):
         load_allowlist(allowlist_path)
+
+
+def _v5_contract_entry(
+    *,
+    path: str = "fixtures/legacy-name.py",
+    pattern: str = "Open Notebook Plus",
+    contract_id: str = "fixture-v1",
+) -> dict[str, object]:
+    context = f"legacy_name = {pattern!r}"
+    column = context.index(pattern) + 1
+    rationale = _rationale(
+        path=path,
+        pattern=pattern,
+        source="content",
+        line=1,
+        column=column,
+        context=context,
+        category="compatibility_alias",
+        explanation=(
+            "The synthetic regression fixture retains a former identity to "
+            "exercise the exact compatibility contract boundary."
+        ),
+        compatibility_contract=contract_id,
+    )
+    return {
+        "path": path,
+        "pattern": pattern,
+        "source": "content",
+        "line": 1,
+        "column": column,
+        "context_sha256": context_sha256(context),
+        "category": "compatibility_alias",
+        "rationale": rationale,
+    }
+
+
+def _test_coverage_digest(
+    entries: list[dict[str, object]],
+    contract_id: str,
+) -> str:
+    identities = sorted(
+        "|".join(
+            str(entry[field])
+            for field in (
+                "path",
+                "pattern",
+                "source",
+                "line",
+                "column",
+                "context_sha256",
+            )
+        )
+        for entry in entries
+        if entry["rationale"]["compatibility_contract"] == contract_id
+    )
+    encoded = json.dumps(
+        identities,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _write_v5_contract_allowlist(
+    path: Path,
+    *,
+    entries: list[dict[str, object]],
+    kind: str = "regression_fixture",
+    proof: str = "static:regression-fixture-contract-v1",
+    scope_paths: list[str] | None = None,
+    coverage_sha256: str | None = None,
+) -> Path:
+    contract_id = "fixture-v1"
+    payload = {
+        "schema_version": 5,
+        "persisted_queue_identifiers": [],
+        "compatibility_contracts": {
+            contract_id: {
+                "kind": kind,
+                "owner": "rebrand-audit-tests",
+                "retention_reason": (
+                    "The focused fixture exercises an exact compatibility "
+                    "validation branch without broad runtime approval."
+                ),
+                "proof": proof,
+                "scope": {
+                    "paths": scope_paths or sorted(
+                        {str(entry["path"]) for entry in entries}
+                    ),
+                    "patterns": sorted(
+                        {str(entry["pattern"]) for entry in entries}
+                    ),
+                    "sources": sorted(
+                        {str(entry["source"]) for entry in entries}
+                    ),
+                },
+                "coverage_sha256": (
+                    coverage_sha256
+                    or _test_coverage_digest(entries, contract_id)
+                ),
+            }
+        },
+        "entries": entries,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_schema_v5_accepts_only_kind_specific_static_proof_ids(tmp_path):
+    entries = [_v5_contract_entry()]
+    valid = _write_v5_contract_allowlist(
+        tmp_path / "valid-static-proof.json",
+        entries=entries,
+    )
+
+    assert len(load_allowlist(valid)) == 1
+
+    invalid = _write_v5_contract_allowlist(
+        tmp_path / "generic-static-proof.json",
+        entries=entries,
+        proof="static:rebrand-audit-schema-v1",
+    )
+    with pytest.raises(ValueError, match="closed kind-specific static proof"):
+        load_allowlist(invalid)
+
+
+def test_schema_v5_rejects_static_proof_for_the_wrong_contract_kind(tmp_path):
+    entries = [_v5_contract_entry()]
+    wrong_kind = _write_v5_contract_allowlist(
+        tmp_path / "wrong-static-kind.json",
+        entries=entries,
+        kind="env_alias",
+    )
+
+    with pytest.raises(ValueError, match="does not prove contract kind"):
+        load_allowlist(wrong_kind)
+
+
+def test_schema_v5_rejects_contract_coverage_digest_tampering(tmp_path):
+    entries = [_v5_contract_entry()]
+    tampered = _write_v5_contract_allowlist(
+        tmp_path / "tampered-coverage.json",
+        entries=entries,
+        coverage_sha256="0" * 64,
+    )
+
+    with pytest.raises(ValueError, match="coverage digest"):
+        load_allowlist(tampered)
+
+
+def test_schema_v5_rejects_entry_outside_exact_contract_scope(tmp_path):
+    entries = [_v5_contract_entry()]
+    broad = _write_v5_contract_allowlist(
+        tmp_path / "out-of-scope.json",
+        entries=entries,
+        scope_paths=["fixtures/different.py"],
+    )
+
+    with pytest.raises(ValueError, match="exact contract scope"):
+        load_allowlist(broad)
+
+
+@pytest.mark.parametrize("pattern", rebrand_audit.LEGACY_PATTERNS)
+def test_every_legacy_pattern_is_forbidden_on_active_ui(pattern):
+    assert rebrand_audit._compatibility_is_forbidden(
+        ROOT,
+        "frontend/src/components/VisibleBanner.tsx",
+        pattern,
+        "content",
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern"),
+    [
+        ("api/routers/unrelated.py", "ONP_"),
+        ("api/routers/unrelated.py", "OPEN_NOTEBOOK_"),
+        ("api/routers/unrelated.py", "open_notebook"),
+        ("tests/test_unrelated_feature.py", "open_notebook"),
+    ],
+)
+def test_contract_mapping_rejects_broad_env_and_import_groups(path, pattern):
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            {
+                "path": path,
+                "pattern": pattern,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": "0" * 64,
+            }
+        )
+        is None
+    )
+
+
+def test_persisted_database_identifier_contract_has_exact_inventory():
+    migration_root = ROOT / "deeper_notebook" / "database" / "migrations"
+    inventory: list[tuple[str, int]] = []
+    for migration in sorted(migration_root.glob("*.surrealql")):
+        for line_number, line in enumerate(
+            migration.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            inventory.extend(
+                (migration.name, line_number)
+                for _match in re.finditer(r"\bopen_notebook\b", line)
+            )
+
+    assert inventory == [
+        ("1.surrealql", 175),
+        ("1.surrealql", 176),
+        ("11.surrealql", 8),
+        ("11_down.surrealql", 4),
+        ("18.surrealql", 5),
+        ("18_down.surrealql", 2),
+        ("1_down.surrealql", 24),
+        ("5.surrealql", 4),
+        ("5.surrealql", 159),
+    ]
+
+
+def test_surreal_namespace_contract_has_exact_runtime_scope():
+    expected_occurrences = {
+        ".github/workflows/test.yml": 2,
+        "desktop/db_repair.py": 2,
+        "desktop/launcher.py": 5,
+        "desktop/memory/_register.py": 2,
+        "desktop/memory/client.py": 2,
+        "desktop/memory/surreal_store.py": 2,
+        "desktop/memory/tests/test_register.py": 2,
+        "scripts/repair_desktop_db.sh": 2,
+        "tests/integration/conftest.py": 1,
+    }
+
+    assert {
+        path: len(
+            re.findall(
+                r"\bopen_notebook\b",
+                (ROOT / path).read_text(encoding="utf-8"),
+            )
+        )
+        for path in expected_occurrences
+    } == expected_occurrences
 
 
 @pytest.mark.parametrize(
@@ -739,7 +1035,7 @@ def test_allowlist_rejects_compatibility_for_active_docs_ui_and_defaults(
         (
             "api/routers/chat.py",
             "open_notebook",
-            "python-import-shim-v1",
+            "persisted-queue-identifier-v1",
         ),
         (
             "api/routers/filesystem.py",
@@ -1131,7 +1427,7 @@ def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
 
 
 def test_allowlist_regeneration_assigns_only_proof_backed_contracts(tmp_path):
-    path = "deeper_notebook/configuration.py"
+    path = "deeper_notebook/environment.py"
     line = "legacy_prefix = 'ONP_SETTING'"
     repo = _init_tracked_repo(tmp_path / "repo", {path: line + "\n"})
     allowlist_path = _write_contract_allowlist(
@@ -1148,11 +1444,17 @@ def test_allowlist_regeneration_assigns_only_proof_backed_contracts(tmp_path):
 
     generated = rebrand_audit.regenerate_allowlist(repo, allowlist_path)
 
-    assert generated["compatibility_contracts"] == {
-        "env-alias-v1": rebrand_audit._DEFAULT_COMPATIBILITY_CONTRACTS[
-            "env-alias-v1"
-        ]
+    contract = generated["compatibility_contracts"]["env-alias-v1"]
+    assert contract["kind"] == "env_alias"
+    assert contract["proof"] == (
+        "tests/test_environment_aliases.py::test_all_four_precedence_positions"
+    )
+    assert contract["scope"] == {
+        "paths": ["deeper_notebook/environment.py"],
+        "patterns": ["ONP_"],
+        "sources": ["content"],
     }
+    assert re.fullmatch(r"[0-9a-f]{64}", contract["coverage_sha256"])
     assert generated["entries"][0]["rationale"][
         "compatibility_contract"
     ] == "env-alias-v1"
@@ -1206,10 +1508,7 @@ def test_repository_category_examples_match_their_actual_roles():
         and entry["line"] in {18, 19}
         and entry["pattern"] in {"OPEN_NOTEBOOK_", "ONP_"}
     ]
-    assert logging_aliases
-    assert {
-        entry["category"] for entry in logging_aliases
-    } == {"migration_documentation"}
+    assert logging_aliases == []
     assert any(
         entry["path"] == "README.upstream.md"
         and entry["category"] == "upstream_reference"
@@ -1232,7 +1531,7 @@ def test_repository_category_examples_match_their_actual_roles():
         for entry in entries
     )
     assert any(
-        entry["path"] == "Dockerfile"
+        entry["path"] == "Makefile"
         and entry["category"] == "upstream_reference"
         for entry in entries
     )
@@ -1291,7 +1590,7 @@ def test_active_logging_provision_maintainer_and_wrapper_copy_is_canonical():
 
     assert "DEEPER_NOTEBOOK_LOG_LEVEL" in logging_source
     assert "DEEPER_NOTEBOOK_LOG_JSON" in logging_source
-    assert "Deprecated aliases" in logging_source
+    assert "deprecated spellings" in logging_source
     assert "DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT" in provision_source
     assert "DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID" in provision_source
     assert "Deprecated aliases accepted during migration" in provision_source

@@ -1,6 +1,6 @@
 """Phase 5.2a — fail-closed privacy gate for cloud routing.
 
-The smart router (`open_notebook/ai/router.py:pick_provider`) may route a chat
+The smart router (`deeper_notebook/ai/router.py:pick_provider`) may route a chat
 turn to a CLOUD provider when the local sidecar is unhealthy or the content is
 too big for the local context window. For a privacy-first app that's a leak
 risk: the turn's text — which can contain API keys, SSNs, card numbers, etc.
@@ -23,7 +23,7 @@ Scope / honesty:
     cloud model (no auto-route) explicitly chose cloud and isn't gated;
     extending coverage there is a documented follow-up.
 
-Default OFF — set `ONP_PRIVACY_GATE=on` (aliases: 1/true/yes/local) to enable.
+Default OFF — set `DEEPER_NOTEBOOK_PRIVACY_GATE=on` (aliases: 1/true/yes/local) to enable.
 """
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def apply_privacy_gate(
     if local_model_id:
         logger.warning(
             "privacy gate: rerouting cloud→local — detected {} in outbound "
-            "content (set ONP_PRIVACY_GATE=off to disable)", summary,
+            "content (set DEEPER_NOTEBOOK_PRIVACY_GATE=off to disable)", summary,
         )
         _record_redirect("local")
         return ModelChoice(
@@ -180,5 +180,5 @@ def apply_privacy_gate(
         f"Privacy gate blocked a cloud request: sensitive data ({summary}) "
         "was detected in the prompt and no local chat model is configured to "
         "handle it on-device. Configure a local chat model, or set "
-        "ONP_PRIVACY_GATE=off to allow cloud routing for this content."
+        "DEEPER_NOTEBOOK_PRIVACY_GATE=off to allow cloud routing for this content."
     )

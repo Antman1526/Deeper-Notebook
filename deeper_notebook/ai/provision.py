@@ -30,7 +30,7 @@ def _get_health_cache_lock() -> asyncio.Lock:
     we need it. asyncio.Lock() in modern Python doesn't bind to a
     specific event loop at construct time, but lazy init keeps imports
     side-effect-free and mirrors the get_async_graph() pattern in
-    open_notebook/graphs/chat.py for the same reason."""
+    deeper_notebook/graphs/chat.py for the same reason."""
     global _health_cache_lock
     if _health_cache_lock is None:
         _health_cache_lock = asyncio.Lock()
@@ -173,11 +173,11 @@ async def provision_langchain_chat_model(
       DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL  — sidecar base URL for health probe
 
     Deprecated aliases accepted during migration:
-      OPEN_NOTEBOOK_AUTO_ROUTE_CHAT, OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID,
-      OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID, OPEN_NOTEBOOK_LOCAL_N_CTX,
-      OPEN_NOTEBOOK_CHAT_PROVIDER, and OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL.
-      The ONP_* spellings for registered short settings, including
-      ONP_CHAT_LLM_CTX, are also deprecated aliases. Canonical
+      DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT, DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID,
+      DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID, DEEPER_NOTEBOOK_LOCAL_N_CTX,
+      DEEPER_NOTEBOOK_CHAT_PROVIDER, and DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL.
+      The DEEPER_NOTEBOOK_* spellings for registered short settings, including
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX, are also deprecated aliases. Canonical
       DEEPER_NOTEBOOK_* variables always win.
 
     v0.8.1 — optional `selection_out` dict that, when smart routing is

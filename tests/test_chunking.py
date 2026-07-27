@@ -1,5 +1,5 @@
 """
-Unit tests for the open_notebook.utils.chunking module.
+Unit tests for the deeper_notebook.utils.chunking module.
 
 Tests content type detection and text chunking functionality.
 """

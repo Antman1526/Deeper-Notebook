@@ -249,7 +249,7 @@ async def test_start_snapshot_install_records_failures(
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     async def fake_start_snapshot_install(repo_id: str, target_path: Path):
         return types.SimpleNamespace(

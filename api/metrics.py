@@ -6,7 +6,7 @@ v0.7.88-v0.7.123 timeout-coverage cycle made interesting:
 
   * HTTP request counter + latency histogram (by route + method + status)
   * Database query latency histogram + slow-query counter (matches
-    v0.7.120's `ONP_SLOW_QUERY_LOG_MS` threshold log line)
+    v0.7.120's `DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS` threshold log line)
   * Memory-recall fall-through counter (v0.7.113 / v0.7.114 — counts
     times the chat-hot-path recall hit a timeout and returned empty)
 
@@ -70,7 +70,7 @@ db_query_duration_seconds = Histogram(
 db_slow_queries_total = Counter(
     "onp_db_slow_queries_total",
     "Number of SurrealQL queries that exceeded "
-    "ONP_SLOW_QUERY_LOG_MS (default 500ms).",
+    "DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS (default 500ms).",
 )
 
 
@@ -84,7 +84,7 @@ memory_recall_fallthrough_total = Counter(
     "error and fell through to empty. Reasons: 'embed_timeout' / "
     "'embed_error' / 'query_timeout' / 'query_error' (per-step, "
     "v0.7.113 / v0.7.114), 'outer_budget' (v0.7.133 outer "
-    "ONP_MEMORY_RECALL_BUDGET_SEC wall fired).",
+    "DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC wall fired).",
     ["reason"],
 )
 
@@ -112,7 +112,7 @@ privacy_gate_redirects_total = Counter(
 # loop. outcome='truncated' means the loop hit max_iterations while the model
 # still wanted to call tools → the answer is likely incomplete (the tool
 # budget, not the model, was the limiting factor). A rising 'truncated' ratio
-# says ONP_MCP_TOOL_TIMEOUT_SEC / the iteration cap may be too tight.
+# says DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC / the iteration cap may be too tight.
 agent_tool_loop_outcomes_total = Counter(
     "onp_agent_tool_loop_outcomes_total",
     "Terminal state of the chat MCP tool loop (only counted when MCP tools "
@@ -130,7 +130,7 @@ checkpoint_prune_runs_total = Counter(
     "onp_checkpoint_prune_runs_total",
     "Number of times the LangGraph SQLite checkpoint-pruning task "
     "has executed (default cadence: every 24h, configurable via "
-    "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS).",
+    "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS).",
 )
 
 checkpoint_prune_rows_deleted_total = Counter(
@@ -215,7 +215,7 @@ def time_memory_recall():
 
 
 def record_slow_query() -> None:
-    """Called by repo_query when a query exceeded ONP_SLOW_QUERY_LOG_MS.
+    """Called by repo_query when a query exceeded DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS.
     Wrapper exists so call sites don't have to import the Counter
     directly (keeps the boundary clean for refactor)."""
     db_slow_queries_total.inc()

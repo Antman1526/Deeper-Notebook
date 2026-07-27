@@ -241,7 +241,7 @@ class DefaultModels(RecordModel):
     # cloud fallbacks to a locally-configured chat model. Migration 18.
     auto_route_cloud: Optional[str] = None
     # v0.8.37 — UI-controllable smart-router toggle. Pre-v0.8.37 the
-    # only way to enable smart routing was the OPEN_NOTEBOOK_AUTO_ROUTE_CHAT
+    # only way to enable smart routing was the DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT
     # env var, which meant power-users could enable it but the UI was
     # invisible. These two fields make the toggle settable from
     # Settings → API Keys → Smart Routing. The env var still wins (for
@@ -301,14 +301,14 @@ class ModelManager:
             model: Model = await Model.get(model_id)
         except Exception as exc:
             # Re-raise typed exceptions with appropriate remapping.
-            # Order matters: NotFoundError extends OpenNotebookError,
+            # Order matters: NotFoundError extends DeeperNotebookError,
             # so we must check the more-specific class FIRST before
             # the broader passthrough catch — otherwise NotFoundError
             # passes through unchanged instead of becoming a user-
             # actionable ConfigurationError.
             from deeper_notebook.exceptions import (
+                DeeperNotebookError,
                 NotFoundError,
-                OpenNotebookError,
             )
 
             # NotFoundError from Model.get means the ID really doesn't
@@ -318,10 +318,10 @@ class ModelManager:
                     f"Model with ID {model_id} not found. Re-check that "
                     f"the model is configured in Settings → Models."
                 ) from exc
-            # Other typed OpenNotebookError subclasses (RateLimitError,
+            # Other typed DeeperNotebookError subclasses (RateLimitError,
             # AuthenticationError, etc.) propagate verbatim — they
             # already have actionable messages and the right HTTP code.
-            if isinstance(exc, OpenNotebookError):
+            if isinstance(exc, DeeperNotebookError):
                 raise
             # Anything else: log + surface as a generic operational
             # error so the user sees "something broke" rather than
@@ -330,7 +330,7 @@ class ModelManager:
                 f"get_model({model_id}): unexpected exception from "
                 f"Model.get(): {type(exc).__name__}: {exc}"
             )
-            raise OpenNotebookError(
+            raise DeeperNotebookError(
                 f"Could not load model {model_id}: {exc}. The DB or "
                 f"connection pool may be transiently unavailable; "
                 f"retry shortly."
@@ -461,7 +461,7 @@ class ModelManager:
 
     async def get_default_model_id(self, model_type: str) -> Optional[str]:
         """v0.8.68 — id-only resolution extracted from get_default_model so
-        the offline gate (open_notebook/ai/offline_gate.py) can inspect the
+        the offline gate (deeper_notebook/ai/offline_gate.py) can inspect the
         candidate's provider BEFORE instantiation. Mapping unchanged."""
         defaults = await self.get_defaults()
         model_id = None

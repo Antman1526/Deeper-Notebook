@@ -127,7 +127,7 @@ async def test_stream_aborts_on_cancellation_flag(tmp_path):
         job.cancelled = True
         await dl_mod._stream_download(job, tmp_path)
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         await asyncio.wait_for(_drive(), timeout=5.0)
 
@@ -171,7 +171,7 @@ async def test_start_download_detects_existing_part_file(tmp_path):
             captured_headers.append(dict(headers or {}))
             return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
@@ -216,7 +216,7 @@ async def test_resume_aborts_when_server_returns_200(tmp_path):
         async def __aexit__(self, *_a): pass
         def stream(self, m, u, headers=None): return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)

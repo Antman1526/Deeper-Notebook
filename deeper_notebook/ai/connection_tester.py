@@ -25,11 +25,11 @@ from deeper_notebook.environment import resolve_env
 # v0.7.116 — Per-provider tuning. Local providers (ollama,
 # openai_compatible, llama-cpp via desktop bundle) commonly need
 # more time to cold-start a model; cloud APIs typically respond in
-# <2s. The legacy global ONP_CONNECTION_TEST_TIMEOUT_SEC still
+# <2s. The legacy global DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC still
 # overrides everything when set; otherwise we pick per-provider
 # defaults from _PROVIDER_DEFAULT_TIMEOUTS, and individual providers
-# can be tuned via ONP_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>
-# (e.g. ONP_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA=120).
+# can be tuned via DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>
+# (e.g. DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA=120).
 
 # Per-provider defaults in seconds. Cloud APIs are snappy; local
 # servers can take a long time to first-load a model on a cold cache.
@@ -60,8 +60,8 @@ def _connection_timeout_for(provider: str) -> float:
     """Resolve the connection-test timeout for a specific provider.
 
     Lookup order:
-      1. Provider-specific env: ONP_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>
-      2. Global override env:    ONP_CONNECTION_TEST_TIMEOUT_SEC
+      1. Provider-specific env: DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>
+      2. Global override env:    DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC
       3. Per-provider default:   _PROVIDER_DEFAULT_TIMEOUTS[provider]
       4. Fallback:               30s
     """
@@ -79,7 +79,7 @@ def _connection_timeout_for(provider: str) -> float:
             return float(per_env)
         except ValueError:
             logger.warning(
-                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC_{}: {!r}; falling through",
+                "Invalid DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_{}: {!r}; falling through",
                 p.upper(), per_env,
             )
     # 2. Global override
@@ -89,7 +89,7 @@ def _connection_timeout_for(provider: str) -> float:
             return float(global_env)
         except ValueError:
             logger.warning(
-                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC: {!r}; falling through",
+                "Invalid DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC: {!r}; falling through",
                 global_env,
             )
     # 3. Per-provider default
@@ -367,7 +367,7 @@ async def test_provider_connection(
                     f"Connection test timed out after {_timeout:.0f}s. "
                     "The provider may be slow, the model may be loading, or "
                     "the endpoint is unreachable. Raise "
-                    f"ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    f"DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
                     "if your model legitimately takes longer than that for "
                     "a 'Hi' prompt."
                 )
@@ -384,7 +384,7 @@ async def test_provider_connection(
             except asyncio.TimeoutError:
                 return False, (
                     f"Embedding test timed out after {_timeout:.0f}s. "
-                    f"Raise ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    f"Raise DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
                     "or check provider status."
                 )
             return True, "Connection successful"
@@ -512,7 +512,7 @@ async def test_individual_model(model) -> tuple[bool, str]:
     Test a specific model configuration end-to-end by making a real API call.
 
     Args:
-        model: A Model instance (from open_notebook.ai.models)
+        model: A Model instance (from deeper_notebook.ai.models)
 
     Returns:
         Tuple of (success: bool, message: str)

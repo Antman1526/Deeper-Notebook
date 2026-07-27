@@ -30,7 +30,7 @@ class TestWarmupRetry:
         fake_conn = object()
         acquire_mock = AsyncMock(return_value=fake_conn)
         with patch(
-            "open_notebook.database.repository._acquire", acquire_mock,
+            "deeper_notebook.database.repository._acquire", acquire_mock,
         ):
             result = await _warmup_pool_acquire_with_retry(timeout_s=10.0)
         assert result is fake_conn
@@ -53,7 +53,7 @@ class TestWarmupRetry:
             return fake_conn
 
         with patch(
-            "open_notebook.database.repository._acquire", flaky_acquire,
+            "deeper_notebook.database.repository._acquire", flaky_acquire,
         ), patch(
             "asyncio.sleep", AsyncMock(),  # don't actually wait
         ):
@@ -72,7 +72,7 @@ class TestWarmupRetry:
             raise RuntimeError("connection refused")
 
         with patch(
-            "open_notebook.database.repository._acquire", always_fails,
+            "deeper_notebook.database.repository._acquire", always_fails,
         ), patch(
             "asyncio.sleep", AsyncMock(),
         ):
@@ -97,7 +97,7 @@ class TestWarmupRetry:
             await asyncio.sleep(60)
 
         with patch(
-            "open_notebook.database.repository._acquire", hang_forever,
+            "deeper_notebook.database.repository._acquire", hang_forever,
         ), patch(
             "api.main._WARMUP_RETRY_DELAYS_S", (0.001, 0.001, 0.001),
         ):
@@ -117,7 +117,7 @@ class TestWarmupRetry:
 
         sleep_mock = AsyncMock()
         with patch(
-            "open_notebook.database.repository._acquire", always_fails,
+            "deeper_notebook.database.repository._acquire", always_fails,
         ), patch(
             "asyncio.sleep", sleep_mock,
         ):

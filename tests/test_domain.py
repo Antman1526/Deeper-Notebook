@@ -1,5 +1,5 @@
 """
-Unit tests for the open_notebook.domain module.
+Unit tests for the deeper_notebook.domain module.
 
 This test suite focuses on validation logic, business rules, and data structures
 that can be tested without database mocking.
@@ -135,7 +135,7 @@ class TestSourceDomain:
         # Create a "uploads" dir + a file inside it
         uploads_dir = Path(tempfile.mkdtemp())
         monkeypatch.setattr(
-            "open_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
+            "deeper_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
         )
         tmp_path = uploads_dir / "test.txt"
         tmp_path.write_bytes(b"Test content")
@@ -237,7 +237,7 @@ class TestSourceDomain:
         """Test that vectorize() submits embed_source command when text is valid."""
         source = Source(id="source:test_valid", title="Test", full_text="Real content")
         with patch(
-            "open_notebook.domain.notebook.submit_command", return_value="command:123"
+            "deeper_notebook.domain.notebook.submit_command", return_value="command:123"
         ) as mock_submit:
             result = await source.vectorize()
             mock_submit.assert_called_once_with(
@@ -448,7 +448,7 @@ class TestEpisodeProfile:
 
 class TestNoteSaveResilience:
     """v0.7.129 — Note.save() previously raised
-    `ValueError: Command not found: open_notebook.embed_note` whenever
+    `ValueError: Command not found: deeper_notebook.embed_note` whenever
     the surreal-commands worker hadn't registered the embed_note
     command (CI without a worker, fresh installs, restart windows).
     Embedding is fire-and-forget by design, so a missing worker
@@ -473,12 +473,12 @@ class TestNoteSaveResilience:
             self.id = "note:fake123"
 
         with (
-            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
             patch(
-                "open_notebook.domain.notebook._is_command_registered",
+                "deeper_notebook.domain.notebook._is_command_registered",
                 return_value=False,
             ),
-            patch("open_notebook.domain.notebook.submit_command") as submit_mock,
+            patch("deeper_notebook.domain.notebook.submit_command") as submit_mock,
         ):
             result = await note.save()
             assert result is None
@@ -501,12 +501,12 @@ class TestNoteSaveResilience:
             raise RuntimeError("worker DB unreachable")
 
         with (
-            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
             patch(
-                "open_notebook.domain.notebook._is_command_registered",
+                "deeper_notebook.domain.notebook._is_command_registered",
                 return_value=True,
             ),
-            patch("open_notebook.domain.notebook.submit_command", _raise_runtime),
+            patch("deeper_notebook.domain.notebook.submit_command", _raise_runtime),
         ):
             result = await note.save()
             assert result is None
@@ -533,12 +533,12 @@ class TestNoteSaveResilience:
             raise ValueError("Invalid note_id format")
 
         with (
-            patch("open_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch("deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
             patch(
-                "open_notebook.domain.notebook._is_command_registered",
+                "deeper_notebook.domain.notebook._is_command_registered",
                 return_value=True,
             ),
-            patch("open_notebook.domain.notebook.submit_command", _raise_bad_args),
+            patch("deeper_notebook.domain.notebook.submit_command", _raise_bad_args),
         ):
             with pytest.raises(ValueError, match="Invalid note_id format"):
                 await note.save()

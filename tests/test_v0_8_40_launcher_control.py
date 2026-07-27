@@ -219,8 +219,8 @@ def test_restart_endpoint_unknown_kind_returns_404(app):
 def test_restart_endpoint_503_when_control_url_missing(app, monkeypatch):
     """API running outside the launcher → no control URL → 503 with a
     user-friendly hint."""
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", raising=False)
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
     with TestClient(app) as client:
         resp = client.post("/api/healthz/sidecars/chat/restart")
     assert resp.status_code == 503
@@ -241,8 +241,8 @@ def test_restart_endpoint_proxies_to_launcher_happy_path(app, monkeypatch):
 
         srv.register_callback("restart_sidecar", _cb)
 
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
 
         with TestClient(app) as client:
             resp = client.post("/api/healthz/sidecars/chat/restart")
@@ -262,9 +262,9 @@ def test_restart_endpoint_502_when_launcher_unreachable(app, monkeypatch):
     502 from the API (NOT 500 — we know the network failed, not us)."""
     # Pick a port that's almost certainly not bound.
     monkeypatch.setenv(
-        "OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", "http://127.0.0.1:1",
+        "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "http://127.0.0.1:1",
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "dummy")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "dummy")
     with TestClient(app) as client:
         resp = client.post("/api/healthz/sidecars/chat/restart")
     assert resp.status_code == 502
@@ -280,8 +280,8 @@ def test_restart_endpoint_400_when_launcher_rejects(app, monkeypatch):
             return False, "Sidecar 'memory' was never spawned this session"
 
         srv.register_callback("restart_sidecar", _cb)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", srv.url)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", srv.token)
 
         with TestClient(app) as client:
             resp = client.post("/api/healthz/sidecars/memory/restart")

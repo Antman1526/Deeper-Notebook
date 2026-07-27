@@ -42,7 +42,7 @@ def client():
 
 
 def test_auth_status_reports_disabled_when_no_password(client, monkeypatch):
-    """v0.7.162: when OPEN_NOTEBOOK_PASSWORD is unset, the endpoint
+    """v0.7.162: when DEEPER_NOTEBOOK_PASSWORD is unset, the endpoint
     must report auth_enabled=False. This is the desktop-default state
     (the v0.7.154 CORS warning bullet documents 127.0.0.1-only bind)
     and the frontend's auth flow depends on this signal to decide
@@ -50,8 +50,8 @@ def test_auth_status_reports_disabled_when_no_password(client, monkeypatch):
     for name in (
         "DEEPER_NOTEBOOK_PASSWORD",
         "DEEPER_NOTEBOOK_PASSWORD_FILE",
-        "OPEN_NOTEBOOK_PASSWORD",
-        "OPEN_NOTEBOOK_PASSWORD_FILE",
+        "DEEPER_NOTEBOOK_PASSWORD",
+        "DEEPER_NOTEBOOK_PASSWORD_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -70,11 +70,11 @@ def test_auth_status_reports_enabled_when_password_set(client, monkeypatch):
     for name in (
         "DEEPER_NOTEBOOK_PASSWORD",
         "DEEPER_NOTEBOOK_PASSWORD_FILE",
-        "OPEN_NOTEBOOK_PASSWORD",
-        "OPEN_NOTEBOOK_PASSWORD_FILE",
+        "DEEPER_NOTEBOOK_PASSWORD",
+        "DEEPER_NOTEBOOK_PASSWORD_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("OPEN_NOTEBOOK_PASSWORD", "test-password-123")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PASSWORD", "test-password-123")
 
     r = client.get("/api/auth/status", headers={})  # no auth header
     assert r.status_code == 200

@@ -156,7 +156,7 @@ class DefaultModelsResponse(BaseModel):
     # round-tripped through the router. Adding it here closes that gap.
     auto_route_cloud: Optional[str] = None
     # v0.8.37 — UI-controllable smart-routing toggle + provider pref.
-    # Env var (OPEN_NOTEBOOK_AUTO_ROUTE_CHAT) still wins for back-compat;
+    # Env var (DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT) still wins for back-compat;
     # otherwise these fields drive `provision_langchain_chat_model`.
     auto_route_enabled: Optional[bool] = None
     auto_route_provider_pref: Optional[str] = None
@@ -703,7 +703,7 @@ class ApiKeyStatusResponse(BaseModel):
     )
     encryption_configured: bool = Field(
         ...,
-        description="Whether OPEN_NOTEBOOK_ENCRYPTION_KEY is set (required to store keys in database)",
+        description="Whether DEEPER_NOTEBOOK_ENCRYPTION_KEY is set (required to store keys in database)",
     )
 
 

@@ -4,9 +4,9 @@ Field-level encryption for sensitive data using API keys.
 This module provides encryption/decryption for API keys stored in the database.
 Fernet uses AES-128-CBC with HMAC-SHA256 for authenticated encryption.
 
-OPEN_NOTEBOOK_ENCRYPTION_KEY accepts **any string**. A Fernet key is derived
+DEEPER_NOTEBOOK_ENCRYPTION_KEY accepts **any string**. A Fernet key is derived
 from it via SHA-256, so users can set a simple passphrase like
-``OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret`` and it will work.
+``DEEPER_NOTEBOOK_ENCRYPTION_KEY=my-secret`` and it will work.
 
 Usage:
     # Encrypt before storing
@@ -35,7 +35,7 @@ def get_secret_from_env(var_name: str) -> Optional[str]:
     Checks for VAR_FILE first (Docker secrets), then falls back to VAR.
 
     Args:
-        var_name: Base name of the environment variable (e.g., "OPEN_NOTEBOOK_ENCRYPTION_KEY")
+        var_name: Base name of the environment variable (e.g., "DEEPER_NOTEBOOK_ENCRYPTION_KEY")
 
     Returns:
         The secret value, or None if not configured.
@@ -67,12 +67,12 @@ def _get_encryption_keys_from_env() -> list[str]:
 
     v0.7.17 — added rotation support. Priority order:
 
-    1. ``OPEN_NOTEBOOK_ENCRYPTION_KEYS`` (plural) — comma-separated list.
+    1. ``DEEPER_NOTEBOOK_ENCRYPTION_KEYS`` (plural) — comma-separated list.
        First entry is the *primary* (used for all new encryption);
        remaining entries are accepted for decryption only. Use this
        during a rotation: add the new key first, leave the old one
        second, run a re-encrypt sweep, then drop the old key.
-    2. ``OPEN_NOTEBOOK_ENCRYPTION_KEY`` (singular) — single key, the
+    2. ``DEEPER_NOTEBOOK_ENCRYPTION_KEY`` (singular) — single key, the
        pre-rotation default. Still honored for backward compatibility.
     3. Both Docker-secrets ``_FILE`` variants are honored at each step.
 
@@ -95,10 +95,10 @@ def _get_encryption_keys_from_env() -> list[str]:
         return [single]
 
     raise ValueError(
-        "Neither OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural) nor "
-        "OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) is set. "
-        "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret-string> to enable "
-        "encrypted storage, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> "
+        "Neither DEEPER_NOTEBOOK_ENCRYPTION_KEYS (plural) nor "
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY (singular) is set. "
+        "Set DEEPER_NOTEBOOK_ENCRYPTION_KEY=<secret-string> to enable "
+        "encrypted storage, or DEEPER_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> "
         "to rotate without losing existing credentials."
     )
 
@@ -125,7 +125,7 @@ def _get_encryption_keys() -> list[str]:
     v0.7.24 — no caching. Previously this was a process-lifetime
     singleton, which masked a real rotation bug: under uvicorn
     --reload (or any in-place env refresh), updating
-    OPEN_NOTEBOOK_ENCRYPTION_KEYS appeared to take effect but the
+    DEEPER_NOTEBOOK_ENCRYPTION_KEYS appeared to take effect but the
     module retained the stale cached list, so every encrypt_value
     call used the old key. Plus across the API + worker processes
     the caches could diverge during a rolling rotation, producing
@@ -160,7 +160,7 @@ def _get_encryption_key() -> str:
 # leaves the machine.
 #
 # v0.7.123 adds PBKDF2-HMAC-SHA256 (stdlib, no new dep) as an opt-in
-# upgrade via `ONP_ENCRYPTION_KDF=pbkdf2`. 600,000 iterations gives
+# upgrade via `DEEPER_NOTEBOOK_ENCRYPTION_KDF=pbkdf2`. 600,000 iterations gives
 # ~250ms cost per guess on a modern CPU — slows offline brute-force
 # of a stolen database from "instant" to "~one year per million
 # guesses". Backward compatible: decryption tries BOTH KDFs in order,
@@ -232,7 +232,7 @@ def _ensure_fernet_key(key: str, kdf: str | None = None) -> str:
     if kdf == "sha256":
         return _derive_fernet_key_sha256(key).decode()
     raise ValueError(
-        f"Unknown ONP_ENCRYPTION_KDF: {kdf!r}. "
+        f"Unknown DEEPER_NOTEBOOK_ENCRYPTION_KDF: {kdf!r}. "
         "Valid values: 'sha256' (default, fast) or 'pbkdf2' (recommended, slow)."
     )
 
@@ -244,7 +244,7 @@ def get_fernet() -> Fernet:
     Used for new encryption only; for decryption use `get_multi_fernet()`
     so rotation + cross-KDF compatibility works.
 
-    v0.7.123 — uses the env-configured KDF (`ONP_ENCRYPTION_KDF`).
+    v0.7.123 — uses the env-configured KDF (`DEEPER_NOTEBOOK_ENCRYPTION_KDF`).
 
     Raises:
         ValueError: If encryption key is not configured.
@@ -319,7 +319,7 @@ def re_encrypt_value(value: str) -> str:
     Used during rotation: walk the credentials table, call
     `re_encrypt_value` on each stored ciphertext, save it back. Once
     everything is re-encrypted with the new primary key, drop the old
-    key from `OPEN_NOTEBOOK_ENCRYPTION_KEYS`.
+    key from `DEEPER_NOTEBOOK_ENCRYPTION_KEYS`.
 
     Args:
         value: The encrypted string to rotate.
@@ -340,7 +340,7 @@ def re_encrypt_value(value: str) -> str:
             raise ValueError(
                 "Re-encrypt failed: value looks like a Fernet token but no "
                 "configured key can decrypt it. Are all old keys still "
-                "listed in OPEN_NOTEBOOK_ENCRYPTION_KEYS?"
+                "listed in DEEPER_NOTEBOOK_ENCRYPTION_KEYS?"
             )
         # Legacy plaintext — just encrypt it under the primary key.
         return mf.encrypt(value.encode()).decode()
@@ -408,13 +408,13 @@ def decrypt_value(value: str) -> str:
         if looks_like_fernet_token(value):
             # Looks like encrypted data but no configured key can decrypt
             # it — either wrong key, key rotated without re-encrypt, or
-            # the old key was dropped from OPEN_NOTEBOOK_ENCRYPTION_KEYS
+            # the old key was dropped from DEEPER_NOTEBOOK_ENCRYPTION_KEYS
             # before the data was re-encrypted.
             raise ValueError(
                 "Decryption failed: data appears to be encrypted but no "
                 "configured key can decrypt it. If you recently rotated "
                 "keys, ensure the OLD key is still in "
-                "OPEN_NOTEBOOK_ENCRYPTION_KEYS until you've run the "
+                "DEEPER_NOTEBOOK_ENCRYPTION_KEYS until you've run the "
                 "re-encrypt sweep."
             )
         # Not a valid token - treat as legacy plaintext

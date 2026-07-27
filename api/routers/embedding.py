@@ -51,7 +51,7 @@ class NotebookVectorizeResponse(BaseModel):
     # v0.7.137 — Pagination fields so callers can systematically work
     # through notebooks with more sources than the per-request limit.
     # Before this release the request silently truncated after
-    # ONP_BULK_VECTORIZE_MAX_SOURCES (default 500) and there was no
+    # DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES (default 500) and there was no
     # way to reach the remaining sources without raising the env var
     # OR running the endpoint multiple times against the same first-500
     # slice (which would re-process them, not paginate).
@@ -214,12 +214,12 @@ async def vectorize_notebook_sources(
     models in Settings → Models).
 
     v0.7.137 — Pagination added. Previously the endpoint silently
-    truncated to ONP_BULK_VECTORIZE_MAX_SOURCES (default 500) and
+    truncated to DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES (default 500) and
     there was no way to reach beyond that without raising the env
     var. Now callers can use `?offset=` to step through notebooks
     of any size; the response includes `total_sources`, `offset`,
     `limit`, and `has_more` so the next page is trivial to request.
-    `ONP_BULK_VECTORIZE_MAX_SOURCES` still acts as a hard per-call
+    `DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES` still acts as a hard per-call
     ceiling — if `limit` exceeds it, we clamp down + emit a warning
     so a misconfigured caller doesn't accidentally spam the worker.
     """
@@ -266,7 +266,7 @@ async def vectorize_notebook_sources(
         warnings.append(
             f"Requested limit {limit} exceeds the per-call cap "
             f"({_max_sources_cap}); clamped down. Raise "
-            "ONP_BULK_VECTORIZE_MAX_SOURCES if you need bigger batches, "
+            "DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES if you need bigger batches, "
             "or use pagination (?offset=) to walk the notebook in chunks."
         )
 

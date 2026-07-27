@@ -87,10 +87,10 @@ class TestProvisionChatModelExposesSelection:
         carries provider='local'."""
         import deeper_notebook.ai.provision as provision_mod
 
-        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
@@ -118,11 +118,11 @@ class TestProvisionChatModelExposesSelection:
         """Overflow content → router picks cloud → selection_out reflects it."""
         import deeper_notebook.ai.provision as provision_mod
 
-        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "32768")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
@@ -152,7 +152,7 @@ class TestProvisionChatModelExposesSelection:
         local/cloud distinction exists in the default-path)."""
         import deeper_notebook.ai.provision as provision_mod
 
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
 
         # v0.8.46c — env var unset → v0.8.37 disabled-path consults
         # `model_manager.get_defaults().auto_route_enabled`. Mock it so

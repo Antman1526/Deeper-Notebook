@@ -20,10 +20,10 @@ _MIG_DIR = _REPO / "deeper_notebook" / "database" / "migrations"
 
 def test_plus_stable_feature_flags_default_on(monkeypatch):
     for name in (
-        "ONP_VISUAL_REFRESH",
-        "ONP_EVIDENCE_STUDIO",
-        "ONP_MODEL_FLEET",
-        "ONP_RESEARCH_RUNS",
+        "DEEPER_NOTEBOOK_VISUAL_REFRESH",
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DEEPER_NOTEBOOK_MODEL_FLEET",
+        "DEEPER_NOTEBOOK_RESEARCH_RUNS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -43,13 +43,13 @@ def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
     for name in (
         "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
         "DN_EVIDENCE_STUDIO",
-        "OPEN_NOTEBOOK_EVIDENCE_STUDIO",
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
     ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "yes")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "yes")
     assert feature_flags.evidence_studio_enabled() is True
 
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "0")
     assert feature_flags.evidence_studio_enabled() is False
 
 

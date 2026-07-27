@@ -150,7 +150,7 @@ def test_deep_degraded_when_chat_model_missing(client, monkeypatch):
 
 def test_deep_endpoint_is_exempt_from_auth(client, monkeypatch):
     """Monitoring tools polling /healthz/deep can't be expected to
-    provide the OPEN_NOTEBOOK_PASSWORD header. This test verifies the
+    provide the DEEPER_NOTEBOOK_PASSWORD header. This test verifies the
     endpoint is in the middleware's excluded_paths list."""
     _patch_all_healthy(monkeypatch)
     # Even WITHOUT an Authorization header, the request must succeed.

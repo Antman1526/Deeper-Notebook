@@ -27,7 +27,7 @@ _VALID_THEMES = {
     "light-blue", "system", "solarized-light", "github-light", "paper",
     "dark", "solarized-dark", "dracula", "nord",
     # v0.8.72 — premium theme pack (must mirror desktop/window.py:_THEMES
-    # and frontend ThemeSwitcher:ONP_THEMES).
+    # and frontend ThemeSwitcher:DEEPER_NOTEBOOK_THEMES).
     "midnight-aurora", "tokyo-night", "catppuccin-mocha", "rose-pine",
     "gruvbox-dark", "one-dark", "catppuccin-latte", "rose-pine-dawn",
 }

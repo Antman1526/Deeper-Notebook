@@ -30,6 +30,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from deeper_notebook.environment import normalize_product_environment
 from desktop.data_root import active_data_root
 
 # v0.8.8 — log handle so merge_with_env can surface a malformed
@@ -45,44 +46,15 @@ ALLOWED_KEYS: frozenset[str] = frozenset({
     "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
     "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
     "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-    "DN_CHAT_LLM_CTX",
-    "DN_CHAT_LLM_CTX_MAX",
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",
-    "ONP_CHAT_LLM_CTX",
-    "ONP_CHAT_LLM_CTX_MAX",
+    "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
+    "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX",
 })
-
-_PREF_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
-    (
-        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    ),
-    (
-        "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-        "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    ),
-    (
-        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-        "OPEN_NOTEBOOK_LOCAL_N_CTX",
-    ),
-    ("DN_CHAT_LLM_CTX", "ONP_CHAT_LLM_CTX"),
-    ("DN_CHAT_LLM_CTX_MAX", "ONP_CHAT_LLM_CTX_MAX"),
-)
 
 
 def _canonicalize_prefs(prefs: dict[str, str]) -> dict[str, str]:
-    """Collapse compatibility aliases to the first name in each group."""
-    result = dict(prefs)
-    for group in _PREF_ALIAS_GROUPS:
-        winner = next((name for name in group if name in prefs), None)
-        if winner is None:
-            continue
-        for name in group:
-            result.pop(name, None)
-        result[group[0]] = prefs[winner]
-    return result
+    """Canonicalize compatibility keys through the central registry."""
+    normalized = normalize_product_environment(prefs)
+    return {key: normalized[key] for key in ALLOWED_KEYS if key in normalized}
 
 
 def _prefs_path() -> Path:
@@ -168,7 +140,7 @@ def get_prefs() -> dict[str, str]:
         return {}
     parsed = _parse_file(path.read_text(encoding="utf-8"))
     # Defense in depth — only surface whitelisted keys.
-    return {k: v for k, v in parsed.items() if k in ALLOWED_KEYS}
+    return _canonicalize_prefs(parsed)
 
 
 def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
@@ -197,12 +169,7 @@ def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
 
     for key, value in updates.items():
         if value is None:
-            group = next(
-                (aliases for aliases in _PREF_ALIAS_GROUPS if key in aliases),
-                (key,),
-            )
-            for alias in group:
-                current.pop(alias, None)
+            current.pop(key, None)
         else:
             current[key] = str(value)
 

@@ -76,7 +76,7 @@ export interface SettingsResponse {
 
 // v0.7.136 — Read-only observability config from GET /settings/observability
 // (backend added in v0.7.130). Mirrors api/routers/settings.py:ObservabilityResponse.
-// Every field reflects an ONP_* env var read at request time, so the UI
+// Every field reflects an DEEPER_NOTEBOOK_* env var read at request time, so the UI
 // shows operators what their running process is actually seeing.
 export interface ObservabilityResponse {
   slow_query_log_ms: number | null

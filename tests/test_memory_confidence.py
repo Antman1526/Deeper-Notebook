@@ -1,7 +1,7 @@
 """v0.8.55 — Phase 5.1c: confidence-aware memory.
 
 The extract prompt asks the model for a confidence (0.0-1.0) per fact. v0.8.55
-(a) drops candidates below ONP_MEMORY_CONFIDENCE_FLOOR and (b) persists the
+(a) drops candidates below DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR and (b) persists the
 real score (via metadata → surreal_store). Default floor 0.0 → keep all
 (unchanged); a missing/garbled score is treated as 1.0 (never dropped on an
 absent number).
@@ -49,7 +49,7 @@ def test_coerce_confidence():
 
 
 def test_confidence_floor_default(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_CONFIDENCE_FLOOR", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", raising=False)
     assert writer_mod._confidence_floor() == 0.0
 
 
@@ -58,7 +58,7 @@ def test_confidence_floor_default(monkeypatch):
     ("1.5", 0.0), ("-1", 0.0), ("x", 0.0), ("", 0.0),
 ])
 def test_confidence_floor_parsing(monkeypatch, val, expected):
-    monkeypatch.setenv("ONP_MEMORY_CONFIDENCE_FLOOR", val)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", val)
     assert writer_mod._confidence_floor() == expected
 
 
@@ -68,14 +68,14 @@ def test_confidence_floor_parsing(monkeypatch, val, expected):
 
 
 def test_default_floor_keeps_everything(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_CONFIDENCE_FLOOR", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", raising=False)
     mem = _FakeMemClient()
     apply_tool_call(mem, _call(conf=0.1))  # low but floor is 0.0
     assert len(mem.added) == 1
 
 
 def test_floor_drops_low_confidence(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_CONFIDENCE_FLOOR", "0.6")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", "0.6")
     mem = _FakeMemClient()
     apply_tool_call(mem, _call(conf=0.4))   # below floor → dropped
     apply_tool_call(mem, _call(conf=0.9))   # above floor → kept
@@ -84,7 +84,7 @@ def test_floor_drops_low_confidence(monkeypatch):
 
 
 def test_missing_confidence_not_dropped_even_with_floor(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_CONFIDENCE_FLOOR", "0.6")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", "0.6")
     mem = _FakeMemClient()
     apply_tool_call(mem, _call(conf=None))  # absent → treated as 1.0 → kept
     assert len(mem.added) == 1
@@ -92,7 +92,7 @@ def test_missing_confidence_not_dropped_even_with_floor(monkeypatch):
 
 
 def test_confidence_persisted_in_metadata(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_CONFIDENCE_FLOOR", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_CONFIDENCE_FLOOR", raising=False)
     mem = _FakeMemClient()
     apply_tool_call(mem, _call(conf=0.75))
     assert mem.added[0]["metadata"]["confidence"] == 0.75

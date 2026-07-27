@@ -1517,7 +1517,7 @@ async def import_notebook(req: NotebookImportRequest) -> NotebookImportResponse:
                 await source.save()
                 await source.add_to_notebook(notebook_id)
                 # v0.7.104 — Real bug fix: Source.save() does NOT auto-embed
-                # (per open_notebook/domain/CLAUDE.md). Without this
+                # (per deeper_notebook/domain/CLAUDE.md). Without this
                 # vectorize() call, imported sources were saved but never
                 # got embeddings, which meant vector_search() couldn't find
                 # them — breaking the "import then chat-with-sources"

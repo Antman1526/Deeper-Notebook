@@ -219,7 +219,7 @@ class PodcastService:
             # model's context window MID-JOB with a generic provider error
             # after minutes of waiting. Check at submit instead, while the
             # user is still looking at the dialog. Env-tunable
-            # (ONP_PODCAST_MAX_CONTENT_TOKENS, 0 disables); the default is
+            # (DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS, 0 disables); the default is
             # generous for cloud models but catches the pathological cases.
             try:
                 import os as _os
@@ -242,7 +242,7 @@ class PodcastService:
                         f"The selected content is too large for podcast "
                         f"generation (~{_content_tokens:,} tokens, limit "
                         f"{_max_tokens:,}). Select fewer sources, or raise "
-                        f"ONP_PODCAST_MAX_CONTENT_TOKENS if your models can "
+                        f"DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS if your models can "
                         f"handle it."
                     )
 
@@ -309,7 +309,7 @@ class PodcastService:
                 raise ValueError(
                     f"Podcast submission timed out after {_submit_timeout:.0f}s. "
                     "The SurrealDB pool may be saturated. Raise "
-                    "ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                    "DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
                 ) from exc
 
             # Convert RecordID to string if needed

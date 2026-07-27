@@ -63,7 +63,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
     external drive — the underlying `open()` can block UNINTERRUPTIBLY and hang
     the ENTIRE launch (the exact boot wedge seen when models lived on the iCloud
     Desktop: `sample` showed the main thread stuck in scandir → open$NOCANCEL).
-    Run the scan in a daemon thread and give up after ONP_MODEL_SCAN_TIMEOUT
+    Run the scan in a daemon thread and give up after DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT
     seconds: the app boots (local chat degraded, with a clear warning) instead of
     hanging forever. A wedged scan thread leaks, but it's a daemon so it never
     blocks process exit."""
@@ -91,7 +91,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
         log.error(
             "chat-GGUF scan of %s timed out after %ss (stalled filesystem?) — "
             "starting WITHOUT a local chat model. Move models off iCloud/Desktop, "
-            "or raise ONP_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
+            "or raise DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
         )
         return None
     return result[0]
@@ -526,7 +526,7 @@ def _phase_select_provider(ctx: AppContext) -> None:
             model = cfg.default_model or provider.pick_default_model()
             if model:
                 extra_env = provider.start(model)
-                extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
                 ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
@@ -700,7 +700,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     # v0.5.1 audit fix: capability-aware chat-LLM selection.
     # Replaces the v0.4 hardcoded Hermes-3*.gguf glob (which loaded the
     # 5 GB model regardless of machine size). Now picks the highest-scoring
-    # `chat`-kind GGUF that fits within ONP_CHAT_RAM_GB_CEILING (default 4 GB
+    # `chat`-kind GGUF that fits within DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING (default 4 GB
     # — small + fast for the chat experience). Hermes-3 still wins the
     # `default_tools_model` assignment if downloaded, since that slot has a
     # different recipe.

@@ -212,8 +212,8 @@ def validate_url(url: str, provider: str) -> None:
 def require_encryption_key() -> None:
     """Raise ValueError if encryption key is not configured.
 
-    v0.7.63 — accept either OPEN_NOTEBOOK_ENCRYPTION_KEY (singular) or
-    OPEN_NOTEBOOK_ENCRYPTION_KEYS (plural — rotation list). The
+    v0.7.63 — accept either DEEPER_NOTEBOOK_ENCRYPTION_KEY (singular) or
+    DEEPER_NOTEBOOK_ENCRYPTION_KEYS (plural — rotation list). The
     encryption utility (`utils/encryption.get_fernet_keys`) and the
     lifespan check in api/main.py both already accept both forms. The
     previous check here only looked at the singular, so a user who had
@@ -228,8 +228,8 @@ def require_encryption_key() -> None:
     if not (has_singular or has_plural):
         raise ValueError(
             "Encryption key not configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret-string> for a single "
-            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for a "
+            "Set DEEPER_NOTEBOOK_ENCRYPTION_KEY=<secret-string> for a single "
+            "key, or DEEPER_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for a "
             "rotation list, to enable storing API keys."
         )
 

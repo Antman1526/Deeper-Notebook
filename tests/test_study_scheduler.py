@@ -157,7 +157,7 @@ async def test_source_edit_creates_a_new_version_in_one_transaction(monkeypatch)
             return [replacement.model_dump(mode="json")]
         return []
 
-    monkeypatch.setattr("open_notebook.study.repository.repo_query", fake_query)
+    monkeypatch.setattr("deeper_notebook.study.repository.repo_query", fake_query)
 
     updated = await StudyRepository().create_card_version(
         previous.model_copy(update={"back": "Updated cited answer."})

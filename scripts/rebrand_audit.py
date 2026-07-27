@@ -20,7 +20,7 @@ CATEGORIES = (
     "migration_documentation",
     "unexpected_active_identity",
 )
-ALLOWLIST_SCHEMA_VERSION = 4
+ALLOWLIST_SCHEMA_VERSION = 5
 LEGACY_PATTERNS = (
     "Open Notebook Plus",
     "Open Notebook",
@@ -149,7 +149,17 @@ _RATIONALE_FIELDS = frozenset(
     }
 )
 _COMPATIBILITY_CONTRACT_FIELDS = frozenset(
-    {"kind", "owner", "retention_reason", "proof"}
+    {
+        "kind",
+        "owner",
+        "retention_reason",
+        "proof",
+        "scope",
+        "coverage_sha256",
+    }
+)
+_COMPATIBILITY_SCOPE_FIELDS = frozenset(
+    {"paths", "patterns", "sources"}
 )
 COMPATIBILITY_CONTRACT_KINDS = frozenset(
     {
@@ -165,9 +175,10 @@ COMPATIBILITY_CONTRACT_KINDS = frozenset(
         "regression_fixture",
     }
 )
-_STATIC_COMPATIBILITY_PROOFS = frozenset(
-    {"static:rebrand-audit-schema-v1"}
-)
+_STATIC_COMPATIBILITY_PROOFS = {
+    "static:env-alias-contract-fixture-v1": "env_alias",
+    "static:regression-fixture-contract-v1": "regression_fixture",
+}
 _PROVEN_LEGACY_TEST_FIXTURE_PATHS = frozenset(
     {
         "desktop/tests/conftest.py",
@@ -213,6 +224,19 @@ _VISIBLE_IDENTITY_PATTERNS = frozenset(
         "open-notebook-plus",
     }
 )
+_UPSTREAM_REFERENCE_PATHS = frozenset(
+    {
+        "Makefile",
+        ".github/ISSUE_TEMPLATE/installation_issue.yml",
+        ".github/workflows/build-and-release.yml",
+        ".github/workflows/build-dev.yml",
+        "examples/docker-compose-full-local.yml",
+        "examples/docker-compose-ollama.yml",
+        "examples/docker-compose-single.yml",
+        "examples/docker-compose-speaches.yml",
+        "examples/easypanel/meta.yaml",
+    }
+)
 _DEFAULT_COMPATIBILITY_CONTRACTS = {
     "env-alias-v1": {
         "kind": "env_alias",
@@ -246,7 +270,8 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "while the canonical symbol migration is staged."
         ),
         "proof": (
-            "tests/test_v0_7_139.py::TestGetModelErrorDiscrimination"
+            "tests/test_python_import_compatibility.py::"
+            "test_legacy_exception_name_is_an_alias_of_the_canonical_base"
         ),
     },
     "database-record-identifier-v1": {
@@ -257,8 +282,41 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "until a dedicated idempotent data migration is shipped."
         ),
         "proof": (
-            "tests/integration/test_notebook_lifecycle.py::"
-            "test_fixture_provisions_isolated_namespace"
+            "tests/test_product_identity.py::"
+            "test_persisted_database_identifier_contract_has_exact_inventory"
+        ),
+    },
+    "runtime-record-identifier-v1": {
+        "kind": "persisted_identifier",
+        "owner": "database-domain-models",
+        "retention_reason": (
+            "Domain singleton records must remain addressable under their "
+            "persisted identifiers until an idempotent record migration ships."
+        ),
+        "proof": "tests/test_domain.py::TestContentSettings",
+    },
+    "surreal-namespace-identifier-v1": {
+        "kind": "persisted_identifier",
+        "owner": "database-runtime",
+        "retention_reason": (
+            "Existing SurrealDB installations must retain their namespace and "
+            "database names until a coordinated data migration is available."
+        ),
+        "proof": (
+            "tests/test_product_identity.py::"
+            "test_surreal_namespace_contract_has_exact_runtime_scope"
+        ),
+    },
+    "persisted-queue-identifier-v1": {
+        "kind": "persisted_identifier",
+        "owner": "background-command-queue",
+        "retention_reason": (
+            "Queued jobs and workers must retain their persisted application "
+            "identifier until a coordinated queue migration is complete."
+        ),
+        "proof": (
+            "tests/test_persisted_queue_identifiers.py::"
+            "test_persisted_queue_identifier_allowlist_matches_exact_ast_inventory"
         ),
     },
     "data-root-migration-v1": {
@@ -309,6 +367,18 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "test_research_bundle_writes_canonical_format_and_reads_legacy_format"
         ),
     },
+    "desktop-bridge-v1": {
+        "kind": "external_protocol",
+        "owner": "desktop-webview-bridge",
+        "retention_reason": (
+            "Installed frontend bundles may still read legacy injected window "
+            "properties while canonical bridge consumers roll out."
+        ),
+        "proof": (
+            "desktop/tests/test_window.py::"
+            "test_injection_supports_both_stt_and_tts_simultaneously"
+        ),
+    },
     "legacy-artifact-probe-v1": {
         "kind": "legacy_artifact_probe",
         "owner": "desktop-release",
@@ -343,6 +413,18 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
         "proof": (
             "frontend/src/lib/features.test.ts::"
             "continues to support legacy Plus flags when canonical flags are absent"
+        ),
+    },
+    "launcher-pref-env-migration-v1": {
+        "kind": "env_alias",
+        "owner": "desktop-launcher-preferences",
+        "retention_reason": (
+            "Existing launcher preference files must normalize deprecated keys "
+            "through the central registry before canonical persistence."
+        ),
+        "proof": (
+            "desktop/tests/test_launcher_prefs.py::"
+            "test_legacy_launcher_pref_remains_accepted_and_is_canonicalized"
         ),
     },
     "theme-storage-migration-v1": {
@@ -429,6 +511,249 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "test_allowlist_rejects_compatibility_for_active_docs_ui_and_defaults"
         ),
     },
+    "frontend-canonical-help-regression-v1": {
+        "kind": "regression_fixture",
+        "owner": "frontend-settings",
+        "retention_reason": (
+            "The settings regression explicitly rejects deprecated environment "
+            "labels from every visible help surface."
+        ),
+        "proof": (
+            "frontend/src/components/settings/SmartRoutingPanel.test.tsx::"
+            "names only canonical Deeper Notebook environment variables"
+        ),
+    },
+}
+_KIND_PROOF_PATHS = {
+    "env_alias": frozenset(
+        {
+            "tests/test_environment_aliases.py",
+            "frontend/src/lib/features.test.ts",
+            "frontend/src/lib/features-build-contract.test.ts",
+            "desktop/tests/test_launcher_prefs.py",
+        }
+    ),
+    "import_shim": frozenset(
+        {"tests/test_python_import_compatibility.py"}
+    ),
+    "data_migration": frozenset(
+        {
+            "desktop/tests/test_data_root_migration.py",
+            "desktop/tests/test_data_root_conflict_recovery.py",
+            "desktop/tests/test_emergency_log.py",
+        }
+    ),
+    "installer_upgrade": frozenset(
+        {"desktop/tests/test_release_manifest.py"}
+    ),
+    "legacy_api_route": frozenset(
+        {"tests/test_task6_active_product.py"}
+    ),
+    "persisted_identifier": frozenset(
+        {
+            "tests/test_persisted_queue_identifiers.py",
+            "tests/test_product_identity.py",
+            "tests/test_domain.py",
+            "tests/test_task6_active_product.py",
+            "tests/test_local_model_benchmarks.py",
+            "tests/test_podcast_suggest.py",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
+        }
+    ),
+    "public_symbol": frozenset(
+        {
+            "tests/test_python_import_compatibility.py",
+            "tests/test_v0_7_139.py",
+        }
+    ),
+    "external_protocol": frozenset(
+        {
+            "desktop/tests/test_window.py",
+            "tests/test_task6_active_product.py",
+        }
+    ),
+    "legacy_artifact_probe": frozenset(
+        {
+            "desktop/tests/test_release_manifest.py",
+            "tests/test_filesystem_router.py",
+            "tests/test_logging_config.py",
+        }
+    ),
+    "regression_fixture": frozenset(
+        {
+            "frontend/src/components/settings/SmartRoutingPanel.test.tsx",
+            "tests/test_product_identity.py",
+            "tests/test_task6_active_product.py",
+        }
+    ),
+}
+_KIND_SCOPE_EXACT_PATHS = {
+    "env_alias": frozenset(
+        {
+            "deeper_notebook/environment.py",
+            "tests/test_environment_aliases.py",
+            "frontend/package.json",
+            "frontend/scripts/verify-feature-env-build.mjs",
+            "frontend/src/lib/features.ts",
+            "frontend/src/lib/features.test.ts",
+            "frontend/src/lib/features-build-contract.test.ts",
+            "frontend/tests/build-contract/package.json",
+            "desktop/tests/test_launcher_prefs.py",
+        }
+    ),
+    "import_shim": frozenset(
+        {
+            ".codex-scanignore",
+            "desktop/bootstrap.py",
+            "desktop/build/package_layout.py",
+            "desktop/build/pyinstaller.spec",
+            "desktop/build/verify_package_contents.py",
+            "desktop/launcher.py",
+            "pyproject.toml",
+            "tests/fixtures/legacy_import_modules.txt",
+            "tests/test_environment_aliases.py",
+            "tests/test_package_artifact_contract.py",
+            "tests/test_python_import_compatibility.py",
+        }
+    ),
+    "public_symbol": frozenset(
+        {
+            "deeper_notebook/exceptions.py",
+            "tests/test_python_import_compatibility.py",
+            "tests/test_v0_7_139.py",
+        }
+    ),
+    "persisted_identifier": frozenset(
+        {
+            "api/command_service.py",
+            "api/podcast_service.py",
+            "api/routers/chat.py",
+            "api/routers/commands.py",
+            "api/routers/embedding.py",
+            "api/routers/embedding_rebuild.py",
+            "api/routers/sources.py",
+            "api/routers/studio/common.py",
+            "api/routers/transformations.py",
+            "commands/embedding_commands.py",
+            "commands/example_commands.py",
+            "commands/podcast_commands.py",
+            "commands/prompt_optimizer_commands.py",
+            "commands/source_commands.py",
+            "commands/studio_commands.py",
+            ".github/workflows/test.yml",
+            "desktop/db_repair.py",
+            "desktop/launcher.py",
+            "desktop/memory/_register.py",
+            "desktop/memory/client.py",
+            "desktop/memory/memory_commands.py",
+            "desktop/memory/surreal_store.py",
+            "desktop/memory/tests/test_register.py",
+            "deeper_notebook/database/migrations/1.surrealql",
+            "deeper_notebook/database/migrations/1_down.surrealql",
+            "deeper_notebook/database/migrations/5.surrealql",
+            "deeper_notebook/database/migrations/11.surrealql",
+            "deeper_notebook/database/migrations/11_down.surrealql",
+            "deeper_notebook/database/migrations/18.surrealql",
+            "deeper_notebook/database/migrations/18_down.surrealql",
+            "deeper_notebook/identity.py",
+            "deeper_notebook/ai/models.py",
+            "deeper_notebook/domain/content_settings.py",
+            "deeper_notebook/domain/notebook.py",
+            "deeper_notebook/domain/provider_config.py",
+            "deeper_notebook/domain/transformation.py",
+            "deeper_notebook/graphs/source.py",
+            "deeper_notebook/research/graph.py",
+            "deeper_notebook/local_models/benchmarks.py",
+            "deeper_notebook/podcasts/profile_names.py",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
+            "frontend/src/lib/theme-storage.ts",
+            "tests/test_local_model_benchmarks.py",
+            "tests/test_persisted_queue_identifiers.py",
+            "scripts/repair_desktop_db.sh",
+            "tests/integration/conftest.py",
+            "tests/test_domain.py",
+            "tests/test_embedding_commands.py",
+            "tests/test_evidence_studio_artifact_api.py",
+            "tests/test_research_graph.py",
+            "tests/test_podcast_suggest.py",
+            "tests/test_task5_brand_namespace.py",
+            "tests/test_task6_active_product.py",
+            "tests/test_v0_8_68_prompt_optimizer.py",
+        }
+    ),
+    "external_protocol": frozenset(
+        {
+            "api/routers/exports.py",
+            "desktop/tests/test_window.py",
+            "desktop/window.py",
+            "deeper_notebook/studio/exporters/research_bundle.py",
+            "frontend/src/lib/desktop-version.ts",
+            "tests/test_v0_7_210_version_and_reaper.py",
+            "tests/test_task6_active_product.py",
+        }
+    ),
+    "legacy_artifact_probe": frozenset(
+        {
+            ".github/workflows/build-desktop.yml",
+            "api/routers/filesystem.py",
+            "deeper_notebook/logging.py",
+            "desktop/build/deeper-notebook.iss",
+            "desktop/build/pyinstaller.spec",
+            "tests/test_filesystem_router.py",
+            "tests/test_logging_config.py",
+            "desktop/tests/test_release_manifest.py",
+        }
+    ),
+    "legacy_api_route": frozenset(
+        {
+            "api/main.py",
+            "api/routers/deeper_notebook.py",
+            "deeper_notebook/identity.py",
+            "desktop/build/pyinstaller.spec",
+            "frontend/src/lib/api/deeper-notebook.test.ts",
+            "frontend/src/lib/api/deeper-notebook.ts",
+            "frontend/src/lib/api/onp.ts",
+            "frontend/src/lib/task6-active-brand.test.ts",
+            "tests/test_gmail_router.py",
+            "tests/test_task6_active_product.py",
+        }
+    ),
+    "data_migration": frozenset(
+        {
+            "desktop/tests/test_emergency_log.py",
+            "scripts/backup_restore.py",
+            "tests/test_backup_restore_v0_7_126.py",
+            "scripts/repair_desktop_db.sh",
+        }
+    ),
+    "installer_upgrade": frozenset(
+        {
+            "desktop/tests/test_data_root_conflict_recovery.py",
+            "scripts/repair_desktop_db.sh",
+        }
+    ),
+}
+_KIND_SCOPE_PREFIXES = {
+    "import_shim": ("open_notebook/",),
+    "data_migration": (
+        "desktop/tests/test_data_root_",
+        "desktop/data_root.py",
+        "desktop/app_migration.py",
+    ),
+    "installer_upgrade": (
+        ".github/workflows/",
+        "desktop/build/",
+        "desktop/tests/test_release_manifest.py",
+        "desktop/app_migration.py",
+        "desktop/window.py",
+    ),
+    "regression_fixture": (
+        "fixtures/",
+        "tests/",
+        "desktop/tests/",
+        "frontend/src/",
+    ),
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _MIN_EXPLANATION_CHARS = 48
@@ -1028,15 +1353,32 @@ def _allowlist_root(path: Path) -> Path:
     return path.parent.resolve()
 
 
-def _validate_compatibility_proof(root: Path, proof: str) -> None:
-    if proof in _STATIC_COMPATIBILITY_PROOFS:
+def _validate_compatibility_proof(
+    root: Path,
+    proof: str,
+    kind: str,
+) -> None:
+    static_kind = _STATIC_COMPATIBILITY_PROOFS.get(proof)
+    if static_kind is not None:
+        if static_kind != kind:
+            raise ValueError(
+                "static compatibility proof does not prove contract kind"
+            )
         return
+    if proof.startswith("static:"):
+        raise ValueError(
+            "compatibility contract requires a closed kind-specific static proof"
+        )
     if proof.count("::") != 1:
         raise ValueError(
             "compatibility contract requires a tracked proof reference "
             "formatted as path::test_name or a validated static contract ID"
         )
     relative_path, symbol = proof.split("::", 1)
+    if relative_path not in _KIND_PROOF_PATHS[kind]:
+        raise ValueError(
+            "tracked proof reference path does not prove contract kind"
+        )
     proof_path = Path(relative_path)
     if (
         not relative_path
@@ -1081,10 +1423,144 @@ def _validate_compatibility_proof(root: Path, proof: str) -> None:
             raise ValueError(
                 "compatibility contract requires a tracked proof reference"
             )
-    elif symbol not in source:
+        if not (symbol.startswith("test_") or symbol.startswith("Test")):
+            raise ValueError(
+                "compatibility contract proof must reference a behavioral test"
+            )
+    else:
+        matching_lines = [
+            line for line in source.splitlines() if symbol in line
+        ]
+        if not matching_lines:
+            raise ValueError(
+                "compatibility contract requires a tracked proof reference"
+            )
+        if not any(
+            re.search(r"\b(?:it|test|describe)\s*\(", line)
+            for line in matching_lines
+        ):
+            raise ValueError(
+                "compatibility contract proof must reference a behavioral test"
+            )
+
+
+def _scope_path_allowed(kind: str, path: str) -> bool:
+    if path in _KIND_SCOPE_EXACT_PATHS.get(kind, frozenset()):
+        return True
+    return any(
+        path.startswith(prefix)
+        for prefix in _KIND_SCOPE_PREFIXES.get(kind, ())
+    )
+
+
+def _validate_contract_scope(
+    kind: str,
+    scope: Mapping[str, object],
+) -> None:
+    if frozenset(scope) != _COMPATIBILITY_SCOPE_FIELDS:
         raise ValueError(
-            "compatibility contract requires a tracked proof reference"
+            "compatibility contract scope must use exact structured fields"
         )
+    for field in ("paths", "patterns", "sources"):
+        values = scope.get(field)
+        if (
+            not isinstance(values, list)
+            or not values
+            or values != sorted(set(values))
+            or not all(isinstance(value, str) and value for value in values)
+        ):
+            raise ValueError(
+                "compatibility contract scope values must be sorted unique strings"
+            )
+    paths = scope["paths"]
+    patterns = scope["patterns"]
+    sources = scope["sources"]
+    assert isinstance(paths, list)
+    assert isinstance(patterns, list)
+    assert isinstance(sources, list)
+    if not all(_scope_path_allowed(kind, path) for path in paths):
+        raise ValueError(
+            "compatibility contract scope exceeds its kind-specific boundary"
+        )
+    if not set(patterns).issubset(LEGACY_PATTERNS):
+        raise ValueError(
+            "compatibility contract scope patterns must be built-in patterns"
+        )
+    if not set(sources).issubset({"path", "content"}):
+        raise ValueError(
+            "compatibility contract scope sources must be path or content"
+        )
+    if kind == "env_alias" and not set(patterns).issubset(
+        {"OPEN_NOTEBOOK_", "ONP_"}
+    ):
+        raise ValueError("env_alias scope contains a non-environment pattern")
+    if kind == "import_shim" and set(patterns) != {"open_notebook"}:
+        raise ValueError("import_shim scope must use the legacy package pattern")
+    if kind == "public_symbol" and set(patterns) != {"OpenNotebook"}:
+        raise ValueError("public_symbol scope must use the exported legacy symbol")
+
+
+def _coverage_identity(entry: Mapping[str, object]) -> str:
+    return "|".join(
+        str(entry[field])
+        for field in (
+            "path",
+            "pattern",
+            "source",
+            "line",
+            "column",
+            "context_sha256",
+        )
+    )
+
+
+def compatibility_coverage_digest(
+    entries: list[Mapping[str, object]],
+    contract_id: str,
+) -> str:
+    identities = sorted(
+        _coverage_identity(entry)
+        for entry in entries
+        if isinstance(entry.get("rationale"), dict)
+        and entry["rationale"].get("compatibility_contract") == contract_id
+    )
+    encoded = json.dumps(
+        identities,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _materialize_compatibility_contracts(
+    entries: list[dict[str, object]],
+    contract_ids: set[str],
+) -> dict[str, dict[str, object]]:
+    contracts: dict[str, dict[str, object]] = {}
+    for contract_id in sorted(contract_ids):
+        base = _DEFAULT_COMPATIBILITY_CONTRACTS[contract_id]
+        owned_entries = [
+            entry
+            for entry in entries
+            if isinstance(entry.get("rationale"), dict)
+            and entry["rationale"].get("compatibility_contract") == contract_id
+        ]
+        contract: dict[str, object] = dict(base)
+        contract["scope"] = {
+            "paths": sorted({str(entry["path"]) for entry in owned_entries}),
+            "patterns": sorted(
+                {str(entry["pattern"]) for entry in owned_entries}
+            ),
+            "sources": sorted(
+                {str(entry["source"]) for entry in owned_entries}
+            ),
+        }
+        contract["coverage_sha256"] = compatibility_coverage_digest(
+            owned_entries,
+            contract_id,
+        )
+        contracts[contract_id] = contract
+    return contracts
 
 
 def _compatibility_is_forbidden(
@@ -1093,6 +1569,7 @@ def _compatibility_is_forbidden(
     pattern: str,
     source: str,
     line: int | None,
+    contract_kind: str | None = None,
 ) -> bool:
     path_obj = Path(path)
     if path_obj.suffix.lower() in {".md", ".mdx", ".rst"}:
@@ -1100,9 +1577,11 @@ def _compatibility_is_forbidden(
     if "/locales/" in f"/{path}":
         return True
     if (
-        path.startswith("frontend/src/")
+        (
+            path.startswith("frontend/src/components/")
+            or path.startswith("frontend/src/app/")
+        )
         and ".test." not in path
-        and pattern in _VISIBLE_IDENTITY_PATTERNS
     ):
         return True
     if (
@@ -1111,6 +1590,8 @@ def _compatibility_is_forbidden(
         or ".test." in path
     ):
         return False
+    if contract_kind == "persisted_identifier":
+        return False
     if source != "content" or line is None:
         return False
     target = root / path_obj
@@ -1118,14 +1599,11 @@ def _compatibility_is_forbidden(
         context = target.read_text(encoding="utf-8").splitlines()[line - 1]
     except (OSError, UnicodeError, IndexError):
         return False
-    return (
-        pattern in _VISIBLE_IDENTITY_PATTERNS | {"OpenNotebook"}
-        and bool(
-            re.search(
-                r"\bdefault(?:s|ed)?\b|default_",
-                context,
-                re.IGNORECASE,
-            )
+    return bool(
+        re.search(
+            r"\bdefault(?:s|ed)?\b|default_",
+            context,
+            re.IGNORECASE,
         )
     )
 
@@ -1155,9 +1633,16 @@ def compatibility_contract_for_occurrence(
     is_test = (
         path.startswith("tests/")
         or path.startswith("desktop/tests/")
+        or "/tests/" in path
         or ".test." in path
     )
     if is_test:
+        if (
+            path
+            == "frontend/src/components/settings/SmartRoutingPanel.test.tsx"
+            and pattern in {"OPEN_NOTEBOOK_", "ONP_"}
+        ):
+            return "frontend-canonical-help-regression-v1"
         if path == "tests/test_product_identity.py":
             return "rebrand-audit-regression-v1"
         if pattern in {
@@ -1165,17 +1650,76 @@ def compatibility_contract_for_occurrence(
             "ONP_",
         }:
             if path in {
+                "desktop/tests/test_window.py",
+                "tests/test_v0_7_210_version_and_reaper.py",
+            }:
+                return "desktop-bridge-v1"
+            if path == "tests/test_backup_restore_v0_7_126.py":
+                return "data-root-migration-v1"
+            if path == "tests/test_logging_config.py":
+                return "container-log-fallback-v1"
+            if path == "desktop/tests/test_launcher_prefs.py":
+                return "launcher-pref-env-migration-v1"
+            if path in {
                 "frontend/src/lib/features.test.ts",
-                "frontend/src/lib/features.ts",
+                "frontend/src/lib/features-build-contract.test.ts",
             }:
                 return "frontend-env-alias-v1"
-            return "env-alias-v1"
-        if pattern == "open_notebook":
+            if path == "tests/test_environment_aliases.py":
+                return "env-alias-v1"
+            return None
+        if (
+            pattern == "open_notebook"
+            and path == "tests/test_python_import_compatibility.py"
+        ):
+            return "python-import-shim-v1"
+        if (
+            pattern == "open_notebook"
+            and path == "tests/test_canonical_diagnostics.py"
+        ):
+            return "legacy-test-fixture-v1"
+        if (
+            pattern == "open_notebook"
+            and path == "tests/test_persisted_queue_identifiers.py"
+        ):
+            return "persisted-queue-identifier-v1"
+        if (
+            pattern == "open_notebook"
+            and path == "tests/test_v0_8_68_prompt_optimizer.py"
+        ):
+            return "persisted-queue-identifier-v1"
+        if pattern == "open_notebook" and path in {
+            "tests/test_domain.py",
+            "tests/test_embedding_commands.py",
+            "tests/test_evidence_studio_artifact_api.py",
+            "tests/test_research_graph.py",
+        }:
+            line = occurrence.get("line")
+            if path == "tests/test_domain.py" and line == 382:
+                return "runtime-record-identifier-v1"
+            return "persisted-queue-identifier-v1"
+        if pattern == "open_notebook" and path in {
+            "desktop/memory/tests/test_register.py",
+            "tests/integration/conftest.py",
+        }:
+            return "surreal-namespace-identifier-v1"
+        if pattern == "open_notebook" and path in {
+            "tests/fixtures/legacy_import_modules.txt",
+            "tests/test_environment_aliases.py",
+            "tests/test_package_artifact_contract.py",
+        }:
             return "python-import-shim-v1"
         if pattern == "OpenNotebook":
             if path == "tests/test_filesystem_router.py":
                 return "export-directory-fallback-v1"
-            return "python-symbol-compat-v1"
+            if path == "desktop/tests/test_release_manifest.py":
+                return "legacy-artifact-probe-v1"
+            if path in {
+                "tests/test_python_import_compatibility.py",
+                "tests/test_v0_7_139.py",
+            }:
+                return "python-symbol-compat-v1"
+            return None
         if pattern in {"/api/onp", "/onp/", "onpFetch", "components/onp"}:
             return "legacy-api-route-v1"
         if path == "tests/test_python_import_compatibility.py":
@@ -1213,22 +1757,104 @@ def compatibility_contract_for_occurrence(
         return None
 
     if pattern in {"OPEN_NOTEBOOK_", "ONP_"}:
+        if path == "desktop/window.py":
+            return "desktop-bridge-v1"
+        if path == "frontend/src/lib/desktop-version.ts":
+            return "desktop-bridge-v1"
+        if path == "scripts/backup_restore.py":
+            return "data-root-migration-v1"
         if path in {
-            "frontend/src/lib/features.test.ts",
+            "frontend/package.json",
+            "frontend/scripts/verify-feature-env-build.mjs",
             "frontend/src/lib/features.ts",
+            "frontend/tests/build-contract/package.json",
         }:
             return "frontend-env-alias-v1"
-        return "env-alias-v1"
+        if path == "deeper_notebook/environment.py":
+            return "env-alias-v1"
+        return None
     if pattern == "open_notebook":
-        if "/database/migrations/" in f"/{path}":
+        if path == "deeper_notebook/identity.py":
+            return "central-legacy-identity-v1"
+        if path in {
+            "deeper_notebook/database/migrations/1.surrealql",
+            "deeper_notebook/database/migrations/1_down.surrealql",
+            "deeper_notebook/database/migrations/5.surrealql",
+            "deeper_notebook/database/migrations/11.surrealql",
+            "deeper_notebook/database/migrations/11_down.surrealql",
+            "deeper_notebook/database/migrations/18.surrealql",
+            "deeper_notebook/database/migrations/18_down.surrealql",
+        }:
             return "database-record-identifier-v1"
-        return "python-import-shim-v1"
+        if path in {
+            "api/command_service.py",
+            "api/podcast_service.py",
+            "api/routers/chat.py",
+            "api/routers/commands.py",
+            "api/routers/embedding.py",
+            "api/routers/embedding_rebuild.py",
+            "api/routers/sources.py",
+            "api/routers/studio/common.py",
+            "api/routers/transformations.py",
+            "commands/embedding_commands.py",
+            "commands/example_commands.py",
+            "commands/podcast_commands.py",
+            "commands/prompt_optimizer_commands.py",
+            "commands/source_commands.py",
+            "commands/studio_commands.py",
+            "desktop/memory/memory_commands.py",
+            "deeper_notebook/domain/notebook.py",
+            "deeper_notebook/research/graph.py",
+        }:
+            return "persisted-queue-identifier-v1"
+        if path in {
+            "deeper_notebook/ai/models.py",
+            "deeper_notebook/domain/content_settings.py",
+            "deeper_notebook/domain/provider_config.py",
+            "deeper_notebook/domain/transformation.py",
+            "deeper_notebook/graphs/source.py",
+        }:
+            return "runtime-record-identifier-v1"
+        if path == "api/routers/exports.py":
+            return "external-format-v1"
+        if path in {
+            ".github/workflows/test.yml",
+            "desktop/db_repair.py",
+            "desktop/memory/_register.py",
+            "desktop/memory/client.py",
+            "desktop/memory/surreal_store.py",
+            "scripts/repair_desktop_db.sh",
+        }:
+            return "surreal-namespace-identifier-v1"
+        if path == "desktop/launcher.py":
+            line = occurrence.get("line")
+            if isinstance(line, int) and line <= 250:
+                return "python-import-shim-v1"
+            return "surreal-namespace-identifier-v1"
+        if (
+            path == "pyproject.toml"
+            or path.startswith("open_notebook/")
+            or path
+            in {
+                ".codex-scanignore",
+                "desktop/bootstrap.py",
+                "desktop/build/package_layout.py",
+                "desktop/build/pyinstaller.spec",
+                "desktop/build/verify_package_contents.py",
+            }
+        ):
+            return "python-import-shim-v1"
+        return None
     if pattern == "OpenNotebook":
         if path == "api/routers/filesystem.py":
             return "export-directory-fallback-v1"
-        return "python-symbol-compat-v1"
+        if path == "deeper_notebook/exceptions.py":
+            return "python-symbol-compat-v1"
+        return None
     if pattern in {"/api/onp", "/onp/", "onpFetch", "components/onp"}:
         return "legacy-api-route-v1"
+    if path == "desktop/window.py" and pattern == "ONP_":
+        return "desktop-bridge-v1"
     if path == "desktop/app_migration.py":
         return (
             "installer-upgrade-v1"
@@ -1328,7 +1954,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
     raw_contracts = payload.get("compatibility_contracts")
     if not isinstance(raw_contracts, dict):
         raise ValueError("allowlist compatibility_contracts must be an object")
-    contracts: dict[str, dict[str, str]] = {}
+    contracts: dict[str, dict[str, object]] = {}
     root = _allowlist_root(path)
     for contract_id, contract in raw_contracts.items():
         if (
@@ -1336,21 +1962,47 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             or not contract_id
             or not isinstance(contract, dict)
             or frozenset(contract) != _COMPATIBILITY_CONTRACT_FIELDS
-            or not all(isinstance(value, str) and value for value in contract.values())
         ):
             raise ValueError(
                 "compatibility contracts must use the exact structured fields"
             )
-        if contract["kind"] not in COMPATIBILITY_CONTRACT_KINDS:
+        kind = contract.get("kind")
+        owner = contract.get("owner")
+        retention_reason = contract.get("retention_reason")
+        proof = contract.get("proof")
+        scope = contract.get("scope")
+        coverage_sha256 = contract.get("coverage_sha256")
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                kind,
+                owner,
+                retention_reason,
+                proof,
+                coverage_sha256,
+            )
+        ) or not isinstance(scope, dict):
+            raise ValueError(
+                "compatibility contracts must use the exact structured fields"
+            )
+        assert isinstance(kind, str)
+        assert isinstance(retention_reason, str)
+        assert isinstance(proof, str)
+        assert isinstance(coverage_sha256, str)
+        if kind not in COMPATIBILITY_CONTRACT_KINDS:
             raise ValueError(
                 "compatibility contract kind must be a closed compatibility "
                 "contract kind"
             )
-        if len(contract["retention_reason"].split()) < 8:
+        if len(retention_reason.split()) < 8:
             raise ValueError(
                 "compatibility contract requires a meaningful retention reason"
             )
-        _validate_compatibility_proof(root, contract["proof"])
+        if not _SHA256_RE.fullmatch(coverage_sha256):
+            raise ValueError(
+                "compatibility contract coverage digest must be 64 lowercase hex chars"
+            )
+        _validate_compatibility_proof(root, proof, kind)
         contracts[contract_id] = contract
     entries = payload.get("entries")
     if not isinstance(entries, list):
@@ -1493,10 +2145,21 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 pattern,
                 source,
                 line,
+                str(contracts[compatibility_contract]["kind"]),
             ):
                 raise ValueError(
                     "active UI, documentation, or default identifier cannot "
                     "use compatibility_alias"
+                )
+            contract_scope = contracts[compatibility_contract]["scope"]
+            assert isinstance(contract_scope, dict)
+            if (
+                allowlisted_path not in contract_scope["paths"]
+                or pattern not in contract_scope["patterns"]
+                or source not in contract_scope["sources"]
+            ):
+                raise ValueError(
+                    "compatibility occurrence is outside its exact contract scope"
                 )
             referenced_contracts.add(compatibility_contract)
         elif compatibility_contract is not None:
@@ -1536,6 +2199,19 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             "allowlist contains unused compatibility contracts: "
             f"{sorted(unused_contracts)}"
         )
+    for contract_id, contract in contracts.items():
+        kind = contract["kind"]
+        scope = contract["scope"]
+        assert isinstance(kind, str)
+        assert isinstance(scope, dict)
+        _validate_contract_scope(kind, scope)
+        expected_digest = contract["coverage_sha256"]
+        actual_digest = compatibility_coverage_digest(entries, contract_id)
+        if expected_digest != actual_digest:
+            raise ValueError(
+                "compatibility contract coverage digest does not match its "
+                f"exact occurrences: {contract_id}"
+            )
     return allowlist
 
 
@@ -1804,7 +2480,9 @@ def regenerate_allowlist(
         category = category_policy.get(policy_key)
         match_path = Path(str(match["path"]))
         if category is None:
-            if match_path.suffix.lower() in {".md", ".mdx", ".rst"}:
+            if compatibility_contract_for_occurrence(match) is not None:
+                category = "compatibility_alias"
+            elif match_path.suffix.lower() in {".md", ".mdx", ".rst"}:
                 category = "migration_documentation"
             elif match["path"] == "scripts/rebrand_audit.py":
                 category = "migration_documentation"
@@ -1822,6 +2500,11 @@ def regenerate_allowlist(
                 category = "migration_documentation"
             elif str(match["path"]).startswith("output/"):
                 category = "historical_reference"
+            elif (
+                match["path"] in _UPSTREAM_REFERENCE_PATHS
+                and match["pattern"] == "open_notebook"
+            ):
+                category = "upstream_reference"
         compatibility_contract: str | None = None
         if category == "compatibility_alias":
             compatibility_contract = compatibility_contract_for_occurrence(match)
@@ -1888,10 +2571,10 @@ def regenerate_allowlist(
     generated: dict[str, object] = {
         "schema_version": ALLOWLIST_SCHEMA_VERSION,
         "persisted_queue_identifiers": persisted_identifiers,
-        "compatibility_contracts": {
-            contract_id: _DEFAULT_COMPATIBILITY_CONTRACTS[contract_id]
-            for contract_id in sorted(used_contracts)
-        },
+        "compatibility_contracts": _materialize_compatibility_contracts(
+            generated_entries,
+            used_contracts,
+        ),
         "entries": generated_entries,
     }
     allowlist_path.write_text(

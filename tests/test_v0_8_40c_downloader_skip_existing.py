@@ -48,7 +48,7 @@ async def test_start_download_skips_when_final_already_exists(tmp_path):
             "httpx.AsyncClient called even though file already exists",
         )
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _explode_async_client):
         job = await dl_mod.start_download(
             "bartowski/Some-Model-GGUF", "model.gguf", tmp_path,
@@ -75,7 +75,7 @@ async def test_start_download_does_not_poison_registry_after_skip(tmp_path):
     f.write_bytes(b"x" * 100)
 
     # First call — file exists, skip.
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient"):
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient"):
         first = await dl_mod.start_download("r/x", "model.gguf", tmp_path)
     assert first.status == "completed"
 
@@ -104,7 +104,7 @@ async def test_start_download_does_not_poison_registry_after_skip(tmp_path):
         async def __aexit__(self, *_a): pass
         def stream(self, m, u, headers=None): return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         second = await dl_mod.start_download("r/x", "model.gguf", tmp_path)
         # Real download was kicked off — should have a background task.
@@ -145,7 +145,7 @@ async def test_start_download_does_not_skip_zero_byte_stub(tmp_path):
         async def __aexit__(self, *_a): pass
         def stream(self, m, u, headers=None): return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("r/x", "model.gguf", tmp_path)
         assert job._task is not None

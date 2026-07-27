@@ -39,7 +39,7 @@ def test_probe_openai_compatible_healthy(monkeypatch):
     fake_client.__exit__.return_value = False
     fake_client.get.return_value = fake_resp
 
-    with patch("open_notebook.health.local_models.httpx.Client",
+    with patch("deeper_notebook.health.local_models.httpx.Client",
                return_value=fake_client):
         result = probe_local_model(
             name="local_chat", kind="openai_compatible",
@@ -82,7 +82,7 @@ def test_probe_ollama_healthy(monkeypatch):
     fake_client.get.return_value = fake_resp
 
     with patch(
-        "open_notebook.health.local_models.httpx.Client",
+        "deeper_notebook.health.local_models.httpx.Client",
         return_value=fake_client,
     ):
         result = probe_local_model(
@@ -289,20 +289,20 @@ def test_local_chat_healthy_cached_is_awaitable():
     try:
         # Force the no-base-URL path so the test stays hermetic
         import os
-        prev = os.environ.pop("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", None)
+        prev = os.environ.pop("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", None)
         # Also reset the cache so the lookup goes through the empty-creds path
         provision_mod._health_cache = None
         try:
             result = loop.run_until_complete(_drive())
         finally:
             if prev is not None:
-                os.environ["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"] = prev
+                os.environ["DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL"] = prev
             provision_mod._health_cache = None
     finally:
         loop.close()
 
     assert result is False, (
-        "With no OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL set, the helper "
+        "With no DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL set, the helper "
         "must short-circuit to False (no local sidecar = nothing to "
         "probe = treat as unhealthy so the router falls through to cloud)."
     )

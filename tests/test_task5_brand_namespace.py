@@ -76,9 +76,12 @@ def test_theme_storage_uses_canonical_identity_and_mirrors_legacy() -> None:
     theme_switcher = (
         ROOT / "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx"
     ).read_text(encoding="utf-8")
+    theme_storage = (
+        ROOT / "frontend/src/lib/theme-storage.ts"
+    ).read_text(encoding="utf-8")
 
-    assert "localStorage.getItem('dn-theme')" in theme_switcher
-    assert "localStorage.setItem('dn-theme', themeId)" in theme_switcher
-    assert "localStorage.getItem('onp-theme')" in theme_switcher
-    assert "localStorage.setItem('onp-theme', themeId)" in theme_switcher
+    assert "const CANONICAL_THEME_KEY = 'dn-theme'" in theme_storage
+    assert "const LEGACY_THEME_KEY = 'onp-theme'" in theme_storage
+    assert "readStoredTheme(localStorage)" in theme_switcher
+    assert "writeStoredTheme(localStorage, themeId)" in theme_switcher
     assert "const themeBridge = w.DN ?? w.ONP" in theme_switcher

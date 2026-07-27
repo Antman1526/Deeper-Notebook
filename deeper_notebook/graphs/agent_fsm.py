@@ -22,7 +22,7 @@ Guarantees:
 
 This is the CORE (5.3a): transitions + a tolerant parser for the model's
 declared state + completion validation + a pure step driver. Wiring it into
-the `ask` graph / chat tool loop behind `ONP_AGENT_FSM` is 5.3b/c — see
+the `ask` graph / chat tool loop behind `DEEPER_NOTEBOOK_AGENT_FSM` is 5.3b/c — see
 `docs/7-DEVELOPMENT/phase-5-advanced-memory.md`.
 """
 from __future__ import annotations

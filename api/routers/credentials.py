@@ -464,7 +464,7 @@ async def discover_models_for_credential(credential_id: str):
                 detail=(
                     f"Model discovery timed out after {_discover_timeout:.0f}s. "
                     "The provider may be slow or the base_url is unreachable. "
-                    "Raise ONP_DISCOVER_MODELS_TIMEOUT_SEC if discovery "
+                    "Raise DEEPER_NOTEBOOK_DISCOVER_MODELS_TIMEOUT_SEC if discovery "
                     "legitimately takes longer."
                 ),
             )

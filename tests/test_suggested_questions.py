@@ -38,7 +38,7 @@ def _patch_model(content):
     chain = AsyncMock()
     chain.ainvoke = AsyncMock(return_value=_FakeResp(content))
     return patch(
-        "open_notebook.ai.provision.provision_langchain_model",
+        "deeper_notebook.ai.provision.provision_langchain_model",
         new=AsyncMock(return_value=chain),
     )
 
@@ -92,7 +92,7 @@ async def test_degrades_to_empty_on_llm_error():
     nb = _FakeNotebook([_FakeSource("S1", ["t"])])
     with patch("api.routers.notebooks.Notebook.get",
                new=AsyncMock(return_value=nb)), patch(
-        "open_notebook.ai.provision.provision_langchain_model",
+        "deeper_notebook.ai.provision.provision_langchain_model",
         new=AsyncMock(side_effect=RuntimeError("no model configured")),
     ):
         out = await get_suggested_questions("notebook:x", limit=4)

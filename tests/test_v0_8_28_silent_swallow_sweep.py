@@ -53,7 +53,7 @@ def test_v0828_fernet_logs_warning_on_construction_failure(monkeypatch):
     bug, binary garbage, etc.), pre-v0.8.28 returned None silently and
     the downstream RuntimeError said "key not set" — misleading the
     operator. Must now emit a WARNING naming the real failure."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "any-value")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", "any-value")
 
     from deeper_notebook.domain import gmail as gmail_mod
 
@@ -90,8 +90,8 @@ def test_v0828_fernet_silent_when_key_unset(monkeypatch):
     for name in (
         "DEEPER_NOTEBOOK_ENCRYPTION_KEY",
         "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE",
-        "OPEN_NOTEBOOK_ENCRYPTION_KEY",
-        "OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE",
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY",
+        "DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -122,7 +122,7 @@ def test_v0828_dec_quiet_on_invalid_token(monkeypatch):
     """InvalidToken is the canonical 'wrong key / rotated key' case
     and is expected during key rotation. Must stay quiet — otherwise
     every legacy unencrypted row logs a WARNING on read."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
 
     from deeper_notebook.domain import gmail as gmail_mod
 
@@ -153,7 +153,7 @@ def test_v0828_dec_warns_on_unexpected_exception(monkeypatch):
     cryptography library bug) is a real bug — must surface as
     WARNING so the operator doesn't see Gmail integration
     silently disappear."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
 
     from deeper_notebook.domain import gmail as gmail_mod
 

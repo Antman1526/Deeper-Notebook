@@ -108,7 +108,7 @@ async def test_run_one_down_raises_clear_error_for_missing_down(monkeypatch, tmp
 
     # Stub get_latest_version → 2 (pretend DB is at version 2)
     monkeypatch.setattr(
-        "open_notebook.database.async_migrate.get_latest_version",
+        "deeper_notebook.database.async_migrate.get_latest_version",
         _AsyncReturn(2),
     )
 

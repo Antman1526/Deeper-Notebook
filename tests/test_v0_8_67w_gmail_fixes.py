@@ -49,7 +49,7 @@ async def test_gmail_get_returns_isolated_copy():
     async def _mock_repo_query(q, vars=None):
         return [db_row]
 
-    with patch("open_notebook.domain.gmail.repo_query", _mock_repo_query):
+    with patch("deeper_notebook.domain.gmail.repo_query", _mock_repo_query):
         # First call gets the object from DB and caches it
         g1 = await GmailIntegration.get()
         assert g1.email_address == "original@example.com"
@@ -107,10 +107,10 @@ async def test_gmail_send_digest_single_flight_under_lock():
         return True, "Sent successfully", 5
 
     # Stub the encrypt/decrypt routines to pass values through
-    with patch("open_notebook.domain.gmail.repo_query", _mock_repo_query), \
-         patch("open_notebook.domain.gmail.repo_upsert", _mock_repo_upsert), \
-         patch("open_notebook.domain.gmail._dec", lambda x: x), \
-         patch("open_notebook.domain.gmail._enc", lambda x: x), \
+    with patch("deeper_notebook.domain.gmail.repo_query", _mock_repo_query), \
+         patch("deeper_notebook.domain.gmail.repo_upsert", _mock_repo_upsert), \
+         patch("deeper_notebook.domain.gmail._dec", lambda x: x), \
+         patch("deeper_notebook.domain.gmail._enc", lambda x: x), \
          patch("api.routers.gmail._send_digest_now_inner", _mock_send_digest_now_inner):
 
         # Prepare two initial integration references (mimicking concurrent callers)

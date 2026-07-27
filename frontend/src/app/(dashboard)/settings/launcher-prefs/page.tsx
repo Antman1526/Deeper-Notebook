@@ -38,35 +38,21 @@ const ALLOWED_KEYS = new Set([
   'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
   'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
   'DEEPER_NOTEBOOK_LOCAL_N_CTX',
-  'DN_CHAT_LLM_CTX',
-  'DN_CHAT_LLM_CTX_MAX',
+  'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+  'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
 ])
 
 const PREF_KEYS = {
-  draftModelPath: {
-    canonical: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
-    legacy: 'OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
-  },
-  draftNPredict: {
-    canonical: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
-    legacy: 'OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
-  },
-  nCtx: {
-    canonical: 'DN_CHAT_LLM_CTX',
-    legacy: 'ONP_CHAT_LLM_CTX',
-  },
-  nCtxMax: {
-    canonical: 'DN_CHAT_LLM_CTX_MAX',
-    legacy: 'ONP_CHAT_LLM_CTX_MAX',
-  },
+  draftModelPath: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
+  draftNPredict: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
+  nCtx: 'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+  nCtxMax: 'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
 } as const
-
-type PrefAliases = (typeof PREF_KEYS)[keyof typeof PREF_KEYS]
 
 const readPref = (
   prefs: Record<string, string>,
-  aliases: PrefAliases,
-): string => prefs[aliases.canonical] ?? prefs[aliases.legacy] ?? ''
+  key: (typeof PREF_KEYS)[keyof typeof PREF_KEYS],
+): string => prefs[key] ?? ''
 
 export default function LauncherPrefsPage() {
   const { t } = useTranslation()
@@ -102,12 +88,11 @@ export default function LauncherPrefsPage() {
     const diff: { [key: string]: string | null } = {}
 
     const check = (
-      aliases: PrefAliases,
+      key: (typeof PREF_KEYS)[keyof typeof PREF_KEYS],
       newVal: string,
     ) => {
-      const key = aliases.canonical
       if (!ALLOWED_KEYS.has(key)) return  // frontend whitelist guard
-      const old = readPref(current, aliases)
+      const old = readPref(current, key)
       if (newVal === old) return          // no change — skip
       diff[key] = newVal.trim() === '' ? null : newVal.trim()
     }

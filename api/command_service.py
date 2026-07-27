@@ -36,7 +36,7 @@ class CommandService:
             # the SurrealDB pool is saturated or the WS handshake
             # hangs, the request would otherwise wait indefinitely.
             # 10s default is generous for a row-insert; tunable via
-            # ONP_SUBMIT_COMMAND_TIMEOUT_SEC.
+            # DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC.
             import os
             _submit_timeout = float(
                 resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
@@ -56,7 +56,7 @@ class CommandService:
                 raise ValueError(
                     f"Command submission timed out after {_submit_timeout:.0f}s. "
                     "The SurrealDB connection pool may be saturated. "
-                    "Raise ONP_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
+                    "Raise DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC or check pool health."
                 ) from exc
             # Convert RecordID to string if needed
             if not cmd_id:
@@ -68,7 +68,7 @@ class CommandService:
             return cmd_id_str
 
         except Exception as e:
-            # v0.7.204 — re-raise as typed OpenNotebookError so the
+            # v0.7.204 — re-raise as typed DeeperNotebookError so the
             # global FastAPI classifier in api/main.py emits a 500
             # with a structured payload instead of bubbling an
             # untyped Exception that the framework renders as
@@ -78,11 +78,11 @@ class CommandService:
             # subclass Exception too — only untyped Exceptions get
             # wrapped. Logging stays at error level so ops have the
             # full stack.
-            from deeper_notebook.exceptions import OpenNotebookError
+            from deeper_notebook.exceptions import DeeperNotebookError
             logger.error(f"Failed to submit command job: {e}")
-            if isinstance(e, (OpenNotebookError, ValueError, asyncio.TimeoutError)):
+            if isinstance(e, (DeeperNotebookError, ValueError, asyncio.TimeoutError)):
                 raise
-            raise OpenNotebookError(
+            raise DeeperNotebookError(
                 "Failed to submit command job. Check the API logs "
                 "for the underlying error."
             ) from e

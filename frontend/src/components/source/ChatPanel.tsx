@@ -427,7 +427,7 @@ export function ChatPanel({
                           }
                         />
                         {/* v0.8.62 — agent-FSM "needs input"/"truncated" chip;
-                            null unless ONP_AGENT_FSM surfaced a non-complete
+                            null unless DEEPER_NOTEBOOK_AGENT_FSM surfaced a non-complete
                             terminal state on the done event. */}
                         <ChatMessageAgentStateBadge messageId={message.id} />
                       </div>

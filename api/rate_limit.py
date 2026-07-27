@@ -1,8 +1,8 @@
 """v0.8.66 (audit S-4) — lightweight, env-gated in-memory rate limiter.
 
-DEFAULT OFF (`ONP_RATE_LIMIT_PER_MIN` unset / 0) so the single-user, local-first
+DEFAULT OFF (`DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN` unset / 0) so the single-user, local-first
 desktop experience (127.0.0.1, one user) is completely unchanged. Set
-`ONP_RATE_LIMIT_PER_MIN=N` to cap requests per client IP per 60s window on the
+`DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN=N` to cap requests per client IP per 60s window on the
 exposed / Docker / multi-user path the audit flags — closing the
 auth-brute-force and download/discover cost-amplification gaps (the
 `RateLimitError` + 429 handler already existed; nothing raised it).

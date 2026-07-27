@@ -6,7 +6,7 @@ launcher the reverse channel: a way to push state updates INTO the
 running API process. Currently one use case:
 
   - After `hot_swap_chat` succeeds, the launcher needs to update
-    `OPEN_NOTEBOOK_LOCAL_N_CTX` in the API's environment so the smart
+    `DEEPER_NOTEBOOK_LOCAL_N_CTX` in the API's environment so the smart
     router (provision.py) sees the new GGUF's native context length on
     the very next chat turn. Without this push, the n_ctx stays at the
     OLD GGUF's value until the next app launch — documented as a
@@ -17,7 +17,7 @@ Design choices:
     main.py:excluded_paths) so the launcher doesn't need to know the
     user-facing password.
   - **Auth via the same bearer token the launcher control plane uses**
-    (`OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`). Both the launcher and the
+    (`DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`). Both the launcher and the
     API have this token via session_env; reusing it for the reverse
     direction is symmetric. A future v0.8.40e could split the token
     if scope separation matters, but the trust boundary is the same
@@ -48,12 +48,12 @@ router = APIRouter()
 # the running API. Keep this list narrow + audited — each entry should
 # correspond to a documented launcher-side mutation flow.
 #
-# OPEN_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
+# DEEPER_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
 #   hot_swap_chat so provision.py's router sees the new GGUF's native
 #   context length without app restart.
 _ALLOWED_ENV_VARS: frozenset[str] = frozenset({
     "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
 })
 
 
@@ -75,11 +75,11 @@ async def env_refresh(
     """v0.8.40d — Mutate selected env vars in the running API process.
 
     Called by the launcher's `hot_swap_chat` to push the new
-    `OPEN_NOTEBOOK_LOCAL_N_CTX` value so subsequent chat turns route
+    `DEEPER_NOTEBOOK_LOCAL_N_CTX` value so subsequent chat turns route
     against the new GGUF's actual native context window (not the stale
     pre-swap value).
 
-    Auth: bearer token matching `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`.
+    Auth: bearer token matching `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`.
     The launcher and API both receive this token via session_env at
     boot; nothing else on the box should know it. Constant-time compare
     via `secrets.compare_digest` so a timing attack on the token isn't
@@ -97,7 +97,7 @@ async def env_refresh(
         raise HTTPException(
             status_code=503,
             detail=(
-                "env-refresh is disabled — OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN "
+                "env-refresh is disabled — DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN "
                 "is not set in the API environment. The API is likely "
                 "running outside the desktop launcher."
             ),

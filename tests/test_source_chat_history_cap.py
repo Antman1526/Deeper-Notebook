@@ -3,7 +3,7 @@
 source_chat.py concatenated `state["messages"]` verbatim into the LLM
 payload (same v0.7.11 bug as chat.py, just in a different graph).
 After v0.7.13 it now calls the shared `trim_message_history` util
-with `env_var_name="ONP_SOURCE_CHAT_HISTORY_CHAR_CAP"` and a smaller
+with `env_var_name="DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP"` and a smaller
 default cap of 8_000 chars (since source_chat already spends part of
 the context budget on injected source + insight content per v0.7.12).
 """
@@ -27,18 +27,18 @@ def _hist(n_turns: int, content_size: int = 300) -> list:
 # ---------------------------------------------------------------------------
 
 def test_source_chat_uses_its_own_env_var(monkeypatch):
-    """Setting ONP_SOURCE_CHAT_HISTORY_CHAR_CAP must affect the
-    source-chat trim path even when ONP_CHAT_HISTORY_CHAR_CAP differs.
+    """Setting DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP must affect the
+    source-chat trim path even when DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP differs.
     Independent budgets for the two chat graphs is the whole point."""
-    monkeypatch.setenv("ONP_CHAT_HISTORY_CHAR_CAP", "999999")  # huge
-    monkeypatch.setenv("ONP_SOURCE_CHAT_HISTORY_CHAR_CAP", "1000")  # tiny
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", "999999")  # huge
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP", "1000")  # tiny
 
     msgs = _hist(20, content_size=200)  # ~8_000 chars
 
     # Chat-style call (huge cap) → no trimming
     chat_out = mh.trim_message_history(
         msgs,
-        env_var_name="ONP_CHAT_HISTORY_CHAR_CAP",
+        env_var_name="DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP",
         default_char_cap=12_000,
     )
     assert chat_out == msgs
@@ -46,7 +46,7 @@ def test_source_chat_uses_its_own_env_var(monkeypatch):
     # Source-chat-style call (tiny cap) → trimmed
     sc_out = mh.trim_message_history(
         msgs,
-        env_var_name="ONP_SOURCE_CHAT_HISTORY_CHAR_CAP",
+        env_var_name="DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP",
         default_char_cap=8_000,
     )
     assert isinstance(sc_out[0], SystemMessage)
@@ -57,14 +57,14 @@ def test_source_chat_uses_its_own_env_var(monkeypatch):
 def test_source_chat_default_cap_is_8000(monkeypatch):
     """Default cap for source-chat is smaller than for chat (8k vs 12k)
     because the system prompt already eats more budget."""
-    monkeypatch.delenv("ONP_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
 
     msgs = _hist(30, content_size=500)  # ~30k chars
 
     out = mh.trim_message_history(
         msgs,
-        env_var_name="ONP_SOURCE_CHAT_HISTORY_CHAR_CAP",
+        env_var_name="DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP",
         default_char_cap=8_000,
     )
     assert isinstance(out[0], SystemMessage)
@@ -91,7 +91,7 @@ async def test_source_chat_invokes_trim(monkeypatch):
     needs `await`; the fake model now exposes `ainvoke`."""
     from deeper_notebook.graphs import source_chat
 
-    monkeypatch.delenv("ONP_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
 
     trim_calls: list = []
 

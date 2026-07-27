@@ -35,7 +35,7 @@ def _write_manifest(root: Path) -> Path:
 def test_manifest_row_preview_validates_without_writing(monkeypatch, tmp_path):
     manifest = _write_manifest(tmp_path)
     original = manifest.read_text()
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     row = (
         "| Fast study tools - Suggested | candidate - study_fast | "
         "`unsloth/Qwen3-8B-GGUF` | "
@@ -62,7 +62,7 @@ def test_manifest_row_preview_validates_without_writing(monkeypatch, tmp_path):
 def test_manifest_row_apply_appends_normalized_row_and_creates_backup(monkeypatch, tmp_path):
     manifest = _write_manifest(tmp_path)
     original = manifest.read_text()
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     row = (
         "| Embedding and retrieval - Suggested | candidate - embedding | "
         "`nomic-ai/nomic-embed-text-v1.5-GGUF` | "
@@ -93,7 +93,7 @@ def test_manifest_row_apply_appends_normalized_row_and_creates_backup(monkeypatc
 def test_manifest_row_apply_rejects_duplicates_without_appending(monkeypatch, tmp_path):
     manifest = _write_manifest(tmp_path)
     original = manifest.read_text()
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     duplicate_row = (
         "| Coding Assistant - GGUF | backup | `local/Qwen3-Coder` | "
         f"`{tmp_path / 'GGUF' / 'qwen-coder.gguf'}` | GGUF | suggested - review | duplicate |"
@@ -119,7 +119,7 @@ def test_manifest_row_apply_rejects_duplicates_without_appending(monkeypatch, tm
 
 def test_manifest_row_preview_rejects_bad_rows(monkeypatch, tmp_path):
     _write_manifest(tmp_path)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(_app()) as client:
         resp = client.post(
@@ -132,7 +132,7 @@ def test_manifest_row_preview_rejects_bad_rows(monkeypatch, tmp_path):
 
 
 def test_manifest_row_preview_requires_configured_model_dir(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
 
     with TestClient(_app()) as client:
         resp = client.post(

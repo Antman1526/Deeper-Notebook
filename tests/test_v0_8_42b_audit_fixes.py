@@ -123,7 +123,7 @@ async def test_resume_aborts_when_content_range_doesnt_match_request(tmp_path):
         async def __aexit__(self, *_a): pass
         def stream(self, m, u, headers=None): return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
@@ -168,7 +168,7 @@ async def test_resume_accepts_matching_content_range(tmp_path):
         async def __aexit__(self, *_a): pass
         def stream(self, m, u, headers=None): return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
