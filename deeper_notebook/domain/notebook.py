@@ -72,6 +72,7 @@ def _secure_upload_unlink_is_supported() -> bool:
     return (
         hasattr(os, "O_DIRECTORY")
         and hasattr(os, "O_NOFOLLOW")
+        and hasattr(os, "O_NONBLOCK")
         and os.open in supports_dir_fd
         and os.stat in supports_dir_fd
         and os.unlink in supports_dir_fd
@@ -129,6 +130,7 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
     file_flags = (
         os.O_RDONLY
         | os.O_NOFOLLOW
+        | os.O_NONBLOCK
         | getattr(os, "O_CLOEXEC", 0)
     )
     descriptors: list[int] = []

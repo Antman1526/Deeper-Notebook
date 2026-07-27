@@ -20,7 +20,14 @@ don't need a live SurrealDB.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -178,6 +185,141 @@ def test_upload_cleanup_refuses_directory(tmp_path, monkeypatch):
     assert directory.is_dir()
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unsupported")
+def test_upload_cleanup_refuses_fifo_without_blocking_or_leaking_fds(
+    tmp_path,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    fifo = uploads / "blocking-upload"
+    os.mkfifo(fifo)
+    child_code = """
+import json
+import os
+import sys
+
+from deeper_notebook import config
+from deeper_notebook.database import repository
+from deeper_notebook.domain import base
+from deeper_notebook.domain.notebook import Asset, Source
+import surreal_commands
+from surreal_commands.core import service
+
+calls = []
+
+async def forbidden_async(*args, **kwargs):
+    calls.append("database-or-queue")
+    raise AssertionError("cleanup touched database or queue")
+
+def forbidden_sync(*args, **kwargs):
+    calls.append("database-or-queue")
+    raise AssertionError("cleanup touched database or queue")
+
+for name in (
+    "repo_create",
+    "repo_delete",
+    "repo_query",
+    "repo_relate",
+    "repo_update",
+    "repo_upsert",
+):
+    setattr(repository, name, forbidden_async)
+base.repo_delete = forbidden_async
+surreal_commands.get_command_status = forbidden_async
+service.get_command_service = forbidden_sync
+config.UPLOADS_FOLDER = sys.argv[1]
+fd_root = "/proc/self/fd" if os.path.isdir("/proc/self/fd") else "/dev/fd"
+before = len(os.listdir(fd_root))
+Source(
+    id="source:fifo",
+    title="FIFO",
+    asset=Asset(file_path=sys.argv[2]),
+)._cleanup_uploaded_file()
+after = len(os.listdir(fd_root))
+print(json.dumps({"calls": calls, "fd_delta": after - before}))
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", child_code, str(uploads), str(fifo)],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=2,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip())
+    assert payload == {"calls": [], "fd_delta": 0}
+    assert fifo.exists()
+    assert stat.S_ISFIFO(fifo.stat(follow_symlinks=False).st_mode)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unsupported")
+async def test_source_delete_refuses_fifo_then_runs_expected_database_path(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    fifo = uploads / "source-upload"
+    os.mkfifo(fifo)
+    queue_calls: list[str] = []
+
+    async def forbidden_queue_call(*_args, **_kwargs):
+        queue_calls.append("queue")
+        raise AssertionError("source without a command touched queue state")
+
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+    monkeypatch.setattr(
+        "surreal_commands.get_command_status",
+        forbidden_queue_call,
+    )
+    repo_query = AsyncMock(return_value=[])
+    parent_delete = AsyncMock(return_value=True)
+    source = _source_for(fifo, source_id="source:fifo-delete")
+
+    with patch(
+        "deeper_notebook.domain.notebook.repo_query",
+        repo_query,
+    ), patch(
+        "deeper_notebook.domain.notebook.ObjectModel.delete",
+        parent_delete,
+    ):
+        result = await asyncio.wait_for(source.delete(), timeout=1)
+
+    assert result is True
+    assert queue_calls == []
+    assert repo_query.await_count == 5
+    parent_delete.assert_awaited_once()
+    assert stat.S_ISFIFO(fifo.stat(follow_symlinks=False).st_mode)
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix socket unsupported")
+def test_upload_cleanup_refuses_unix_socket_without_blocking(
+    monkeypatch,
+):
+    short_base = Path("/private/tmp")
+    if not short_base.is_dir():
+        short_base = Path("/tmp").resolve()
+    with tempfile.TemporaryDirectory(dir=short_base, prefix="dn-") as temp_dir:
+        uploads = Path(temp_dir)
+        socket_path = uploads / "upload.sock"
+        monkeypatch.setattr(
+            "deeper_notebook.config.UPLOADS_FOLDER",
+            str(uploads),
+        )
+
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+            listener.bind(str(socket_path))
+            _source_for(socket_path)._cleanup_uploaded_file()
+
+            assert socket_path.exists()
+            assert stat.S_ISSOCK(
+                socket_path.stat(follow_symlinks=False).st_mode
+            )
+
+
 def test_upload_cleanup_fails_closed_without_secure_dir_fd_support(
     tmp_path,
     monkeypatch,
@@ -188,6 +330,22 @@ def test_upload_cleanup_fails_closed_without_secure_dir_fd_support(
     owned_file.write_text("preserve")
     monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
     monkeypatch.setattr(os, "supports_dir_fd", frozenset())
+
+    _source_for(owned_file)._cleanup_uploaded_file()
+
+    assert owned_file.read_text() == "preserve"
+
+
+def test_upload_cleanup_fails_closed_without_nonblocking_open(
+    tmp_path,
+    monkeypatch,
+):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    owned_file = uploads / "owned.txt"
+    owned_file.write_text("preserve")
+    monkeypatch.setattr("deeper_notebook.config.UPLOADS_FOLDER", str(uploads))
+    monkeypatch.delattr(os, "O_NONBLOCK")
 
     _source_for(owned_file)._cleanup_uploaded_file()
 
