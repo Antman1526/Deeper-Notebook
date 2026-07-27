@@ -8,12 +8,14 @@ import shutil
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from desktop import app as desktop_app
 from desktop import app_migration
 from desktop.app_migration import (
     COMPATIBLE_BUNDLE_ID,
@@ -244,3 +246,274 @@ def test_native_recycler_uses_headless_nsfilemanager_trash_api(
         ("url", str(source)),
         ("trash", f"url:{source}", None, None),
     ]
+
+
+def test_detection_refuses_a_symlinked_applications_root(tmp_path: Path) -> None:
+    real_applications = tmp_path / "Real Applications"
+    _app(real_applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(real_applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    applications = tmp_path / "Applications"
+    applications.symlink_to(real_applications, target_is_directory=True)
+
+    decision = detect_legacy_app_replacement(
+        applications, tmp_path / ".deeper-notebook"
+    )
+
+    assert decision.state == "refused"
+    assert decision.reason_code == "unsafe-applications-root"
+
+
+def test_replacement_refuses_bundle_swap_after_confirmation_without_receipt(
+    tmp_path: Path,
+) -> None:
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    decision = detect_legacy_app_replacement(applications, data_root)
+    original = applications / "Original Legacy.app"
+    legacy.rename(original)
+    replacement = _app(
+        applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID
+    )
+    calls: list[Path] = []
+
+    with pytest.raises(AppReplacementRefused, match="changed after confirmation"):
+        replace_legacy_app(
+            replacement,
+            applications_dir=applications,
+            data_root=data_root,
+            expected_decision=decision,
+            recycler=lambda path: calls.append(path) or path,
+        )
+
+    assert calls == []
+    assert not (data_root / "app-bundle-replacement.json").exists()
+    assert original.is_dir()
+    assert replacement.is_dir()
+
+
+def test_replacement_refuses_root_swap_after_confirmation_without_receipt(
+    tmp_path: Path,
+) -> None:
+    applications = tmp_path / "Applications"
+    _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    decision = detect_legacy_app_replacement(applications, data_root)
+    original_root = tmp_path / "Original Applications"
+    applications.rename(original_root)
+    applications.mkdir()
+    replacement = _app(
+        applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID
+    )
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    calls: list[Path] = []
+
+    with pytest.raises(AppReplacementRefused, match="changed after confirmation"):
+        replace_legacy_app(
+            replacement,
+            applications_dir=applications,
+            data_root=data_root,
+            expected_decision=decision,
+            recycler=lambda path: calls.append(path) or path,
+        )
+
+    assert calls == []
+    assert not (data_root / "app-bundle-replacement.json").exists()
+    assert (original_root / "Open Notebook Plus.app").is_dir()
+    assert replacement.is_dir()
+
+
+def test_replacement_refuses_bundle_swap_at_final_trash_boundary_without_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    decision = detect_legacy_app_replacement(applications, data_root)
+    original_write = app_migration._write_receipt
+    raced = False
+
+    def swap_after_started_receipt(
+        receipt_path: Path, receipt: dict[str, object]
+    ) -> None:
+        nonlocal raced
+        original_write(receipt_path, receipt)
+        if receipt["status"] == "started" and not raced:
+            raced = True
+            legacy.rename(applications / "Original Legacy.app")
+            _app(
+                applications,
+                "Open Notebook Plus.app",
+                COMPATIBLE_BUNDLE_ID,
+            )
+
+    monkeypatch.setattr(app_migration, "_write_receipt", swap_after_started_receipt)
+    calls: list[Path] = []
+
+    with pytest.raises(AppReplacementRefused, match="changed after confirmation"):
+        replace_legacy_app(
+            legacy,
+            applications_dir=applications,
+            data_root=data_root,
+            expected_decision=decision,
+            recycler=lambda path: calls.append(path) or path,
+        )
+
+    assert raced is True
+    assert calls == []
+    assert not (data_root / "app-bundle-replacement.json").exists()
+
+
+def test_production_recovery_controller_is_explicit_and_non_persistent_on_keep(
+    tmp_path: Path,
+) -> None:
+    controller_type = getattr(app_migration, "AppRecoveryController", None)
+    assert controller_type is not None, "production recovery controller is absent"
+
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    trash = tmp_path / "Trash"
+
+    def recycle(source: Path) -> Path:
+        trash.mkdir()
+        destination = trash / source.name
+        shutil.move(source, destination)
+        return destination
+
+    controller = controller_type.detect(
+        applications_dir=applications,
+        data_root=data_root,
+        recycler=recycle,
+    )
+    payload = controller.card_payload()
+    assert payload["show_recovery_card"] is True
+    assert payload["title"] == "Two Deeper Notebook apps are installed"
+    assert payload["replace_label"] == "Replace Old App"
+    assert payload["keep_label"] == "Keep Both"
+
+    controller.keep_both()
+    assert legacy.is_dir()
+    assert not (data_root / "app-bundle-replacement.json").exists()
+    assert controller.card_payload()["show_recovery_card"] is False
+
+    resurfaced = controller_type.detect(
+        applications_dir=applications,
+        data_root=data_root,
+        recycler=recycle,
+    )
+    assert resurfaced.card_payload()["show_recovery_card"] is True
+    receipt = resurfaced.replace_old_app(confirmed=True)
+    assert receipt.is_file()
+    assert not legacy.exists()
+    assert resurfaced.card_payload()["show_recovery_card"] is False
+
+
+def test_startup_phase_detects_recovery_and_passes_it_to_the_packaged_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    phase = getattr(desktop_app, "_phase_detect_app_recovery", None)
+    assert phase is not None, "desktop startup never runs app-bundle detection"
+
+    applications = tmp_path / "Applications"
+    _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    ctx = desktop_app._new_context()
+
+    phase(ctx, applications_dir=applications, data_root=data_root)
+
+    assert ctx.app_recovery is not None
+    assert ctx.app_recovery.card_payload()["show_recovery_card"] is True
+    source = Path(desktop_app.__file__).read_text(encoding="utf-8")
+    assert "_phase_detect_app_recovery(ctx)" in source
+    assert "app_recovery=ctx.app_recovery" in source
+
+
+def test_production_startup_to_rendered_confirmation_replacement_and_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import window as desktop_window
+
+    applications = tmp_path / "Applications"
+    legacy = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
+    _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
+    data_root = tmp_path / ".deeper-notebook"
+    trash = tmp_path / "Trash"
+
+    def recycle(source: Path) -> Path:
+        trash.mkdir()
+        destination = trash / source.name
+        shutil.move(source, destination)
+        return destination
+
+    ctx = desktop_app._new_context()
+    desktop_app._phase_detect_app_recovery(
+        ctx,
+        applications_dir=applications,
+        data_root=data_root,
+        recycler=recycle,
+    )
+    stopped: list[bool] = []
+    events: list[tuple[str, str, str]] = []
+    ctx.sv = SimpleNamespace(
+        frontend_url="http://127.0.0.1:62001/",
+        session_env={"INTERNAL_API_URL": "http://127.0.0.1:62000"},
+        whisper_port=0,
+        piper_port=0,
+        stop_all=lambda: stopped.append(True),
+    )
+    ctx.cfg = SimpleNamespace(
+        theme="light-blue",
+        openchronicle_choice="skip",
+    )
+    ctx.progress_bus = SimpleNamespace(
+        publish=lambda step, status, message="": events.append(
+            (step, status, message)
+        )
+    )
+    ctx.log_dir = data_root / "logs"
+    ctx.log_dir.mkdir(parents=True)
+    observed: dict[str, object] = {}
+
+    def fake_open_window(*_args, **kwargs) -> None:
+        controller = kwargs["app_recovery"]
+        payload = controller.card_payload()
+        observed["js"] = desktop_window._app_recovery_injection_js(payload)
+        bridge = desktop_window._OnpJsApi(controller)
+        result = bridge.replace_old_app(True)
+        assert result["ok"] is True
+        kwargs["on_ready"]()
+        marker = ctx.log_dir / "desktop-readiness.json"
+        observed["marker"] = json.loads(marker.read_text(encoding="utf-8"))
+        kwargs["on_close"]()
+        observed["marker_cleared_on_close"] = not marker.exists()
+
+    monkeypatch.setattr(desktop_window, "open_window", fake_open_window)
+
+    desktop_app._phase_open_window(ctx)
+
+    assert "Replace Old App" in str(observed["js"])
+    assert "Keep Both" in str(observed["js"])
+    assert "confirm(" in str(observed["js"])
+    assert not legacy.exists()
+    receipt = json.loads(
+        (data_root / "app-bundle-replacement.json").read_text(encoding="utf-8")
+    )
+    assert receipt["status"] == "completed"
+    assert observed["marker"] == {
+        "api_url": "http://127.0.0.1:62000",
+        "frontend_url": "http://127.0.0.1:62001/",
+        "pid": observed["marker"]["pid"],
+        "schema_version": 1,
+        "status": "ready",
+        "window_marker": "__next_f",
+    }
+    assert observed["marker_cleared_on_close"] is True
+    assert not (ctx.log_dir / "desktop-readiness.json").exists()
+    assert ("window.ready", "done", "http://127.0.0.1:62001/") in events
+    assert stopped

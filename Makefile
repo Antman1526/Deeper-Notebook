@@ -485,7 +485,7 @@ build-mac-pyinstaller:
 	@spctl -a -vvv "dist/Deeper Notebook.app" 2>&1 | sed 's/^/   /' || \
 		echo "   ⚠️  spctl rejected the bundle (expected for ad-hoc on first-launch Gatekeeper);" && \
 		echo "   the seal itself is valid, run codesign -v to confirm."
-	@codesign -v "dist/Deeper Notebook.app" 2>&1 | sed 's/^/   /' || true
+	@codesign --verify --deep --strict "dist/Deeper Notebook.app"
 
 # Stage 5: wrap the .app into a .dmg via hdiutil. Unsigned — first launch needs
 # right-click → Open OR `xattr -dr com.apple.quarantine dist/Deeper\ Notebook.app`.

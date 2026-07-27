@@ -5,8 +5,12 @@ test asserting the token set is complete or that WCAG contrast holds. (P1-LOW-12
 """
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 
+import desktop.window as window_module
 from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
 
@@ -208,3 +212,115 @@ def test_injection_supports_both_stt_and_tts_simultaneously():
     assert "window.ONP_TTS_URL = " in js
     assert "51111" in js
     assert "51222" in js
+
+
+def test_recovery_card_renders_explanation_confirmation_and_explicit_actions():
+    renderer = getattr(window_module, "_app_recovery_injection_js", None)
+    assert renderer is not None, "the packaged window has no recovery-card renderer"
+
+    js = renderer(
+        {
+            "show_recovery_card": True,
+            "title": "Two Deeper Notebook apps are installed",
+            "message": (
+                "Open Notebook Plus.app and Deeper Notebook.app both exist."
+            ),
+            "replace_label": "Replace Old App",
+            "keep_label": "Keep Both",
+        }
+    )
+
+    assert "Two Deeper Notebook apps are installed" in js
+    assert "Open Notebook Plus.app" in js
+    assert "Deeper Notebook.app" in js
+    assert "Replace Old App" in js
+    assert "Keep Both" in js
+    assert "confirm(" in js
+    assert "replace_old_app" in js
+    assert "keep_both" in js
+
+
+def test_native_app_termination_runs_window_cleanup_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    """Cocoa app termination must use the same cleanup path as window close.
+
+    ``NSRunningApplication.terminate()`` emits the application-termination
+    notification without necessarily emitting pywebview's ``closed`` event.
+    The packaged compatibility smoke exercises that native path.
+    """
+
+    callbacks: dict[str, object] = {}
+
+    class FakeNotificationCenter:
+        def addObserverForName_object_queue_usingBlock_(
+            self, name, obj, queue, block
+        ):
+            callbacks["notification"] = block
+            return "observer-token"
+
+        def removeObserver_(self, token):
+            callbacks["removed"] = token
+
+    center = FakeNotificationCenter()
+    monkeypatch.setitem(
+        sys.modules,
+        "Foundation",
+        SimpleNamespace(
+            NSNotificationCenter=SimpleNamespace(
+                defaultCenter=lambda: center
+            )
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "AppKit",
+        SimpleNamespace(
+            NSApplicationWillTerminateNotification="will-terminate"
+        ),
+    )
+
+    class Event:
+        def __init__(self):
+            self.callback = None
+
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    fake_window = SimpleNamespace(
+        events=SimpleNamespace(
+            resized=Event(),
+            closed=Event(),
+            loaded=Event(),
+        ),
+        width=1280,
+        height=800,
+    )
+
+    def start(**_kwargs):
+        callbacks["notification"](None)
+        fake_window.events.closed.callback()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(
+            create_window=lambda *_args, **_kwargs: fake_window,
+            start=start,
+        ),
+    )
+    monkeypatch.setattr(window_module, "_preferred_window_size", lambda *_: (1280, 800))
+    monkeypatch.setattr(window_module, "_start_handoff_controller", lambda *_: None)
+    monkeypatch.setattr(
+        "desktop.data_root.active_data_root", lambda: tmp_path
+    )
+    monkeypatch.setattr("desktop.window_state.load_size", lambda *_: None)
+    monkeypatch.setattr("desktop.window_state.save_size", lambda *_: None)
+
+    cleaned: list[bool] = []
+    window_module.open_window("http://127.0.0.1:62001", lambda: cleaned.append(True))
+
+    assert cleaned == [True]
+    assert callbacks["removed"] == "observer-token"

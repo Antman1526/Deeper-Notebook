@@ -120,6 +120,42 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
         p.terminate.assert_called()
 
 
+def test_supervisor_children_cannot_mutate_packaged_python_bytecode(
+    cfg, tmp_path, monkeypatch
+):
+    """Runtime imports must not rewrite signed ``upstream/**/__pycache__``."""
+    spawned_envs: list[dict[str, str]] = []
+
+    def fake_popen(_args, **kwargs):
+        spawned_envs.append(kwargs["env"])
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports",
+        lambda n: list(range(40001, 40001 + n)),
+    )
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+    sv.start_all()
+    try:
+        assert spawned_envs
+        assert all(
+            env.get("PYTHONDONTWRITEBYTECODE") == "1"
+            for env in spawned_envs
+        )
+    finally:
+        sv.stop_all()
+
+
 def test_supervisor_uses_venv_python_for_api_and_worker(cfg, tmp_path, monkeypatch):
     """Spawned API and worker commands must use the configured venv_python."""
     spawned_args: list[list[str]] = []
