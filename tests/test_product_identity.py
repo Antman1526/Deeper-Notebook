@@ -1,6 +1,7 @@
 import hashlib
 import importlib
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -11,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 import deeper_notebook
+import scripts.rebrand_audit as rebrand_audit
 from deeper_notebook.environment import SETTINGS
 from deeper_notebook.identity import (
     API_NAMESPACE,
@@ -76,10 +78,12 @@ def _approval(
         category=category,
         rationale=Rationale(
             path=path,
+            pattern=pattern,
             source=source,
             line=line,
             column=actual_column,
             context_sha256=key[-1],
+            category=category,
             explanation=rationale,
         ),
     )
@@ -88,18 +92,22 @@ def _approval(
 def _rationale(
     *,
     path: str,
+    pattern: str,
     source: str,
     line: int | None,
     column: int,
     context: str,
+    category: str,
     explanation: str,
 ) -> dict[str, object]:
     return {
         "path": path,
+        "pattern": pattern,
         "source": source,
         "line": line,
         "column": column,
         "context_sha256": context_sha256(context),
+        "category": category,
         "explanation": explanation,
     }
 
@@ -204,10 +212,12 @@ def test_allowlist_rejects_broad_custom_pattern_containing_builtins(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern=pattern,
                     source="content",
                     line=1,
                     column=1,
                     context=pattern,
+                    category="historical_reference",
                     explanation=(
                         "This exact historical wording is retained to preserve "
                         "the accuracy of the recorded release."
@@ -286,10 +296,12 @@ def test_allowlist_rejects_all_wildcard_paths(
                 "category": "upstream_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern=pattern,
                     source="content",
                     line=1,
                     column=1,
                     context=pattern,
+                    category="upstream_reference",
                     explanation=(
                         "This exact upstream product reference is retained to "
                         "preserve the documented project history."
@@ -308,10 +320,26 @@ def test_repository_allowlist_entries_have_bound_specific_rationales():
 
     for entry in payload["entries"]:
         rationale = entry["rationale"]
-        for field in ("path", "source", "line", "column", "context_sha256"):
+        for field in (
+            "path",
+            "pattern",
+            "source",
+            "line",
+            "column",
+            "context_sha256",
+            "category",
+        ):
             assert rationale[field] == entry[field], entry
         assert len(rationale["explanation"]) >= 48, entry
         assert len(rationale["explanation"].split()) >= 8, entry
+        assert entry["path"] not in rationale["explanation"], entry
+        assert entry["pattern"] not in rationale["explanation"], entry
+        assert entry["category"] not in rationale["explanation"], entry
+        assert not re.search(
+            r"\boccurrence at\b|:[0-9]+:[0-9]+\b|[0-9a-f]{64}",
+            rationale["explanation"],
+            flags=re.IGNORECASE,
+        ), entry
 
 
 def test_allowlist_requires_occurrence_location_and_context(tmp_path):
@@ -346,10 +374,12 @@ def test_allowlist_rationale_is_bound_to_its_exact_occurrence(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path="docs/wrong-history.md",
+                    pattern="Open Notebook Plus",
                     source="content",
                     line=1,
                     column=line.index("Open Notebook Plus") + 1,
                     context=line,
+                    category="historical_reference",
                     explanation=(
                         "This historical product name is retained to preserve "
                         "the accuracy of the documented release."
@@ -361,6 +391,78 @@ def test_allowlist_rationale_is_bound_to_its_exact_occurrence(tmp_path):
 
     with pytest.raises(ValueError, match="exactly match its occurrence"):
         load_allowlist(generic)
+
+
+def test_allowlist_rejects_rationale_pattern_mismatch_for_safe_nested_names(
+    tmp_path,
+):
+    path = "docs/history.md"
+    line = "Open Notebook Plus"
+    mismatched = _write_allowlist(
+        tmp_path / "pattern-mismatch.json",
+        [
+            {
+                "path": path,
+                "pattern": "Open Notebook Plus",
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": context_sha256(line),
+                "category": "historical_reference",
+                "rationale": _rationale(
+                    path=path,
+                    pattern="Open Notebook",
+                    source="content",
+                    line=1,
+                    column=1,
+                    context=line,
+                    category="historical_reference",
+                    explanation=(
+                        "The release record preserves the former desktop name "
+                        "because that was the identity shipped to users."
+                    ),
+                ),
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="pattern.*exactly match"):
+        load_allowlist(mismatched)
+
+
+def test_allowlist_rejects_rationale_category_mismatch(tmp_path):
+    path = "docs/history.md"
+    line = "Open Notebook Plus"
+    mismatched = _write_allowlist(
+        tmp_path / "category-mismatch.json",
+        [
+            {
+                "path": path,
+                "pattern": line,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": context_sha256(line),
+                "category": "historical_reference",
+                "rationale": _rationale(
+                    path=path,
+                    pattern=line,
+                    source="content",
+                    line=1,
+                    column=1,
+                    context=line,
+                    category="compatibility_alias",
+                    explanation=(
+                        "The release record preserves the former desktop name "
+                        "because that was the identity shipped to users."
+                    ),
+                ),
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="category.*exactly match"):
+        load_allowlist(mismatched)
 
 
 def test_allowlist_rejects_unknown_entry_fields(tmp_path):
@@ -379,10 +481,12 @@ def test_allowlist_rejects_unknown_entry_fields(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern="Open Notebook Plus",
                     source="content",
                     line=1,
                     column=21,
                     context=line,
+                    category="historical_reference",
                     explanation=(
                         "This exact historical release name is retained to "
                         "preserve the accuracy of the release record."
@@ -413,10 +517,12 @@ def test_allowlist_rejects_one_character_rationale(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern=line,
                     source="content",
                     line=1,
                     column=1,
                     context=line,
+                    category="historical_reference",
                     explanation="x",
                 ),
             }
@@ -443,10 +549,12 @@ def test_allowlist_rejects_generic_rationale(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern=line,
                     source="content",
                     line=1,
                     column=1,
                     context=line,
+                    category="historical_reference",
                     explanation=(
                         "Historical reference retained for accuracy and "
                         "migration compatibility."
@@ -481,10 +589,12 @@ def test_allowlist_rejects_duplicate_generic_rationales(tmp_path):
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path=path,
+                    pattern=line,
                     source="content",
                     line=1,
                     column=1,
                     context=line,
+                    category="historical_reference",
                     explanation=generic,
                 ),
             }
@@ -492,8 +602,168 @@ def test_allowlist_rejects_duplicate_generic_rationales(tmp_path):
         ],
     )
 
-    with pytest.raises(ValueError, match="duplicate explanation"):
+    with pytest.raises(ValueError, match="duplicate semantic explanation"):
         load_allowlist(duplicate)
+
+
+def test_semantic_duplicate_key_ignores_mechanical_locator_suffixes():
+    first = (
+        "The release record preserves the former desktop name because that "
+        "was the identity shipped to users. This occurrence at "
+        "docs/history-one.md:12:4 is individually pinned."
+    )
+    second = (
+        "The release record preserves the former desktop name because that "
+        "was the identity shipped to users. This occurrence at "
+        "docs/history-two.md:48:9 is individually pinned."
+    )
+
+    assert rebrand_audit.semantic_explanation_key(first) == (
+        rebrand_audit.semantic_explanation_key(second)
+    )
+
+
+def test_semantic_explanation_uses_heading_and_line_purpose_not_locator(
+    tmp_path,
+):
+    path = "docs/history.md"
+    line = "Upgrade notes retain Open Notebook Plus for archival accuracy."
+    root = tmp_path / "repo"
+    root.mkdir()
+    target = root / path
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "# Release History\n\n## Version 1 migration\n\n" + line + "\n",
+        encoding="utf-8",
+    )
+
+    explanation = rebrand_audit.semantic_explanation_for_occurrence(
+        root,
+        {
+            "path": path,
+            "pattern": "Open Notebook Plus",
+            "source": "content",
+            "line": 5,
+            "column": line.index("Open Notebook Plus") + 1,
+            "context_sha256": context_sha256(line),
+        },
+        "historical_reference",
+    )
+
+    assert "Version 1 migration" in explanation
+    assert "archival accuracy" in explanation
+    assert path not in explanation
+    assert "Open Notebook Plus" not in explanation
+    assert "historical_reference" not in explanation
+    assert not re.search(r":[0-9]+:[0-9]+", explanation)
+
+
+def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
+    path = "docs/history.md"
+    line = "Upgrade notes retain Open Notebook Plus for archival accuracy."
+    repo = _init_tracked_repo(
+        tmp_path / "repo",
+        {
+            path: (
+                "# Release History\n\n"
+                "## Version 1 migration\n\n"
+                f"{line}\n"
+            )
+        },
+    )
+    allowlist_path = _write_allowlist(
+        tmp_path / "allowlist.json",
+        [
+            {
+                "path": path,
+                "pattern": "Open Notebook Plus",
+                "source": "content",
+                "line": 5,
+                "column": line.index("Open Notebook Plus") + 1,
+                "context_sha256": context_sha256(line),
+                "category": "historical_reference",
+                "rationale": _rationale(
+                    path=path,
+                    pattern="Open Notebook Plus",
+                    source="content",
+                    line=5,
+                    column=line.index("Open Notebook Plus") + 1,
+                    context=line,
+                    category="historical_reference",
+                    explanation=(
+                        "The release history preserves the former desktop "
+                        "identity because the migration record depends on it."
+                    ),
+                ),
+            }
+        ],
+    )
+
+    first = rebrand_audit.regenerate_allowlist(repo, allowlist_path)
+    first_bytes = allowlist_path.read_bytes()
+    second = rebrand_audit.regenerate_allowlist(repo, allowlist_path)
+
+    assert first == second
+    assert allowlist_path.read_bytes() == first_bytes
+    entry = first["entries"][0]
+    assert entry["rationale"]["pattern"] == entry["pattern"]
+    assert entry["rationale"]["category"] == entry["category"]
+    assert "Version 1 migration" in entry["rationale"]["explanation"]
+
+
+def test_repository_category_examples_match_their_actual_roles():
+    payload = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    entries = payload["entries"]
+
+    assert any(
+        entry["path"] == "deeper_notebook/identity.py"
+        and entry["pattern"] == "open_notebook"
+        and entry["category"] == "compatibility_alias"
+        for entry in entries
+    )
+    assert any(
+        entry["path"] == "desktop/__init__.py"
+        and entry["pattern"] == "open-notebook-plus"
+        and entry["category"] == "historical_reference"
+        for entry in entries
+    )
+    logging_aliases = [
+        entry
+        for entry in entries
+        if entry["path"] == "deeper_notebook/logging.py"
+        and entry["line"] in {18, 19}
+        and entry["pattern"] in {"OPEN_NOTEBOOK_", "ONP_"}
+    ]
+    assert logging_aliases
+    assert {
+        entry["category"] for entry in logging_aliases
+    } == {"migration_documentation"}
+    assert any(
+        entry["path"] == "README.upstream.md"
+        and entry["category"] == "upstream_reference"
+        for entry in entries
+    )
+    assert any(
+        entry["path"] == ".github/workflows/build-desktop.yml"
+        and entry["pattern"] == "open-notebook-plus"
+        and entry["category"] == "compatibility_alias"
+        for entry in entries
+    )
+    assert any(
+        entry["path"] == "CHANGELOG.md"
+        and entry["category"] == "historical_reference"
+        for entry in entries
+    )
+    assert any(
+        entry["path"] == "docs/7-DEVELOPMENT/maintainer-guide.md"
+        and entry["category"] == "migration_documentation"
+        for entry in entries
+    )
+    assert any(
+        entry["path"] == "Dockerfile"
+        and entry["category"] == "upstream_reference"
+        for entry in entries
+    )
 
 
 def test_approved_broad_builtin_suppresses_only_its_safe_nested_pattern(
@@ -575,10 +845,12 @@ def test_same_file_legacy_injection_is_not_covered_by_existing_approval(tmp_path
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path="history.md",
+                    pattern="Open Notebook Plus",
                     source="content",
                     line=1,
                     column=line.index("Open Notebook Plus") + 1,
                     context=line,
+                    category="historical_reference",
                     explanation=(
                         "This exact product name identifies the software "
                         "shipped in the recorded historical release."

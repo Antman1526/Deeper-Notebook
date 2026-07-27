@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -41,6 +42,13 @@ _SAFE_NESTED_APPROVALS = frozenset(
         ("Open Notebook Plus", "Open Notebook"),
     }
 )
+_CATEGORY_OVERRIDES = {
+    ("desktop/__init__.py", "open-notebook-plus"): "historical_reference",
+    ("deeper_notebook/logging.py", "OPEN_NOTEBOOK_"): (
+        "migration_documentation"
+    ),
+    ("deeper_notebook/logging.py", "ONP_"): "migration_documentation",
+}
 
 OccurrenceKey = tuple[str, str, str, int | None, int, str]
 
@@ -48,19 +56,23 @@ OccurrenceKey = tuple[str, str, str, int | None, int, str]
 @dataclass(frozen=True)
 class Rationale:
     path: str
+    pattern: str
     source: str
     line: int | None
     column: int
     context_sha256: str
+    category: str
     explanation: str
 
     def as_dict(self) -> dict[str, object]:
         return {
             "path": self.path,
+            "pattern": self.pattern,
             "source": self.source,
             "line": self.line,
             "column": self.column,
             "context_sha256": self.context_sha256,
+            "category": self.category,
             "explanation": self.explanation,
         }
 
@@ -95,10 +107,12 @@ _ENTRY_FIELDS = frozenset(
 _RATIONALE_FIELDS = frozenset(
     {
         "path",
+        "pattern",
         "source",
         "line",
         "column",
         "context_sha256",
+        "category",
         "explanation",
     }
 )
@@ -116,6 +130,504 @@ _GENERIC_EXPLANATIONS = frozenset(
         "this legacy reference is retained for compatibility.",
     }
 )
+_MECHANICAL_LOCATOR_RE = re.compile(
+    r"\s*(?:this\s+)?occurrence\s+at\s+"
+    r"(?:[\w.@+ -]+/)*[\w.@+ -]+:\d+:\d+"
+    r"\s+is\s+individually\s+pinned(?:\s+to\s+its\s+audited\s+context)?[.!]?",
+    flags=re.IGNORECASE,
+)
+_STRUCTURAL_LOCATOR_RE = re.compile(
+    r"(?:[\w.@+ -]+/)+[\w.@+ -]+:\d+:\d+|"
+    r"\b(?:line|column)\s+\d+\b|"
+    r"\b[0-9a-f]{64}\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _humanize(value: str) -> str:
+    value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    return " ".join(
+        word for word in re.split(r"[^A-Za-z0-9]+", value) if word
+    ).lower()
+
+
+def _scrub_structural_terms(value: str) -> str:
+    scrubbed = value
+    for pattern in sorted(LEGACY_PATTERNS, key=len, reverse=True):
+        scrubbed = scrubbed.replace(pattern, "former identifier")
+    for category in CATEGORIES:
+        scrubbed = scrubbed.replace(category, "approved classification")
+    scrubbed = _STRUCTURAL_LOCATOR_RE.sub("", scrubbed)
+    return " ".join(scrubbed.split()).strip(" .,:;-")
+
+
+def semantic_explanation_key(explanation: str) -> str:
+    """Normalize semantic meaning without locator-only differentiation."""
+    normalized = _MECHANICAL_LOCATOR_RE.sub("", explanation)
+    normalized = _scrub_structural_terms(normalized)
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized.casefold())
+    return " ".join(normalized.split())
+
+
+def _source_role(relative_path: str) -> str:
+    path = Path(relative_path)
+    if relative_path == "desktop/__init__.py":
+        return "The desktop package wrapper"
+    if path.name in {"CHANGELOG.md", "CHANGELOG"}:
+        return "The product changelog"
+    if path.name == "MEMORY.md":
+        return "The project memory history"
+    if relative_path.startswith(".github/workflows/"):
+        return f"The {_humanize(path.stem)} workflow"
+    if relative_path.startswith(".github/ISSUE_TEMPLATE/"):
+        return f"The {_humanize(path.stem)} issue template"
+    if path.name.startswith("Dockerfile"):
+        return (
+            "The single-image container build definition"
+            if path.name != "Dockerfile"
+            else "The multi-stage container build definition"
+        )
+    if path.name == "docker-compose.yml":
+        return "The container orchestration definition"
+    if path.name == ".env.example":
+        return "The environment configuration example"
+
+    stem_role = _humanize(path.stem or path.name) or "project"
+    semantic_parents = [
+        _humanize(part)
+        for part in path.parts[:-1]
+        if part
+        not in {
+            ".",
+            ".github",
+            "src",
+            "docs",
+            "tests",
+            "test",
+        }
+    ]
+    qualifier = " ".join(part for part in semantic_parents[-3:] if part)
+    subject = " ".join(part for part in (qualifier, stem_role) if part)
+    if relative_path.startswith("tests/") or "/tests/" in relative_path:
+        return f"The {subject} regression suite"
+    if path.suffix == ".py":
+        return f"The {subject} Python module"
+    if path.suffix in {".ts", ".tsx", ".js", ".mjs"}:
+        return f"The {subject} client module"
+    if path.suffix in {".yml", ".yaml"}:
+        return f"The {subject} configuration"
+    if path.suffix == ".md":
+        if "spec" in path.stem:
+            return f"The {subject} specification"
+        if "plan" in path.stem:
+            return f"The {subject} plan"
+        if "report" in path.stem:
+            return f"The {subject} report"
+        return f"The {subject} document"
+    return f"The {subject} project artifact"
+
+
+def _markdown_scope(lines: list[str], line_number: int) -> str | None:
+    headings: list[tuple[int, str]] = []
+    local_label: str | None = None
+    in_fence = False
+    for line in lines[:line_number]:
+        if re.match(r"^\s*```", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = re.match(r"^\s*(#{1,6})\s+(.+?)\s*$", line)
+        if match:
+            level = len(match.group(1))
+            headings = [heading for heading in headings if heading[0] < level]
+            headings.append((level, _scrub_structural_terms(match.group(2))))
+            local_label = None
+            continue
+        bold_match = re.match(
+            r"^\s*(?:\d+\.\s*)?\*\*(.+?)\*\*\s*:?(?:\s+.*)?$",
+            line,
+        )
+        if bold_match:
+            local_label = _scrub_structural_terms(bold_match.group(1))
+    if not headings:
+        return f'the "{local_label}" section' if local_label else None
+    hierarchy_parts = [heading for _level, heading in headings[-3:]]
+    if local_label:
+        hierarchy_parts.append(local_label)
+    hierarchy = " / ".join(hierarchy_parts)
+    return f'the "{hierarchy}" section'
+
+
+def _python_scope(source: str, line_number: int) -> str | None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    scopes: list[tuple[int, int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(
+            node,
+            (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef),
+        ):
+            continue
+        start = min(
+            [node.lineno, *(decorator.lineno for decorator in node.decorator_list)]
+        )
+        end = getattr(node, "end_lineno", node.lineno)
+        if start <= line_number <= end:
+            kind = "class" if isinstance(node, ast.ClassDef) else "function"
+            scopes.append((start, end, f"the `{node.name}` {kind}"))
+    if not scopes:
+        return None
+    return min(scopes, key=lambda scope: (scope[1] - scope[0], -scope[0]))[2]
+
+
+def _workflow_scope(lines: list[str], line_number: int) -> str | None:
+    for line in reversed(lines[:line_number]):
+        match = re.match(r"^\s*-\s+name:\s*(.+?)\s*$", line)
+        if match:
+            return (
+                f'the "{_scrub_structural_terms(match.group(1))}" '
+                "workflow step"
+            )
+    return None
+
+
+def _generic_scope(lines: list[str], line_number: int) -> str | None:
+    symbol_patterns = (
+        r"^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)",
+        r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)",
+        r"^\s*(?:function\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{",
+        r"^\s*(?:describe|test|it)\s*\(\s*['\"](.+?)['\"]",
+        r"^\s*(?:Task|Step)\s+\d+[.: -]+\s*(.+?)\s*$",
+    )
+    for line in reversed(lines[:line_number]):
+        for pattern in symbol_patterns:
+            match = re.match(pattern, line)
+            if match:
+                name = _scrub_structural_terms(match.group(1))
+                return f'the "{name}" operation'
+    return None
+
+
+def _semantic_scope(
+    relative_path: str,
+    lines: list[str],
+    line_number: int,
+) -> str:
+    suffix = Path(relative_path).suffix
+    if suffix == ".md":
+        return _markdown_scope(lines, line_number) or "the document overview"
+    if suffix == ".py":
+        source = "\n".join(lines)
+        return _python_scope(source, line_number) or "the module overview"
+    if suffix in {".yml", ".yaml"}:
+        return (
+            _workflow_scope(lines, line_number)
+            or _generic_scope(lines, line_number)
+            or "the configuration block"
+        )
+    return _generic_scope(lines, line_number) or "the active artifact section"
+
+
+def _alias_purpose(
+    line: str,
+    *,
+    pattern: str,
+    column: int,
+) -> str | None:
+    start = column - 1
+    if pattern in {"OPEN_NOTEBOOK_", "ONP_"}:
+        variable_match = re.match(r"[A-Z][A-Z0-9_]+", line[start:])
+        variable = variable_match.group(0) if variable_match else pattern
+        suffix = variable.removeprefix(pattern)
+        setting = _humanize(suffix) or "product setting"
+        form = "long-form" if pattern == "OPEN_NOTEBOOK_" else "short-form"
+        base = (
+            f"the deprecated {form} {setting} setting is named so operators "
+            "can recognize and migrate that specific fallback"
+        )
+        return f"{base}; {_statement_semantics(line, pattern, column)}"
+    if pattern == "open_notebook":
+        lowered = line.casefold()
+        if "app=" in lowered or '"app"' in lowered or "'app'" in lowered:
+            return (
+                "the persisted command application namespace remains explicit "
+                "so queued registrations and submissions keep routing "
+                f"correctly; {_statement_semantics(line, pattern, column)}"
+            )
+        if "namespace" in lowered:
+            return (
+                "the persisted database namespace remains explicit so existing "
+                "records continue to resolve during upgrades; "
+                f"{_statement_semantics(line, pattern, column)}"
+            )
+        if "database" in lowered:
+            return (
+                "the persisted database name remains explicit so existing "
+                "records continue to resolve during upgrades; "
+                f"{_statement_semantics(line, pattern, column)}"
+            )
+        if re.search(r"\b(?:from|import)\s+", line):
+            return (
+                "the compatibility Python package is imported so downstream "
+                "extensions keep their established module boundary; "
+                f"{_statement_semantics(line, pattern, column)}"
+            )
+    if pattern in {"Open Notebook Plus", "Open Notebook", "Open notebook+"}:
+        if "http" in line or "](" in line or "spec" in line.casefold():
+            return (
+                "the archived product wording identifies the historical design "
+                "or source link that maintainers still need to trace; "
+                f"{_statement_semantics(line, pattern, column)}"
+            )
+    return None
+
+
+def _pattern_role(pattern: str, line: str) -> str:
+    roles = {
+        "Open Notebook Plus": "former full desktop product title",
+        "Open Notebook": "former base product title",
+        "Open notebook+": "former stylized plus title",
+        "OpenNotebook": "former compact product title",
+        "open-notebook-Plus": "former mixed-case package slug",
+        "open-notebook-plus": "former lowercase package slug",
+        "/onp/": "legacy API path segment",
+        "onpFetch": "legacy client fetch helper",
+        "--onp-": "legacy command-line option prefix",
+        "components/onp": "legacy component directory",
+        "/api/onp": "legacy API namespace",
+    }
+    if pattern in roles:
+        return roles[pattern]
+    if pattern == "open_notebook":
+        lowered = line.casefold()
+        if "namespace" in lowered:
+            return "persisted database namespace"
+        if "database" in lowered:
+            return "persisted database name"
+        if "app" in lowered:
+            return "persisted command application namespace"
+        if re.search(r"\b(?:from|import)\s+", line):
+            return "compatibility Python package"
+        return "legacy underscored identifier"
+    if pattern == "OPEN_NOTEBOOK_":
+        return "deprecated long-form environment prefix"
+    if pattern == "ONP_":
+        return "deprecated short-form environment prefix"
+    return "legacy compatibility role"
+
+
+def _statement_semantics(line: str, pattern: str, column: int) -> str:
+    start = column - 1
+    end = start + len(pattern)
+    if pattern in {"OPEN_NOTEBOOK_", "ONP_"}:
+        variable_match = re.match(r"[A-Z][A-Z0-9_]+", line[start:])
+        if variable_match:
+            end = start + len(variable_match.group(0))
+    role = _pattern_role(pattern, line)
+    window_start = max(0, start - 100)
+    window_end = min(len(line), end + 100)
+    marked = (
+        line[window_start:start]
+        + f" current {role} "
+        + line[end:window_end]
+    )
+    marked = _scrub_structural_terms(marked)
+    marked = re.sub(r"[`*_#|<>{}\[\]();]+", " ", marked)
+    marked = " ".join(marked.split()).strip(" .,:;-")
+    if len(marked) > 180:
+        marked = marked[:177].rsplit(" ", 1)[0] + "..."
+    return (
+        f"the statement uses that role while expressing {marked}"
+        if marked
+        else "the statement assigns that role to the current migration case"
+    )
+
+
+def _normalized_line_purpose(
+    line: str,
+    *,
+    pattern: str,
+    column: int,
+) -> str:
+    alias_purpose = _alias_purpose(line, pattern=pattern, column=column)
+    if alias_purpose:
+        return alias_purpose
+
+    return _statement_semantics(line, pattern, column)
+
+
+def _role_specific_purpose(
+    relative_path: str,
+    pattern: str,
+    line: str,
+) -> str | None:
+    if relative_path == "desktop/__init__.py":
+        return (
+            "the archived desktop design specification keeps its former "
+            "filename so maintainers can trace packaging decisions made "
+            "before the rename"
+        )
+    if relative_path == "README.upstream.md":
+        return (
+            "the original project terminology remains visible so inherited "
+            "documentation stays attributable to its upstream source"
+        )
+    if (
+        relative_path == "deeper_notebook/identity.py"
+        and pattern == "open_notebook"
+    ):
+        return (
+            "the declared legacy Python package name remains available so "
+            "compatibility imports resolve after the package rename"
+        )
+    if relative_path == "scripts/rebrand_audit.py":
+        role = _pattern_role(pattern, line)
+        return (
+            f"the scanner enumerates the {role} form so active legacy remnants "
+            "cannot evade the identity audit"
+        )
+    return None
+
+
+def _nearby_semantic_context(
+    lines: list[str],
+    line_number: int,
+) -> str | None:
+    neighbors: list[tuple[str, str]] = []
+    for label, indexes in (
+        ("the preceding context", range(line_number - 2, -1, -1)),
+        ("the following context", range(line_number, len(lines))),
+    ):
+        for index in indexes:
+            candidate = _scrub_structural_terms(lines[index])
+            candidate = re.sub(r"[`*_#|<>{}\[\]();]+", " ", candidate)
+            candidate = " ".join(candidate.split()).strip(" .,:;-")
+            if not candidate:
+                continue
+            if len(candidate) > 110:
+                candidate = candidate[:107].rsplit(" ", 1)[0] + "..."
+            neighbors.append((label, candidate))
+            break
+    if not neighbors:
+        return None
+    return "; ".join(f"{label} concerns {value}" for label, value in neighbors)
+
+
+def _semantic_context_label(
+    lines: list[str],
+    line_number: int,
+) -> str | None:
+    current_line = lines[line_number - 1]
+    current_indent = len(current_line) - len(current_line.lstrip())
+    label_patterns = (
+        r"^\s*(?:\d+\.\s*)?\*\*(.+?)\*\*\s*:?\s*$",
+        r"^\s*(?:Task|Step)\s+\d+[.: -]+\s*(.+?)\s*$",
+    )
+    for line in reversed(lines[max(0, line_number - 120) : line_number]):
+        if re.search(r"(?:\"rationale\"\s*:\s*|rationale\s*=\s*)_rationale\(", line):
+            return "the rationale binding"
+        function_match = re.match(
+            r"^(\s*)(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)",
+            line,
+        )
+        if function_match and len(function_match.group(1)) < current_indent:
+            return _scrub_structural_terms(function_match.group(2))
+        class_match = re.match(
+            r"^(\s*)class\s+([A-Za-z_][A-Za-z0-9_]*)",
+            line,
+        )
+        if class_match and len(class_match.group(1)) < current_indent:
+            return _scrub_structural_terms(class_match.group(2))
+        for pattern in label_patterns:
+            match = re.match(pattern, line)
+            if match:
+                return _scrub_structural_terms(match.group(1))
+    return None
+
+
+def semantic_explanation_for_occurrence(
+    root: Path,
+    occurrence: Mapping[str, object],
+    category: str,
+) -> str:
+    """Explain why one exact legacy occurrence remains using source semantics."""
+    relative_path = occurrence["path"]
+    pattern = occurrence["pattern"]
+    source = occurrence["source"]
+    line_number = occurrence.get("line")
+    column = occurrence["column"]
+    if not isinstance(relative_path, str) or not isinstance(pattern, str):
+        raise ValueError("occurrence path and pattern must be strings")
+    if not isinstance(source, str) or not isinstance(column, int):
+        raise ValueError("occurrence source and column must be valid")
+
+    role = _source_role(relative_path)
+    if source == "path":
+        scope = "the installed or persisted artifact identity"
+        purpose = (
+            "the legacy artifact name remains discoverable for upgrade and "
+            "compatibility checks"
+        )
+    else:
+        if not isinstance(line_number, int):
+            raise ValueError("content occurrence requires a line number")
+        lines = (root / relative_path).read_text(encoding="utf-8").splitlines()
+        if not 1 <= line_number <= len(lines):
+            raise ValueError("occurrence line is outside the source file")
+        scope = _semantic_scope(relative_path, lines, line_number)
+        current_line = lines[line_number - 1]
+        purpose = _role_specific_purpose(
+            relative_path,
+            pattern,
+            current_line,
+        ) or _normalized_line_purpose(
+            current_line,
+            pattern=pattern,
+            column=column,
+        )
+        nearby_context = _nearby_semantic_context(lines, line_number)
+        if nearby_context:
+            purpose = f"{purpose}, while {nearby_context}"
+        context_label = _semantic_context_label(lines, line_number)
+        if context_label and context_label.casefold() not in scope.casefold():
+            purpose = (
+                f"{purpose}; the local example is introduced by "
+                f"{context_label}"
+            )
+
+    templates = {
+        "compatibility_alias": (
+            "{role} keeps the legacy behavior in {scope} because {purpose}."
+        ),
+        "historical_reference": (
+            "{role} preserves the historical record in {scope} because "
+            "{purpose}."
+        ),
+        "migration_documentation": (
+            "{role} documents the upgrade boundary in {scope} because "
+            "{purpose}."
+        ),
+        "upstream_reference": (
+            "{role} retains inherited terminology in {scope} because "
+            "{purpose}."
+        ),
+    }
+    try:
+        explanation = templates[category].format(
+            role=role,
+            scope=scope,
+            purpose=purpose,
+        )
+    except KeyError as exc:
+        raise ValueError(f"invalid rationale category: {category}") from exc
+    explanation = explanation.replace(
+        relative_path,
+        "the related project artifact",
+    )
+    return _scrub_structural_terms(explanation).rstrip(".") + "."
 
 
 def context_sha256(context: str) -> str:
@@ -278,8 +790,8 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             raise ValueError("allowlist rationale must be an object")
         if frozenset(rationale) != _RATIONALE_FIELDS:
             raise ValueError(
-                "allowlist rationale must contain exactly path, source, line, "
-                "column, context_sha256, and explanation"
+                "allowlist rationale must contain exactly path, pattern, "
+                "source, line, column, context_sha256, category, and explanation"
             )
         rationale_location = (
             rationale.get("path"),
@@ -299,6 +811,14 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 "allowlist rationale location and context hash must exactly "
                 "match its occurrence"
             )
+        if rationale.get("pattern") != pattern:
+            raise ValueError(
+                "allowlist rationale pattern must exactly match its occurrence"
+            )
+        if rationale.get("category") != category:
+            raise ValueError(
+                "allowlist rationale category must exactly match its occurrence"
+            )
         explanation = rationale.get("explanation")
         if not isinstance(explanation, str):
             raise ValueError("allowlist rationale explanation must be a string")
@@ -313,10 +833,22 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 f"least {_MIN_EXPLANATION_CHARS} characters and "
                 f"{_MIN_EXPLANATION_WORDS} words"
             )
-        duplicate_key = normalized_explanation.casefold()
+        if (
+            allowlisted_path in normalized_explanation
+            or pattern in normalized_explanation
+            or category in normalized_explanation
+            or digest in normalized_explanation
+            or _STRUCTURAL_LOCATOR_RE.search(normalized_explanation)
+            or _MECHANICAL_LOCATOR_RE.search(normalized_explanation)
+        ):
+            raise ValueError(
+                "allowlist rationale explanation must not repeat structural "
+                "path, locator, hash, pattern, or category fields"
+            )
+        duplicate_key = semantic_explanation_key(normalized_explanation)
         if duplicate_key in explanations:
             raise ValueError(
-                "allowlist rationale contains a duplicate explanation"
+                "allowlist rationale contains a duplicate semantic explanation"
             )
         explanations.add(duplicate_key)
         if category not in CATEGORIES[:-1]:
@@ -337,10 +869,12 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             category=category,
             rationale=Rationale(
                 path=allowlisted_path,
+                pattern=pattern,
                 source=source,
                 line=line,
                 column=column,
                 context_sha256=digest,
+                category=category,
                 explanation=normalized_explanation,
             ),
         )
@@ -514,6 +1048,152 @@ def audit_repository(root: Path, allowlist: Allowlist) -> dict[str, object]:
     }
 
 
+def _without_safe_nested_matches(
+    matches: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    identities = {
+        (
+            match["path"],
+            match["source"],
+            match.get("line"),
+            match["column"],
+            match["context_sha256"],
+            match["pattern"],
+        )
+        for match in matches
+    }
+    return [
+        match
+        for match in matches
+        if not any(
+            match["pattern"] == nested
+            and (
+                match["path"],
+                match["source"],
+                match.get("line"),
+                match["column"],
+                match["context_sha256"],
+                broader,
+            )
+            in identities
+            for broader, nested in _SAFE_NESTED_APPROVALS
+        )
+    ]
+
+
+def regenerate_allowlist(
+    root: Path,
+    allowlist_path: Path,
+) -> dict[str, object]:
+    """Regenerate exact approvals and semantic rationales deterministically."""
+    payload = json.loads(allowlist_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("allowlist must be an object")
+    persisted_identifiers = payload.get("persisted_queue_identifiers")
+    entries = payload.get("entries")
+    if not isinstance(persisted_identifiers, list) or not isinstance(
+        entries,
+        list,
+    ):
+        raise ValueError(
+            "allowlist regeneration requires persisted identifiers and entries"
+        )
+
+    category_sets: dict[tuple[str, str], set[str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("allowlist regeneration entries must be objects")
+        path = entry.get("path")
+        pattern = entry.get("pattern")
+        category = entry.get("category")
+        if not all(isinstance(value, str) for value in (path, pattern, category)):
+            raise ValueError(
+                "allowlist regeneration entries require path, pattern, and category"
+            )
+        category_sets.setdefault((path, pattern), set()).add(category)
+    ambiguous = {
+        key: categories
+        for key, categories in category_sets.items()
+        if len(categories) != 1
+    }
+    if ambiguous:
+        raise ValueError(f"ambiguous category policies: {ambiguous}")
+    category_policy = {
+        key: next(iter(categories))
+        for key, categories in category_sets.items()
+    }
+    category_policy.update(_CATEGORY_OVERRIDES)
+
+    report = audit_repository(root.resolve(), {})
+    raw_matches = report["categories"]["unexpected_active_identity"]
+    assert isinstance(raw_matches, list)
+    matches = _without_safe_nested_matches(raw_matches)
+    generated_entries: list[dict[str, object]] = []
+    semantic_keys: set[str] = set()
+    for match in sorted(
+        matches,
+        key=lambda item: (
+            item["path"],
+            item["source"],
+            item.get("line") or 0,
+            item["column"],
+            item["pattern"],
+        ),
+    ):
+        policy_key = (match["path"], match["pattern"])
+        category = category_policy.get(policy_key)
+        if category is None:
+            raise ValueError(
+                "unclassified occurrence requires explicit review: "
+                f"{match}"
+            )
+        explanation = semantic_explanation_for_occurrence(
+            root.resolve(),
+            match,
+            category,
+        )
+        semantic_key = semantic_explanation_key(explanation)
+        if semantic_key in semantic_keys:
+            raise ValueError(
+                "semantic rationale generation produced a duplicate: "
+                f"{explanation}"
+            )
+        semantic_keys.add(semantic_key)
+        line = match.get("line")
+        rationale = {
+            "path": match["path"],
+            "pattern": match["pattern"],
+            "source": match["source"],
+            "line": line,
+            "column": match["column"],
+            "context_sha256": match["context_sha256"],
+            "category": category,
+            "explanation": explanation,
+        }
+        generated_entries.append(
+            {
+                "path": match["path"],
+                "pattern": match["pattern"],
+                "source": match["source"],
+                "line": line,
+                "column": match["column"],
+                "context_sha256": match["context_sha256"],
+                "category": category,
+                "rationale": rationale,
+            }
+        )
+    generated: dict[str, object] = {
+        "schema_version": ALLOWLIST_SCHEMA_VERSION,
+        "persisted_queue_identifiers": persisted_identifiers,
+        "entries": generated_entries,
+    }
+    allowlist_path.write_text(
+        json.dumps(generated, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return generated
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -532,11 +1212,18 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="fail for unexpected active identity or stale allowlist entries",
     )
+    parser.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="rewrite exact approvals with deterministic semantic rationales",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    if args.regenerate:
+        regenerate_allowlist(args.root.resolve(), args.allowlist)
     allowlist = load_allowlist(args.allowlist)
     report = audit_repository(args.root.resolve(), allowlist)
     print(json.dumps(report, indent=2, sort_keys=True))
