@@ -181,7 +181,7 @@ class AsyncMigrationManager:
 
     def __init__(self):
         """Initialize migration manager — auto-discovers migrations from
-        open_notebook/database/migrations/*.surrealql via _discover_migrations.
+        deeper_notebook/database/migrations/*.surrealql via _discover_migrations.
         """
         self.up_migrations, self.down_migrations = self._discover_migrations()
         self.runner = AsyncMigrationRunner(

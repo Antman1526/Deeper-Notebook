@@ -1,4 +1,251 @@
 {
+  "persisted_queue_identifiers": [
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "create_insight_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "create_insight"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "embed_insight_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "embed_insight"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "embed_note_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "embed_note"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "embed_source_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "embed_source"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "legacy_embed_chunk_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "embed_chunk"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "legacy_embed_single_item_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "embed_single_item"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "legacy_vectorize_source_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "vectorize_source"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/embedding_commands.py",
+      "symbol": "rebuild_embeddings_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "rebuild_embeddings"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/example_commands.py",
+      "symbol": "analyze_data_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "analyze_data"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/example_commands.py",
+      "symbol": "process_text_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "process_text"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/podcast_commands.py",
+      "symbol": "generate_podcast_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "generate_podcast"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/podcast_commands.py",
+      "symbol": "resume_podcast_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "resume_podcast"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/prompt_optimizer_commands.py",
+      "symbol": "optimize_prompt_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "optimize_prompt"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/source_commands.py",
+      "symbol": "process_source_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "process_source"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/source_commands.py",
+      "symbol": "run_transformation_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "run_transformation"
+    },
+    {
+      "kind": "registration",
+      "path": "commands/studio_commands.py",
+      "symbol": "generate_studio_artifact_command",
+      "callee": "command",
+      "app": "open_notebook",
+      "command": "generate_studio_artifact"
+    },
+    {
+      "kind": "submission",
+      "path": "api/command_service.py",
+      "symbol": "submit_command_job",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "module_name",
+      "command": "command_name"
+    },
+    {
+      "kind": "submission",
+      "path": "api/podcast_service.py",
+      "symbol": "submit_generation_job",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "open_notebook",
+      "command": "generate_podcast"
+    },
+    {
+      "kind": "submission",
+      "path": "api/podcast_service.py",
+      "symbol": "submit_outline_approval",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "open_notebook",
+      "command": "resume_podcast"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/chat.py",
+      "symbol": "_fire_memory_extract_turn",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "open_notebook",
+      "command": "memory_extract_turn"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/chat.py",
+      "symbol": "_fire_memory_summarize_session",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "open_notebook",
+      "command": "memory_summarize_session"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/commands.py",
+      "symbol": "execute_command",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "request.app",
+      "command": "request.command"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/embedding.py",
+      "symbol": "embed_content",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "command_name"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/embedding_rebuild.py",
+      "symbol": "start_rebuild",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "rebuild_embeddings"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/sources.py",
+      "symbol": "create_source",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "process_source"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/sources.py",
+      "symbol": "create_source_insight",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "run_transformation"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/sources.py",
+      "symbol": "retry_source_processing",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "process_source"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/studio/common.py",
+      "symbol": "_submit_studio_generation_command",
+      "callee": "submit_command_job",
+      "invocation": "submit_command_job",
+      "app": "open_notebook",
+      "command": "generate_studio_artifact"
+    },
+    {
+      "kind": "submission",
+      "path": "api/routers/transformations.py",
+      "symbol": "optimize_transformation_prompt",
+      "callee": "submit_command",
+      "invocation": "to_thread",
+      "app": "open_notebook",
+      "command": "optimize_prompt"
+    }
+  ],
   "entries": [
     {
       "path": "deeper_notebook/identity.py",

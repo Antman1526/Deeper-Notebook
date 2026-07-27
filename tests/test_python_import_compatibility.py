@@ -13,6 +13,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from desktop.build.package_layout import pyinstaller_upstream_package_datas
+
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_MODULES = (
     ROOT / "tests" / "fixtures" / "legacy_import_modules.txt"
@@ -58,8 +60,8 @@ def _install_optional_skillopt_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_canonical_import_is_primary():
-    from deeper_notebook.domain.notebook import Note as canonical
-    from open_notebook.domain.notebook import Note as legacy
+    canonical = importlib.import_module("deeper_notebook.domain.notebook").Note
+    legacy = importlib.import_module("open_notebook.domain.notebook").Note
 
     assert legacy is canonical
 
@@ -156,15 +158,9 @@ def test_fixture_preserves_all_pre_move_first_level_modules():
 
 
 def test_pyinstaller_packages_canonical_and_legacy_packages():
-    spec = (ROOT / "desktop" / "build" / "pyinstaller.spec").read_text(
-        encoding="utf-8"
-    )
+    datas = pyinstaller_upstream_package_datas(ROOT)
 
-    assert (
-        '(str(PROJECT_ROOT / "deeper_notebook"), "upstream/deeper_notebook")'
-        in spec
-    )
-    assert (
-        '(str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook")'
-        in spec
-    )
+    assert datas == [
+        (str(ROOT / "deeper_notebook"), "upstream/deeper_notebook"),
+        (str(ROOT / "open_notebook"), "upstream/open_notebook"),
+    ]
