@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -85,7 +86,7 @@ def test_single_item_still_yields_val():
 
 # ------------------------------------------------------------- rollout
 
-def test_rollout_scores_with_judge(monkeypatch):
+def test_rollout_scores_with_judge(monkeypatch, tmp_path):
     from deeper_notebook.prompt_optimizer import adapter as ad
 
     def _fake_target(system, user, max_completion_tokens=0, **kw):
@@ -104,14 +105,16 @@ def test_rollout_scores_with_judge(monkeypatch):
         workers=2,
     )
     results = adapter.rollout(
-        [{"id": "a", "input_text": "alpha"}], "PROMPT", "/tmp/po-test-out"
+        [{"id": "a", "input_text": "alpha"}],
+        "PROMPT",
+        str(tmp_path / "po-test-out"),
     )
     assert results[0]["soft"] == 0.9
     assert results[0]["hard"] == 1
     assert results[0]["task_type"] == "transformation"
 
 
-def test_rollout_target_failure_scores_zero(monkeypatch):
+def test_rollout_target_failure_scores_zero(monkeypatch, tmp_path):
     from deeper_notebook.prompt_optimizer import adapter as ad
 
     def _boom(system, user, max_completion_tokens=0, **kw):
@@ -122,7 +125,9 @@ def test_rollout_target_failure_scores_zero(monkeypatch):
         items=[{"id": "a", "input_text": "alpha"}], criteria="c" * 20,
     )
     results = adapter.rollout(
-        [{"id": "a", "input_text": "alpha"}], "PROMPT", "/tmp/po-test-out"
+        [{"id": "a", "input_text": "alpha"}],
+        "PROMPT",
+        str(tmp_path / "po-test-out"),
     )
     assert results[0]["hard"] == 0 and results[0]["soft"] == 0.0
 
@@ -236,8 +241,9 @@ def test_all_command_input_schemas_resolve():
     ("<name>_command_input is not fully defined" → 500 on the API route,
     caught live). Force-resolve every registered command's input schema so
     the next module added with the future import fails here, not in prod."""
-    import commands  # noqa: F401 — triggers registration
     from surreal_commands.core.registry import CommandRegistry
+
+    import commands  # noqa: F401 — triggers registration
 
     registry = CommandRegistry()
     cmds = registry._commands  # no public enumeration API in 1.x
@@ -290,14 +296,34 @@ def test_ensure_skillopt_prompts_backfills_missing_only(tmp_path):
     assert ensure_skillopt_prompts(dest_dir=tmp_path) == 0  # idempotent
 
 
-def test_ensure_skillopt_prompts_fixes_real_package():
-    """After backfill, skillopt's own loader must resolve the names that
-    crashed live ('Prompt analyst_success not found', merge_* in aggregate)."""
-    from skillopt.prompts import load_prompt
+def test_ensure_skillopt_prompts_fixes_disposable_package(monkeypatch, tmp_path):
+    """Backfill must satisfy SkillOpt's loader without mutating site-packages."""
+    import skillopt.prompts as skillopt_prompts
 
     from deeper_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
 
-    ensure_skillopt_prompts()
+    installed_prompts = Path(skillopt_prompts.__file__).parent
+    installed_snapshot = {
+        path.name: path.read_bytes()
+        for path in installed_prompts.glob("*.md")
+    }
+    disposable_prompts = tmp_path / "skillopt" / "prompts"
+    shutil.copytree(installed_prompts, disposable_prompts)
+    for prompt in disposable_prompts.glob("*.md"):
+        prompt.unlink()
+
+    ensure_skillopt_prompts(dest_dir=disposable_prompts)
+    monkeypatch.setattr(
+        skillopt_prompts,
+        "_PROMPTS_DIR",
+        str(disposable_prompts),
+    )
     for name in ("analyst_error", "analyst_success",
                  "merge_failure", "merge_success", "merge_final"):
-        assert load_prompt(name).strip(), f"load_prompt({name!r}) empty"
+        assert skillopt_prompts.load_prompt(name).strip(), (
+            f"load_prompt({name!r}) empty"
+        )
+    assert {
+        path.name: path.read_bytes()
+        for path in installed_prompts.glob("*.md")
+    } == installed_snapshot
