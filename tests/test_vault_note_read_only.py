@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 
+import deeper_notebook.vault as vault_package
 from deeper_notebook.domain import notebook as notebook_module
 from deeper_notebook.domain.base import ObjectModel
 from deeper_notebook.domain.notebook import (
@@ -11,7 +13,10 @@ from deeper_notebook.domain.notebook import (
     Note,
     Notebook,
 )
-from deeper_notebook.vault import _projection_note_refresh
+from deeper_notebook.vault._projection_context import (
+    _projection_refresh_is_active,
+)
+from deeper_notebook.vault.repository import _projection_note_refresh
 
 
 def _external_note(**updates) -> Note:
@@ -60,7 +65,9 @@ async def test_caller_cannot_save_mutated_external_note(monkeypatch):
     persisted = _external_note().model_dump()
     base_save = AsyncMock(return_value=None)
     monkeypatch.setattr(ObjectModel, "save", base_save)
-    monkeypatch.setattr(notebook_module, "repo_query", AsyncMock(return_value=[persisted]))
+    monkeypatch.setattr(
+        notebook_module, "repo_query", AsyncMock(return_value=[persisted])
+    )
 
     with pytest.raises(ExternalNoteReadOnlyError, match="external_note_read_only"):
         await note.save()
@@ -88,7 +95,9 @@ async def test_private_projection_context_can_refresh_external_note(monkeypatch)
     persisted = _external_note().model_dump()
     base_save = AsyncMock(return_value=None)
     monkeypatch.setattr(ObjectModel, "save", base_save)
-    monkeypatch.setattr(notebook_module, "repo_query", AsyncMock(return_value=[persisted]))
+    monkeypatch.setattr(
+        notebook_module, "repo_query", AsyncMock(return_value=[persisted])
+    )
     monkeypatch.setattr(notebook_module, "_is_command_registered", lambda _: False)
 
     with _projection_note_refresh():
@@ -97,23 +106,81 @@ async def test_private_projection_context_can_refresh_external_note(monkeypatch)
     base_save.assert_awaited_once()
 
 
+def test_projection_activation_is_not_exported_from_vault_package():
+    assert not hasattr(vault_package, "_projection_note_refresh")
+
+
 @pytest.mark.asyncio
-async def test_notebook_delete_preflights_external_notes_before_any_cascade(monkeypatch):
+async def test_projection_context_is_bound_to_exact_asyncio_task():
+    async def probe() -> bool:
+        return _projection_refresh_is_active()
+
+    with _projection_note_refresh():
+        assert _projection_refresh_is_active() is True
+        assert await asyncio.create_task(probe()) is False
+        assert await asyncio.to_thread(_projection_refresh_is_active) is False
+
+    assert _projection_refresh_is_active() is False
+
+
+@pytest.mark.asyncio
+async def test_child_created_inside_context_stays_unauthorized_after_parent_exit():
+    release = asyncio.Event()
+
+    async def delayed_probe() -> bool:
+        await release.wait()
+        return _projection_refresh_is_active()
+
+    with _projection_note_refresh():
+        child = asyncio.create_task(delayed_probe())
+    release.set()
+
+    assert await child is False
+
+
+@pytest.mark.asyncio
+async def test_nested_same_owner_context_and_exception_cleanup():
+    with pytest.raises(RuntimeError, match="boom"):
+        with _projection_note_refresh():
+            assert _projection_refresh_is_active() is True
+            with _projection_note_refresh():
+                assert _projection_refresh_is_active() is True
+            assert _projection_refresh_is_active() is True
+            raise RuntimeError("boom")
+
+    assert _projection_refresh_is_active() is False
+
+
+def test_projection_context_sync_thread_fallback_is_owner_bound():
+    with _projection_note_refresh():
+        assert _projection_refresh_is_active() is True
+    assert _projection_refresh_is_active() is False
+
+
+@pytest.mark.asyncio
+async def test_notebook_delete_maps_persisted_external_guard_to_typed_error(
+    monkeypatch,
+):
     notebook = Notebook(
         id="notebook:brain",
         name="Brain",
         description="Read-only projection",
     )
-    external_notes = [_external_note(id=f"note:external-{index}") for index in range(30)]
+    external_notes = [
+        _external_note(id=f"note:external-{index}") for index in range(30)
+    ]
     monkeypatch.setattr(
         Notebook,
         "get_notes",
         AsyncMock(return_value=external_notes),
     )
-    query = AsyncMock()
+    monkeypatch.setattr(Notebook, "get_sources", AsyncMock(return_value=[]))
+    query = AsyncMock(side_effect=RuntimeError("external_note_read_only"))
     monkeypatch.setattr(notebook_module, "repo_query", query)
 
     with pytest.raises(ExternalNoteReadOnlyError, match="external_note_read_only"):
         await notebook.delete()
 
-    query.assert_not_awaited()
+    query.assert_awaited_once()
+    transaction = query.await_args.args[0]
+    assert transaction.index("external_note_read_only") < transaction.index("DELETE ")

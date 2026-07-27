@@ -3,7 +3,7 @@
   * #16  Note.save() — registry introspection replaces string-match exception
   * #2   Memory recall — DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC outer wall
   * #11  Source.delete() — race-window post-sweep
-  * #4   Notebook.delete() — bulk-SQL path above threshold
+  * #4   Notebook.delete() — legacy bulk-SQL threshold (now retired)
 
 All tests are hermetic — no SurrealDB, no surreal-commands worker.
 DB-touching tests mock repo_query at the boundary.
@@ -16,7 +16,6 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------- #
 # #16 — _is_command_registered + Note.save behavior
@@ -282,94 +281,25 @@ class TestSourceDeletePostSweep:
 
 
 # ---------------------------------------------------------------------- #
-# #4 — Notebook delete bulk-SQL threshold
+# #4 — Notebook delete atomic cascade supersedes partial bulk paths
 # ---------------------------------------------------------------------- #
 
 
 class TestNotebookBulkDelete:
-    """v0.7.133 — Notebooks with > DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD
-    notes get the 3-statement bulk-SQL path instead of N concurrent
-    per-note DELETEs."""
+    """The old partial/best-effort bulk path must stay retired."""
 
-    def test_threshold_default(self, monkeypatch):
-        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
-        monkeypatch.delenv("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD", raising=False)
-        assert _notebook_delete_bulk_threshold() == 25
+    def test_threshold_and_partial_bulk_helpers_are_absent(self):
+        from deeper_notebook.domain import notebook as notebook_module
 
-    def test_threshold_env_override(self, monkeypatch):
-        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
-        monkeypatch.setenv("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD", "5")
-        assert _notebook_delete_bulk_threshold() == 5
+        assert not hasattr(notebook_module, "_notebook_delete_bulk_threshold")
+        assert not hasattr(notebook_module.Notebook, "_bulk_delete_notes")
 
-    def test_threshold_garbage_env_falls_back(self, monkeypatch):
-        from deeper_notebook.domain.notebook import _notebook_delete_bulk_threshold
-        monkeypatch.setenv("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD", "nope")
-        assert _notebook_delete_bulk_threshold() == 25
-        monkeypatch.setenv("DEEPER_NOTEBOOK_NOTEBOOK_DELETE_BULK_THRESHOLD", "-1")
-        assert _notebook_delete_bulk_threshold() == 25
+    def test_notebook_delete_uses_one_transaction_instead_of_gather(self):
+        import inspect
 
-    @pytest.mark.asyncio
-    async def test_bulk_delete_uses_three_statements(self):
-        """The bulk path must issue exactly 3 SurrealQL statements
-        regardless of N — that's the whole point of the optimization."""
-        from deeper_notebook.domain.notebook import Notebook, Note
-
-        nb = Notebook(name="N", description="d")
-        nb.id = "notebook:fake"
-
-        notes = []
-        for i in range(50):
-            n = Note(title=f"n{i}", content="x", note_type="human")
-            n.id = f"note:fake{i}"
-            notes.append(n)
-
-        statements = []
-
-        async def fake_repo_query(query, vars=None):
-            statements.append(query)
-            return []
-
-        with patch(
-            "deeper_notebook.domain.notebook.repo_query",
-            new=fake_repo_query,
-        ):
-            deleted = await nb._bulk_delete_notes(notes)
-            assert deleted == 50
-            # v0.8.66 (audit D-1 + D-5) — TWO statements now (the phantom
-            # `note_embedding` step was removed), and the note ROWS are deleted
-            # FIRST so a partial failure can't orphan searchable rows.
-            assert len(statements) == 2
-            assert "DELETE note WHERE" in statements[0]   # rows first
-            assert "artifact" in statements[1]            # edges second
-            assert all("note_embedding" not in s for s in statements)
-
-    @pytest.mark.asyncio
-    async def test_bulk_delete_failure_returns_zero(self):
-        """Failure in bulk-delete must NOT propagate — outer
-        Notebook.delete() handles the cascade fallback."""
-        from deeper_notebook.domain.notebook import Notebook, Note
-
-        nb = Notebook(name="N", description="d")
-        nb.id = "notebook:fake"
-
-        notes = [Note(title="t", content="x", note_type="human") for _ in range(5)]
-        for i, n in enumerate(notes):
-            n.id = f"note:fake{i}"
-
-        async def raising_repo_query(query, vars=None):
-            raise RuntimeError("connection refused")
-
-        with patch(
-            "deeper_notebook.domain.notebook.repo_query",
-            new=raising_repo_query,
-        ):
-            deleted = await nb._bulk_delete_notes(notes)
-            assert deleted == 0
-
-    @pytest.mark.asyncio
-    async def test_empty_notes_list_returns_zero(self):
         from deeper_notebook.domain.notebook import Notebook
-        nb = Notebook(name="N", description="d")
-        nb.id = "notebook:fake"
-        result = await nb._bulk_delete_notes([])
-        assert result == 0
+
+        source = inspect.getsource(Notebook.delete)
+        assert "BEGIN TRANSACTION" in source
+        assert "COMMIT TRANSACTION" in source
+        assert "asyncio.gather" not in source
