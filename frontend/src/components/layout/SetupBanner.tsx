@@ -76,8 +76,8 @@ export function SetupBanner() {
           </AlertTitle>
           <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>{t('setupBanner.encryptionRequiredDescription')}</span>
-            {/* v0.7.201 — point at the Plus fork (Antman1526/
-                open-notebook-Plus) instead of the upstream lfnovo
+            {/* v0.7.201 — point at the Deeper Notebook fork (Antman1526/
+                Deeper-Notebook) instead of the upstream lfnovo
                 repo. The fork's docs branch + path layout may drift
                 from upstream; keeping the link inside the Plus repo
                 ensures users land on docs that match the build

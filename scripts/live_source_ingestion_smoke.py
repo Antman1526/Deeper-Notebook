@@ -91,7 +91,7 @@ def request_multipart(
     token: str | None = None,
     timeout: float = 30,
 ) -> ApiResponse:
-    boundary = f"----onp-smoke-{uuid.uuid4().hex}"
+    boundary = f"----dn-smoke-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
         chunks.extend([

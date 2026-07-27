@@ -123,7 +123,8 @@ BenchmarkRunner = Callable[
 ]
 
 _JOBS: dict[str, BenchmarkJob] = {}
-_HISTORY_FILENAME = "open-notebook-plus-benchmarks.json"
+_HISTORY_FILENAME = "deeper-notebook-benchmarks.json"
+_LEGACY_HISTORY_FILENAME = "open-notebook-plus-benchmarks.json"
 _VALID_ROLES = {
     "chat",
     "source_synthesis",
@@ -151,6 +152,9 @@ def benchmark_history_path(model_dir: Path) -> Path:
 
 def load_benchmark_history(model_dir: Path) -> list[BenchmarkResult]:
     path = benchmark_history_path(model_dir)
+    legacy_path = path.with_name(_LEGACY_HISTORY_FILENAME)
+    if not path.exists() and legacy_path.exists():
+        path = legacy_path
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
