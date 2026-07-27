@@ -216,6 +216,39 @@ def test_mixed_case_system_root_rejects_before_descriptor_open(
     assert open_calls == []
 
 
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "//PRIVATE/VAR/SPOOL",
+        "//sYsTeM/Library",
+        "//server/share/vault",
+        "///server/share/vault",
+        "////server/share/vault",
+        r"\\server\share\vault",
+        r"\\\\server\share\vault",
+    ],
+)
+def test_network_style_root_rejects_before_descriptor_open(
+    candidate: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    open_calls: list[tuple[object, ...]] = []
+
+    def unexpected_open(*args: object, **kwargs: object) -> int:
+        open_calls.append(args)
+        raise AssertionError(f"os.open must not run: {kwargs}")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security._descriptor_security_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(os, "open", unexpected_open)
+
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root(candidate)
+    assert caught.value.code == "unsafe_root"
+    assert open_calls == []
+
+
 def test_case_varied_home_and_desktop_reject_before_descriptor_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
