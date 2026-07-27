@@ -1079,7 +1079,6 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     assert ctx.sv is not None
 
-    sv = ctx.sv
     mm_port = ctx.mm_port
     md_port = ctx.memory_dashboard_port
 
@@ -1113,7 +1112,7 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     def _on_quit() -> None:
         try:
-            sv.stop_all()
+            _stop_app_runtime_once(ctx)
         finally:
             try:
                 _webview.windows[0].destroy()
