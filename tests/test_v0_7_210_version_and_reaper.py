@@ -108,7 +108,8 @@ def test_sidebar_renders_version_badge():
     src = _src("frontend/src/components/layout/AppSidebar.tsx")
     bridge = _src("frontend/src/lib/desktop-version.ts")
     assert "readDesktopVersion(window)" in src
-    assert "DEEPER_NOTEBOOK_VERSION || bridge.ONP_VERSION" in bridge
+    assert "return bridge.DEEPER_NOTEBOOK_VERSION" in bridge
+    assert "ONP_VERSION" not in bridge
     assert "v0.7.210 — Version badge" in src
     # The badge is hidden when collapsed (matches the existing
     # sidebar pattern for footer chrome).

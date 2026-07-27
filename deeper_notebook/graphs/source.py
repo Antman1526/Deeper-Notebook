@@ -101,9 +101,8 @@ async def content_process(state: SourceState) -> dict:
     # v0.7.209 — HIGH: previously this node constructed a FRESH
     # `ContentSettings(...)` with hardcoded literals every time,
     # silently overriding the user's persisted preferences. The
-    # Settings page in the UI writes to the singleton record
-    # `open_notebook:content_settings` (see
-    # `api/routers/settings.py`); toggling
+    # Settings page in the UI writes to the persisted singleton
+    # (see `api/routers/settings.py`); toggling
     # `default_content_processing_engine_doc` / `_url`,
     # `auto_delete_files`, or `youtube_preferred_languages` then
     # had ZERO effect on the actual ingest pipeline because this

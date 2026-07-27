@@ -1069,7 +1069,7 @@ class Note(ObjectModel):
             # registry directly via `registry.get_command_by_id()` —
             # returns None if the command isn't registered, no
             # exception. Cleaner intent + no string brittleness.
-            if not _is_command_registered("deeper_notebook.embed_note"):
+            if not _is_command_registered("open_notebook.embed_note"):
                 logger.warning(
                     f"embed_note not in surreal-commands registry — "
                     f"note {self.id} saved without embedding. Embedding "

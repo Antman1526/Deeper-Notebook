@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 import deeper_notebook
 import scripts.rebrand_audit as rebrand_audit
@@ -878,6 +879,181 @@ def test_every_legacy_pattern_is_forbidden_on_active_ui(pattern):
         pattern,
         "content",
         1,
+    )
+
+
+@pytest.mark.parametrize("pattern", rebrand_audit.LEGACY_PATTERNS)
+def test_every_legacy_pattern_is_forbidden_on_all_production_frontend_paths(
+    pattern,
+):
+    assert rebrand_audit._compatibility_is_forbidden(
+        ROOT,
+        "frontend/src/lib/VisibleTip.ts",
+        pattern,
+        "content",
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "frontend/src/lib/VisibleTip.ts",
+        "api/lib/visible_tip.py",
+        "deeper_notebook/visible_tip.py",
+        "desktop/visible_tip.py",
+    ],
+)
+def test_regression_fixture_contract_rejects_active_production_paths(
+    tmp_path,
+    path,
+):
+    context = "legacy_name = 'Open Notebook Plus'"
+    target = tmp_path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(context + "\n", encoding="utf-8")
+    entry = _contract_entry(
+        path=path,
+        pattern="Open Notebook Plus",
+        context=context,
+        contract="test-compatibility-v1",
+    )
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / (path.replace("/", "-") + ".json"),
+        [entry],
+        {
+            "test-compatibility-v1": {
+                "kind": "regression_fixture",
+                "owner": "rebrand-audit-tests",
+                "retention_reason": (
+                    "The focused fixture proves runtime code cannot be "
+                    "smuggled into a regression-only compatibility scope."
+                ),
+                "proof": "static:regression-fixture-contract-v1",
+            }
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="kind-specific boundary|active UI",
+    ):
+        load_allowlist(allowlist_path)
+
+
+def test_regression_fixture_scope_accepts_only_true_test_or_fixture_paths():
+    accepted = [
+        "tests/test_visible_tip.py",
+        "desktop/tests/test_visible_tip.py",
+        "fixtures/visible_tip.py",
+        "frontend/src/lib/VisibleTip.test.ts",
+        "frontend/tests/build-contract/app/page.tsx",
+    ]
+    rejected = [
+        "frontend/src/lib/VisibleTip.ts",
+        "api/lib/visible_tip.py",
+        "deeper_notebook/visible_tip.py",
+        "desktop/visible_tip.py",
+    ]
+
+    assert all(
+        rebrand_audit._scope_path_allowed("regression_fixture", path)
+        for path in accepted
+    )
+    assert not any(
+        rebrand_audit._scope_path_allowed("regression_fixture", path)
+        for path in rejected
+    )
+
+
+def test_runtime_record_contract_has_exact_behavioral_inventory():
+    from deeper_notebook.ai.models import DefaultModels
+    from deeper_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.provider_config import ProviderConfig
+    from deeper_notebook.domain.transformation import DefaultPrompts
+
+    expected = {
+        "deeper_notebook/ai/models.py": {
+            "open_notebook:default_models",
+        },
+        "deeper_notebook/domain/content_settings.py": {
+            "open_notebook:content_settings",
+        },
+        "deeper_notebook/domain/provider_config.py": {
+            "open_notebook",
+            "open_notebook:provider_configs",
+        },
+        "deeper_notebook/domain/transformation.py": {
+            "open_notebook:default_prompts",
+        },
+    }
+    actual: dict[str, set[str]] = {}
+    for path in expected:
+        source = (ROOT / path).read_text(encoding="utf-8")
+        actual[path] = set(
+            re.findall(r"[\"'](open_notebook(?::[a-z_]+)?)[\"']", source)
+        )
+
+    assert actual == expected
+    assert {
+        DefaultModels.record_id,
+        ContentSettings.record_id,
+        ProviderConfig.record_id,
+        DefaultPrompts.record_id,
+    } == {
+        "open_notebook:default_models",
+        "open_notebook:content_settings",
+        "open_notebook:provider_configs",
+        "open_notebook:default_prompts",
+    }
+
+
+def test_installation_issue_log_command_names_existing_compose_service():
+    issue_path = ROOT / ".github/ISSUE_TEMPLATE/installation_issue.yml"
+    issue_source = issue_path.read_text(encoding="utf-8")
+    issue = yaml.safe_load(issue_source)
+    compose = yaml.safe_load(
+        (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    )
+    logs_field = next(item for item in issue["body"] if item.get("id") == "logs")
+    description = logs_field["attributes"]["description"]
+    command = re.search(
+        r"docker compose logs -f ([a-zA-Z0-9_-]+)",
+        description,
+    )
+
+    assert command is not None
+    assert command.group(1) in compose["services"]
+    assert command.group(1) == "open_notebook"
+
+    allowlist = json.loads(
+        (ROOT / "scripts/rebrand-allowlist.json").read_text(encoding="utf-8")
+    )
+    command_line = next(
+        number
+        for number, line in enumerate(issue_source.splitlines(), start=1)
+        if "docker compose logs -f open_notebook" in line
+    )
+    image_line = next(
+        number
+        for number, line in enumerate(issue_source.splitlines(), start=1)
+        if "image: lfnovo/open_notebook" in line
+    )
+    issue_entries = {
+        entry["line"]: entry
+        for entry in allowlist["entries"]
+        if entry["path"] == ".github/ISSUE_TEMPLATE/installation_issue.yml"
+        and entry["pattern"] == "open_notebook"
+    }
+    assert issue_entries[command_line]["category"] == "compatibility_alias"
+    assert (
+        issue_entries[command_line]["rationale"]["compatibility_contract"]
+        == "compose-service-identifier-v1"
+    )
+    assert issue_entries[image_line]["category"] == "upstream_reference"
+    assert (
+        issue_entries[image_line]["rationale"]["compatibility_contract"]
+        is None
     )
 
 
