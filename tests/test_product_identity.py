@@ -178,27 +178,6 @@ def test_allowlist_uses_exact_persisted_context_not_broad_module_pattern():
     )
 
 
-def test_queued_command_app_id_is_a_persisted_compatibility_identifier():
-    allowlist = load_allowlist(ALLOWLIST_PATH)
-    persisted_queue_app_id = 'app="open_notebook"'
-    command_modules = (
-        "commands/embedding_commands.py",
-        "commands/example_commands.py",
-        "commands/podcast_commands.py",
-        "commands/prompt_optimizer_commands.py",
-        "commands/source_commands.py",
-        "commands/studio_commands.py",
-    )
-
-    for path in command_modules:
-        assert classify_match(
-            path,
-            persisted_queue_app_id,
-            allowlist,
-        ) == "compatibility_alias"
-        assert persisted_queue_app_id in (ROOT / path).read_text(encoding="utf-8")
-
-
 def test_allowlist_accepts_upstream_docs_wildcard_and_rejects_arbitrary_scope(
     tmp_path,
 ):

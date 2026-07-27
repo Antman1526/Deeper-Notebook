@@ -150,7 +150,7 @@ def build_flat_config(
             return
         raise PromptOptimizerError(
             f"SkillOpt config key {key!r} not found — the skillopt package "
-            f"layout changed; update open_notebook/prompt_optimizer."
+            f"layout changed; update deeper_notebook/prompt_optimizer."
         )
 
     _set("model_backend", "azure_openai")

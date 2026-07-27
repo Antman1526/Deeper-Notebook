@@ -12,6 +12,8 @@
 import sys
 from pathlib import Path
 
+from desktop.build.package_layout import pyinstaller_upstream_package_datas
+
 # SPECPATH is the directory holding this .spec file (i.e. desktop/build/).
 # ROOT = desktop/
 # PROJECT_ROOT = repo root
@@ -93,8 +95,7 @@ datas = [
     # Paths include <MEIPASS>/upstream/deeper_notebook (canonical) and
     # /upstream/open_notebook (compatibility shim).
     (str(PROJECT_ROOT / "api"),          "upstream/api"),
-    (str(PROJECT_ROOT / "deeper_notebook"), "upstream/deeper_notebook"),
-    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
+    *pyinstaller_upstream_package_datas(PROJECT_ROOT),
     (str(PROJECT_ROOT / "commands"),     "upstream/commands"),
     (str(PROJECT_ROOT / "prompts"),      "upstream/prompts"),
     (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
