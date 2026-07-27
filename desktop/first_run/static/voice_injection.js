@@ -21,9 +21,9 @@
     style.textContent = [
       // Pulse ring around mic FAB while recording
       '@keyframes onp-pulse {',
-      '  0%   { box-shadow: 0 0 0 0 rgba(var(--onp-pulse-rgb,45,127,249), 0.55); }',
-      '  70%  { box-shadow: 0 0 0 14px rgba(var(--onp-pulse-rgb,45,127,249), 0); }',
-      '  100% { box-shadow: 0 0 0 0 rgba(var(--onp-pulse-rgb,45,127,249), 0); }',
+      '  0%   { box-shadow: 0 0 0 0 rgba(var(--dn-pulse-rgb,45,212,191), 0.55); }',
+      '  70%  { box-shadow: 0 0 0 14px rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
+      '  100% { box-shadow: 0 0 0 0 rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
       '}',
       '#onp-mic-fab.recording { animation: onp-pulse 1.1s ease-out infinite; }',
 

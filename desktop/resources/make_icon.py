@@ -5,8 +5,6 @@ Run: uv run python desktop/resources/make_icon.py
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from xml.etree import ElementTree
@@ -247,69 +245,97 @@ def render_master() -> Image.Image:
     return canvas
 
 
-def write_mac_icns(master: Image.Image) -> None:
-    """Use macOS iconutil to make the multi-representation .icns."""
-    iconset = ROOT / "Deeper Notebook.iconset"
-    if iconset.exists():
-        shutil.rmtree(iconset)
-    iconset.mkdir()
-    sizes = [
-        (16, "icon_16x16.png"),
-        (32, "icon_16x16@2x.png"),
-        (32, "icon_32x32.png"),
-        (64, "icon_32x32@2x.png"),
-        (128, "icon_128x128.png"),
-        (256, "icon_128x128@2x.png"),
-        (256, "icon_256x256.png"),
-        (512, "icon_256x256@2x.png"),
-        (512, "icon_512x512.png"),
-        (1024, "icon_512x512@2x.png"),
+def render_frame(master: Image.Image, size: int) -> Image.Image:
+    """Render one deterministic frame, pixel-hinting the 16px spark."""
+    frame = master.resize((size, size), Image.Resampling.LANCZOS)
+    if size != 16:
+        return frame
+
+    # At 16px, ordinary Lanczos reduction averages the four-point spark into
+    # the dark-teal cover until none of the approved light survives. Keep the
+    # canonical large geometry untouched and hint only the same 16px spark:
+    # ten light arm pixels around its cyan center.
+    draw = ImageDraw.Draw(frame)
+    center_x, center_y = 10, 7
+    draw.point(
+        [
+            (center_x, center_y - 2),
+            (center_x - 1, center_y - 1),
+            (center_x, center_y - 1),
+            (center_x + 1, center_y - 1),
+            (center_x - 2, center_y),
+            (center_x + 2, center_y),
+            (center_x - 1, center_y + 1),
+            (center_x, center_y + 1),
+            (center_x + 1, center_y + 1),
+            (center_x, center_y + 2),
+        ],
+        fill=PALETTE["light"],
+    )
+    draw.point((center_x, center_y), fill=PALETTE["cyan"])
+    return frame
+
+
+def write_mac_icns(master: Image.Image, destination: Path) -> None:
+    """Write deterministic ICNS representations with Pillow."""
+    frames = [
+        render_frame(master, size)
+        for size in (32, 64, 128, 256, 512)
     ]
-    try:
-        for size, name in sizes:
-            master.resize((size, size), Image.Resampling.LANCZOS).save(
-                iconset / name
-            )
-        subprocess.run(
-            ["iconutil", "-c", "icns", str(iconset), "-o", str(ROOT / "icon.icns")],
-            check=True,
-        )
-    finally:
-        shutil.rmtree(iconset, ignore_errors=True)
+    master.save(destination, format="ICNS", append_images=frames)
 
 
 def _write_ico(image: Image.Image, destination: Path) -> None:
-    sizes = [(size, size) for size in ICO_SIZES]
-    image.save(destination, format="ICO", sizes=sizes)
+    frames = [render_frame(image, size) for size in ICO_SIZES]
+    largest = frames[-1]
+    largest.save(
+        destination,
+        format="ICO",
+        sizes=[frame.size for frame in frames],
+        append_images=frames[:-1],
+    )
 
 
-def write_win_ico(master: Image.Image) -> None:
-    """Write the Windows icon with every required frame."""
-    _write_ico(master, ROOT / "icon.ico")
+def write_win_ico(master: Image.Image, destination: Path) -> None:
+    """Write the Windows icon with every required exact-size frame."""
+    _write_ico(master, destination)
 
 
-def write_frontend_favicon(master: Image.Image) -> None:
+def write_frontend_favicon(master: Image.Image, destination: Path) -> None:
     """Write the frontend favicon from the canonical 256-pixel image."""
-    favicon_master = master.resize((256, 256), Image.Resampling.LANCZOS)
-    _write_ico(favicon_master, FRONTEND_FAVICON)
+    favicon_master = render_frame(master, 256)
+    _write_ico(favicon_master, destination)
+
+
+def generate_assets(
+    output_dir: Path,
+    favicon_path: Path,
+) -> dict[str, Path]:
+    """Generate every brand artifact under caller-provided paths."""
+    output_dir = Path(output_dir)
+    favicon_path = Path(favicon_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    favicon_path.parent.mkdir(parents=True, exist_ok=True)
+
+    paths = {
+        "png": output_dir / "icon.png",
+        "icns": output_dir / "icon.icns",
+        "ico": output_dir / "icon.ico",
+        "favicon": favicon_path,
+    }
+    master = render_master()
+    master.save(paths["png"])
+    write_mac_icns(master, paths["icns"])
+    write_win_ico(master, paths["ico"])
+    write_frontend_favicon(master, paths["favicon"])
+    return paths
 
 
 def main() -> None:
     print("Rendering Notebook Spark master 1024x1024 ...")
-    master = render_master()
-    master_png = ROOT / "icon.png"
-    master.save(master_png)
-    print(f"  -> {master_png}")
-    if sys.platform == "darwin":
-        print("Generating macOS .icns ...")
-        write_mac_icns(master)
-        print(f"  -> {ROOT / 'icon.icns'}")
-    print("Generating Windows .ico ...")
-    write_win_ico(master)
-    print(f"  -> {ROOT / 'icon.ico'}")
-    print("Generating frontend favicon ...")
-    write_frontend_favicon(master)
-    print(f"  -> {FRONTEND_FAVICON}")
+    generated = generate_assets(ROOT, FRONTEND_FAVICON)
+    for label in ("png", "icns", "ico", "favicon"):
+        print(f"  {label:>7} -> {generated[label]}")
 
 
 if __name__ == "__main__":

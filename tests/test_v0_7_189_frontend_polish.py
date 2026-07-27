@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -113,7 +112,9 @@ def test_rebuild_embeddings_uses_formatdatetime():
 
 def test_gmail_integration_uses_formatdatetime():
     """v0.7.189: GmailIntegration last_sent_at uses formatDateTime."""
-    src = _read_source("frontend/src/components/onp/GmailIntegration.tsx")
+    src = _read_source(
+        "frontend/src/components/deeper-notebook/GmailIntegration.tsx"
+    )
     assert "formatDateTime(status.last_sent_at, language)" in src
     assert "useTranslation" in src, (
         "v0.7.189 regression: GmailIntegration must import "

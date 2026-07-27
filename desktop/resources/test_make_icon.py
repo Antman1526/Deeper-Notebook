@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +22,16 @@ REQUIRED_ICO_SIZES = {
     (128, 128),
     (256, 256),
 }
+REQUIRED_ICNS_REPRESENTATIONS = {
+    (16, 16, 2),
+    (32, 32, 2),
+    (128, 128, 1),
+    (128, 128, 2),
+    (256, 256, 1),
+    (256, 256, 2),
+    (512, 512, 1),
+    (512, 512, 2),
+}
 APPROVED_PALETTE = {
     "deep": (7, 27, 29, 255),
     "dark_teal": (15, 118, 110, 255),
@@ -27,26 +39,109 @@ APPROVED_PALETTE = {
     "cyan": (56, 189, 248, 255),
     "light": (204, 251, 241, 255),
 }
+COMMITTED_ARTIFACTS = {
+    "png": REPOSITORY_ROOT / "desktop/resources/icon.png",
+    "icns": REPOSITORY_ROOT / "desktop/resources/icon.icns",
+    "ico": REPOSITORY_ROOT / "desktop/resources/icon.ico",
+    "favicon": REPOSITORY_ROOT / "frontend/src/app/favicon.ico",
+}
 
 
-def _largest_rgba(path: Path) -> Image.Image:
-    image = Image.open(path)
-    if image.format == "ICO":
-        image = image.ico.getimage((256, 256))
-    return image.convert("RGBA")
+def _color_distance(
+    actual: tuple[int, int, int, int],
+    expected: tuple[int, int, int, int],
+) -> int:
+    return max(abs(actual[channel] - expected[channel]) for channel in range(4))
 
 
-def _contains_near_color(
-    colors: set[tuple[int, int, int, int]],
-    target: tuple[int, int, int, int],
-    tolerance: int = 18,
-) -> bool:
-    return any(
-        color[3] == target[3]
-        and max(abs(color[channel] - target[channel]) for channel in range(3))
-        <= tolerance
-        for color in colors
+def _relative_luminance(color: tuple[int, int, int, int]) -> float:
+    channels = []
+    for value in color[:3]:
+        channel = value / 255
+        channels.append(
+            channel / 12.92
+            if channel <= 0.04045
+            else ((channel + 0.055) / 1.055) ** 2.4
+        )
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(
+    first: tuple[int, int, int, int],
+    second: tuple[int, int, int, int],
+) -> float:
+    high, low = sorted(
+        (_relative_luminance(first), _relative_luminance(second)),
+        reverse=True,
     )
+    return (high + 0.05) / (low + 0.05)
+
+
+def _assert_brand_content(image: Image.Image, *, require_transparency: bool) -> None:
+    rgba = image.convert("RGBA")
+    colors = set(rgba.getdata())
+    if require_transparency:
+        assert rgba.getchannel("A").getextrema() == (0, 255)
+    # The diagonal teal-to-cyan outline has sub-pixel coverage at 16px, so its
+    # teal endpoint is legitimately blended. Palette constants are pinned
+    # separately; the tiny-frame content contract pins the four solid roles.
+    expected_roles = (
+        APPROVED_PALETTE
+        if rgba.width > 16
+        else {
+            role: APPROVED_PALETTE[role]
+            for role in ("deep", "dark_teal", "cyan", "light")
+        }
+    )
+    for role, expected in expected_roles.items():
+        assert any(_color_distance(color, expected) <= 18 for color in colors), (
+            f"{rgba.size} frame is missing the {role} Research Core color"
+        )
+
+
+def _assert_spark_visible(image: Image.Image) -> None:
+    rgba = image.convert("RGBA")
+    size = rgba.width
+    left = max(0, int(120 * size / 256))
+    top = max(0, int(76 * size / 256))
+    right = min(size, int(194 * size / 256) + 1)
+    bottom = min(size, int(150 * size / 256) + 1)
+    spark = rgba.crop((left, top, right, bottom))
+    colors = list(spark.getdata())
+    light_pixels = [
+        color
+        for color in colors
+        if _color_distance(color, APPROVED_PALETTE["light"]) <= 18
+    ]
+    cyan_pixels = [
+        color
+        for color in colors
+        if _color_distance(color, APPROVED_PALETTE["cyan"]) <= 18
+    ]
+
+    assert light_pixels, f"{size}px frame lost the light spark"
+    assert cyan_pixels, f"{size}px frame lost the cyan spark core"
+    if size == 16:
+        assert len(light_pixels) >= 6
+        assert _contrast(
+            APPROVED_PALETTE["light"],
+            APPROVED_PALETTE["dark_teal"],
+        ) >= 4.5
+
+
+@pytest.fixture(scope="module")
+def generated_assets(tmp_path_factory):
+    first_root = tmp_path_factory.mktemp("generated-icons-first")
+    second_root = tmp_path_factory.mktemp("generated-icons-second")
+    first = make_icon.generate_assets(
+        first_root / "desktop",
+        first_root / "frontend/favicon.ico",
+    )
+    second = make_icon.generate_assets(
+        second_root / "desktop",
+        second_root / "frontend/favicon.ico",
+    )
+    return first, second
 
 
 def test_icon_generator_declares_the_approved_palette() -> None:
@@ -95,31 +190,60 @@ def test_gradient_outline_has_no_background_seams_at_rounded_joins() -> None:
     assert seams == 0
 
 
-def test_generator_exposes_frontend_favicon_writer() -> None:
-    assert callable(make_icon.write_frontend_favicon)
+@pytest.mark.parametrize("artifact_name", ["ico", "favicon"])
+def test_committed_16px_frames_keep_the_light_spark(artifact_name: str) -> None:
+    with Image.open(COMMITTED_ARTIFACTS[artifact_name]) as icon:
+        frame = icon.ico.getimage((16, 16)).copy()
+    _assert_spark_visible(frame)
 
 
-def test_generated_icons_contain_the_brand_and_required_representations() -> None:
-    artifacts = [
-        REPOSITORY_ROOT / "desktop/resources/icon.png",
-        REPOSITORY_ROOT / "desktop/resources/icon.icns",
-        REPOSITORY_ROOT / "desktop/resources/icon.ico",
-        REPOSITORY_ROOT / "frontend/src/app/favicon.ico",
-    ]
+def test_generation_is_deterministic_and_matches_committed_artifacts(
+    generated_assets,
+) -> None:
+    first, second = generated_assets
 
-    for artifact in artifacts:
-        assert artifact.is_file()
-        assert artifact.stat().st_size > 0
-        image = _largest_rgba(artifact)
-        assert max(image.size) >= 256
-        colors = set(image.getdata())
-        for role, expected in APPROVED_PALETTE.items():
-            assert _contains_near_color(colors, expected), (
-                f"{artifact} is missing the {role} Research Core color"
-            )
+    assert first.keys() == COMMITTED_ARTIFACTS.keys()
+    assert second.keys() == COMMITTED_ARTIFACTS.keys()
+    for name, committed in COMMITTED_ARTIFACTS.items():
+        first_bytes = first[name].read_bytes()
+        second_bytes = second[name].read_bytes()
+        assert hashlib.sha256(first_bytes).digest() == hashlib.sha256(
+            second_bytes
+        ).digest()
+        assert first_bytes == committed.read_bytes()
 
-    with Image.open(REPOSITORY_ROOT / "desktop/resources/icon.ico") as icon:
+
+@pytest.mark.parametrize("artifact_name", ["ico", "favicon"])
+def test_every_required_ico_frame_contains_the_mark(
+    generated_assets,
+    artifact_name: str,
+) -> None:
+    generated, _ = generated_assets
+    with Image.open(generated[artifact_name]) as icon:
         assert icon.ico.sizes() == REQUIRED_ICO_SIZES
+        for size in sorted(REQUIRED_ICO_SIZES):
+            frame = icon.ico.getimage(size)
+            assert frame.size == size
+            _assert_brand_content(frame, require_transparency=True)
+            _assert_spark_visible(frame)
 
-    with Image.open(REPOSITORY_ROOT / "frontend/src/app/favicon.ico") as favicon:
-        assert (256, 256) in favicon.ico.sizes()
+
+def test_every_generated_icns_representation_contains_the_mark(
+    generated_assets,
+) -> None:
+    generated, _ = generated_assets
+    with Image.open(generated["icns"]) as icon:
+        representations = set(icon.info["sizes"])
+        assert representations == REQUIRED_ICNS_REPRESENTATIONS
+        for representation in sorted(representations):
+            frame = icon.icns.getimage(representation)
+            _assert_brand_content(frame, require_transparency=True)
+            _assert_spark_visible(frame)
+
+
+def test_generated_png_contains_the_full_resolution_mark(generated_assets) -> None:
+    generated, _ = generated_assets
+    with Image.open(generated["png"]) as image:
+        assert image.size == (1024, 1024)
+        _assert_brand_content(image, require_transparency=True)
+        _assert_spark_visible(image)

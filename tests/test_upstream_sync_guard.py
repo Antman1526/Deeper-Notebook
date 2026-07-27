@@ -17,6 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 _REPO = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO / "scripts" / "upstream_sync_guard.sh"
+_LEGACY_COMPONENT_PATH = "components/" + "onp"
 
 
 def _run_guard(command: str, snapshot_dir: Path) -> subprocess.CompletedProcess[str]:
@@ -156,3 +157,11 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
     if worktree_dir.exists():
         shutil.rmtree(worktree_dir)
     _git(repo, "worktree", "prune")
+
+
+def test_guard_protects_and_verifies_the_canonical_component_path():
+    script = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "frontend/src/components/deeper-notebook/" in script
+    assert "src/components/deeper-notebook/ArtifactRail.test.tsx" in script
+    assert _LEGACY_COMPONENT_PATH not in script
