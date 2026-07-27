@@ -99,6 +99,8 @@ def test_default_migration_discovery_includes_vault_repair_33_and_down():
     assert "idx_vault_trust_manifest" in ups[32].sql
     assert downs[32] is not None
     assert "schema_preserved: true" in downs[32].sql
+    assert ups[32].version == 33
+    assert downs[32].version == 33
 
 
 def test_discover_ignores_non_numeric_files(tmp_path):

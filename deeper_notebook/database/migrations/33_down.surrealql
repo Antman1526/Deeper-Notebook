@@ -4,6 +4,6 @@
 -- corrected migration 32 owns these same canonical fields and indexes, so a
 -- version rollback must not remove them or recreate the unsafe global trust
 -- identity. This statement makes the discovered down migration explicit while
--- preserving the canonical v32 schema.
+-- preserving the canonical v32 schema, backfilled keys, and link resolution.
 
 RETURN { migration: 33, schema_preserved: true };
