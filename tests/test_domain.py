@@ -133,7 +133,7 @@ class TestSourceDomain:
         hermetic.
         """
         # Create a "uploads" dir + a file inside it
-        uploads_dir = Path(tempfile.mkdtemp())
+        uploads_dir = Path(tempfile.mkdtemp()).resolve()
         monkeypatch.setattr(
             "deeper_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
         )
