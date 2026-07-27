@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from desktop.data_root import prepare_recovery_log_directory
+from desktop.data_root import append_recovery_log, open_recovery_log_directory
 
 
 def _emergency_log(exc: BaseException) -> None:
@@ -29,40 +29,17 @@ def _emergency_log(exc: BaseException) -> None:
     fails, the process still exits non-zero so the caller knows it failed.
     """
     import datetime as _dt
-    import os as _os
-    import stat as _stat
     import traceback as _traceback
 
     try:
-        log_dir = prepare_recovery_log_directory()
-        log_path = log_dir / "launcher.log"
-        if log_path.is_symlink():
-            raise OSError("recovery launcher log is a symlink")
         payload = (
             f"\n===== EARLY-INIT FAILURE at "
             f"{_dt.datetime.now().isoformat()} =====\n"
             f"{type(exc).__name__}: {exc}\n"
             f"{_traceback.format_exc()}\n"
         ).encode("utf-8", errors="replace")
-        flags = _os.O_CREAT | _os.O_APPEND | _os.O_WRONLY
-        flags |= getattr(_os, "O_NOFOLLOW", 0)
-        fd = _os.open(log_path, flags, 0o600)
-        try:
-            stat_result = _os.fstat(fd)
-            if not _stat.S_ISREG(stat_result.st_mode):
-                raise OSError("recovery launcher log is not a regular file")
-            getuid = getattr(_os, "getuid", None)
-            if getuid is not None and stat_result.st_uid != getuid():
-                raise OSError("recovery launcher log is not owned by this user")
-            view = memoryview(payload)
-            while view:
-                written = _os.write(fd, view)
-                if written <= 0:
-                    raise OSError("short emergency-log write")
-                view = view[written:]
-            _os.fsync(fd)
-        finally:
-            _os.close(fd)
+        with open_recovery_log_directory() as log_directory:
+            append_recovery_log(log_directory, "launcher.log", payload)
     except Exception:
         # If we can't even write to the log dir, fall back to stderr.
         try:

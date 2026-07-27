@@ -18,7 +18,8 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,51 +137,174 @@ def recovery_metadata_root(*, home: Path | None = None) -> Path:
     return base / RECOVERY_DIRECTORY_NAME
 
 
-def _ensure_private_owned_directory(
-    path: Path,
+@dataclass(frozen=True)
+class SecureDirectory:
+    """An owned directory bound to a validated no-follow descriptor."""
+
+    path: Path
+    fd: int
+    parent_fd: int | None
+    name: str | None
+    device: int
+    inode: int
+
+    def verify_visible_identity(self) -> None:
+        if self.parent_fd is None or self.name is None:
+            return
+        try:
+            current = os.stat(
+                self.name,
+                dir_fd=self.parent_fd,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise _CriticalPathError(
+                "recovery-directory-identity-changed"
+            ) from exc
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or current.st_dev != self.device
+            or current.st_ino != self.inode
+        ):
+            raise _CriticalPathError("recovery-directory-identity-changed")
+
+
+def _secure_directory_flags() -> int:
+    required = ("O_DIRECTORY", "O_NOFOLLOW")
+    if any(not hasattr(os, name) for name in required):
+        raise _CriticalPathError("secure-directory-handles-unavailable")
+    return (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+
+
+def _validate_directory_fd(
+    fd: int,
     *,
+    ownership_reason: str | None,
+    harden_permissions: bool,
+) -> os.stat_result:
+    result = os.fstat(fd)
+    if not stat.S_ISDIR(result.st_mode):
+        raise _CriticalPathError(
+            ownership_reason or "recovery-parent-is-not-directory"
+        )
+    getuid = getattr(os, "getuid", None)
+    if (
+        ownership_reason is not None
+        and getuid is not None
+        and result.st_uid != getuid()
+    ):
+        raise _CriticalPathError(ownership_reason)
+    if harden_permissions:
+        os.fchmod(fd, 0o700)
+        result = os.fstat(fd)
+        if stat.S_IMODE(result.st_mode) & 0o077:
+            raise _CriticalPathError("recovery-directory-permissions-unsafe")
+    return result
+
+
+@contextmanager
+def _open_directory_path(path: Path) -> Iterator[SecureDirectory]:
+    fd = os.open(path, _secure_directory_flags())
+    try:
+        result = _validate_directory_fd(
+            fd,
+            ownership_reason=None,
+            harden_permissions=False,
+        )
+        yield SecureDirectory(path, fd, None, None, result.st_dev, result.st_ino)
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def _open_child_directory(
+    parent: SecureDirectory,
+    name: str,
+    *,
+    path: Path,
     symlink_reason: str,
     ownership_reason: str,
-) -> None:
-    """Create or validate an exact private directory without following links."""
-    if path.is_symlink():
-        raise _CriticalPathError(symlink_reason)
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+) -> Iterator[SecureDirectory]:
     try:
-        stat_result = path.lstat()
-    except OSError as exc:
-        raise _CriticalPathError(ownership_reason) from exc
-    if not stat.S_ISDIR(stat_result.st_mode) or path.is_symlink():
-        raise _CriticalPathError(symlink_reason)
-    getuid = getattr(os, "getuid", None)
-    if getuid is not None and stat_result.st_uid != getuid():
-        raise _CriticalPathError(ownership_reason)
-    try:
-        os.chmod(path, 0o700)
-    except OSError:
+        os.mkdir(name, mode=0o700, dir_fd=parent.fd)
+    except FileExistsError:
         pass
+    try:
+        fd = os.open(name, _secure_directory_flags(), dir_fd=parent.fd)
+    except OSError as exc:
+        raise _CriticalPathError(symlink_reason) from exc
+    try:
+        result = _validate_directory_fd(
+            fd,
+            ownership_reason=ownership_reason,
+            harden_permissions=True,
+        )
+        directory = SecureDirectory(
+            path,
+            fd,
+            parent.fd,
+            name,
+            result.st_dev,
+            result.st_ino,
+        )
+        directory.verify_visible_identity()
+        yield directory
+        directory.verify_visible_identity()
+    finally:
+        os.close(fd)
 
 
-def prepare_recovery_metadata_root(*, home: Path | None = None) -> Path:
-    """Create and validate the private sibling recovery directory."""
-    recovery_root = recovery_metadata_root(home=home)
-    _ensure_private_owned_directory(
-        recovery_root,
-        symlink_reason="recovery-metadata-directory-symlink",
-        ownership_reason="recovery-metadata-directory-not-owned",
-    )
-    return recovery_root
+@contextmanager
+def open_owned_directory(path: Path) -> Iterator[SecureDirectory]:
+    """Create and bind one owned private directory below an existing parent."""
+    path = Path(path).absolute()
+    with _open_directory_path(path.parent) as parent:
+        with _open_child_directory(
+            parent,
+            path.name,
+            path=path,
+            symlink_reason="owned-directory-symlink",
+            ownership_reason="owned-directory-not-owned",
+        ) as directory:
+            yield directory
 
 
-def prepare_recovery_log_directory(*, home: Path | None = None) -> Path:
-    """Create and validate the private sibling emergency-log directory."""
-    log_dir = prepare_recovery_metadata_root(home=home) / "logs"
-    _ensure_private_owned_directory(
-        log_dir,
-        symlink_reason="recovery-log-directory-symlink",
-        ownership_reason="recovery-log-directory-not-owned",
-    )
-    return log_dir
+@contextmanager
+def open_recovery_metadata_directory(
+    *, home: Path | None = None
+) -> Iterator[SecureDirectory]:
+    """Bind the sibling recovery root through owned no-follow descriptors."""
+    base = Path(home) if home is not None else user_home()
+    with _open_directory_path(base) as home_directory:
+        with _open_child_directory(
+            home_directory,
+            RECOVERY_DIRECTORY_NAME,
+            path=base / RECOVERY_DIRECTORY_NAME,
+            symlink_reason="recovery-metadata-directory-symlink",
+            ownership_reason="recovery-metadata-directory-not-owned",
+        ) as recovery_directory:
+            yield recovery_directory
+
+
+@contextmanager
+def open_recovery_log_directory(
+    *, home: Path | None = None
+) -> Iterator[SecureDirectory]:
+    """Bind the sibling recovery log directory without pathname writes."""
+    with open_recovery_metadata_directory(home=home) as recovery_directory:
+        with _open_child_directory(
+            recovery_directory,
+            "logs",
+            path=recovery_directory.path / "logs",
+            symlink_reason="recovery-log-directory-symlink",
+            ownership_reason="recovery-log-directory-not-owned",
+        ) as log_directory:
+            yield log_directory
 
 
 def _safe_tree_summary(root: Path) -> dict[str, object]:
@@ -218,6 +342,7 @@ def write_conflict_recovery_evidence(
     decision: DataRootDecision,
     *,
     home: Path | None = None,
+    _race_hook: Callable[[str, Path], None] | None = None,
 ) -> tuple[Path, dict[str, object]]:
     """Persist read-only conflict evidence outside both ambiguous roots."""
     if (
@@ -229,24 +354,35 @@ def write_conflict_recovery_evidence(
     recovery_root = recovery_metadata_root(home=home)
     if recovery_root in {decision.canonical_root, decision.legacy_root}:
         raise _CriticalPathError("recovery-metadata-overlaps-data-root")
-    recovery_root = prepare_recovery_metadata_root(home=home)
-
-    payload: dict[str, object] = {
-        "schema_version": 1,
-        "recorded_at": _now(),
-        "state": decision.state,
-        "reason_code": decision.reason_code,
-        "selected_root": None,
-        "mutated_roots": [],
-        "canonical": _safe_tree_summary(decision.canonical_root),
-        "legacy": _safe_tree_summary(decision.legacy_root),
-    }
-    receipt_path = recovery_root / CONFLICT_RECOVERY_RECEIPT_NAME
-    _replace_json(receipt_path, payload)
-
-    log_dir = prepare_recovery_log_directory(home=home)
-    log_path = log_dir / "recovery.log"
-    _replace_json(log_path, payload)
+    with open_recovery_metadata_directory(home=home) as recovery_directory:
+        recovery_root = recovery_directory.path
+        if _race_hook is not None:
+            _race_hook("recovery-opened", recovery_root)
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "recorded_at": _now(),
+            "state": decision.state,
+            "reason_code": decision.reason_code,
+            "selected_root": None,
+            "mutated_roots": [],
+            "canonical": _safe_tree_summary(decision.canonical_root),
+            "legacy": _safe_tree_summary(decision.legacy_root),
+        }
+        atomic_replace_json(
+            recovery_directory,
+            CONFLICT_RECOVERY_RECEIPT_NAME,
+            payload,
+        )
+        with _open_child_directory(
+            recovery_directory,
+            "logs",
+            path=recovery_root / "logs",
+            symlink_reason="recovery-log-directory-symlink",
+            ownership_reason="recovery-log-directory-not-owned",
+        ) as log_directory:
+            if _race_hook is not None:
+                _race_hook("logs-opened", log_directory.path)
+            atomic_replace_json(log_directory, "recovery.log", payload)
     return recovery_root, payload
 
 
@@ -457,6 +593,64 @@ def _replace_json(path: Path, payload: dict[str, object]) -> None:
     finally:
         if _path_exists(temporary):
             temporary.unlink()
+
+
+def atomic_replace_json(
+    directory: SecureDirectory,
+    name: str,
+    payload: dict[str, object],
+) -> None:
+    """Atomically replace JSON relative to a bound no-follow directory."""
+    temporary = f".{name}.{uuid.uuid4().hex}.tmp"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(temporary, flags, 0o600, dir_fd=directory.fd)
+        try:
+            _write_all(fd, _json_bytes(payload))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(
+            temporary,
+            name,
+            src_dir_fd=directory.fd,
+            dst_dir_fd=directory.fd,
+        )
+        os.fsync(directory.fd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=directory.fd)
+        except FileNotFoundError:
+            pass
+
+
+def append_recovery_log(
+    directory: SecureDirectory,
+    name: str,
+    payload: bytes,
+) -> None:
+    """Append to an owned regular file relative to a bound log directory."""
+    flags = os.O_CREAT | os.O_APPEND | os.O_WRONLY
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(name, flags, 0o600, dir_fd=directory.fd)
+    try:
+        result = os.fstat(fd)
+        getuid = getattr(os, "getuid", None)
+        if (
+            not stat.S_ISREG(result.st_mode)
+            or (getuid is not None and result.st_uid != getuid())
+            or result.st_nlink != 1
+            or result.st_dev != directory.device
+        ):
+            raise _CriticalPathError("recovery-log-file-unsafe")
+        os.fchmod(fd, 0o600)
+        if stat.S_IMODE(os.fstat(fd).st_mode) & 0o177:
+            raise _CriticalPathError("recovery-log-file-permissions-unsafe")
+        _write_all(fd, payload)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.fsync(directory.fd)
 
 
 def _device_id(path: Path) -> int:
