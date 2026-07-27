@@ -62,7 +62,7 @@ def reset_pending_digest_for_tests() -> None:
 
 
 def pending_digest_info() -> dict:
-    """Read-only view for /api/onp/gmail/status."""
+    """Read-only view for the canonical Gmail status endpoint."""
     if _pending_digest_since is None:
         return {"pending": False, "since": None}
     return {"pending": True, "since": _pending_digest_since.isoformat()}

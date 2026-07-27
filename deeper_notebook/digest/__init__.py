@@ -137,7 +137,7 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
 
     window = "since last digest" if g.last_sent_at else "in the last 7 days"
     header = f"""
-<h1 style="margin:0 0 8px;color:#1A2B3C;font-size:22px;">Open Notebook Plus</h1>
+<h1 style="margin:0 0 8px;color:#1A2B3C;font-size:22px;">Deeper Notebook</h1>
 <p style="margin:0 0 24px;color:#888;font-size:13px;">
   Activity {_html.escape(window)} · sent {datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")}
 </p>
@@ -145,7 +145,7 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
     footer = """
 <hr style="border:none;border-top:1px solid #eee;margin:32px 0 12px;">
 <p style="color:#aaa;font-size:11px;text-align:center;">
-  You're receiving this because you connected Gmail in Open Notebook Plus.
+  You're receiving this because you connected Gmail in Deeper Notebook.
   Manage frequency or disconnect in Settings → Email Digests.
 </p>
 """

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from deeper_notebook.identity import PRODUCT_NAME
 from deeper_notebook.studio.exporters.theme import (
     BORDER,
     INK,
@@ -306,7 +307,7 @@ def _render_infographic(document: InfographicDocument) -> Image.Image:
         )
 
     markers = unique_markers([panel.citations for panel in document.panels])
-    footer = "Sources  " + " ".join(markers) if markers else "Open Notebook Plus"
+    footer = "Sources  " + " ".join(markers) if markers else PRODUCT_NAME
     draw.text((60, height - 54), footer, font=load_font(16), fill=MUTED)
     return image
 
@@ -325,7 +326,9 @@ def export_infographic(
         "PDF",
         resolution=144.0,
         title=safe_pdf_title(document.title),
-        author="Open Notebook Plus",
+        author=PRODUCT_NAME,
+        creator=PRODUCT_NAME,
+        producer=PRODUCT_NAME,
         subject="Evidence Studio infographic",
     )
     image.close()

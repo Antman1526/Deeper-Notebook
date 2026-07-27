@@ -151,10 +151,13 @@ export default function DashboardPage() {
             className="dn-aurora-bg relative overflow-hidden rounded-2xl border border-[var(--dn-glass-border)] px-6 py-7"
           >
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Open Notebook<span className="dn-aurora-text">+</span>
+              Deeper Notebook
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Local-first research and reasoning · {totalNotebooks} notebook
+              Think further with every source
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {totalNotebooks} notebook
               {totalNotebooks === 1 ? '' : 's'}
             </p>
           </motion.header>

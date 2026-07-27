@@ -10,6 +10,8 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
+from deeper_notebook.identity import PRODUCT_NAME
+from deeper_notebook.studio.exporters.metadata import brand_office_application
 from deeper_notebook.studio.exporters.theme import (
     BORDER,
     CORAL,
@@ -106,7 +108,7 @@ def _add_title_slide(presentation: Presentation, document: SlideDeckDocument) ->
         top=6.65,
         width=6.0,
         height=0.4,
-        text="OPEN NOTEBOOK PLUS  /  EVIDENCE STUDIO",
+        text=f"{PRODUCT_NAME.upper()}  /  EVIDENCE STUDIO",
         size=10,
         color="#B7C8D8",
         bold=True,
@@ -237,7 +239,7 @@ def _render_title_page(document: SlideDeckDocument) -> Image.Image:
         )
     draw.text(
         (160, 810),
-        "OPEN NOTEBOOK PLUS  /  EVIDENCE STUDIO",
+        f"{PRODUCT_NAME.upper()}  /  EVIDENCE STUDIO",
         font=load_font(18, bold=True),
         fill="#B7C8D8",
     )
@@ -357,7 +359,10 @@ def export_slide_deck(
         _add_content_slide(presentation, item, index, len(document.slides))
     presentation.core_properties.title = document.title
     presentation.core_properties.subject = "Evidence Studio slide deck"
+    presentation.core_properties.author = PRODUCT_NAME
+    presentation.core_properties.last_modified_by = PRODUCT_NAME
     presentation.save(pptx_path)
+    brand_office_application(pptx_path)
 
     pages = [_render_title_page(document)]
     pages.extend(
@@ -371,7 +376,9 @@ def export_slide_deck(
         save_all=True,
         append_images=pages[1:],
         title=safe_pdf_title(document.title),
-        author="Open Notebook Plus",
+        author=PRODUCT_NAME,
+        creator=PRODUCT_NAME,
+        producer=PRODUCT_NAME,
         subject="Evidence Studio slide deck",
     )
     for page in pages:

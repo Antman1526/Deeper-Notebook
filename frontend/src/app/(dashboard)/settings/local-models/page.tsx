@@ -113,7 +113,7 @@ function LocalModelsWorkspace() {
     try {
       const response = await apiClient.post<{ ok: boolean; detail: string }>('/local-models/launch-default', { launcher_model_ref: model.launcher_model_ref })
       if (response.data.ok) {
-        toast.success('Native launcher default saved. Restart Open Notebook Plus to apply it.')
+        toast.success('Native launcher default saved. Restart Deeper Notebook to apply it.')
         await inventory.refetch()
       } else toast.error(response.data.detail)
     } catch (error) {

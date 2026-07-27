@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -37,7 +36,8 @@ def test_api_version_endpoint_defined():
     src = _src("api/main.py")
     assert '@app.get("/api/version")' in src
     assert 'from desktop import __version__ as desktop_version' in src
-    assert '"name": "Open Notebook Plus"' in src
+    assert '"name": PRODUCT_NAME' in src
+    assert '"description": DESCRIPTION' in src
 
 
 def test_api_version_excluded_from_auth():

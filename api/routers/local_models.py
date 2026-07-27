@@ -1077,7 +1077,10 @@ async def local_models_set_launch_default(body: dict):
     await asyncio.to_thread(updated.save, config_path)
     return {
         "ok": True,
-        "detail": f"Native launcher default set to {requested_ref}. Restart Open Notebook Plus to apply it.",
+        "detail": (
+            f"Native launcher default set to {requested_ref}. "
+            "Restart Deeper Notebook to apply it."
+        ),
         "launcher_config": _launcher_config_summary(model_dir),
     }
 

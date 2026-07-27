@@ -41,6 +41,7 @@ from deeper_notebook.domain.notebook import (
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 from deeper_notebook.feature_flags import evidence_studio_enabled
+from deeper_notebook.identity import ACTIVITY_URN_PREFIX, PRODUCT_NAME
 from deeper_notebook.local_models.inventory import enumerate_models
 from deeper_notebook.local_models.role_routing import (
     inventory_model_match_keys,
@@ -652,7 +653,7 @@ def _course_pack_lms_index_html(
         "</head>",
         "<body>",
         f"  <h1>{html.escape(artifact.title)}</h1>",
-        "  <p>Open Notebook Plus Course Pack export.</p>",
+        f"  <p>{PRODUCT_NAME} Course Pack export.</p>",
         "  <h2>Modules</h2>",
         f"  <ol>{module_items}</ol>",
         "  <h2>Course Pack Markdown</h2>",
@@ -677,8 +678,8 @@ def _course_pack_scorm_manifest(artifact: StudioArtifact) -> str:
         "    <schema>ADL SCORM</schema>",
         "    <schemaversion>1.2</schemaversion>",
         "  </metadata>",
-        "  <organizations default=\"open-notebook-plus-course-pack\">",
-        "    <organization identifier=\"open-notebook-plus-course-pack\">",
+        "  <organizations default=\"deeper-notebook-course-pack\">",
+        "    <organization identifier=\"deeper-notebook-course-pack\">",
         f"      <title>{title}</title>",
         "      <item identifier=\"course-pack-launch\" identifierref=\"course-pack-resource\">",
         f"        <title>{title}</title>",
@@ -701,14 +702,14 @@ def _course_pack_scorm_manifest(artifact: StudioArtifact) -> str:
 
 def _course_pack_tincan_xml(artifact: StudioArtifact) -> str:
     title = html.escape(artifact.title)
-    activity_id = html.escape(f"urn:open-notebook-plus:{artifact.id}")
+    activity_id = html.escape(f"{ACTIVITY_URN_PREFIX}{artifact.id}")
     return "\n".join([
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<tincan xmlns="http://projecttincan.com/tincan.xsd">',
         "  <activities>",
         f'    <activity id="{activity_id}" type="http://adlnet.gov/expapi/activities/course">',
         f"      <name>{title}</name>",
-        "      <description>Open Notebook Plus Course Pack export.</description>",
+        f"      <description>{PRODUCT_NAME} Course Pack export.</description>",
         "      <launch lang=\"en-US\">index.html</launch>",
         "    </activity>",
         "  </activities>",
@@ -721,7 +722,7 @@ def _course_pack_xapi_statements(
     artifact: StudioArtifact,
     modules: list[dict[str, object]],
 ) -> dict[str, object]:
-    activity_id = f"urn:open-notebook-plus:{artifact.id}"
+    activity_id = f"{ACTIVITY_URN_PREFIX}{artifact.id}"
     return {
         "activity": {
             "id": activity_id,
