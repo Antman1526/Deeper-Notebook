@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import subprocess
+import sys
 import time
 from datetime import date
 from pathlib import Path
@@ -193,6 +196,43 @@ def test_logseq_multiline_code_span_does_not_project_inner_syntax() -> None:
         link.target_text for link in parsed.links if link.link_kind == "wikilink"
     ] == ["Visible Link"]
     assert parsed.tags == ["visible-tag"]
+
+
+def test_logseq_fence_requires_a_valid_commonmark_closer() -> None:
+    raw = (
+        b"- parent\n"
+        b"  ```python\n"
+        b"  [[Hidden One]] #hidden-one\n"
+        b"  ```not-a-close\n"
+        b"  [[Hidden Two]] #hidden-two\n"
+        b"  ````   \n"
+        b"- NOW [[Visible]] #visible\n"
+    )
+
+    parsed = parse_document("fences.md", raw, format_mode="logseq")
+
+    assert [task.status for task in parsed.tasks] == ["doing"]
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Visible"]
+    assert parsed.tags == ["visible"]
+
+
+def test_logseq_fence_openers_and_eof_are_fail_closed() -> None:
+    raw = (
+        b"- parent\n"
+        b"  ```bad`info\n"
+        b"  [[Visible Before Fence]]\n"
+        b"  ~~~ tilde info\n"
+        b"  [[Hidden At EOF]] #hidden\n"
+    )
+
+    parsed = parse_document("fence-eof.md", raw, format_mode="logseq")
+
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Visible Before Fence"]
+    assert parsed.tags == []
 
 
 def test_parse_is_read_only_and_deterministic(tmp_path: Path) -> None:
@@ -536,6 +576,41 @@ def test_escaped_image_and_link_destinations_are_not_nested_semantics() -> None:
     assert parsed.tags == []
 
 
+def test_inline_html_declarations_comments_and_tags_are_literal() -> None:
+    raw = (
+        b"Text <!DOCTYPE [[DocType]] #doctype> "
+        b"<?processor [[Instruction]] #pi?> "
+        b"<![CDATA[[[CData]] #cdata]]> "
+        b"<!-- [[Comment]] #comment --> "
+        b'<span title="[[Attribute]] #attribute">visible</span> '
+        b"[[Real]] #real\n"
+    )
+
+    parsed = parse_document("inline-html.md", raw, format_mode="obsidian")
+
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Real"]
+    assert parsed.tags == ["real"]
+
+
+def test_unmatched_raw_html_scales_linearly() -> None:
+    timings: list[float] = []
+    for size in (50_000, 100_000, 150_000):
+        raw = (b"<pre>" * (size // 5)) + b"\n"
+        started = time.monotonic()
+        parsed = parse_document(
+            f"html-{size}.md",
+            raw,
+            format_mode="markdown",
+        )
+        timings.append(time.monotonic() - started)
+        assert parsed.links == []
+
+    assert timings[-1] < 2.0
+    assert timings[-1] <= max(0.03, timings[0]) * 6
+
+
 def test_markdown_links_support_bounded_nested_labels_targets_and_titles() -> None:
     raw = (
         b'[outer [nested]](folder/a_(b).md "Title (#not-a-tag)")\n'
@@ -550,6 +625,38 @@ def test_markdown_links_support_bounded_nested_labels_targets_and_titles() -> No
     ]
     assert parsed.links[0].alias == "outer [nested]"
     assert parsed.tags == []
+
+
+def test_markdown_links_with_code_labels_project_only_the_outer_link() -> None:
+    raw = (
+        b"[`[[hidden]] #hidden`](target.md)\n"
+        b'[pre ``code [[hidden-two]]`` post](other.md "title")\n'
+    )
+
+    parsed = parse_document("code-labels.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == [
+        "target.md",
+        "other.md",
+    ]
+    assert parsed.tags == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"[[Outer [[Inner]] tail]]\n",
+        b"[[Page [alias](nested.md)]]\n",
+        b"[[Outer [[Inner]] tail [label](nested.md)]]\n",
+    ],
+)
+def test_nested_invalid_link_syntax_is_preserved_without_partial_edges(
+    raw: bytes,
+) -> None:
+    parsed = parse_document("invalid-overlap.md", raw, format_mode="obsidian")
+
+    assert parsed.markdown.encode() == raw
+    assert parsed.links == []
 
 
 def test_neutral_markdown_uses_semantic_block_boundaries_and_exact_spans() -> None:
@@ -651,6 +758,47 @@ def test_dense_unmatched_wikilinks_scale_linearly() -> None:
     assert timings[-1] <= max(0.05, timings[0]) * 20
 
 
+def test_logseq_task_tag_association_scales_linearly() -> None:
+    timings: list[float] = []
+    for count in (1_000, 5_000, 10_000):
+        raw = "".join(
+            f"- TODO Task {index} #tag-{index}\n" for index in range(count)
+        ).encode()
+        started = time.monotonic()
+        parsed = parse_document(
+            f"tasks-{count}.md",
+            raw,
+            format_mode="logseq",
+        )
+        timings.append(time.monotonic() - started)
+        assert len(parsed.tasks) == count
+        assert parsed.tasks[-1].tags == [f"tag-{count - 1}"]
+
+    assert timings[-1] < 4.0
+    assert timings[-1] <= max(0.08, timings[0]) * 15
+
+
+def test_logseq_task_metadata_ignores_code_and_html_literals() -> None:
+    raw = (
+        b"- TODO Task `SCHEDULED: <2026-08-01> [#A] +1w #hidden`\n"
+        b"  <code>DEADLINE: <2026-08-02> [#B] +2w #hidden-html</code>\n"
+        b"  SCHEDULED: <2026-08-03 Mon +3w>\n"
+        b"  DEADLINE: <2026-08-04 Tue>\n"
+        b"  priority:: C\n"
+        b"  tags:: visible-property\n"
+        b"  #visible-tag\n"
+    )
+
+    parsed = parse_document("task-metadata.md", raw, format_mode="logseq")
+    task = parsed.tasks[0]
+
+    assert task.scheduled == date(2026, 8, 3)
+    assert task.due == date(2026, 8, 4)
+    assert task.priority == "C"
+    assert task.recurrence == "+3w"
+    assert task.tags == ["visible-property", "visible-tag"]
+
+
 def test_near_default_limit_dense_unmatched_wikilinks_remain_bounded() -> None:
     raw = (b"[[" * ((9 * 1024 * 1024) // 2)) + b"\n"
     started = time.monotonic()
@@ -659,6 +807,89 @@ def test_near_default_limit_dense_unmatched_wikilinks_remain_bounded() -> None:
 
     assert parsed.links == []
     assert time.monotonic() - started < 8.0
+
+
+def test_projection_budget_rejects_excessive_structure_before_tokenization() -> None:
+    raw = b"paragraph\n\n" * 60_000
+
+    with pytest.raises(VaultParseError) as raised:
+        parse_document(
+            "too-structured.md",
+            raw,
+            format_mode="markdown",
+        )
+
+    assert raised.value.code == "projection_too_large"
+    assert "paragraph" not in str(raised.value)
+
+
+def test_projection_budget_rejects_excessive_inline_outputs_incrementally() -> None:
+    raw = b"#tag " * 100_001
+
+    with pytest.raises(VaultParseError) as raised:
+        parse_document("too-many-tags.md", raw, format_mode="markdown")
+
+    assert raised.value.code == "projection_too_large"
+    assert "tag" not in str(raised.value)
+
+
+def test_projection_line_budget_counts_cr_only_and_unterminated_lines() -> None:
+    raw = (b"\r" * 100_000) + b"unterminated"
+
+    with pytest.raises(VaultParseError) as raised:
+        parse_document("cr-only.md", raw, format_mode="markdown")
+
+    assert raised.value.code == "projection_too_large"
+
+
+def test_projection_budget_subprocess_rss_and_time_are_bounded() -> None:
+    code = """
+import json
+import resource
+import time
+from deeper_notebook.vault.parsers import VaultParseError, parse_document
+
+unit = b"# Heading\\n[[Target]] #tag\\n\\n"
+raw = (unit * ((9 * 1024 * 1024 // len(unit)) + 1))[: 9 * 1024 * 1024]
+started = time.monotonic()
+try:
+    parse_document("hostile.md", raw, format_mode="obsidian")
+except VaultParseError as exc:
+    result = {
+        "code": exc.code,
+        "elapsed": time.monotonic() - started,
+        "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+    }
+    print(json.dumps(result))
+else:
+    raise SystemExit("projection unexpectedly succeeded")
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    rss_bytes = result["rss"]
+    if sys.platform != "darwin":
+        rss_bytes *= 1024
+
+    assert result["code"] == "projection_too_large"
+    assert result["elapsed"] < 5.0
+    assert rss_bytes < 350 * 1024 * 1024
+
+
+def test_large_useful_logseq_document_stays_within_projection_budget() -> None:
+    count = 40_000
+    raw = "".join(f"- TODO Useful task {index}\n" for index in range(count)).encode()
+
+    parsed = parse_document("useful-large.md", raw, format_mode="logseq")
+
+    assert len(parsed.blocks) == count
+    assert len(parsed.tasks) == count
 
 
 def test_many_semantic_blocks_scale_without_rebuilding_line_maps() -> None:

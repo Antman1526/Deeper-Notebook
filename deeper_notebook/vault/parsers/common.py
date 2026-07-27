@@ -21,6 +21,8 @@ MAX_CONFIGURED_MARKDOWN_BYTES = 100 * 1024 * 1024
 MAX_FRONTMATTER_BYTES = 256 * 1024
 MAX_FRONTMATTER_DEPTH = 20
 MAX_FRONTMATTER_NODES = 10_000
+MAX_SOURCE_LINES = 100_000
+MAX_STRUCTURAL_LINES = 50_000
 UTF8_BOM = b"\xef\xbb\xbf"
 
 _SAFE_MESSAGES = {
@@ -34,6 +36,7 @@ _SAFE_MESSAGES = {
     "frontmatter_not_json_safe": "YAML frontmatter contains an unsupported value.",
     "invalid_format_mode": "Vault format mode is invalid.",
     "invalid_document": "Markdown structure could not be projected safely.",
+    "projection_too_large": "Markdown projection exceeds the parser limit.",
 }
 
 
@@ -157,6 +160,7 @@ def decode_source(
 
     bom_size = len(UTF8_BOM) if raw.startswith(UTF8_BOM) else 0
     encoded_markdown = raw[bom_size:]
+    _preflight_source_structure(encoded_markdown)
     try:
         markdown = encoded_markdown.decode("utf-8")
     except UnicodeDecodeError:
@@ -186,6 +190,35 @@ def detect_newline(raw: bytes) -> str:
     if lf and not crlf and not cr:
         return "lf"
     return "mixed"
+
+
+def _preflight_source_structure(raw: bytes) -> None:
+    if not raw:
+        return
+    line_count = 0
+    nonblank_count = 0
+    line_has_content = False
+    cursor = 0
+    while cursor < len(raw):
+        byte = raw[cursor]
+        if byte in {10, 13}:
+            line_count += 1
+            if line_has_content:
+                nonblank_count += 1
+            if byte == 13 and cursor + 1 < len(raw) and raw[cursor + 1] == 10:
+                cursor += 1
+            line_has_content = False
+            if line_count > MAX_SOURCE_LINES or nonblank_count > MAX_STRUCTURAL_LINES:
+                fail("projection_too_large")
+        elif byte not in {9, 32}:
+            line_has_content = True
+        cursor += 1
+    if raw[-1] not in {10, 13}:
+        line_count += 1
+        if line_has_content:
+            nonblank_count += 1
+    if line_count > MAX_SOURCE_LINES or nonblank_count > MAX_STRUCTURAL_LINES:
+        fail("projection_too_large")
 
 
 def _parse_frontmatter(raw: bytes, bom_size: int) -> tuple[dict[str, Any], int]:
