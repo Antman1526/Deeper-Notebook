@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from array import array
 from bisect import bisect_right
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -53,6 +55,7 @@ _MAX_LINKS = 100_000
 _MAX_TASKS = 50_000
 _MAX_EMBEDS = 50_000
 _MAX_PROJECTED_OBJECTS = 150_000
+_MAX_TRANSIENT_RANGES = 150_000
 
 _MD = MarkdownIt("commonmark", options_update={"html": True})
 
@@ -61,44 +64,91 @@ SourceText = SourceLine | SourceRegion
 
 @dataclass(frozen=True, slots=True)
 class ProtectedRanges:
-    """Merged half-open character ranges with logarithmic intersection checks."""
+    """Compact merged ranges with logarithmic intersection checks."""
 
-    ranges: tuple[tuple[int, int], ...]
-    starts: tuple[int, ...]
+    starts: array
+    ends: array
 
     @classmethod
-    def from_ranges(cls, ranges: list[tuple[int, int]]) -> "ProtectedRanges":
-        merged: list[tuple[int, int]] = []
-        for start, end in sorted(ranges):
-            if end <= start:
-                continue
-            if merged and start <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+    def from_packed(cls, packed_ranges: array) -> "ProtectedRanges":
+        starts = array("I")
+        ends = array("I")
+        for packed in sorted(packed_ranges):
+            start = packed >> 32
+            end = packed & 0xFFFFFFFF
+            if starts and start <= ends[-1]:
+                ends[-1] = max(end, ends[-1])
             else:
-                merged.append((start, end))
-        return cls(
-            ranges=tuple(merged),
-            starts=tuple(start for start, _end in merged),
-        )
+                starts.append(start)
+                ends.append(end)
+        return cls(starts=starts, ends=ends)
 
     def overlaps(self, start: int, end: int) -> bool:
-        if not self.ranges or end <= start:
+        if not self.starts or end <= start:
             return False
         index = bisect_right(self.starts, start) - 1
-        if index >= 0 and self.ranges[index][1] > start:
+        if index >= 0 and self.ends[index] > start:
             return True
         next_index = index + 1
-        return next_index < len(self.ranges) and self.ranges[next_index][0] < end
+        return next_index < len(self.starts) and self.starts[next_index] < end
 
     def containing(self, position: int) -> tuple[int, int] | None:
-        if not self.ranges:
+        if not self.starts:
             return None
         index = bisect_right(self.starts, position) - 1
         if index >= 0:
-            start, end = self.ranges[index]
+            start, end = self.starts[index], self.ends[index]
             if start <= position < end:
                 return start, end
         return None
+
+    def iter_ranges(self) -> Iterator[tuple[int, int]]:
+        return zip(self.starts, self.ends, strict=True)
+
+
+@dataclass(slots=True)
+class TransientRangeCollector:
+    """One shared packed range budget for an inline source region."""
+
+    limit: int
+    packed: array = field(default_factory=lambda: array("Q"))
+
+    def add(self, start: int, end: int) -> None:
+        if end <= start:
+            return
+        if len(self.packed) >= self.limit:
+            fail("projection_too_large")
+        if start > 0xFFFFFFFF or end > 0xFFFFFFFF:
+            fail("projection_too_large")
+        self.packed.append((start << 32) | end)
+
+    def snapshot(self) -> ProtectedRanges:
+        return ProtectedRanges.from_packed(self.packed)
+
+    @property
+    def remaining(self) -> int:
+        return self.limit - len(self.packed)
+
+
+@dataclass(slots=True)
+class CandidatePreflight:
+    """Count ephemeral candidates against the collector's remaining budget."""
+
+    collector: TransientRangeCollector
+    limit: int
+    count: int = 0
+
+    def observe(self) -> None:
+        if self.count >= self.limit or self.count >= self.collector.remaining:
+            fail("projection_too_large")
+        self.count += 1
+
+    def add_range(self, start: int, end: int) -> None:
+        if end <= start:
+            return
+        if self.count >= self.collector.remaining:
+            fail("projection_too_large")
+        self.collector.add(start, end)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +179,8 @@ class WikiCandidate:
     start: int
     end: int
     embedded: bool
-    value: str
+    target_start: int
+    target_end: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,25 +188,35 @@ class MarkdownCandidate:
     start: int
     end: int
     embedded: bool
-    label: str
-    raw_target: str
+    label_start: int
+    label_end: int
+    target_start: int
+    target_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class InvalidRange:
+    start: int
+    end: int
 
 
 @dataclass(frozen=True, slots=True)
 class ByteOffsetMapper:
     source_start: int
-    offsets: tuple[int, ...] | None
+    offsets: array | None
 
     @classmethod
     def from_source(cls, source_text: SourceText) -> "ByteOffsetMapper":
         if source_text.content.isascii():
             return cls(source_start=source_text.source_start, offsets=None)
-        offsets = [0]
+        offsets = array("I", [0])
+        byte_offset = 0
         for character in source_text.content:
-            offsets.append(offsets[-1] + len(character.encode("utf-8")))
+            byte_offset += len(character.encode("utf-8"))
+            offsets.append(byte_offset)
         return cls(
             source_start=source_text.source_start,
-            offsets=tuple(offsets),
+            offsets=offsets,
         )
 
     def span(self, start: int, end: int) -> tuple[int, int]:
@@ -210,28 +271,57 @@ class ParseAccumulator:
         text = source_text.content
         scan = ScanContext.from_text(text)
         byte_offsets = ByteOffsetMapper.from_source(source_text)
-        occupied = list(_literal_spans(scan))
-        literals = ProtectedRanges.from_ranges(occupied)
-        wiki_candidates, invalid_wiki_ranges = _scan_wikilinks(scan, literals)
-        occupied.extend(invalid_wiki_ranges)
-        initial_protected = ProtectedRanges.from_ranges(occupied)
-        markdown_candidates, invalid_markdown_ranges = _scan_markdown_links(
-            scan,
-            initial_protected,
+        projected_total = (
+            len(self.blocks) + len(self.links) + len(self.tasks) + len(self.embeds)
         )
-        occupied.extend(invalid_markdown_ranges)
+        transient_limit = min(
+            _MAX_TRANSIENT_RANGES,
+            _MAX_PROJECTED_OBJECTS - projected_total,
+        )
+        if transient_limit <= 0:
+            fail("projection_too_large")
+        occupied = TransientRangeCollector(limit=transient_limit)
 
-        for candidate in markdown_candidates:
-            target = _markdown_target(candidate.raw_target)
+        for start, end in _iter_code_spans(scan):
+            occupied.add(start, end)
+        for start, end in _iter_html_spans(scan):
+            occupied.add(start, end)
+
+        literals = occupied.snapshot()
+        candidate_preflight = CandidatePreflight(
+            occupied,
+            limit=_MAX_PROJECTED_OBJECTS - projected_total,
+        )
+        for event in _iter_wikilinks(scan, literals):
+            if isinstance(event, InvalidRange):
+                candidate_preflight.add_range(event.start, event.end)
+            else:
+                candidate_preflight.observe()
+
+        initial_protected = occupied.snapshot()
+        for event in _iter_markdown_links(scan, initial_protected):
+            if isinstance(event, InvalidRange):
+                candidate_preflight.add_range(event.start, event.end)
+            else:
+                candidate_preflight.observe()
+
+        protected = occupied.snapshot()
+        for event in _iter_markdown_links(scan, protected):
+            if isinstance(event, InvalidRange):
+                occupied.add(event.start, event.end)
+                continue
+            candidate = event
+            raw_target = text[candidate.target_start : candidate.target_end]
+            target = _markdown_target(raw_target)
             if not target:
                 continue
-            occupied.append((candidate.start, candidate.end))
+            occupied.add(candidate.start, candidate.end)
             span_start, span_end = byte_offsets.span(candidate.start, candidate.end)
             self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
-                    alias=candidate.label or None,
+                    alias=text[candidate.label_start : candidate.label_end] or None,
                     link_kind="embed" if candidate.embedded else "markdown",
                     source_start=span_start,
                     source_end=span_end,
@@ -247,11 +337,11 @@ class ParseAccumulator:
                     )
                 )
 
-        protected = ProtectedRanges.from_ranges(occupied)
+        protected = occupied.snapshot()
         for matched in _LOGSEQ_EMBED.finditer(text):
             if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
-            occupied.append(matched.span())
+            occupied.add(*matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target, heading, target_block, _alias = _split_wikilink(matched.group(1))
             self.add_link(
@@ -276,11 +366,11 @@ class ParseAccumulator:
                 )
             )
 
-        protected = ProtectedRanges.from_ranges(occupied)
+        protected = occupied.snapshot()
         for matched in _LOGSEQ_BLOCK_EMBED.finditer(text):
             if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
-            occupied.append(matched.span())
+            occupied.add(*matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target = matched.group(1)
             self.add_link(
@@ -303,12 +393,15 @@ class ParseAccumulator:
                 )
             )
 
-        protected = ProtectedRanges.from_ranges(occupied)
-        for candidate in wiki_candidates:
-            if protected.overlaps(candidate.start, candidate.end):
+        protected = occupied.snapshot()
+        for event in _iter_wikilinks(scan, protected):
+            if isinstance(event, InvalidRange):
+                occupied.add(event.start, event.end)
                 continue
-            occupied.append((candidate.start, candidate.end))
-            target, heading, target_block, alias = _split_wikilink(candidate.value)
+            candidate = event
+            value = text[candidate.target_start : candidate.target_end]
+            target, heading, target_block, alias = _split_wikilink(value)
+            occupied.add(candidate.start, candidate.end)
             span_start, span_end = byte_offsets.span(candidate.start, candidate.end)
             self.add_link(
                 ParsedLink(
@@ -334,11 +427,11 @@ class ParseAccumulator:
                     )
                 )
 
-        protected = ProtectedRanges.from_ranges(occupied)
+        protected = occupied.snapshot()
         for matched in _LOGSEQ_BLOCK_REF.finditer(text):
             if scan.is_escaped(matched.start()) or protected.overlaps(*matched.span()):
                 continue
-            occupied.append(matched.span())
+            occupied.add(*matched.span())
             span_start, span_end = byte_offsets.span(*matched.span())
             target = matched.group(1)
             self.add_link(
@@ -352,7 +445,7 @@ class ParseAccumulator:
                 )
             )
 
-        protected = ProtectedRanges.from_ranges(occupied)
+        protected = occupied.snapshot()
         for matched in _TAG.finditer(text):
             if (
                 scan.is_escaped(matched.start())
@@ -609,16 +702,9 @@ def _close_container(containers: list[ContainerContext], expected_kind: str) -> 
             return
 
 
-def _literal_spans(scan: ScanContext) -> list[tuple[int, int]]:
-    spans = _code_spans(scan)
-    spans.extend(_html_spans(scan))
-    return spans
-
-
-def _code_spans(scan: ScanContext) -> list[tuple[int, int]]:
+def _iter_code_spans(scan: ScanContext) -> Iterator[tuple[int, int]]:
     text = scan.text
     pending: dict[int, tuple[int, int]] = {}
-    spans: list[tuple[int, int]] = []
     cursor = 0
     while cursor < len(text):
         if text[cursor] != "`" or scan.is_escaped(cursor):
@@ -632,14 +718,12 @@ def _code_spans(scan: ScanContext) -> list[tuple[int, int]]:
         if opening is None:
             pending[run_length] = (cursor, end)
         else:
-            spans.append((opening[0], end))
+            yield opening[0], end
         cursor = end
-    return spans
 
 
-def _html_spans(scan: ScanContext) -> list[tuple[int, int]]:
+def _iter_html_spans(scan: ScanContext) -> Iterator[tuple[int, int]]:
     text = scan.text
-    spans: list[tuple[int, int]] = []
     lowered = text.lower()
     cursor = 0
     while cursor < len(text):
@@ -652,25 +736,25 @@ def _html_spans(scan: ScanContext) -> list[tuple[int, int]]:
         if text.startswith("<!--", opening):
             closing = text.find("-->", opening + 4)
             end = len(text) if closing < 0 else closing + 3
-            spans.append((opening, end))
+            yield opening, end
             cursor = end
             continue
         if text.startswith("<![CDATA[", opening):
             closing = text.find("]]>", opening + 9)
             end = len(text) if closing < 0 else closing + 3
-            spans.append((opening, end))
+            yield opening, end
             cursor = end
             continue
         if text.startswith("<?", opening):
             closing = text.find("?>", opening + 2)
             end = len(text) if closing < 0 else closing + 2
-            spans.append((opening, end))
+            yield opening, end
             cursor = end
             continue
         if text.startswith("<!", opening):
             closing = text.find(">", opening + 2)
             end = len(text) if closing < 0 else closing + 1
-            spans.append((opening, end))
+            yield opening, end
             cursor = end
             continue
         matched = _HTML_TAG.match(text, opening)
@@ -688,9 +772,8 @@ def _html_spans(scan: ScanContext) -> list[tuple[int, int]]:
             else:
                 closing_end = text.find(">", closing_start + len(tag) + 2)
                 end = len(text) if closing_end < 0 else closing_end + 1
-        spans.append((opening, end))
+        yield opening, end
         cursor = end
-    return spans
 
 
 def _line_break_in_range(text: str, start: int, end: int) -> int:
@@ -701,15 +784,13 @@ def _line_break_in_range(text: str, start: int, end: int) -> int:
     return min((found for found in line_breaks if found >= 0), default=-1)
 
 
-def _scan_wikilinks(
+def _iter_wikilinks(
     scan: ScanContext,
     protected: ProtectedRanges,
-) -> tuple[list[WikiCandidate], list[tuple[int, int]]]:
+) -> Iterator[WikiCandidate | InvalidRange]:
     """Find valid wiki links and fail-closed malformed outer ranges."""
 
     text = scan.text
-    candidates: list[WikiCandidate] = []
-    invalid_ranges: list[tuple[int, int]] = []
     cursor = 0
     length = len(text)
     while cursor + 1 < length:
@@ -775,15 +856,14 @@ def _scan_wikilinks(
                     continue
                 end = position + 2
                 if malformed:
-                    invalid_ranges.append((start, end))
+                    yield InvalidRange(start=start, end=end)
                 else:
-                    candidates.append(
-                        WikiCandidate(
-                            start=start,
-                            end=end,
-                            embedded=embedded,
-                            value=text[target_start:position],
-                        )
+                    yield WikiCandidate(
+                        start=start,
+                        end=end,
+                        embedded=embedded,
+                        target_start=target_start,
+                        target_end=position,
                     )
                 cursor = end
                 closed = True
@@ -796,21 +876,17 @@ def _scan_wikilinks(
             invalid_end = max(position, target_start)
             if invalid_end <= start:
                 invalid_end = min(length, start + 2)
-            invalid_ranges.append((start, invalid_end))
+            yield InvalidRange(start=start, end=invalid_end)
             cursor = invalid_end
 
-    return candidates, invalid_ranges
 
-
-def _scan_markdown_links(
+def _iter_markdown_links(
     context: ScanContext,
     protected: ProtectedRanges,
-) -> tuple[list[MarkdownCandidate], list[tuple[int, int]]]:
+) -> Iterator[MarkdownCandidate | InvalidRange]:
     """Scan links once and protect complete over-limit outer constructs."""
 
     text = context.text
-    candidates: list[MarkdownCandidate] = []
-    invalid_ranges: list[tuple[int, int]] = []
     cursor = 0
     length = len(text)
     while cursor < length:
@@ -867,14 +943,14 @@ def _scan_markdown_links(
 
         if closing_label is None:
             if malformed:
-                invalid_ranges.append((start, position))
+                yield InvalidRange(start=start, end=position)
             cursor = max(position, label_start)
             continue
 
         after_label = closing_label + 1
         if after_label >= length or text[after_label] != "(":
             if malformed:
-                invalid_ranges.append((start, after_label))
+                yield InvalidRange(start=start, end=after_label)
             cursor = after_label
             continue
 
@@ -923,7 +999,7 @@ def _scan_markdown_links(
 
         if closing_target is None:
             if malformed:
-                invalid_ranges.append((start, position))
+                yield InvalidRange(start=start, end=position)
             cursor = max(position, target_start)
             continue
 
@@ -933,20 +1009,18 @@ def _scan_markdown_links(
             or protected.overlaps(start, label_start)
             or protected.overlaps(closing_label, end)
         ):
-            invalid_ranges.append((start, end))
+            yield InvalidRange(start=start, end=end)
         else:
-            candidates.append(
-                MarkdownCandidate(
-                    start=start,
-                    end=end,
-                    embedded=embedded,
-                    label=text[label_start:closing_label],
-                    raw_target=text[target_start:closing_target],
-                )
+            yield MarkdownCandidate(
+                start=start,
+                end=end,
+                embedded=embedded,
+                label_start=label_start,
+                label_end=closing_label,
+                target_start=target_start,
+                target_end=closing_target,
             )
         cursor = end
-
-    return candidates, invalid_ranges
 
 
 def _split_wikilink(
@@ -992,15 +1066,30 @@ def semantic_visible_text(text: str) -> str:
     """Blank literal code/HTML spans while preserving character positions."""
 
     scan = ScanContext.from_text(text)
-    spans = ProtectedRanges.from_ranges(_literal_spans(scan)).ranges
-    if not spans:
+    ranges = TransientRangeCollector(limit=_MAX_TRANSIENT_RANGES)
+    for start, end in _iter_code_spans(scan):
+        ranges.add(start, end)
+    for start, end in _iter_html_spans(scan):
+        ranges.add(start, end)
+    spans = ranges.snapshot()
+    if not spans.starts:
         return text
-    characters = list(text)
-    for start, end in spans:
-        for index in range(start, end):
-            if characters[index] not in "\r\n":
-                characters[index] = " "
-    return "".join(characters)
+    pieces: list[str] = []
+    cursor = 0
+    for start, end in spans.iter_ranges():
+        pieces.append(text[cursor:start])
+        literal = text[start:end]
+        if "\r" not in literal and "\n" not in literal:
+            pieces.append(" " * len(literal))
+        else:
+            pieces.append(
+                "".join(
+                    character if character in "\r\n" else " " for character in literal
+                )
+            )
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def _is_priority_marker(text: str, start: int, end: int) -> bool:
