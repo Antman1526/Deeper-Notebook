@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
+from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.vault.contracts import (
     ParsedBlock,
     ParsedDocument,
@@ -18,6 +21,7 @@ from deeper_notebook.vault.repository import (
     ProjectionResult,
     VaultMount,
     VaultRepository,
+    VaultSyncReceipt,
 )
 from deeper_notebook.vault.security import approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError, parse_trust_manifest
@@ -52,6 +56,8 @@ class QueryRecorder:
         self.calls.append((compact, variables))
         if "RETURN { receipt:" in compact:
             return [self.reconciliation_proof] if self.reconciliation_proof else []
+        if "SELECT VALUE id FROM $note_id" in compact:
+            return [str(variables["note_id"])]
         if self.fail_on and self.fail_on in compact:
             raise RuntimeError("synthetic database failure")
         if "LET $unchanged =" in compact:
@@ -232,25 +238,25 @@ async def test_projection_is_one_ordered_transaction_and_embeds_after_commit():
     assert transaction.startswith("BEGIN TRANSACTION;")
     assert "COMMIT TRANSACTION;" in transaction
     ordered_fragments = [
-        "UPSERT $vault_file_id CONTENT $vault_file",
-        "UPSERT $note_id CONTENT $note",
+        "UPSERT $vault_file_id MERGE $vault_file",
+        "UPSERT $note_id MERGE $note",
         "DELETE note_block",
         "DELETE note_link",
         "DELETE knowledge_task",
         "UPSERT $block.record_id CONTENT $block.data",
         "UPSERT $link.record_id CONTENT $link.data",
         "UPSERT $task.record_id CONTENT $task.data",
-        "UPDATE $link.record_id SET",
+        "UPDATE $affected_link.id SET",
         "UPDATE $vault_file_id SET parse_status",
         "UPDATE $note_id SET external_state",
-        "CREATE $receipt_id CONTENT $receipt",
+        "CREATE $receipt_id CONTENT",
     ]
     positions = [transaction.index(fragment) for fragment in ordered_fragments]
     assert positions == sorted(positions)
     assert "artifact" not in transaction.casefold()
     assert "before_hash = $existing_file.content_hash" in transaction
     assert embedding_calls == [
-        ("open_notebook", "embed_note", {"note_id": result.note_id})
+        (LEGACY_COMMAND_APP, "embed_note", {"note_id": result.note_id})
     ]
 
 
@@ -305,6 +311,125 @@ async def test_changed_projection_receipt_binds_prior_and_current_hashes_atomica
     assert "before_hash = $existing_file.content_hash" in transaction
 
 
+@pytest.mark.asyncio
+async def test_task_dates_are_converted_to_timezone_aware_utc_before_query():
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+    parsed = _document().model_copy(
+        update={
+            "tasks": [
+                ParsedTask(
+                    block_parser_id="task",
+                    status="done",
+                    scheduled=date(2026, 7, 28),
+                    due=date(2026, 7, 29),
+                    completed=date(2026, 7, 30),
+                )
+            ]
+        }
+    )
+
+    await repository.project_document(_mount(), _work(), parsed, "operation-task-dates")
+
+    task = connection.calls[0][1]["tasks"][0]["data"]
+    for field in ("scheduled", "due", "completed"):
+        assert isinstance(task[field], datetime)
+        assert task[field].tzinfo is timezone.utc
+        assert task[field].hour == 0
+        assert task[field].minute == 0
+
+
+@pytest.mark.asyncio
+async def test_projection_transaction_has_atomic_stale_writer_supersession():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "parsed",
+            "deleted_state": "present",
+        }
+    )
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    await repository.project_document(
+        _mount(),
+        _work(content_hash="a" * 64),
+        _document(content_hash="a" * 64),
+        "operation-stale-projection",
+    )
+
+    transaction = connection.calls[0][0]
+    assert "LET $current_success" in transaction
+    assert "LET $superseded" in transaction
+    assert "observed_modified_ns" in transaction
+    assert "$superseded_receipt" in transaction
+    assert transaction.index("LET $superseded") < transaction.index(
+        "UPSERT $vault_file_id"
+    )
+
+
+@pytest.mark.asyncio
+async def test_failure_transaction_cannot_invalidate_newer_successful_projection():
+    connection = QueryRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    await repository.record_failure(
+        "vault_mount:test",
+        _work(content_hash="a" * 64),
+        "operation-stale-failure",
+        "frontmatter_invalid",
+    )
+
+    transaction = connection.calls[0][0]
+    assert "LET $current_success" in transaction
+    assert "LET $superseded" in transaction
+    assert "$superseded_receipt" in transaction
+    assert transaction.index("LET $superseded") < transaction.index(
+        "UPSERT $vault_file_id"
+    )
+
+
+@pytest.mark.asyncio
+async def test_projection_persists_python_canonical_title_keys_and_reconciles_inbound():
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+    parsed = _document().model_copy(
+        update={
+            "title": "  Ｂｅｔａ  ",
+            "links": [
+                ParsedLink(
+                    source_block_parser_id="task",
+                    target_text="  Ｂｅｔａ  ",
+                    link_kind="wikilink",
+                    source_start=19,
+                    source_end=27,
+                )
+            ],
+        }
+    )
+
+    await repository.project_document(_mount(), _work(), parsed, "operation-title-key")
+
+    transaction, variables = connection.calls[0]
+    assert variables["note"]["title_key"] == "beta"
+    assert variables["links"][0]["data"]["target_title_key"] == "beta"
+    assert "target_title_key" in transaction
+    assert "array::len($targets) = 1" in transaction
+    assert "source_note_id IN" in transaction
+    assert "WHERE vault_id = $vault_id" in transaction
+    assert "string::lowercase(title)" not in transaction
+
+
 def test_atomic_repository_paths_never_split_begin_and_commit_rpcs():
     source = Path(VaultRepository.project_document.__code__.co_filename).read_text(
         encoding="utf-8"
@@ -338,7 +463,7 @@ async def test_projection_failure_cancels_and_records_bounded_receipt_separately
     serialized = json.dumps(variables, default=str)
     assert "# Alpha" not in serialized
     assert "/Users/" not in serialized
-    assert variables["receipt"]["error_code"] == "projection_failed"
+    assert variables["failed_receipt"]["error_code"] == "projection_failed"
 
 
 @pytest.mark.asyncio
@@ -403,6 +528,50 @@ async def test_cancellation_issues_cancel_and_never_embeds():
 
     assert len(connection.calls) == 1
     assert embedded is False
+
+
+@pytest.mark.asyncio
+async def test_cancellation_waits_for_query_terminal_state_and_arranges_embedding_once():
+    started = asyncio.Event()
+    release = asyncio.Event()
+    completed = asyncio.Event()
+    embedding_calls: list[str] = []
+
+    class DelayedConnection(QueryRecorder):
+        async def query(self, statement, variables=None):
+            self.calls.append((" ".join(statement.split()), variables or {}))
+            started.set()
+            try:
+                await release.wait()
+                return [{"projection_status": "projected"}]
+            finally:
+                completed.set()
+
+    connection = DelayedConnection()
+
+    async def embed(_app, _command, payload):
+        embedding_calls.append(payload["note_id"])
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=embed,
+    )
+    projection = asyncio.create_task(
+        repository.project_document(
+            _mount(), _work(), _document(), "operation-cancel-terminal"
+        )
+    )
+    await started.wait()
+    projection.cancel()
+    await asyncio.sleep(0)
+    assert not completed.is_set()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await projection
+
+    assert completed.is_set()
+    assert len(embedding_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -545,6 +714,33 @@ def test_receipts_are_append_and_list_only():
     )
 
 
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"operation_id": "operation\nsecret"},
+        {"operation": "project\nsecret"},
+        {"source": "vault-indexer\nsecret"},
+        {"error_code": "x" * 65},
+        {"rollback_path": "/tmp/phase-1-must-not-write"},
+    ],
+)
+def test_receipt_contract_rejects_unbounded_or_phase_1_unsafe_fields(override):
+    values = {
+        "operation_id": "operation-safe",
+        "vault_id": "vault_mount:test",
+        "vault_file_id": "vault_file:test",
+        "operation": "project",
+        "source": "vault-indexer",
+        "parser_version": "test",
+        "status": "success",
+        "started_at": datetime.now(timezone.utc),
+        **override,
+    }
+
+    with pytest.raises(ValidationError):
+        VaultSyncReceipt.model_validate(values)
+
+
 @pytest.mark.asyncio
 async def test_graph_uses_only_vault_links_and_same_mount_notes():
     class GraphRecorder(QueryRecorder):
@@ -552,6 +748,8 @@ async def test_graph_uses_only_vault_links_and_same_mount_notes():
             compact = " ".join(statement.split())
             variables = variables or {}
             self.calls.append((compact, variables))
+            if "SELECT VALUE id FROM $note_id" in compact:
+                return [str(variables["note_id"])]
             if "FROM note_link" in compact:
                 return [
                     {
@@ -589,6 +787,24 @@ async def test_graph_uses_only_vault_links_and_same_mount_notes():
         "artifact" not in statement.casefold() for statement, _ in connection.calls
     )
     assert all("vault_id = $vault_id" in statement for statement, _ in connection.calls)
+
+
+@pytest.mark.asyncio
+async def test_link_reads_validate_center_and_filter_both_resolved_endpoints():
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection, connection)
+    )
+
+    await repository.outgoing_links("vault_mount:test", "note:alpha")
+
+    statements = [statement for statement, _ in connection.calls]
+    assert any("SELECT VALUE id FROM $note_id" in statement for statement in statements)
+    link_query = next(
+        statement for statement in statements if "FROM note_link" in statement
+    )
+    assert "source_note_id IN" in link_query
+    assert "target_note_id = NONE OR target_note_id IN" in link_query
 
 
 @pytest.mark.asyncio
@@ -704,6 +920,36 @@ async def test_same_trust_hash_transitions_unresolved_to_resolved_with_receipt()
 
 
 @pytest.mark.asyncio
+async def test_trust_record_identity_is_scoped_by_vault_and_manifest_path():
+    vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
+    root = approve_vault_root(vault_root)
+    first = QueryRecorder()
+    second = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(first, second),
+        approved_roots={
+            "vault_mount:first": root,
+            "vault_mount:second": root,
+        },
+    )
+    try:
+        await repository.import_trust_manifest(
+            "vault_mount:first", "brain-engine/trust.json"
+        )
+        await repository.import_trust_manifest(
+            "vault_mount:second", "brain-engine/trust.json"
+        )
+    finally:
+        root.close()
+
+    first_variables = first.calls[0][1]
+    second_variables = second.calls[0][1]
+    assert first_variables["trust_id_0"] != second_variables["trust_id_0"]
+    assert "vault_id = $vault_id" in first.calls[0][0]
+    assert "manifest_relative_path = $manifest_relative_path" in first.calls[0][0]
+
+
+@pytest.mark.asyncio
 async def test_trust_import_rejects_non_connector_json_before_database_access():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
@@ -781,3 +1027,15 @@ def test_trust_manifest_parser_enforces_explicit_budgets(payload: bytes, code: s
     with pytest.raises(TrustManifestError) as caught:
         parse_trust_manifest(payload)
     assert caught.value.code == code
+
+
+def test_mark_missing_returns_outcome_before_transaction_commit():
+    transaction = VaultRepository.mark_missing.__code__.co_consts
+    statement = next(
+        value
+        for value in transaction
+        if isinstance(value, str) and "LET $transitioned" in value
+    )
+    assert statement.index("RETURN { transitioned: $transitioned };") < statement.index(
+        "COMMIT TRANSACTION;"
+    )
