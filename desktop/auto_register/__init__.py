@@ -88,7 +88,7 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
 
     NEVER overwrites a slot the user manually set (we read the current defaults
     first and skip any slot that already has a value). Logs the reasoning for
-    each pick so users can `cat ~/.open-notebook-plus/logs/launcher.log` and
+    each pick so users can `cat ~/.deeper-notebook/logs/launcher.log` and
     audit assignments.
     """
     # 1. Read current defaults so manual user overrides are preserved.

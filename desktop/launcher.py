@@ -1977,7 +1977,7 @@ class Supervisor:
         # for backward compat.
         #
         # Skipping rules (same as the original llamacpp.py guard):
-        #   - Missing OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH = no flag,
+        #   - Missing DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH = no flag,
         #     no speedup, same as today (sidecar default behavior).
         #   - Path doesn't exist or is <1MB (Git-LFS pointer / aborted
         #     download) = silently skip rather than crash; main model
@@ -2018,7 +2018,7 @@ class Supervisor:
                         # rather than crash the chat sidecar over a
                         # tuning knob.
                         log.warning(
-                            "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT=%r is "
+                            "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT=%r is "
                             "not an int; ignoring (--n_predict_draft "
                             "omitted; llama_cpp.server default applies)",
                             _draft_n_env,
@@ -2030,7 +2030,7 @@ class Supervisor:
                 )
             else:
                 log.warning(
-                    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=%s skipped: "
+                    "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=%s skipped: "
                     "file missing or <1MB (likely Git-LFS pointer or "
                     "aborted download). Chat sidecar starting without "
                     "speculative decoding.",

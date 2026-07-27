@@ -137,7 +137,7 @@ async def db_repair_needed() -> dict:
     """v0.8.67q — Report whether the launcher flagged the SurrealDB live-query
     state as corrupt.
 
-    The launcher's worker watcher (v0.8.67l) writes ~/.open-notebook-plus/
+    The launcher's worker watcher (v0.8.67l) writes ~/.deeper-notebook/
     .needs_db_repair when it sees the "key being inserted already exists"
     crash that bricks source processing. On the NEXT launch the launcher runs
     a backup-first auto-repair and clears the flag. Between detection and that

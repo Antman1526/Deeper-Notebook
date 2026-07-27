@@ -1,3 +1,4 @@
+import hashlib
 import importlib
 import json
 import subprocess
@@ -20,9 +21,12 @@ from deeper_notebook.identity import (
     TAGLINE,
 )
 from scripts.rebrand_audit import (
+    Approval,
     audit_repository,
     classify_match,
+    context_sha256,
     load_allowlist,
+    occurrence_anchor,
     patterns_for_path,
 )
 
@@ -31,9 +35,39 @@ AUDIT_SCRIPT = ROOT / "scripts" / "rebrand_audit.py"
 ALLOWLIST_PATH = ROOT / "scripts" / "rebrand-allowlist.json"
 
 
-def _write_allowlist(path: Path, entries: list[dict[str, str]]) -> Path:
-    path.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
+    path.write_text(
+        json.dumps({"schema_version": 2, "entries": entries}),
+        encoding="utf-8",
+    )
     return path
+
+
+def _approval(
+    *,
+    path: str,
+    pattern: str,
+    context: str,
+    source: str = "content",
+    line: int | None = 1,
+    column: int | None = None,
+    category: str = "compatibility_alias",
+    rationale: str = "Compatibility behavior is intentionally preserved.",
+):
+    actual_column = column or context.index(pattern) + 1
+    key = (
+        path,
+        pattern,
+        source,
+        line,
+        actual_column,
+        context_sha256(context),
+    )
+    reason = (
+        f"{occurrence_anchor(path, source, line, actual_column)} "
+        f"{rationale}"
+    )
+    return key, Approval(category=category, reason=reason)
 
 
 def _init_tracked_repo(path: Path, files: dict[str, bytes | str]) -> Path:
@@ -63,27 +97,22 @@ def test_legacy_identity_is_explicitly_compatibility_only():
 
 
 def test_audit_distinguishes_compatibility_from_active_branding():
-    allowlist = {
-        (
-            "desktop/build/deeper-notebook.iss",
-            "AppId={{572C65B3",
-        ): "compatibility_alias"
-    }
+    line = "AppId={{572C65B3"
+    approved_key, approval = _approval(
+        path="desktop/build/deeper-notebook.iss",
+        pattern=line,
+        context=line,
+    )
+    allowlist = {approved_key: approval}
 
-    assert (
-        classify_match(
-            "desktop/build/deeper-notebook.iss",
-            "AppId={{572C65B3",
-            allowlist,
-        )
-        == "compatibility_alias"
+    assert classify_match(approved_key, allowlist) == "compatibility_alias"
+    active_key, _ = _approval(
+        path="frontend/src/app/layout.tsx",
+        pattern="Open Notebook Plus",
+        context="Open Notebook Plus",
     )
     assert (
-        classify_match(
-            "frontend/src/app/layout.tsx",
-            "Open Notebook Plus",
-            allowlist,
-        )
+        classify_match(active_key, allowlist)
         == "unexpected_active_identity"
     )
 
@@ -135,79 +164,79 @@ def test_legacy_installer_path_is_unexpected_but_current_app_id_is_compatible():
     allowlist = load_allowlist(ALLOWLIST_PATH)
     legacy_installer = "desktop/build/open-notebook-plus.iss"
     current_installer = "desktop/build/deeper-notebook.iss"
+    current_key = next(
+        key
+        for key in allowlist
+        if key[0] == current_installer
+        and key[1] == "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}"
+    )
+    legacy_key = (
+        legacy_installer,
+        "open-notebook-plus",
+        "path",
+        None,
+        legacy_installer.index("open-notebook-plus") + 1,
+        context_sha256(legacy_installer),
+    )
 
     assert (
-        classify_match(legacy_installer, "open-notebook-plus", allowlist)
+        classify_match(legacy_key, allowlist)
         == "unexpected_active_identity"
     )
-    assert (
-        classify_match(
-            current_installer,
-            "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}",
-            allowlist,
-        )
-        == "compatibility_alias"
-    )
+    assert classify_match(current_key, allowlist) == "compatibility_alias"
 
 
 def test_allowlist_uses_exact_persisted_context_not_broad_module_pattern():
     allowlist = load_allowlist(ALLOWLIST_PATH)
-
-    assert (
-        classify_match(
-            "commands/embedding_commands.py",
-            'app="open_notebook"',
-            allowlist,
-        )
-        == "compatibility_alias"
+    command_key = next(
+        key
+        for key, approval in allowlist.items()
+        if key[0] == "commands/embedding_commands.py"
+        and key[1] == 'app="open_notebook"'
+        and approval.category == "compatibility_alias"
     )
+    shifted_command_key = (*command_key[:4], command_key[4] + 1, command_key[5])
     assert (
-        classify_match(
-            "commands/embedding_commands.py",
-            "open_notebook",
-            allowlist,
-        )
+        classify_match(shifted_command_key, allowlist)
         == "unexpected_active_identity"
     )
-    assert (
-        classify_match(
-            "desktop/db_repair.py",
-            'namespace: str = "open_notebook"',
-            allowlist,
-        )
-        == "compatibility_alias"
+    repair_key = next(
+        key
+        for key, approval in allowlist.items()
+        if key[0] == "desktop/db_repair.py"
+        and key[1] == 'namespace: str = "open_notebook"'
+        and approval.category == "compatibility_alias"
     )
+    assert classify_match(command_key, allowlist) == "compatibility_alias"
+    assert classify_match(repair_key, allowlist) == "compatibility_alias"
 
 
-def test_allowlist_accepts_upstream_docs_wildcard_and_rejects_arbitrary_scope(
+def test_allowlist_rejects_all_wildcard_paths(
     tmp_path,
 ):
-    valid = _write_allowlist(
-        tmp_path / "valid.json",
+    path = "docs/1-INSTALLATION/**"
+    pattern = "lfnovo/open-notebook"
+    wildcard = _write_allowlist(
+        tmp_path / "wildcard.json",
         [
             {
-                "path": "docs/1-INSTALLATION/**",
-                "pattern": "lfnovo/open-notebook",
+                "path": path,
+                "pattern": pattern,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": context_sha256(pattern),
                 "category": "upstream_reference",
-            }
-        ],
-    )
-    invalid = _write_allowlist(
-        tmp_path / "invalid.json",
-        [
-            {
-                "path": "frontend/**",
-                "pattern": "Open Notebook",
-                "category": "upstream_reference",
+                "reason": (
+                    f"{occurrence_anchor(path, 'content', 1, 1)} "
+                    "Retains an exact upstream repository reference."
+                ),
             }
         ],
     )
 
-    assert load_allowlist(valid) == {
-        ("docs/1-INSTALLATION/**", "lfnovo/open-notebook"): "upstream_reference"
-    }
-    with pytest.raises(ValueError, match="disallowed allowlist wildcard"):
-        load_allowlist(invalid)
+    with pytest.raises(ValueError, match="wildcards are disallowed"):
+        load_allowlist(wildcard)
 
 
 def test_repository_allowlist_entries_have_specific_reasons():
@@ -216,6 +245,116 @@ def test_repository_allowlist_entries_have_specific_reasons():
     for entry in payload["entries"]:
         assert isinstance(entry.get("reason"), str), entry
         assert entry["reason"].strip(), entry
+
+
+def test_allowlist_requires_occurrence_location_and_context(tmp_path):
+    incomplete = _write_allowlist(
+        tmp_path / "incomplete.json",
+        [
+            {
+                "path": "docs/history.md",
+                "pattern": "Open Notebook Plus",
+                "category": "historical_reference",
+                "reason": "Historical product name.",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="source.*line.*column.*context_sha256"):
+        load_allowlist(incomplete)
+
+
+def test_allowlist_reason_names_its_exact_occurrence_anchor(tmp_path):
+    line = "Historical release: Open Notebook Plus"
+    generic = _write_allowlist(
+        tmp_path / "generic.json",
+        [
+            {
+                "path": "docs/history.md",
+                "pattern": "Open Notebook Plus",
+                "source": "content",
+                "line": 1,
+                "column": line.index("Open Notebook Plus") + 1,
+                "context_sha256": hashlib.sha256(line.encode()).hexdigest(),
+                "category": "historical_reference",
+                "reason": "Historical product name retained for accuracy.",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="exact occurrence anchor"):
+        load_allowlist(generic)
+
+
+def test_same_file_legacy_injection_is_not_covered_by_existing_approval(tmp_path):
+    line = "Historical release: Open Notebook Plus"
+    repo = _init_tracked_repo(tmp_path / "repo", {"history.md": f"{line}\n"})
+    allowlist_path = _write_allowlist(
+        tmp_path / "allowlist.json",
+        [
+            {
+                "path": "history.md",
+                "pattern": "Open Notebook Plus",
+                "source": "content",
+                "line": 1,
+                "column": line.index("Open Notebook Plus") + 1,
+                "context_sha256": hashlib.sha256(line.encode()).hexdigest(),
+                "category": "historical_reference",
+                "reason": (
+                    "docs/history.md@content:1:21 names the product shipped "
+                    "in this historical release."
+                ),
+            }
+        ],
+    )
+    command = [
+        sys.executable,
+        str(AUDIT_SCRIPT),
+        "--root",
+        str(repo),
+        "--allowlist",
+        str(allowlist_path),
+        "--check",
+    ]
+
+    assert subprocess.run(command, capture_output=True, check=False).returncode == 0
+
+    (repo / "history.md").write_text(
+        f"{line}\nActive copy: Open Notebook Plus\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "history.md"], check=True)
+
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode == 1, result.stdout + result.stderr
+
+
+def test_active_user_copy_uses_canonical_paths_and_settings():
+    expected = {
+        "frontend/src/app/(dashboard)/page.tsx": ("~/.deeper-notebook/",),
+        "frontend/src/lib/api/client.ts": (
+            "~/.deeper-notebook/logs/api.log",
+        ),
+        "docs/4-AI-PROVIDERS/local-models-tool-calling.md": (
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID",
+            "~/.deeper-notebook/launcher.env",
+        ),
+        "docs/3-USER-GUIDE/free-mcp-servers-web-search.md": (
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID",
+            "~/.deeper-notebook/logs/launcher.log",
+        ),
+    }
+    forbidden = (
+        "~/.open-notebook-plus/",
+        "OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID",
+    )
+
+    for path, snippets in expected.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        for snippet in snippets:
+            assert snippet in source, f"{path}: {snippet}"
+        for legacy in forbidden:
+            assert legacy not in source, f"{path}: {legacy}"
 
 
 def test_current_runtime_descriptions_use_deeper_notebook_name():
@@ -363,6 +502,9 @@ def test_visible_locale_configuration_examples_use_canonical_short_prefix():
     for path in locale_files:
         source = path.read_text(encoding="utf-8")
         assert "ONP_" not in source, path
+        assert "OPEN_NOTEBOOK_LOCAL_DRAFT_" not in source, path
+        assert "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH" in source, path
+        assert "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT" in source, path
         assert "DN_CHAT_LLM_CTX" in source, path
         assert "DN_CHAT_LLM_CTX_MAX" in source, path
         assert "DN_METRICS_AUTH_TOKEN" in source, path
@@ -390,22 +532,44 @@ def test_audit_scans_tracked_paths_and_content(tmp_path):
     )
 
 
+def test_audit_skips_only_its_self_referential_allowlist_metadata(tmp_path):
+    repo = _init_tracked_repo(
+        tmp_path / "repo",
+        {
+            "scripts/rebrand-allowlist.json": (
+                '{"pattern": "Open Notebook Plus"}\n'
+            ),
+            "active.txt": "Deeper Notebook\n",
+        },
+    )
+
+    report = audit_repository(repo, {})
+
+    assert not any(
+        match["path"] == "scripts/rebrand-allowlist.json"
+        for matches in report["categories"].values()
+        for match in matches
+    )
+
+
 def test_exact_context_does_not_hide_active_imports(tmp_path):
+    compatibility_line = '@command("work", app="open_notebook")'
     repo = _init_tracked_repo(
         tmp_path / "repo",
         {
             "commands/example.py": (
                 "from open_notebook.domain import Note\n"
-                '@command("work", app="open_notebook")\n'
+                f"{compatibility_line}\n"
             )
         },
     )
-    allowlist = {
-        (
-            "commands/example.py",
-            'app="open_notebook"',
-        ): "compatibility_alias"
-    }
+    key, approval = _approval(
+        path="commands/example.py",
+        pattern='app="open_notebook"',
+        context=compatibility_line,
+        line=2,
+    )
+    allowlist = {key: approval}
 
     report = audit_repository(repo, allowlist)
 
@@ -415,6 +579,8 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
             "pattern": 'app="open_notebook"',
             "source": "content",
             "line": 2,
+            "column": compatibility_line.index('app="open_notebook"') + 1,
+            "context_sha256": context_sha256(compatibility_line),
         }
     ]
     assert [
@@ -425,21 +591,22 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
 
 
 def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_path):
+    line = (
+        'legacy_module = open_notebook; @command("work", '
+        'app="open_notebook")'
+    )
     repo = _init_tracked_repo(
         tmp_path / "repo",
         {
-            "commands/example.py": (
-                'legacy_module = open_notebook; @command("work", '
-                'app="open_notebook")\n'
-            )
+            "commands/example.py": f"{line}\n"
         },
     )
-    allowlist = {
-        (
-            "commands/example.py",
-            'app="open_notebook"',
-        ): "compatibility_alias"
-    }
+    key, approval = _approval(
+        path="commands/example.py",
+        pattern='app="open_notebook"',
+        context=line,
+    )
+    allowlist = {key: approval}
 
     report = audit_repository(repo, allowlist)
 
@@ -454,6 +621,8 @@ def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_pa
             "pattern": "open_notebook",
             "source": "content",
             "line": 1,
+            "column": line.index("open_notebook") + 1,
+            "context_sha256": context_sha256(line),
         }
     ]
 
@@ -478,9 +647,14 @@ def test_audit_reports_stale_entries_and_skips_binary_contents(tmp_path):
             "clean.txt": "Deeper Notebook\n",
         },
     )
-    allowlist = {
-        ("missing.md", "Open Notebook"): "historical_reference",
-    }
+    key, approval = _approval(
+        path="missing.md",
+        pattern="Open Notebook",
+        context="Open Notebook",
+        category="historical_reference",
+        rationale="Historical product name retained for accuracy.",
+    )
+    allowlist = {key: approval}
 
     report = audit_repository(repo, allowlist)
 
@@ -488,7 +662,12 @@ def test_audit_reports_stale_entries_and_skips_binary_contents(tmp_path):
         {
             "path": "missing.md",
             "pattern": "Open Notebook",
+            "source": "content",
+            "line": 1,
+            "column": 1,
+            "context_sha256": context_sha256("Open Notebook"),
             "category": "historical_reference",
+            "reason": approval.reason,
         }
     ]
     assert not any(

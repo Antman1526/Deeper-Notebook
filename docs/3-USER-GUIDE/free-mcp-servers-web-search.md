@@ -299,7 +299,7 @@ the value SearXNG adds over a raw HTML scraper.
 After registering any MCP server:
 
 1. Pick a tool-call-capable chat model (Settings → Models or
-   `OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID` via Settings → Launcher
+   `DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID` via Settings → Launcher
    Preferences).
 2. Open any notebook → chat.
 3. Ask: *"What's the top story on Hacker News right now?"*
@@ -315,7 +315,7 @@ You should see:
   real tool name, args (the search query), and a truncated excerpt
   of what the server returned. Per v0.8.13 image/PDF blocks will
   also surface here once a frontend renderer ships.
-- In `~/.open-notebook-plus/logs/launcher.log`, a `phase1.health`
+- In `~/.deeper-notebook/logs/launcher.log`, a `phase1.health`
   line per launch (v0.8.0 Phase 1) and a `v0.8.0 chat router →`
   line per smart-routed turn (v0.8.5) — both confirm the model
   the router picked.

@@ -4,10 +4,10 @@ v0.7.14 — for local-deploy use (the project's documented target), the
 launcher and API both run as long-lived subprocesses on the user's
 machine. Without a configured sink, loguru's default is stderr only —
 when something breaks at 2am the user has nothing to `tail`. The README
-references `~/.open-notebook-plus/logs/*.log` but no code wrote there.
+references `~/.deeper-notebook/logs/*.log` but no code wrote there.
 
 This module wires loguru to:
-  - rotated file sinks under `~/.open-notebook-plus/logs/<component>.log`
+  - rotated file sinks under `~/.deeper-notebook/logs/<component>.log`
   - rotation: 20 MB per file
   - retention: 14 days
   - compression: zstd (or gzip on platforms without zstandard)
@@ -60,8 +60,8 @@ _LOG_FORMAT = (
 
 
 def default_log_dir() -> Path:
-    """Resolve the log directory. Honors ONP_LOG_DIR if set, else uses
-    the standard ~/.open-notebook-plus/logs path.
+    """Resolve the log directory. Honors DEEPER_NOTEBOOK_LOG_DIR if set, else uses
+    the standard ~/.deeper-notebook/logs path.
 
     v0.7.24 — improved Docker fallback. Previously, when HOME and
     USERPROFILE were both unset (common in stripped-down containers

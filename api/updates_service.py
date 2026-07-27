@@ -54,7 +54,7 @@ REQUEST_TIMEOUT_SECONDS = 8.0
 def _state_path() -> Path:
     """Path to the persisted update-notifier state file.
 
-    Shares the ``~/.open-notebook-plus`` directory used by launcher prefs so
+    Shares the ``~/.deeper-notebook`` directory used by launcher prefs so
     all desktop-side state lives in one place.
     """
     return active_data_root() / "update_state.json"

@@ -1,7 +1,7 @@
 """Pub-sub progress channel for the launcher startup phase.
 
 Publishes structured events to:
-  - ~/.open-notebook-plus/logs/progress.jsonl  (persistent, tailable)
+  - ~/.deeper-notebook/logs/progress.jsonl  (persistent, tailable)
   - in-process subscribers via subscribe()      (for the wizard's SSE feed)
 
 Thread-safe; the launcher's main thread publishes, the wizard server's

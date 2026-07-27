@@ -1,6 +1,6 @@
 """v0.8.6 Item D — File-backed launcher preference layer.
 
-Reads and writes ``~/.open-notebook-plus/launcher.env`` as a KEY=VALUE file
+Reads and writes ``~/.deeper-notebook/launcher.env`` as a KEY=VALUE file
 so non-CLI users can configure the same knobs that are otherwise set via
 shell env or ``.env`` files.
 
@@ -14,7 +14,7 @@ Format
 Env-var precedence
 ------------------
 ``merge_with_env(env)`` applies file values ONLY for keys not already present
-in ``env``. This means a shell-level ``export OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/x``
+in ``env``. This means a shell-level ``export DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/x``
 always wins over anything in the file — consistent with ops/CI override workflows.
 
 Whitelist

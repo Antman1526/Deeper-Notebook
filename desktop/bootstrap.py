@@ -1,5 +1,5 @@
 # desktop/bootstrap.py
-"""First-launch bootstrap: creates ~/.open-notebook-plus/venv via uv.
+"""First-launch bootstrap: creates ~/.deeper-notebook/venv via uv.
 
 The launcher's frozen Python only carries pywebview/aiohttp/httpx; upstream's
 FastAPI + langchain + esperanto stack lives in a user-managed venv that uv
@@ -46,7 +46,7 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
         shipped inside the bundle.
     dest_parent:
         Directory under which ``python-runtime/`` will be created
-        (typically ``~/.open-notebook-plus``).
+        (typically ``~/.deeper-notebook``).
 
     Returns
     -------
@@ -69,7 +69,7 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     # actually broken; the interpreter can't import its own stdlib.
     # Subsequent `venv` create from this interpreter fails with a
     # cryptic error and the user has to manually `rm -rf
-    # ~/.open-notebook-plus/python-runtime` to recover.
+    # ~/.deeper-notebook/python-runtime` to recover.
     #
     # Health check: if the file is present, ensure it's executable
     # AND can print its version. Anything else means the install is
