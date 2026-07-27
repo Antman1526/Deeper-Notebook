@@ -154,9 +154,19 @@ def _humanize(value: str) -> str:
 def _scrub_structural_terms(value: str) -> str:
     scrubbed = value
     for pattern in sorted(LEGACY_PATTERNS, key=len, reverse=True):
-        scrubbed = scrubbed.replace(pattern, "former identifier")
+        scrubbed = re.sub(
+            re.escape(pattern),
+            "former identifier",
+            scrubbed,
+            flags=re.IGNORECASE,
+        )
     for category in CATEGORIES:
-        scrubbed = scrubbed.replace(category, "approved classification")
+        scrubbed = re.sub(
+            re.escape(category),
+            "approved classification",
+            scrubbed,
+            flags=re.IGNORECASE,
+        )
     scrubbed = _STRUCTURAL_LOCATOR_RE.sub("", scrubbed)
     return " ".join(scrubbed.split()).strip(" .,:;-")
 
@@ -171,6 +181,8 @@ def semantic_explanation_key(explanation: str) -> str:
 
 def _source_role(relative_path: str) -> str:
     path = Path(relative_path)
+    if path.name == "Makefile":
+        return "The build automation manifest"
     if relative_path == "desktop/__init__.py":
         return "The desktop package wrapper"
     if path.name in {"CHANGELOG.md", "CHANGELOG"}:
@@ -823,10 +835,11 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
         if not isinstance(explanation, str):
             raise ValueError("allowlist rationale explanation must be a string")
         normalized_explanation = " ".join(explanation.split())
+        casefolded_explanation = normalized_explanation.casefold()
         if (
             len(normalized_explanation) < _MIN_EXPLANATION_CHARS
             or len(normalized_explanation.split()) < _MIN_EXPLANATION_WORDS
-            or normalized_explanation.casefold() in _GENERIC_EXPLANATIONS
+            or casefolded_explanation in _GENERIC_EXPLANATIONS
         ):
             raise ValueError(
                 "allowlist rationale requires a meaningful explanation of at "
@@ -834,10 +847,10 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 f"{_MIN_EXPLANATION_WORDS} words"
             )
         if (
-            allowlisted_path in normalized_explanation
-            or pattern in normalized_explanation
-            or category in normalized_explanation
-            or digest in normalized_explanation
+            allowlisted_path.casefold() in casefolded_explanation
+            or pattern.casefold() in casefolded_explanation
+            or category.casefold() in casefolded_explanation
+            or digest.casefold() in casefolded_explanation
             or _STRUCTURAL_LOCATOR_RE.search(normalized_explanation)
             or _MECHANICAL_LOCATOR_RE.search(normalized_explanation)
         ):
