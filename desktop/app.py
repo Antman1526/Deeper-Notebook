@@ -10,16 +10,17 @@ dataclass that carries state forward without 50 nested local variables.
 
 Phase order
 -----------
-1. _phase_load_config      — locate & load config.toml; set up log dir + progress bus
-2. _phase_wizard_if_first_run — run the first-run wizard on first launch
-3. _phase_bootstrap_runtime   — provision the venv (bootstrap.ensure_venv)
-4. _phase_download_models     — auto-download embedding + voice models
-5. _phase_select_provider     — start Ollama or llama.cpp server; populate extra_env
-6. _phase_start_supervisor    — build & start the Supervisor process tree
-7. _phase_auto_register       — register discovered models with the upstream API
-8. _phase_start_model_manager — start the aiohttp model-manager window server
-9. _phase_install_tray        — set up the system tray icon + menu
-10. _phase_open_window        — open the PyWebView main window (blocks until closed)
+1. _phase_detect_data_root_recovery — stop on divergent canonical/legacy roots
+2. _phase_load_config      — locate & load config.toml; set up log dir + progress bus
+3. _phase_wizard_if_first_run — run the first-run wizard on first launch
+4. _phase_bootstrap_runtime   — provision the venv (bootstrap.ensure_venv)
+5. _phase_download_models     — auto-download embedding + voice models
+6. _phase_select_provider     — start Ollama or llama.cpp server; populate extra_env
+7. _phase_start_supervisor    — build & start the Supervisor process tree
+8. _phase_auto_register       — register discovered models with the upstream API
+9. _phase_start_model_manager — start the aiohttp model-manager window server
+10. _phase_install_tray       — set up the system tray icon + menu
+11. _phase_open_window        — open the PyWebView main window (blocks until closed)
 """
 from __future__ import annotations
 
@@ -36,11 +37,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from deeper_notebook.environment import resolve_env
-from desktop.data_root import active_data_root
+from desktop.data_root import (
+    active_data_root,
+    resolve_data_root,
+    write_conflict_recovery_evidence,
+)
 
 if TYPE_CHECKING:
     from desktop.app_migration import AppRecoveryController
     from desktop.config import Config
+    from desktop.data_root import DataRootDecision
     from desktop.launcher import Supervisor
     from desktop.progress import ProgressBus
     from desktop.providers import ModelProvider
@@ -173,6 +179,9 @@ class AppContext:
     commands_dst: "Path | None" = None
     memory_dashboard_port: int = 0
     app_recovery: "AppRecoveryController | None" = None
+    data_root_decision: "DataRootDecision | None" = None
+    data_root_recovery_root: Path | None = None
+    data_root_recovery_payload: dict[str, object] | None = None
     _cleanup_lock: threading.Lock = dataclasses.field(
         default_factory=threading.Lock, repr=False, compare=False
     )
@@ -191,6 +200,27 @@ def _new_context() -> AppContext:
     return AppContext()
 
 
+def _phase_detect_data_root_recovery(
+    ctx: AppContext,
+    *,
+    home: Path | None = None,
+) -> None:
+    """Resolve guarded migration or prepare read-only divergent-root recovery."""
+    decision = resolve_data_root(home=home)
+    ctx.data_root_decision = decision
+    if (
+        decision.state != "migration-conflict"
+        or decision.reason_code != "non-equivalent-roots"
+    ):
+        return
+    recovery_root, payload = write_conflict_recovery_evidence(
+        decision,
+        home=home,
+    )
+    ctx.data_root_recovery_root = recovery_root
+    ctx.data_root_recovery_payload = payload
+
+
 def _phase_detect_app_recovery(
     ctx: AppContext,
     *,
@@ -203,10 +233,25 @@ def _phase_detect_app_recovery(
         return
     from desktop.app_migration import AppRecoveryController
 
+    if data_root is None and ctx.data_root_recovery_root is not None:
+        data_root = ctx.data_root_recovery_root
     ctx.app_recovery = AppRecoveryController.detect(
         applications_dir=applications_dir,
         data_root=data_root,
         recycler=recycler,
+    )
+
+
+def _phase_open_data_root_recovery(ctx: AppContext) -> None:
+    """Block in the packaged recovery webview without starting app services."""
+    from desktop.window import open_data_root_recovery_window
+
+    assert ctx.data_root_recovery_payload is not None
+    assert ctx.data_root_recovery_root is not None
+    open_data_root_recovery_window(
+        conflict_payload=ctx.data_root_recovery_payload,
+        app_recovery=ctx.app_recovery,
+        storage_root=ctx.data_root_recovery_root,
     )
 
 
@@ -1204,7 +1249,11 @@ def run() -> int:
     covers everything between supervisor.start_all() and that finally.
     """
     ctx = _new_context()
+    _phase_detect_data_root_recovery(ctx)
     _phase_detect_app_recovery(ctx)
+    if ctx.data_root_recovery_payload is not None:
+        _phase_open_data_root_recovery(ctx)
+        return 0
     _phase_load_config(ctx)
     _phase_wizard_if_first_run(ctx)
     _phase_bootstrap_runtime(ctx)

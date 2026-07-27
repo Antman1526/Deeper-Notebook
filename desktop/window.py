@@ -11,6 +11,7 @@ which still requires webview.
 """
 from __future__ import annotations
 
+import html as _html
 import json as _json
 import threading
 import time
@@ -788,6 +789,133 @@ def _install_native_termination_observer(
             pass
 
     return _remove
+
+
+def _data_root_recovery_html(
+    conflict_payload: dict[str, object],
+) -> str:
+    """Render only paths, aggregate hashes, and counts from conflict evidence."""
+
+    def summary(name: str, label: str) -> str:
+        value = conflict_payload.get(name)
+        item = value if isinstance(value, dict) else {}
+        path = _html.escape(str(item.get("path", "Unavailable")))
+        tree_hash = _html.escape(str(item.get("tree_sha256", "Unavailable")))
+        file_count = _html.escape(str(item.get("file_count", "Unavailable")))
+        directory_count = _html.escape(
+            str(item.get("directory_count", "Unavailable"))
+        )
+        return f"""
+          <article class="root-summary">
+            <h2>{_html.escape(label)}</h2>
+            <dl>
+              <dt>Path</dt><dd><code>{path}</code></dd>
+              <dt>Tree SHA-256</dt><dd><code>{tree_hash}</code></dd>
+              <dt>Files</dt><dd>{file_count}</dd>
+              <dt>Directories</dt><dd>{directory_count}</dd>
+            </dl>
+          </article>
+        """
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deeper Notebook Recovery</title>
+  <style>
+    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif; background: #f4f7fb; color: #172033; }}
+    body {{ margin: 0; padding: 40px; }}
+    main {{ max-width: 960px; margin: 0 auto; }}
+    h1 {{ margin: 0 0 12px; font-size: 30px; }}
+    .notice {{ padding: 16px 18px; border: 1px solid #b7cae5;
+      border-radius: 12px; background: #fff; line-height: 1.55; }}
+    .summaries {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px; margin-top: 24px; }}
+    .root-summary {{ min-width: 0; padding: 18px; border: 1px solid #d3deec;
+      border-radius: 12px; background: #fff; }}
+    .root-summary h2 {{ margin: 0 0 14px; font-size: 18px; }}
+    dl {{ display: grid; grid-template-columns: max-content minmax(0, 1fr);
+      gap: 10px 14px; margin: 0; }}
+    dt {{ color: #526276; font-weight: 600; }}
+    dd {{ min-width: 0; margin: 0; overflow-wrap: anywhere; }}
+    code {{ font-size: 12px; }}
+    @media (max-width: 720px) {{
+      body {{ padding: 24px; }}
+      .summaries {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Data folders need manual review</h1>
+    <p class="notice">
+      Deeper Notebook found different canonical and legacy data folders.
+      Normal services were not started.
+      No data root has been selected or changed.
+      The summaries below contain paths, aggregate hashes, and counts only;
+      neither folder will be merged, copied, or deleted here.
+    </p>
+    <section class="summaries" aria-label="Data root summaries">
+      {summary("canonical", "Canonical data folder")}
+      {summary("legacy", "Legacy data folder")}
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def open_data_root_recovery_window(
+    *,
+    conflict_payload: dict[str, object],
+    app_recovery,
+    storage_root: Path,
+) -> None:
+    """Open the isolated packaged recovery UI without resolving a data root."""
+    import webview
+
+    storage_root = Path(storage_root)
+    if storage_root.is_symlink() or not storage_root.is_dir():
+        raise RuntimeError("unsafe recovery storage root")
+    storage_path = storage_root / "webview_data"
+    if storage_path.is_symlink():
+        raise RuntimeError("unsafe recovery webview storage")
+    storage_path.mkdir(mode=0o700, parents=False, exist_ok=True)
+
+    api = _OnpJsApi(app_recovery)
+    window = webview.create_window(
+        "Deeper Notebook Recovery",
+        html=_data_root_recovery_html(conflict_payload),
+        width=1080,
+        height=760,
+        js_api=api,
+    )
+    api._window = window
+
+    def _on_loaded() -> None:
+        try:
+            window.evaluate_js(
+                _app_recovery_injection_js(api.get_app_recovery())
+            )
+        except Exception:
+            pass
+
+    window.events.loaded += _on_loaded
+    remove_termination_observer = _install_native_termination_observer(
+        lambda: None
+    )
+    try:
+        try:
+            webview.start(
+                private_mode=False,
+                storage_path=str(storage_path),
+            )
+        except TypeError:
+            webview.start()
+    finally:
+        remove_termination_observer()
 
 
 def open_window(url: str, on_close: Callable[[], None],
