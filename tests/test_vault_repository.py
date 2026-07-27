@@ -61,8 +61,23 @@ class QueryRecorder:
         if self.fail_on and self.fail_on in compact:
             raise RuntimeError("synthetic database failure")
         if "LET $unchanged =" in compact:
+            existing_modified_ns = (
+                self.existing_file.get("modified_ns", variables["observed_modified_ns"])
+                if self.existing_file
+                else None
+            )
+            observed_modified_ns = variables["observed_modified_ns"]
+            conflict = bool(
+                self.existing_file
+                and existing_modified_ns == observed_modified_ns
+                and self.existing_file.get("content_hash") != variables["content_hash"]
+            )
+            superseded = bool(
+                self.existing_file and existing_modified_ns > observed_modified_ns
+            )
             unchanged = bool(
                 self.existing_file
+                and existing_modified_ns == observed_modified_ns
                 and self.existing_file.get("content_hash") == variables["content_hash"]
                 and self.existing_file.get("parse_status") == "parsed"
                 and self.existing_file.get("deleted_state") == "present"
@@ -70,7 +85,41 @@ class QueryRecorder:
             self.receipts_created += 1
             if self.lost_response_after_commit:
                 raise ConnectionError("synthetic lost response")
-            return [{"projection_status": ("unchanged" if unchanged else "projected")}]
+            status = (
+                "conflict"
+                if conflict
+                else "superseded"
+                if superseded
+                else "unchanged"
+                if unchanged
+                else "projected"
+            )
+            return [{"projection_status": status}]
+        if "LET $failure_status =" in compact:
+            existing_modified_ns = (
+                self.existing_file.get("modified_ns", 0) if self.existing_file else None
+            )
+            observed_modified_ns = variables["modified_ns"]
+            conflict = bool(
+                self.existing_file
+                and existing_modified_ns == observed_modified_ns
+                and self.existing_file.get("content_hash") != variables["content_hash"]
+            )
+            superseded = bool(
+                self.existing_file and existing_modified_ns >= observed_modified_ns
+            )
+            self.receipts_created += 1
+            return [
+                {
+                    "failure_status": (
+                        "conflict"
+                        if conflict
+                        else "superseded"
+                        if superseded
+                        else "stale-invalid"
+                    )
+                }
+            ]
         if "LET $transitioned =" in compact:
             transitioned = not (
                 self.existing_file
@@ -148,6 +197,7 @@ def _work(
     *,
     relative_path: str = "Pages/Alpha.md",
     content_hash: str = "a" * 64,
+    modified_ns: int = 123,
 ) -> VaultWorkItem:
     return VaultWorkItem(
         vault_id="vault_mount:test",
@@ -157,7 +207,7 @@ def _work(
         content=b"# Alpha\n- [ ] Task [[Beta]]",
         content_hash=content_hash,
         byte_size=28,
-        modified_ns=123,
+        modified_ns=modified_ns,
     )
 
 
@@ -265,6 +315,7 @@ async def test_unchanged_hash_only_appends_one_unchanged_receipt():
     existing = {
         "id": "vault_file:existing",
         "content_hash": "a" * 64,
+        "modified_ns": 123,
         "parse_status": "parsed",
         "deleted_state": "present",
     }
@@ -291,6 +342,7 @@ async def test_changed_projection_receipt_binds_prior_and_current_hashes_atomica
     existing = {
         "id": "vault_file:existing",
         "content_hash": "a" * 64,
+        "modified_ns": 100,
         "parse_status": "parsed",
         "deleted_state": "present",
     }
@@ -366,34 +418,136 @@ async def test_projection_transaction_has_atomic_stale_writer_supersession():
     )
 
     transaction = connection.calls[0][0]
-    assert "LET $current_success" in transaction
     assert "LET $superseded" in transaction
+    assert "LET $conflict" in transaction
     assert "observed_modified_ns" in transaction
     assert "$superseded_receipt" in transaction
+    assert "$conflict_receipt" in transaction
+    assert "$current_success.started_at" not in transaction
     assert transaction.index("LET $superseded") < transaction.index(
         "UPSERT $vault_file_id"
     )
 
 
 @pytest.mark.asyncio
-async def test_failure_transaction_cannot_invalidate_newer_successful_projection():
-    connection = QueryRecorder()
+async def test_equal_timestamp_different_hash_projection_requires_reconciliation():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "parsed",
+            "deleted_state": "present",
+        }
+    )
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    result = await repository.project_document(
+        _mount(),
+        _work(content_hash="a" * 64, modified_ns=200),
+        _document(content_hash="a" * 64),
+        "operation-equal-conflict",
+    )
+
+    assert result.status == "conflict"
+    assert result.reconciliation_required is True
+    assert connection.calls[0][1]["conflict_receipt"]["status"] == "conflict"
+    assert (
+        connection.calls[0][1]["conflict_receipt"]["error_code"]
+        == "reconciliation_required"
+    )
+
+
+@pytest.mark.asyncio
+async def test_newer_failure_invalidates_file_but_preserves_projection_graph():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "parsed",
+            "deleted_state": "present",
+        }
+    )
     repository = VaultRepository(connection_factory=ConnectionSequence(connection))
 
-    await repository.record_failure(
+    result = await repository.record_failure(
         "vault_mount:test",
-        _work(content_hash="a" * 64),
-        "operation-stale-failure",
+        _work(content_hash="c" * 64, modified_ns=300),
+        "operation-newer-failure",
         "frontmatter_invalid",
     )
 
     transaction = connection.calls[0][0]
-    assert "LET $current_success" in transaction
     assert "LET $superseded" in transaction
+    assert "LET $conflict" in transaction
     assert "$superseded_receipt" in transaction
+    assert "$conflict_receipt" in transaction
+    assert "$stale_invalid_receipt" in transaction
+    assert "UPDATE note SET external_state = 'stale'" in transaction
+    assert "DELETE note" not in transaction
+    assert "DELETE note_block" not in transaction
+    assert "DELETE note_link" not in transaction
+    assert "DELETE knowledge_task" not in transaction
     assert transaction.index("LET $superseded") < transaction.index(
         "UPSERT $vault_file_id"
     )
+    assert result.status == "stale-invalid"
+    assert result.reconciliation_required is False
+
+
+@pytest.mark.asyncio
+async def test_equal_timestamp_different_hash_failure_requires_reconciliation():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "parsed",
+            "deleted_state": "present",
+        }
+    )
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    result = await repository.record_failure(
+        "vault_mount:test",
+        _work(content_hash="a" * 64, modified_ns=200),
+        "operation-conflicting-failure",
+        "parse_failed",
+    )
+
+    assert result.status == "conflict"
+    assert result.reconciliation_required is True
+    variables = connection.calls[0][1]
+    assert variables["conflict_receipt"]["status"] == "conflict"
+    assert variables["conflict_receipt"]["error_code"] == "reconciliation_required"
+
+
+@pytest.mark.asyncio
+async def test_equal_timestamp_same_hash_failure_does_not_invalidate_success():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "parsed",
+            "deleted_state": "present",
+        }
+    )
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    result = await repository.record_failure(
+        "vault_mount:test",
+        _work(content_hash="b" * 64, modified_ns=200),
+        "operation-idempotent-failure",
+        "parse_failed",
+    )
+
+    assert result.status == "superseded"
+    assert result.reconciliation_required is False
 
 
 @pytest.mark.asyncio
@@ -720,6 +874,13 @@ def test_receipts_are_append_and_list_only():
         {"operation_id": "operation\nsecret"},
         {"operation": "project\nsecret"},
         {"source": "vault-indexer\nsecret"},
+        {"parser_version": "/Users/private/parser"},
+        {"parser_version": "parser\\private"},
+        {"parser_version": "parser\nsecret"},
+        {"parser_version": "x" * 129},
+        {"policy_decision": "guarded-write"},
+        {"policy_decision": "read-only\n/Users/private"},
+        {"policy_decision": "x" * 100_000},
         {"error_code": "x" * 65},
         {"rollback_path": "/tmp/phase-1-must-not-write"},
     ],
@@ -739,6 +900,35 @@ def test_receipt_contract_rejects_unbounded_or_phase_1_unsafe_fields(override):
 
     with pytest.raises(ValidationError):
         VaultSyncReceipt.model_validate(values)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("parser_version", "/Users/private/parser"),
+        ("parser_version", "parser\nsecret"),
+        ("policy_decision", "x" * 100_000),
+    ],
+)
+async def test_append_receipt_revalidates_adversarial_constructed_models(field, value):
+    values = {
+        "operation_id": "operation-safe",
+        "vault_id": "vault_mount:test",
+        "vault_file_id": "vault_file:test",
+        "operation": "project",
+        "source": "vault-indexer",
+        "parser_version": "test",
+        "policy_decision": "read-only",
+        "status": "success",
+        "started_at": datetime.now(timezone.utc),
+    }
+    values[field] = value
+    unsafe = VaultSyncReceipt.model_construct(**values)
+    repository = VaultRepository(connection_factory=ConnectionSequence())
+
+    with pytest.raises(ValidationError):
+        await repository.append_receipt(unsafe)
 
 
 @pytest.mark.asyncio

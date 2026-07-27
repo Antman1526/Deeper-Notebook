@@ -1,0 +1,13 @@
+-- vault schema repair for recorded migration 32
+--
+-- Migration 32 was exercised locally before its ordering correction landed.
+-- Reassert the canonical fields and indexes so those databases converge with
+-- a fresh install without deleting projection data.
+
+DEFINE FIELD IF NOT EXISTS title_key ON TABLE note TYPE option<string>;
+DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key ON TABLE note COLUMNS vault_id, title_key;
+
+DEFINE FIELD IF NOT EXISTS target_title_key ON TABLE note_link TYPE string;
+
+REMOVE INDEX IF EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record;
+DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record COLUMNS vault_id, manifest_relative_path, manifest_id UNIQUE;
