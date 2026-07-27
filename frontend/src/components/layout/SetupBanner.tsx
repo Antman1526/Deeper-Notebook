@@ -83,7 +83,7 @@ export function SetupBanner() {
                 ensures users land on docs that match the build
                 they're running. */}
             <a
-              href="https://github.com/Antman1526/open-notebook-Plus/blob/main/docs/3-USER-GUIDE/api-configuration.md#encryption-setup"
+              href="https://github.com/Antman1526/Deeper-Notebook/blob/main/docs/3-USER-GUIDE/api-configuration.md#encryption-setup"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center shrink-0 text-sm font-medium underline underline-offset-2 hover:opacity-80"

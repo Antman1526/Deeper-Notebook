@@ -1,4 +1,4 @@
-"""Surreal-commands integration for Open Notebook.
+"""Surreal-commands integration for Deeper Notebook.
 
 v0.7.24 — configure loguru file logging for the worker process.
 

@@ -52,7 +52,7 @@ _NON_CHAT_PREFIXES = ("piper-", "whisper-", "nomic-", "Local Embeddings")
 # to itself.
 _PRESETS: list[dict[str, Any]] = [
     {
-        "name": "Open Notebook Plus Local",
+        "name": "Deeper Notebook Local",
         "description": "Two-voice podcast using local Piper TTS",
         "num_segments": 5,
         "default_length_minutes": 5,
@@ -198,6 +198,13 @@ _PRESETS: list[dict[str, Any]] = [
     },
 ]
 
+# Existing installations may already have the old default profile name stored
+# in SurrealDB. Treat it as the same preset during idempotent registration;
+# never rename or duplicate the persisted user record implicitly.
+_LEGACY_PRESET_NAMES: dict[str, frozenset[str]] = {
+    "Deeper Notebook Local": frozenset({"Open Notebook Plus Local"}),
+}
+
 
 def register_default_episode_profile(client: httpx.Client) -> None:
     """Idempotent: create the v0.7.30 preset library.
@@ -302,7 +309,11 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     degraded = 0
     skipped_no_speaker = 0
     for preset in _PRESETS:
-        if preset["name"] in existing:
+        equivalent_names = {
+            preset["name"],
+            *_LEGACY_PRESET_NAMES.get(preset["name"], frozenset()),
+        }
+        if existing & equivalent_names:
             skipped += 1
             continue
         # v0.7.149 — Fall back to "Local Duo" if the preset's preferred

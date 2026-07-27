@@ -1,5 +1,5 @@
 """
-Chunking utilities for Open Notebook.
+Chunking utilities for Deeper Notebook.
 
 Provides content-type detection and smart text chunking for embedding operations.
 Supports HTML, Markdown, and plain text with appropriate splitters for each type.
@@ -9,9 +9,9 @@ Key functions:
 - chunk_text(): Splits text into chunks using appropriate splitter for content type
 
 Environment Variables:
-    OPEN_NOTEBOOK_CHUNK_SIZE: Maximum chunk size in tokens (default: 400)
-    OPEN_NOTEBOOK_CHUNK_OVERLAP: Overlap between chunks in tokens (default: 15% of CHUNK_SIZE)
-    OPEN_NOTEBOOK_MIN_CHUNK_SIZE: Minimum chunk size in tokens (default: 5)
+    DEEPER_NOTEBOOK_CHUNK_SIZE: Maximum chunk size in tokens (default: 400)
+    DEEPER_NOTEBOOK_CHUNK_OVERLAP: Overlap between chunks in tokens (default: 15% of CHUNK_SIZE)
+    DEEPER_NOTEBOOK_MIN_CHUNK_SIZE: Minimum chunk size in tokens (default: 5)
 """
 
 import os

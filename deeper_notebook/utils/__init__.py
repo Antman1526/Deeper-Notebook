@@ -1,12 +1,12 @@
 """
-Utils package for Open Notebook.
+Utils package for Deeper Notebook.
 
 To avoid circular imports, import functions directly:
-- from open_notebook.utils.context_builder import ContextBuilder
-- from open_notebook.utils import token_count, compare_versions
-- from open_notebook.utils.chunking import chunk_text, detect_content_type, ContentType
-- from open_notebook.utils.embedding import generate_embedding, generate_embeddings
-- from open_notebook.utils.encryption import encrypt_value, decrypt_value
+- from deeper_notebook.utils.context_builder import ContextBuilder
+- from deeper_notebook.utils import token_count, compare_versions
+- from deeper_notebook.utils.chunking import chunk_text, detect_content_type, ContentType
+- from deeper_notebook.utils.embedding import generate_embedding, generate_embeddings
+- from deeper_notebook.utils.encryption import encrypt_value, decrypt_value
 """
 
 from .chunking import (

@@ -1,4 +1,4 @@
-# Private SearXNG (localhost) for Open Notebook Plus web search
+# Private SearXNG (localhost) for Deeper Notebook web search
 
 A private, localhost-only SearXNG instance with the **JSON API enabled**, so the
 chat `web_search` tool has a stable keyless search endpoint. Public SearXNG
@@ -13,7 +13,7 @@ openssl rand -hex 32
 # 2. Start it (binds 127.0.0.1:8889 only)
 docker compose up -d
 
-# 3. Point Open Notebook Plus at it in .env, then restart the app
+# 3. Point Deeper Notebook at it in .env, then restart the app
 #    SEARXNG_BASE_URL=http://127.0.0.1:8889/
 
 # 4. Verify the JSON API works

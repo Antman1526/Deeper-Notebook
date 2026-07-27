@@ -1,5 +1,10 @@
 # 01 — Project Overview & Architecture
 
+> **Historical snapshot:** this packet records the pre-rebrand product and
+> shipped paths. The current successor is
+> [Deeper Notebook](https://github.com/Antman1526/Deeper-Notebook); use the
+> root README for current install, package, and configuration names.
+>
 > Exhaustive recreation documentation for **Open Notebook Plus**.
 > Target: an engineer (or AI) rebuilding the system from scratch.
 > Repo: `Antman1526/open-notebook-Plus`, branch `desktop-app`.

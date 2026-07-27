@@ -320,7 +320,7 @@ We'd love to have you contribute in other ways! Check out:
 - Help wanted issues
 - Our roadmap
 
-Thanks again for your interest in Open Notebook!
+Thanks again for your interest in Deeper Notebook!
 ```
 
 ### Closing a Stale Issue
@@ -506,6 +506,6 @@ Before tagging a `v0.7.NN` release:
 4. `cd frontend && npx tsc --noEmit` — clean
 5. Update `desktop/CHANGELOG.md` "Unreleased" section
 6. `make build-mac-pyinstaller && make build-mac-dmg` — produces
-   `dist/Open Notebook Plus.dmg`
+   `dist/Deeper Notebook.dmg`
 7. Smoke-test: launch the .dmg, hit `http://localhost:5055/healthz/deep`,
    verify `status: healthy` (or `degraded` with diagnostics)

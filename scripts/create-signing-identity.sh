@@ -6,7 +6,7 @@
 # re-signed with the SAME identity on every rebuild:
 #
 #     bash scripts/create-signing-identity.sh
-#     make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+#     make build-mac ONP_CODESIGN_IDENTITY="Deeper Notebook Local"
 #
 # Why: the default build re-seals with an ad-hoc signature (`codesign --sign -`),
 # which gives the app a NEW cryptographic identity every rebuild. macOS ties
@@ -24,7 +24,7 @@
 # Apple-notarized; first launch may still need right-click → Open.
 set -euo pipefail
 
-IDENTITY="${1:-Open Notebook Plus Local}"
+IDENTITY="${1:-Deeper Notebook Local}"
 KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 
 if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then

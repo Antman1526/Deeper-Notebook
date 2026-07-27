@@ -141,7 +141,7 @@ Once you're up and running:
 ## Need Help?
 
 - **Discord**: [Join community](https://discord.gg/37XJPXfz2w)
-- **GitHub Issues**: [Report problems](https://github.com/lfnovo/open-notebook/issues)
+- **GitHub Issues**: [Report problems](https://github.com/Antman1526/Deeper-Notebook/issues)
 - **Docs**: See [Full Documentation](../index.md)
 
 ---

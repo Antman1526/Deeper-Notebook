@@ -1,5 +1,5 @@
 """
-Text utilities for Open Notebook.
+Text utilities for Deeper Notebook.
 Extracted from main utils to avoid circular imports.
 """
 

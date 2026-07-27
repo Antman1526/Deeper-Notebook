@@ -1,7 +1,7 @@
 """Helpers for Antman's AI_Models manifest.
 
 The manifest is a Markdown table generated outside the app under
-`<model_dir>/manifests/model_inventory.md`. Most helpers let Open Notebook
+`<model_dir>/manifests/model_inventory.md`. Most helpers let Deeper Notebook
 Plus compare scanned models with that curated intent. The patch helpers are
 intentionally narrow: append one validated row, with a backup, inside the
 configured model directory.

@@ -29,6 +29,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import backup_restore as br  # noqa: E402
 
 
+def test_data_root_env_prefers_canonical_and_accepts_legacy(
+    tmp_path, monkeypatch
+):
+    canonical = tmp_path / "canonical"
+    legacy = tmp_path / "legacy"
+    canonical.mkdir()
+    legacy.mkdir()
+
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DATA_DIR", str(canonical))
+    monkeypatch.setenv("ONP_DATA_DIR", str(legacy))
+    assert br._resolve_data_root() == canonical.resolve()
+
+    monkeypatch.delenv("DEEPER_NOTEBOOK_DATA_DIR")
+    assert br._resolve_data_root() == legacy.resolve()
+
+
 def _make_fake_data_dir(root: Path) -> dict[str, bytes]:
     """Build a small data directory with the file types ONP actually
     creates. Returns {relpath: bytes} so tests can verify what was
@@ -326,7 +342,7 @@ def test_restore_rejects_future_bundle_version(tmp_path):
 
 def test_backup_raises_on_empty_data_dir(tmp_path):
     """v0.7.126 — Backing up an empty data dir is almost certainly a
-    misconfiguration (wrong ONP_DATA_DIR). Raise with an actionable
+    misconfiguration (wrong DEEPER_NOTEBOOK_DATA_DIR). Raise with an actionable
     error message."""
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -334,14 +350,14 @@ def test_backup_raises_on_empty_data_dir(tmp_path):
     with pytest.raises(RuntimeError) as exc_info:
         br.backup(tmp_path / "out.tar.gz", data_root=empty)
     assert "no files" in str(exc_info.value).lower()
-    assert "ONP_DATA_DIR" in str(exc_info.value)
+    assert "DEEPER_NOTEBOOK_DATA_DIR" in str(exc_info.value)
 
 
 def test_backup_raises_on_missing_data_dir(tmp_path):
     """v0.7.126 — Pointing at a non-existent dir errors with
-    actionable text mentioning ONP_DATA_DIR."""
+    actionable text mentioning DEEPER_NOTEBOOK_DATA_DIR."""
     with pytest.raises(RuntimeError) as exc_info:
         br.backup(tmp_path / "out.tar.gz",
                   data_root=tmp_path / "does-not-exist")
     assert "not found" in str(exc_info.value).lower()
-    assert "ONP_DATA_DIR" in str(exc_info.value)
+    assert "DEEPER_NOTEBOOK_DATA_DIR" in str(exc_info.value)

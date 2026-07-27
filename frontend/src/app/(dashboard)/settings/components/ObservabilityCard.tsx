@@ -178,7 +178,7 @@ export function ObservabilityCard() {
             convention used elsewhere in the app. */}
         <div className="pt-4 mt-2 border-t">
           <a
-            href="https://github.com/Antman1526/open-notebook-Plus/blob/desktop-app/docs/operator/observability.md"
+            href="https://github.com/Antman1526/Deeper-Notebook/blob/main/docs/operator/observability.md"
             target="_blank"
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1 text-xs text-primary underline"

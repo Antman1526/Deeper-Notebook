@@ -1,6 +1,6 @@
 # Local Development Setup
 
-This guide walks you through setting up Open Notebook for local development. Follow these steps to get the full stack running on your machine.
+This guide walks you through setting up Deeper Notebook for local development. Follow these steps to get the full stack running on your machine.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ Before you start, ensure you have the following installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/lfnovo/open-notebook.git
-cd open-notebook
+git clone https://github.com/Antman1526/Deeper-Notebook.git
+cd Deeper-Notebook
 
 # Add upstream remote for keeping your fork updated
 git remote add upstream https://github.com/lfnovo/open-notebook.git
@@ -54,7 +54,7 @@ SURREAL_NAMESPACE=open_notebook
 SURREAL_DATABASE=development
 
 # Credential encryption (required for storing API keys)
-OPEN_NOTEBOOK_ENCRYPTION_KEY=my-dev-secret-key
+DEEPER_NOTEBOOK_ENCRYPTION_KEY=my-dev-secret-key
 
 # Application
 APP_PASSWORD=  # Optional password protection
@@ -289,7 +289,7 @@ git push origin feature/my-feature
 ### Updating from Upstream
 
 ```bash
-# Open Notebook Plus keeps desktop, Studio, source-ingestion, and
+# Deeper Notebook keeps desktop, Studio, source-ingestion, and
 # local-model changes that must be reviewed before accepting upstream code.
 # Use the guarded workflow instead of rebasing directly:
 scripts/upstream_sync_guard.sh prepare

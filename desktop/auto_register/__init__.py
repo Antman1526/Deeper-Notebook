@@ -385,7 +385,7 @@ def _do_register(
     ):
         registered_any = True
 
-    # --- 4a. Native MLX server launched by Open Notebook Plus ---------------
+    # --- 4a. Native MLX server launched by Deeper Notebook ------------------
     if register_mlx_models(
         client,
         existing_cred_names,

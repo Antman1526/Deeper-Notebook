@@ -1,4 +1,4 @@
-# Pre-commit hooks for Open Notebook Plus (v0.7.120).
+# Pre-commit hooks for Deeper Notebook (v0.7.120).
 #
 # Install: `uv run pre-commit install` (one-time; wires .git/hooks/pre-commit)
 # Run on all files: `uv run pre-commit run --all-files`
