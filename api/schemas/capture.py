@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from open_notebook.capture.contracts import CaptureState
-from open_notebook.capture.routing import CaptureRouteResult
+from deeper_notebook.capture.contracts import CaptureState
+from deeper_notebook.capture.routing import CaptureRouteResult
 
 
 class RegisterCaptureRootRequest(BaseModel):

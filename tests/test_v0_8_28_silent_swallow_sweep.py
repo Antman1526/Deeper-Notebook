@@ -5,10 +5,10 @@ After v0.8.19 (memory_recall._safe_select) and v0.8.27
 `except Exception: return <sentinel>` with no log, this sweep
 closes the remaining four:
 
-  - open_notebook/domain/gmail.py:_fernet (security boundary)
-  - open_notebook/domain/gmail.py:_dec (encryption decode)
-  - open_notebook/database/async_migrate.py:get_all_versions
-  - open_notebook/utils/chunking.py:detect_content_type_from_extension
+  - deeper_notebook/domain/gmail.py:_fernet (security boundary)
+  - deeper_notebook/domain/gmail.py:_dec (encryption decode)
+  - deeper_notebook/database/async_migrate.py:get_all_versions
+  - deeper_notebook/utils/chunking.py:detect_content_type_from_extension
 
 Each fix logs at WARNING (genuine bug) or DEBUG (benign bootstrap
 case). Tests below pin the new contracts so a future refactor that
@@ -55,7 +55,7 @@ def test_v0828_fernet_logs_warning_on_construction_failure(monkeypatch):
     operator. Must now emit a WARNING naming the real failure."""
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "any-value")
 
-    from open_notebook.domain import gmail as gmail_mod
+    from deeper_notebook.domain import gmail as gmail_mod
 
     # Patch Fernet to raise on construction.
     def _boom_fernet(_key):
@@ -95,7 +95,7 @@ def test_v0828_fernet_silent_when_key_unset(monkeypatch):
     ):
         monkeypatch.delenv(name, raising=False)
 
-    from open_notebook.domain import gmail as gmail_mod
+    from deeper_notebook.domain import gmail as gmail_mod
 
     captured, sink_id = _capture_loguru(level="DEBUG")
     try:
@@ -124,7 +124,7 @@ def test_v0828_dec_quiet_on_invalid_token(monkeypatch):
     every legacy unencrypted row logs a WARNING on read."""
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
 
-    from open_notebook.domain import gmail as gmail_mod
+    from deeper_notebook.domain import gmail as gmail_mod
 
     class _RaiseInvalidToken:
         def decrypt(self, _bytes):
@@ -155,7 +155,7 @@ def test_v0828_dec_warns_on_unexpected_exception(monkeypatch):
     silently disappear."""
     monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", "k" * 32)
 
-    from open_notebook.domain import gmail as gmail_mod
+    from deeper_notebook.domain import gmail as gmail_mod
 
     class _RaiseRuntimeError:
         def decrypt(self, _bytes):
@@ -188,7 +188,7 @@ def test_v0828_dec_warns_on_unexpected_exception(monkeypatch):
 def test_v0828_get_all_versions_debug_on_table_missing(monkeypatch):
     """Fresh install: _sbl_migrations table doesn't exist yet. DEBUG
     only — otherwise every first-run installs warns on startup."""
-    from open_notebook.database import async_migrate as am_mod
+    from deeper_notebook.database import async_migrate as am_mod
 
     async def _missing(_q):
         raise RuntimeError("Table missing: _sbl_migrations")
@@ -215,7 +215,7 @@ def test_v0828_get_all_versions_warns_on_other_errors(monkeypatch):
     """Connection drop / auth failure / unknown SurrealDB error must
     surface as WARNING — otherwise the migration runner silently
     re-runs every migration when the DB is misbehaving."""
-    from open_notebook.database import async_migrate as am_mod
+    from deeper_notebook.database import async_migrate as am_mod
 
     async def _connection_drop(_q):
         raise RuntimeError("Connection refused: ws://127.0.0.1:8000")
@@ -253,7 +253,7 @@ def test_v0828_detect_content_type_logs_debug_on_exception(monkeypatch):
     """Path/.suffix is normally infallible on str input, but if it
     ever raises (exotic input), the fallback to heuristic detection
     is correct and DEBUG is the right level. Pre-v0.8.28 was silent."""
-    from open_notebook.utils import chunking as chunking_mod
+    from deeper_notebook.utils import chunking as chunking_mod
 
     class _BoomPath:
         def __init__(self, _v):

@@ -1,6 +1,6 @@
 """v0.8.64 — native env-keyed web_search chat tool.
 
-Covers the new `open_notebook/tools/web_search.py` module (provider detection,
+Covers the new `deeper_notebook/tools/web_search.py` module (provider detection,
 per-provider request/parse, opt-in gating, formatting, the StructuredTool
 builder + citation capture) AND its integration into the chat tool loop
 (bound only when a key is set and not disabled via the MCP picker).
@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from open_notebook.graphs import chat as chat_mod
-from open_notebook.tools import web_search as ws
+from deeper_notebook.graphs import chat as chat_mod
+from deeper_notebook.tools import web_search as ws
 
 _ALL_ENV = (
     "SERPER_API_KEY",

@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from api.routers import evaluations
-from open_notebook.evaluation.schemas import ClaimVerdict
-from open_notebook.studio.generation.service import (
+from deeper_notebook.evaluation.schemas import ClaimVerdict
+from deeper_notebook.studio.generation.service import (
     _critical_verdicts,
     _strict_evidence_required,
 )

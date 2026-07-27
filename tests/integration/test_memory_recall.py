@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from open_notebook.database.repository import repo_query
+from deeper_notebook.database.repository import repo_query
 
 
 pytestmark = pytest.mark.integration_surreal
@@ -80,7 +80,7 @@ async def test_recall_recent_memory_against_real_surrealdb(clean_namespace):
 
     # Now exercise the real recall_recent_memory — same import the
     # chat graph uses on every turn.
-    from open_notebook.utils.memory_recall import recall_recent_memory
+    from deeper_notebook.utils.memory_recall import recall_recent_memory
 
     result = await recall_recent_memory()
 
@@ -130,7 +130,7 @@ async def test_safe_select_query_shape_does_not_raise(clean_namespace):
     even on an empty table — exactly the signal v0.8.19 needed but
     didn't have.
     """
-    from open_notebook.utils.memory_recall import _safe_select
+    from deeper_notebook.utils.memory_recall import _safe_select
 
     facts = await _safe_select(
         "SELECT text, created_at FROM memory_fact "

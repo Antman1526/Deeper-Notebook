@@ -25,9 +25,9 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.models import SettingsResponse, SettingsUpdate
+from deeper_notebook.domain.content_settings import ContentSettings
 from deeper_notebook.environment import resolve_env
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.exceptions import InvalidInputError
+from deeper_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
 
@@ -96,7 +96,7 @@ async def update_settings(settings_update: SettingsUpdate):
             settings.offline_mode = settings_update.offline_mode
             # v0.8.68 — bust the network-state cache so the toggle takes
             # effect on the next chat turn, not after the 30s accessor TTL.
-            from open_notebook.health.network import invalidate_forced_offline_cache
+            from deeper_notebook.health.network import invalidate_forced_offline_cache
             invalidate_forced_offline_cache()
         # v0.8.88 — opt-in source auto-summary on ingest.
         if settings_update.auto_summarize_on_ingest is not None:

@@ -20,7 +20,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.database import repository as repo
+from deeper_notebook.database import repository as repo
 
 # Reuse the fakes/fixtures from the sibling pool test module.
 from tests.test_db_pool import (  # noqa: F401

@@ -10,7 +10,7 @@ import httpx
 from loguru import logger
 
 from deeper_notebook.environment import resolve_env
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 
 class ChatService:

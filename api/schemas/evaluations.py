@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from open_notebook.evaluation.schemas import ClaimVerdict
+from deeper_notebook.evaluation.schemas import ClaimVerdict
 
 
 class SourceContentHashResponse(BaseModel):

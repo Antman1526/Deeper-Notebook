@@ -14,7 +14,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from open_notebook import logging as onp_logging
+from deeper_notebook import logging as onp_logging
 
 
 def test_default_log_dir_uses_home(monkeypatch, tmp_path):

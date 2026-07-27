@@ -56,11 +56,15 @@ from api.models import (
     RegisterModelsResponse,
     UpdateCredentialRequest,
 )
+from deeper_notebook.database.repository import (
+    ensure_record_id,
+    repo_delete,
+    repo_query,
+)
+from deeper_notebook.domain.credential import Credential
 from deeper_notebook.environment import resolve_env
-from open_notebook.utils.encryption import get_secret_from_env
-from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
-from open_notebook.domain.credential import Credential
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 

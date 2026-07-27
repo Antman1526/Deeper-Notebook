@@ -42,7 +42,7 @@ from datetime import datetime
 from typing import Optional, Union
 
 
-def iso(value: Union[datetime, str, None]) -> Optional[str]:
+def iso(value: datetime | str | None) -> Optional[str]:
     """Return an ISO 8601 string (T separator) or None.
 
     Accepts datetime, str, or None. For datetimes, uses .isoformat()

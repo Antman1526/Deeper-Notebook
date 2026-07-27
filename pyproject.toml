@@ -94,6 +94,14 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["deeper_notebook*", "open_notebook*"]
 
+[tool.setuptools.package-data]
+deeper_notebook = [
+    "ai/assets/*.mp3",
+    "database/migrations/*.surrealql",
+    "prompt_optimizer/*.yaml",
+    "prompt_optimizer/skillopt_prompts/*.md",
+]
+
 
 [project.optional-dependencies]
 dev = [

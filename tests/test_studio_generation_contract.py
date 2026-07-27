@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_notebook.studio import artifact_generation
-from open_notebook.studio.generation import ArtifactGenerationRequest
-from open_notebook.studio.generation.context import (
+from deeper_notebook.studio import artifact_generation
+from deeper_notebook.studio.generation import ArtifactGenerationRequest
+from deeper_notebook.studio.generation.context import (
     artifact_context,
     artifact_not_ready_sources,
 )
-from open_notebook.studio.generation.prompts import (
+from deeper_notebook.studio.generation.prompts import (
     artifact_instruction,
     artifact_model_role,
 )

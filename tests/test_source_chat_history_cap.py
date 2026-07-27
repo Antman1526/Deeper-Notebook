@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from open_notebook.utils import message_history as mh
+from deeper_notebook.utils import message_history as mh
 
 
 def _hist(n_turns: int, content_size: int = 300) -> list:
@@ -89,7 +89,7 @@ async def test_source_chat_invokes_trim(monkeypatch):
 
     v0.7.37 — the inner function is now `async def`. Call-site
     needs `await`; the fake model now exposes `ainvoke`."""
-    from open_notebook.graphs import source_chat
+    from deeper_notebook.graphs import source_chat
 
     monkeypatch.delenv("ONP_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
 

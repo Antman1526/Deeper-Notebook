@@ -233,7 +233,9 @@ def ensure_venv(
     standalone_python — bundled portable interpreter used to create the venv.
     uv_binary — bundled uv binary used to install requirements.
     lock_path — pinned requirements.lock shipped in the bundle.
-    upstream_dir — bundled upstream source (api/, open_notebook/, commands/).
+    upstream_dir — bundled source root containing the canonical
+    deeper_notebook package, open_notebook compatibility shim, api/, and
+    commands/.
     """
     progress = progress or (lambda msg: None)
 
@@ -279,7 +281,9 @@ def ensure_venv(
     # at the bundled upstream/ source dir.
     site_packages = next(venv_dir().glob("lib/python*/site-packages"), None) \
         or (venv_dir() / "Lib" / "site-packages")  # Windows
-    (site_packages / "open_notebook_upstream.pth").write_text(str(upstream_dir) + "\n")
+    (site_packages / "deeper_notebook_upstream.pth").write_text(
+        str(upstream_dir) + "\n"
+    )
 
     # v0.7.141 — Defensive post-install verification (Area for Review,
     # found by real user). Before this check existed, a stale bundled

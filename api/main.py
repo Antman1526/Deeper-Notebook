@@ -70,8 +70,8 @@ from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
 from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
 from api.routers import updates as _updates_router  # v0.8.70 — in-app update notifier
-from open_notebook.database.async_migrate import AsyncMigrationManager
-from open_notebook.exceptions import (
+from deeper_notebook.database.async_migrate import AsyncMigrationManager
+from deeper_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
     ExternalServiceError,
@@ -81,8 +81,8 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     RateLimitError,
 )
-from open_notebook.logging import configure_logging
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.logging import configure_logging
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 
 def _parse_cors_origins(raw: str) -> list[str]:
@@ -160,7 +160,7 @@ async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
 
     Returns the acquired AsyncSurreal connection.
     """
-    from open_notebook.database.repository import _acquire
+    from deeper_notebook.database.repository import _acquire
 
     last_exc: BaseException | None = None
     for attempt, delay in enumerate(_WARMUP_RETRY_DELAYS_S):
@@ -271,7 +271,7 @@ async def lifespan(app: FastAPI):
 
     # Run podcast profile data migration (legacy strings -> Model registry)
     try:
-        from open_notebook.podcasts.migration import migrate_podcast_profiles
+        from deeper_notebook.podcasts.migration import migrate_podcast_profiles
 
         await migrate_podcast_profiles()
     except Exception as e:
@@ -286,7 +286,7 @@ async def lifespan(app: FastAPI):
     # runs once per startup, is idempotent (clean DB → no-op), and is
     # non-fatal if it fails (we'll retry next boot).
     try:
-        from open_notebook.database.dedup_edges import dedupe_legacy_edges
+        from deeper_notebook.database.dedup_edges import dedupe_legacy_edges
 
         await dedupe_legacy_edges()
     except Exception as e:
@@ -314,7 +314,7 @@ async def lifespan(app: FastAPI):
     # status — only stale work older than 30m. For the desktop
     # launcher's process-tree model this is overkill but cheap.
     try:
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         reaped = await repo_query(
             "UPDATE command "
@@ -357,7 +357,7 @@ async def lifespan(app: FastAPI):
     # Schedule a 5-minute loop that runs the same query. Cancelled
     # cleanly on shutdown.
     async def _reaper_loop() -> None:
-        from open_notebook.database.repository import repo_query as _rq
+        from deeper_notebook.database.repository import repo_query as _rq
         while True:
             try:
                 await asyncio.sleep(300)  # 5 minutes
@@ -412,7 +412,7 @@ async def lifespan(app: FastAPI):
     digest_stop_event: asyncio.Event = asyncio.Event()
     digest_scheduler_task: asyncio.Task | None = None
     try:
-        from open_notebook.digest.scheduler import run_forever as _digest_run_forever
+        from deeper_notebook.digest.scheduler import run_forever as _digest_run_forever
 
         # v0.7.190 — wrap in _track_task so a future refactor that
         # loses the local-var anchor doesn't silently allow GC.
@@ -440,7 +440,7 @@ async def lifespan(app: FastAPI):
     # past 5 s already indicates trouble. We log the timeout and move
     # on (degrades to lazy-warmup, same as the pre-0.7.44 behavior).
     try:
-        from open_notebook.database.repository import (
+        from deeper_notebook.database.repository import (
             _db_pool_size,
             _release,
         )
@@ -494,7 +494,7 @@ async def lifespan(app: FastAPI):
     checkpoint_prune_stop_event: asyncio.Event = asyncio.Event()
     checkpoint_prune_task: asyncio.Task | None = None
     try:
-        from open_notebook.utils.checkpoint_prune import (
+        from deeper_notebook.utils.checkpoint_prune import (
             run_prune_loop as _checkpoint_prune_loop,
         )
 
@@ -520,7 +520,7 @@ async def lifespan(app: FastAPI):
     # one user request slower.
     async def _prewarm_gmail_cache() -> None:
         try:
-            from open_notebook.domain.gmail import GmailIntegration
+            from deeper_notebook.domain.gmail import GmailIntegration
             await GmailIntegration.get()
         except Exception as e:
             logger.debug(f"Gmail cache pre-warm failed (non-fatal): {e}")
@@ -614,7 +614,7 @@ async def lifespan(app: FastAPI):
     # v0.7.18 — close pooled SurrealDB connections so we exit clean
     # (avoids "task pending" warnings and leaves the DB free).
     try:
-        from open_notebook.database.repository import close_pool
+        from deeper_notebook.database.repository import close_pool
 
         await close_pool()
         logger.info("SurrealDB pool closed")
@@ -630,14 +630,14 @@ async def lifespan(app: FastAPI):
     # constructed; both helpers no-op if their graph was never
     # used this session.
     try:
-        from open_notebook.graphs.chat import close_async_graph
+        from deeper_notebook.graphs.chat import close_async_graph
 
         await close_async_graph()
         logger.debug("AsyncSqliteSaver (chat) closed")
     except Exception as e:
         logger.warning(f"Closing chat AsyncSqliteSaver raised: {e}")
     try:
-        from open_notebook.graphs.source_chat import (
+        from deeper_notebook.graphs.source_chat import (
             close_async_source_chat_graph,
         )
 
@@ -1053,7 +1053,7 @@ async def readyz():
     # Late-binding the imports keeps tests cheap (they can monkeypatch
     # without importing the whole api.main side-effect chain).
     from api.routers.config import check_database_health
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     db_health = await check_database_health()
     db_status = db_health.get("status", "unknown")
@@ -1228,7 +1228,7 @@ async def healthz_deep(probe_providers: bool = False):
     broken instead of a generic "providers degraded".
     """
     from api.routers.config import check_database_health
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     checks: dict[str, dict] = {}
     # v0.7.202 — defensive defaults so `must_have_ok = checks["database"]
@@ -1270,7 +1270,7 @@ async def healthz_deep(probe_providers: bool = False):
 
     # OPTIONAL: Embedding model (required for vector search + chat-with-sources)
     try:
-        from open_notebook.ai.models import model_manager
+        from deeper_notebook.ai.models import model_manager
         emb = await asyncio.wait_for(
             model_manager.get_embedding_model(), timeout=2.0,
         )
@@ -1294,7 +1294,7 @@ async def healthz_deep(probe_providers: bool = False):
 
     # OPTIONAL: Default chat model (required for /chat, /studio, /ask, etc.)
     try:
-        from open_notebook.ai.models import model_manager
+        from deeper_notebook.ai.models import model_manager
         chat = await asyncio.wait_for(
             model_manager.get_default_model("chat"), timeout=2.0,
         )
@@ -1431,8 +1431,8 @@ async def _probe_upstream_providers(*, timeout_seconds: float = 5.0) -> dict:
       - One credential failed mid-probe → that entry has ok=False,
         but the overall response is still emitted with the others
     """
-    from open_notebook.ai.connection_tester import test_provider_connection
-    from open_notebook.domain.credential import Credential
+    from deeper_notebook.ai.connection_tester import test_provider_connection
+    from deeper_notebook.domain.credential import Credential
 
     try:
         creds = await Credential.get_all()

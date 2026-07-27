@@ -3,12 +3,12 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from open_notebook.research.safe_fetch import (
+from deeper_notebook.research.safe_fetch import (
     MAX_BODY_BYTES,
     SafeFetcher,
     SafeFetchError,
 )
-from open_notebook.security.outbound_url import (
+from deeper_notebook.security.outbound_url import (
     OutboundURLPolicyError,
     ValidatedOutboundURL,
 )

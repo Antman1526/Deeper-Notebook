@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from pptx import Presentation
 
 from api.routers import studio as studio_mod
-from open_notebook.exceptions import NotFoundError
-from open_notebook.studio.generation import service as artifact_generation_service
+from deeper_notebook.exceptions import NotFoundError
+from deeper_notebook.studio.generation import service as artifact_generation_service
 
 
 def _client() -> TestClient:

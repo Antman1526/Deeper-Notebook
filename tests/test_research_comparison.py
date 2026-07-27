@@ -2,15 +2,15 @@
 
 import pytest
 
-from open_notebook.research.comparison import (
+from deeper_notebook.research.comparison import (
     ClaimVerificationError,
     ComparisonSource,
     compare_research_sources,
 )
-from open_notebook.research.graph import ResearchWorkflow
-from open_notebook.research.state import ResearchRun, ResearchStageResult
-from open_notebook.studio.renderers import render_artifact_markdown
-from open_notebook.studio.schemas import ResearchRunDocument
+from deeper_notebook.research.graph import ResearchWorkflow
+from deeper_notebook.research.state import ResearchRun, ResearchStageResult
+from deeper_notebook.studio.renderers import render_artifact_markdown
+from deeper_notebook.studio.schemas import ResearchRunDocument
 
 
 def _source(source_id: str, text: str, marker: str) -> ComparisonSource:

@@ -3,8 +3,9 @@
 #
 # Architecture after the uv-bootstrap pivot:
 # - The frozen launcher only bundles its OWN light deps (pywebview, aiohttp,
-#   httpx, stdlib). Upstream Python code (api/, open_notebook/, commands/)
-#   ships as DATA and is run by the user-venv python, not the frozen binary.
+#   httpx, stdlib). Canonical Python code (api/, deeper_notebook/, commands/)
+#   and the open_notebook compatibility shim ship as DATA and are run by the
+#   user-venv python, not the frozen binary.
 # - uv binary + python-build-standalone are bundled in desktop/bin/ so the
 #   launcher can provision ~/.open-notebook-plus/venv on first launch.
 # - requirements.lock is bundled so bootstrap knows what to install.
@@ -89,10 +90,11 @@ hiddenimports = [
 # ---------------------------------------------------------------------------
 datas = [
     # Upstream Python source — shipped as data, executed by venv python.
-    # Paths: <MEIPASS>/upstream/api, /upstream/open_notebook, etc.
+    # Paths include <MEIPASS>/upstream/deeper_notebook (canonical) and
+    # /upstream/open_notebook (compatibility shim).
     (str(PROJECT_ROOT / "api"),          "upstream/api"),
-    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
     (str(PROJECT_ROOT / "deeper_notebook"), "upstream/deeper_notebook"),
+    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
     (str(PROJECT_ROOT / "commands"),     "upstream/commands"),
     (str(PROJECT_ROOT / "prompts"),      "upstream/prompts"),
     (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
@@ -146,8 +148,7 @@ datas = [
     (str(PROJECT_ROOT / "desktop" / "config.py"), "upstream/desktop"),
     (str(PROJECT_ROOT / "desktop" / "launcher_prefs.py"), "upstream/desktop"),
     (str(PROJECT_ROOT / "desktop" / "auto_register"), "upstream/desktop/auto_register"),
-    # Migration #15 ships inside upstream/open_notebook/database/migrations
-    # (already covered by the upstream/open_notebook entry above).
+    # Migrations ship inside upstream/deeper_notebook/database/migrations.
     # memory_injection.js is included by the first_run/static directory
     # entry above — no separate line needed.
 ]

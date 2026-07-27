@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.graphs.chat import _agent_max_iterations, _mcp_tool_timeout_sec
+from deeper_notebook.graphs.chat import _agent_max_iterations, _mcp_tool_timeout_sec
 
 
 @pytest.mark.parametrize("val,expected", [

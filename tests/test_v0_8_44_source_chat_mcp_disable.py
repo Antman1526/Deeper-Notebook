@@ -52,7 +52,7 @@ def test_source_chat_state_has_disabled_mcp_servers_field():
     """SourceChatState TypedDict must declare the field. A future
     accidental rollback that drops it would silently break the picker
     on source chat — guard with a type-level assertion."""
-    from open_notebook.graphs.source_chat import SourceChatState
+    from deeper_notebook.graphs.source_chat import SourceChatState
 
     hints = typing.get_type_hints(SourceChatState)
     assert "disabled_mcp_servers" in hints, (

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.podcasts.models import PodcastEpisode
+from deeper_notebook.podcasts.models import PodcastEpisode
 
 pytestmark = pytest.mark.integration_surreal
 

@@ -9,7 +9,7 @@ Three independent surfaces tightened:
     every call. monotonic is the canonical choice for "elapsed
     time" comparisons. Audit finding #4.
 
-2.  `open_notebook/domain/base.py` `created` / `updated` timestamps
+2.  `deeper_notebook/domain/base.py` `created` / `updated` timestamps
     now serialise as `datetime.now(timezone.utc).isoformat()` —
     aware UTC ISO 8601. Previously naive local-time with a
     non-ISO format string. Cross-machine sync produced off-by-N-
@@ -91,7 +91,7 @@ def test_object_model_save_uses_aware_utc_timestamps():
     """v0.7.187: ObjectModel.save() must use
     `datetime.now(timezone.utc).isoformat()` for created/updated.
     Naive local-time silently broke cross-machine ordering."""
-    src = _read_source("open_notebook/domain/base.py")
+    src = _read_source("deeper_notebook/domain/base.py")
     # The aware-UTC isoformat pattern is present at least twice
     # (one for updated, one for created on new records).
     aware_count = src.count("datetime.now(timezone.utc).isoformat()")
@@ -123,7 +123,7 @@ def test_base_module_imports_timezone():
     """v0.7.187: base.py must import timezone from datetime. Without
     the import, the v0.7.187 aware-UTC isoformat calls NameError
     at import time."""
-    src = _read_source("open_notebook/domain/base.py")
+    src = _read_source("deeper_notebook/domain/base.py")
     assert "from datetime import datetime, timezone" in src, (
         "v0.7.187 regression: timezone import gone from base.py. "
         "The aware-UTC datetime.now(timezone.utc) calls will fail."

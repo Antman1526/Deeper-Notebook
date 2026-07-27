@@ -7,10 +7,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Source
-from open_notebook.evaluation.repository import EvaluationRepository
-from open_notebook.evaluation.verifier import CitationSource, verify_response_claims
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import Source
+from deeper_notebook.evaluation.repository import EvaluationRepository
+from deeper_notebook.evaluation.verifier import CitationSource, verify_response_claims
 
 router = APIRouter()
 

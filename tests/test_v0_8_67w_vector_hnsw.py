@@ -12,8 +12,8 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 import pytest
 
-from open_notebook.utils import memory_recall
-from open_notebook.utils.memory_recall import (
+from deeper_notebook.utils import memory_recall
+from deeper_notebook.utils.memory_recall import (
     recall_relevant_memory,
     recall_memory,
 )

@@ -7,7 +7,7 @@ without heavy mocking - string processing, validation, and algorithms.
 
 import pytest
 
-from open_notebook.utils import (
+from deeper_notebook.utils import (
     clean_thinking_content,
     compare_versions,
     get_installed_version,
@@ -16,7 +16,7 @@ from open_notebook.utils import (
     remove_non_printable,
     token_count,
 )
-from open_notebook.utils.context_builder import ContextBuilder, ContextConfig
+from deeper_notebook.utils.context_builder import ContextBuilder, ContextConfig
 
 # ============================================================================
 # TEST SUITE 1: Text Utilities
@@ -259,7 +259,7 @@ class TestVersionUtilities:
 
     def test_get_version_from_github_invalid_url(self):
         """Test GitHub version fetch with invalid URL."""
-        from open_notebook.utils.version_utils import get_version_from_github
+        from deeper_notebook.utils.version_utils import get_version_from_github
 
         with pytest.raises(ValueError, match="Not a GitHub URL"):
             get_version_from_github("https://example.com/repo")
@@ -314,16 +314,16 @@ class TestExtractTextContent:
     provider envelope formats (Gemini, Claude, etc.) into a plain string."""
 
     def test_extract_text_content_plain_string_passes_through(self):
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         assert extract_text_content("hello") == "hello"
 
     def test_extract_text_content_gemini_envelope(self):
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         content = [{"type": "text", "text": "hi there", "extras": {}}]
         assert extract_text_content(content) == "hi there"
 
     def test_extract_text_content_multi_part_envelope(self):
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         content = [
             {"type": "text", "text": "Part 1. "},
             {"type": "text", "text": "Part 2."},
@@ -331,7 +331,7 @@ class TestExtractTextContent:
         assert extract_text_content(content) == "Part 1. Part 2."
 
     def test_extract_text_content_mixed_string_and_envelope(self):
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         content = ["raw string ", {"type": "text", "text": "envelope"}]
         assert extract_text_content(content) == "raw string envelope"
 
@@ -339,7 +339,7 @@ class TestExtractTextContent:
         """v0.6.19 regression: some providers put a list/dict at "text"
         instead of a string. The old code appended that as-is and then
         crashed at "".join with TypeError. Now we coerce to str first."""
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         content = [{"type": "text", "text": ["nested", "list"]}]
         # Should NOT raise; coerced via str(...)
         result = extract_text_content(content)
@@ -351,7 +351,7 @@ class TestExtractTextContent:
         we don't recognize (e.g. all image_url parts). The old code returned
         "" silently → 'blank chat reply' bug with no log trail. Now we
         fall back to str(content) so SOMETHING gets through."""
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         content = [{"type": "image_url", "image_url": "https://x.png"}]
         result = extract_text_content(content)
         # Original empty string was the bug; now we get the repr.
@@ -359,13 +359,13 @@ class TestExtractTextContent:
         assert "image_url" in result
 
     def test_extract_text_content_unknown_type_falls_back_to_str(self):
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         # Not a string, not a list — falls through to str(content)
         result = extract_text_content({"single": "dict"})
         assert "single" in result and "dict" in result
 
     def test_extract_text_content_empty_list_falls_back_to_str(self):
         """Empty list → no text parts → fallback. Old behavior returned ""."""
-        from open_notebook.utils.text_utils import extract_text_content
+        from deeper_notebook.utils.text_utils import extract_text_content
         # str([]) is "[]" — at least not blank, signals weird shape to caller.
         assert extract_text_content([]) == "[]"

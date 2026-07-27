@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.domain.notebook import Source
+from deeper_notebook.domain.notebook import Source
 
 
 @pytest.mark.asyncio

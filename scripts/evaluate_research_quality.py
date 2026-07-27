@@ -16,12 +16,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from open_notebook.evaluation.datasets import (
+from deeper_notebook.evaluation.datasets import (
     CorpusCase,
     corpus_paths,
     load_golden_corpus,
 )
-from open_notebook.evaluation.runner import (
+from deeper_notebook.evaluation.runner import (
     EvaluationPrediction,
     PredictedSpan,
     ThresholdError,
@@ -30,7 +30,7 @@ from open_notebook.evaluation.runner import (
     run_evaluation,
     write_report,
 )
-from open_notebook.utils.text_utils import extract_text_content
+from deeper_notebook.utils.text_utils import extract_text_content
 
 
 class RegisteredModelEvaluator:
@@ -147,7 +147,7 @@ class RegisteredModelEvaluator:
 
 
 async def _load_registered_model(model_id: str) -> object:
-    from open_notebook.ai.models import ModelManager
+    from deeper_notebook.ai.models import ModelManager
 
     model = await ModelManager().get_model(model_id, temperature=0)
     if model is None:

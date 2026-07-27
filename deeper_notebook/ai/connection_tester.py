@@ -1,0 +1,581 @@
+"""
+Connection testing for AI providers.
+
+This module provides functionality to test if a provider's API key is valid
+by making minimal API calls to each provider, and to test individual model
+configurations end-to-end.
+"""
+import asyncio  # v0.7.100 — wait_for around the test ainvoke / aembed
+import io
+import os
+import struct
+from typing import List, Optional, Tuple
+
+import httpx
+from esperanto.factory import AIFactory
+from loguru import logger
+
+from deeper_notebook.domain.credential import Credential
+from deeper_notebook.environment import resolve_env
+
+# v0.7.100 — Per-test timeout. The endpoint that calls this is
+# /credentials/{id}/test which the user clicks from the Settings UI;
+# they expect feedback within seconds, not minutes.
+#
+# v0.7.116 — Per-provider tuning. Local providers (ollama,
+# openai_compatible, llama-cpp via desktop bundle) commonly need
+# more time to cold-start a model; cloud APIs typically respond in
+# <2s. The legacy global ONP_CONNECTION_TEST_TIMEOUT_SEC still
+# overrides everything when set; otherwise we pick per-provider
+# defaults from _PROVIDER_DEFAULT_TIMEOUTS, and individual providers
+# can be tuned via ONP_CONNECTION_TEST_TIMEOUT_SEC_<PROVIDER>
+# (e.g. ONP_CONNECTION_TEST_TIMEOUT_SEC_OLLAMA=120).
+
+# Per-provider defaults in seconds. Cloud APIs are snappy; local
+# servers can take a long time to first-load a model on a cold cache.
+_PROVIDER_DEFAULT_TIMEOUTS: dict[str, float] = {
+    # Cloud APIs — usually <2s, 10s is plenty
+    "openai": 10.0,
+    "anthropic": 10.0,
+    "google": 10.0,
+    "groq": 10.0,
+    "mistral": 10.0,
+    "deepseek": 10.0,
+    "xai": 10.0,
+    "openrouter": 15.0,   # OpenRouter sometimes routes via slow upstreams
+    "voyage": 10.0,
+    "elevenlabs": 15.0,
+    "azure": 15.0,
+    "vertex": 15.0,
+    "dashscope": 15.0,
+    "minimax": 15.0,
+    # Local-ish (self-hosted servers) — cold-start can be slow
+    "ollama": 60.0,
+    "openai_compatible": 60.0,
+}
+_FALLBACK_CONNECTION_TIMEOUT_SEC = 30.0
+
+
+def _connection_timeout_for(provider: str) -> float:
+    """Resolve the connection-test timeout for a specific provider.
+
+    Lookup order:
+      1. Provider-specific env: ONP_CONNECTION_TEST_TIMEOUT_SEC_<UPPER>
+      2. Global override env:    ONP_CONNECTION_TEST_TIMEOUT_SEC
+      3. Per-provider default:   _PROVIDER_DEFAULT_TIMEOUTS[provider]
+      4. Fallback:               30s
+    """
+    p = (provider or "").lower()
+    # 1. Provider-specific env
+    per_env = (
+        resolve_env(
+            f"DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC_{p.upper()}",
+            "",
+        )
+        or ""
+    ).strip()
+    if per_env:
+        try:
+            return float(per_env)
+        except ValueError:
+            logger.warning(
+                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC_{}: {!r}; falling through",
+                p.upper(), per_env,
+            )
+    # 2. Global override
+    global_env = resolve_env("DEEPER_NOTEBOOK_CONNECTION_TEST_TIMEOUT_SEC", "").strip()
+    if global_env:
+        try:
+            return float(global_env)
+        except ValueError:
+            logger.warning(
+                "Invalid ONP_CONNECTION_TEST_TIMEOUT_SEC: {!r}; falling through",
+                global_env,
+            )
+    # 3. Per-provider default
+    return _PROVIDER_DEFAULT_TIMEOUTS.get(p, _FALLBACK_CONNECTION_TIMEOUT_SEC)
+
+# Test models for each provider - uses minimal/cheapest models for testing
+# Format: (model_name, model_type)
+TEST_MODELS = {
+    # v0.8.68 — refreshed retired test models. gpt-3.5-turbo and
+    # claude-3-haiku-20240307 are retired/deprecated upstream, so "Test
+    # Connection" reported failure for perfectly valid keys (the worst
+    # moment to mislead someone — during setup). Swapped to each
+    # provider's current cheapest model.
+    "openai": ("gpt-4o-mini", "language"),
+    "anthropic": ("claude-haiku-4-5", "language"),
+    "google": ("gemini-2.0-flash", "language"),
+    "groq": ("llama-3.1-8b-instant", "language"),
+    "mistral": ("mistral-small-latest", "language"),
+    "deepseek": ("deepseek-chat", "language"),
+    "xai": ("grok-3-mini", "language"),  # grok-beta retired 2025
+    "openrouter": ("openai/gpt-4o-mini", "language"),
+    "voyage": ("voyage-3-lite", "embedding"),
+    "elevenlabs": ("eleven_multilingual_v2", "text_to_speech"),
+    "ollama": (None, "language"),  # Dynamic - will use first available model
+    # Complex providers with additional configuration
+    "vertex": ("gemini-2.0-flash", "language"),  # Uses Google Vertex AI
+    "azure": ("gpt-35-turbo", "language"),  # Azure OpenAI deployment name
+    "openai_compatible": (None, "language"),  # Dynamic - will use first available model
+    "dashscope": ("qwen-plus", "language"),
+    "minimax": ("MiniMax-M2.5", "language"),
+}
+
+
+async def _test_azure_connection(
+    endpoint: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_version: Optional[str] = None,
+) -> tuple[bool, str]:
+    """
+    Test Azure OpenAI connectivity by listing models.
+
+    Azure requires deployment names which vary per user, so instead of
+    invoking a model, we list available models to validate credentials.
+    """
+    test_endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT")
+    test_api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY")
+    test_api_version = api_version or os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+
+    if not test_endpoint:
+        return False, "No Azure endpoint configured"
+    if not test_api_key:
+        return False, "No Azure API key configured"
+
+    # Strip trailing slash to avoid double-slash in URL
+    test_endpoint = test_endpoint.rstrip("/")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{test_endpoint}/openai/models?api-version={test_api_version}",
+                headers={"api-key": test_api_key},
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                count = len(models)
+                if count > 0:
+                    names = [m.get("id", "unknown") for m in models[:3]]
+                    name_list = ", ".join(names)
+                    if count > 3:
+                        name_list += f" (+{count - 3} more)"
+                    return True, f"Connected. {count} models: {name_list}"
+                else:
+                    return True, "Connected successfully (no models found)"
+            elif response.status_code == 401:
+                return False, "Invalid API key"
+            elif response.status_code == 403:
+                return False, "API key lacks required permissions"
+            else:
+                return False, f"Azure returned status {response.status_code}"
+
+    except httpx.ConnectError:
+        return False, "Cannot connect to Azure endpoint. Check the URL."
+    except httpx.TimeoutException:
+        return False, "Connection timed out. Check the endpoint URL."
+    except Exception as e:
+        return False, f"Connection error: {str(e)[:100]}"
+
+
+async def _test_ollama_connection(base_url: str) -> tuple[bool, str]:
+    """Test Ollama server connectivity."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Try /api/tags endpoint (standard Ollama)
+            response = await client.get(f"{base_url}/api/tags")
+
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("models", [])
+                model_count = len(models)
+
+                if model_count > 0:
+                    model_names = [m.get("name", "unknown") for m in models[:3]]
+                    model_list = ", ".join(model_names)
+                    if model_count > 3:
+                        model_list += f" (+{model_count - 3} more)"
+                    return True, f"Connected. {model_count} models available: {model_list}"
+                else:
+                    return True, "Connected successfully (no models listed)"
+            elif response.status_code == 401:
+                return False, "Invalid API key"
+            elif response.status_code == 403:
+                return False, "API key lacks required permissions"
+            else:
+                return False, f"Server returned status {response.status_code}"
+
+    except httpx.ConnectError:
+        return False, "Cannot connect to Ollama. Check if Ollama server is running."
+    except httpx.TimeoutException:
+        return False, "Connection timed out. Check if Ollama server is accessible."
+    except Exception as e:
+        return False, f"Connection error: {str(e)[:100]}"
+
+
+async def _test_openai_compatible_connection(base_url: str, api_key: Optional[str] = None) -> tuple[bool, str]:
+    """Test OpenAI-compatible server connectivity."""
+    try:
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Try /models endpoint (standard OpenAI-compatible)
+            response = await client.get(f"{base_url}/models", headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                model_count = len(models)
+
+                if model_count > 0:
+                    model_names = [m.get("id", "unknown") for m in models[:3]]
+                    model_list = ", ".join(model_names)
+                    if model_count > 3:
+                        model_list += f" (+{model_count - 3} more)"
+                    return True, f"Connected. {model_count} models available: {model_list}"
+                else:
+                    return True, "Connected successfully (no models listed)"
+            elif response.status_code == 401:
+                return False, "Invalid API key"
+            elif response.status_code == 403:
+                return False, "API key lacks required permissions"
+            else:
+                return False, f"Server returned status {response.status_code}"
+
+    except httpx.ConnectError:
+        return False, "Cannot connect to server. Check the URL is correct."
+    except httpx.TimeoutException:
+        return False, "Connection timed out. Check if server is accessible."
+    except Exception as e:
+        return False, f"Connection error: {str(e)[:100]}"
+
+async def test_provider_connection(
+    provider: str, model_type: str = "language", config_id: Optional[str] = None
+) -> tuple[bool, str]:
+    """
+    Test if a provider's API key is valid by making a minimal API call.
+
+    Args:
+        provider: Provider name (openai, anthropic, etc.)
+        model_type: Type of model to test (language, embedding, etc.)
+                   Note: This is overridden by TEST_MODELS if provider is in that dict.
+        config_id: Optional specific configuration ID to test (format: configId)
+                   If provided, uses the configuration from ProviderConfig for this specific config.
+
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    try:
+        # Get configuration - either specific config or default
+        api_key: Optional[str] = None
+        base_url: Optional[str] = None
+        endpoint: Optional[str] = None
+        api_version: Optional[str] = None
+        model_name: Optional[str] = None
+
+        # v0.8.70 — track the env var we (may) mutate below so the finally
+        # block can restore it. Declared up front (before any throwing code)
+        # so the finally never hits an unbound name. See the restore logic at
+        # the end of the function for the bug this fixes.
+        _env_key_name: Optional[str] = None
+        _env_key_prev: Optional[str] = None
+        _env_key_set = False
+
+        if config_id:
+            # Load specific credential from database
+            try:
+                cred = await Credential.get(config_id)
+                config = cred.to_esperanto_config()
+                api_key = config.get("api_key")
+                base_url = config.get("base_url")
+                endpoint = config.get("endpoint")
+                api_version = config.get("api_version")
+            except Exception:
+                return False, f"Credential not found: {config_id}"
+
+        # Normalize provider name (handle hyphenated aliases)
+        normalized_provider = provider.replace("-", "_")
+
+        # Special handling for URL-based providers (no API key, just connectivity)
+        if normalized_provider == "ollama":
+            # Use base_url from specific config, or environment variable
+            test_base_url = base_url or os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
+            return await _test_ollama_connection(test_base_url)
+
+        if normalized_provider == "openai_compatible":
+            # Use base_url from specific config, or environment variable
+            test_base_url = base_url or os.environ.get("OPENAI_COMPATIBLE_BASE_URL")
+            test_api_key = api_key or os.environ.get("OPENAI_COMPATIBLE_API_KEY")
+            if not test_base_url:
+                return False, "No base URL configured for OpenAI-compatible provider"
+            return await _test_openai_compatible_connection(test_base_url, test_api_key)
+
+        if normalized_provider == "azure":
+            # For Azure, base_url from the UI form maps to endpoint
+            azure_endpoint = endpoint or base_url
+            return await _test_azure_connection(azure_endpoint, api_key, api_version)
+
+        # Get test model for provider
+        if normalized_provider not in TEST_MODELS:
+            return False, f"Unknown provider: {provider}"
+
+        test_model, test_model_type = TEST_MODELS[normalized_provider]
+
+        # Use model from config if provided, otherwise use TEST_MODELS default
+        model_to_use = model_name if model_name else test_model
+
+        # For providers with dynamic model detection
+        if model_to_use is None:
+            if normalized_provider == "openai_compatible":
+                # OpenAI-compatible servers should already be tested via _test_openai_compatible_connection
+                test_base_url = base_url or os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "")
+                test_api_key = api_key or os.environ.get("OPENAI_COMPATIBLE_API_KEY")
+                return await _test_openai_compatible_connection(test_base_url, test_api_key)
+            else:
+                return False, f"No test model configured for {provider}"
+
+        # If we have a specific API key, set it in environment for this test.
+        # v0.8.70 — remember the prior value; the finally block restores it.
+        if api_key:
+            _env_key_name = f"{provider.upper()}_API_KEY"
+            _env_key_prev = os.environ.get(_env_key_name)
+            os.environ[_env_key_name] = api_key
+            _env_key_set = True
+
+        # Try to create the model and make a minimal call
+        # v0.7.100 — wrap in wait_for so a misconfigured slow provider
+        # can't hang the Settings UI's "Test connection" button.
+        # v0.7.116 — per-provider timeout via _connection_timeout_for().
+        # Cloud APIs get 10-15s; local servers (ollama,
+        # openai_compatible) get 60s for cold-start model loads.
+        _timeout = _connection_timeout_for(provider)
+        if test_model_type == "language":
+            model = AIFactory.create_language(model_name=model_to_use, provider=provider)
+            # Convert to LangChain and make a minimal call
+            lc_model = model.to_langchain()
+            try:
+                await asyncio.wait_for(
+                    lc_model.ainvoke("Hi"),
+                    timeout=_timeout,
+                )
+            except asyncio.TimeoutError:
+                return False, (
+                    f"Connection test timed out after {_timeout:.0f}s. "
+                    "The provider may be slow, the model may be loading, or "
+                    "the endpoint is unreachable. Raise "
+                    f"ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    "if your model legitimately takes longer than that for "
+                    "a 'Hi' prompt."
+                )
+            return True, "Connection successful"
+
+        elif test_model_type == "embedding":
+            model = AIFactory.create_embedding(model_name=model_to_use, provider=provider)
+            # Embed a single short test string
+            try:
+                await asyncio.wait_for(
+                    model.aembed(["test"]),
+                    timeout=_timeout,
+                )
+            except asyncio.TimeoutError:
+                return False, (
+                    f"Embedding test timed out after {_timeout:.0f}s. "
+                    f"Raise ONP_CONNECTION_TEST_TIMEOUT_SEC_{provider.upper()} "
+                    "or check provider status."
+                )
+            return True, "Connection successful"
+
+        elif test_model_type == "text_to_speech":
+            # For TTS, we just verify the model can be created
+            # Making an actual TTS call would be more expensive
+            # Most TTS providers validate the key on model creation
+            AIFactory.create_text_to_speech(
+                model_name=model_to_use, provider=provider
+            )
+            return True, "Connection successful (key format valid)"
+
+        else:
+            return False, f"Unsupported model type for testing: {test_model_type}"
+
+    except Exception as e:
+        error_msg = str(e)
+
+        # Clean up common error messages for user-friendly display
+        if "401" in error_msg or "unauthorized" in error_msg.lower():
+            return False, "Invalid API key"
+        elif "403" in error_msg or "forbidden" in error_msg.lower():
+            return False, "API key lacks required permissions"
+        elif "rate" in error_msg.lower() and "limit" in error_msg.lower():
+            # Rate limit means the key is valid but we hit limits
+            return True, "Rate limited - but connection works"
+        elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+            return False, "Connection error - check network/endpoint"
+        elif "timeout" in error_msg.lower():
+            return False, "Connection timed out - check network/endpoint"
+        elif "not found" in error_msg.lower() and "model" in error_msg.lower():
+            # Model not found but auth worked - this is actually a success for connectivity
+            return True, "API key valid (test model not available)"
+        elif provider == "ollama" and "connection refused" in error_msg.lower():
+            return False, "Ollama not running - check if Ollama server is started"
+        else:
+            logger.debug(f"Test connection error for {provider}: {e}")
+            # Truncate long error messages
+            truncated = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+            return False, f"Error: {truncated}"
+    finally:
+        # v0.8.70 — BUG FIX: restore the process environment after the test.
+        # Previously the `os.environ[PROVIDER_API_KEY] = api_key` above was
+        # never undone, so clicking "Test connection" in Settings left that
+        # key set for the lifetime of the API process. It then shadowed every
+        # later env-fallback provisioning of that provider — overriding the
+        # intended default/other credentials until the app was restarted.
+        # Runs on every return/exception path, so the mutation is scoped to
+        # exactly this call.
+        if _env_key_set and _env_key_name is not None:
+            if _env_key_prev is None:
+                os.environ.pop(_env_key_name, None)
+            else:
+                os.environ[_env_key_name] = _env_key_prev
+
+
+# Default voices for TTS testing per provider
+# ElevenLabs excluded: uses voice_id (not name), looked up dynamically
+DEFAULT_TEST_VOICES = {
+    "openai": "alloy",
+    "azure": "alloy",
+    "google": "Kore",
+    "vertex": "Kore",
+    "openai_compatible": "alloy",
+}
+
+
+def _generate_test_wav() -> io.BytesIO:
+    """Generate a minimal 0.5s silence WAV file in memory (16kHz, 16-bit mono)."""
+    sample_rate = 16000
+    num_samples = sample_rate // 2  # 0.5 seconds
+    bits_per_sample = 16
+    num_channels = 1
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    data_size = num_samples * block_align
+
+    buf = io.BytesIO()
+    # RIFF header
+    buf.write(b"RIFF")
+    buf.write(struct.pack("<I", 36 + data_size))
+    buf.write(b"WAVE")
+    # fmt chunk
+    buf.write(b"fmt ")
+    buf.write(struct.pack("<I", 16))  # chunk size
+    buf.write(struct.pack("<H", 1))  # PCM format
+    buf.write(struct.pack("<H", num_channels))
+    buf.write(struct.pack("<I", sample_rate))
+    buf.write(struct.pack("<I", byte_rate))
+    buf.write(struct.pack("<H", block_align))
+    buf.write(struct.pack("<H", bits_per_sample))
+    # data chunk
+    buf.write(b"data")
+    buf.write(struct.pack("<I", data_size))
+    buf.write(b"\x00" * data_size)  # silence
+
+    buf.seek(0)
+    buf.name = "test.wav"
+    return buf
+
+
+def _normalize_error_message(error_msg: str) -> tuple[bool, str]:
+    """Normalize common error patterns into user-friendly messages."""
+    lower = error_msg.lower()
+
+    if "401" in error_msg or "unauthorized" in lower:
+        return False, "Invalid API key"
+    elif "403" in error_msg or "forbidden" in lower:
+        return False, "API key lacks required permissions"
+    elif "rate" in lower and "limit" in lower:
+        return True, "Rate limited - but connection works"
+    elif "not found" in lower and "model" in lower:
+        return False, "Model not found on this provider"
+    elif "connection" in lower or "network" in lower:
+        return False, "Connection error - check network/endpoint"
+    elif "timeout" in lower:
+        return False, "Connection timed out - check network/endpoint"
+
+    return False, error_msg
+
+
+async def test_individual_model(model) -> tuple[bool, str]:
+    """
+    Test a specific model configuration end-to-end by making a real API call.
+
+    Args:
+        model: A Model instance (from open_notebook.ai.models)
+
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    from deeper_notebook.ai.models import ModelManager
+
+    try:
+        manager = ModelManager()
+        esp_model = await manager.get_model(model.id)
+
+        if esp_model is None:
+            return False, "Could not create model instance"
+
+        if model.type == "language":
+            response = await esp_model.achat_complete(
+                messages=[{"role": "user", "content": "Hi!"}]
+            )
+            text = response.content[:100] if response.content else "(empty response)"
+            return True, f"Response: {text}"
+
+        elif model.type == "embedding":
+            result = await esp_model.aembed(["This is a test."])
+            if result and len(result) > 0:
+                dims = len(result[0])
+                return True, f"Embedding dimensions: {dims}"
+            return True, "Embedding successful"
+
+        elif model.type == "text_to_speech":
+            # For ElevenLabs, look up first available voice (API uses voice_id, not name)
+            voice = DEFAULT_TEST_VOICES.get(model.provider)
+            if not voice and hasattr(esp_model, "available_voices"):
+                try:
+                    voices = esp_model.available_voices
+                    if voices:
+                        voice = next(iter(voices.keys()))
+                except Exception:
+                    pass
+            if not voice:
+                voice = "alloy"  # fallback
+
+            result = await esp_model.agenerate_speech(
+                text="Hello from Open Notebook", voice=voice
+            )
+            if result and hasattr(result, "content"):
+                size = len(result.content)
+                return True, f"Audio generated: {size} bytes"
+            return True, "Speech generation successful"
+
+        elif model.type == "speech_to_text":
+            audio_file = _generate_test_wav()
+            result = await esp_model.atranscribe(
+                audio_file=audio_file, language="en"
+            )
+            text = str(result.text) if hasattr(result, "text") else str(result)
+            return True, f"Transcription: {text[:100]}"
+
+        else:
+            return False, f"Unsupported model type: {model.type}"
+
+    except Exception as e:
+        error_msg = str(e)
+        success, normalized = _normalize_error_message(error_msg)
+        if success:
+            return True, normalized
+        logger.debug(f"Test individual model error for {model.id}: {e}")
+        return False, normalized

@@ -8,7 +8,7 @@ middleware, CORS, and memory shim.
    so the endpoint is `/models` (not `/v1/models`).
 
 2. **HIGH — `content_process` ignored user ContentSettings.**
-   `open_notebook/graphs/source.py:34-51` constructed a fresh
+   `deeper_notebook/graphs/source.py:34-51` constructed a fresh
    `ContentSettings(...)` with hardcoded literals every time,
    silently overriding the singleton record the user toggled in
    Settings. Auto-delete-files, processing engine choices, YouTube
@@ -88,7 +88,7 @@ def test_content_process_reads_content_settings_singleton():
     """v0.7.209 — content_process must call
     `ContentSettings.get_instance()` instead of constructing a
     fresh ContentSettings with hardcoded literals."""
-    src = _src("open_notebook/graphs/source.py")
+    src = _src("deeper_notebook/graphs/source.py")
     assert "await ContentSettings.get_instance()" in src
     # The defensive-fallback construction still exists (for cold
     # cache / fresh install) but it's inside an except branch.

@@ -157,7 +157,7 @@ class TestV0822MigrationSanitization:
     @pytest.mark.asyncio
     @patch("api.credentials_service.Credential.get_by_provider")
     # NOTE: ProviderConfig is imported lazily INSIDE the migration
-    # function (`from open_notebook.domain.provider_config import
+    # function (`from deeper_notebook.domain.provider_config import
     # ProviderConfig`). Patching `api.credentials_service.ProviderConfig`
     # does not intercept that local import — we must patch the source
     # module path instead. This is the same shape as v0.7.96's lazy-

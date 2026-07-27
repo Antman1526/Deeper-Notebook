@@ -7,8 +7,8 @@ import pytest
 from PIL import Image, ImageStat
 from pptx import Presentation
 
-from open_notebook.studio.exporters import export_infographic, export_slide_deck
-from open_notebook.studio.schemas import (
+from deeper_notebook.studio.exporters import export_infographic, export_slide_deck
+from deeper_notebook.studio.schemas import (
     InfographicDocument,
     SlideDeckDocument,
     parse_artifact_document,

@@ -8,9 +8,9 @@ import pytest
 
 from api.routers.capture import _route_capture_media
 from api.schemas.capture import CaptureRouteRequest
-from open_notebook.capture.contracts import CaptureInboxItem
-from open_notebook.capture.fingerprints import fingerprint_file
-from open_notebook.capture.routing import (
+from deeper_notebook.capture.contracts import CaptureInboxItem
+from deeper_notebook.capture.fingerprints import fingerprint_file
+from deeper_notebook.capture.routing import (
     CaptureNotebook,
     CaptureRoutingService,
 )
@@ -129,7 +129,7 @@ async def test_prefers_injected_local_semantic_notebook_suggestions(
     # fixture keeps the test independent of a running embedding provider.
     async def typed_semantic_suggester(transcript, source, notebooks):
         await semantic_suggester(transcript, source, notebooks)
-        from open_notebook.capture.routing import CaptureNotebookSuggestion
+        from deeper_notebook.capture.routing import CaptureNotebookSuggestion
 
         return [
             CaptureNotebookSuggestion(

@@ -20,12 +20,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models.gguf_metadata import (
+from deeper_notebook.local_models.gguf_metadata import (
     parse_gguf_metadata,
     parse_param_count_b,
     parse_quant_from_filename,
 )
-from open_notebook.local_models.inventory import (
+from deeper_notebook.local_models.inventory import (
     LocalModelInfo,
     enumerate_models,
 )

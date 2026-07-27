@@ -1,7 +1,7 @@
 """v0.8.35 audit — _local_chat_healthy_cached() single-flight guard.
 
 Found during the chat-stream `selected_provider` audit. The TTL cache at
-`open_notebook/ai/provision.py:_local_chat_healthy_cached` lacks a
+`deeper_notebook/ai/provision.py:_local_chat_healthy_cached` lacks a
 single-flight guard: when multiple concurrent chat requests hit a
 cache-miss (cold start, or every 30s when the TTL expires), each
 coroutine independently enters the inline `if _health_cache is None or
@@ -35,7 +35,7 @@ def test_health_cache_single_flight_under_concurrency(monkeypatch):
     finishes. The assertion is `probe_call_count == 1` — anything > 1
     means the race exists.
     """
-    import open_notebook.ai.provision as provision_mod
+    import deeper_notebook.ai.provision as provision_mod
 
     # Start cold so every concurrent caller sees a cache-miss.
     monkeypatch.setattr(provision_mod, "_health_cache", None)
@@ -52,7 +52,7 @@ def test_health_cache_single_flight_under_concurrency(monkeypatch):
         time.sleep(0.1)
         return [{"name": "Local GGUF (llama.cpp)", "status": "healthy"}]
 
-    import open_notebook.health.local_models as health_mod
+    import deeper_notebook.health.local_models as health_mod
     monkeypatch.setattr(health_mod, "probe_all_local_models", _slow_probe)
     monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
@@ -89,7 +89,7 @@ def test_health_cache_single_flight_does_not_serialize_cache_hits(monkeypatch):
     turn pays lock-acquisition latency, even though the TTL hasn't
     expired. Verify by pre-populating the cache and asserting that
     a slow-probe stub is NEVER called."""
-    import open_notebook.ai.provision as provision_mod
+    import deeper_notebook.ai.provision as provision_mod
 
     # Pre-populate with a fresh entry (well within TTL).
     monkeypatch.setattr(
@@ -104,7 +104,7 @@ def test_health_cache_single_flight_does_not_serialize_cache_hits(monkeypatch):
         probe_called[0] = True
         return []
 
-    import open_notebook.health.local_models as health_mod
+    import deeper_notebook.health.local_models as health_mod
     monkeypatch.setattr(health_mod, "probe_all_local_models", _probe_should_not_run)
     monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 

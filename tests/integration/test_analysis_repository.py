@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.analysis.contracts import (
+from deeper_notebook.analysis.contracts import (
     AnalysisRun,
     ApprovalReceipt,
     OutputEntry,
@@ -13,9 +13,9 @@ from open_notebook.analysis.contracts import (
     ScrubbedExecutionRequest,
     SourceInputHash,
 )
-from open_notebook.analysis.repository import AnalysisRunRepository
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Notebook
+from deeper_notebook.analysis.repository import AnalysisRunRepository
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import Notebook
 
 pytestmark = pytest.mark.integration_surreal
 

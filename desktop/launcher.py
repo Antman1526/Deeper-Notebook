@@ -199,10 +199,10 @@ class Supervisor:
         # venv_python: the Python interpreter used to spawn FastAPI/worker children.
         # When None, falls back to sys.executable (unfrozen/dev path).
         self.venv_python: Path = venv_python or Path(sys.executable)
-        # upstream_root: cwd for the API + worker subprocesses. Upstream code
-        # uses relative paths like 'open_notebook/database/migrations/1.surrealql'
-        # so cwd MUST be the directory that contains the api/ and open_notebook/
-        # source trees. In the frozen .app, upstream lives at MEIPASS/upstream/;
+        # upstream_root: cwd for the API + worker subprocesses. It must contain
+        # api/, commands/, the canonical deeper_notebook package, and the
+        # open_notebook compatibility shim. In the frozen .app, these live at
+        # MEIPASS/upstream/;
         # the frontend lives at MEIPASS/frontend/. They're not the same dir.
         # In unfrozen/dev mode, upstream_root defaults to repo_root (they coincide).
         self.upstream_root: Path = upstream_root or repo_root
@@ -319,7 +319,7 @@ class Supervisor:
 
         api_url = f"http://127.0.0.1:{api_port}"
         # v0.7.147 — Pin DATA_FOLDER to a per-user, ALWAYS-writable absolute
-        # path. open_notebook/config.py used to hardcode "./data" (CWD-
+        # path. deeper_notebook/config.py used to hardcode "./data" (CWD-
         # relative) and the API subprocess inherits cwd=upstream_root, which
         # is read-only when the .app is launched from a mounted DMG. The
         # resulting EROFS at module import crashed uvicorn before /readyz
@@ -417,7 +417,7 @@ class Supervisor:
             "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
             "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
             # v0.8.4 — CRITICAL fix: the v0.8.0 Phase 3 smart router
-            # in open_notebook/ai/provision.py reads this env var to
+            # in deeper_notebook/ai/provision.py reads this env var to
             # know where the local llama.cpp chat sidecar lives so it
             # can probe `/v1/models` for health. Without it set,
             # `_local_chat_healthy_cached()` returns False every call,
@@ -1043,8 +1043,8 @@ class Supervisor:
         # Use the venv python to run uvicorn directly — it's a real Python
         # interpreter with all upstream deps installed, so -m uvicorn works
         # without any internal dispatcher tricks.
-        # cwd MUST be upstream_root so relative paths in upstream code resolve
-        # correctly (e.g. open_notebook/database/migrations/*.surrealql).
+        # cwd MUST be upstream_root so top-level api, commands, and canonical
+        # deeper_notebook imports resolve consistently in the bundled runtime.
         args = [
             str(self.venv_python), "-m", "uvicorn", "api.main:app",
             "--host", "127.0.0.1", "--port", str(port),

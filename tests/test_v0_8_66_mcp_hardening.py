@@ -19,7 +19,7 @@ from surrealdb import RecordID
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_repo_update_binds_record_id_as_param(monkeypatch):
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
 
     captured = {}
 
@@ -51,7 +51,7 @@ async def test_repo_update_binds_record_id_as_param(monkeypatch):
 def test_patch_endpoint_passes_record_id(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     seen = {}
@@ -73,7 +73,7 @@ def test_patch_endpoint_passes_record_id(monkeypatch):
 def test_patch_endpoint_rejects_malformed_id(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     async def _should_not_run(*a, **k):  # pragma: no cover
@@ -92,7 +92,7 @@ def test_patch_endpoint_rejects_malformed_id(monkeypatch):
 def test_delete_binds_record_id(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     seen = {}
@@ -116,7 +116,7 @@ def test_delete_binds_record_id(monkeypatch):
 def test_test_endpoint_binds_record_id(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     seen = {}
@@ -141,7 +141,7 @@ def test_test_endpoint_binds_record_id(monkeypatch):
 def test_create_rejects_link_local_url(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     async def _should_not_create(*a, **k):  # pragma: no cover
@@ -165,7 +165,7 @@ def test_create_rejects_link_local_url(monkeypatch):
 def test_create_allows_loopback_url(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import open_notebook.database.repository as repo
+    import deeper_notebook.database.repository as repo
     from api.main import app
 
     async def _fake_create(table, data):

@@ -36,10 +36,10 @@ import secrets
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from deeper_notebook.ai.offline_gate import find_local_language_model
 from deeper_notebook.environment import normalize_product_environment, resolve_env
+from deeper_notebook.health.network import get_network_state_with_settings
 from desktop.data_root import active_data_root
-from open_notebook.ai.offline_gate import find_local_language_model
-from open_notebook.health.network import get_network_state_with_settings
 
 router = APIRouter()
 

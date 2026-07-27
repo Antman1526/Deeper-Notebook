@@ -39,14 +39,14 @@ def test_router_threads_bypass_into_state():
 
 
 def test_node_passes_bypass_to_provision():
-    src = _src("open_notebook/graphs/chat.py")
+    src = _src("deeper_notebook/graphs/chat.py")
     assert 'privacy_gate_bypass=bool(state.get("bypass_privacy_gate"))' in src
 
 
 def test_provision_skips_gate_when_bypassed():
     """The gate block must be guarded by `if privacy_gate_bypass: ... else:`
     so a bypassed turn never runs the classifier or apply_privacy_gate."""
-    src = _src("open_notebook/ai/provision.py")
+    src = _src("deeper_notebook/ai/provision.py")
     assert "privacy_gate_bypass: bool = False" in src
     assert "if privacy_gate_bypass:" in src
     # The gate call + classifier live in the else branch.

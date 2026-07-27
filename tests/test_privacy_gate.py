@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.ai.router import ModelChoice
-from open_notebook.ai import privacy_gate as pg
-from open_notebook.exceptions import ConfigurationError
+from deeper_notebook.ai.router import ModelChoice
+from deeper_notebook.ai import privacy_gate as pg
+from deeper_notebook.exceptions import ConfigurationError
 
 
 # ---------------------------------------------------------------------------

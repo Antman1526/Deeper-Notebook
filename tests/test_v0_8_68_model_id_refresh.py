@@ -28,7 +28,7 @@ RETIRED_MODEL_IDS = {
 
 
 def test_connection_tester_uses_no_retired_models():
-    from open_notebook.ai.connection_tester import TEST_MODELS
+    from deeper_notebook.ai.connection_tester import TEST_MODELS
 
     for provider, (model_name, _type) in TEST_MODELS.items():
         if model_name is None:
@@ -41,7 +41,7 @@ def test_connection_tester_uses_no_retired_models():
 
 
 def test_anthropic_test_model_is_current_cheap_tier():
-    from open_notebook.ai.connection_tester import TEST_MODELS
+    from deeper_notebook.ai.connection_tester import TEST_MODELS
 
     model, mtype = TEST_MODELS["anthropic"]
     assert model == "claude-haiku-4-5"

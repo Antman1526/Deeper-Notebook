@@ -12,13 +12,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
-from open_notebook.ai.models import ModelManager
-from open_notebook.domain.base import RecordModel
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.domain.notebook import Asset, Note, Notebook, Source
-from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import InvalidInputError
-from open_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
+from deeper_notebook.ai.models import ModelManager
+from deeper_notebook.domain.base import RecordModel
+from deeper_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.domain.notebook import Asset, Note, Notebook, Source
+from deeper_notebook.domain.transformation import Transformation
+from deeper_notebook.exceptions import InvalidInputError
+from deeper_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
 
 # ============================================================================
 # TEST SUITE 1: RecordModel Singleton Pattern

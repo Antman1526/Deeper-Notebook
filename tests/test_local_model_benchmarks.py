@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models import benchmarks as benchmarks_mod
-from open_notebook.local_models.benchmarks import (
+from deeper_notebook.local_models import benchmarks as benchmarks_mod
+from deeper_notebook.local_models.benchmarks import (
     BenchmarkMeasurement,
     BenchmarkResult,
     QualityMeasurement,
@@ -24,9 +24,9 @@ from open_notebook.local_models.benchmarks import (
     score_benchmark_measurement,
     start_benchmark,
 )
-from open_notebook.local_models.gguf_metadata import GGUFMetadata
-from open_notebook.local_models.inventory import LocalModelInfo
-from open_notebook.local_models.role_routing import recommend_model_roles
+from deeper_notebook.local_models.gguf_metadata import GGUFMetadata
+from deeper_notebook.local_models.inventory import LocalModelInfo
+from deeper_notebook.local_models.role_routing import recommend_model_roles
 
 
 def _make_gguf(path: Path, name: str) -> Path:

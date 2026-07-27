@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.research.graph import ResearchWorkflow
-from open_notebook.research.state import (
+from deeper_notebook.research.graph import ResearchWorkflow
+from deeper_notebook.research.state import (
     ResearchCandidate,
     ResearchRun,
     ResearchStageResult,

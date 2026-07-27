@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models import snapshot_installer as snap_mod
+from deeper_notebook.local_models import snapshot_installer as snap_mod
 
 
 @pytest.fixture(autouse=True)

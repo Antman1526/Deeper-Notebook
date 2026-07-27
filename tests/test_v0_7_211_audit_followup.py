@@ -81,7 +81,7 @@ def test_app_publishes_warning_when_embedding_gguf_missing():
 def test_chat_module_exposes_close_async_graph():
     """v0.7.211 — chat.py must export an idempotent
     `close_async_graph()` for the API lifespan teardown."""
-    src = _src("open_notebook/graphs/chat.py")
+    src = _src("deeper_notebook/graphs/chat.py")
     assert "async def close_async_graph()" in src
     assert "global _async_graph, _async_aio_conn" in src
     # Idempotent + no-op on never-built graph.
@@ -90,7 +90,7 @@ def test_chat_module_exposes_close_async_graph():
 
 def test_source_chat_module_exposes_close_async_graph():
     """v0.7.211 — same teardown helper for source_chat.py."""
-    src = _src("open_notebook/graphs/source_chat.py")
+    src = _src("deeper_notebook/graphs/source_chat.py")
     assert "async def close_async_source_chat_graph()" in src
     assert "_async_source_chat_aio_conn" in src
 
@@ -100,10 +100,10 @@ def test_api_lifespan_calls_both_close_helpers():
     close helpers after the DB pool drain. Otherwise the
     helpers exist but are never wired in."""
     src = _src("api/main.py")
-    assert "from open_notebook.graphs.chat import close_async_graph" in src
+    assert "from deeper_notebook.graphs.chat import close_async_graph" in src
     assert "await close_async_graph()" in src
     assert (
-        "from open_notebook.graphs.source_chat import (\n"
+        "from deeper_notebook.graphs.source_chat import (\n"
         "            close_async_source_chat_graph,"
     ) in src
     assert "await close_async_source_chat_graph()" in src
@@ -121,7 +121,7 @@ def test_close_async_graph_is_safe_on_never_built(monkeypatch):
     chat path was exercised."""
     import asyncio
 
-    from open_notebook.graphs import chat as chat_mod
+    from deeper_notebook.graphs import chat as chat_mod
 
     # Force the module to look "never built".
     monkeypatch.setattr(chat_mod, "_async_graph", None)

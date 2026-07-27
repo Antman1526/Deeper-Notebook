@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import research as research_router
-from open_notebook.research.state import ResearchCandidate, ResearchRun
+from deeper_notebook.research.state import ResearchCandidate, ResearchRun
 
 
 @dataclass

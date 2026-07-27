@@ -9,7 +9,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.domain import notebook as nb
+from deeper_notebook.domain import notebook as nb
 
 
 def _run(coro):

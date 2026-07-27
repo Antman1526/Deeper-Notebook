@@ -20,14 +20,14 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
-from desktop.data_root import active_data_root
-from open_notebook.local_models import (
+from deeper_notebook.local_models import (
     cancel_snapshot_install,
     get_snapshot_install,
     list_snapshot_installs,
     reconcile_snapshot_installs,
     start_snapshot_install,
 )
+from desktop.data_root import active_data_root
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def _load_local_credentials() -> list[dict]:
     so users who registered an openai_compatible credential as
     `http://localhost:PORT/v1` (common LM Studio default) are
     picked up by the probe."""
-    from open_notebook.domain.credential import Credential
+    from deeper_notebook.domain.credential import Credential
 
     creds = await Credential.get_all()
     return [
@@ -101,7 +101,7 @@ async def local_models_health():
     cascaded into freezing the app for 9s every poll. `to_thread`
     pushes the sync httpx calls onto the default executor so the
     loop keeps serving everyone else."""
-    from open_notebook.health.local_models import probe_all_local_models
+    from deeper_notebook.health.local_models import probe_all_local_models
 
     creds = await _load_local_credentials()
     results = await asyncio.to_thread(probe_all_local_models, creds)
@@ -156,7 +156,7 @@ async def local_models_inventory():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import enumerate_models
+    from deeper_notebook.local_models import enumerate_models
 
     # Resolve model dir per docstring precedence.
     raw = (
@@ -208,7 +208,7 @@ async def local_models_role_routing():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import (
+    from deeper_notebook.local_models import (
         build_manifest_reconciliation,
         enumerate_models,
         find_manifest_matches,
@@ -881,7 +881,7 @@ def _open_path_in_file_manager(path: Path) -> None:
 @router.post("/api/local-models/manifest/rows/preview")
 async def local_models_manifest_row_preview(body: dict):
     """Validate one draft AI_Models manifest row without mutating disk."""
-    from open_notebook.local_models import ManifestRowError, preview_manifest_row
+    from deeper_notebook.local_models import ManifestRowError, preview_manifest_row
 
     row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
     if not row:
@@ -910,7 +910,7 @@ async def local_models_manifest_row_preview(body: dict):
 @router.post("/api/local-models/manifest/rows/apply")
 async def local_models_manifest_row_apply(body: dict):
     """Append one validated AI_Models manifest row with a backup."""
-    from open_notebook.local_models import ManifestRowError, append_manifest_row
+    from deeper_notebook.local_models import ManifestRowError, append_manifest_row
 
     row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
     allow_duplicate = bool(body.get("allow_duplicate")) if isinstance(body, dict) else False
@@ -1014,8 +1014,8 @@ async def local_models_set_launch_default(body: dict):
     - inventory-only rows are rejected until their runtime has a launcher
       provider.
     """
+    from deeper_notebook.local_models import enumerate_models
     from desktop.config import load_or_create
-    from open_notebook.local_models import enumerate_models
 
     requested_ref = (body.get("launcher_model_ref") or "").strip()
     if not requested_ref:
@@ -1090,7 +1090,7 @@ async def local_models_benchmark_start(body: dict):
     language models, so downloaded-but-unregistered files are reported as
     skipped instead of causing confusing runtime errors.
     """
-    from open_notebook.local_models import start_benchmark
+    from deeper_notebook.local_models import start_benchmark
 
     model_dir = _configured_model_dir()
     if model_dir is None:
@@ -1111,7 +1111,7 @@ async def local_models_benchmark_start(body: dict):
 
 @router.get("/api/local-models/benchmarks")
 async def local_models_benchmark_list():
-    from open_notebook.local_models import list_benchmark_jobs
+    from deeper_notebook.local_models import list_benchmark_jobs
 
     return {
         "benchmarks": [
@@ -1123,7 +1123,7 @@ async def local_models_benchmark_list():
 
 @router.get("/api/local-models/benchmarks/{job_id}")
 async def local_models_benchmark_status(job_id: str):
-    from open_notebook.local_models import get_benchmark_job
+    from deeper_notebook.local_models import get_benchmark_job
 
     job = get_benchmark_job(job_id)
     if job is None:
@@ -1143,7 +1143,7 @@ async def local_models_recommendations():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import (
+    from deeper_notebook.local_models import (
         RECOMMENDATIONS,
         build_manifest_recommendations,
         enumerate_models,
@@ -1201,7 +1201,7 @@ async def local_models_download(body: dict):
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import start_download
+    from deeper_notebook.local_models import start_download
 
     repo_id = (body.get("repo_id") or "").strip()
     filename = (body.get("filename") or "").strip()
@@ -1387,7 +1387,7 @@ async def local_models_download_cancel(job_id: str):
           failed / cancelled) — caller should poll for current status
           rather than retry.
     """
-    from open_notebook.local_models import cancel_job, get_job
+    from deeper_notebook.local_models import cancel_job, get_job
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1419,7 +1419,7 @@ async def local_models_downloads_list():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import list_jobs, reconcile_jobs
+    from deeper_notebook.local_models import list_jobs, reconcile_jobs
 
     raw = (
         resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
@@ -1465,7 +1465,7 @@ async def local_models_download_status(job_id: str):
     reconciles interrupted downloads from disk sidecars first — call
     that to repopulate, then poll individual job IDs.
     """
-    from open_notebook.local_models import get_job
+    from deeper_notebook.local_models import get_job
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1550,7 +1550,7 @@ async def sidecar_log(kind: str):
     # Classify on the API side so the frontend doesn't have to ship
     # the pattern list. Falls back to None when no pattern matches —
     # UI then renders just the raw tail.
-    from open_notebook.utils.error_classifier import classify_sidecar_error
+    from deeper_notebook.utils.error_classifier import classify_sidecar_error
     hint = classify_sidecar_error(log_text)
 
     return {"kind": kind, "log": log_text, "hint": hint, "available": True}

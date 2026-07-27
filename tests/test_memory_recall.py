@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.utils import memory_recall
-from open_notebook.utils.memory_recall import (
+from deeper_notebook.utils import memory_recall
+from deeper_notebook.utils.memory_recall import (
     _coerce_text,
     _sanitize_memory_text,
     render_memory_block,
@@ -343,12 +343,12 @@ def test_recall_relevant_memory_falls_through_on_embed_timeout(
     async def _get_emb():
         return _HangingEmbedModel()
 
-    from open_notebook.ai import models as ai_models
+    from deeper_notebook.ai import models as ai_models
     monkeypatch.setattr(
         ai_models.model_manager, "get_embedding_model", _get_emb,
     )
 
-    from open_notebook.utils.memory_recall import recall_relevant_memory
+    from deeper_notebook.utils.memory_recall import recall_relevant_memory
     result = _asyncio_for_timeout_test.run(
         recall_relevant_memory("what is my favorite color")
     )
@@ -375,14 +375,14 @@ def test_recall_relevant_memory_completes_when_embed_returns_in_time(
         # the embed timeout path, not on SurrealQL semantics.
         return []
 
-    from open_notebook.ai import models as ai_models
+    from deeper_notebook.ai import models as ai_models
     monkeypatch.setattr(
         ai_models.model_manager, "get_embedding_model", _get_emb,
     )
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "_safe_select", _safe_select_empty)
 
-    from open_notebook.utils.memory_recall import recall_relevant_memory
+    from deeper_notebook.utils.memory_recall import recall_relevant_memory
     result = _asyncio_for_timeout_test.run(
         recall_relevant_memory("what is my favorite color")
     )
@@ -408,7 +408,7 @@ def test_safe_select_returns_empty_on_query_timeout(monkeypatch):
         await _asyncio_for_timeout_test.sleep(5)
         return []
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _hanging_query)
 
     result = _asyncio_for_timeout_test.run(
@@ -425,7 +425,7 @@ def test_safe_select_returns_results_when_query_fast(monkeypatch):
     async def _fast_query(q, params):
         return [{"text": "ok"}]
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _fast_query)
 
     result = _asyncio_for_timeout_test.run(
@@ -459,7 +459,7 @@ def test_recall_recent_memory_uses_select_text_not_select_value(monkeypatch):
         # Return realistic shape — SELECT text returns dicts, not strings
         return [{"text": "fake fact"}]
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _capture)
 
     result = _asyncio_for_timeout_test.run(
@@ -531,7 +531,7 @@ def test_safe_select_logs_warning_on_schema_error(monkeypatch):
                 "Missing order idiom `created_at` in statement selection'"
             )
 
-        from open_notebook.utils import memory_recall
+        from deeper_notebook.utils import memory_recall
         monkeypatch.setattr(memory_recall, "repo_query", _raise_schema_err)
 
         result = _asyncio_for_timeout_test.run(
@@ -571,7 +571,7 @@ def test_safe_select_keeps_table_missing_at_debug(monkeypatch):
         async def _raise_table_missing(q, params):
             raise Exception("Table memory_fact does not exist")
 
-        from open_notebook.utils import memory_recall
+        from deeper_notebook.utils import memory_recall
         monkeypatch.setattr(memory_recall, "repo_query", _raise_table_missing)
 
         result = _asyncio_for_timeout_test.run(
@@ -607,7 +607,7 @@ def test_recall_recent_includes_episodes_by_default(monkeypatch):
         captured.append(q)
         return [{"text": "row"}]
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _capture)
 
     result = _asyncio_for_timeout_test.run(memory_recall.recall_recent_memory())
@@ -630,7 +630,7 @@ def test_recall_recent_skips_episodes_when_disabled(monkeypatch):
         captured.append(q)
         return [{"text": "row"}]
 
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.setattr(memory_recall, "repo_query", _capture)
 
     result = _asyncio_for_timeout_test.run(memory_recall.recall_recent_memory())
@@ -642,7 +642,7 @@ def test_recall_recent_skips_episodes_when_disabled(monkeypatch):
 
 
 def test_episode_recall_enabled_parsing(monkeypatch):
-    from open_notebook.utils import memory_recall
+    from deeper_notebook.utils import memory_recall
     monkeypatch.delenv("ONP_MEMORY_RECALL_EPISODES", raising=False)
     assert memory_recall._episode_recall_enabled() is True
     for off in ("0", "false", "no", "off", "OFF", "False"):

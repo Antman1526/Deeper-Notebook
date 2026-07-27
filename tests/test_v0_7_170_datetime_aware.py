@@ -3,14 +3,14 @@
 Two sites previously could leak naive datetimes into code that
 expected aware (timezone-bearing) ones:
 
-  1. `open_notebook/database/repository.py:repo_update` —
+  1. `deeper_notebook/database/repository.py:repo_update` —
      `datetime.fromisoformat(data["created"])` returns a naive
      datetime when the input string has no timezone suffix. The
      adjacent line writes `data["updated"] = datetime.now(timezone.utc)`
      (aware), so the row would end up with a mixed pair. Any
      downstream comparison between the two would TypeError.
 
-  2. `open_notebook/domain/gmail.py:_parse_dt` — returns whatever
+  2. `deeper_notebook/domain/gmail.py:_parse_dt` — returns whatever
      `fromisoformat` produces, plus passes through naive datetime
      INSTANCES unchanged. `needs_refresh` at line 242 then does
      `datetime.now(timezone.utc) >= self.token_expires_at` which
@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from open_notebook.domain.gmail import _parse_dt
+from deeper_notebook.domain.gmail import _parse_dt
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def test_needs_refresh_does_not_typeerror_on_naive_db_input():
     `_parse_dt` always returns aware, so the comparison succeeds
     on every code path that builds a GmailIntegration from DB rows.
     """
-    from open_notebook.domain.gmail import GmailIntegration
+    from deeper_notebook.domain.gmail import GmailIntegration
 
     # Simulate SurrealDB returning a naive ISO string (the historic
     # bug input). _parse_dt now coerces to aware.
@@ -142,7 +142,7 @@ def test_repo_update_normalizes_naive_created_string():
     """
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
-    src = (root / "open_notebook/database/repository.py").read_text()
+    src = (root / "deeper_notebook/database/repository.py").read_text()
 
     assert "parsed = datetime.fromisoformat(data[\"created\"])" in src
     # The normalization must immediately follow the parse.
