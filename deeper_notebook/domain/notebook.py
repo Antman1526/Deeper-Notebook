@@ -349,6 +349,9 @@ class Notebook(ObjectModel):
                     []
                 };
                 LET $source_count = $source_rows.len();
+                LET $notebook_reference_ids = SELECT VALUE id
+                    FROM reference
+                    WHERE out = $notebook_id;
                 LET $chat_session_ids = SELECT VALUE in
                     FROM refers_to
                     WHERE out = $notebook_id;
@@ -360,7 +363,7 @@ class Notebook(ObjectModel):
                 DELETE source_insight WHERE source IN $exclusive_source_ids;
                 DELETE reference WHERE in IN $exclusive_source_ids;
                 DELETE source WHERE id IN $exclusive_source_ids;
-                DELETE reference WHERE out = $notebook_id;
+                DELETE $notebook_reference_ids;
                 DELETE refers_to WHERE out = $notebook_id;
                 DELETE chat_session WHERE id IN $chat_session_ids;
                 DELETE $notebook_id;
@@ -402,7 +405,7 @@ class Notebook(ObjectModel):
                     if source.id is None or str(source.id) not in exclusive_source_ids:
                         continue
                     try:
-                        await source._cleanup_external_resources()
+                        source._cleanup_uploaded_file()
                     except Exception as exc:
                         logger.warning(
                             "Post-commit cleanup failed for source {}: {}",
@@ -788,9 +791,8 @@ class Source(ObjectModel):
 
         return data
 
-    async def _cleanup_external_resources(self) -> None:
-        """Best-effort worker and upload cleanup with no database mutation."""
-
+    async def _cancel_processing_command(self) -> None:
+        """Best-effort cancellation for an ordinary source deletion."""
         if self.command:
             try:
                 from surreal_commands import get_command_status
@@ -820,6 +822,9 @@ class Source(ObjectModel):
                     f"Could not cancel command {self.command} for source "
                     f"{self.id}: {e}. Continuing with deletion."
                 )
+
+    def _cleanup_uploaded_file(self) -> None:
+        """Remove an owned upload without consulting queue or database state."""
 
         # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
@@ -868,7 +873,8 @@ class Source(ObjectModel):
         against a now-dead source, writing fresh source_embedding rows
         pointing at the deleted source. Orphan data + wasted GPU.
         """
-        await self._cleanup_external_resources()
+        await self._cancel_processing_command()
+        self._cleanup_uploaded_file()
 
         # Delete associated embeddings and insights to prevent orphaned records
         source_id = ensure_record_id(self.id)
