@@ -133,6 +133,15 @@ class WikiCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class MarkdownCandidate:
+    start: int
+    end: int
+    embedded: bool
+    label: str
+    raw_target: str
+
+
+@dataclass(frozen=True, slots=True)
 class ByteOffsetMapper:
     source_start: int
     offsets: tuple[int, ...] | None
@@ -206,26 +215,29 @@ class ParseAccumulator:
         wiki_candidates, invalid_wiki_ranges = _scan_wikilinks(scan, literals)
         occupied.extend(invalid_wiki_ranges)
         initial_protected = ProtectedRanges.from_ranges(occupied)
+        markdown_candidates, invalid_markdown_ranges = _scan_markdown_links(
+            scan,
+            initial_protected,
+        )
+        occupied.extend(invalid_markdown_ranges)
 
-        for start, end, embedded, label, raw_target in _iter_markdown_links(
-            scan, initial_protected
-        ):
-            target = _markdown_target(raw_target)
+        for candidate in markdown_candidates:
+            target = _markdown_target(candidate.raw_target)
             if not target:
                 continue
-            occupied.append((start, end))
-            span_start, span_end = byte_offsets.span(start, end)
+            occupied.append((candidate.start, candidate.end))
+            span_start, span_end = byte_offsets.span(candidate.start, candidate.end)
             self.add_link(
                 ParsedLink(
                     source_block_parser_id=block_id,
                     target_text=target,
-                    alias=label or None,
-                    link_kind="embed" if embedded else "markdown",
+                    alias=candidate.label or None,
+                    link_kind="embed" if candidate.embedded else "markdown",
                     source_start=span_start,
                     source_end=span_end,
                 )
             )
-            if embedded:
+            if candidate.embedded:
                 self.add_embed(
                     ParsedEmbed(
                         source_block_parser_id=block_id,
@@ -681,6 +693,14 @@ def _html_spans(scan: ScanContext) -> list[tuple[int, int]]:
     return spans
 
 
+def _line_break_in_range(text: str, start: int, end: int) -> int:
+    line_breaks = (
+        text.find("\r", start, end),
+        text.find("\n", start, end),
+    )
+    return min((found for found in line_breaks if found >= 0), default=-1)
+
+
 def _scan_wikilinks(
     scan: ScanContext,
     protected: ProtectedRanges,
@@ -712,20 +732,30 @@ def _scan_wikilinks(
         start = cursor - 1 if embedded else cursor
         target_start = cursor + 2
         position = target_start
-        limit = min(length, target_start + _MAX_WIKILINK_TARGET_CHARS + 2)
         nested_depth = 0
         malformed = False
         closed = False
-        while position + 1 < limit:
+        while position < length:
+            if position - target_start > _MAX_WIKILINK_TARGET_CHARS:
+                malformed = True
             protected_region = protected.containing(position)
             if protected_region is not None:
                 malformed = True
+                line_break = _line_break_in_range(
+                    text,
+                    position,
+                    protected_region[1],
+                )
+                if line_break >= 0:
+                    position = line_break
+                    break
                 position = protected_region[1]
                 continue
             if text[position] in "\r\n":
                 break
             if (
-                text[position] == "["
+                position + 1 < length
+                and text[position] == "["
                 and text[position + 1] == "["
                 and not scan.is_escaped(position)
             ):
@@ -734,7 +764,8 @@ def _scan_wikilinks(
                 position += 2
                 continue
             if (
-                text[position] == "]"
+                position + 1 < length
+                and text[position] == "]"
                 and text[position + 1] == "]"
                 and not scan.is_escaped(position)
             ):
@@ -771,10 +802,15 @@ def _scan_wikilinks(
     return candidates, invalid_ranges
 
 
-def _iter_markdown_links(context: ScanContext, protected: ProtectedRanges):
-    """Yield links and images with bounded, forward-only label/target scans."""
+def _scan_markdown_links(
+    context: ScanContext,
+    protected: ProtectedRanges,
+) -> tuple[list[MarkdownCandidate], list[tuple[int, int]]]:
+    """Scan links once and protect complete over-limit outer constructs."""
 
     text = context.text
+    candidates: list[MarkdownCandidate] = []
+    invalid_ranges: list[tuple[int, int]] = []
     cursor = 0
     length = len(text)
     while cursor < length:
@@ -791,83 +827,126 @@ def _iter_markdown_links(context: ScanContext, protected: ProtectedRanges):
             cursor = opening + 2
             continue
 
+        start = cursor
         label_start = opening + 1
-        scan = label_start
-        label_limit = min(length, label_start + _MAX_MARKDOWN_LABEL_CHARS + 1)
+        position = label_start
         closing_label: int | None = None
         label_depth = 0
-        while scan < label_limit:
-            protected_region = protected.containing(scan)
+        malformed = False
+        while position < length:
+            if position - label_start > _MAX_MARKDOWN_LABEL_CHARS:
+                malformed = True
+            protected_region = protected.containing(position)
             if protected_region is not None:
-                scan = protected_region[1]
+                line_break = _line_break_in_range(
+                    text,
+                    position,
+                    protected_region[1],
+                )
+                if line_break >= 0:
+                    position = line_break
+                    break
+                position = protected_region[1]
                 continue
-            if text[scan] in "\r\n":
+            if text[position] in "\r\n":
                 break
-            if not context.is_escaped(scan):
-                if text[scan] == "[":
-                    label_depth += 1
-                    if label_depth > 32:
-                        break
-                elif text[scan] == "]":
-                    if label_depth:
-                        label_depth -= 1
-                    else:
-                        closing_label = scan
-                        break
-            scan += 1
-        if (
-            closing_label is None
-            or closing_label + 1 >= length
-            or text[closing_label + 1] != "("
-        ):
-            cursor = max(scan, label_start)
+            if context.is_escaped(position):
+                position += 2
+                continue
+            if text[position] == "[":
+                label_depth += 1
+                if label_depth > 32:
+                    malformed = True
+            elif text[position] == "]":
+                if label_depth:
+                    label_depth -= 1
+                else:
+                    closing_label = position
+                    break
+            position += 1
+
+        if closing_label is None:
+            if malformed:
+                invalid_ranges.append((start, position))
+            cursor = max(position, label_start)
             continue
 
-        target_start = closing_label + 2
-        scan = target_start
-        target_limit = min(length, target_start + _MAX_MARKDOWN_TARGET_CHARS + 1)
+        after_label = closing_label + 1
+        if after_label >= length or text[after_label] != "(":
+            if malformed:
+                invalid_ranges.append((start, after_label))
+            cursor = after_label
+            continue
+
+        target_start = after_label + 1
+        position = target_start
         closing_target: int | None = None
         target_depth = 0
         quote: str | None = None
-        while scan < target_limit:
-            if text[scan] in "\r\n":
+        while position < length:
+            if position - target_start > _MAX_MARKDOWN_TARGET_CHARS:
+                malformed = True
+            protected_region = protected.containing(position)
+            if protected_region is not None:
+                malformed = True
+                line_break = _line_break_in_range(
+                    text,
+                    position,
+                    protected_region[1],
+                )
+                if line_break >= 0:
+                    position = line_break
+                    break
+                position = protected_region[1]
+                continue
+            if text[position] in "\r\n":
                 break
-            if context.is_escaped(scan):
-                scan += 1
-            elif quote is not None:
-                if text[scan] == quote:
+            if context.is_escaped(position):
+                position += 2
+                continue
+            if quote is not None:
+                if text[position] == quote:
                     quote = None
-            elif text[scan] in {'"', "'"}:
-                quote = text[scan]
-            elif text[scan] == "(":
+            elif text[position] in {'"', "'"}:
+                quote = text[position]
+            elif text[position] == "(":
                 target_depth += 1
                 if target_depth > 32:
-                    break
-            elif text[scan] == ")":
+                    malformed = True
+            elif text[position] == ")":
                 if target_depth:
                     target_depth -= 1
                 else:
-                    closing_target = scan
+                    closing_target = position
                     break
-            scan += 1
+            position += 1
+
         if closing_target is None:
-            cursor = max(scan, target_start)
+            if malformed:
+                invalid_ranges.append((start, position))
+            cursor = max(position, target_start)
             continue
 
         end = closing_target + 1
-        if protected.overlaps(cursor, label_start) or protected.overlaps(
-            closing_label, end
+        if (
+            malformed
+            or protected.overlaps(start, label_start)
+            or protected.overlaps(closing_label, end)
         ):
-            cursor = end
-            continue
-        yield (
-            cursor,
-            end,
-            embedded,
-            text[label_start:closing_label],
-            text[target_start:closing_target],
-        )
+            invalid_ranges.append((start, end))
+        else:
+            candidates.append(
+                MarkdownCandidate(
+                    start=start,
+                    end=end,
+                    embedded=embedded,
+                    label=text[label_start:closing_label],
+                    raw_target=text[target_start:closing_target],
+                )
+            )
         cursor = end
+
+    return candidates, invalid_ranges
 
 
 def _split_wikilink(
