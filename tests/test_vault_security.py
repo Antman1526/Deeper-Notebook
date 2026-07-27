@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import pwd
 import shutil
 import socket
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,21 @@ from deeper_notebook.vault.security import (
     classify_vault_path,
     secure_read,
 )
+
+
+@pytest.fixture
+def tmp_path() -> Path:
+    base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "deeper-notebook-tests"
+    unique = base / uuid.uuid4().hex
+    unique.mkdir(parents=True)
+    try:
+        yield unique
+    finally:
+        shutil.rmtree(unique, ignore_errors=True)
+        try:
+            base.rmdir()
+        except OSError:
+            pass
 
 
 @pytest.fixture
@@ -130,6 +147,13 @@ def test_approved_root_rejects_broad_home_collections(
         "/private/var/at",
         "/private/var/networkd",
         "/private/var/protected",
+        "/private/var/spool",
+        "/private/var/empty",
+        "/private/var/select",
+        "/private/var/vm",
+        "/private/var/install",
+        "/private/var/folders",
+        "/private/var/folders/arbitrary/deeper",
     ],
 )
 def test_canonical_macos_system_trees_and_descendants_are_unsafe(
@@ -378,7 +402,9 @@ def test_secure_read_detects_change_during_read(vault_root: Path) -> None:
 
     with approve_vault_root(vault_root) as approved:
         with pytest.raises(VaultSecurityError) as caught:
-            secure_read(approved, "changing.md", _between_read_passes=mutate_after_first_pass)
+            secure_read(
+                approved, "changing.md", _between_read_passes=mutate_after_first_pass
+            )
     assert caught.value.code == "changed_during_read"
 
 

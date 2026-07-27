@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import pwd
 import shutil
 import socket
 import tempfile
+import uuid
 from dataclasses import replace
 from pathlib import Path
 
@@ -34,6 +36,9 @@ class MemoryObservationRepository:
         if key not in self._missing_state:
             self._missing_state.add(key)
             self.missing.append(key)
+
+    def simulate_projection_commit(self, vault_id: str, relative_path: str) -> None:
+        self._missing_state.discard((vault_id, relative_path))
 
 
 class FailingObservationRepository(MemoryObservationRepository):
@@ -69,6 +74,21 @@ class FailingObservationRepository(MemoryObservationRepository):
         if self.fail_after_mark_commit:
             self.fail_after_mark_commit = False
             raise RuntimeError("repository response lost")
+
+
+@pytest.fixture
+def tmp_path() -> Path:
+    base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "deeper-notebook-tests"
+    unique = base / uuid.uuid4().hex
+    unique.mkdir(parents=True)
+    try:
+        yield unique
+    finally:
+        shutil.rmtree(unique, ignore_errors=True)
+        try:
+            base.rmdir()
+        except OSError:
+            pass
 
 
 @pytest.fixture
@@ -153,9 +173,11 @@ async def test_current_hash_dedupe_allows_a_to_b_to_a(vault_root: Path) -> None:
         )
         await watcher.scan(now_monotonic=1.0)
         first = await watcher.scan(now_monotonic=3.0)
+        await watcher.acknowledge_projected("note.md", first[0].content_hash)
         path.write_bytes(b"B")
         await watcher.scan(now_monotonic=4.0)
         second = await watcher.scan(now_monotonic=6.0)
+        await watcher.acknowledge_projected("note.md", second[0].content_hash)
         path.write_bytes(b"A")
         await watcher.scan(now_monotonic=7.0)
         third = await watcher.scan(now_monotonic=9.0)
@@ -217,7 +239,9 @@ async def test_missing_then_same_content_reappearance_emits_again(
             vault_id="vault:test", approved_root=approved, repository=repository
         )
         await watcher.scan(now_monotonic=1.0)
-        assert len(await watcher.scan(now_monotonic=3.0)) == 1
+        initial = await watcher.scan(now_monotonic=3.0)
+        assert len(initial) == 1
+        await watcher.acknowledge_projected("note.md", initial[0].content_hash)
         path.unlink()
         await watcher.scan(now_monotonic=4.0)
         path.write_bytes(b"body")
@@ -360,7 +384,8 @@ async def test_missing_repository_failures_retry_without_poisoning_state(
             vault_id="vault:test", approved_root=approved, repository=repository
         )
         await watcher.scan(now_monotonic=1.0)
-        await watcher.scan(now_monotonic=3.0)
+        initial = await watcher.scan(now_monotonic=3.0)
+        await watcher.acknowledge_projected("note.md", initial[0].content_hash)
         path.unlink()
         repository.fail_mark_missing = True
         with pytest.raises(RuntimeError):
@@ -390,7 +415,8 @@ async def test_missing_repository_cancellations_retry_without_poisoning_state(
             vault_id="vault:test", approved_root=approved, repository=repository
         )
         await watcher.scan(now_monotonic=1.0)
-        await watcher.scan(now_monotonic=3.0)
+        initial = await watcher.scan(now_monotonic=3.0)
+        await watcher.acknowledge_projected("note.md", initial[0].content_hash)
         path.unlink()
         repository.cancel_mark_missing = True
         with pytest.raises(asyncio.CancelledError):
@@ -462,7 +488,16 @@ async def test_ctime_change_with_restored_size_and_mtime_restarts_stability(
 
 
 @pytest.mark.parametrize(
-    "invalid", ["../bad.md", "/bad.md", r"a\\bad.md", "a\x00b.md", "a//b.md", "a/./b.md", "./b.md"]
+    "invalid",
+    [
+        "../bad.md",
+        "/bad.md",
+        r"a\\bad.md",
+        "a\x00b.md",
+        "a//b.md",
+        "a/./b.md",
+        "./b.md",
+    ],
 )
 def test_constructor_rejects_noncanonical_seed_paths(
     vault_root: Path, invalid: str
@@ -552,9 +587,10 @@ async def test_releasing_unconsumed_ready_hash_reemits_work(
         )
         await watcher.scan(now_monotonic=1.0)
         assert len(await watcher.scan(now_monotonic=3.0)) == 1
-        assert await watcher.release_queued("note.md", content_hash) is True
-        reemitted = await watcher.scan(now_monotonic=4.0)
-    assert [item.content for item in reemitted] == [content]
+        released = await watcher.release_queued("note.md", content_hash)
+        assert released.accepted is True
+        assert [item.content for item in released.corrective_work] == [content]
+        assert await watcher.scan(now_monotonic=4.0) == []
 
 
 @pytest.mark.asyncio
@@ -571,9 +607,9 @@ async def test_acknowledged_projection_dedupes_now_and_after_restart(
         )
         await watcher.scan(now_monotonic=1.0)
         assert len(await watcher.scan(now_monotonic=3.0)) == 1
-        assert (
-            await watcher.acknowledge_projected("note.md", content_hash) is True
-        )
+        acknowledged = await watcher.acknowledge_projected("note.md", content_hash)
+        assert acknowledged.accepted is True
+        assert acknowledged.corrective_work == ()
         assert await watcher.scan(now_monotonic=4.0) == []
 
         restarted = VaultWatcher(
@@ -600,16 +636,222 @@ async def test_stale_ack_or_release_cannot_clobber_newer_queued_hash(
             vault_id="vault:test", approved_root=approved, repository=repository
         )
         await watcher.scan(now_monotonic=1.0)
-        await watcher.scan(now_monotonic=3.0)
+        initial = await watcher.scan(now_monotonic=3.0)
+        assert len(initial) == 1
+        await watcher.acknowledge_projected("note.md", initial[0].content_hash)
         path.write_bytes(b"B")
         await watcher.scan(now_monotonic=4.0)
         assert len(await watcher.scan(now_monotonic=6.0)) == 1
 
-        assert await watcher.acknowledge_projected("note.md", hash_a) is False
-        assert await watcher.release_queued("note.md", hash_a) is False
+        stale_ack = await watcher.acknowledge_projected("note.md", hash_a)
+        stale_release = await watcher.release_queued("note.md", hash_a)
+        assert stale_ack.accepted is False
+        assert stale_release.accepted is False
         assert await watcher.scan(now_monotonic=7.0) == []
-        assert await watcher.release_queued("note.md", hash_b) is True
-        assert len(await watcher.scan(now_monotonic=8.0)) == 1
+        released = await watcher.release_queued("note.md", hash_b)
+        assert released.accepted is True
+        assert [item.content for item in released.corrective_work] == [b"B"]
+        assert await watcher.scan(now_monotonic=8.0) == []
+
+
+@pytest.mark.asyncio
+async def test_late_b_ack_after_current_returns_to_a_yields_corrective_a(
+    vault_root: Path,
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+            known_projected_hashes={"note.md": hash_a},
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        assert len(await watcher.scan(now_monotonic=6.0)) == 1
+        path.write_bytes(b"A")
+        await watcher.scan(now_monotonic=7.0)
+        assert await watcher.scan(now_monotonic=9.0) == []
+        assert len(watcher._in_flight) == 1
+        assert watcher._in_flight["note.md"].content_hash == hash_b
+
+        late_b = await watcher.acknowledge_projected("note.md", hash_b)
+        assert late_b.accepted is True
+        assert [item.content for item in late_b.corrective_work] == [b"A"]
+        assert len(watcher._in_flight) == 1
+        assert watcher._in_flight["note.md"].content_hash == hash_a
+
+        final_a = await watcher.acknowledge_projected("note.md", hash_a)
+        assert final_a.accepted is True
+        assert final_a.corrective_work == ()
+        assert watcher._in_flight == {}
+
+
+@pytest.mark.asyncio
+async def test_newer_c_waits_behind_b_and_release_returns_corrective_c(
+    vault_root: Path,
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    hash_c = hashlib.sha256(b"C").hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+            known_projected_hashes={"note.md": hash_a},
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        await watcher.scan(now_monotonic=6.0)
+        path.write_bytes(b"C")
+        await watcher.scan(now_monotonic=7.0)
+        assert await watcher.scan(now_monotonic=9.0) == []
+        assert await watcher.scan(now_monotonic=10.0) == []
+        assert len(watcher._in_flight) == 1
+        assert watcher._in_flight["note.md"].content_hash == hash_b
+
+        released_b = await watcher.release_queued("note.md", hash_b)
+        assert released_b.accepted is True
+        assert [item.content for item in released_b.corrective_work] == [b"C"]
+        assert len(watcher._in_flight) == 1
+        assert watcher._in_flight["note.md"].content_hash == hash_c
+        assert (
+            await watcher.acknowledge_projected("note.md", hash_b)
+        ).accepted is False
+
+
+@pytest.mark.parametrize(
+    ("failure_attribute", "expected_exception"),
+    [
+        ("fail_record_state", RuntimeError),
+        ("cancel_record_state", asyncio.CancelledError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_ack_interruption_restores_prior_inflight_handoff(
+    vault_root: Path,
+    failure_attribute: str,
+    expected_exception: type[BaseException],
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    repository = FailingObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        await watcher.scan(now_monotonic=6.0)
+
+        setattr(repository, failure_attribute, "ready")
+        with pytest.raises(expected_exception):
+            await watcher.acknowledge_projected("note.md", hash_a)
+        assert watcher._projected_hashes.get("note.md") is None
+        assert watcher._in_flight["note.md"].content_hash == hash_a
+
+        retried = await watcher.acknowledge_projected("note.md", hash_a)
+        assert [item.content for item in retried.corrective_work] == [b"B"]
+        assert watcher._in_flight["note.md"].content_hash == hash_b
+
+
+@pytest.mark.parametrize(
+    ("failure_attribute", "expected_exception"),
+    [
+        ("fail_record_state", RuntimeError),
+        ("cancel_record_state", asyncio.CancelledError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_release_interruption_restores_prior_inflight_handoff(
+    vault_root: Path,
+    failure_attribute: str,
+    expected_exception: type[BaseException],
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    repository = FailingObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        await watcher.scan(now_monotonic=6.0)
+
+        setattr(repository, failure_attribute, "ready")
+        with pytest.raises(expected_exception):
+            await watcher.release_queued("note.md", hash_a)
+        assert watcher._projected_hashes.get("note.md") is None
+        assert watcher._in_flight["note.md"].content_hash == hash_a
+
+        retried = await watcher.release_queued("note.md", hash_a)
+        assert [item.content for item in retried.corrective_work] == [b"B"]
+        assert watcher._in_flight["note.md"].content_hash == hash_b
+
+
+@pytest.mark.asyncio
+async def test_late_inflight_commit_after_missing_gets_corrective_missing(
+    vault_root: Path,
+) -> None:
+    path = vault_root / "note.md"
+    path.write_bytes(b"A")
+    hash_a = hashlib.sha256(b"A").hexdigest()
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:test",
+            approved_root=approved,
+            repository=repository,
+            known_projected_hashes={"note.md": hash_a},
+        )
+        await watcher.scan(now_monotonic=1.0)
+        await watcher.scan(now_monotonic=3.0)
+        path.write_bytes(b"B")
+        await watcher.scan(now_monotonic=4.0)
+        await watcher.scan(now_monotonic=6.0)
+        path.unlink()
+        await watcher.scan(now_monotonic=7.0)
+        assert repository.missing == [("vault:test", "note.md")]
+        assert watcher._in_flight["note.md"].content_hash == hash_b
+
+        repository.simulate_projection_commit("vault:test", "note.md")
+        late_b = await watcher.acknowledge_projected("note.md", hash_b)
+        assert late_b.accepted is True
+        assert late_b.corrective_work == ()
+        assert late_b.missing_corrected is True
+        assert repository.missing == [
+            ("vault:test", "note.md"),
+            ("vault:test", "note.md"),
+        ]
+        assert ("vault:test", "note.md") in repository._missing_state
+        assert watcher._in_flight == {}
+        assert (await watcher.release_queued("note.md", hash_b)).accepted is False
 
 
 @pytest.mark.asyncio
@@ -702,7 +944,9 @@ async def test_incomplete_subtree_listing_does_not_mark_known_paths_missing(
             known_paths={"known.md"},
         )
 
-        def denied(path: str | bytes, flags: int, *args: object, **kwargs: object) -> int:
+        def denied(
+            path: str | bytes, flags: int, *args: object, **kwargs: object
+        ) -> int:
             if path == "subtree" and kwargs.get("dir_fd") == approved._fd:
                 raise PermissionError
             return real_open(path, flags, *args, **kwargs)  # type: ignore[arg-type]
