@@ -659,6 +659,157 @@ def test_nested_invalid_link_syntax_is_preserved_without_partial_edges(
     assert parsed.links == []
 
 
+@pytest.mark.parametrize("target_length", [4095, 4096])
+def test_wikilink_target_boundary_accepts_values_at_or_below_limit(
+    target_length: int,
+) -> None:
+    target = "x" * target_length
+    raw = f"[[{target}]] and [[Good]]\n".encode()
+
+    parsed = parse_document("wiki-boundary.md", raw, format_mode="obsidian")
+
+    assert [link.target_text for link in parsed.links] == [target, "Good"]
+
+
+def test_oversized_wikilink_protects_its_full_invalid_outer_construct() -> None:
+    raw = (
+        b"[["
+        + (b"x" * 4097)
+        + b" [[Inner]] [label](nested.md) #leaked]] and [[Good]] #good\n"
+    )
+
+    parsed = parse_document("oversized-wiki.md", raw, format_mode="obsidian")
+
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Good"]
+    assert not any(link.target_text == "nested.md" for link in parsed.links)
+    assert parsed.tags == ["good"]
+
+
+@pytest.mark.parametrize("separator", [b"\n", b"\r", b"\r\n"])
+def test_unclosed_oversized_wikilink_is_protected_through_line_end(
+    separator: bytes,
+) -> None:
+    raw = (
+        b"[["
+        + (b"x" * 4097)
+        + b" [label](nested.md) #leaked"
+        + separator
+        + b"[[Good]] #good"
+    )
+
+    parsed = parse_document("oversized-line.md", raw, format_mode="obsidian")
+
+    assert [
+        link.target_text for link in parsed.links if link.link_kind == "wikilink"
+    ] == ["Good"]
+    assert not any(link.target_text == "nested.md" for link in parsed.links)
+    assert parsed.tags == ["good"]
+
+
+def test_unclosed_oversized_wikilink_is_protected_through_eof() -> None:
+    raw = b"[[" + (b"x" * 4097) + b" [label](nested.md) #leaked"
+
+    parsed = parse_document("oversized-eof.md", raw, format_mode="obsidian")
+
+    assert parsed.links == []
+    assert parsed.tags == []
+
+
+def test_oversized_multibyte_wikilink_resumes_with_exact_byte_spans() -> None:
+    raw = (
+        "[[" + ("\u00e9" * 4097) + " [label](nested.md) #leaked]] [[Good]] #good\n"
+    ).encode()
+
+    parsed = parse_document("oversized-multibyte.md", raw, format_mode="obsidian")
+
+    assert [link.target_text for link in parsed.links] == ["Good", "good"]
+    for link in parsed.links:
+        projected = raw[link.source_start : link.source_end].decode()
+        assert link.target_text in projected
+
+
+@pytest.mark.parametrize("label_length", [1023, 1024])
+def test_markdown_label_boundary_accepts_values_at_or_below_limit(
+    label_length: int,
+) -> None:
+    label = "x" * label_length
+    raw = f"[{label}](outer.md) and [[Good]]\n".encode()
+
+    parsed = parse_document("label-boundary.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == ["outer.md", "Good"]
+    assert parsed.links[0].alias == label
+
+
+@pytest.mark.parametrize("target_length", [4095, 4096])
+def test_markdown_target_boundary_accepts_values_at_or_below_limit(
+    target_length: int,
+) -> None:
+    target = "x" * target_length
+    raw = f"[outer]({target}) and [[Good]]\n".encode()
+
+    parsed = parse_document("target-boundary.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == [target, "Good"]
+
+
+@pytest.mark.parametrize("character", ["x", "\u00e9"])
+def test_oversized_markdown_label_protects_full_outer_construct(
+    character: str,
+) -> None:
+    raw = (
+        "["
+        + (character * 1025)
+        + " [[Nested]] [inner](nested.md) #leaked]"
+        + '(outer-[[target]].md "#title") and [[Good]] #good\n'
+    ).encode()
+
+    parsed = parse_document("oversized-label.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == ["Good", "good"]
+
+
+@pytest.mark.parametrize("character", ["x", "\u00e9"])
+def test_oversized_markdown_target_protects_full_outer_construct(
+    character: str,
+) -> None:
+    raw = (
+        "[outer]("
+        + (character * 4097)
+        + " [[Nested]] [inner](nested.md) #leaked)"
+        + " and [[Good]] #good\n"
+    ).encode()
+
+    parsed = parse_document("oversized-target.md", raw, format_mode="markdown")
+
+    assert [link.target_text for link in parsed.links] == ["Good", "good"]
+
+
+@pytest.mark.parametrize("kind", ["label", "target"])
+@pytest.mark.parametrize("ending", ["newline", "eof"])
+def test_unclosed_oversized_markdown_construct_is_protected_to_boundary(
+    kind: str,
+    ending: str,
+) -> None:
+    if kind == "label":
+        invalid = "[" + ("x" * 1025) + " [inner](nested.md) #leaked"
+    else:
+        invalid = "[outer](" + ("x" * 4097) + " [[Nested]] #leaked"
+    suffix = "\n[[Good]] #good" if ending == "newline" else ""
+    raw = (invalid + suffix).encode()
+
+    parsed = parse_document(
+        f"oversized-{kind}-{ending}.md",
+        raw,
+        format_mode="markdown",
+    )
+
+    expected = ["Good", "good"] if ending == "newline" else []
+    assert [link.target_text for link in parsed.links] == expected
+
+
 def test_neutral_markdown_uses_semantic_block_boundaries_and_exact_spans() -> None:
     raw = (
         b"# Heading\n\n"
