@@ -653,6 +653,21 @@ def append_recovery_log(
     os.fsync(directory.fd)
 
 
+def unlink_owned_file(
+    directory: SecureDirectory,
+    name: str,
+    *,
+    missing_ok: bool = False,
+) -> None:
+    """Unlink one entry relative to a bound owned directory and fsync it."""
+    try:
+        os.unlink(name, dir_fd=directory.fd)
+    except FileNotFoundError:
+        if not missing_ok:
+            raise
+    os.fsync(directory.fd)
+
+
 def _device_id(path: Path) -> int:
     return Path(path).stat().st_dev
 

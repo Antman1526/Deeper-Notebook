@@ -20,7 +20,12 @@ from pathlib import Path
 from typing import Literal
 
 from deeper_notebook.identity import DATA_DIR_NAME
-from desktop.data_root import atomic_replace_json, open_owned_directory
+from desktop.data_root import (
+    SecureDirectory,
+    atomic_replace_json,
+    open_owned_directory,
+    unlink_owned_file,
+)
 from desktop.paths import user_home
 
 COMPATIBLE_BUNDLE_ID = "com.antman1526.open-notebook-plus"
@@ -298,9 +303,12 @@ def detect_legacy_app_replacement(
     )
 
 
-def _write_receipt(receipt_path: Path, receipt: dict[str, object]) -> None:
-    with open_owned_directory(receipt_path.parent) as directory:
-        atomic_replace_json(directory, receipt_path.name, receipt)
+def _write_receipt(
+    directory: SecureDirectory,
+    receipt_path: Path,
+    receipt: dict[str, object],
+) -> None:
+    atomic_replace_json(directory, receipt_path.name, receipt)
 
 
 def _native_macos_recycle(source: Path) -> Path:
@@ -384,101 +392,132 @@ def replace_legacy_app(
 
     revalidate_confirmation()
 
-    now = datetime.now(UTC).isoformat()
-    receipt: dict[str, object] = {
-        "schema_version": 1,
-        "status": "started",
-        "action": RECOVERY_ACTION,
-        "bundle_identifier": COMPATIBLE_BUNDLE_ID,
-        "legacy_app": str(exact_legacy_app),
-        "canonical_app": str(decision.canonical_app),
-        "started_at": now,
-    }
-    try:
-        _write_receipt(receipt_path, receipt)
-    except Exception as error:
-        current = _capture_snapshot(
-            applications_dir, exact_legacy_app, decision.canonical_app
-        )
-        if _snapshot_matches(decision.snapshot, current):
-            raise AppReplacementOutcomeError(
-                "The old app was not moved because the recovery receipt "
-                "could not be started.",
-                move_outcome="not-moved",
-            ) from error
-        raise AppReplacementOutcomeError(
-            "The Trash move was not started, but the application paths changed. "
-            "Review Applications before trying again.",
-            move_outcome="move-uncertain",
-        ) from error
-
     recycle = recycler or _native_macos_recycle
-    # Keep this identity check outside the recycler failure-receipt block:
-    # a confirmation-time race is a refused action, not an attempted move,
-    # and therefore must leave no receipt behind.
+    move_completed = False
     try:
-        revalidate_confirmation()
-    except AppReplacementRefused:
-        receipt_path.unlink(missing_ok=True)
+        with open_owned_directory(data_root) as receipt_directory:
+            now = datetime.now(UTC).isoformat()
+            receipt: dict[str, object] = {
+                "schema_version": 1,
+                "status": "started",
+                "action": RECOVERY_ACTION,
+                "bundle_identifier": COMPATIBLE_BUNDLE_ID,
+                "legacy_app": str(exact_legacy_app),
+                "canonical_app": str(decision.canonical_app),
+                "started_at": now,
+            }
+            try:
+                _write_receipt(receipt_directory, receipt_path, receipt)
+            except Exception as error:
+                current = _capture_snapshot(
+                    applications_dir,
+                    exact_legacy_app,
+                    decision.canonical_app,
+                )
+                if _snapshot_matches(decision.snapshot, current):
+                    raise AppReplacementOutcomeError(
+                        "The old app was not moved because the recovery receipt "
+                        "could not be started.",
+                        move_outcome="not-moved",
+                    ) from error
+                raise AppReplacementOutcomeError(
+                    "The Trash move was not started, but the application paths "
+                    "changed. Review Applications before trying again.",
+                    move_outcome="move-uncertain",
+                ) from error
+
+            # The bundle snapshot and receipt directory identity are both
+            # checked at the final boundary immediately before invoking Trash.
+            try:
+                revalidate_confirmation()
+                receipt_directory.verify_visible_identity()
+            except Exception:
+                unlink_owned_file(
+                    receipt_directory,
+                    receipt_path.name,
+                    missing_ok=True,
+                )
+                raise
+
+            try:
+                trash_destination = _absolute(recycle(exact_legacy_app))
+            except Exception as error:
+                receipt.update(
+                    {
+                        "status": "failed",
+                        "failed_at": datetime.now(UTC).isoformat(),
+                        "reason_code": "trash-move-failed",
+                        "error_type": type(error).__name__,
+                    }
+                )
+                try:
+                    _write_receipt(
+                        receipt_directory,
+                        receipt_path,
+                        receipt,
+                    )
+                except Exception:
+                    pass
+                current = _capture_snapshot(
+                    applications_dir,
+                    exact_legacy_app,
+                    decision.canonical_app,
+                )
+                if _snapshot_matches(decision.snapshot, current):
+                    raise AppReplacementOutcomeError(
+                        "The old app was not moved. "
+                        "The macOS Trash operation failed.",
+                        move_outcome="not-moved",
+                    ) from error
+                raise AppReplacementOutcomeError(
+                    "The Trash operation returned an error after the app path "
+                    "changed. Verify the macOS Trash and Applications before "
+                    "trying again.",
+                    move_outcome="move-uncertain",
+                ) from error
+
+            if _path_exists(exact_legacy_app):
+                receipt.update(
+                    {
+                        "status": "failed",
+                        "failed_at": datetime.now(UTC).isoformat(),
+                        "reason_code": "legacy-bundle-remains",
+                    }
+                )
+                _write_receipt(receipt_directory, receipt_path, receipt)
+                raise AppReplacementRefused(
+                    "recoverable move left the legacy bundle in place"
+                )
+
+            move_completed = True
+            receipt.update(
+                {
+                    "status": "completed",
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "trash_destination": str(trash_destination),
+                }
+            )
+            try:
+                _write_receipt(receipt_directory, receipt_path, receipt)
+            except Exception as error:
+                raise AppReplacementOutcomeError(
+                    "Open Notebook Plus.app was moved, but the completion "
+                    "receipt could not be saved. Verify the macOS Trash before "
+                    "taking any further action.",
+                    move_outcome="moved-receipt-uncertain",
+                ) from error
+        return receipt_path
+    except AppReplacementOutcomeError:
         raise
-
-    try:
-        trash_destination = _absolute(recycle(exact_legacy_app))
     except Exception as error:
-        receipt.update(
-            {
-                "status": "failed",
-                "failed_at": datetime.now(UTC).isoformat(),
-                "reason_code": "trash-move-failed",
-                "error_type": type(error).__name__,
-            }
-        )
-        try:
-            _write_receipt(receipt_path, receipt)
-        except Exception:
-            pass
-        current = _capture_snapshot(
-            applications_dir, exact_legacy_app, decision.canonical_app
-        )
-        if _snapshot_matches(decision.snapshot, current):
+        if move_completed:
             raise AppReplacementOutcomeError(
-                "The old app was not moved. The macOS Trash operation failed.",
-                move_outcome="not-moved",
+                "Open Notebook Plus.app was moved, but recovery metadata "
+                "identity changed. Verify the macOS Trash before taking any "
+                "further action.",
+                move_outcome="moved-receipt-uncertain",
             ) from error
-        raise AppReplacementOutcomeError(
-            "The Trash operation returned an error after the app path changed. "
-            "Verify the macOS Trash and Applications before trying again.",
-            move_outcome="move-uncertain",
-        ) from error
-
-    if _path_exists(exact_legacy_app):
-        receipt.update(
-            {
-                "status": "failed",
-                "failed_at": datetime.now(UTC).isoformat(),
-                "reason_code": "legacy-bundle-remains",
-            }
-        )
-        _write_receipt(receipt_path, receipt)
-        raise AppReplacementRefused("recoverable move left the legacy bundle in place")
-
-    receipt.update(
-        {
-            "status": "completed",
-            "completed_at": datetime.now(UTC).isoformat(),
-            "trash_destination": str(trash_destination),
-        }
-    )
-    try:
-        _write_receipt(receipt_path, receipt)
-    except Exception as error:
-        raise AppReplacementOutcomeError(
-            "Open Notebook Plus.app was moved, but the completion receipt "
-            "could not be saved. Verify the macOS Trash before taking any "
-            "further action.",
-            move_outcome="moved-receipt-uncertain",
-        ) from error
-    return receipt_path
+        raise
 
 
 @dataclass
