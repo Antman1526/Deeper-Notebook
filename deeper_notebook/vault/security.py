@@ -75,6 +75,7 @@ class SecureFileCandidate:
     mode: int
     byte_size: int
     modified_ns: int
+    changed_ns: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +85,7 @@ class SecureReadResult:
     sha256: str
     byte_size: int
     modified_ns: int
+    changed_ns: int
     device: int
     inode: int
     mode: int
@@ -96,8 +98,16 @@ class ApprovedVaultRoot:
     path: Path
     device: int
     inode: int
-    _fd: int
+    _chain_fds: tuple[int, ...]
+    _chain_identities: tuple[tuple[int, int, int], ...]
+    _component_names: tuple[str, ...]
     _closed: bool = False
+
+    @property
+    def _fd(self) -> int:
+        if self._closed or not self._chain_fds:
+            raise VaultSecurityError("root_changed")
+        return self._chain_fds[-1]
 
     def __enter__(self) -> "ApprovedVaultRoot":
         self._assert_current()
@@ -114,38 +124,50 @@ class ApprovedVaultRoot:
     def close(self) -> None:
         if self._closed:
             return
-        os.close(self._fd)
         self._closed = True
+        for descriptor in reversed(self._chain_fds):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
     def _assert_current(self) -> os.stat_result:
         if self._closed:
             raise VaultSecurityError("root_changed")
+        if len(self._chain_fds) != len(self._chain_identities):
+            raise VaultSecurityError("root_changed")
+        if len(self._chain_fds) != len(self._component_names) + 1:
+            raise VaultSecurityError("root_changed")
+
+        stats: list[os.stat_result] = []
         try:
-            current = os.fstat(self._fd)
+            for descriptor, expected in zip(
+                self._chain_fds, self._chain_identities, strict=True
+            ):
+                current = os.fstat(descriptor)
+                if (
+                    not stat.S_ISDIR(current.st_mode)
+                    or _directory_identity(current) != expected
+                ):
+                    raise VaultSecurityError("root_changed")
+                stats.append(current)
+            for index, name in enumerate(self._component_names):
+                entry = os.stat(
+                    name,
+                    dir_fd=self._chain_fds[index],
+                    follow_symlinks=False,
+                )
+                if (
+                    stat.S_ISLNK(entry.st_mode)
+                    or not stat.S_ISDIR(entry.st_mode)
+                    or _directory_identity(entry) != self._chain_identities[index + 1]
+                ):
+                    raise VaultSecurityError("root_changed")
+        except VaultSecurityError:
+            raise
         except OSError as exc:
             raise VaultSecurityError("root_changed") from exc
-        if (
-            current.st_dev != self.device
-            or current.st_ino != self.inode
-            or not stat.S_ISDIR(current.st_mode)
-        ):
-            raise VaultSecurityError("root_changed")
-        verification_fd = -1
-        try:
-            verification_fd = _open_absolute_directory(self.path)
-            path_current = os.fstat(verification_fd)
-        except (OSError, VaultSecurityError) as exc:
-            raise VaultSecurityError("root_changed") from exc
-        finally:
-            if verification_fd >= 0:
-                os.close(verification_fd)
-        if (
-            path_current.st_dev != self.device
-            or path_current.st_ino != self.inode
-            or not stat.S_ISDIR(path_current.st_mode)
-        ):
-            raise VaultSecurityError("root_changed")
-        return current
+        return stats[-1]
 
 
 def _descriptor_security_available() -> bool:
@@ -191,52 +213,77 @@ def _open_child_directory(parent_fd: int, name: str) -> int:
     return child_fd
 
 
-def _open_absolute_directory(path: Path) -> int:
-    current_fd = -1
+def _directory_identity(value: os.stat_result) -> tuple[int, int, int]:
+    return value.st_dev, value.st_ino, value.st_mode
+
+
+def _open_absolute_directory_chain(path: Path) -> tuple[int, ...]:
+    opened: list[int] = []
     try:
         current_fd = os.open(os.path.sep, _directory_flags())
+        opened.append(current_fd)
         for part in path.parts[1:]:
             child_fd = _open_child_directory(current_fd, part)
-            os.close(current_fd)
+            opened.append(child_fd)
             current_fd = child_fd
-        return current_fd
+        return tuple(opened)
     except BaseException:
-        if current_fd >= 0:
-            os.close(current_fd)
+        for descriptor in reversed(opened):
+            os.close(descriptor)
         raise
 
 
-def _is_unsafe_root(path: Path) -> bool:
+def _is_lexically_unsafe_root(path: Path) -> bool:
     normalized = os.path.normcase(str(path))
-    if os.path.ismount(path):
-        return True
     homes = {os.path.normcase(str(Path.home()))}
     if pwd is not None:
         try:
             homes.add(os.path.normcase(pwd.getpwuid(os.getuid()).pw_dir))
         except (KeyError, OSError):
             pass
-    forbidden = {
+    exact_forbidden = {
         os.path.normcase(value)
         for value in (
             os.path.sep,
-            "/System",
-            "/Library",
-            "/Applications",
             "/Users",
             "/Volumes",
             "/private",
             "/private/var",
-            "/usr",
-            "/bin",
-            "/sbin",
-            "/etc",
-            "/var",
-            "/tmp",
         )
     }
-    forbidden.update(homes)
-    if normalized in forbidden:
+    exact_forbidden.update(homes)
+    for home in homes:
+        exact_forbidden.update(
+            {
+                os.path.join(home, "Desktop"),
+                os.path.join(home, "Documents"),
+                os.path.join(home, "Downloads"),
+            }
+        )
+    if normalized in exact_forbidden:
+        return True
+
+    system_trees = (
+        "/System",
+        "/Library",
+        "/Applications",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/etc",
+        "/var",
+        "/tmp",
+        "/dev",
+        "/proc",
+        "/sys",
+        "/run",
+        "/boot",
+    )
+    if any(
+        normalized == os.path.normcase(prefix)
+        or normalized.startswith(os.path.normcase(prefix) + os.path.sep)
+        for prefix in system_trees
+    ):
         return True
 
     drive, tail = os.path.splitdrive(str(path))
@@ -256,28 +303,56 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
     if not expanded.is_absolute() or ".." in expanded.parts:
         raise VaultSecurityError("invalid_root")
     normalized = Path(os.path.normpath(expanded_text))
-    if _is_unsafe_root(normalized):
-        raise VaultSecurityError("unsafe_root")
-
-    current_fd = -1
+    chain_fds: tuple[int, ...] = ()
+    approved: ApprovedVaultRoot | None = None
     try:
-        current_fd = _open_absolute_directory(normalized)
-        root_stat = os.fstat(current_fd)
+        chain_fds = _open_absolute_directory_chain(normalized)
+        chain_stats = tuple(os.fstat(descriptor) for descriptor in chain_fds)
+        root_stat = chain_stats[-1]
         if not stat.S_ISDIR(root_stat.st_mode):
             raise VaultSecurityError("invalid_root")
-        return ApprovedVaultRoot(
+        approved = ApprovedVaultRoot(
             path=normalized,
             device=root_stat.st_dev,
             inode=root_stat.st_ino,
-            _fd=current_fd,
+            _chain_fds=chain_fds,
+            _chain_identities=tuple(
+                _directory_identity(value) for value in chain_stats
+            ),
+            _component_names=normalized.parts[1:],
         )
+        approved._assert_current()
+        if _is_lexically_unsafe_root(normalized):
+            raise VaultSecurityError("unsafe_root")
+
+        prefix = Path(os.path.sep)
+        for component in normalized.parts[1:]:
+            prefix /= component
+            approved._assert_current()
+            is_mount = os.path.ismount(prefix)
+            approved._assert_current()
+            if is_mount:
+                raise VaultSecurityError("unsafe_root")
+        return approved
     except VaultSecurityError:
-        if current_fd >= 0:
-            os.close(current_fd)
+        if approved is not None:
+            approved.close()
+        elif chain_fds:
+            for descriptor in reversed(chain_fds):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
         raise
     except OSError as exc:
-        if current_fd >= 0:
-            os.close(current_fd)
+        if approved is not None:
+            approved.close()
+        elif chain_fds:
+            for descriptor in reversed(chain_fds):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
         raise VaultSecurityError("invalid_root") from exc
 
 
@@ -286,14 +361,15 @@ def _relative_parts(relative_path: str) -> tuple[str, ...]:
         raise VaultSecurityError("path_escape")
     if "\\" in relative_path:
         raise VaultSecurityError("path_escape")
-    candidate = PurePosixPath(relative_path)
-    if (
-        not candidate.parts
-        or candidate.is_absolute()
-        or any(part in {"", ".", ".."} for part in candidate.parts)
+    raw_parts = relative_path.split("/")
+    if relative_path.startswith("/") or any(
+        part in {"", ".", ".."} for part in raw_parts
     ):
         raise VaultSecurityError("path_escape")
-    return candidate.parts
+    candidate = PurePosixPath(*raw_parts)
+    if candidate.is_absolute() or candidate.as_posix() != relative_path:
+        raise VaultSecurityError("path_escape")
+    return tuple(raw_parts)
 
 
 def _is_temporary_name(name: str) -> bool:
@@ -475,6 +551,7 @@ def secure_read(
             sha256=second_hash,
             byte_size=len(second),
             modified_ns=after.st_mtime_ns,
+            changed_ns=after.st_ctime_ns,
             device=after.st_dev,
             inode=after.st_ino,
             mode=after.st_mode,
@@ -514,8 +591,8 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
             classification = classify_vault_path(relative)
             try:
                 entry_stat = entry.stat(follow_symlinks=False)
-            except OSError:
-                continue
+            except OSError as exc:
+                raise VaultSecurityError("unreadable") from exc
             if stat.S_ISLNK(entry_stat.st_mode):
                 continue
             if stat.S_ISDIR(entry_stat.st_mode):
@@ -523,8 +600,8 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
                     continue
                 try:
                     child_fd = os.open(name, _directory_flags(), dir_fd=directory_fd)
-                except OSError:
-                    continue
+                except OSError as exc:
+                    raise VaultSecurityError("unreadable") from exc
                 try:
                     child_stat = os.fstat(child_fd)
                     if (
@@ -532,7 +609,7 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
                         or child_stat.st_dev != entry_stat.st_dev
                         or child_stat.st_ino != entry_stat.st_ino
                     ):
-                        continue
+                        raise VaultSecurityError("unreadable")
                     walk(child_fd, relative_parts)
                 finally:
                     os.close(child_fd)
@@ -547,6 +624,7 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
                     mode=entry_stat.st_mode,
                     byte_size=entry_stat.st_size,
                     modified_ns=entry_stat.st_mtime_ns,
+                    changed_ns=entry_stat.st_ctime_ns,
                 )
             )
 

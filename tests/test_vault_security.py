@@ -85,6 +85,8 @@ def test_approved_root_rejects_symlink_in_ancestor_chain(tmp_path: Path) -> None
         Path("/Applications"),
         Path("/Users"),
         Path("/Volumes"),
+        Path("/usr/local"),
+        Path("/Applications/Utilities"),
     ],
 )
 def test_approved_root_rejects_broad_or_system_roots(candidate: Path) -> None:
@@ -93,6 +95,18 @@ def test_approved_root_rejects_broad_or_system_roots(candidate: Path) -> None:
     with pytest.raises(VaultSecurityError) as caught:
         approve_vault_root(candidate)
     assert caught.value.code == "unsafe_root"
+
+
+def test_approved_root_rejects_broad_home_collections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name in ("Desktop", "Documents", "Downloads"):
+        candidate = tmp_path / name
+        candidate.mkdir()
+        with pytest.raises(VaultSecurityError) as caught:
+            approve_vault_root(candidate)
+        assert caught.value.code == "unsafe_root"
 
 
 def test_approved_root_fails_closed_without_descriptor_security(
@@ -119,6 +133,70 @@ def test_approved_root_rejects_drive_or_share_mount_root(
     with pytest.raises(VaultSecurityError) as caught:
         approve_vault_root(vault_root)
     assert caught.value.code == "unsafe_root"
+
+
+def test_approved_root_rejects_mount_backed_ancestor(
+    vault_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_ismount = os.path.ismount
+    monkeypatch.setattr(
+        os.path,
+        "ismount",
+        lambda candidate: Path(candidate) == vault_root.parent
+        or real_ismount(candidate),
+    )
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root(vault_root)
+    assert caught.value.code == "unsafe_root"
+
+
+def test_approval_detects_replacement_during_mount_query(
+    vault_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moved = vault_root.parent / "moved-during-mount-check"
+    real_ismount = os.path.ismount
+    replaced = False
+
+    def replacing_ismount(candidate: str | os.PathLike[str]) -> bool:
+        nonlocal replaced
+        if Path(candidate) == vault_root and not replaced:
+            replaced = True
+            vault_root.rename(moved)
+            vault_root.mkdir()
+            return False
+        return real_ismount(candidate)
+
+    monkeypatch.setattr(os.path, "ismount", replacing_ismount)
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root(vault_root)
+    assert caught.value.code == "root_changed"
+
+
+def test_approval_rejects_symlink_substitution_immediately_before_open(
+    vault_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moved = vault_root.parent / "moved-before-open"
+    real_open = os.open
+    substituted = False
+
+    def substituting_open(
+        path: str | bytes, flags: int, *args: object, **kwargs: object
+    ) -> int:
+        nonlocal substituted
+        if path == vault_root.name and not substituted:
+            substituted = True
+            vault_root.rename(moved)
+            vault_root.symlink_to(moved, target_is_directory=True)
+        return real_open(path, flags, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security._descriptor_security_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(os, "open", substituting_open)
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root(vault_root)
+    assert caught.value.code == "unsafe_symlink"
 
 
 @pytest.mark.parametrize(
@@ -151,7 +229,17 @@ def test_path_classification(relative: str, kind: str, protected: bool) -> None:
 
 @pytest.mark.parametrize(
     "relative",
-    ["../escape.md", "/absolute.md", "a/../../escape.md", ".", "", r"a\\note.md"],
+    [
+        "../escape.md",
+        "/absolute.md",
+        "a/../../escape.md",
+        ".",
+        "",
+        r"a\\note.md",
+        "a//b.md",
+        "a/./b.md",
+        "./b.md",
+    ],
 )
 def test_path_classification_rejects_candidate_escape(relative: str) -> None:
     with pytest.raises(VaultSecurityError) as caught:
@@ -333,6 +421,26 @@ def test_secure_read_detects_approved_root_rename_and_replacement(
     assert caught.value.code == "root_changed"
 
 
+def test_secure_read_detects_approved_root_ancestor_replacement(
+    vault_root: Path,
+) -> None:
+    (vault_root / "note.md").write_bytes(b"same")
+    approved = approve_vault_root(vault_root)
+    original_parent = vault_root.parent
+    moved_parent = original_parent.parent / f"{original_parent.name}-moved"
+    try:
+        original_parent.rename(moved_parent)
+        original_parent.mkdir()
+        replacement = original_parent / vault_root.name
+        replacement.mkdir()
+        (replacement / "note.md").write_bytes(b"same")
+        with pytest.raises(VaultSecurityError) as caught:
+            secure_read(approved, "note.md")
+        assert caught.value.code == "root_changed"
+    finally:
+        approved.close()
+
+
 def test_secure_read_detects_size_and_mtime_preserving_content_race(
     vault_root: Path,
 ) -> None:
@@ -380,6 +488,17 @@ def test_secure_read_fd_stress_does_not_leak(vault_root: Path) -> None:
     with approve_vault_root(vault_root) as approved:
         for _ in range(200):
             assert secure_read(approved, "note.md").content == b"body"
+    if before is not None:
+        assert len(list(fd_root.iterdir())) <= before + 2
+
+
+def test_approved_root_chain_close_stress_does_not_leak(vault_root: Path) -> None:
+    fd_root = Path("/dev/fd")
+    before = len(list(fd_root.iterdir())) if fd_root.exists() else None
+    for _ in range(100):
+        approved = approve_vault_root(vault_root)
+        approved.close()
+        approved.close()
     if before is not None:
         assert len(list(fd_root.iterdir())) <= before + 2
 

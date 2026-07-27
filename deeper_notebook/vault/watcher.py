@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -67,6 +69,7 @@ class _StableObservation:
     mode: int
     byte_size: int
     modified_ns: int
+    changed_ns: int
     first_seen_at: float
 
     @classmethod
@@ -79,6 +82,7 @@ class _StableObservation:
             mode=candidate.mode,
             byte_size=candidate.byte_size,
             modified_ns=candidate.modified_ns,
+            changed_ns=candidate.changed_ns,
             first_seen_at=now,
         )
 
@@ -89,12 +93,14 @@ class _StableObservation:
             self.mode,
             self.byte_size,
             self.modified_ns,
+            self.changed_ns,
         ) == (
             candidate.device,
             candidate.inode,
             candidate.mode,
             candidate.byte_size,
             candidate.modified_ns,
+            candidate.changed_ns,
         )
 
 
@@ -109,6 +115,7 @@ class VaultWatcher:
         repository: VaultObservationRepository,
         stable_after_seconds: float = 2.0,
         known_paths: set[str] | None = None,
+        known_content_hashes: Mapping[str, str | None] | None = None,
         max_file_bytes: int | None = None,
     ) -> None:
         if stable_after_seconds < 2.0:
@@ -118,13 +125,32 @@ class VaultWatcher:
         self._repository = repository
         self._stable_after_seconds = stable_after_seconds
         self._max_file_bytes = max_file_bytes
+        self._scan_lock = asyncio.Lock()
         self._observations: dict[str, _StableObservation] = {}
-        self._known_paths = set(known_paths or ())
+        self._known_paths = {
+            self._validated_seed_path(relative) for relative in (known_paths or ())
+        }
+        self._committed_hashes: dict[str, str] = {}
+        for relative, content_hash in (known_content_hashes or {}).items():
+            validated = self._validated_seed_path(relative)
+            self._known_paths.add(validated)
+            if content_hash is not None:
+                if (
+                    len(content_hash) != 64
+                    or any(character not in "0123456789abcdef" for character in content_hash)
+                ):
+                    raise ValueError("known content hashes must be lowercase SHA-256")
+                self._committed_hashes[validated] = content_hash
         self._missing_paths: set[str] = set()
-        self._emitted: set[tuple[str, str]] = set()
 
     async def scan(
         self, *, now_monotonic: float | None = None
+    ) -> list[VaultWorkItem]:
+        async with self._scan_lock:
+            return await self._scan_locked(now_monotonic=now_monotonic)
+
+    async def _scan_locked(
+        self, *, now_monotonic: float | None
     ) -> list[VaultWorkItem]:
         now = time.monotonic() if now_monotonic is None else now_monotonic
         candidates = list_secure_candidates(self._root)
@@ -137,13 +163,8 @@ class VaultWatcher:
                 continue
             relative = candidate.relative_path
             current_paths.add(relative)
-            self._known_paths.add(relative)
-            self._missing_paths.discard(relative)
             prior = self._observations.get(relative)
             if prior is None or not prior.same_file_state(candidate):
-                self._observations[relative] = _StableObservation.from_candidate(
-                    candidate, now
-                )
                 await self._record(
                     relative=relative,
                     state="pending",
@@ -154,6 +175,11 @@ class VaultWatcher:
                     modified_ns=candidate.modified_ns,
                     observed_at=now,
                 )
+                self._observations[relative] = _StableObservation.from_candidate(
+                    candidate, now
+                )
+                self._known_paths.add(relative)
+                self._missing_paths.discard(relative)
                 continue
             if now - prior.first_seen_at < self._stable_after_seconds:
                 await self._record(
@@ -166,6 +192,8 @@ class VaultWatcher:
                     modified_ns=candidate.modified_ns,
                     observed_at=now,
                 )
+                self._known_paths.add(relative)
+                self._missing_paths.discard(relative)
                 continue
 
             try:
@@ -175,7 +203,6 @@ class VaultWatcher:
                     max_bytes=self._max_file_bytes,
                 )
             except VaultSecurityError as exc:
-                self._observations.pop(relative, None)
                 await self._record(
                     relative=relative,
                     state="retry",
@@ -187,6 +214,9 @@ class VaultWatcher:
                     observed_at=now,
                     error_code=exc.code,
                 )
+                self._observations.pop(relative, None)
+                self._known_paths.add(relative)
+                self._missing_paths.discard(relative)
                 continue
 
             if (
@@ -195,8 +225,8 @@ class VaultWatcher:
                 or read.mode != candidate.mode
                 or read.byte_size != candidate.byte_size
                 or read.modified_ns != candidate.modified_ns
+                or read.changed_ns != candidate.changed_ns
             ):
-                self._observations.pop(relative, None)
                 await self._record(
                     relative=relative,
                     state="retry",
@@ -208,12 +238,13 @@ class VaultWatcher:
                     observed_at=now,
                     error_code="changed_during_read",
                 )
+                self._observations.pop(relative, None)
+                self._known_paths.add(relative)
+                self._missing_paths.discard(relative)
                 continue
 
-            dedupe_key = (relative, read.sha256)
-            if dedupe_key in self._emitted:
+            if self._committed_hashes.get(relative) == read.sha256:
                 continue
-            self._emitted.add(dedupe_key)
             await self._record(
                 relative=relative,
                 state="ready",
@@ -224,6 +255,9 @@ class VaultWatcher:
                 modified_ns=read.modified_ns,
                 observed_at=now,
             )
+            self._committed_hashes[relative] = read.sha256
+            self._known_paths.add(relative)
+            self._missing_paths.discard(relative)
             work.append(
                 VaultWorkItem(
                     vault_id=self._vault_id,
@@ -240,8 +274,6 @@ class VaultWatcher:
         for relative in sorted(self._known_paths - current_paths):
             if relative in self._missing_paths:
                 continue
-            self._missing_paths.add(relative)
-            self._observations.pop(relative, None)
             await self._repository.mark_missing(self._vault_id, relative)
             classification = classify_vault_path(relative)
             await self._record(
@@ -255,8 +287,16 @@ class VaultWatcher:
                 observed_at=now,
                 parse_state="missing",
             )
+            self._missing_paths.add(relative)
+            self._observations.pop(relative, None)
+            self._committed_hashes.pop(relative, None)
 
         return work
+
+    @staticmethod
+    def _validated_seed_path(relative: str) -> str:
+        classify_vault_path(relative)
+        return relative
 
     async def _record(
         self,
