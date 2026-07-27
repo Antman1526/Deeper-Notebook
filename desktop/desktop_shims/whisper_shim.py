@@ -29,7 +29,7 @@ def build_app(model: Any) -> FastAPI:
 
     `model` is a faster_whisper.WhisperModel instance.
     """
-    app = FastAPI(title="Open Notebook Plus — Whisper STT shim")
+    app = FastAPI(title="Deeper Notebook — Whisper STT shim")
 
     @app.get("/health")
     def health() -> dict:

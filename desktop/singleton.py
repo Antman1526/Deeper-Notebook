@@ -2,7 +2,7 @@
 
 Why this exists (real user incident, 2026-05-19):
 
-  User double-clicked `Open Notebook Plus.app` multiple times during
+  User double-clicked `Deeper Notebook.app` multiple times during
   debugging. Each click spawned a fresh launcher process tree (uvicorn
   API + Next.js + worker + SurrealDB binary) with independent dynamic
   ports. The launchers were completely unaware of each other. Closing
@@ -73,7 +73,7 @@ class AlreadyRunning(RuntimeError):
 
     def __init__(self, pid: int, pid_file: Path):
         super().__init__(
-            f"Another Open Notebook Plus launcher is already running "
+            f"Another Deeper Notebook launcher is already running "
             f"(PID {pid}; lock at {pid_file}). Quit the existing app "
             "or wait for its shutdown before relaunching."
         )

@@ -15,6 +15,8 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_BREAK
 from docx.shared import Inches, Pt
 
+from deeper_notebook.identity import PRODUCT_NAME
+from deeper_notebook.studio.exporters.metadata import brand_office_application
 from deeper_notebook.studio.schemas import (
     ArtifactDocumentBase,
     CoursePackDocument,
@@ -53,7 +55,8 @@ def _configure_document(document: Document, title: str) -> None:
 
     properties = document.core_properties
     properties.title = title
-    properties.author = "Open Notebook Plus"
+    properties.author = PRODUCT_NAME
+    properties.last_modified_by = PRODUCT_NAME
     properties.subject = "Evidence Studio editable export"
     properties.keywords = "evidence, local research, editable export"
     properties.comments = (
@@ -198,7 +201,7 @@ def export_document(artifact: ArtifactDocumentBase, path: Path) -> None:
     document = Document()
     _configure_document(document, artifact.title)
     document.add_heading(artifact.title, level=0)
-    _add_paragraph(document, "Open Notebook Plus / Evidence Studio")
+    _add_paragraph(document, f"{PRODUCT_NAME} / Evidence Studio")
 
     if isinstance(artifact, GenericDocument):
         citations = _export_generic(document, artifact)
@@ -209,6 +212,7 @@ def export_document(artifact: ArtifactDocumentBase, path: Path) -> None:
 
     _add_citation_appendix(document, citations)
     document.save(path)
+    brand_office_application(path)
 
 
 __all__ = ["export_document"]

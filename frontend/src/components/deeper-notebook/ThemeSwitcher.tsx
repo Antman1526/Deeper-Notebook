@@ -9,7 +9,7 @@
  *   1. User clicks a theme in the dropdown
  *   2. window.ONP.setTheme(theme) sets <html data-theme="..."> immediately
  *      (instant visual feedback — no reload)
- *   3. window.ONP.setTheme also POSTs to /api/onp/theme to persist to
+ *   3. window.ONP.setTheme also POSTs to the canonical theme endpoint
  *      ~/.open-notebook-plus/config.toml
  *   4. Next page load: desktop/window.py re-reads config.toml, bakes in
  *      the new theme, injection JS applies it
@@ -18,7 +18,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { onpFetch } from '@/lib/api/onp'
+import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Palette, Check } from 'lucide-react'
 
-// Kept in lockstep with desktop/window.py:_THEMES and api/routers/onp.py.
+// Kept in lockstep with desktop/window.py:_THEMES and the theme router.
 // `accent` is each theme's primary/accent hue — rendered as a second dot in
 // the swatch so the (now many) dark themes are distinguishable at a glance.
 const ONP_THEMES = [
@@ -87,7 +87,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     } catch {
       /* localStorage disabled — fall through to API */
     }
-    onpFetch('/api/onp/theme')
+    deeperNotebookFetch('/api/deeper-notebook/theme')
       .then((r) => r.json())
       .then((d) => setActiveTheme(d.theme || 'light-blue'))
       .catch(() => {})
@@ -102,7 +102,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     if (w.ONP?.setTheme) {
       w.ONP.setTheme(themeId)
     } else {
-      onpFetch('/api/onp/theme', {
+      deeperNotebookFetch('/api/deeper-notebook/theme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ theme: themeId }),

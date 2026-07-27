@@ -18,8 +18,8 @@ import { IntroReveal } from "@/components/intro/IntroReveal";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Open notebook+",
-  description: "Privacy-focused research and knowledge management",
+  title: "Deeper Notebook",
+  description: "Local-first research and knowledge workspace",
 };
 
 export default function RootLayout({

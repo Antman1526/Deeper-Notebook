@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 _MANIFEST_PATH = "manifest.json"
+_CANONICAL_FORMAT = "deeper-notebook-research-bundle"
+_LEGACY_FORMATS = frozenset({"open-notebook-plus-research-bundle"})
 
 
 def normalize_bundle_path(value: str) -> str:
@@ -69,7 +71,7 @@ def build_research_bundle(
 
     manifest = {
         "schema_version": 1,
-        "format": "open-notebook-plus-research-bundle",
+        "format": _CANONICAL_FORMAT,
         "entries": [
             {"path": name, "sha256": _sha256(data), "size": len(data)}
             for name, data in sorted(entries.items())
@@ -92,6 +94,9 @@ def verify_research_bundle(path: Path) -> dict[str, object]:
         for name in payload_names:
             normalize_bundle_path(name)
         manifest = json.loads(bundle.read(_MANIFEST_PATH))
+        bundle_format = manifest.get("format") if isinstance(manifest, dict) else None
+        if bundle_format not in {_CANONICAL_FORMAT, *_LEGACY_FORMATS}:
+            raise ValueError("research bundle format is unsupported")
         entries = manifest.get("entries") if isinstance(manifest, dict) else None
         if not isinstance(entries, list):
             raise ValueError("research bundle manifest is invalid")
