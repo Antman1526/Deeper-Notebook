@@ -613,7 +613,7 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "open-notebook-plus", "version": "0.5"},
+                    "clientInfo": {"name": "deeper-notebook", "version": "0.5"},
                 },
             },
             headers={

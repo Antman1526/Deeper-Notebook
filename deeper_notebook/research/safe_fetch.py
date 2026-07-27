@@ -114,7 +114,7 @@ class SafeFetcher:
                     connect=CONNECT_TIMEOUT_SECONDS,
                     read=READ_TIMEOUT_SECONDS,
                 ),
-                headers={"User-Agent": "OpenNotebookPlus/0.8 safe-research-fetch"},
+                headers={"User-Agent": "DeeperNotebook/0.8 safe-research-fetch"},
             )
 
         current_url = raw_url

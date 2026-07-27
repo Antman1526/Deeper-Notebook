@@ -41,11 +41,49 @@ ALLOWLIST_PATH = ROOT / "scripts" / "rebrand-allowlist.json"
 
 
 def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
+    has_compatibility = any(
+        entry.get("category") == "compatibility_alias"
+        for entry in entries
+    )
     path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
+                "schema_version": 4,
                 "persisted_queue_identifiers": [],
+                "compatibility_contracts": (
+                    {
+                        "test-compatibility-v1": {
+                            "kind": "regression_fixture",
+                            "owner": "rebrand-audit-tests",
+                            "retention_reason": (
+                                "The focused audit fixture exercises a "
+                                "specific compatibility validation branch."
+                            ),
+                            "proof": "static:rebrand-audit-schema-v1",
+                        }
+                    }
+                    if has_compatibility
+                    else {}
+                ),
+                "entries": entries,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_contract_allowlist(
+    path: Path,
+    entries: list[dict[str, object]],
+    contracts: dict[str, dict[str, str]],
+) -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "persisted_queue_identifiers": [],
+                "compatibility_contracts": contracts,
                 "entries": entries,
             }
         ),
@@ -85,6 +123,11 @@ def _approval(
             context_sha256=key[-1],
             category=category,
             explanation=rationale,
+            compatibility_contract=(
+                "test-compatibility-v1"
+                if category == "compatibility_alias"
+                else None
+            ),
         ),
     )
 
@@ -99,6 +142,7 @@ def _rationale(
     context: str,
     category: str,
     explanation: str,
+    compatibility_contract: str | None = None,
 ) -> dict[str, object]:
     return {
         "path": path,
@@ -109,6 +153,15 @@ def _rationale(
         "context_sha256": context_sha256(context),
         "category": category,
         "explanation": explanation,
+        "compatibility_contract": (
+            compatibility_contract
+            if compatibility_contract is not None
+            else (
+                "test-compatibility-v1"
+                if category == "compatibility_alias"
+                else None
+            )
+        ),
     }
 
 
@@ -501,6 +554,244 @@ def test_allowlist_rejects_unknown_entry_fields(tmp_path):
         load_allowlist(unknown)
 
 
+def _contract_entry(
+    *,
+    path: str = "deeper_notebook/environment.py",
+    pattern: str = "ONP_",
+    context: str = "legacy_name = 'ONP_SETTING'",
+    contract: str | None = "env-alias-v1",
+) -> dict[str, object]:
+    column = context.index(pattern) + 1
+    rationale = _rationale(
+        path=path,
+        pattern=pattern,
+        source="content",
+        line=1,
+        column=column,
+        context=context,
+        category="compatibility_alias",
+        explanation=(
+            "The environment resolver retains the deprecated short-form "
+            "setting so existing operator configuration keeps loading."
+        ),
+    )
+    rationale["compatibility_contract"] = contract
+    return {
+        "path": path,
+        "pattern": pattern,
+        "source": "content",
+        "line": 1,
+        "column": column,
+        "context_sha256": context_sha256(context),
+        "category": "compatibility_alias",
+        "rationale": rationale,
+    }
+
+
+def _valid_contract(**overrides: str) -> dict[str, str]:
+    contract = {
+        "kind": "env_alias",
+        "owner": "runtime-configuration",
+        "retention_reason": (
+            "Existing operator environments need a deprecation window while "
+            "canonical settings take precedence."
+        ),
+        "proof": "static:rebrand-audit-schema-v1",
+    }
+    contract.update(overrides)
+    return contract
+
+
+def test_allowlist_accepts_proof_backed_structured_compatibility_contract(
+    tmp_path,
+):
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "valid-contract.json",
+        [_contract_entry()],
+        {"env-alias-v1": _valid_contract()},
+    )
+
+    loaded = load_allowlist(allowlist_path)
+
+    assert len(loaded) == 1
+    assert next(iter(loaded.values())).rationale.compatibility_contract == (
+        "env-alias-v1"
+    )
+
+
+def test_allowlist_rejects_compatibility_without_structured_contract(tmp_path):
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "missing-contract.json",
+        [_contract_entry(contract=None)],
+        {"env-alias-v1": _valid_contract()},
+    )
+
+    with pytest.raises(ValueError, match="requires a structured compatibility"):
+        load_allowlist(allowlist_path)
+
+
+def test_allowlist_rejects_unknown_compatibility_contract_kind(tmp_path):
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "unknown-contract-kind.json",
+        [_contract_entry()],
+        {
+            "env-alias-v1": _valid_contract(
+                kind="freeform-compatibility-assertion",
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="closed compatibility contract kind"):
+        load_allowlist(allowlist_path)
+
+
+def test_allowlist_rejects_unvalidated_compatibility_proof(tmp_path):
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "missing-proof.json",
+        [_contract_entry()],
+        {
+            "env-alias-v1": _valid_contract(
+                proof="tests/missing-proof.py::test_missing_contract",
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="tracked proof reference"):
+        load_allowlist(allowlist_path)
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern", "context"),
+    [
+        (
+            "docs/operator-guide.md",
+            "ONP_",
+            "Default configuration uses ONP_SETTING.",
+        ),
+        (
+            "frontend/src/lib/locales/en-US/index.ts",
+            "Open Notebook Plus",
+            "appName: 'Open Notebook Plus',",
+        ),
+        (
+            "api/routers/filesystem.py",
+            "OpenNotebook",
+            "default_exports = home / 'OpenNotebookPlus-Exports'",
+        ),
+    ],
+)
+def test_allowlist_rejects_compatibility_for_active_docs_ui_and_defaults(
+    tmp_path,
+    path,
+    pattern,
+    context,
+):
+    target = tmp_path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(context + "\n", encoding="utf-8")
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "forbidden-compatibility.json",
+        [
+            _contract_entry(
+                path=path,
+                pattern=pattern,
+                context=context,
+            )
+        ],
+        {"env-alias-v1": _valid_contract()},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="active UI, documentation, or default identifier",
+    ):
+        load_allowlist(allowlist_path)
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern", "expected_contract"),
+    [
+        (
+            "deeper_notebook/environment.py",
+            "ONP_",
+            "env-alias-v1",
+        ),
+        (
+            "open_notebook/domain/notebook.py",
+            "open_notebook",
+            "python-import-shim-v1",
+        ),
+        (
+            "api/main.py",
+            "/api/onp",
+            "legacy-api-route-v1",
+        ),
+        (
+            "desktop/app_migration.py",
+            "open-notebook-plus",
+            "data-root-migration-v1",
+        ),
+        (
+            "tests/test_environment_aliases.py",
+            "ONP_",
+            "env-alias-v1",
+        ),
+        (
+            "api/routers/chat.py",
+            "open_notebook",
+            "python-import-shim-v1",
+        ),
+        (
+            "api/routers/filesystem.py",
+            "OpenNotebook",
+            "export-directory-fallback-v1",
+        ),
+    ],
+)
+def test_compatibility_contract_mapping_uses_only_proof_backed_groups(
+    path,
+    pattern,
+    expected_contract,
+):
+    assert rebrand_audit.compatibility_contract_for_occurrence(
+        {
+            "path": path,
+            "pattern": pattern,
+            "source": "content",
+            "line": 1,
+            "column": 1,
+            "context_sha256": "0" * 64,
+        }
+    ) == expected_contract
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern"),
+    [
+        ("tests/test_unrelated_feature.py", "Open Notebook Plus"),
+        ("docs/operator-guide.md", "ONP_"),
+        ("frontend/src/components/VisibleBanner.tsx", "Open Notebook Plus"),
+    ],
+)
+def test_compatibility_contract_mapping_does_not_invent_ungrounded_contracts(
+    path,
+    pattern,
+):
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            {
+                "path": path,
+                "pattern": pattern,
+                "source": "content",
+                "line": 1,
+                "column": 1,
+                "context_sha256": "0" * 64,
+            }
+        )
+        is None
+    )
+
+
 def test_allowlist_rejects_one_character_rationale(tmp_path):
     path = "docs/history.md"
     line = "Open Notebook Plus"
@@ -651,7 +942,7 @@ def test_allowlist_rejects_semantic_duplicates_across_structural_term_case(
                 ),
             }
             for path, explanation in zip(
-                ("docs/history-one.md", "docs/history-two.md"),
+                ("fixtures/history-one.py", "fixtures/history-two.py"),
                 explanations,
                 strict=True,
             )
@@ -837,6 +1128,59 @@ def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
     assert entry["rationale"]["pattern"] == entry["pattern"]
     assert entry["rationale"]["category"] == entry["category"]
     assert "Version 1 migration" in entry["rationale"]["explanation"]
+
+
+def test_allowlist_regeneration_assigns_only_proof_backed_contracts(tmp_path):
+    path = "deeper_notebook/configuration.py"
+    line = "legacy_prefix = 'ONP_SETTING'"
+    repo = _init_tracked_repo(tmp_path / "repo", {path: line + "\n"})
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "allowlist.json",
+        [
+            _contract_entry(
+                path=path,
+                pattern="ONP_",
+                context=line,
+            )
+        ],
+        {"env-alias-v1": _valid_contract()},
+    )
+
+    generated = rebrand_audit.regenerate_allowlist(repo, allowlist_path)
+
+    assert generated["compatibility_contracts"] == {
+        "env-alias-v1": rebrand_audit._DEFAULT_COMPATIBILITY_CONTRACTS[
+            "env-alias-v1"
+        ]
+    }
+    assert generated["entries"][0]["rationale"][
+        "compatibility_contract"
+    ] == "env-alias-v1"
+
+
+def test_allowlist_regeneration_surfaces_ungrounded_compatibility_groups(
+    tmp_path,
+):
+    path = "tests/test_unrelated_feature.py"
+    line = "legacy_label = 'Open Notebook Plus'"
+    repo = _init_tracked_repo(tmp_path / "repo", {path: line + "\n"})
+    allowlist_path = _write_contract_allowlist(
+        tmp_path / "allowlist.json",
+        [
+            _contract_entry(
+                path=path,
+                pattern="Open Notebook Plus",
+                context=line,
+            )
+        ],
+        {"env-alias-v1": _valid_contract()},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"uncontracted compatibility groups.*tests.*Open Notebook Plus",
+    ):
+        rebrand_audit.regenerate_allowlist(repo, allowlist_path)
 
 
 def test_repository_category_examples_match_their_actual_roles():

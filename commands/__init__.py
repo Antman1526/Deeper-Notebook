@@ -9,7 +9,7 @@ that take minutes and most things that fail in interesting ways.
 Without a configured file sink, all worker output went to stderr,
 and the launcher pipes worker stderr to DEVNULL in non-debug mode.
 Net effect since v0.7.14: every worker job failure in production was
-silently discarded; the README's `tail ~/.open-notebook-plus/logs/*.log`
+silently discarded; the README's `tail ~/.deeper-notebook/logs/*.log`
 story worked for the API process but not the worker that does the
 long-running work.
 

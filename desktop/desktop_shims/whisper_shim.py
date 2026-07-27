@@ -50,7 +50,7 @@ def build_app(model: Any) -> FastAPI:
                 {
                     "id": "whisper-base-en",
                     "object": "model",
-                    "owned_by": "open-notebook-plus",
+                    "owned_by": "deeper-notebook",
                 }
             ],
         }

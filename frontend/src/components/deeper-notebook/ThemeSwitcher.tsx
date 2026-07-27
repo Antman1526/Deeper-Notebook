@@ -1,15 +1,15 @@
 /**
  * ThemeSwitcher — replaces upstream's <ThemeToggle> with a list of all
- * ONP themes. Live-switching via window.ONP.setTheme (defined by the
+ * Deeper Notebook themes. Live-switching via window.DN.setTheme (defined by the
  * desktop wrapper's theme-injection JS in desktop/window.py).
  *
  * Shadow-layer component — see components/deeper-notebook/README.md.
  *
  * Live-switch flow:
  *   1. User clicks a theme in the dropdown
- *   2. window.ONP.setTheme(theme) sets <html data-theme="..."> immediately
+ *   2. window.DN.setTheme(theme) sets <html data-theme="..."> immediately
  *      (instant visual feedback — no reload)
- *   3. window.ONP.setTheme also POSTs to the canonical theme endpoint
+ *   3. window.DN.setTheme also POSTs to the canonical theme endpoint
  *      ~/.deeper-notebook/config.toml
  *   4. Next page load: desktop/window.py re-reads config.toml, bakes in
  *      the new theme, injection JS applies it
@@ -32,7 +32,7 @@ import { Palette, Check } from 'lucide-react'
 // Kept in lockstep with desktop/window.py:_THEMES and the theme router.
 // `accent` is each theme's primary/accent hue — rendered as a second dot in
 // the swatch so the (now many) dark themes are distinguishable at a glance.
-const ONP_THEMES = [
+const DN_THEMES = [
   { id: 'light-blue', label: 'Light Blue', dark: false, swatch: '#FFFFFF', accent: '#2D7FF9' },
   { id: 'system', label: 'System', dark: false, swatch: '#FFFFFF', accent: '#5AB1FF' },
   { id: 'solarized-light', label: 'Solarized Light', dark: false, swatch: '#FDF6E3', accent: '#268BD2' },
@@ -52,11 +52,15 @@ const ONP_THEMES = [
   { id: 'nord', label: 'Nord', dark: true, swatch: '#2E3440', accent: '#88C0D0' },
 ]
 
-interface OnpWindow {
-  ONP?: {
-    setTheme?: (theme: string) => void
-    themes?: string[]
-  }
+interface ThemeBridge {
+  setTheme?: (theme: string) => void
+  themes?: string[]
+}
+
+interface DeeperNotebookWindow {
+  DN?: ThemeBridge
+  // Transitional fallback for existing desktop wrappers.
+  ONP?: ThemeBridge
 }
 
 interface ThemeSwitcherProps {
@@ -67,7 +71,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
   const [activeTheme, setActiveTheme] = useState<string>('light-blue')
 
   // Read the current theme from <html data-theme="..."> on mount.
-  // window.ONP.setTheme has already set that attribute by the time React
+  // window.DN.setTheme has already set that attribute by the time React
   // mounts — fallback to localStorage (preserves user choice across hard
   // reloads that may briefly race the injection), then to the API.
   useEffect(() => {
@@ -79,9 +83,15 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     // v0.5.9 — localStorage fallback so the dropdown doesn't flicker to
     // the default while waiting for the API response.
     try {
-      const cached = localStorage.getItem('onp-theme')
+      const cached = localStorage.getItem('dn-theme')
       if (cached) {
         setActiveTheme(cached)
+        return
+      }
+      const legacyCached = localStorage.getItem('onp-theme')
+      if (legacyCached) {
+        localStorage.setItem('dn-theme', legacyCached)
+        setActiveTheme(legacyCached)
         return
       }
     } catch {
@@ -97,10 +107,12 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     setActiveTheme(themeId)
     // v0.5.9 — also write localStorage so a subsequent navigation that races
     // the injection still shows the right swatch in the dropdown.
+    try { localStorage.setItem('dn-theme', themeId) } catch { /* noop */ }
     try { localStorage.setItem('onp-theme', themeId) } catch { /* noop */ }
-    const w = window as OnpWindow & Window
-    if (w.ONP?.setTheme) {
-      w.ONP.setTheme(themeId)
+    const w = window as DeeperNotebookWindow & Window
+    const themeBridge = w.DN ?? w.ONP
+    if (themeBridge?.setTheme) {
+      themeBridge.setTheme(themeId)
     } else {
       deeperNotebookFetch('/api/deeper-notebook/theme', {
         method: 'POST',
@@ -110,8 +122,8 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
     }
   }
 
-  const lightThemes = ONP_THEMES.filter((t) => !t.dark)
-  const darkThemes = ONP_THEMES.filter((t) => t.dark)
+  const lightThemes = DN_THEMES.filter((t) => !t.dark)
+  const darkThemes = DN_THEMES.filter((t) => t.dark)
 
   return (
     <DropdownMenu>
