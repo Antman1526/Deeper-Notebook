@@ -169,3 +169,21 @@ def test_emergency_log_dirfd_cannot_be_redirected_after_open(
         held / "launcher.log"
     ).read_text(encoding="utf-8")
     assert "Launcher early-init failure" in capsys.readouterr().err
+
+
+def test_recovery_log_adopts_and_appends_to_existing_owned_file(tmp_path):
+    from desktop.data_root import (
+        append_recovery_log,
+        open_recovery_log_directory,
+    )
+
+    log_path = (
+        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
+    )
+    log_path.parent.mkdir(parents=True)
+    log_path.write_bytes(b"existing-log\n")
+
+    with open_recovery_log_directory(home=tmp_path) as directory:
+        append_recovery_log(directory, "launcher.log", b"new-entry\n")
+
+    assert log_path.read_bytes() == b"existing-log\nnew-entry\n"
