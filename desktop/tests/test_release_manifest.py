@@ -395,3 +395,12 @@ def test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut() -> None
     )
     assert "Expected one canonical Start Menu shortcut" in compatibility
     assert "Retired Start Menu shortcut remains" in compatibility
+
+
+def test_macos_dmg_creation_retries_only_resource_busy_and_verifies_image() -> None:
+    post_build = MAC_POST_BUILD.read_text(encoding="utf-8")
+
+    assert "DMG_CREATE_ATTEMPTS=3" in post_build
+    assert '"Resource busy"' in post_build
+    assert "hdiutil verify" in post_build
+    assert "exit \"${_status}\"" in post_build
