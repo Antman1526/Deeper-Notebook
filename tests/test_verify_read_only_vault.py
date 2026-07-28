@@ -250,6 +250,23 @@ def test_non_git_inventory_excludes_git_and_all_symlinks(tmp_path, monkeypatch):
     assert "linked-dir/escaped.md" not in files
 
 
+def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation(tmp_path):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text("ignored-private.md\n")
+    ignored = root / "ignored-private.md"
+    ignored.write_text("before")
+
+    before = verifier._snapshot(root)
+    ignored.write_text("after")
+    after = verifier._snapshot(root)
+
+    assert "ignored-private.md" in before.hashes
+    assert verifier._snapshot_differences(before, after)[0] is True
+
+
 @pytest.mark.parametrize("kind", ["missing", "file", "home_symlink"])
 def test_rejects_malformed_roots_without_path_disclosure(tmp_path, monkeypatch, capsys, kind):
     verifier = _load_verifier()
@@ -636,3 +653,106 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
     assert report["failures"] == []
     assert report["trust_records"] == 2
     assert all(path.startswith("/api/deeper-notebook/vaults") for path in paths)
+
+
+@pytest.mark.parametrize("mutation_point", ["mount", "trust", "summary", "malformed_scan"])
+def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path, mutation_point):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    output = tmp_path / f"{mutation_point}.json"
+    ids = {"2nd Brains": "parent", "Obsidian Brain": "obsidian", "Logseq Brain": "logseq"}
+    details = {
+        "parent": _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
+        "obsidian": _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
+        "logseq": _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+    }
+
+    def mutate():
+        (root / "Obsidian Brain" / "note.md").write_text(f"mutated at {mutation_point}")
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def _reply(self, payload):
+            encoded = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def do_GET(self):
+            if self.path == "/api/deeper-notebook/vaults":
+                return self._reply([])
+            if self.path.endswith("/trust"):
+                return self._reply([
+                    {"id": "source-1", "evidence_class": "source", "derived_from": []},
+                    {"id": "synthesis-1", "evidence_class": "synthesis", "derived_from": ["source-1"]},
+                ])
+            if self.path.endswith("/trust/summary"):
+                if mutation_point == "summary":
+                    mutate()
+                return self._reply({"total": 2})
+            if self.path.endswith("/receipts"):
+                return self._reply([])
+            return self._reply(details[self.path.rsplit("/", 1)[-1]])
+
+        def do_POST(self):
+            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+            if self.path == "/api/deeper-notebook/vaults":
+                if mutation_point == "mount":
+                    mutate()
+                return self._reply({"id": ids[payload["name"]]})
+            if self.path.endswith("/trust/import"):
+                if mutation_point == "trust":
+                    mutate()
+                return self._reply({"changed": 0})
+            if self.path.endswith("/parent/scan") and mutation_point == "malformed_scan":
+                mutate()
+                return self._reply({"parsed": "not-an-int"})
+            return self._reply({"parsed": 0})
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        api = f"http://127.0.0.1:{server.server_port}/api/deeper-notebook"
+        assert verifier.main(["--root", str(root), "--api", api, "--output", str(output)]) != 0
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+    report = json.loads(output.read_text())
+    assert report["source_files_changed"] == 1
+    assert "source_hash_mismatch" in report["failures"]
+    assert report["failures"] != []
+
+
+def test_derived_from_values_are_never_disclosed_in_report_or_errors(tmp_path, monkeypatch, capsys):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    secret = "/private/absolute/path/SECRET-derivation-token"
+    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    payload = json.loads(manifest.read_text())
+    payload["records"][1]["derivedFrom"] = [secret]
+    manifest.write_text(json.dumps(payload))
+    output = tmp_path / "report.json"
+    responses = _api_responses(root)
+    responses[("GET", "/parent/trust")][1]["derived_from"] = ["different"]
+    monkeypatch.setattr(
+        verifier,
+        "_request_json",
+        lambda method, api, path, payload=None: responses[(method, path)](payload)
+        if callable(responses[(method, path)])
+        else responses[(method, path)],
+    )
+
+    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    captured = capsys.readouterr()
+    rendered = output.read_text() + captured.out + captured.err
+    assert secret not in rendered
+    assert '"expected_derived_from":' not in rendered
+    assert "derived_from_mismatch" in json.loads(output.read_text())["failures"]

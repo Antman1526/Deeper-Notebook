@@ -17,16 +17,22 @@ state capture, and connector-manifest counts without making API calls.
 For a controlled verification, the script registers the approved mixed parent
 and its Obsidian and Logseq children through the canonical Deeper Notebook
 vault API. It imports only the root-relative connector manifest as trust
-metadata, then performs two scans. Before and after each scan it compares
-regular-file SHA-256 inventories and Git porcelain state. If Git status is
+metadata, then performs two scans. The source inventory walks every regular,
+non-symlink file below the explicit root except `.git/**`; this includes files
+ignored by Git and untracked files. Git porcelain remains supplementary rather
+than deciding which files are fingerprinted. Every canonical API request
+(mount list, create, detail/reuse, trust import, scans, trust, summary, and
+receipts) receives a before/after source reconciliation. A changed source is
+recorded immediately and terminates the run, even if the API response is
+malformed or failed after a side effect. If Git status is
 blocked by a pre-existing lock, the report records `git_status_unavailable`; it
 does not alter the lock or repository. A mismatch stops before the next scan,
 writes a sanitized failure report, and returns nonzero.
 
-The post-scan observation is mandatory even when the API request fails or
-times out: the scan attempt is wrapped so the after snapshot runs in `finally`.
-If a failed request changed source hashes or Git state, the report records both
-the observation mismatch and `scan_request_failed`. Filesystem, inventory,
+The post-operation observation is mandatory even when an API request fails or
+times out: every request is wrapped so the after snapshot runs in `finally`.
+If a failed request changed source hashes or Git state, the report records the
+observation mismatch before its sanitized operation failure. Filesystem, inventory,
 subprocess, API, and report-creation failures are normalized to stable failure
 codes or a generic user-facing error; they do not expose source paths, source
 contents, or tracebacks.
@@ -36,7 +42,10 @@ detail and requires the exact resolved root path, format, parent relationship,
 and watch state before reusing its ID. A conflicting or ambiguous matching name
 fails safely and is never scanned or used for trust import. Trust reconciliation
 compares each synthesis record's `derived_from` array to the connector manifest
-by stable record ID, including array order and membership.
+by stable record ID, including array order and membership. Those arrays are
+untrusted provenance metadata: they stay internal for exact comparison and the
+report exposes only aggregate counts plus a SHA-256 provenance digest, never
+their values.
 
 The vault-list response itself must be a list. Every ID, including an ID just
 returned by mount creation, is fetched from the canonical detail endpoint and
@@ -44,12 +53,12 @@ must match the normalized root, name, format, parent, and watch setting before
 trust import or scanning can begin.
 
 The generated report is intentionally structured and sanitized. It contains a
-root label, relative file paths and hashes, count reconciliation, and failure
-codes only. It excludes source contents, secrets, absolute source paths, and
-unredacted home paths. A successful controlled report requires unchanged source
+root label, relative file paths and hashes, count reconciliation, digest-only
+provenance, and failure codes only. It excludes source contents, secrets,
+absolute source paths, unredacted home paths, and raw `derivedFrom` values. A successful controlled report requires unchanged source
 hashes and Git state, zero projections changed on the second scan, matching
-trust totals, and exact retained `derivedFrom` arrays for every synthesis
-record.
+trust totals, and exact internally-reconciled `derivedFrom` arrays for every
+synthesis record.
 
 Example owner-invoked command:
 
