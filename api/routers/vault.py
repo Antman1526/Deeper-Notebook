@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from api.schemas.vault import (
     VaultFileResponse,
+    VaultLinkResponse,
     VaultMountCreateRequest,
     VaultMountDetail,
     VaultMountSummary,
@@ -209,26 +210,32 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
         raise _map_exception(exc) from None
 
 
-@router.get("/vaults/{vault_id}/pages/{note_id}/backlinks")
+@router.get(
+    "/vaults/{vault_id}/pages/{note_id}/backlinks",
+    response_model=list[VaultLinkResponse],
+)
 async def backlinks(
     request: Request, vault_id: str, note_id: str
-) -> list[dict[str, Any]]:
+) -> list[VaultLinkResponse]:
     try:
         return [
-            item.model_dump()
+            VaultLinkResponse.model_validate(item.model_dump())
             for item in await _repository(request).backlinks(vault_id, note_id)
         ]
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
-@router.get("/vaults/{vault_id}/pages/{note_id}/outgoing")
+@router.get(
+    "/vaults/{vault_id}/pages/{note_id}/outgoing",
+    response_model=list[VaultLinkResponse],
+)
 async def outgoing(
     request: Request, vault_id: str, note_id: str
-) -> list[dict[str, Any]]:
+) -> list[VaultLinkResponse]:
     try:
         return [
-            item.model_dump()
+            VaultLinkResponse.model_validate(item.model_dump())
             for item in await _repository(request).outgoing_links(vault_id, note_id)
         ]
     except Exception as exc:

@@ -1069,6 +1069,36 @@ async def test_link_reads_validate_center_and_filter_both_resolved_endpoints():
 
 
 @pytest.mark.asyncio
+async def test_backlinks_project_source_note_title_for_display_identity():
+    class BacklinkRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            self.calls.append((compact, variables or {}))
+            if "SELECT VALUE id FROM $note_id" in compact:
+                return ["note:target"]
+            if "FROM note_link" in compact:
+                return [{
+                    "id": "note_link:source-target",
+                    "source_note_id": "note:source",
+                    "target_note_id": "note:target",
+                    "target_text": "Target",
+                    "source_note_title": "Source title",
+                    "link_kind": "wikilink",
+                    "resolved": True,
+                }]
+            return []
+
+    connection = BacklinkRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    backlinks = await repository.backlinks("vault_mount:test", "note:target")
+
+    assert backlinks[0].source_note_title == "Source title"
+    link_query = next(statement for statement, _ in connection.calls if "FROM note_link" in statement)
+    assert "source_note_id.title AS source_note_title" in link_query
+
+
+@pytest.mark.asyncio
 async def test_trust_manifest_is_contained_hashed_and_idempotent():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
