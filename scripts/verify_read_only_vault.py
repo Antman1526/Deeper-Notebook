@@ -541,7 +541,7 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
     )
     report["receipts"] = len(receipts)
     returned_derived_from = {
-        item.get("id"): item.get("derived_from")
+        item.get("manifest_id"): item.get("derived_from")
         for item in trust
         if isinstance(item, dict) and item.get("evidence_class") == "synthesis"
     }

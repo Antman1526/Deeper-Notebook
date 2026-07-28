@@ -329,6 +329,83 @@ class VaultRepository:
             return VaultMount.model_validate(rows[0])
         return VaultMount(id=mount_id, **request.model_dump())
 
+    async def record_observation(
+        self, observation: VaultFileObservation
+    ) -> None:
+        """Persist file provenance only; source bytes never cross this boundary."""
+
+        vault_file_id = _record_id(
+            "vault_file", observation.vault_id, observation.relative_path
+        )
+        parse_status = (
+            "invalid" if observation.state == "retry" else observation.parse_state
+        )
+        variables = {
+            "vault_file_id": _db_id(vault_file_id),
+            "vault_id": _db_id(observation.vault_id),
+            "relative_path": observation.relative_path,
+            "file_kind": observation.file_kind,
+            "format": "markdown",
+            "content_hash": observation.content_hash,
+            "size_bytes": observation.byte_size or 0,
+            "modified_ns": observation.modified_ns or 0,
+            "parse_status": parse_status,
+            "parse_error_code": (
+                _safe_error_code(observation.error_code)
+                if observation.error_code
+                else None
+            ),
+        }
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                LET $existing_file = (
+                    SELECT * FROM $vault_file_id LIMIT 1
+                )[0];
+                LET $same_projection = (
+                    $existing_file != NONE
+                    AND $existing_file.modified_ns = $modified_ns
+                    AND $existing_file.size_bytes = $size_bytes
+                    AND $existing_file.parse_status IN ['parsed', 'invalid']
+                    AND $existing_file.deleted_state = "present"
+                    AND (
+                        $content_hash = NONE
+                        OR $existing_file.content_hash = $content_hash
+                    )
+                );
+                UPSERT $vault_file_id SET
+                    vault_id = $vault_id,
+                    relative_path = $relative_path,
+                    file_kind = $file_kind,
+                    format = $format,
+                    content_hash = IF $same_projection {
+                        $existing_file.content_hash
+                    } ELSE {
+                        $content_hash
+                    },
+                    size_bytes = $size_bytes,
+                    modified_ns = $modified_ns,
+                    parse_status = IF $same_projection {
+                        $existing_file.parse_status
+                    } ELSE {
+                        $parse_status
+                    },
+                    parse_error_code = IF $same_projection {
+                        $existing_file.parse_error_code
+                    } ELSE {
+                        $parse_error_code
+                    },
+                    deleted_state = "present",
+                    embedding_state = IF $same_projection {
+                        $existing_file.embedding_state
+                    } ELSE {
+                        "pending"
+                    };
+                """,
+                variables,
+            )
+
     async def list_mounts(self) -> list[VaultMount]:
         async with self._connection_factory() as connection:
             rows = await self._query(
@@ -983,6 +1060,11 @@ class VaultRepository:
             true
         } ELSE {
             $modified_ns > $existing_file.modified_ns
+            OR (
+                $modified_ns = $existing_file.modified_ns
+                AND $content_hash = $existing_file.content_hash
+                AND $existing_file.parse_status != 'parsed'
+            )
         };
         LET $conflict = IF $existing_file = NONE {
             false
@@ -997,6 +1079,7 @@ class VaultRepository:
             OR (
                 $modified_ns = $existing_file.modified_ns
                 AND $content_hash = $existing_file.content_hash
+                AND $existing_file.parse_status = 'parsed'
             )
         };
         IF $operation_receipt = NONE {

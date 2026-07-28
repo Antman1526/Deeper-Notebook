@@ -100,7 +100,12 @@ def parse_trust_manifest(content: bytes) -> TrustManifest:
         "missing_vault_root",
         max_length=MAX_SOURCE_PATH,
     )
-    raw_records = payload.get("records")
+    has_records = "records" in payload
+    has_documents = "documents" in payload
+    if has_records == has_documents:
+        raise TrustManifestError("invalid_records")
+    document_mode = has_documents
+    raw_records = payload.get("documents" if document_mode else "records")
     if not isinstance(raw_records, list):
         raise TrustManifestError("invalid_records")
     if len(raw_records) > MAX_MANIFEST_RECORDS:
@@ -112,7 +117,9 @@ def parse_trust_manifest(content: bytes) -> TrustManifest:
         if not isinstance(raw, dict):
             raise TrustManifestError("invalid_record")
         manifest_id = _required_text(
-            _field(raw, "manifestId", "manifest_id"),
+            raw.get("id")
+            if document_mode
+            else _field(raw, "manifestId", "manifest_id"),
             "missing_manifest_id",
         )
         if manifest_id in seen:
@@ -123,15 +130,18 @@ def parse_trust_manifest(content: bytes) -> TrustManifest:
             "missing_source_path",
             max_length=MAX_SOURCE_PATH,
         )
-        status = _field(raw, "status", "status")
+        approval = raw.get("approval") if document_mode else raw
+        if not isinstance(approval, dict):
+            raise TrustManifestError("invalid_status")
+        status = _field(approval, "status", "status")
         if status != "approved":
             raise TrustManifestError("invalid_status")
         reviewer = _required_text(
-            _field(raw, "reviewer", "reviewer"),
+            _field(approval, "reviewer", "reviewer"),
             "missing_reviewer",
         )
         reviewed_text = _required_text(
-            _field(raw, "reviewedAt", "reviewed_at"),
+            _field(approval, "reviewedAt", "reviewed_at"),
             "missing_reviewed_at",
         )
         try:
@@ -151,6 +161,8 @@ def parse_trust_manifest(content: bytes) -> TrustManifest:
             _field(raw, "contentHash", "content_hash"),
             "missing_content_hash",
         ).casefold()
+        if document_mode and content_hash.startswith("sha256:"):
+            content_hash = content_hash.removeprefix("sha256:")
         if not _SHA256.fullmatch(content_hash):
             raise TrustManifestError("invalid_content_hash")
         derived = _field(raw, "derivedFrom", "derived_from")
