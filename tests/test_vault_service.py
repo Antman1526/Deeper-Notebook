@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import pwd
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from deeper_notebook.vault.repository import (
+    FailureResult,
     ProjectionResult,
     VaultMount,
     VaultMountCreate,
@@ -30,6 +33,7 @@ class FakeRepository:
     mounts: list[VaultMount]
     projections: list[tuple[str, str, str]]
     missing_operations: list[tuple[str, str, str]]
+    failures: list[tuple[str, str, str]] = field(default_factory=list)
 
     async def create_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = VaultMount(id=f"vault_mount:{request.name}", **request.model_dump())
@@ -49,6 +53,19 @@ class FakeRepository:
         self, vault_id: str, relative_path: str, operation_id: str
     ) -> None:
         self.missing_operations.append((vault_id, relative_path, operation_id))
+
+    async def record_failure(
+        self,
+        vault_id: str,
+        observation: VaultWorkItem,
+        operation_id: str,
+        error_code: str,
+    ) -> FailureResult:
+        self.failures.append((observation.relative_path, operation_id, error_code))
+        return FailureResult(
+            vault_file_id="vault_file:fixture",
+            status="stale-invalid",
+        )
 
     async def project_document(
         self, vault: VaultMount, work: VaultWorkItem, parsed, operation_id: str
@@ -145,6 +162,90 @@ async def test_scan_reports_unchanged_work_from_a_real_watcher(
     assert result.unchanged == 1
     assert result.failed == 0
     assert result.projected + result.unchanged + result.failed == 1
+
+
+@pytest.mark.asyncio
+async def test_pending_repository_file_is_not_seeded_as_already_projected(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "pending"
+    root.mkdir()
+    content = b"# Pending projection\n"
+    (root / "note.md").write_bytes(content)
+    repository = FakeRepository([_mount(root)], [], [])
+    repository.list_files = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                relative_path="note.md",
+                content_hash=hashlib.sha256(content).hexdigest(),
+                deleted_state="present",
+                parse_status="pending",
+            )
+        ]
+    )
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        repository, stable_after_seconds=0, clock=lambda: next(moments)
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 1
+    assert [path for path, _, _ in repository.projections] == ["note.md"]
+
+
+@pytest.mark.asyncio
+async def test_non_indexable_repository_row_is_not_used_as_watcher_seed(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "manifest-row"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    repository.list_files = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                relative_path="brain-engine/trust.json",
+                content_hash="a" * 64,
+                deleted_state="present",
+                parse_status="invalid",
+            )
+        ]
+    )
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: 1.0)
+
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.status == "ready-read-only"
+    assert result.failed == 0
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_is_terminal_for_unchanged_hash(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "invalid"
+    root.mkdir()
+    (root / "broken.md").write_text("---\n[unterminated\n---\n")
+    repository = FakeRepository([_mount(root)], [], [])
+    moments = iter((1.0, 3.0, 5.0))
+    service = VaultService(
+        repository, stable_after_seconds=0, clock=lambda: next(moments)
+    )
+
+    await service.scan("vault_mount:fixture")
+    failed = await asyncio.wait_for(
+        service.scan("vault_mount:fixture"),
+        timeout=1.0,
+    )
+    settled = await asyncio.wait_for(
+        service.scan("vault_mount:fixture"),
+        timeout=1.0,
+    )
+
+    assert failed.failed == 1
+    assert settled.failed == 0
+    assert len(repository.failures) == 1
 
 
 class _BlockingVaultWatcher(VaultWatcher):

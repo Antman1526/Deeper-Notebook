@@ -162,5 +162,7 @@ async def test_text_search_enriches_mounted_note_with_portable_provenance(embedd
         "source_hash": "sha256:d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
     }
     assert query.await_count == 2
-    assert "embedding_state" in query.await_args_list[1].args[0]
+    provenance_query = query.await_args_list[1].args[0]
+    assert "vault_file_id.embedding_state" in provenance_query
+    assert "vault_file_id.relative_path" in provenance_query
     assert "/Users/" not in str(result)
