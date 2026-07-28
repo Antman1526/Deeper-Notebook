@@ -76,7 +76,7 @@ class _ObservationAdapter:
 
     async def mark_missing(self, vault_id: str, relative_path: str) -> None:
         await self._repository.mark_missing(
-            vault_id, relative_path, self._operation_id()
+            vault_id, relative_path, f"vault-missing-{uuid.uuid4().hex}"
         )
 
 

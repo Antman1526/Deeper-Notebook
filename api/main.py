@@ -597,6 +597,12 @@ async def lifespan(app: FastAPI):
 
     if vault_scan_task is not None and not vault_scan_task.done():
         vault_scan_task.cancel()
+        try:
+            await vault_scan_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning("Vault initial scan shutdown raised ({})", type(exc).__name__)
 
     # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
     # still running. The task is short-lived (a single SurrealDB read)

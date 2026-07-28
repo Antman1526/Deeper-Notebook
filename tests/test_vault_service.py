@@ -5,9 +5,9 @@ import os
 import pwd
 import shutil
 import uuid
-from unittest.mock import AsyncMock
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -16,7 +16,7 @@ from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
 )
-from deeper_notebook.vault.service import VaultService
+from deeper_notebook.vault.service import VaultService, _ObservationAdapter
 from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
 
 
@@ -195,3 +195,16 @@ async def test_conflict_is_not_acknowledged_then_stable_rescan_projects_authorit
     assert first.reconciliation_required is True
     assert second.status == "ready-read-only"
     assert repository.project_document.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_missing_receipts_always_get_fresh_ids_outside_scan_context(synthetic_root: Path):
+    repository = FakeRepository([], [], [])
+    adapter = _ObservationAdapter(repository, lambda: "vault-scan-shared")
+
+    await adapter.mark_missing("vault_mount:fixture", "one.md")
+    await adapter.mark_missing("vault_mount:fixture", "two.md")
+
+    ids = [operation for _, _, operation in repository.missing_operations]
+    assert len(set(ids)) == 2
+    assert all(identifier.startswith("vault-missing-") for identifier in ids)
