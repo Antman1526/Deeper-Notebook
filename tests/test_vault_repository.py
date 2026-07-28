@@ -239,6 +239,54 @@ def _mount(root_path: str = "/synthetic/approved-vault") -> VaultMount:
     )
 
 
+@pytest.mark.asyncio
+async def test_scan_lifecycle_is_persisted_with_utc_timestamps():
+    started_at = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+    completed_at = datetime(2026, 7, 28, 12, 1, tzinfo=timezone.utc)
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection, connection)
+    )
+
+    await repository.mark_scan_started("vault_mount:test", started_at=started_at)
+    await repository.mark_scan_completed(
+        "vault_mount:test",
+        status="ready-read-only",
+        completed_at=completed_at,
+    )
+
+    started_statement, started_variables = connection.calls[0]
+    completed_statement, completed_variables = connection.calls[1]
+    assert "UPDATE $vault_id SET" in started_statement
+    assert 'status = "scanning"' in started_statement
+    assert "last_scan_started_at = $started_at" in started_statement
+    assert started_variables == {
+        "vault_id": RecordID("vault_mount", "test"),
+        "started_at": started_at,
+    }
+    assert "UPDATE $vault_id SET" in completed_statement
+    assert "status = $status" in completed_statement
+    assert "last_scan_completed_at = $completed_at" in completed_statement
+    assert completed_variables == {
+        "vault_id": RecordID("vault_mount", "test"),
+        "status": "ready-read-only",
+        "completed_at": completed_at,
+    }
+
+
+@pytest.mark.asyncio
+async def test_scan_completion_rejects_non_terminal_state():
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(QueryRecorder()),
+    )
+
+    with pytest.raises(ValueError, match="vault_scan_state_not_terminal"):
+        await repository.mark_scan_completed(
+            "vault_mount:test",
+            status="scanning",
+        )
+
+
 def _work(
     *,
     relative_path: str = "Pages/Alpha.md",

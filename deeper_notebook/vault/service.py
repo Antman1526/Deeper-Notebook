@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -15,6 +16,7 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from deeper_notebook.vault.contracts import VaultState
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
 from deeper_notebook.vault.security import (
@@ -43,6 +45,16 @@ class VaultScanResult:
 class _Repository(Protocol):
     async def create_mount(self, request: VaultMountCreate) -> VaultMount: ...
     async def list_mounts(self) -> list[VaultMount]: ...
+    async def mark_scan_started(
+        self, vault_id: str, *, started_at: datetime | None = None
+    ) -> None: ...
+    async def mark_scan_completed(
+        self,
+        vault_id: str,
+        *,
+        status: VaultState,
+        completed_at: datetime | None = None,
+    ) -> None: ...
     async def list_files(
         self, vault_id: str, prefix: str, limit: int, offset: int
     ) -> list[Any]: ...
@@ -118,6 +130,35 @@ class VaultService:
 
     def _operation_id(self) -> str:
         return self._scan_operation_id.get() or f"vault-scan-{uuid.uuid4().hex}"
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _cache_mount_state(
+        self,
+        mount: VaultMount,
+        status: VaultState,
+        **updates: datetime,
+    ) -> VaultMount:
+        current = mount.model_copy(update={"status": status, **updates})
+        self._mounts[current.id] = current
+        self._states[current.id] = current.status
+        return current
+
+    async def _complete_scan(self, vault_id: str, status: VaultState) -> None:
+        completed_at = self._now()
+        await self._repository.mark_scan_completed(
+            vault_id,
+            status=status,
+            completed_at=completed_at,
+        )
+        mount = self._mounts[vault_id]
+        self._cache_mount_state(
+            mount,
+            status,
+            last_scan_completed_at=completed_at,
+        )
 
     async def register_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = await self._repository.create_mount(request)
@@ -198,15 +239,28 @@ class VaultService:
         mount = self._mounts.get(vault_id)
         if mount is None:
             raise LookupError("vault_mount_not_found")
-        watcher = await self._watcher_for(mount)
-        if watcher is None:
-            return VaultScanResult(vault_id, "unavailable", operation_id)
-        self._states[vault_id] = "scanning"
+        started_at = self._now()
+        await self._repository.mark_scan_started(vault_id, started_at=started_at)
+        mount = self._cache_mount_state(
+            mount,
+            "scanning",
+            last_scan_started_at=started_at,
+        )
         try:
+            watcher = await self._watcher_for(mount)
+            if watcher is None:
+                result = VaultScanResult(vault_id, "unavailable", operation_id)
+                await self._complete_scan(vault_id, "unavailable")
+                return result
             work = await watcher.scan(now_monotonic=self._clock())
             if not work:
-                self._states[vault_id] = "ready-read-only"
-                return VaultScanResult(vault_id, self._states[vault_id], operation_id)
+                result = VaultScanResult(
+                    vault_id,
+                    "ready-read-only",
+                    operation_id,
+                )
+                await self._complete_scan(vault_id, "ready-read-only")
+                return result
             projected = unchanged = failed = 0
             reconciliation_required = False
             for item in work:
@@ -217,21 +271,32 @@ class VaultService:
                 reconciliation_required = (
                     reconciliation_required or outcome.reconciliation_required
                 )
-            self._states[vault_id] = (
-                "conflict" if reconciliation_required else "ready-read-only"
-            )
-            return VaultScanResult(
+            terminal_status: VaultState
+            if reconciliation_required:
+                terminal_status = "conflict"
+            elif failed:
+                terminal_status = "degraded"
+            else:
+                terminal_status = "ready-read-only"
+            result = VaultScanResult(
                 vault_id,
-                self._states[vault_id],
+                terminal_status,
                 operation_id,
                 projected,
                 unchanged=unchanged,
                 failed=failed,
                 reconciliation_required=reconciliation_required,
             )
-        finally:
-            if self._states.get(vault_id) == "scanning":
-                self._states[vault_id] = "ready-read-only"
+            await self._complete_scan(vault_id, terminal_status)
+            return result
+        except BaseException:
+            try:
+                await self._complete_scan(vault_id, "degraded")
+            except Exception:
+                logger.exception(
+                    "Failed to persist degraded state for vault {}", vault_id
+                )
+            raise
 
     async def _project(
         self,

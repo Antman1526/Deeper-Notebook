@@ -73,3 +73,29 @@ def _disable_db_autorepair(monkeypatch):
         staticmethod(lambda: None),
         raising=False,
     )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Keep POSIX/macOS-only descriptor and bundle tests off Windows."""
+    import sys
+
+    if sys.platform != "win32":
+        return
+    mac_app_suite = "desktop/tests/test_app_migration.py::"
+    posix_descriptor_tests = {
+        (
+            "desktop/tests/test_data_root_conflict_recovery.py::"
+            "test_conflict_evidence_dirfd_refuses_visible_root_swap_without_redirect"
+        ),
+        (
+            "desktop/tests/test_emergency_log.py::"
+            "test_emergency_log_dirfd_cannot_be_redirected_after_open"
+        ),
+    }
+    marker = pytest.mark.skip(
+        reason="POSIX descriptor or macOS bundle contract"
+    )
+    for item in items:
+        normalized = item.nodeid.replace("\\", "/")
+        if normalized.startswith(mac_app_suite) or normalized in posix_descriptor_tests:
+            item.add_marker(marker)

@@ -7,6 +7,7 @@ import pwd
 import shutil
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -34,6 +35,7 @@ class FakeRepository:
     projections: list[tuple[str, str, str]]
     missing_operations: list[tuple[str, str, str]]
     failures: list[tuple[str, str, str]] = field(default_factory=list)
+    state_transitions: list[tuple[str, str, datetime]] = field(default_factory=list)
 
     async def create_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = VaultMount(id=f"vault_mount:{request.name}", **request.model_dump())
@@ -42,6 +44,42 @@ class FakeRepository:
 
     async def list_mounts(self) -> list[VaultMount]:
         return list(self.mounts)
+
+    async def mark_scan_started(
+        self, vault_id: str, *, started_at: datetime | None = None
+    ) -> VaultMount:
+        assert started_at is not None
+        return self._replace_mount(
+            vault_id,
+            status="scanning",
+            last_scan_started_at=started_at,
+        )
+
+    async def mark_scan_completed(
+        self,
+        vault_id: str,
+        *,
+        status: str,
+        completed_at: datetime | None = None,
+    ) -> VaultMount:
+        assert completed_at is not None
+        return self._replace_mount(
+            vault_id,
+            status=status,
+            last_scan_completed_at=completed_at,
+        )
+
+    def _replace_mount(self, vault_id: str, **updates) -> VaultMount:
+        index = next(
+            index for index, mount in enumerate(self.mounts) if mount.id == vault_id
+        )
+        mount = self.mounts[index].model_copy(update=updates)
+        self.mounts[index] = mount
+        timestamp = updates.get("last_scan_started_at") or updates.get(
+            "last_scan_completed_at"
+        )
+        self.state_transitions.append((vault_id, mount.status, timestamp))
+        return mount
 
     async def list_files(self, vault_id: str, prefix: str, limit: int, offset: int):
         return []
@@ -131,6 +169,31 @@ async def test_scan_transitions_to_ready_read_only_and_projects_once(
     assert second.status == "ready-read-only"
     assert len(repository.projections) == 1
     assert repository.projections[0][2].startswith("vault-scan-")
+
+
+@pytest.mark.asyncio
+async def test_completed_scan_state_is_visible_to_repository_and_fresh_service(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "persisted"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: 1.0)
+
+    result = await service.scan("vault_mount:fixture")
+
+    persisted = (await repository.list_mounts())[0]
+    fresh_service = VaultService(repository)
+    await fresh_service._load_mounts()
+    assert result.status == "ready-read-only"
+    assert persisted.status == "ready-read-only"
+    assert persisted.last_scan_started_at is not None
+    assert persisted.last_scan_completed_at is not None
+    assert fresh_service._states[persisted.id] == "ready-read-only"
+    assert [state for _, state, _ in repository.state_transitions] == [
+        "scanning",
+        "ready-read-only",
+    ]
 
 
 @pytest.mark.asyncio
@@ -238,12 +301,15 @@ async def test_parse_failure_is_terminal_for_unchanged_hash(
         service.scan("vault_mount:fixture"),
         timeout=1.0,
     )
+    persisted_failure = (await repository.list_mounts())[0]
     settled = await asyncio.wait_for(
         service.scan("vault_mount:fixture"),
         timeout=1.0,
     )
 
     assert failed.failed == 1
+    assert failed.status == "degraded"
+    assert persisted_failure.status == "degraded"
     assert settled.failed == 0
     assert len(repository.failures) == 1
 
@@ -297,6 +363,39 @@ async def test_scan_returns_in_progress_only_while_a_real_watcher_scan_is_live(
 
 
 @pytest.mark.asyncio
+async def test_cancelled_scan_persists_degraded_instead_of_stale_scanning(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "cancelled"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: 3.0)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    approved_root = approve_vault_root(str(root))
+    watcher = _BlockingVaultWatcher(
+        vault_id="vault_mount:fixture",
+        approved_root=approved_root,
+        repository=_ObservationAdapter(repository, service._operation_id),
+        stable_after_seconds=2.0,
+        started=started,
+        release=release,
+    )
+    service._watchers["vault_mount:fixture"] = watcher
+
+    scan = asyncio.create_task(service.scan("vault_mount:fixture"))
+    await started.wait()
+    scan.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await scan
+
+    persisted = (await repository.list_mounts())[0]
+    approved_root.close()
+    assert persisted.status == "degraded"
+    assert persisted.last_scan_completed_at is not None
+
+
+@pytest.mark.asyncio
 async def test_unavailable_root_is_reported_without_crashing(synthetic_root: Path):
     repository = FakeRepository([_mount(synthetic_root / "missing")], [], [])
     service = VaultService(repository, stable_after_seconds=0)
@@ -304,6 +403,9 @@ async def test_unavailable_root_is_reported_without_crashing(synthetic_root: Pat
     result = await service.scan("vault_mount:fixture")
 
     assert result.status == "unavailable"
+    persisted = (await repository.list_mounts())[0]
+    assert persisted.status == "unavailable"
+    assert persisted.last_scan_completed_at is not None
 
 
 @pytest.mark.asyncio

@@ -265,6 +265,9 @@ jobs:
               sleep 1
             done
             echo "Timed out waiting for the packaged app's PID-bound visible window." >&2
+            "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+              'import json,sys; from Quartz import CGWindowListCopyWindowInfo,kCGWindowListOptionAll,kCGNullWindowID,kCGWindowOwnerPID; pids={int(value) for value in sys.argv[1:]}; windows=CGWindowListCopyWindowInfo(kCGWindowListOptionAll,kCGNullWindowID) or []; print(json.dumps([{key:value for key,value in window.items() if key in {"kCGWindowOwnerPID","kCGWindowOwnerName","kCGWindowName","kCGWindowLayer","kCGWindowAlpha","kCGWindowBounds"}} for window in windows if int(window.get(kCGWindowOwnerPID,-1)) in pids],default=str))' \
+              "$launcher_pid" $(descendants_of "$launcher_pid")
             return 1
           }
           graceful_stop_and_assert_clean() {
@@ -421,7 +424,15 @@ jobs:
             $deadline = [DateTime]::UtcNow.AddMinutes(5)
             while ([DateTime]::UtcNow -lt $deadline) {
               $Process.Refresh()
-              if ($Process.HasExited) { throw "Packaged app exited before readiness." }
+              if ($Process.HasExited) {
+                Write-Host "Packaged app exited before readiness with code $($Process.ExitCode)."
+                Get-ChildItem -Path $env:HOME -Recurse -File -Filter "*.log" -ErrorAction SilentlyContinue |
+                  ForEach-Object {
+                    Write-Host "=== $($_.FullName) ==="
+                    Get-Content $_.FullName -Tail 200 -ErrorAction SilentlyContinue
+                  }
+                throw "Packaged app exited before readiness."
+              }
               $descendants = @(Get-DescendantProcessIds $Process.Id)
               $processIds = @($Process.Id) + $descendants
               $ports = @(
