@@ -608,11 +608,16 @@ jobs:
           $canonicalLauncher = Join-Path $installDir "Deeper Notebook.exe"
           if (-not (Test-Path $canonicalLauncher)) { throw "Canonical launcher missing." }
           if (Test-Path (Join-Path $installDir "Open Notebook Plus.exe")) { throw "Retired launcher remains." }
-          $programs = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
-          $canonicalShortcut = Join-Path $programs "Deeper Notebook.lnk"
-          $legacyShortcut = Join-Path $programs "Open Notebook Plus.lnk"
-          if (-not (Test-Path $canonicalShortcut)) { throw "Canonical Start Menu shortcut missing." }
-          if (Test-Path $legacyShortcut) { throw "Retired Start Menu shortcut remains." }
+          $programs = @(
+            [Environment]::GetFolderPath('Programs')
+            [Environment]::GetFolderPath('CommonPrograms')
+          ) | Where-Object { $_ } | Select-Object -Unique
+          $canonicalShortcuts = @($programs | ForEach-Object { Join-Path $_ "Deeper Notebook.lnk" } | Where-Object { Test-Path $_ })
+          $legacyShortcuts = @($programs | ForEach-Object { Join-Path $_ "Open Notebook Plus.lnk" } | Where-Object { Test-Path $_ })
+          if ($canonicalShortcuts.Count -ne 1) {
+            throw "Expected one canonical Start Menu shortcut; found $($canonicalShortcuts.Count)."
+          }
+          if ($legacyShortcuts.Count -ne 0) { throw "Retired Start Menu shortcut remains." }
           $canonicalProcess = Start-Process -FilePath $canonicalLauncher -PassThru
           $readyFile = Join-Path $canonicalRoot "logs\desktop-readiness.json"
           Wait-PackagedReady $canonicalProcess $readyFile

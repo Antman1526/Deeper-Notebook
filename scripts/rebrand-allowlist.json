@@ -616,7 +616,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "c7676fa20d72d1f99e4ff9c87f222b8a7c2fbc4aef07f4586b8dbe0f0bc0d7ec"
+      "coverage_sha256": "f22a3e1123b509e5abd089edb891470df85baffc606265813e5a96aab45bf9b1"
     },
     "launcher-pref-env-migration-v1": {
       "kind": "env_alias",
@@ -1318,7 +1318,7 @@
         "column": 49,
         "context_sha256": "472ffd52db775e9d3ff34e7956806c68a34a5b8d9e0d0f4144616df2b15b64a5",
         "category": "compatibility_alias",
-        "explanation": "The build desktop workflow keeps the legacy behavior in the \"Install legacy, readiness-probe, upgrade, and prove stable identity\" workflow step because the statement uses that role while expressing if Test-Path Join-Path $installDir \" current former full desktop product title .exe\" throw \"Retired launcher remains.\", while the preceding context concerns if -not Test-Path $canonicalLauncher throw \"Canonical launcher missing.\"; the following context concerns $programs = Join-Path $env:APPDATA \"Microsoft\\Windows\\Start Menu\\Programs\".",
+        "explanation": "The build desktop workflow keeps the legacy behavior in the \"Install legacy, readiness-probe, upgrade, and prove stable identity\" workflow step because the statement uses that role while expressing if Test-Path Join-Path $installDir \" current former full desktop product title .exe\" throw \"Retired launcher remains.\", while the preceding context concerns if -not Test-Path $canonicalLauncher throw \"Canonical launcher missing.\"; the following context concerns $programs = @.",
         "compatibility_contract": "installer-upgrade-v1"
       }
     },
@@ -1326,19 +1326,19 @@
       "path": ".github/workflows/build-desktop.yml",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 613,
-      "column": 50,
-      "context_sha256": "e8b52da2568adcb9224faa992d9c7e4b7d7c3b74af41bbbcaae750d6f55bbebd",
+      "line": 616,
+      "column": 75,
+      "context_sha256": "1124a3d68d3b32ab95cc56efd019280ff4a0986f87806007bc0d2e9e72a7d1cc",
       "category": "compatibility_alias",
       "rationale": {
         "path": ".github/workflows/build-desktop.yml",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 613,
-        "column": 50,
-        "context_sha256": "e8b52da2568adcb9224faa992d9c7e4b7d7c3b74af41bbbcaae750d6f55bbebd",
+        "line": 616,
+        "column": 75,
+        "context_sha256": "1124a3d68d3b32ab95cc56efd019280ff4a0986f87806007bc0d2e9e72a7d1cc",
         "category": "compatibility_alias",
-        "explanation": "The build desktop workflow keeps the legacy behavior in the \"Install legacy, readiness-probe, upgrade, and prove stable identity\" workflow step because the statement uses that role while expressing $legacyShortcut = Join-Path $programs \" current former full desktop product title .lnk\", while the preceding context concerns $canonicalShortcut = Join-Path $programs \"Deeper Notebook.lnk\"; the following context concerns if -not Test-Path $canonicalShortcut throw \"Canonical Start Menu shortcut missing.\".",
+        "explanation": "The build desktop workflow keeps the legacy behavior in the \"Install legacy, readiness-probe, upgrade, and prove stable identity\" workflow step because the statement uses that role while expressing $legacyShortcuts = @ $programs ForEach-Object Join-Path $ \" current former full desktop product title .lnk\" Where-Object Test-Path $, while the preceding context concerns $canonicalShortcuts = @ $programs ForEach-Object Join-Path $ \"Deeper Notebook.lnk\" Where-Object Test-Path $; the following context concerns if $canonicalShortcuts.Count -ne 1.",
         "compatibility_contract": "installer-upgrade-v1"
       }
     },
@@ -16186,19 +16186,19 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 385,
-      "column": 52,
-      "context_sha256": "1dfa2d0943f031405af7d26ba9ebe8e45d8d79965f78c540948c17d50d9f396f",
+      "line": 393,
+      "column": 24,
+      "context_sha256": "f804b07df2d17016334c4647a413028efbb95b657dc1ef4cd27dd43aa1835400",
       "category": "compatibility_alias",
       "rationale": {
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 385,
-        "column": 52,
-        "context_sha256": "1dfa2d0943f031405af7d26ba9ebe8e45d8d79965f78c540948c17d50d9f396f",
+        "line": 393,
+        "column": 24,
+        "context_sha256": "f804b07df2d17016334c4647a413028efbb95b657dc1ef4cd27dd43aa1835400",
         "category": "compatibility_alias",
-        "explanation": "The desktop test release manifest regression suite keeps the legacy behavior in the `test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut` function because the statement uses that role while expressing assert '$legacyShortcut = Join-Path $programs \" current former full desktop product title .lnk\"' in compatibility, while the preceding context concerns assert '$canonicalShortcut = Join-Path $programs \"Deeper Notebook.lnk\"' in compatibility; the following context concerns assert \"Retired Start Menu shortcut remains\" in compatibility.",
+        "explanation": "The desktop test release manifest regression suite keeps the legacy behavior in the `test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut` function because the statement uses that role while expressing 'Join-Path $ \" current former full desktop product title .lnk\" Where-Object Test-Path $ ', while the preceding context concerns '$legacyShortcuts = @ $programs ForEach-Object '; the following context concerns in compatibility.",
         "compatibility_contract": "installer-upgrade-v1"
       }
     },
