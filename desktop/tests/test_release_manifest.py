@@ -220,6 +220,24 @@ def test_macos_checksum_manifests_are_portable_after_artifact_download() -> None
     assert "shasum -a 256 release/Deeper-Notebook-mac-" not in workflow
 
 
+def test_windows_checksum_manifests_are_portable_after_artifact_download() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+
+    assert workflow.count("| Set-Content -NoNewline -Encoding utf8") == 2
+    assert (
+        '"  Deeper-Notebook-windows-x64.zip" '
+        "| Set-Content -NoNewline -Encoding utf8 "
+        "release/windows-zip/SHA256SUMS"
+        in workflow
+    )
+    assert (
+        '"  Deeper-Notebook-Setup-x64.exe" '
+        "| Set-Content -NoNewline -Encoding utf8 "
+        "release/windows-setup/SHA256SUMS"
+        in workflow
+    )
+
+
 def test_pyinstaller_uses_canonical_visible_names_and_compatible_bundle_id() -> None:
     spec = PYINSTALLER_SPEC.read_text(encoding="utf-8")
 
