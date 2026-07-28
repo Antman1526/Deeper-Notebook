@@ -2,7 +2,7 @@
 #    uv pip compile pyproject.toml desktop/requirements.txt --python-version 3.12 -o desktop/requirements.lock
 ai-prompter==0.4.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   podcast-creator
 aiofile==3.9.0
@@ -64,7 +64,7 @@ azure-core==1.41.0
 azure-identity==1.25.3
     # via skillopt
 babel==2.18.0
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 backoff==2.2.1
     # via posthog
 beartype==0.22.9
@@ -99,7 +99,7 @@ click==8.3.3
     #   uvicorn
 content-core==1.14.1
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   podcast-creator
 cryptography==48.0.0
     # via
@@ -144,7 +144,7 @@ email-validator==2.3.0
     # via pydantic
 esperanto==2.20.1
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   podcast-creator
 et-xmlfile==2.0.0
@@ -153,7 +153,7 @@ exceptiongroup==1.3.1
     # via fastmcp
 fastapi==0.138.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   llama-cpp-python
 faster-whisper==1.2.1
     # via -r desktop/requirements.txt
@@ -176,7 +176,7 @@ frozenlist==1.8.0
 fsrs==6.3.1
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
 fsspec==2026.4.0
     # via huggingface-hub
 google-auth==2.52.0
@@ -204,7 +204,7 @@ httpcore==1.0.9
 httpx==0.28.1
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   anthropic
     #   esperanto
     #   fastmcp
@@ -227,7 +227,7 @@ httpx-sse==0.4.3
     #   mcp
 huggingface-hub==1.14.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   faster-whisper
     #   tokenizers
     #   transformers
@@ -247,7 +247,7 @@ imageio==2.37.3
 imageio-ffmpeg==0.6.0
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   moviepy
 importlib-metadata==8.7.1
     # via opentelemetry-api
@@ -286,16 +286,16 @@ jsonschema-specifications==2025.9.1
 keyring==25.7.0
     # via py-key-value-aio
 langchain==1.2.18
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-anthropic==1.4.3
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-classic==1.0.7
     # via langchain-community
 langchain-community==0.4.1
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-core==1.3.3
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   langchain
     #   langchain-anthropic
     #   langchain-classic
@@ -312,18 +312,18 @@ langchain-core==1.3.3
     #   langgraph-prebuilt
     #   surreal-commands
 langchain-deepseek==1.0.1
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-google-genai==4.2.2
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-groq==1.1.2
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-mistralai==1.1.4
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-ollama==1.1.0
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-openai==1.2.1
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   langchain-deepseek
 langchain-protocol==0.0.15
     # via langchain-core
@@ -333,7 +333,7 @@ langdetect==1.0.9
     # via content-core
 langgraph==1.1.10
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   langchain
     #   podcast-creator
@@ -343,14 +343,14 @@ langgraph-checkpoint==4.0.3
     #   langgraph-checkpoint-sqlite
     #   langgraph-prebuilt
 langgraph-checkpoint-sqlite==3.0.3
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langgraph-prebuilt==1.0.13
     # via langgraph
 langgraph-sdk==0.3.14
     # via langgraph
 langsmith==0.8.3
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   langchain-classic
     #   langchain-community
     #   langchain-core
@@ -358,13 +358,13 @@ llama-cpp-python==0.3.23
     # via -r desktop/requirements.txt
 loguru==0.7.3
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   podcast-creator
     #   surreal-commands
 lxml==6.1.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   lxml-html-clean
     #   python-docx
     #   python-pptx
@@ -374,7 +374,9 @@ lxml-html-clean==0.4.4
 macholib==1.16.4
     # via pyinstaller
 markdown-it-py==4.2.0
-    # via rich
+    # via
+    #   deeper-notebook (pyproject.toml)
+    #   rich
 markdownify==1.2.2
     # via content-core
 markupsafe==3.0.3
@@ -384,7 +386,7 @@ marshmallow==3.26.2
 mcp==1.27.1
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   fastmcp
 mdurl==0.1.2
     # via markdown-it-py
@@ -424,7 +426,7 @@ nodejs-wheel-binaries==24.15.0
     # via pytubefix
 numpy==2.4.4
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   ctranslate2
     #   imageio
     #   langchain-community
@@ -452,7 +454,7 @@ openapi-pydantic==0.5.1
 openpyxl==3.1.5
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   skillopt
 opentelemetry-api==1.41.1
@@ -483,7 +485,7 @@ pathvalidate==3.3.1
     # via piper-tts
 pillow==11.3.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   imageio
     #   moviepy
@@ -497,7 +499,7 @@ platformdirs==4.9.6
 pluggy==1.6.0
     # via pytest
 podcast-creator==0.12.0
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 portalocker==3.2.0
     # via qdrant-client
 posthog==7.15.3
@@ -505,7 +507,7 @@ posthog==7.15.3
 proglog==0.1.12
     # via moviepy
 prometheus-client==0.25.0
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 propcache==0.5.2
     # via
     #   aiohttp
@@ -526,13 +528,13 @@ pyasn1-modules==0.4.2
     # via google-auth
 pycountry==26.2.16
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   podcast-creator
 pycparser==3.0
     # via cffi
 pydantic==2.13.4
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   ai-prompter
     #   anthropic
     #   esperanto
@@ -612,11 +614,11 @@ python-dateutil==2.9.0.post0
 python-docx==1.2.0
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
 python-dotenv==1.2.2
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   fastmcp
     #   firecrawl-py
@@ -626,11 +628,11 @@ python-dotenv==1.2.2
     #   surreal-commands
 python-multipart==0.0.28
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   mcp
 python-pptx==1.0.2
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   content-core
 pytubefix==10.6.1
     # via content-core
@@ -640,6 +642,7 @@ pywebview==5.4
     # via -r desktop/requirements.txt
 pyyaml==6.0.3
     # via
+    #   deeper-notebook (pyproject.toml)
     #   ctranslate2
     #   fastmcp
     #   huggingface-hub
@@ -734,7 +737,7 @@ sse-starlette==3.4.2
     #   mcp
 starlette==1.3.1
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   fastapi
     #   mcp
     #   sse-starlette
@@ -742,10 +745,10 @@ starlette==1.3.1
 starlette-context==0.3.6
     # via llama-cpp-python
 surreal-commands==1.3.1
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 surrealdb==2.0.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   surreal-commands
 tenacity==9.1.4
     # via
@@ -757,7 +760,7 @@ tenacity==9.1.4
     #   surreal-commands
 tiktoken==0.12.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   langchain-openai
     #   podcast-creator
 tokenizers==0.22.2
@@ -766,7 +769,7 @@ tokenizers==0.22.2
     #   langchain-mistralai
     #   transformers
 tomli==2.4.1
-    # via open-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 tqdm==4.67.3
     # via
     #   faster-whisper
@@ -826,7 +829,7 @@ uncalled-for==0.3.2
     # via fastmcp
 urllib3==2.7.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   qdrant-client
     #   requests
 uuid-utils==0.14.1
@@ -835,7 +838,7 @@ uuid-utils==0.14.1
     #   langsmith
 uvicorn==0.46.0
     # via
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
     #   fastmcp
     #   llama-cpp-python
     #   mcp
@@ -844,7 +847,7 @@ validators==0.35.0
 watchdog==6.0.0
     # via
     #   -r desktop/requirements.txt
-    #   open-notebook (pyproject.toml)
+    #   deeper-notebook (pyproject.toml)
 watchfiles==1.1.1
     # via fastmcp
 websockets==16.0
