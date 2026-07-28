@@ -148,10 +148,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path release/windows-zip, release/windows-setup | Out-Null
           Copy-Item dist/Deeper-Notebook-windows-x64.zip release/windows-zip/
           python desktop/build/release_manifest.py --artifact release/windows-zip/Deeper-Notebook-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
-          (Get-FileHash release/windows-zip/Deeper-Notebook-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-windows-x64.zip" | Set-Content release/windows-zip/SHA256SUMS
+          (Get-FileHash release/windows-zip/Deeper-Notebook-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-windows-x64.zip" | Set-Content -NoNewline -Encoding utf8 release/windows-zip/SHA256SUMS
           Copy-Item dist/Deeper-Notebook-Setup-x64.exe release/windows-setup/
           python desktop/build/release_manifest.py --artifact release/windows-setup/Deeper-Notebook-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
-          (Get-FileHash release/windows-setup/Deeper-Notebook-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-Setup-x64.exe" | Set-Content release/windows-setup/SHA256SUMS
+          (Get-FileHash release/windows-setup/Deeper-Notebook-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-Setup-x64.exe" | Set-Content -NoNewline -Encoding utf8 release/windows-setup/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Deeper-Notebook-windows-x64
