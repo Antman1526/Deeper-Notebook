@@ -441,7 +441,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "06fb3edc566a0c65a14fa8cda57808097a1bda0ccd9e505cd242e7918c4724c7"
+      "coverage_sha256": "72b15cc13feb0350a7a612d18f2149880c917d67dbcb3d65a6b34a495273cd48"
     },
     "database-record-identifier-v1": {
       "kind": "persisted_identifier",
@@ -15706,7 +15706,7 @@
       "path": "desktop/tests/test_emergency_log.py",
       "pattern": "open-notebook-plus",
       "source": "content",
-      "line": 119,
+      "line": 121,
       "column": 30,
       "context_sha256": "397da0bf513f3c077c9a95dc92beb4b90ace643a25a87833bb4998bc85357401",
       "category": "compatibility_alias",
@@ -15714,7 +15714,7 @@
         "path": "desktop/tests/test_emergency_log.py",
         "pattern": "open-notebook-plus",
         "source": "content",
-        "line": 119,
+        "line": 121,
         "column": 30,
         "context_sha256": "397da0bf513f3c077c9a95dc92beb4b90ace643a25a87833bb4998bc85357401",
         "category": "compatibility_alias",

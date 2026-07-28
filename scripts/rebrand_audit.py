@@ -790,7 +790,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "e8555e65c25028c60f968075b2a372bc969a5ad6eb3a6bc5498d9537507a6c0b"
+    "f641e016b9b627898f80dfa4166ce78dbfdc4b384a588ca06894ce4df40be6e8"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
