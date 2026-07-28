@@ -79,6 +79,7 @@ def test_upload_cleanup_refuses_intermediate_symlink_even_when_target_is_inside(
     assert owned_file.read_text() == "preserve"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor defense")
 @pytest.mark.parametrize("_iteration", range(50))
 def test_upload_cleanup_detects_parent_swap_after_secure_open(
     _iteration,
@@ -320,6 +321,7 @@ def test_upload_cleanup_refuses_unix_socket_without_blocking(
             )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor defense")
 def test_upload_cleanup_fails_closed_without_secure_dir_fd_support(
     tmp_path,
     monkeypatch,
@@ -336,6 +338,7 @@ def test_upload_cleanup_fails_closed_without_secure_dir_fd_support(
     assert owned_file.read_text() == "preserve"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor defense")
 def test_upload_cleanup_fails_closed_without_nonblocking_open(
     tmp_path,
     monkeypatch,
@@ -352,6 +355,7 @@ def test_upload_cleanup_fails_closed_without_nonblocking_open(
     assert owned_file.read_text() == "preserve"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor defense")
 def test_upload_cleanup_fails_closed_without_capability_metadata(
     tmp_path,
     monkeypatch,
