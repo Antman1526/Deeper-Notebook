@@ -205,9 +205,26 @@ def _manifest_counts(root: Path, identity: RootIdentity) -> dict[str, Any]:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise VerificationError("connector manifest is invalid") from exc
-    records = payload.get("records") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        raise VerificationError("connector manifest is invalid")
+    has_documents = "documents" in payload
+    has_records = "records" in payload
+    if has_documents and has_records:
+        raise VerificationError("connector manifest is ambiguous")
+    records = payload.get("documents") if has_documents else payload.get("records")
     if not isinstance(records, list):
-        raise VerificationError("connector manifest has no records list")
+        raise VerificationError("connector manifest has no supported records list")
+    record_ids: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            raise VerificationError("connector manifest has invalid records")
+        record_id = record.get("id")
+        evidence_class = record.get("evidenceClass")
+        if not isinstance(record_id, str) or not record_id or not isinstance(evidence_class, str):
+            raise VerificationError("connector manifest has invalid records")
+        if record_id in record_ids:
+            raise VerificationError("connector manifest has duplicate records")
+        record_ids.add(record_id)
     synthesis = [
         record
         for record in records

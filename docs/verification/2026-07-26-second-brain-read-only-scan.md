@@ -23,7 +23,12 @@ state capture, and connector-manifest counts without making API calls.
 For a controlled verification, the script registers the approved mixed parent
 and its Obsidian and Logseq children through the canonical Deeper Notebook
 vault API. It imports only the root-relative connector manifest as trust
-metadata, then performs two scans. The source inventory walks every regular,
+metadata, then performs two scans. The canonical connector manifest uses its
+`documents` array; the verifier accepts the legacy `records` array only when it
+is the sole supported record array. A manifest with both arrays, no usable array,
+or malformed record IDs/evidence classes fails closed. It reads only each
+record's `id`, `evidenceClass`, and (for synthesis records) `derivedFrom` fields;
+all other manifest fields are ignored and never enter the report. The source inventory walks every regular,
 non-symlink file below the explicit root except `.git/**`; this includes files
 ignored by Git and untracked files. Git porcelain remains supplementary rather
 than deciding which files are fingerprinted. Every canonical API request
@@ -61,7 +66,9 @@ trust import or scanning can begin.
 The generated report is intentionally structured and sanitized. It contains a
 root label, relative file paths and hashes, count reconciliation, digest-only
 provenance, and failure codes only. It excludes source contents, secrets,
-absolute source paths, unredacted home paths, and raw `derivedFrom` values. A successful controlled report requires unchanged source
+absolute source paths, unredacted home paths, raw `derivedFrom` values, and all
+other connector-manifest fields (including source/content paths, titles, and
+vault roots). A successful controlled report requires unchanged source
 hashes and Git state, zero projections changed on the second scan, matching
 trust totals, and exact internally-reconciled `derivedFrom` arrays for every
 synthesis record.
