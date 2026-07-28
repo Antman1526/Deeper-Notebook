@@ -345,9 +345,9 @@ def test_compatibility_jobs_probe_real_readiness_then_leave_no_sidecars() -> Non
     assert "kill -TERM" in compatibility  # bounded failure cleanup only
     assert "CloseMainWindow()" in compatibility
     assert "sidecar" in compatibility.lower()
-    assert "ps eww -axo pid=,command=" in compatibility
-    assert 'index($0, "HOME=" scope " ")' in compatibility
-    assert 'index($0, "USERPROFILE=" scope " ")' in compatibility
+    assert "ps eww" not in compatibility
+    assert "ps -axo pid=,command=" in compatibility
+    assert "index($0, scope)" in compatibility
     assert "remaining_descendants" in compatibility
 
 

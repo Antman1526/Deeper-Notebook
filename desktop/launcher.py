@@ -716,14 +716,16 @@ class Supervisor:
         # survived past the .app close. Falls back to terminate() if
         # killpg fails (e.g. process already exited, mocked Popen in
         # tests that doesn't have a real pgid).
+        owned_posix_groups: set[int] = set()
         for p in reversed(self._procs):
             try:
                 pid = getattr(p, "pid", None)
-                if pid and sys.platform != "win32":
+                if isinstance(pid, int) and pid > 0 and sys.platform != "win32":
                     try:
                         # killpg with the LEADER's PID (which equals
                         # the pgid because start_new_session=True).
                         os.killpg(pid, signal.SIGTERM)
+                        owned_posix_groups.add(pid)
                     except (ProcessLookupError, PermissionError, OSError):
                         # Process already gone, no permission, or pgid
                         # missing (mock). Fall through to terminate().
@@ -731,7 +733,7 @@ class Supervisor:
                             p.terminate()
                         except Exception:
                             pass
-                elif pid and sys.platform == "win32":
+                elif isinstance(pid, int) and pid > 0 and sys.platform == "win32":
                     # v0.7.185 — was `os.kill(pid, CTRL_BREAK_EVENT)`. That
                     # only works when the target shares a console with us;
                     # a PyInstaller windowed .exe has NO console, so the
@@ -793,9 +795,80 @@ class Supervisor:
                 remaining = max(0.0, deadline - time.monotonic())
                 p.wait(timeout=remaining if remaining > 0 else 0.1)
             except subprocess.TimeoutExpired:
-                p.kill()
+                pid = getattr(p, "pid", None)
+                if not (
+                    sys.platform != "win32"
+                    and isinstance(pid, int)
+                    and pid in owned_posix_groups
+                ):
+                    p.kill()
             except Exception as exc:
                 log.debug("wait pid=%s failed: %s", getattr(p, "pid", "?"), exc)
+
+        # A process-group leader can honor SIGTERM and exit while one of its
+        # grandchildren ignores the same signal. Popen.wait() then succeeds,
+        # even though the still-owned group keeps API ports or the database
+        # lock alive. Give every surviving group the remainder of the shared
+        # graceful deadline, then escalate the *whole group* and wait until it
+        # is gone before returning from cleanup.
+        def active_owned_groups(groups: set[int]) -> set[int]:
+            active: set[int] = set()
+            for process_group in groups:
+                try:
+                    os.killpg(process_group, 0)
+                except ProcessLookupError:
+                    continue
+                except (PermissionError, OSError):
+                    # The group was created by this supervisor. A transient
+                    # probe error must fail closed and retain it for escalation.
+                    active.add(process_group)
+                else:
+                    active.add(process_group)
+            return active
+
+        remaining_groups = active_owned_groups(owned_posix_groups)
+        while remaining_groups and time.monotonic() < deadline:
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+            remaining_groups = active_owned_groups(remaining_groups)
+
+        for process_group in remaining_groups:
+            try:
+                os.killpg(process_group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except (PermissionError, OSError) as exc:
+                log.warning(
+                    "process-group escalation pgid=%s failed: %s",
+                    process_group,
+                    exc,
+                )
+
+        hard_deadline = time.monotonic() + 2.0
+        remaining_groups = active_owned_groups(remaining_groups)
+        while remaining_groups and time.monotonic() < hard_deadline:
+            time.sleep(0.05)
+            remaining_groups = active_owned_groups(remaining_groups)
+        if remaining_groups:
+            log.warning(
+                "owned process groups remain after SIGKILL: %s",
+                sorted(remaining_groups),
+            )
+
+        # Reap group leaders that reached SIGKILL after the first shared wait.
+        for p in self._procs:
+            try:
+                p.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+            except Exception as exc:
+                log.debug(
+                    "final wait pid=%s failed: %s",
+                    getattr(p, "pid", "?"),
+                    exc,
+                )
         # Join drainer threads with a short timeout BEFORE closing the
         # log files they're writing into — otherwise the daemon threads
         # could be mid-write when the file handle goes away. Buffered

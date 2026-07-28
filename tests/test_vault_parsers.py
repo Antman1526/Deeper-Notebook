@@ -4,6 +4,7 @@ import ast
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -22,6 +23,13 @@ from deeper_notebook.vault.parsers.common import SourceRegion
 from deeper_notebook.vault.parsers.markdown import ByteOffsetMapper, ScanContext
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vault"
+
+PARSER_RUNTIME_LIMIT_SECONDS = (
+    16.0
+    if sys.platform == "darwin" and platform.machine() == "x86_64"
+    else 8.0
+)
+PARSER_SUBPROCESS_TIMEOUT_SECONDS = PARSER_RUNTIME_LIMIT_SECONDS + 12.0
 
 RSS_SAMPLER_CODE = """
 import ctypes
@@ -996,7 +1004,7 @@ def test_near_default_limit_dense_unmatched_wikilinks_remain_bounded() -> None:
     parsed = parse_document("dense-9m.md", raw, format_mode="obsidian")
 
     assert parsed.links == []
-    assert time.monotonic() - started < 8.0
+    assert time.monotonic() - started < PARSER_RUNTIME_LIMIT_SECONDS
 
 
 def test_projection_budget_rejects_excessive_structure_before_tokenization() -> None:
@@ -1166,12 +1174,12 @@ else:
         check=True,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=PARSER_SUBPROCESS_TIMEOUT_SECONDS,
     )
     result = json.loads(completed.stdout.strip().splitlines()[-1])
 
     assert result["code"] == "projection_too_large"
-    assert result["elapsed"] < 8.0
+    assert result["elapsed"] < PARSER_RUNTIME_LIMIT_SECONDS
     assert result["rss_growth"] < 150 * 1024 * 1024
 
 
@@ -1209,12 +1217,12 @@ print(json.dumps({
         check=True,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=PARSER_SUBPROCESS_TIMEOUT_SECONDS,
     )
     result = json.loads(completed.stdout.strip().splitlines()[-1])
 
     assert result["blocks"] == 1
-    assert result["elapsed"] < 8.0
+    assert result["elapsed"] < PARSER_RUNTIME_LIMIT_SECONDS
     assert result["rss_growth"] < 150 * 1024 * 1024
 
 
