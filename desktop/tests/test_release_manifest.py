@@ -381,7 +381,17 @@ def test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut() -> None
     workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
     compatibility = workflow[workflow.index("  windows-compatibility-upgrade:") :]
 
-    assert '$canonicalShortcut = Join-Path $programs "Deeper Notebook.lnk"' in compatibility
-    assert '$legacyShortcut = Join-Path $programs "Open Notebook Plus.lnk"' in compatibility
+    assert "[Environment]::GetFolderPath('Programs')" in compatibility
+    assert "[Environment]::GetFolderPath('CommonPrograms')" in compatibility
+    assert (
+        '$canonicalShortcuts = @($programs | ForEach-Object { '
+        'Join-Path $_ "Deeper Notebook.lnk" } | Where-Object { Test-Path $_ })'
+        in compatibility
+    )
+    assert (
+        '$legacyShortcuts = @($programs | ForEach-Object { '
+        'Join-Path $_ "Open Notebook Plus.lnk" } | Where-Object { Test-Path $_ })'
+        in compatibility
+    )
+    assert "Expected one canonical Start Menu shortcut" in compatibility
     assert "Retired Start Menu shortcut remains" in compatibility
-    assert "Canonical Start Menu shortcut missing" in compatibility
