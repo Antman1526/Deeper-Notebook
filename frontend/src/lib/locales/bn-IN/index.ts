@@ -232,7 +232,9 @@ export const bnIN = {
     language: "ভাষা টগল",
     theme: "থিম",
     ask: "জিজ্ঞাসা",
+    knowledge: "জ্ঞান",
   },
+  knowledge: { mounts: "মাউন্ট করা ভল্ট", scan: "ভল্ট স্ক্যান করুন", status: "অবস্থা", readOnly: "শুধু-পঠনযোগ্য বাহ্যিক ফাইল", backlinks: "ব্যাকলিংক", outgoing: "আউটগোয়িং লিংক", properties: "বৈশিষ্ট্য", tags: "ট্যাগ", unresolved: "অমীমাংসিত লিংক", loadError: "জ্ঞান লোড করা যায়নি।" },
   notebooks: {
     title: "নোটবুকগুলি",
     newNotebook: "নতুন নোটবুক",

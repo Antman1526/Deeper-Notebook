@@ -232,7 +232,9 @@ export const zhCN = {
     language: "切换语言",
     theme: "主题",
     ask: "提问",
+    knowledge: "知识",
   },
+  knowledge: { mounts: "已挂载的知识库", scan: "扫描知识库", status: "状态", readOnly: "只读外部文件", backlinks: "反向链接", outgoing: "出站链接", properties: "属性", tags: "标签", unresolved: "未解析链接", loadError: "无法加载知识。" },
   notebooks: {
     title: "笔记本",
     newNotebook: "创建笔记本",

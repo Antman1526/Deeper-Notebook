@@ -232,7 +232,9 @@ export const frFR = {
     language: "Changer de langue",
     theme: "Thème",
     ask: "Demander",
+    knowledge: "Connaissances",
   },
+  knowledge: { mounts: "Coffres montés", scan: "Analyser le coffre", status: "État", readOnly: "Fichier externe en lecture seule", backlinks: "Liens entrants", outgoing: "Liens sortants", properties: "Propriétés", tags: "Étiquettes", unresolved: "Lien non résolu", loadError: "Impossible de charger les connaissances." },
   notebooks: {
     title: "Carnets",
     newNotebook: "Nouveau Carnet",

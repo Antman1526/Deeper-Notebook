@@ -232,7 +232,9 @@ export const itIT = {
     language: "Cambia lingua",
     theme: "Tema",
     ask: "Chiedi",
+    knowledge: "Conoscenza",
   },
+  knowledge: { mounts: "Vault montati", scan: "Scansiona vault", status: "Stato", readOnly: "File esterno in sola lettura", backlinks: "Collegamenti in entrata", outgoing: "Collegamenti in uscita", properties: "Proprietà", tags: "Tag", unresolved: "Collegamento irrisolto", loadError: "Impossibile caricare la conoscenza." },
   notebooks: {
     title: "Quaderni",
     newNotebook: "Nuovo quaderno",
