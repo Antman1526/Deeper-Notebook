@@ -5,13 +5,19 @@ vault was mounted, scanned, or verified.
 
 Run the verifier only with an explicit vault root supplied by the owner. It
 rejects the filesystem root, the current user's home directory, and paths that
-are not directories. It resolves `--output` before observing or writing
-anything and rejects an output equal to, inside, or symlink-resolved inside the
-source root. The report target must not already exist: it is created once with
-exclusive creation and owner-only permissions, so an existing file or hard link
-can never be truncated. Its parent directory identity is rechecked immediately
-before creation to fail closed if a path changes during the run. `--check-only`
-validates the root, output, source inventory, Git
+are not directories. Immediately after validation it binds the resolved root
+path to its device/inode identity. Before and after every source snapshot around
+an API operation, and again immediately before report creation, the supplied
+root path must still resolve to that same directory identity. A rename, symlink
+rebind, or replacement fails closed without creating a report. It resolves
+`--output` before observing or writing anything and rejects an output equal to,
+inside, or symlink-resolved inside the source root. Immediately before report
+creation it resolves the output again and confirms it remains outside the
+stable root identity. The report target must not already exist: it is created
+once with exclusive creation and owner-only permissions, so an existing file or
+hard link can never be truncated. Its parent directory identity is rechecked
+immediately before creation to fail closed if a path changes during the run.
+`--check-only` validates the root, output, source inventory, Git
 state capture, and connector-manifest counts without making API calls.
 
 For a controlled verification, the script registers the approved mixed parent

@@ -37,6 +37,14 @@ class OutputTarget:
     parent_inode: int
 
 
+@dataclass(frozen=True)
+class RootIdentity:
+    path: Path
+    resolved_path: Path
+    device: int
+    inode: int
+
+
 class VerificationError(Exception):
     """A safe, human-readable verification failure."""
 
@@ -66,6 +74,34 @@ def _safe_root(value: str) -> Path:
     if root == Path("/") or root == Path.home().resolve() or not root.is_dir():
         raise VerificationError("root must be a non-home, non-root directory")
     return root
+
+
+def _capture_root_identity(root: Path) -> RootIdentity:
+    """Bind verification to the validated directory, not a replaceable path."""
+    try:
+        resolved = root.resolve(strict=True)
+        metadata = resolved.stat()
+    except OSError as exc:
+        raise VerificationError("source root changed during verification") from exc
+    if not resolved.is_dir():
+        raise VerificationError("source root changed during verification")
+    return RootIdentity(root, resolved, metadata.st_dev, metadata.st_ino)
+
+
+def _revalidate_root(identity: RootIdentity) -> Path:
+    """Fail closed if the approved root path no longer names its original directory."""
+    try:
+        resolved = identity.path.resolve(strict=True)
+        metadata = resolved.stat()
+    except OSError as exc:
+        raise VerificationError("source root changed during verification") from exc
+    if (
+        not resolved.is_dir()
+        or resolved != identity.resolved_path
+        or (metadata.st_dev, metadata.st_ino) != (identity.device, identity.inode)
+    ):
+        raise VerificationError("source root changed during verification")
+    return resolved
 
 
 def _safe_output(value: str, root: Path) -> OutputTarget:
@@ -137,10 +173,11 @@ def _git_status(root: Path) -> tuple[str, bool]:
     return result.stdout, True
 
 
-def _snapshot(root: Path) -> Snapshot:
+def _snapshot(root: Path, identity: RootIdentity) -> Snapshot:
+    _revalidate_root(identity)
     try:
         git_status, git_status_available = _git_status(root)
-        return Snapshot(
+        snapshot = Snapshot(
             hashes={relative.as_posix(): _hash_file(root / relative) for relative in _relative_files(root)},
             git_status=git_status,
             git_status_available=git_status_available,
@@ -149,6 +186,8 @@ def _snapshot(root: Path) -> Snapshot:
         raise
     except (OSError, UnicodeError) as exc:
         raise VerificationError("source observation failed") from exc
+    _revalidate_root(identity)
+    return snapshot
 
 
 def _provenance_digest(mapping: dict[str, list[Any]]) -> str:
@@ -157,7 +196,8 @@ def _provenance_digest(mapping: dict[str, list[Any]]) -> str:
     ).hexdigest()
 
 
-def _manifest_counts(root: Path) -> dict[str, Any]:
+def _manifest_counts(root: Path, identity: RootIdentity) -> dict[str, Any]:
+    _revalidate_root(identity)
     manifest = root / MANIFEST_PATH
     if not manifest.is_file() or manifest.is_symlink():
         raise VerificationError("connector manifest is unavailable")
@@ -182,7 +222,7 @@ def _manifest_counts(root: Path) -> dict[str, Any]:
         if record_id in expected_derived_from:
             raise VerificationError("connector manifest has duplicate synthesis records")
         expected_derived_from[record_id] = derived_from
-    return {
+    counts = {
         "expected_trust_records": len(records),
         "expected_synthesis_records": len(synthesis),
         "expected_synthesis_with_derived_from": sum(
@@ -192,6 +232,8 @@ def _manifest_counts(root: Path) -> dict[str, Any]:
         "expected_derived_from": expected_derived_from,
         "expected_derived_from_digest": _provenance_digest(expected_derived_from),
     }
+    _revalidate_root(identity)
+    return counts
 
 
 def _request_json(
@@ -282,13 +324,14 @@ def _snapshot_differences(left: Snapshot, right: Snapshot) -> tuple[bool, bool]:
 class _ObservedApi:
     """Run every API request with a mandatory before/after source reconciliation."""
 
-    def __init__(self, root: Path, baseline: Snapshot, report: dict[str, Any]):
+    def __init__(self, root: Path, identity: RootIdentity, baseline: Snapshot, report: dict[str, Any]):
         self.root = root
+        self.identity = identity
         self.baseline = baseline
         self.report = report
 
     def request(self, method: str, api: str, path: str, payload: dict[str, Any] | None = None) -> Any:
-        before = _snapshot(self.root)
+        before = _snapshot(self.root, self.identity)
         request_failed = False
         try:
             result = _request_json(method, api, path, payload)
@@ -296,7 +339,7 @@ class _ObservedApi:
             request_failed = True
             raise
         finally:
-            after = _snapshot(self.root)
+            after = _snapshot(self.root, self.identity)
             before_hashes, before_git = _snapshot_differences(before, self.baseline)
             after_hashes, after_git = _snapshot_differences(after, self.baseline)
             if before_hashes or before_git or after_hashes or after_git:
@@ -312,23 +355,23 @@ class _ObservedApi:
 
 
 def _scan_once(
-    api: str, mount_ids: list[str], root: Path, baseline: Snapshot, request: Any
+    api: str, mount_ids: list[str], root: Path, identity: RootIdentity, baseline: Snapshot, request: Any
 ) -> tuple[int, bool, bool, Snapshot | None]:
     changed = 0
     for mount_id in mount_ids:
-        before = _snapshot(root)
+        before = _snapshot(root, identity)
         request_failed = False
         result: Any = None
         try:
             result = request("POST", api, f"/{mount_id}/scan")
         except SourceChangedError:
-            after = _snapshot(root)
+            after = _snapshot(root, identity)
             hashes_changed, git_changed = _snapshot_differences(after, baseline)
             return changed, hashes_changed, git_changed, after
         except VerificationError:
             request_failed = True
         finally:
-            after = _snapshot(root)
+            after = _snapshot(root, identity)
         before_hashes, before_git = _snapshot_differences(before, baseline)
         after_hashes, after_git = _snapshot_differences(after, baseline)
         if request_failed:
@@ -341,17 +384,22 @@ def _scan_once(
     return changed, False, False, None
 
 
-def _write_report(output: OutputTarget, report: dict[str, Any]) -> None:
+def _write_report(output: OutputTarget, root_identity: RootIdentity, report: dict[str, Any]) -> None:
     payload = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8")
     try:
+        root = _revalidate_root(root_identity)
+        resolved_output = output.path.resolve(strict=False)
+        parent = resolved_output.parent.resolve(strict=True)
+        if resolved_output == root or root in resolved_output.parents or parent == root or root in parent.parents:
+            raise VerificationError("output must remain outside the source root")
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        parent_descriptor = os.open(output.path.parent, flags)
+        parent_descriptor = os.open(parent, flags)
         try:
             parent_stat = os.fstat(parent_descriptor)
             if (parent_stat.st_dev, parent_stat.st_ino) != (output.parent_device, output.parent_inode):
                 raise VerificationError("output parent changed during verification")
             descriptor = os.open(
-                output.path.name,
+                resolved_output.name,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
                 dir_fd=parent_descriptor,
@@ -404,50 +452,50 @@ def _record_observation(report: dict[str, Any], hashes_changed: bool, git_change
             report["failures"].append("git_status_mismatch")
 
 
-def run(root: Path, api: str, output: OutputTarget, check_only: bool) -> int:
-    initial = _snapshot(root)
-    counts = _manifest_counts(root)
+def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget, check_only: bool) -> int:
+    initial = _snapshot(root, root_identity)
+    counts = _manifest_counts(root, root_identity)
     report = _safe_report(root, initial, counts, "check-only" if check_only else "controlled")
     if check_only:
-        _write_report(output, report)
+        _write_report(output, root_identity, report)
         return 0
     try:
-        observed_api = _ObservedApi(root, initial, report)
+        observed_api = _ObservedApi(root, root_identity, initial, report)
         request = observed_api.request
         parent_id = _mount_id(api, "2nd Brains", root, "mixed", None, False, request)
         obsidian_id = _mount_id(api, "Obsidian Brain", root / "Obsidian Brain", "obsidian", parent_id, True, request)
         logseq_id = _mount_id(api, "Logseq Brain", root / "Logseq Brain", "logseq", parent_id, True, request)
         request("POST", api, f"/{parent_id}/trust/import", {"manifest_relative_path": MANIFEST_PATH})
         mounts = [parent_id, obsidian_id, logseq_id]
-        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, mounts, root, initial, request)
+        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, mounts, root, root_identity, initial, request)
         if first_hash_mismatch or first_git_mismatch:
             _record_observation(report, first_hash_mismatch, first_git_mismatch, first_observed or initial)
-            _write_report(output, report)
+            _write_report(output, root_identity, report)
             return 1
-        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, mounts, root, initial, request)
+        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, mounts, root, root_identity, initial, request)
         report["second_scan_changed_projections"] = second_changed
         if second_hash_mismatch or second_git_mismatch:
             _record_observation(report, second_hash_mismatch, second_git_mismatch, second_observed or initial)
-            _write_report(output, report)
+            _write_report(output, root_identity, report)
             return 1
         trust = request("GET", api, f"/{parent_id}/trust")
         summary = request("GET", api, f"/{parent_id}/trust/summary")
         receipts = request("GET", api, f"/{parent_id}/receipts")
     except SourceChangedError:
-        _write_report(output, report)
+        _write_report(output, root_identity, report)
         return 1
     except ScanVerificationError as exc:
         _record_observation(report, exc.hashes_changed, exc.git_changed, exc.observed)
         report["failures"].append("scan_request_failed")
-        _write_report(output, report)
+        _write_report(output, root_identity, report)
         return 2
     except VerificationError:
         report["failures"].append("verification_operation_failed")
-        _write_report(output, report)
+        _write_report(output, root_identity, report)
         return 2
     if not isinstance(trust, list) or not isinstance(summary, dict) or not isinstance(receipts, list):
         report["failures"].append("verification_operation_failed")
-        _write_report(output, report)
+        _write_report(output, root_identity, report)
         return 2
     report["trust_records"] = len(trust)
     report["synthesis_records"] = sum(item.get("evidence_class") == "synthesis" for item in trust if isinstance(item, dict))
@@ -476,7 +524,7 @@ def run(root: Path, api: str, output: OutputTarget, check_only: bool) -> int:
         report["failures"].append("git_status_mismatch")
     if report["second_scan_changed_projections"]:
         report["failures"].append("second_scan_not_idempotent")
-    _write_report(output, report)
+    _write_report(output, root_identity, report)
     return 1 if report["failures"] else 0
 
 
@@ -489,8 +537,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         root = _safe_root(args.root)
+        root_identity = _capture_root_identity(root)
         output = _safe_output(args.output, root)
-        return run(root, args.api, output, args.check_only)
+        return run(root, root_identity, args.api, output, args.check_only)
     except Exception:
         print("verification failed: safe verification error", file=sys.stderr)
         return 2
