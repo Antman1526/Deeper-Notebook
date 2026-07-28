@@ -27,7 +27,7 @@ def test_built_wheel_contains_canonical_runtime_data_and_exact_legacy_shim(
     verifier = _load_module(VERIFIER_PATH, "verify_package_contents")
     wheel_dir = tmp_path / "wheel"
     result = subprocess.run(
-        ["uv", "build", "--wheel", "--out-dir", str(wheel_dir)],
+        [*_WHEEL_BUILD_COMMAND, "--wheel-dir", str(wheel_dir), "."],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -88,3 +88,6 @@ def test_ci_inspects_the_actual_pyinstaller_output() -> None:
 
     assert workflow.count(verification_command) == 3
     assert verification_command in windows_workflow
+
+
+_WHEEL_BUILD_COMMAND = (sys.executable, "-m", "pip", "wheel", "--no-deps")

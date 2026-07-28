@@ -545,7 +545,18 @@ def test_embedded_surreal_guard_throw_rolls_back_every_delete(
                 """
             )
 
-        result = db.query(query, _embedded_params(params))
+        try:
+            result = db.query(query, _embedded_params(params))
+        except Exception as exc:
+            # surrealdb 1.x returned the failed transaction text, while 2.x
+            # raises its typed query error. Accept both driver contracts but
+            # keep unexpected application/runtime exceptions visible.
+            assert type(exc).__module__ == "surrealdb.errors"
+            assert type(exc).__name__ in {
+                "InternalError",
+                "SurrealDBMethodError",
+            }
+            result = str(exc)
 
         assert expected_error in result
         assert len(db.query("SELECT VALUE id FROM notebook")) == 1
