@@ -531,7 +531,9 @@ class VaultRepository:
                 )
             return True
         except Exception as exc:
-            logger.warning("Vault embedding failure state update failed ({})", type(exc).__name__)
+            logger.warning(
+                "Vault embedding failure state update failed ({})", type(exc).__name__
+            )
             return False
 
     async def _reconcile_projection_commit(

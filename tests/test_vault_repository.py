@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from surrealdb import RecordID
 
 from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.vault.contracts import (
@@ -810,39 +811,106 @@ async def test_link_resolution_is_scoped_to_same_mount_and_never_artifact():
 
 
 @pytest.mark.asyncio
-async def test_embedding_failure_is_post_commit_and_does_not_change_projection_state():
-    connection = QueryRecorder()
+async def test_embedding_submission_failure_marks_only_local_file_state_after_commit():
+    projection = QueryRecorder()
+    failure_state = QueryRecorder()
 
     async def broken_embed(*_args):
         raise ValueError("sensitive submission detail")
 
     repository = VaultRepository(
-        connection_factory=ConnectionSequence(connection),
+        connection_factory=ConnectionSequence(projection, failure_state),
         embedding_submitter=broken_embed,
     )
     result = await repository.project_document(
         _mount(), _work(), _document(), "operation-embed-failure"
     )
 
-    assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
+    assert "COMMIT TRANSACTION;" in projection.calls[-1][0]
     assert result.parse_state == "parsed"
-    # The recorder has no second connection for the local lifecycle update;
-    # durable truth remains pending when that update cannot be persisted.
-    assert result.embedding_state == "pending"
+    assert result.embedding_state == "failed"
+    assert len(projection.calls) == 1
+    assert projection.calls[0][1]["vault_file"]["embedding_state"] == "pending"
+    assert len(failure_state.calls) == 1
+    statement, variables = failure_state.calls[0]
+    assert statement == "UPDATE $vault_file_id SET embedding_state = 'failed';"
+    assert isinstance(variables["vault_file_id"], RecordID)
+    assert str(variables["vault_file_id"]) == result.vault_file_id
     assert all(
-        "CANCEL TRANSACTION" not in statement for statement, _ in connection.calls
+        "CANCEL TRANSACTION" not in statement for statement, _ in projection.calls
     )
 
 
 @pytest.mark.asyncio
+async def test_embedding_failure_remains_pending_when_local_failure_state_update_fails(
+    monkeypatch,
+):
+    projection = QueryRecorder()
+    failure_state = QueryRecorder(
+        fail_on="UPDATE $vault_file_id SET embedding_state = 'failed';"
+    )
+    warnings: list[tuple[object, ...]] = []
+
+    class WarningRecorder:
+        def warning(self, *args: object) -> None:
+            warnings.append(args)
+
+    async def broken_embed(*_args):
+        raise ValueError("sensitive submission detail")
+
+    monkeypatch.setattr("deeper_notebook.vault.repository.logger", WarningRecorder())
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(projection, failure_state),
+        embedding_submitter=broken_embed,
+    )
+
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-embed-update-failure"
+    )
+
+    assert result.embedding_state == "pending"
+    assert len(failure_state.calls) == 1
+    assert warnings == [
+        (
+            "Vault embedding submission failed for note {} ({})",
+            result.note_id,
+            "ValueError",
+        ),
+        ("Vault embedding failure state update failed ({})", "RuntimeError"),
+    ]
+    assert all(
+        "CANCEL TRANSACTION" not in statement for statement, _ in projection.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_embedding_submission_leaves_local_state_pending():
+    projection = QueryRecorder()
+    failure_state = QueryRecorder()
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(projection, failure_state),
+        embedding_submitter=lambda *_args: None,
+    )
+
+    result = await repository.project_document(
+        _mount(), _work(), _document(), "operation-embed-success"
+    )
+
+    assert result.embedding_state == "pending"
+    assert failure_state.calls == []
+
+
+@pytest.mark.asyncio
 async def test_post_commit_embedding_cancellation_propagates_after_durable_commit():
-    connection = QueryRecorder()
+    projection = QueryRecorder()
+    failure_state = QueryRecorder()
 
     async def cancelled_embed(*_args):
         raise asyncio.CancelledError
 
     repository = VaultRepository(
-        connection_factory=ConnectionSequence(connection),
+        connection_factory=ConnectionSequence(projection, failure_state),
         embedding_submitter=cancelled_embed,
     )
     with pytest.raises(asyncio.CancelledError):
@@ -850,9 +918,10 @@ async def test_post_commit_embedding_cancellation_propagates_after_durable_commi
             _mount(), _work(), _document(), "operation-embed-cancelled"
         )
 
-    assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
+    assert "COMMIT TRANSACTION;" in projection.calls[-1][0]
+    assert failure_state.calls == []
     assert all(
-        "CANCEL TRANSACTION" not in statement for statement, _ in connection.calls
+        "CANCEL TRANSACTION" not in statement for statement, _ in projection.calls
     )
 
 
