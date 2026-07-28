@@ -130,7 +130,7 @@ jobs:
           $process = Start-Process -FilePath $launcher -PassThru
           Start-Sleep -Seconds 15
           if ($process.HasExited) { throw "Installed launcher exited during smoke probe." }
-          Stop-Process -Id $process.Id -Force
+          pwsh desktop/build/stop_windows_package.ps1 -ProcessId $process.Id -ScopePath "$installDir"
           # This is a same-version repair test, not a legacy-to-canonical upgrade test.
           $repairProcess = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
           if ($repairProcess.ExitCode -ne 0) { throw "Repair install failed with exit code $($repairProcess.ExitCode)." }

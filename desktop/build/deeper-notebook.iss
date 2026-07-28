@@ -32,6 +32,13 @@ Source: "dist\Deeper Notebook\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 Type: files; Name: "{app}\Open Notebook Plus.exe"
 ; Remove only the exact retired per-user Start Menu shortcut.
 Type: files; Name: "{autoprograms}\Open Notebook Plus.lnk"
+; The internal bundle is app-owned. Replacing it atomically prevents runtime
+; residue from older releases (.orig/.pyc) surviving an in-place upgrade.
+Type: filesandordirs; Name: "{app}\_internal"
+
+[UninstallDelete]
+; Remove runtime residue only from the reserved app-owned internal tree.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
