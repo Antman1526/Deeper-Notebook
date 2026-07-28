@@ -347,8 +347,12 @@ def test_compatibility_jobs_probe_real_readiness_then_leave_no_sidecars() -> Non
     assert "sidecar" in compatibility.lower()
     assert "ps eww" not in compatibility
     assert "ps -axo pid=,command=" in compatibility
-    assert "index($0, scope)" in compatibility
-    assert "remaining_descendants" in compatibility
+    assert 'ENVIRON["DEEPER_NOTEBOOK_CI_SCOPE_PATTERN"]' in compatibility
+    assert "remaining-sidecars.txt" in compatibility
+    assert "applying bounded compatibility cleanup" in compatibility
+    assert '"$RUNNER_TEMP/legacy-descendants.txt" legacy' in compatibility
+    assert '"$RUNNER_TEMP/canonical-descendants.txt" legacy' not in compatibility
+    assert "canonical shutdown remains strict" in compatibility
 
 
 def test_legacy_macos_probe_requires_a_visible_window_owned_by_legacy_pid() -> None:
