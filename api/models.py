@@ -76,6 +76,13 @@ class DiscoverSourcesResponse(BaseModel):
 
 
 # Search models
+class VaultProvenance(BaseModel):
+    canonical_external: Literal[True]
+    vault_id: str
+    relative_path: str
+    source_hash: str
+
+
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     type: Literal["text", "vector"] = Field("text", description="Search type")
@@ -85,7 +92,10 @@ class SearchRequest(BaseModel):
     minimum_score: float = Field(
         # v0.8.67 (A1) — was 0.2; 0.0-0.3 is "unrelated" (matches the memory
         # layer's _MIN_SCORE). Aligns the /search/ask default with vector_search.
-        0.3, description="Minimum score for vector search", ge=0, le=1
+        0.3,
+        description="Minimum score for vector search",
+        ge=0,
+        le=1,
     )
 
 
@@ -509,7 +519,9 @@ class SourceResponse(BaseModel):
     # New fields for async processing
     command_id: Optional[str] = None
     status: Optional[str] = None
-    processing_info: Optional[dict[str, Any]] = None  # v0.7.181 — tightened from bare `dict`
+    processing_info: Optional[dict[str, Any]] = (
+        None  # v0.7.181 — tightened from bare `dict`
+    )
     # Notebook associations
     notebooks: Optional[list[str]] = None
 
@@ -633,12 +645,8 @@ class SetApiKeyRequest(BaseModel):
     base_url: Optional[str] = Field(
         None, description="Base URL for URL-based providers (Ollama, OpenAI-compatible)"
     )
-    endpoint: Optional[str] = Field(
-        None, description="Endpoint URL for Azure OpenAI"
-    )
-    api_version: Optional[str] = Field(
-        None, description="API version for Azure OpenAI"
-    )
+    endpoint: Optional[str] = Field(None, description="Endpoint URL for Azure OpenAI")
+    api_version: Optional[str] = Field(None, description="API version for Azure OpenAI")
     endpoint_llm: Optional[str] = Field(
         None, description="Service-specific endpoint for LLM (Azure)"
     )

@@ -1226,6 +1226,7 @@ class Note(ObjectModel):
         """
         if self.id is None:
             from deeper_notebook.exceptions import InvalidInputError as _IIE
+
             raise _IIE("Cannot delete note without an ID")
         if await self._is_canonical_external():
             raise ExternalNoteReadOnlyError()
@@ -1297,7 +1298,9 @@ class Note(ObjectModel):
         approx = self._SHORT_CONTEXT_MAX_TOKENS * 4
         trimmed = self.content[:approx]
         while trimmed and token_count(trimmed) > self._SHORT_CONTEXT_MAX_TOKENS:
-            cut = trimmed.rsplit(None, 1)[0] if " " in trimmed.strip() else trimmed[:-50]
+            cut = (
+                trimmed.rsplit(None, 1)[0] if " " in trimmed.strip() else trimmed[:-50]
+            )
             if cut == trimmed:
                 trimmed = trimmed[:-50]
             else:
@@ -1363,7 +1366,9 @@ class StudioArtifact(ObjectModel):
     def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()
         data["notebook_id"] = ensure_record_id(self.notebook_id)
-        data["source_ids"] = [ensure_record_id(source_id) for source_id in self.source_ids]
+        data["source_ids"] = [
+            ensure_record_id(source_id) for source_id in self.source_ids
+        ]
         if self.revision_of_id is not None:
             data["revision_of_id"] = ensure_record_id(self.revision_of_id)
         return data
@@ -1403,7 +1408,9 @@ class StudioArtifact(ObjectModel):
             )
             return [cls(**row) for row in rows] if rows else []
         except Exception as e:
-            logger.error(f"Error fetching Studio artifact revisions for {artifact_id}: {e}")
+            logger.error(
+                f"Error fetching Studio artifact revisions for {artifact_id}: {e}"
+            )
             logger.exception(e)
             raise DatabaseOperationError(e)
 
@@ -1425,7 +1432,9 @@ class StudioWorkflowRun(ObjectModel):
         data = super()._prepare_save_data()
         data["artifact_id"] = ensure_record_id(self.artifact_id)
         data["notebook_id"] = ensure_record_id(self.notebook_id)
-        data["source_ids"] = [ensure_record_id(source_id) for source_id in self.source_ids]
+        data["source_ids"] = [
+            ensure_record_id(source_id) for source_id in self.source_ids
+        ]
         if self.command_id is not None:
             data["command_id"] = ensure_record_id(self.command_id)
         return data
@@ -1535,6 +1544,59 @@ class ChatSession(ObjectModel):
 _DEFAULT_VECTOR_MIN_SCORE = 0.3
 
 
+async def _enrich_vault_provenance(
+    search_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach portable mounted-note provenance with one bounded lookup."""
+    note_ids = [
+        result.get("id")
+        for result in search_results
+        if isinstance(result, dict)
+        and isinstance(result.get("id"), str)
+        and str(result["id"]).startswith("note:")
+    ][:1000]
+    if not note_ids:
+        return search_results
+    rows = await repo_query(
+        """
+        SELECT id, canonical_external, vault_id, source_hash,
+               vault_file.relative_path AS relative_path
+        FROM note WHERE id IN $note_ids;
+        """,
+        {"note_ids": [ensure_record_id(note_id) for note_id in note_ids]},
+    )
+    provenance = {
+        str(row["id"]): row
+        for row in rows
+        if row.get("canonical_external") is True
+        and row.get("vault_id")
+        and row.get("relative_path")
+    }
+    enriched: list[dict[str, Any]] = []
+    for result in search_results:
+        row = (
+            provenance.get(str(result.get("id"))) if isinstance(result, dict) else None
+        )
+        if row is None:
+            enriched.append(result)
+            continue
+        source_hash = row.get("source_hash")
+        enriched.append(
+            {
+                **result,
+                "vault_provenance": {
+                    "canonical_external": True,
+                    "vault_id": str(row["vault_id"]),
+                    "relative_path": row["relative_path"],
+                    "source_hash": source_hash
+                    if str(source_hash).startswith("sha256:")
+                    else f"sha256:{source_hash}",
+                },
+            }
+        )
+    return enriched
+
+
 def _vector_min_score() -> float:
     raw = (resolve_env("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE") or "").strip()
     if not raw:
@@ -1560,7 +1622,7 @@ async def text_search(
             """,
             {"keyword": keyword, "results": results, "source": source, "note": note},
         )
-        return search_results
+        return await _enrich_vault_provenance(search_results)
     except Exception as e:
         error_text = str(e).lower()
         if "position overflow" in error_text:
@@ -1612,7 +1674,7 @@ async def vector_search(
                 "minimum_score": minimum_score,
             },
         )
-        return search_results
+        return await _enrich_vault_provenance(search_results)
     except Exception as e:
         logger.error(f"Error performing vector search: {str(e)}")
         logger.exception(e)

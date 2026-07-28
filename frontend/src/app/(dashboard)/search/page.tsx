@@ -495,6 +495,11 @@ export default function SearchPage() {
                                   <Badge variant="secondary" className="ml-2">
                                     {result.final_score.toFixed(2)}
                                   </Badge>
+                                  {result.vault_provenance && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {result.vault_provenance.relative_path}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
 

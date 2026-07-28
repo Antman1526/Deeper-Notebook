@@ -102,3 +102,34 @@ class TestTextSearchHighlightOverflowFallback:
         ):
             with pytest.raises(DatabaseOperationError):
                 await notebook_module.text_search("hello", 10)
+
+
+@pytest.mark.asyncio
+async def test_text_search_enriches_mounted_note_with_portable_provenance():
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with patch.object(
+        notebook_module,
+        "repo_query",
+        new_callable=AsyncMock,
+        side_effect=[
+            [{"id": "note:mounted", "title": "Mounted"}],
+            [{
+                "id": "note:mounted",
+                "canonical_external": True,
+                "vault_id": "vault_mount:obsidian-brain",
+                "relative_path": "wiki/concepts/local-llms.md",
+                "source_hash": "d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+            }],
+        ],
+    ) as query:
+        result = await notebook_module.text_search("mounted", 1)
+
+    assert result[0]["vault_provenance"] == {
+        "canonical_external": True,
+        "vault_id": "vault_mount:obsidian-brain",
+        "relative_path": "wiki/concepts/local-llms.md",
+        "source_hash": "sha256:d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+    }
+    assert query.await_count == 2
+    assert "/Users/" not in str(result)

@@ -21,6 +21,12 @@ export interface SearchResult {
   source_type?: string
   created: string
   updated: string
+  vault_provenance?: {
+    canonical_external: true
+    vault_id: string
+    relative_path: string
+    source_hash: string
+  }
 }
 
 export interface SearchResponse {

@@ -1035,6 +1035,28 @@ async def test_restart_can_seed_known_paths_for_missing_detection(
     assert repository.missing == [("vault:test", "gone.md")]
 
 
+@pytest.mark.asyncio
+async def test_excluded_relative_prefix_never_reads_or_hands_off_child_files(
+    vault_root: Path,
+) -> None:
+    (vault_root / "parent.md").write_text("parent")
+    child = vault_root / "child"
+    child.mkdir()
+    (child / "note.md").write_text("child")
+    repository = MemoryObservationRepository()
+    with approve_vault_root(vault_root) as approved:
+        watcher = VaultWatcher(
+            vault_id="vault:parent",
+            approved_root=approved,
+            repository=repository,
+            excluded_relative_prefixes=("child",),
+        )
+        await watcher.scan(now_monotonic=1.0)
+        work = await watcher.scan(now_monotonic=3.0)
+    assert [item.relative_path for item in work] == ["parent.md"]
+    assert {item.relative_path for item in repository.observations} == {"parent.md"}
+
+
 def test_observation_cannot_mix_parse_and_embedding_state() -> None:
     observation = VaultFileObservation(
         vault_id="vault:test",

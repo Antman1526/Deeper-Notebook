@@ -6,6 +6,7 @@ import asyncio
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Literal, Protocol
 
 from deeper_notebook.vault.security import (
@@ -145,6 +146,7 @@ class VaultWatcher:
         stable_after_seconds: float = 2.0,
         known_paths: set[str] | None = None,
         known_projected_hashes: Mapping[str, str | None] | None = None,
+        excluded_relative_prefixes: tuple[str, ...] = (),
         max_file_bytes: int | None = None,
     ) -> None:
         if stable_after_seconds < 2.0:
@@ -154,6 +156,10 @@ class VaultWatcher:
         self._repository = repository
         self._stable_after_seconds = stable_after_seconds
         self._max_file_bytes = max_file_bytes
+        self._excluded_relative_prefixes = tuple(
+            self._validated_excluded_prefix(prefix)
+            for prefix in excluded_relative_prefixes
+        )
         self._scan_lock = asyncio.Lock()
         self._observations: dict[str, _StableObservation] = {}
         self._current_observed: dict[str, _CurrentObserved] = {}
@@ -262,6 +268,8 @@ class VaultWatcher:
         work: list[VaultWorkItem] = []
 
         for candidate in candidates:
+            if self._is_excluded(candidate.relative_path):
+                continue
             classification = classify_vault_path(candidate.relative_path)
             if not classification.indexable:
                 continue
@@ -457,6 +465,29 @@ class VaultWatcher:
         if not classification.indexable:
             raise ValueError("seed paths must identify indexable vault files")
         return relative
+
+    @staticmethod
+    def _validated_excluded_prefix(prefix: str) -> str:
+        """Accept only canonical, root-relative directory prefixes."""
+        if (
+            not isinstance(prefix, str)
+            or not prefix
+            or "\\" in prefix
+            or prefix.startswith("/")
+            or "\x00" in prefix
+        ):
+            raise ValueError("excluded prefixes must be canonical relative paths")
+        parts = prefix.split("/")
+        path = PurePosixPath(*parts)
+        if any(part in {"", ".", ".."} for part in parts) or path.as_posix() != prefix:
+            raise ValueError("excluded prefixes must be canonical relative paths")
+        return prefix
+
+    def _is_excluded(self, relative: str) -> bool:
+        return any(
+            relative == prefix or relative.startswith(prefix + "/")
+            for prefix in self._excluded_relative_prefixes
+        )
 
     @staticmethod
     def _validated_hash(content_hash: str) -> str:
