@@ -26,6 +26,7 @@ import {
 } from './use-knowledge-workspace'
 
 const originalReplaceWorkspace = useKnowledgeWorkspaceStore.getState().replaceWorkspace
+const originalHydrateWorkspace = useKnowledgeWorkspaceStore.getState().hydrateWorkspace
 
 const plan = {
   vaultId: 'vault:one',
@@ -83,16 +84,19 @@ describe('knowledge workspace synchronization', () => {
   })
 
   afterEach(() => {
-    useKnowledgeWorkspaceStore.setState({ replaceWorkspace: originalReplaceWorkspace })
+    useKnowledgeWorkspaceStore.setState({
+      replaceWorkspace: originalReplaceWorkspace,
+      hydrateWorkspace: originalHydrateWorkspace,
+    })
     vi.useRealTimers()
   })
 
   it('hydrates from GET exactly once and marks the immediate store hydrated', async () => {
     vi.mocked(knowledgeWorkspaceApi.get).mockResolvedValue(remoteWorkspace())
-    const replaceWorkspace = vi.fn(
-      useKnowledgeWorkspaceStore.getState().replaceWorkspace,
+    const hydrateWorkspace = vi.fn(
+      useKnowledgeWorkspaceStore.getState().hydrateWorkspace,
     )
-    useKnowledgeWorkspaceStore.setState({ replaceWorkspace })
+    useKnowledgeWorkspaceStore.setState({ hydrateWorkspace })
 
     const { rerender } = renderHook(
       () => useHydrateKnowledgeWorkspace(),
@@ -106,11 +110,13 @@ describe('knowledge workspace synchronization', () => {
         nextId: 8,
       })
     })
-    expect(replaceWorkspace).toHaveBeenCalledTimes(1)
+    expect(hydrateWorkspace).toHaveBeenCalledTimes(1)
+    expect(useKnowledgeWorkspaceStore.getState().durableRevision)
+      .toBe(useKnowledgeWorkspaceStore.getState().revision)
     expect(knowledgeWorkspaceApi.get).toHaveBeenCalledTimes(1)
 
     rerender()
-    expect(replaceWorkspace).toHaveBeenCalledTimes(1)
+    expect(hydrateWorkspace).toHaveBeenCalledTimes(1)
   })
 
   it('does not let a late GET overwrite user changes made after the request starts', async () => {
@@ -132,6 +138,41 @@ describe('knowledge workspace synchronization', () => {
       ...plan,
       viewMode: 'reading',
     })
+    expect(useKnowledgeWorkspaceStore.getState().revision)
+      .toBeGreaterThan(useKnowledgeWorkspaceStore.getState().durableRevision)
+  })
+
+  it('persists a pre-hydration edit even when persistence mounts after hydration', async () => {
+    const request = deferred<KnowledgeWorkspaceDocument>()
+    vi.mocked(knowledgeWorkspaceApi.get).mockReturnValue(request.promise)
+    renderHook(() => useHydrateKnowledgeWorkspace(), { wrapper: createWrapper() })
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      request.resolve(remoteWorkspace())
+      await request.promise
+    })
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().hydrated).toBe(true))
+    expect(useKnowledgeWorkspaceStore.getState().revision)
+      .toBeGreaterThan(useKnowledgeWorkspaceStore.getState().durableRevision)
+
+    vi.useFakeTimers()
+    vi.mocked(knowledgeWorkspaceApi.put).mockImplementation(async (document) => document)
+    renderHook(() => usePersistKnowledgeWorkspace(), { wrapper: createWrapper() })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledWith(expect.objectContaining({
+      panes: {
+        'pane-1': expect.objectContaining({
+          tabs: [expect.objectContaining(plan)],
+        }),
+      },
+    }))
   })
 
   it('debounces a post-hydration state change into one PUT after 400 ms', async () => {
@@ -198,6 +239,140 @@ describe('knowledge workspace synchronization', () => {
     expect(result.current.error).toBe(saveError)
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0])
       .toMatchObject(plan)
+  })
+
+  it('serializes and coalesces an in-flight save with the newest unmount snapshot', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const secondSave = deferred<KnowledgeWorkspaceDocument>()
+    let activeSaves = 0
+    let maxActiveSaves = 0
+    vi.mocked(knowledgeWorkspaceApi.put).mockImplementation(() => {
+      activeSaves += 1
+      maxActiveSaves = Math.max(maxActiveSaves, activeSaves)
+      const save = vi.mocked(knowledgeWorkspaceApi.put).mock.calls.length === 1
+        ? firstSave
+        : secondSave
+      return save.promise.finally(() => {
+        activeSaves -= 1
+      })
+    })
+    const { unmount } = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+
+    const activeTabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    act(() => {
+      useKnowledgeWorkspaceStore
+        .getState().setTabViewMode('pane-1', activeTabId, 'graph')
+    })
+    unmount()
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(maxActiveSaves).toBe(1)
+
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+      await vi.runAllTimersAsync()
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
+    expect(maxActiveSaves).toBe(1)
+    expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
+      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+
+    await act(async () => {
+      secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await secondSave.promise
+      await vi.runAllTimersAsync()
+    })
+    expect(useKnowledgeWorkspaceStore.getState().durableRevision)
+      .toBe(useKnowledgeWorkspaceStore.getState().revision)
+  })
+
+  it('shares one save queue across Strict Mode effect cleanup and re-setup', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    useKnowledgeWorkspaceStore.getState().openTab(plan)
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const secondSave = deferred<KnowledgeWorkspaceDocument>()
+    let activeSaves = 0
+    let maxActiveSaves = 0
+    vi.mocked(knowledgeWorkspaceApi.put).mockImplementation(() => {
+      activeSaves += 1
+      maxActiveSaves = Math.max(maxActiveSaves, activeSaves)
+      const save = vi.mocked(knowledgeWorkspaceApi.put).mock.calls.length === 1
+        ? firstSave
+        : secondSave
+      return save.promise.finally(() => {
+        activeSaves -= 1
+      })
+    })
+
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper(), reactStrictMode: true },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(maxActiveSaves).toBe(1)
+
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+      await vi.runAllTimersAsync()
+    })
+    if (vi.mocked(knowledgeWorkspaceApi.put).mock.calls.length === 2) {
+      secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await act(async () => {
+        await secondSave.promise
+        await vi.runAllTimersAsync()
+      })
+    }
+    expect(maxActiveSaves).toBe(1)
+  })
+
+  it('exposes a stable validation error instead of silently dropping an invalid snapshot', async () => {
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    useKnowledgeWorkspaceStore.getState().openTab(plan)
+    const state = useKnowledgeWorkspaceStore.getState()
+    useKnowledgeWorkspaceStore.setState({
+      panes: {
+        ...state.panes,
+        'pane-1': {
+          ...state.panes['pane-1'],
+          tabs: state.panes['pane-1'].tabs.map((tab) => ({
+            ...tab,
+            relativePath: '/Users/owner/secret.md',
+          })),
+        },
+      },
+    })
+    const { result, rerender } = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error))
+    const validationError = result.current.error
+    expect(validationError?.message).toMatch(/invalid workspace/i)
+    rerender()
+    expect(result.current.error).toBe(validationError)
+    expect(knowledgeWorkspaceApi.put).not.toHaveBeenCalled()
   })
 
   it('flushes pending valid state with mutateAsync on unmount without sendBeacon', async () => {

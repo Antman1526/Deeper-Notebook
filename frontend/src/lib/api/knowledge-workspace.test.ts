@@ -104,6 +104,26 @@ describe('knowledge workspace API boundary', () => {
     })).toThrow(/every pane exactly once/i)
   })
 
+  it('rejects a hostile deeply nested layout before recursive Zod parsing', async () => {
+    let layout: unknown = { type: 'pane', pane_id: 'pane-1' }
+    for (let depth = 0; depth < 5_000; depth += 1) {
+      layout = {
+        type: 'split',
+        id: `split-${depth}`,
+        direction: 'horizontal',
+        first: layout,
+        second: { type: 'pane', pane_id: 'pane-1' },
+      }
+    }
+    const hostile = { ...wireDocument, layout }
+
+    expect(() => knowledgeWorkspaceWireSchema.parse(hostile))
+      .toThrow(/depth 64/i)
+
+    vi.mocked(apiClient.get).mockResolvedValue({ data: hostile } as never)
+    await expect(knowledgeWorkspaceApi.get()).rejects.toThrow(/depth 64/i)
+  })
+
   it('converts snake_case responses to the camelCase store document', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: wireDocument } as never)
 
