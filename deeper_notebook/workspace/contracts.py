@@ -70,6 +70,18 @@ class SplitLayoutNode(BaseModel):
     first: "KnowledgeLayoutNode"
     second: "KnowledgeLayoutNode"
 
+    @model_validator(mode="after")
+    def layout_depth_is_bounded(self) -> "SplitLayoutNode":
+        stack: list[tuple[PaneLayoutNode | SplitLayoutNode, int]] = [(self, 1)]
+        while stack:
+            node, depth = stack.pop()
+            if depth > 64:
+                raise ValueError("workspace layout cannot exceed depth 64")
+            if isinstance(node, SplitLayoutNode):
+                stack.append((node.first, depth + 1))
+                stack.append((node.second, depth + 1))
+        return self
+
 
 KnowledgeLayoutNode = Annotated[
     PaneLayoutNode | SplitLayoutNode,
