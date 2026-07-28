@@ -23,6 +23,42 @@ from deeper_notebook.vault.parsers.markdown import ByteOffsetMapper, ScanContext
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vault"
 
+RSS_SAMPLER_CODE = """
+import ctypes
+import os
+import sys
+
+def current_rss():
+    if sys.platform.startswith("linux"):
+        with open("/proc/self/statm", encoding="ascii") as statm:
+            resident_pages = int(statm.read().split()[1])
+        return resident_pages * os.sysconf("SC_PAGE_SIZE")
+    if sys.platform == "win32":
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+        counters = ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        process = ctypes.windll.kernel32.GetCurrentProcess()
+        if not ctypes.windll.psapi.GetProcessMemoryInfo(
+            process, ctypes.byref(counters), counters.cb
+        ):
+            raise OSError(ctypes.get_last_error(), "GetProcessMemoryInfo failed")
+        return counters.WorkingSetSize
+    import resource
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+"""
+
 
 def fixture_bytes(relative_path: str) -> bytes:
     return (FIXTURES / relative_path).read_bytes()
@@ -997,25 +1033,39 @@ def test_projection_line_budget_counts_cr_only_and_unterminated_lines() -> None:
 
 
 def test_projection_budget_subprocess_rss_and_time_are_bounded() -> None:
-    code = """
+    code = RSS_SAMPLER_CODE + """
 import json
-import resource
+import threading
 import time
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 
+baseline_rss = current_rss()
 unit = b"# Heading\\n[[Target]] #tag\\n\\n"
 raw = (unit * ((9 * 1024 * 1024 // len(unit)) + 1))[: 9 * 1024 * 1024]
+peak_rss = [baseline_rss]
+stop_sampling = threading.Event()
+def sample_rss():
+    while not stop_sampling.wait(0.001):
+        peak_rss[0] = max(peak_rss[0], current_rss())
+monitor = threading.Thread(target=sample_rss, daemon=True)
+monitor.start()
 started = time.monotonic()
 try:
     parse_document("hostile.md", raw, format_mode="obsidian")
 except VaultParseError as exc:
+    elapsed = time.monotonic() - started
+    stop_sampling.set()
+    monitor.join()
+    peak_rss[0] = max(peak_rss[0], current_rss())
     result = {
         "code": exc.code,
-        "elapsed": time.monotonic() - started,
-        "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "elapsed": elapsed,
+        "rss_growth": max(0, peak_rss[0] - baseline_rss),
     }
     print(json.dumps(result))
 else:
+    stop_sampling.set()
+    monitor.join()
     raise SystemExit("projection unexpectedly succeeded")
 """
     completed = subprocess.run(
@@ -1027,13 +1077,10 @@ else:
         timeout=15,
     )
     result = json.loads(completed.stdout.strip().splitlines()[-1])
-    rss_bytes = result["rss"]
-    if sys.platform != "darwin":
-        rss_bytes *= 1024
 
     assert result["code"] == "projection_too_large"
     assert result["elapsed"] < 5.0
-    assert rss_bytes < 350 * 1024 * 1024
+    assert result["rss_growth"] < 350 * 1024 * 1024
 
 
 def test_one_mebibyte_useful_wikilink_document_is_accepted() -> None:
@@ -1067,14 +1114,15 @@ def test_exact_wikilink_output_boundary_is_accepted() -> None:
     ],
 )
 def test_single_line_transient_bombs_fail_with_bounded_rss(kind: str) -> None:
-    code = """
+    code = RSS_SAMPLER_CODE + """
 import json
-import resource
 import sys
+import threading
 import time
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 
 kind = sys.argv[1]
+baseline_rss = current_rss()
 raw = {
     "wikilinks": b"[[Target]] " * 300_000,
     "wikilinks-9m": (
@@ -1086,17 +1134,30 @@ raw = {
     "invalid": b"[[Outer [label](nested.md)]] " * 160_000,
     "mixed": b"[[Target]] [label](target.md) " * 75_001,
 }[kind]
+peak_rss = [baseline_rss]
+stop_sampling = threading.Event()
+def sample_rss():
+    while not stop_sampling.wait(0.001):
+        peak_rss[0] = max(peak_rss[0], current_rss())
+monitor = threading.Thread(target=sample_rss, daemon=True)
+monitor.start()
 started = time.monotonic()
 try:
     parse_document(f"{kind}.md", raw, format_mode="obsidian")
 except VaultParseError as exc:
+    elapsed = time.monotonic() - started
+    stop_sampling.set()
+    monitor.join()
+    peak_rss[0] = max(peak_rss[0], current_rss())
     result = {
         "code": exc.code,
-        "elapsed": time.monotonic() - started,
-        "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "elapsed": elapsed,
+        "rss_growth": max(0, peak_rss[0] - baseline_rss),
     }
     print(json.dumps(result))
 else:
+    stop_sampling.set()
+    monitor.join()
     raise SystemExit("transient bomb unexpectedly succeeded")
 """
     completed = subprocess.run(
@@ -1108,29 +1169,38 @@ else:
         timeout=20,
     )
     result = json.loads(completed.stdout.strip().splitlines()[-1])
-    rss_bytes = result["rss"]
-    if sys.platform != "darwin":
-        rss_bytes *= 1024
 
     assert result["code"] == "projection_too_large"
     assert result["elapsed"] < 8.0
-    assert rss_bytes < 150 * 1024 * 1024
+    assert result["rss_growth"] < 150 * 1024 * 1024
 
 
 def test_multibyte_single_line_offset_mapping_has_bounded_rss() -> None:
-    code = """
+    code = RSS_SAMPLER_CODE + """
 import json
-import resource
+import threading
 import time
 from deeper_notebook.vault.parsers import parse_document
 
+baseline_rss = current_rss()
 raw = ("é" * 4_000_000).encode()
+peak_rss = [baseline_rss]
+stop_sampling = threading.Event()
+def sample_rss():
+    while not stop_sampling.wait(0.001):
+        peak_rss[0] = max(peak_rss[0], current_rss())
+monitor = threading.Thread(target=sample_rss, daemon=True)
+monitor.start()
 started = time.monotonic()
 parsed = parse_document("multibyte.md", raw, format_mode="markdown")
+elapsed = time.monotonic() - started
+stop_sampling.set()
+monitor.join()
+peak_rss[0] = max(peak_rss[0], current_rss())
 print(json.dumps({
     "blocks": len(parsed.blocks),
-    "elapsed": time.monotonic() - started,
-    "rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+    "elapsed": elapsed,
+    "rss_growth": max(0, peak_rss[0] - baseline_rss),
 }))
 """
     completed = subprocess.run(
@@ -1142,13 +1212,10 @@ print(json.dumps({
         timeout=20,
     )
     result = json.loads(completed.stdout.strip().splitlines()[-1])
-    rss_bytes = result["rss"]
-    if sys.platform != "darwin":
-        rss_bytes *= 1024
 
     assert result["blocks"] == 1
     assert result["elapsed"] < 8.0
-    assert rss_bytes < 150 * 1024 * 1024
+    assert result["rss_growth"] < 150 * 1024 * 1024
 
 
 def test_escape_map_fast_path_preserves_unescaped_semantics() -> None:
