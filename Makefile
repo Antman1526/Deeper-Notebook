@@ -424,7 +424,7 @@ build-mac-test: build-mac-venv
 # `pip install -r requirements.txt` would have at runtime.
 build-mac-lock:
 	@echo "🔒 Regenerating desktop/requirements.lock from pyproject.toml + desktop/requirements.txt..."
-	@uv pip compile pyproject.toml desktop/requirements.txt --python-version 3.12 \
+	@uv pip compile pyproject.toml desktop/requirements.txt --python-version 3.12 --universal \
 		-o desktop/requirements.lock --quiet
 	@echo "   Lockfile: $$(wc -l < desktop/requirements.lock) pinned packages"
 

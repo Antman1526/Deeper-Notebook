@@ -334,6 +334,65 @@ def _windows_path_owner_sid(path: Path) -> str:
             local_free(descriptor)
 
 
+def _create_windows_owned_directory(path: Path, reason: str) -> bool:
+    """Create a directory with the current user as owner and a protected ACL."""
+    import ctypes
+    from ctypes import wintypes
+
+    sid = _windows_current_user_sid()
+    descriptor = wintypes.LPVOID()
+    descriptor_size = wintypes.DWORD()
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPVOID),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    convert.restype = wintypes.BOOL
+    sddl = (
+        f"O:{sid}"
+        f"D:P(A;OICI;FA;;;{sid})"
+        "(A;OICI;FA;;;SY)"
+        "(A;OICI;FA;;;BA)"
+    )
+    if not convert(sddl, 1, ctypes.byref(descriptor), ctypes.byref(descriptor_size)):
+        raise _CriticalPathError(reason)
+
+    class _SecurityAttributes(ctypes.Structure):
+        _fields_ = (
+            ("nLength", wintypes.DWORD),
+            ("lpSecurityDescriptor", wintypes.LPVOID),
+            ("bInheritHandle", wintypes.BOOL),
+        )
+
+    attributes = _SecurityAttributes(
+        ctypes.sizeof(_SecurityAttributes),
+        descriptor,
+        False,
+    )
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_directory = kernel32.CreateDirectoryW
+    create_directory.argtypes = (
+        wintypes.LPCWSTR,
+        ctypes.POINTER(_SecurityAttributes),
+    )
+    create_directory.restype = wintypes.BOOL
+    local_free = kernel32.LocalFree
+    local_free.argtypes = (wintypes.HLOCAL,)
+    local_free.restype = wintypes.HLOCAL
+    try:
+        if create_directory(str(path), ctypes.byref(attributes)):
+            return True
+        error = ctypes.get_last_error()
+        if error == 183:  # ERROR_ALREADY_EXISTS
+            return False
+        raise _CriticalPathError(reason) from ctypes.WinError(error)
+    finally:
+        local_free(descriptor)
+
+
 def _harden_windows_owned_directory(path: Path, reason: str) -> None:
     import ctypes
     from ctypes import wintypes
@@ -514,10 +573,7 @@ def _open_child_directory(
     ownership_reason: str,
 ) -> Iterator[SecureDirectory]:
     if sys.platform == "win32":
-        try:
-            path.mkdir(mode=0o700)
-        except FileExistsError:
-            pass
+        _create_windows_owned_directory(path, ownership_reason)
         if _windows_path_is_reparse_point(path):
             raise _CriticalPathError(symlink_reason)
         handle = _open_windows_directory_handle(path)
