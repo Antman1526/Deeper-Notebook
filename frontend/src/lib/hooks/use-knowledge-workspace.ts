@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
 import {
@@ -31,18 +31,41 @@ function selectSerializableWorkspace(
 }
 
 function validatedSnapshot(state: KnowledgeWorkspaceState): {
+  ok: true
   document: KnowledgeWorkspaceDocument
   fingerprint: string
-} | null {
+  revision: number
+} | {
+  ok: false
+  error: Error
+} {
   const document = selectSerializableWorkspace(state)
   try {
     return {
+      ok: true,
       document,
       fingerprint: JSON.stringify(serializeKnowledgeWorkspace(document)),
+      revision: state.revision,
     }
-  } catch {
-    return null
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown validation failure'
+    return {
+      ok: false,
+      error: new Error(`Invalid workspace snapshot: ${detail}`),
+    }
   }
+}
+
+type ValidWorkspaceSnapshot = Extract<
+  ReturnType<typeof validatedSnapshot>,
+  { ok: true }
+>
+
+interface SaveQueueState {
+  inFlight: boolean
+  queuedSnapshot: ValidWorkspaceSnapshot | null
+  debouncedSnapshot: ValidWorkspaceSnapshot | null
+  timer: ReturnType<typeof setTimeout> | null
 }
 
 export function useHydrateKnowledgeWorkspace() {
@@ -57,77 +80,137 @@ export function useHydrateKnowledgeWorkspace() {
   useEffect(() => {
     if (!query.data || applied.current) return
     applied.current = true
-    if (getKnowledgeWorkspaceRevision() === requestStartRevision.current) {
-      useKnowledgeWorkspaceStore.getState().replaceWorkspace(query.data)
-    } else {
-      useKnowledgeWorkspaceStore.setState({ hydrated: true })
-    }
+    useKnowledgeWorkspaceStore
+      .getState()
+      .hydrateWorkspace(query.data, requestStartRevision.current)
   }, [query.data])
 
   return query
 }
 
 export function usePersistKnowledgeWorkspace() {
+  const [validationError, setValidationError] = useState<Error | null>(null)
   const mutation = useMutation({
     mutationFn: knowledgeWorkspaceApi.put,
   })
-  const mutateAsync = mutation.mutateAsync
+  const mutateAsyncRef = useRef(mutation.mutateAsync)
+  const queueRef = useRef<SaveQueueState | null>(null)
 
   useEffect(() => {
-    const initialState = useKnowledgeWorkspaceStore.getState()
-    const initialRevision = getKnowledgeWorkspaceRevision()
-    let wasHydrated = initialState.hydrated
-    let lastFingerprint = validatedSnapshot(initialState)?.fingerprint ?? null
-    let pendingDocument: KnowledgeWorkspaceDocument | null = null
-    let timer: ReturnType<typeof setTimeout> | null = null
+    mutateAsyncRef.current = mutation.mutateAsync
+  }, [mutation.mutateAsync])
 
-    const sendPending = () => {
-      timer = null
-      const document = pendingDocument
-      pendingDocument = null
-      if (!document) return
-      void mutateAsync(document).catch(() => undefined)
+  useEffect(() => {
+    const queue = queueRef.current ?? {
+      inFlight: false,
+      queuedSnapshot: null,
+      debouncedSnapshot: null,
+      timer: null,
+    }
+    queueRef.current = queue
+    let unmounted = false
+
+    const preferLatest = (
+      current: ValidWorkspaceSnapshot | null,
+      candidate: ValidWorkspaceSnapshot,
+    ): ValidWorkspaceSnapshot => {
+      if (
+        !current
+        || candidate.revision > current.revision
+        || (
+          candidate.revision === current.revision
+          && candidate.fingerprint !== current.fingerprint
+        )
+      ) {
+        return candidate
+      }
+      return current
     }
 
-    const schedule = (document: KnowledgeWorkspaceDocument) => {
-      pendingDocument = document
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(sendPending, 400)
-    }
-
-    const unsubscribe = useKnowledgeWorkspaceStore.subscribe((state) => {
-      if (!state.hydrated) {
-        wasHydrated = false
+    const startSave = (snapshot: ValidWorkspaceSnapshot) => {
+      const state = useKnowledgeWorkspaceStore.getState()
+      if (snapshot.revision <= state.durableRevision) {
+        return
+      }
+      if (queue.inFlight) {
+        queue.queuedSnapshot = preferLatest(queue.queuedSnapshot, snapshot)
         return
       }
 
-      const snapshot = validatedSnapshot(state)
-      if (!snapshot) return
+      queue.inFlight = true
+      void mutateAsyncRef.current(snapshot.document)
+        .then(() => {
+          useKnowledgeWorkspaceStore
+            .getState()
+            .markWorkspaceDurable(snapshot.revision)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          queue.inFlight = false
+          const next = queue.queuedSnapshot
+          queue.queuedSnapshot = null
+          if (next) startSave(next)
+        })
+    }
 
-      if (!wasHydrated) {
-        wasHydrated = true
-        lastFingerprint = snapshot.fingerprint
-        if (getKnowledgeWorkspaceRevision() !== initialRevision) {
-          schedule(snapshot.document)
+    const flushDebounce = () => {
+      queue.timer = null
+      const snapshot = queue.debouncedSnapshot
+      queue.debouncedSnapshot = null
+      if (snapshot) startSave(snapshot)
+    }
+
+    const schedule = (snapshot: ValidWorkspaceSnapshot) => {
+      if (queue.inFlight) {
+        if (queue.timer) {
+          clearTimeout(queue.timer)
+          queue.timer = null
+        }
+        queue.debouncedSnapshot = null
+        queue.queuedSnapshot = preferLatest(queue.queuedSnapshot, snapshot)
+        return
+      }
+
+      queue.debouncedSnapshot = preferLatest(queue.debouncedSnapshot, snapshot)
+      if (queue.timer) clearTimeout(queue.timer)
+      queue.timer = setTimeout(flushDebounce, 400)
+    }
+
+    const observe = (state: KnowledgeWorkspaceState) => {
+      if (!state.hydrated) return
+      const snapshot = validatedSnapshot(state)
+      if (!snapshot.ok) {
+        if (!unmounted) {
+          setValidationError((current) =>
+            current?.message === snapshot.error.message ? current : snapshot.error)
         }
         return
       }
+      if (!unmounted) setValidationError(null)
+      if (snapshot.revision <= state.durableRevision) return
+      schedule(snapshot)
+    }
 
-      if (snapshot.fingerprint === lastFingerprint) return
-      lastFingerprint = snapshot.fingerprint
-      schedule(snapshot.document)
-    })
+    const unsubscribe = useKnowledgeWorkspaceStore.subscribe(observe)
+    observe(useKnowledgeWorkspaceStore.getState())
 
     return () => {
+      unmounted = true
       unsubscribe()
-      if (timer) clearTimeout(timer)
-      if (pendingDocument) {
-        const document = pendingDocument
-        pendingDocument = null
-        void mutateAsync(document).catch(() => undefined)
+      if (queue.timer) {
+        clearTimeout(queue.timer)
+        queue.timer = null
+      }
+      const snapshot = queue.debouncedSnapshot
+      queue.debouncedSnapshot = null
+      if (snapshot) {
+        startSave(snapshot)
       }
     }
-  }, [mutateAsync])
+  }, [])
 
-  return mutation
+  return {
+    ...mutation,
+    error: validationError ?? mutation.error,
+  }
 }

@@ -2,6 +2,10 @@ import { create } from 'zustand'
 
 import {
   defaultKnowledgeWorkspace,
+  knowledgeViewModeSchema,
+  openKnowledgeTabSchema,
+  serializeKnowledgeWorkspace,
+  splitDirectionSchema,
   type KnowledgeLayoutNode,
   type KnowledgePane,
   type KnowledgeViewMode,
@@ -12,7 +16,14 @@ import {
 
 export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   hydrated: boolean
+  revision: number
+  durableRevision: number
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
+  hydrateWorkspace: (
+    document: KnowledgeWorkspaceDocument,
+    requestStartRevision: number,
+  ) => void
+  markWorkspaceDurable: (revision: number) => void
   openTab: (tab: OpenKnowledgeTab, paneId?: string) => void
   closeTab: (paneId: string, tabId: string) => void
   activateTab: (paneId: string, tabId: string) => void
@@ -23,14 +34,8 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   resetWorkspace: () => void
 }
 
-let workspaceRevision = 0
-
 export function getKnowledgeWorkspaceRevision(): number {
-  return workspaceRevision
-}
-
-function markWorkspaceModified(): void {
-  workspaceRevision += 1
+  return useKnowledgeWorkspaceStore.getState().revision
 }
 
 function replacePaneInLayout(
@@ -67,26 +72,95 @@ function firstPaneId(node: KnowledgeLayoutNode): string {
   return node.type === 'pane' ? node.paneId : firstPaneId(node.first)
 }
 
+function totalTabCount(panes: Record<string, KnowledgePane>): number {
+  return Object.values(panes).reduce((total, pane) => total + pane.tabs.length, 0)
+}
+
+function deepestPaneOccurrence(node: KnowledgeLayoutNode, paneId: string): number {
+  const stack: Array<{ node: KnowledgeLayoutNode; depth: number }> = [{ node, depth: 1 }]
+  let deepest = 0
+  let visitedNodes = 0
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current) break
+    visitedNodes += 1
+    if (visitedNodes > 10_000) return Number.POSITIVE_INFINITY
+    if (current.node.type === 'pane') {
+      if (current.node.paneId === paneId) deepest = Math.max(deepest, current.depth)
+      continue
+    }
+    stack.push(
+      { node: current.node.first, depth: current.depth + 1 },
+      { node: current.node.second, depth: current.depth + 1 },
+    )
+  }
+  return deepest
+}
+
+function isValidWorkspace(document: KnowledgeWorkspaceDocument): boolean {
+  try {
+    serializeKnowledgeWorkspace(document)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set, get) => ({
   ...defaultKnowledgeWorkspace(),
   hydrated: false,
+  revision: 0,
+  durableRevision: 0,
 
   replaceWorkspace: (document) => {
-    set({ ...document, hydrated: true })
+    if (!isValidWorkspace(document)) return
+    const state = get()
+    set({ ...document, hydrated: true, durableRevision: state.revision })
+  },
+
+  hydrateWorkspace: (document, requestStartRevision) => {
+    if (!isValidWorkspace(document)) return
+    const state = get()
+    if (state.revision === requestStartRevision) {
+      set({
+        ...document,
+        hydrated: true,
+        durableRevision: Math.max(state.durableRevision, requestStartRevision),
+      })
+      return
+    }
+    if (!state.hydrated || state.durableRevision < requestStartRevision) {
+      set({
+        hydrated: true,
+        durableRevision: Math.max(state.durableRevision, requestStartRevision),
+      })
+    }
+  },
+
+  markWorkspaceDurable: (revision) => {
+    const state = get()
+    const durableRevision = Math.min(revision, state.revision)
+    if (durableRevision <= state.durableRevision) return
+    set({ durableRevision })
   },
 
   openTab: (tab, requestedPaneId) => {
+    const parsed = openKnowledgeTabSchema.safeParse(tab)
+    if (!parsed.success) return
+    const validTab = parsed.data
     const state = get()
     const paneId = requestedPaneId ?? state.activePaneId
     const pane = state.panes[paneId]
     if (!pane) return
     const existing = pane.tabs.find(
-      (candidate) => candidate.vaultId === tab.vaultId && candidate.noteId === tab.noteId,
+      (candidate) =>
+        candidate.vaultId === validTab.vaultId && candidate.noteId === validTab.noteId,
     )
-    markWorkspaceModified()
     if (existing) {
+      if (state.activePaneId === paneId && pane.activeTabId === existing.id) return
       set({
         activePaneId: paneId,
+        revision: state.revision + 1,
         panes: {
           ...state.panes,
           [paneId]: { ...pane, activeTabId: existing.id },
@@ -94,15 +168,17 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       })
       return
     }
+    if (totalTabCount(state.panes) >= 128) return
 
     const created = {
-      ...tab,
+      ...validTab,
       id: `tab-${state.nextId}`,
-      viewMode: tab.viewMode ?? 'reading',
+      viewMode: validTab.viewMode ?? 'reading',
     }
     set({
       activePaneId: paneId,
       nextId: state.nextId + 1,
+      revision: state.revision + 1,
       panes: {
         ...state.panes,
         [paneId]: {
@@ -124,8 +200,8 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (activeTabId === tabId) {
       activeTabId = tabs[closedIndex]?.id ?? tabs[closedIndex - 1]?.id ?? null
     }
-    markWorkspaceModified()
     set({
+      revision: state.revision + 1,
       panes: {
         ...state.panes,
         [paneId]: { ...pane, activeTabId, tabs },
@@ -137,9 +213,10 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const state = get()
     const pane = state.panes[paneId]
     if (!pane?.tabs.some((tab) => tab.id === tabId)) return
-    markWorkspaceModified()
+    if (state.activePaneId === paneId && pane.activeTabId === tabId) return
     set({
       activePaneId: paneId,
+      revision: state.revision + 1,
       panes: {
         ...state.panes,
         [paneId]: { ...pane, activeTabId: tabId },
@@ -148,36 +225,53 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   },
 
   setActivePane: (paneId) => {
-    if (!get().panes[paneId]) return
-    markWorkspaceModified()
-    set({ activePaneId: paneId })
+    const state = get()
+    if (!state.panes[paneId] || state.activePaneId === paneId) return
+    set({ activePaneId: paneId, revision: state.revision + 1 })
   },
 
   setTabViewMode: (paneId, tabId, mode) => {
+    const parsedMode = knowledgeViewModeSchema.safeParse(mode)
+    if (!parsedMode.success) return
     const state = get()
     const pane = state.panes[paneId]
-    if (!pane?.tabs.some((tab) => tab.id === tabId)) return
-    markWorkspaceModified()
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab || tab.viewMode === parsedMode.data) return
     set({
+      revision: state.revision + 1,
       panes: {
         ...state.panes,
         [paneId]: {
           ...pane,
-          tabs: pane.tabs.map((tab) => tab.id === tabId ? { ...tab, viewMode: mode } : tab),
+          tabs: pane.tabs.map((candidate) =>
+            candidate.id === tabId
+              ? { ...candidate, viewMode: parsedMode.data }
+              : candidate),
         },
       },
     })
   },
 
   splitPane: (paneId, direction) => {
+    const parsedDirection = splitDirectionSchema.safeParse(direction)
+    if (!parsedDirection.success) return paneId
     const state = get()
     const sourcePane = state.panes[paneId]
     if (!sourcePane) {
       throw new Error(`Cannot split unknown pane: ${paneId}`)
     }
+    const targetDepth = deepestPaneOccurrence(state.layout, paneId)
+    if (
+      Object.keys(state.panes).length >= 32
+      || targetDepth === 0
+      || targetDepth >= 64
+    ) {
+      return paneId
+    }
     const newPaneId = `pane-${state.nextId}`
     const splitId = `split-${state.nextId + 1}`
     const activeTab = sourcePane.tabs.find((tab) => tab.id === sourcePane.activeTabId)
+    if (activeTab && totalTabCount(state.panes) >= 128) return paneId
     const newPane: KnowledgePane = {
       id: newPaneId,
       activeTabId: activeTab?.id ?? null,
@@ -186,14 +280,14 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const replacement: KnowledgeLayoutNode = {
       type: 'split',
       id: splitId,
-      direction,
+      direction: parsedDirection.data,
       first: { type: 'pane', paneId },
       second: { type: 'pane', paneId: newPaneId },
     }
-    markWorkspaceModified()
     set({
       activePaneId: newPaneId,
       nextId: state.nextId + 2,
+      revision: state.revision + 1,
       panes: { ...state.panes, [newPaneId]: newPane },
       layout: replacePaneInLayout(state.layout, paneId, replacement),
     })
@@ -207,10 +301,10 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (!layout) return
     const panes = { ...state.panes }
     delete panes[paneId]
-    markWorkspaceModified()
     set({
       panes,
       layout,
+      revision: state.revision + 1,
       activePaneId: state.activePaneId === paneId
         ? firstPaneId(layout)
         : state.activePaneId,
@@ -218,8 +312,13 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   },
 
   resetWorkspace: () => {
-    markWorkspaceModified()
-    set({ ...defaultKnowledgeWorkspace(), hydrated: false })
+    const revision = get().revision + 1
+    set({
+      ...defaultKnowledgeWorkspace(),
+      hydrated: false,
+      revision,
+      durableRevision: revision,
+    })
   },
 }))
 

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  serializeKnowledgeWorkspace,
+  type KnowledgeLayoutNode,
+  type OpenKnowledgeTab,
+} from '@/lib/api/knowledge-workspace'
+import {
   selectActiveKnowledgeTab,
   selectPaneCount,
   useKnowledgeWorkspaceStore,
@@ -109,5 +114,122 @@ describe('knowledge workspace store', () => {
     const tabs = useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs
     expect(tabs[0].viewMode).toBe('graph')
     expect(tabs[1].viewMode).toBe('reading')
+  })
+
+  it.each([
+    { ...plan, vaultId: '' },
+    { ...plan, vaultId: 'v'.repeat(129) },
+    { ...plan, noteId: '' },
+    { ...plan, noteId: 'n'.repeat(129) },
+    { ...plan, title: '' },
+    { ...plan, title: 't'.repeat(513) },
+    { ...plan, relativePath: '' },
+    { ...plan, relativePath: '/Users/owner/secret.md' },
+    { ...plan, relativePath: 'Projects/../secret.md' },
+    { ...plan, relativePath: 'p'.repeat(4097) },
+    { ...plan, viewMode: 'invalid-mode' },
+  ] as OpenKnowledgeTab[])('refuses an invalid open tab without changing state: $relativePath', (tab) => {
+    const before = useKnowledgeWorkspaceStore.getState()
+
+    before.openTab(tab)
+
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+  })
+
+  it('caps the workspace at 128 total tabs without creating invalid state', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    for (let index = 1; index <= 128; index += 1) {
+      store.openTab({
+        ...plan,
+        noteId: `note:${index}`,
+        relativePath: `Projects/${index}.md`,
+      })
+    }
+    const before = useKnowledgeWorkspaceStore.getState()
+
+    before.openTab({
+      ...plan,
+      noteId: 'note:129',
+      relativePath: 'Projects/129.md',
+    })
+
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+    expect(Object.values(before.panes).flatMap((pane) => pane.tabs)).toHaveLength(128)
+    expect(() => serializeKnowledgeWorkspace(before)).not.toThrow()
+  })
+
+  it('refuses a 33rd pane and keeps the workspace schema-valid', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    let sourcePaneId = 'pane-1'
+    for (let count = 1; count < 32; count += 1) {
+      sourcePaneId = store.splitPane(sourcePaneId, 'horizontal')
+    }
+    const before = useKnowledgeWorkspaceStore.getState()
+
+    const returnedPaneId = before.splitPane(sourcePaneId, 'vertical')
+
+    expect(returnedPaneId).toBe(sourcePaneId)
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+    expect(selectPaneCount(before)).toBe(32)
+    expect(() => serializeKnowledgeWorkspace(before)).not.toThrow()
+  })
+
+  it('refuses a split whose target is already at layout depth 64', () => {
+    let layout: KnowledgeLayoutNode = { type: 'pane', paneId: 'pane-1' }
+    for (let depth = 1; depth < 64; depth += 1) {
+      layout = {
+        type: 'split',
+        id: `split-depth-${depth}`,
+        direction: 'horizontal',
+        first: layout,
+        second: { type: 'pane', paneId: 'pane-1' },
+      }
+    }
+    useKnowledgeWorkspaceStore.setState({ layout })
+    const before = useKnowledgeWorkspaceStore.getState()
+
+    const returnedPaneId = before.splitPane('pane-1', 'vertical')
+
+    expect(returnedPaneId).toBe('pane-1')
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+  })
+
+  it('keeps identity and revision stable for no-op activation and view actions', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const active = useKnowledgeWorkspaceStore.getState()
+    const activeTabId = active.panes['pane-1'].activeTabId!
+
+    active.setActivePane('pane-1')
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(active)
+    active.activateTab('pane-1', activeTabId)
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(active)
+    active.openTab(plan)
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(active)
+    active.setTabViewMode('pane-1', activeTabId, 'reading')
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(active)
+    expect(useKnowledgeWorkspaceStore.getState().revision).toBe(active.revision)
+  })
+
+  it('refuses invalid runtime view-mode and split-direction inputs', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const before = useKnowledgeWorkspaceStore.getState()
+    const activeTabId = before.panes['pane-1'].activeTabId!
+
+    before.setTabViewMode(
+      'pane-1',
+      activeTabId,
+      'invalid-mode' as Parameters<typeof before.setTabViewMode>[2],
+    )
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+
+    const returnedPaneId = before.splitPane(
+      'pane-1',
+      'diagonal' as Parameters<typeof before.splitPane>[1],
+    )
+    expect(returnedPaneId).toBe('pane-1')
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
   })
 })

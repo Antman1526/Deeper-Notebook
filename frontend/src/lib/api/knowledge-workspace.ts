@@ -27,6 +27,14 @@ const relativePathSchema = z.string().min(1).max(4096).superRefine((value, conte
   }
 })
 
+export const openKnowledgeTabSchema = z.object({
+  vaultId: z.string().min(1).max(128),
+  noteId: z.string().min(1).max(128),
+  title: z.string().min(1).max(512),
+  relativePath: relativePathSchema,
+  viewMode: knowledgeViewModeSchema.optional(),
+}).strict()
+
 export const knowledgeTabWireSchema = z.object({
   id: z.string().min(1).max(128),
   vault_id: z.string().min(1).max(128),
@@ -68,7 +76,7 @@ export const knowledgeLayoutWireSchema: z.ZodType<KnowledgeLayoutWire> = z.lazy(
   ]),
 )
 
-export const knowledgeWorkspaceWireSchema = z.object({
+const rawKnowledgeWorkspaceWireSchema = z.object({
   version: z.literal(1),
   active_pane_id: z.string().min(1).max(128),
   next_id: z.number().int().min(1),
@@ -143,6 +151,40 @@ export const knowledgeWorkspaceWireSchema = z.object({
   }
 })
 
+function preflightLayoutDepth(value: unknown, context: z.RefinementCtx): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const layout = (value as Record<string, unknown>).layout
+  const stack: Array<{ node: unknown; depth: number }> = [{ node: layout, depth: 1 }]
+
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current) break
+    if (current.depth > 64) {
+      context.addIssue({
+        code: 'custom',
+        fatal: true,
+        path: ['layout'],
+        message: 'workspace layout cannot exceed depth 64',
+      })
+      return
+    }
+    if (!current.node || typeof current.node !== 'object' || Array.isArray(current.node)) {
+      continue
+    }
+    const node = current.node as Record<string, unknown>
+    if (node.type === 'split') {
+      stack.push(
+        { node: node.first, depth: current.depth + 1 },
+        { node: node.second, depth: current.depth + 1 },
+      )
+    }
+  }
+}
+
+export const knowledgeWorkspaceWireSchema = z.unknown()
+  .superRefine(preflightLayoutDepth)
+  .pipe(rawKnowledgeWorkspaceWireSchema)
+
 export type KnowledgeViewMode = z.infer<typeof knowledgeViewModeSchema>
 export type SplitDirection = z.infer<typeof splitDirectionSchema>
 
@@ -209,16 +251,24 @@ export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {
 }
 
 function assertNoAbsolutePath(value: unknown): void {
-  if (typeof value === 'string') {
-    if (/^(?:[\\/]|[A-Za-z]:)/.test(value)) {
-      throw new Error('Knowledge workspace contained an absolute path')
+  const stack: unknown[] = [value]
+  const visited = new WeakSet<object>()
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (typeof current === 'string') {
+      if (/^(?:[\\/]|[A-Za-z]:)/.test(current)) {
+        throw new Error('Knowledge workspace contained an absolute path')
+      }
+      continue
     }
-    return
-  }
-  if (Array.isArray(value)) {
-    value.forEach(assertNoAbsolutePath)
-  } else if (value && typeof value === 'object') {
-    Object.values(value).forEach(assertNoAbsolutePath)
+    if (!current || typeof current !== 'object') continue
+    if (visited.has(current)) continue
+    visited.add(current)
+    if (Array.isArray(current)) {
+      for (const item of current) stack.push(item)
+    } else {
+      for (const item of Object.values(current)) stack.push(item)
+    }
   }
 }
 
