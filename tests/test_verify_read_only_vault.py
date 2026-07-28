@@ -85,7 +85,6 @@ def _api_responses(root: Path):
         ("GET", "/obsidian"): _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
         ("GET", "/logseq"): _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
         ("POST", "/parent/trust/import"): {"changed": 0, "unchanged": 21},
-        ("POST", "/parent/scan"): {"parsed": 0, "unchanged": 21},
         ("POST", "/obsidian/scan"): {"parsed": 0, "unchanged": 12},
         ("POST", "/logseq/scan"): {"parsed": 0, "unchanged": 9},
         ("GET", "/parent/trust"): _trust_records(),
@@ -105,7 +104,7 @@ def _mount_detail(root: Path, mount_id: str, name: str, format_mode: str, parent
     }
 
 
-def test_check_only_never_calls_api_and_reports_relative_paths(tmp_path, monkeypatch):
+def test_check_only_never_calls_api_and_exports_only_aggregate_source_inventory(tmp_path, monkeypatch, capsys):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -119,12 +118,25 @@ def test_check_only_never_calls_api_and_reports_relative_paths(tmp_path, monkeyp
     assert calls == []
     assert report["mode"] == "check-only"
     assert report["source_files_changed"] == 0
-    assert all(not Path(path).is_absolute() for path in report["source_hashes"])
+    assert "source_hashes" not in report
+    assert report["source_files_observed"] > 0
+    assert len(report["source_inventory_digest"]) == 64
     assert str(Path.home()) not in output.read_text()
     assert "private-source-path" not in output.read_text()
     assert "private-content-path" not in output.read_text()
     assert "private-title" not in output.read_text()
     assert "private-vault-root" not in output.read_text()
+    sensitive_relative_name = "Obsidian Brain/CLIENTS/TopSecret notes.md"
+    (root / sensitive_relative_name).parent.mkdir(parents=True)
+    sensitive_file = root / sensitive_relative_name
+    sensitive_file.write_text("sensitive fixture")
+    sensitive_hash = verifier._hash_file(sensitive_file)
+    output.unlink()
+    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    captured = capsys.readouterr()
+    rendered = output.read_text() + captured.out + captured.err
+    assert sensitive_relative_name not in rendered
+    assert sensitive_hash not in rendered
     assert output.stat().st_mode & 0o777 == 0o600
 
 
@@ -221,7 +233,10 @@ def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, mon
     assert report["synthesis_records"] == 9
     assert report["synthesis_with_derived_from"] == 9
     assert ("POST", "/parent/trust/import", {"manifest_relative_path": "brain-engine/generated/deepercode-connector/manifest.json"}) in requests
-    assert sum(path.endswith("/scan") for _, path, _ in requests) == 6
+    assert sum(path.endswith("/scan") for _, path, _ in requests) == 4
+    assert ("POST", "/parent/scan", None) not in requests
+    assert ("POST", "/obsidian/scan", None) in requests
+    assert ("POST", "/logseq/scan", None) in requests
     assert str(root) not in output.read_text()
 
 
@@ -413,7 +428,7 @@ def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(tmp_pat
 
     def request(method, api, path, payload=None):
         requests.append((method, path))
-        if path == "/parent/scan":
+        if path == "/obsidian/scan":
             (root / "Obsidian Brain" / "note.md").write_text("mutated")
             return {"parsed": 0}
         result = responses[(method, path)]
@@ -424,7 +439,8 @@ def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(tmp_pat
     report = json.loads(output.read_text())
     assert "source_hash_mismatch" in report["failures"]
     assert report["git_status_changed"] is False
-    assert ("POST", "/obsidian/scan") not in requests
+    assert ("POST", "/logseq/scan") not in requests
+    assert ("POST", "/parent/scan") not in requests
     assert str(root) not in output.read_text()
 
 
@@ -440,7 +456,7 @@ def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(tmp_p
 
     def request(method, api, path, payload=None):
         requests.append((method, path))
-        if path == "/parent/scan":
+        if path == "/obsidian/scan":
             lock.write_text("external writer lock")
             return {"parsed": 0}
         result = responses[(method, path)]
@@ -454,7 +470,8 @@ def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(tmp_p
     assert report["git_status"] == "git_status_unavailable"
     assert report["git_status_available"] is False
     assert "git_status_mismatch" in report["failures"]
-    assert ("POST", "/obsidian/scan") not in requests
+    assert ("POST", "/logseq/scan") not in requests
+    assert ("POST", "/parent/scan") not in requests
     assert lock.read_text() == "external writer lock"
 
 
@@ -566,7 +583,7 @@ def test_failed_scan_after_mutation_still_snapshots_and_writes_sanitized_report(
     responses = _api_responses(root)
 
     def request(method, api, path, payload=None):
-        if path == "/parent/scan":
+        if path == "/obsidian/scan":
             (root / "Obsidian Brain" / "note.md").write_text("mutated before timeout")
             raise verifier.VerificationError(f"secret path {root}")
         result = responses[(method, path)]
@@ -718,7 +735,7 @@ def test_local_http_server_exercises_requests_mount_details_scan_failure_and_san
             records.append(("POST", self.path, payload))
             if self.path == "/api/deeper-notebook/vaults":
                 return self._reply(200, {"id": ids[payload["name"]]})
-            if self.path.endswith("/parent/scan"):
+            if self.path.endswith("/obsidian/scan"):
                 (root / "Logseq Brain" / "page.md").write_text("mutated by server")
                 return self._reply(500, {"private": str(root)})
             return self._reply(200, {"parsed": 0})
@@ -855,7 +872,7 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
                 if mutation_point == "trust":
                     mutate()
                 return self._reply({"changed": 0})
-            if self.path.endswith("/parent/scan") and mutation_point == "malformed_scan":
+            if self.path.endswith("/obsidian/scan") and mutation_point == "malformed_scan":
                 mutate()
                 return self._reply({"parsed": "not-an-int"})
             return self._reply({"parsed": 0})
