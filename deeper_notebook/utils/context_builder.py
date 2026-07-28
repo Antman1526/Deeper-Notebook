@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from loguru import logger
 
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import Note, Notebook, Source
 from deeper_notebook.exceptions import DatabaseOperationError, NotFoundError
 
@@ -304,6 +305,28 @@ class ContextBuilder:
                 "long" if "full content" in inclusion_level else "short"
             )
             note_context = note.get_context(context_size=context_size)
+            if note.canonical_external and note.vault_file_id and note.vault_id:
+                provenance_rows = await repo_query(
+                    """
+                    SELECT relative_path, source_hash FROM vault_file
+                    WHERE id = $vault_file_id AND vault_id = $vault_id LIMIT 1;
+                    """,
+                    {
+                        "vault_file_id": ensure_record_id(note.vault_file_id),
+                        "vault_id": ensure_record_id(note.vault_id),
+                    },
+                )
+                if provenance_rows:
+                    provenance = provenance_rows[0]
+                    source_hash = provenance.get("source_hash") or note.source_hash
+                    if source_hash:
+                        normalized_hash = str(source_hash)
+                        if not normalized_hash.startswith("sha256:"):
+                            normalized_hash = f"sha256:{normalized_hash}"
+                        note_context["grounded_citation"] = (
+                            f"[V1] {provenance['relative_path']} | note {note.id} | "
+                            f"{normalized_hash} | blocks 0-0"
+                        )
 
             # Add note item
             priority = (self.context_config.priority_weights or {}).get("note", 50)
