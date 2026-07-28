@@ -12,6 +12,7 @@ async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not
     embedding_state: str,
     caplog,
 ):
+    caplog.set_level("DEBUG")
     note = Note(
         id="note:mounted",
         title="Mounted",
@@ -30,6 +31,7 @@ async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not
                 "relative_path": "wiki/selected.md",
                 "source_hash": "a" * 64,
                 "embedding_state": embedding_state,
+                "root_path": "/Users/Antman/private-vault",
                 "selected_block": {"source_start": 12, "source_end": 34},
             }],
         ),

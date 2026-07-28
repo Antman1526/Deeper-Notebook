@@ -133,7 +133,8 @@ async def test_normal_search_result_keeps_legacy_shape():
 
 
 @pytest.mark.asyncio
-async def test_text_search_enriches_mounted_note_with_portable_provenance():
+@pytest.mark.parametrize("embedding_state", ["pending", "failed"])
+async def test_text_search_enriches_mounted_note_with_portable_provenance(embedding_state: str):
     from deeper_notebook.domain import notebook as notebook_module
 
     with patch.object(
@@ -148,6 +149,7 @@ async def test_text_search_enriches_mounted_note_with_portable_provenance():
                 "vault_id": "vault_mount:obsidian-brain",
                 "relative_path": "wiki/concepts/local-llms.md",
                 "source_hash": "d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+                "embedding_state": embedding_state,
             }],
         ],
     ) as query:
@@ -160,4 +162,5 @@ async def test_text_search_enriches_mounted_note_with_portable_provenance():
         "source_hash": "sha256:d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
     }
     assert query.await_count == 2
+    assert "embedding_state" in query.await_args_list[1].args[0]
     assert "/Users/" not in str(result)
