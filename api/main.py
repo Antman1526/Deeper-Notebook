@@ -172,9 +172,11 @@ async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
             is_last = attempt == len(_WARMUP_RETRY_DELAYS_S) - 1
             if not is_last:
                 logger.warning(
-                    "DB pool warmup attempt {}/{} failed ({}); retrying "
-                    "in {}s",
-                    attempt + 1, len(_WARMUP_RETRY_DELAYS_S), exc, delay,
+                    "DB pool warmup attempt {}/{} failed ({}); retrying in {}s",
+                    attempt + 1,
+                    len(_WARMUP_RETRY_DELAYS_S),
+                    exc,
+                    delay,
                 )
                 await asyncio.sleep(delay)
             # else: fall through, last_exc gets raised below
@@ -234,8 +236,12 @@ async def lifespan(app: FastAPI):
     # who has finished rotation and only has DEEPER_NOTEBOOK_ENCRYPTION_KEYS
     # set was getting a spurious "encryption will fail" warning pointing
     # at the wrong variable.
-    has_singular = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env))
-    has_plural = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env))
+    has_singular = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env)
+    )
+    has_plural = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env)
+    )
     if not (has_singular or has_plural):
         logger.warning(
             "Neither DEEPER_NOTEBOOK_ENCRYPTION_KEY nor "
@@ -269,6 +275,26 @@ async def lifespan(app: FastAPI):
         logger.exception(e)
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
+
+    # Vault indexing begins only after migrations are durable. Unavailable roots
+    # are contained by the service so local API startup remains available.
+    vault_service = None
+    vault_scan_task = None
+    try:
+        from deeper_notebook.vault.repository import VaultRepository
+        from deeper_notebook.vault.service import VaultService
+
+        vault_service = VaultService(VaultRepository())
+        await vault_service.start_watchers()
+        vault_scan_task = _track_task(
+            asyncio.create_task(
+                vault_service.scan_dirty_mounts(), name="vault-initial-dirty-scan"
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "Vault read-only index startup unavailable ({})", type(exc).__name__
+        )
 
     # Run podcast profile data migration (legacy strings -> Model registry)
     try:
@@ -346,7 +372,8 @@ async def lifespan(app: FastAPI):
         # Non-fatal — the API can still serve traffic with stale rows
         # around; the next worker startup will likely sort them out.
         logger.warning(
-            "Stale-command reaper failed (non-fatal): {}", e,
+            "Stale-command reaper failed (non-fatal): {}",
+            e,
         )
 
     # v0.7.210 — Periodic stale-command reaper. The startup pass
@@ -359,6 +386,7 @@ async def lifespan(app: FastAPI):
     # cleanly on shutdown.
     async def _reaper_loop() -> None:
         from deeper_notebook.database.repository import repo_query as _rq
+
         while True:
             try:
                 await asyncio.sleep(300)  # 5 minutes
@@ -380,8 +408,8 @@ async def lifespan(app: FastAPI):
                 )
                 if rows:
                     logger.warning(
-                        "Periodic reaper: marked {} stale command "
-                        "row(s) failed", len(rows),
+                        "Periodic reaper: marked {} stale command row(s) failed",
+                        len(rows),
                     )
             except asyncio.CancelledError:
                 logger.debug("Periodic reaper cancelled at shutdown")
@@ -399,9 +427,12 @@ async def lifespan(app: FastAPI):
         # _BACKGROUND_TASKS set so the GC doesn't reap the loose
         # task. Same pattern as the digest scheduler / checkpoint
         # prune loops below.
-        reaper_task = _track_task(asyncio.create_task(
-            _reaper_loop(), name="periodic_stale_command_reaper",
-        ))
+        reaper_task = _track_task(
+            asyncio.create_task(
+                _reaper_loop(),
+                name="periodic_stale_command_reaper",
+            )
+        )
         logger.info("Started periodic stale-command reaper (every 5m)")
     except Exception as exc:
         logger.warning("Could not start periodic reaper: %s", exc)
@@ -417,10 +448,12 @@ async def lifespan(app: FastAPI):
 
         # v0.7.190 — wrap in _track_task so a future refactor that
         # loses the local-var anchor doesn't silently allow GC.
-        digest_scheduler_task = _track_task(asyncio.create_task(
-            _digest_run_forever(digest_stop_event),
-            name="onp-digest-scheduler",
-        ))
+        digest_scheduler_task = _track_task(
+            asyncio.create_task(
+                _digest_run_forever(digest_stop_event),
+                name="onp-digest-scheduler",
+            )
+        )
         logger.info("Digest scheduler task started")
     except Exception as e:
         logger.warning(f"Failed to start digest scheduler (non-fatal): {e}")
@@ -500,10 +533,12 @@ async def lifespan(app: FastAPI):
         )
 
         # v0.7.190 — _track_task anchor (see digest scheduler above).
-        checkpoint_prune_task = _track_task(asyncio.create_task(
-            _checkpoint_prune_loop(checkpoint_prune_stop_event),
-            name="onp-checkpoint-prune",
-        ))
+        checkpoint_prune_task = _track_task(
+            asyncio.create_task(
+                _checkpoint_prune_loop(checkpoint_prune_stop_event),
+                name="onp-checkpoint-prune",
+            )
+        )
         logger.info("LangGraph checkpoint-prune task started")
     except Exception as e:
         logger.warning(
@@ -522,6 +557,7 @@ async def lifespan(app: FastAPI):
     async def _prewarm_gmail_cache() -> None:
         try:
             from deeper_notebook.domain.gmail import GmailIntegration
+
             await GmailIntegration.get()
         except Exception as e:
             logger.debug(f"Gmail cache pre-warm failed (non-fatal): {e}")
@@ -540,15 +576,27 @@ async def lifespan(app: FastAPI):
     # v0.7.190 — _track_task anchor (see digest scheduler above).
     # Belt-and-suspenders: gmail_prewarm_task is also held by the
     # closure for await/cancel below.
-    gmail_prewarm_task = _track_task(asyncio.create_task(
-        _prewarm_gmail_cache(), name="onp-gmail-prewarm",
-    ))
+    gmail_prewarm_task = _track_task(
+        asyncio.create_task(
+            _prewarm_gmail_cache(),
+            name="onp-gmail-prewarm",
+        )
+    )
     logger.info("Gmail TTL-cache pre-warm task scheduled")
 
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
     yield
+
+    if vault_service is not None:
+        try:
+            await vault_service.stop_watchers()
+        except Exception as exc:
+            logger.warning("Vault observer shutdown raised ({})", type(exc).__name__)
+
+    if vault_scan_task is not None and not vault_scan_task.done():
+        vault_scan_task.cancel()
 
     # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
     # still running. The task is short-lived (a single SurrealDB read)
@@ -586,9 +634,7 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(checkpoint_prune_task, timeout=10)
             logger.info("Checkpoint-prune task stopped cleanly")
         except asyncio.TimeoutError:
-            logger.warning(
-                "Checkpoint-prune task did not stop in 10s — cancelling"
-            )
+            logger.warning("Checkpoint-prune task did not stop in 10s — cancelling")
             checkpoint_prune_task.cancel()
             try:
                 await checkpoint_prune_task
@@ -645,9 +691,7 @@ async def lifespan(app: FastAPI):
         await close_async_source_chat_graph()
         logger.debug("AsyncSqliteSaver (source_chat) closed")
     except Exception as e:
-        logger.warning(
-            f"Closing source_chat AsyncSqliteSaver raised: {e}"
-        )
+        logger.warning(f"Closing source_chat AsyncSqliteSaver raised: {e}")
 
     logger.info("API shutdown complete")
 
@@ -676,7 +720,9 @@ else:
 # unset (auth becomes a no-op), so CORS=* + no-password = open API
 # wide open to the world. This is a foot-gun the README warns about
 # but it's worth surfacing at process boot too — operators tail logs.
-_password_is_set = bool(resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env))
+_password_is_set = bool(
+    resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
+)
 # v0.7.154 — Severity downgrade: ERROR → WARNING for the desktop fork.
 # The desktop launcher binds the API to 127.0.0.1 ONLY (see
 # desktop/launcher.py:_spawn_api `--host 127.0.0.1`), so "anyone with
@@ -727,7 +773,7 @@ app.add_middleware(
         "/health",
         "/livez",
         "/readyz",
-        "/healthz/deep",   # v0.7.112 — operators need to poll without auth
+        "/healthz/deep",  # v0.7.112 — operators need to poll without auth
         # v0.7.148 — frontend reaches /healthz/deep through Next.js's /api/*
         # rewrite (frontend builds resolve `apiUrl` to a path that the
         # ApiClient interceptor still routes through /api), so the request
@@ -750,7 +796,7 @@ app.add_middleware(
         "/api/config",
         "/api/version",  # v0.7.210 — launch splash polls before auth
         "/api/local-models/health",  # v0.8.0 — launch splash polls before auth
-        "/metrics",   # v0.7.124 — Prometheus scrapes without auth
+        "/metrics",  # v0.7.124 — Prometheus scrapes without auth
     ],
 )
 
@@ -996,11 +1042,21 @@ app.include_router(research.router, prefix="/api", tags=["research"])
 app.include_router(capture.router, prefix="/api", tags=["capture"])
 app.include_router(study.router, prefix="/api", tags=["study"])
 app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])
-app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
-app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
-app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
-app.include_router(_system_router.router, tags=["system"])  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
-app.include_router(_updates_router.router, tags=["updates"])  # v0.8.70 — in-app update notifier
+app.include_router(
+    _local_models_router.router, tags=["health"]
+)  # v0.8.0 — local sidecar health; path already contains /api prefix
+app.include_router(
+    _mcp_router.router, tags=["mcp"]
+)  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
+app.include_router(
+    _launcher_prefs_router.router, tags=["launcher-prefs"]
+)  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
+app.include_router(
+    _system_router.router, tags=["system"]
+)  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
+app.include_router(
+    _updates_router.router, tags=["updates"]
+)  # v0.8.70 — in-app update notifier
 
 
 @app.get("/")
@@ -1297,48 +1353,62 @@ async def healthz_deep(probe_providers: bool = False):
         }
     except asyncio.TimeoutError:
         checks["migrations"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "needs_migration() took longer than 3s",
         }
     except Exception as exc:
         checks["migrations"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Embedding model (required for vector search + chat-with-sources)
     try:
         from deeper_notebook.ai.models import model_manager
+
         emb = await asyncio.wait_for(
-            model_manager.get_embedding_model(), timeout=2.0,
+            model_manager.get_embedding_model(),
+            timeout=2.0,
         )
         checks["embedding_model"] = {
             "status": "configured" if emb else "missing",
             "ok": bool(emb),
-            "error": None if emb else (
+            "error": None
+            if emb
+            else (
                 "No default embedding model. Configure one in "
                 "Settings → Models to enable vector search."
             ),
         }
     except asyncio.TimeoutError:
         checks["embedding_model"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "embedding model lookup took longer than 2s",
         }
     except Exception as exc:
         checks["embedding_model"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Default chat model (required for /chat, /studio, /ask, etc.)
     try:
         from deeper_notebook.ai.models import model_manager
+
         chat = await asyncio.wait_for(
-            model_manager.get_default_model("chat"), timeout=2.0,
+            model_manager.get_default_model("chat"),
+            timeout=2.0,
         )
         checks["chat_model"] = {
             "status": "configured" if chat else "missing",
             "ok": bool(chat),
-            "error": None if chat else (
+            "error": None
+            if chat
+            else (
                 "No default chat model. Configure one in "
                 "Settings → Models — without it, /chat, /studio, and "
                 "/search/ask cannot generate responses."
@@ -1346,12 +1416,15 @@ async def healthz_deep(probe_providers: bool = False):
         }
     except asyncio.TimeoutError:
         checks["chat_model"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "chat model lookup took longer than 2s",
         }
     except Exception as exc:
         checks["chat_model"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Command registry (required for async embedding +
@@ -1362,12 +1435,16 @@ async def healthz_deep(probe_providers: bool = False):
         import commands.embedding_commands  # noqa: F401
         import commands.podcast_commands  # noqa: F401
         import commands.source_commands  # noqa: F401
+
         checks["command_registry"] = {
-            "status": "loaded", "ok": True, "error": None,
+            "status": "loaded",
+            "ok": True,
+            "error": None,
         }
     except Exception as exc:
         checks["command_registry"] = {
-            "status": "error", "ok": False,
+            "status": "error",
+            "ok": False,
             "error": (
                 f"Failed to import command modules: {exc}. Async jobs "
                 "(podcast generation, embeddings) will fail to queue. "
@@ -1384,9 +1461,7 @@ async def healthz_deep(probe_providers: bool = False):
         upstream = await _probe_upstream_providers(timeout_seconds=5.0)
         checks["upstream_providers"] = upstream
 
-    must_have_ok = (
-        checks["database"]["ok"] and checks["migrations"]["ok"]
-    )
+    must_have_ok = checks["database"]["ok"] and checks["migrations"]["ok"]
     # v0.7.132 — `upstream_providers` is informational. A failing
     # provider knocks the overall to 'degraded' but doesn't flip to
     # 'not_ready'; an operator may have intentionally configured a
