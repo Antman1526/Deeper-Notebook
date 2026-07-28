@@ -826,7 +826,9 @@ async def test_embedding_failure_is_post_commit_and_does_not_change_projection_s
 
     assert "COMMIT TRANSACTION;" in connection.calls[-1][0]
     assert result.parse_state == "parsed"
-    assert result.embedding_state == "failed"
+    # The recorder has no second connection for the local lifecycle update;
+    # durable truth remains pending when that update cannot be persisted.
+    assert result.embedding_state == "pending"
     assert all(
         "CANCEL TRANSACTION" not in statement for statement, _ in connection.calls
     )

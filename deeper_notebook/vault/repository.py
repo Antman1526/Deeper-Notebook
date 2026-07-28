@@ -517,10 +517,10 @@ class VaultRepository:
                 note_id,
                 type(exc).__name__,
             )
-            await self._mark_embedding_failed(vault_file_id)
-            return False, True
+            marked_failed = await self._mark_embedding_failed(vault_file_id)
+            return False, marked_failed
 
-    async def _mark_embedding_failed(self, vault_file_id: str) -> None:
+    async def _mark_embedding_failed(self, vault_file_id: str) -> bool:
         """Persist only local projection lifecycle state after submission failure."""
         try:
             async with self._connection_factory() as connection:
@@ -529,8 +529,10 @@ class VaultRepository:
                     "UPDATE $vault_file_id SET embedding_state = 'failed';",
                     {"vault_file_id": _db_id(vault_file_id)},
                 )
+            return True
         except Exception as exc:
             logger.warning("Vault embedding failure state update failed ({})", type(exc).__name__)
+            return False
 
     async def _reconcile_projection_commit(
         self,
