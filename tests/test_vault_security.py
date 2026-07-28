@@ -490,7 +490,9 @@ def test_secure_read_never_blocks_on_fifo(vault_root: Path) -> None:
 
 
 def test_secure_read_rejects_socket() -> None:
-    short_root = Path(tempfile.mkdtemp(prefix="dn-vault-", dir="/Users/Shared"))
+    shared_root = Path("/Users/Shared")
+    temp_parent = shared_root if shared_root.is_dir() else Path(tempfile.gettempdir())
+    short_root = Path(tempfile.mkdtemp(prefix="dn-vault-", dir=temp_parent))
     socket_path = short_root / "socket.md"
     server = socket.socket(socket.AF_UNIX)
     server.bind(str(socket_path))

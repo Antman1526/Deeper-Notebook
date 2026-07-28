@@ -902,7 +902,9 @@ async def test_indexed_file_becoming_fifo_aborts_without_missing(
 
 @pytest.mark.asyncio
 async def test_indexed_file_becoming_socket_aborts_without_missing() -> None:
-    short_root = Path(tempfile.mkdtemp(prefix="dn-watch-", dir="/Users/Shared"))
+    shared_root = Path("/Users/Shared")
+    temp_parent = shared_root if shared_root.is_dir() else Path(tempfile.gettempdir())
+    short_root = Path(tempfile.mkdtemp(prefix="dn-watch-", dir=temp_parent))
     note = short_root / "note.md"
     note.write_bytes(b"body")
     repository = MemoryObservationRepository()
