@@ -47,11 +47,13 @@ def test_emergency_log_appends_to_existing_file(tmp_path, monkeypatch):
     not overwrite each other."""
     monkeypatch.setenv("HOME", str(tmp_path))
     from desktop.__main__ import _emergency_log
+    from desktop.data_root import open_recovery_log_directory
 
     log_path = (
         tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     )
-    log_path.parent.mkdir(parents=True)
+    with open_recovery_log_directory(home=tmp_path):
+        pass
     log_path.write_text("PREVIOUS-LOG-CONTENT\n")
 
     try:
@@ -180,7 +182,8 @@ def test_recovery_log_adopts_and_appends_to_existing_owned_file(tmp_path):
     log_path = (
         tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     )
-    log_path.parent.mkdir(parents=True)
+    with open_recovery_log_directory(home=tmp_path):
+        pass
     log_path.write_bytes(b"existing-log\n")
 
     with open_recovery_log_directory(home=tmp_path) as directory:
