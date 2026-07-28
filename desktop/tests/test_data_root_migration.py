@@ -619,8 +619,9 @@ def test_uncertain_rollback_returns_rollback_available_with_instructions(
     receipt = json.loads(decision.receipt_path.read_text())
     assert receipt["status"] == "rollback-available"
     assert receipt["operator_instructions"]
-    assert str(canonical) in json.dumps(receipt["operator_instructions"])
-    assert str(legacy) in json.dumps(receipt["operator_instructions"])
+    instructions = "\n".join(receipt["operator_instructions"])
+    assert str(canonical) in instructions
+    assert str(legacy) in instructions
 
 
 def test_unresolved_rollback_receipt_blocks_later_active_root_resolution(

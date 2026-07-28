@@ -161,6 +161,8 @@ class ScanContext:
     @classmethod
     def from_text(cls, text: str) -> "ScanContext":
         escaped = bytearray(len(text))
+        if "\\" not in text:
+            return cls(text=text, escaped=escaped)
         odd_slashes = False
         for index, character in enumerate(text):
             escaped[index] = odd_slashes
@@ -200,28 +202,36 @@ class InvalidRange:
     end: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ByteOffsetMapper:
     source_start: int
+    content: str | None
     offsets: array | None
 
     @classmethod
     def from_source(cls, source_text: SourceText) -> "ByteOffsetMapper":
         if source_text.content.isascii():
-            return cls(source_start=source_text.source_start, offsets=None)
-        offsets = array("I", [0])
-        byte_offset = 0
-        for character in source_text.content:
-            byte_offset += len(character.encode("utf-8"))
-            offsets.append(byte_offset)
+            return cls(
+                source_start=source_text.source_start,
+                content=None,
+                offsets=None,
+            )
         return cls(
             source_start=source_text.source_start,
-            offsets=offsets,
+            content=source_text.content,
+            offsets=None,
         )
 
     def span(self, start: int, end: int) -> tuple[int, int]:
-        if self.offsets is None:
+        if self.content is None:
             return self.source_start + start, self.source_start + end
+        if self.offsets is None:
+            offsets = array("I", [0])
+            byte_offset = 0
+            for character in self.content:
+                byte_offset += len(character.encode("utf-8"))
+                offsets.append(byte_offset)
+            self.offsets = offsets
         return (
             self.source_start + self.offsets[start],
             self.source_start + self.offsets[end],
@@ -288,6 +298,12 @@ class ParseAccumulator:
             occupied.add(start, end)
 
         literals = occupied.snapshot()
+        paired_wikilinks = min(
+            _count_unprotected_literal(text, "[[", literals, transient_limit + 1),
+            _count_unprotected_literal(text, "]]", literals, transient_limit + 1),
+        )
+        if paired_wikilinks > transient_limit:
+            fail("projection_too_large")
         candidate_preflight = CandidatePreflight(
             occupied,
             limit=_MAX_PROJECTED_OBJECTS - projected_total,
@@ -784,6 +800,22 @@ def _line_break_in_range(text: str, start: int, end: int) -> int:
     return min((found for found in line_breaks if found >= 0), default=-1)
 
 
+def _count_unprotected_literal(
+    text: str,
+    needle: str,
+    protected: ProtectedRanges,
+    stop_after: int,
+) -> int:
+    count = 0
+    cursor = 0
+    for start, end in protected.iter_ranges():
+        count += text.count(needle, cursor, start)
+        if count >= stop_after:
+            return count
+        cursor = end
+    return count + text.count(needle, cursor)
+
+
 def _iter_wikilinks(
     scan: ScanContext,
     protected: ProtectedRanges,
@@ -816,9 +848,17 @@ def _iter_wikilinks(
         nested_depth = 0
         malformed = False
         closed = False
+        checked_oversized_closing = False
         while position < length:
             if position - target_start > _MAX_WIKILINK_TARGET_CHARS:
                 malformed = True
+                if not checked_oversized_closing:
+                    checked_oversized_closing = True
+                    line_break = _line_break_in_range(text, position, length)
+                    boundary = line_break if line_break >= 0 else length
+                    if text.find("]]", position, boundary) < 0:
+                        position = boundary
+                        break
             protected_region = protected.containing(position)
             if protected_region is not None:
                 malformed = True

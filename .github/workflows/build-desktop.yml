@@ -330,7 +330,7 @@ jobs:
             "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
           legacy_pid=$!
           wait_for_packaged_ready "$legacy_pid"
-          wait_for_pid_visible_window "$legacy_pid" "Open Notebook Plus" "Open notebook+"
+          wait_for_pid_visible_window "$legacy_pid" "Open notebook+" "Open notebook+"
           graceful_stop_and_assert_clean \
             "$legacy_pid" "$compat_home" \
             "$RUNNER_TEMP/legacy-descendants.txt"
@@ -382,6 +382,7 @@ jobs:
         shell: pwsh
         run: |
           $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
+          Copy-Item "desktop\requirements.lock" (Join-Path $legacySource "desktop\requirements.lock")
           pwsh -File (Join-Path $legacySource "desktop\build\build_windows.ps1")
           if ($LASTEXITCODE -ne 0) { throw "Legacy baseline build failed." }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (Join-Path $legacySource "desktop\build\open-notebook-plus.iss")

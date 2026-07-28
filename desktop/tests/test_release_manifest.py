@@ -256,6 +256,10 @@ def test_compatibility_jobs_build_exact_approved_baseline_in_separate_worktree()
     assert "stable AppId" in workflow
     assert "repair test" in workflow.lower()
     assert "upgrade-path" not in workflow.lower()
+    assert (
+        'Copy-Item "desktop\\requirements.lock" '
+        '(Join-Path $legacySource "desktop\\requirements.lock")'
+    ) in workflow
 
 
 def test_compatibility_workflows_never_mutate_real_applications() -> None:
@@ -360,7 +364,7 @@ def test_legacy_macos_probe_requires_a_visible_window_owned_by_legacy_pid() -> N
     assert "kCGWindowOwnerName" in compatibility
     assert (
         'wait_for_pid_visible_window "$legacy_pid" '
-        '"Open Notebook Plus" "Open notebook+"'
+        '"Open notebook+" "Open notebook+"'
     ) in compatibility
     assert compatibility.index(
         'wait_for_pid_visible_window "$legacy_pid"'

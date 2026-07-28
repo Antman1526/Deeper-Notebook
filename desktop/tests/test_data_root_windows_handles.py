@@ -37,6 +37,16 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
     monkeypatch.setattr(
         data_root, "_close_windows_handle", closed.append
     )
+
+    def create_owned(path, _reason):
+        path.mkdir()
+        return True
+
+    monkeypatch.setattr(
+        data_root,
+        "_create_windows_owned_directory",
+        create_owned,
+    )
     monkeypatch.setattr(
         data_root, "_windows_path_is_reparse_point", lambda _path: False
     )
@@ -48,7 +58,13 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
     monkeypatch.setattr(
         data_root,
         "_open_windows_append_file",
-        lambda path: os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY),
+        lambda path: os.open(
+            path,
+            os.O_CREAT
+            | os.O_APPEND
+            | os.O_WRONLY
+            | getattr(os, "O_BINARY", 0),
+        ),
     )
     monkeypatch.setattr(data_root, "_fsync_directory", lambda _path: None)
 
@@ -68,6 +84,46 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
 
     assert closed == [102, 101]
     assert hardened == [(owned, "owned-directory-not-owned")]
+
+
+def test_windows_private_directory_creation_sets_owner_and_protected_acl(
+    tmp_path, monkeypatch
+):
+    convert = _FakeNativeCall(1)
+    create = _FakeNativeCall(1)
+    local_free = _FakeNativeCall(0)
+    advapi32 = SimpleNamespace(
+        ConvertStringSecurityDescriptorToSecurityDescriptorW=convert,
+    )
+    kernel32 = SimpleNamespace(
+        CreateDirectoryW=create,
+        LocalFree=local_free,
+    )
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda name, **_kwargs: (
+            advapi32 if name == "advapi32" else kernel32
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        data_root,
+        "_windows_current_user_sid",
+        lambda: "S-1-5-21-1000",
+    )
+
+    assert data_root._create_windows_owned_directory(
+        tmp_path / "owned",
+        "owned-directory-not-owned",
+    )
+
+    sddl = convert.calls[0][0]
+    assert sddl.startswith("O:S-1-5-21-1000D:P")
+    assert "(A;OICI;FA;;;S-1-5-21-1000)" in sddl
+    assert create.calls[0][0] == str(tmp_path / "owned")
+    assert create.calls[0][1] is not None
+    assert len(local_free.calls) == 1
 
 
 def test_windows_directory_flush_requests_write_access(

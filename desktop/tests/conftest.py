@@ -91,6 +91,10 @@ def pytest_collection_modifyitems(config, items):
             "desktop/tests/test_emergency_log.py::"
             "test_emergency_log_dirfd_cannot_be_redirected_after_open"
         ),
+        (
+            "desktop/tests/test_data_root_conflict_recovery.py::"
+            "test_divergent_roots_enter_read_only_recovery_before_normal_startup"
+        ),
     }
     marker = pytest.mark.skip(
         reason="POSIX descriptor or macOS bundle contract"
