@@ -190,6 +190,17 @@ def _snapshot(root: Path, identity: RootIdentity) -> Snapshot:
     return snapshot
 
 
+def _source_inventory_digest(hashes: dict[str, str]) -> str:
+    """Return a stable commitment to the private per-file inventory."""
+    digest = hashlib.sha256()
+    for relative_path, file_hash in sorted(hashes.items()):
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(file_hash.encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def _provenance_digest(mapping: dict[str, list[Any]]) -> str:
     return hashlib.sha256(
         json.dumps(mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
@@ -441,8 +452,8 @@ def _safe_report(root: Path, initial: Snapshot, counts: dict[str, Any], mode: st
     return {
         "root_label": root.name,
         "mode": mode,
-        "source_hashes": initial.hashes,
         "source_files_observed": len(initial.hashes),
+        "source_inventory_digest": _source_inventory_digest(initial.hashes),
         "source_files_changed": 0,
         "git_status_changed": False,
         "git_status_available": initial.git_status_available,
@@ -491,13 +502,13 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
         obsidian_id = _mount_id(api, "Obsidian Brain", root / "Obsidian Brain", "obsidian", parent_id, True, request)
         logseq_id = _mount_id(api, "Logseq Brain", root / "Logseq Brain", "logseq", parent_id, True, request)
         request("POST", api, f"/{parent_id}/trust/import", {"manifest_relative_path": MANIFEST_PATH})
-        mounts = [parent_id, obsidian_id, logseq_id]
-        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, mounts, root, root_identity, initial, request)
+        scan_mounts = [obsidian_id, logseq_id]
+        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, scan_mounts, root, root_identity, initial, request)
         if first_hash_mismatch or first_git_mismatch:
             _record_observation(report, first_hash_mismatch, first_git_mismatch, first_observed or initial)
             _write_report(output, root_identity, report)
             return 1
-        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, mounts, root, root_identity, initial, request)
+        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, scan_mounts, root, root_identity, initial, request)
         report["second_scan_changed_projections"] = second_changed
         if second_hash_mismatch or second_git_mismatch:
             _record_observation(report, second_hash_mismatch, second_git_mismatch, second_observed or initial)
