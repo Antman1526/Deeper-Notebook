@@ -5,6 +5,7 @@ import os
 import pwd
 import shutil
 import uuid
+from unittest.mock import AsyncMock
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -155,3 +156,42 @@ async def test_one_scan_operation_id_is_reused_for_every_projected_file(syntheti
     result = await service.scan("vault_mount:fixture")
 
     assert {operation for _, _, operation in repository.projections} == {result.operation_id}
+
+
+@pytest.mark.asyncio
+async def test_real_observer_event_debounces_burst_to_one_projection(synthetic_root: Path):
+    root = synthetic_root / "observed"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository)
+
+    await service.start_watchers()
+    note = root / "burst.md"
+    note.write_text("# First\n")
+    note.write_text("# Final\n")
+    await asyncio.sleep(4.5)
+    await service.stop_watchers()
+
+    assert [path for path, _, _ in repository.projections] == ["burst.md"]
+
+
+@pytest.mark.asyncio
+async def test_conflict_is_not_acknowledged_then_stable_rescan_projects_authoritative_a(synthetic_root: Path):
+    root = synthetic_root / "conflict"
+    root.mkdir()
+    (root / "note.md").write_text("# A\n")
+    repository = FakeRepository([_mount(root)], [], [])
+    conflict = ProjectionResult(vault_file_id="vault_file:fixture", note_id="note:fixture", status="conflict", parse_state="parsed", embedding_state="pending", reconciliation_required=True)
+    projected = ProjectionResult(vault_file_id="vault_file:fixture", note_id="note:fixture", status="projected", parse_state="parsed", embedding_state="pending")
+    repository.project_document = AsyncMock(side_effect=[conflict, projected])
+    moments = iter((1.0, 3.0, 5.0, 7.0, 9.0))
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: next(moments))
+
+    await service.scan("vault_mount:fixture")
+    first = await service.scan("vault_mount:fixture")
+    await service.scan("vault_mount:fixture")
+    second = await service.scan("vault_mount:fixture")
+
+    assert first.reconciliation_required is True
+    assert second.status == "ready-read-only"
+    assert repository.project_document.await_count == 2
