@@ -27,10 +27,10 @@ from api.schemas.studio import (
     StudioWorkflowRunCreate,
     StudioWorkflowRunResponse,
 )
-from open_notebook.ai.models import Model
-from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import (
+from deeper_notebook.ai.models import Model
+from deeper_notebook.ai.provision import provision_langchain_model
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import (
     Asset,
     Note,
     Notebook,
@@ -38,21 +38,22 @@ from open_notebook.domain.notebook import (
     StudioArtifact,
     StudioWorkflowRun,
 )
-from open_notebook.exceptions import InvalidInputError, NotFoundError
-from open_notebook.feature_flags import evidence_studio_enabled
-from open_notebook.local_models.inventory import enumerate_models
-from open_notebook.local_models.role_routing import (
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.feature_flags import evidence_studio_enabled
+from deeper_notebook.local_models.inventory import enumerate_models
+from deeper_notebook.local_models.role_routing import (
     inventory_model_match_keys,
     model_match_key,
     recommend_model_roles,
 )
-from open_notebook.studio import artifact_generation as artifact_generation_service
-from open_notebook.studio.payloads import (
+from deeper_notebook.studio import artifact_generation as artifact_generation_service
+from deeper_notebook.studio.payloads import (
     build_structured_payload,
     parse_payload_document,
 )
-from open_notebook.studio.renderers import render_artifact_markdown
-from open_notebook.utils.text_utils import (
+from deeper_notebook.studio.renderers import render_artifact_markdown
+from deeper_notebook.utils.text_utils import (
     clean_thinking_content,
     extract_text_content,
 )
@@ -141,7 +142,7 @@ def _studio_link_title(link: str) -> str:
 # study notebooks for any single-document upload up to ~15 KB of text.
 def _env_int(name: str, default: int) -> int:
     """Read a positive int from env; fall back to default on missing/invalid."""
-    raw = os.environ.get(name, "").strip()
+    raw = resolve_env(name, "").strip()
     if not raw:
         return default
     try:
@@ -159,12 +160,12 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Defaults sized for local 7B-9B models with 8k-32k context. Cloud users
-# can raise these via env vars (e.g. ONP_STUDIO_MAX_COMBINED_CHARS=200000).
+# can raise these via env vars (e.g. DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS=200000).
 _MAX_EXTRACT_CHARS_PER_FILE = _env_int(
-    "ONP_STUDIO_MAX_FILE_CHARS", 15_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000,
 )
 _MAX_COMBINED_CHARS = _env_int(
-    "ONP_STUDIO_MAX_COMBINED_CHARS", 60_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000,
 )
 
 # v0.7.1 — Cap warning-message length. Parser libraries (PyMuPDF, mammoth)
@@ -253,8 +254,8 @@ def _studio_generation_error_detail(
             "Looks like the model's context window was exceeded. Smaller "
             "local models (Hermes-3 8k, Llama-3.2-3B 4k) can't fit large "
             "documents. Try uploading fewer/smaller files, or tighten the "
-            "caps via ONP_STUDIO_MAX_FILE_CHARS / "
-            "ONP_STUDIO_MAX_COMBINED_CHARS, or pick a chat model with a "
+            "caps via DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS / "
+            "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS, or pick a chat model with a "
             "larger context window in Settings → Models. "
         )
     return (
@@ -319,12 +320,12 @@ do not pad to hit a length target.
 # Default ON. Falls back to the legacy single-note path (NOTEBOOK_SYSTEM_PROMPT
 # above) if disabled OR if the outline pass returns un-parseable JSON.
 _MULTIPAGE_ENABLED = (
-    os.environ.get("ONP_STUDIO_NOTEBOOK_MULTIPAGE", "true").strip().lower()
+    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE", "true").strip().lower()
     not in ("0", "false", "no", "off")
 )
 # Caps pages to bound LLM cost. Outline LLM is *also* told this number so it
 # doesn't propose more than we can render.
-_PAGES_MAX = _env_int("ONP_STUDIO_NOTEBOOK_PAGES_MAX", 6)
+_PAGES_MAX = _env_int("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PAGES_MAX", 6)
 if _PAGES_MAX < 2:
     _PAGES_MAX = 2  # one overview + at least one detail page
 if _PAGES_MAX > 12:
@@ -338,7 +339,7 @@ if _PAGES_MAX > 12:
 # mean per-page failures can interleave in logs, but the final result
 # is identical (each page still gets its own warning on failure).
 _PARALLEL_PAGES = (
-    os.environ.get("ONP_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
+    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
     in ("1", "true", "yes", "on")
 )
 # v0.7.93 — Per-page generation timeout. Local LLMs (especially the
@@ -348,10 +349,10 @@ _PARALLEL_PAGES = (
 # generation request — including subsequent pages, the response, and
 # the user's browser tab. Default: 180s, plenty for a 7B-9B at 8k
 # context. Cloud users with stable APIs can raise via env.
-_PAGE_TIMEOUT_SEC = _env_int("ONP_STUDIO_PAGE_TIMEOUT_SEC", 180)
+_PAGE_TIMEOUT_SEC = _env_int("DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180)
 # Outline pass gets its own (shorter) timeout — JSON-only response,
 # small token budget, should be fast.
-_OUTLINE_TIMEOUT_SEC = _env_int("ONP_STUDIO_OUTLINE_TIMEOUT_SEC", 90)
+_OUTLINE_TIMEOUT_SEC = _env_int("DEEPER_NOTEBOOK_STUDIO_OUTLINE_TIMEOUT_SEC", 90)
 
 # Outline pass: small JSON response. Keep token budget tight — this prompt
 # does NOT need to expand on any topic, just identify the structure.
@@ -719,7 +720,7 @@ async def studio_generate(
     ) -> None:
         try:
             _extract_timeout = float(
-                os.environ.get("ONP_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+                resolve_env("DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
             )
             try:
                 processed = await asyncio.wait_for(
@@ -733,7 +734,7 @@ async def studio_generate(
                 warnings.append(
                     f"Parsing {label!r} timed out after {_extract_timeout:.0f}s. "
                     "The source may be inaccessible, malformed, or password-protected. "
-                    "Raise ONP_STUDIO_EXTRACT_TIMEOUT_SEC or provide a cleaner source."
+                    "Raise DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC or provide a cleaner source."
                 )
                 return
             text = (processed.content or "").strip()
@@ -1120,7 +1121,7 @@ async def _generate_outline(
             detail=(
                 f"Outline generation timed out after {_OUTLINE_TIMEOUT_SEC}s. "
                 "The chat model may be loading or overloaded. Try again, or "
-                "raise ONP_STUDIO_OUTLINE_TIMEOUT_SEC. "
+                "raise DEEPER_NOTEBOOK_STUDIO_OUTLINE_TIMEOUT_SEC. "
                 f"Notebook {notebook_id} was created and contains your "
                 f"{source_count} uploaded source(s)."
             ),
@@ -1254,7 +1255,7 @@ async def _generate_all_pages(
             )
             warnings.append(
                 f"Page {i} ({page_spec['title']!r}) timed out after "
-                f"{_PAGE_TIMEOUT_SEC}s. Raise ONP_STUDIO_PAGE_TIMEOUT_SEC, "
+                f"{_PAGE_TIMEOUT_SEC}s. Raise DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC, "
                 "or switch to a faster chat model."
             )
         else:
@@ -1364,7 +1365,7 @@ async def _dispatch_notebook_mode(
          the Overview first in the notebook UI.
 
     The legacy single-note path remains reachable via the
-    ONP_STUDIO_NOTEBOOK_MULTIPAGE=false env var or whenever the
+    DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE=false env var or whenever the
     outline pass returns un-parseable JSON. That keeps the user shielded
     from regressions during the rollout window.
 
@@ -1490,7 +1491,7 @@ async def _dispatch_notebook_mode(
 
 
 # v0.7.89 — Pre-v0.7.89 single-note path, preserved as a fallback. Reached
-# when ONP_STUDIO_NOTEBOOK_MULTIPAGE=false OR when the outline pass returns
+# when DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE=false OR when the outline pass returns
 # un-parseable JSON. Identical to the original v0.7.0 implementation.
 async def _dispatch_notebook_mode_singlenote(
     *,
@@ -1529,7 +1530,7 @@ async def _dispatch_notebook_mode_singlenote(
             detail=(
                 f"Notebook generation timed out after {_PAGE_TIMEOUT_SEC}s. "
                 "The chat model may be loading or overloaded. Raise "
-                "ONP_STUDIO_PAGE_TIMEOUT_SEC, switch to a faster model, "
+                "DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC, switch to a faster model, "
                 f"or try again. Notebook {notebook_id} was created and "
                 f"contains your {len(source_ids)} uploaded source(s)."
             ),

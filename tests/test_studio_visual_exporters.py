@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import fitz
@@ -7,8 +8,8 @@ import pytest
 from PIL import Image, ImageStat
 from pptx import Presentation
 
-from open_notebook.studio.exporters import export_infographic, export_slide_deck
-from open_notebook.studio.schemas import (
+from deeper_notebook.studio.exporters import export_infographic, export_slide_deck
+from deeper_notebook.studio.schemas import (
     InfographicDocument,
     SlideDeckDocument,
     parse_artifact_document,
@@ -109,6 +110,13 @@ def _assert_nonblank_image(path: Path, expected_size: tuple[int, int]) -> None:
         assert any(low != high for low, high in extrema)
 
 
+def _office_application(path: Path) -> str:
+    with zipfile.ZipFile(path) as package:
+        xml = package.read("docProps/app.xml").decode("utf-8")
+    start = xml.index("<Application>") + len("<Application>")
+    return xml[start : xml.index("</Application>", start)]
+
+
 def test_slide_deck_exports_editable_pptx_with_notes_and_citations(tmp_path):
     pptx_path = tmp_path / "deck.pptx"
     pdf_path = tmp_path / "deck.pdf"
@@ -116,6 +124,8 @@ def test_slide_deck_exports_editable_pptx_with_notes_and_citations(tmp_path):
     export_slide_deck(_slide_deck(), pptx_path, pdf_path)
 
     presentation = Presentation(pptx_path)
+    assert presentation.core_properties.author == "Deeper Notebook"
+    assert _office_application(pptx_path) == "Deeper Notebook"
     assert presentation.slide_width == 12192000
     assert presentation.slide_height == 6858000
     assert len(presentation.slides) == 3
@@ -135,6 +145,9 @@ def test_slide_deck_exports_editable_pptx_with_notes_and_citations(tmp_path):
     assert "[S1] [S2]" in notes
 
     pdf = fitz.open(pdf_path)
+    assert pdf.metadata["author"] == "Deeper Notebook"
+    assert pdf.metadata["creator"] == "Deeper Notebook"
+    assert pdf.metadata["producer"] == "Deeper Notebook"
     assert pdf.page_count == 3
     pixmap = pdf[1].get_pixmap(matrix=fitz.Matrix(0.25, 0.25), alpha=False)
     assert len(set(pixmap.samples)) > 8
@@ -161,6 +174,9 @@ def test_infographic_exports_nonblank_png_and_pdf(
 
     _assert_nonblank_image(png_path, expected_size)
     pdf = fitz.open(pdf_path)
+    assert pdf.metadata["author"] == "Deeper Notebook"
+    assert pdf.metadata["creator"] == "Deeper Notebook"
+    assert pdf.metadata["producer"] == "Deeper Notebook"
     assert pdf.page_count == 1
     assert pdf[0].rect.width > 0
     assert pdf[0].rect.height > 0

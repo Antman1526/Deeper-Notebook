@@ -1,8 +1,8 @@
 """v0.8.66 (audit S-4) — lightweight, env-gated in-memory rate limiter.
 
-DEFAULT OFF (`ONP_RATE_LIMIT_PER_MIN` unset / 0) so the single-user, local-first
+DEFAULT OFF (`DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN` unset / 0) so the single-user, local-first
 desktop experience (127.0.0.1, one user) is completely unchanged. Set
-`ONP_RATE_LIMIT_PER_MIN=N` to cap requests per client IP per 60s window on the
+`DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN=N` to cap requests per client IP per 60s window on the
 exposed / Docker / multi-user path the audit flags — closing the
 auth-brute-force and download/discover cost-amplification gaps (the
 `RateLimitError` + 429 handler already existed; nothing raised it).
@@ -19,6 +19,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from deeper_notebook.environment import resolve_env
+
 # Liveness/metrics probes must never be rate-limited (orchestrators poll them).
 _EXEMPT_PREFIXES = (
     "/health", "/livez", "/readyz", "/metrics", "/api/healthz",
@@ -29,7 +31,7 @@ _WINDOW_SEC = 60.0
 
 def _limit_per_min() -> int:
     """Requests/IP/minute. 0 (default) disables the limiter entirely."""
-    raw = (os.environ.get("ONP_RATE_LIMIT_PER_MIN") or "").strip()
+    raw = (resolve_env("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN") or "").strip()
     if not raw:
         return 0
     try:

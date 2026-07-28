@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDbRepairStatus } from '@/lib/hooks/use-db-repair-status'
 
-interface OnpRelaunchWindow {
+interface RelaunchWindow {
+  DN?: { relaunch?: () => boolean }
   ONP?: { relaunch?: () => boolean }
 }
 
@@ -17,9 +18,9 @@ interface OnpRelaunchWindow {
 // persisting it is the correct behaviour rather than a nag.
 //
 // v0.8.81 — one-click "Repair & restart": instead of telling the user to ⌘Q +
-// reopen manually, relaunch the desktop app via the window.ONP.relaunch bridge
-// so the boot-time auto-repair runs. Falls back to a reload in a plain browser
-// (dev), where there's no desktop relaunch bridge.
+// reopen manually, relaunch the desktop app via the canonical window.DN bridge
+// so the boot-time auto-repair runs. The former bridge remains a migration
+// fallback; a plain browser reloads because it has no desktop bridge.
 export function DbRepairBanner() {
   const { t } = useTranslation()
   const { data } = useDbRepairStatus()
@@ -27,8 +28,9 @@ export function DbRepairBanner() {
   if (!data?.needs_repair) return null
 
   const handleRepairRestart = () => {
-    const w = window as unknown as OnpRelaunchWindow & Window
-    const relaunched = w.ONP?.relaunch?.()
+    const w = window as unknown as RelaunchWindow & Window
+    const relaunch = w.DN?.relaunch ?? w.ONP?.relaunch
+    const relaunched = relaunch?.()
     if (!relaunched) {
       // No desktop bridge (dev / browser) — a reload is the best fallback.
       window.location.reload()

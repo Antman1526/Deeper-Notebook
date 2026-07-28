@@ -2,14 +2,14 @@
 
 Background: an MCP tool that hangs (slow web fetch, server stuck, hung
 network connection) currently blocks the entire chat turn. /chat/execute
-has the v0.7.99 outer wrap (`ONP_CHAT_TIMEOUT_SEC`, default 300s) so
+has the v0.7.99 outer wrap (`DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC`, default 300s) so
 the request eventually fails, but /chat/stream has no such bound —
 streaming relies on client-disconnect detection to halt. A hung tool
 freezes the user's stream until they reload the tab.
 
 CLAUDE.md's standing audit explicitly names "missing timeouts" as a
 recurring footgun. Wrapping each tool call in `asyncio.wait_for`
-bounds the worst-case wait at `ONP_MCP_TOOL_TIMEOUT_SEC` (default
+bounds the worst-case wait at `DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC` (default
 30s, env-overridable) per tool — matching the per-call timeout pattern
 already used in `api/chat_service.py:_DEFAULT_TIMEOUT` and
 `api/routers/chat.py:_chat_timeout`.
@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_notebook.graphs import chat as chat_mod
+from deeper_notebook.graphs import chat as chat_mod
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ async def test_hanging_tool_times_out_and_feeds_error_to_model(monkeypatch):
         return "should never get here"
 
     # Force a tiny timeout via the env var so the test runs fast.
-    monkeypatch.setenv("ONP_MCP_TOOL_TIMEOUT_SEC", "0.05")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC", "0.05")
 
     tools = [_make_tool("mcp_search", _hang)]
     monkeypatch.setattr(
@@ -193,11 +193,11 @@ async def test_hanging_tool_times_out_and_feeds_error_to_model(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_default_timeout_when_env_var_unset(monkeypatch):
-    """When ONP_MCP_TOOL_TIMEOUT_SEC is unset the wrap must still
+    """When DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC is unset the wrap must still
     apply — using the default. We verify the default is non-trivial
     (> 1s) so legitimate slow tools (web fetch, large MCP search) are
     not falsely timed-out by an aggressive default."""
-    monkeypatch.delenv("ONP_MCP_TOOL_TIMEOUT_SEC", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC", raising=False)
 
     # A tool that sleeps 0.5s — well under any sensible default.
     async def _slow_but_ok(**kwargs):

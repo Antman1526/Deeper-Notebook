@@ -11,7 +11,7 @@ and v0.7.165 closes the next two sites the audit found:
      single `result_messages` local that handles both dict and
      Pydantic state shapes.
 
-  2. `open_notebook/graphs/source.py:168,172` used `result["output"]`
+  2. `deeper_notebook/graphs/source.py:168,172` used `result["output"]`
      against the transformation graph. Now normalized via an
      `output_text` local with the same dual-path.
 
@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+
+from task_lifecycle_assertions import assert_lifespan_tracked_task
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -79,11 +81,11 @@ def test_chat_execute_normalizes_result_messages_via_dual_path():
 
 
 def test_source_transform_normalizes_output_via_dual_path():
-    """v0.7.165: open_notebook/graphs/source.py must normalize
+    """v0.7.165: deeper_notebook/graphs/source.py must normalize
     `output_text` before using it in both `source.add_insight(...)`
     and the returned `{"output": output_text}` dict.
     """
-    src = _read_source("open_notebook/graphs/source.py")
+    src = _read_source("deeper_notebook/graphs/source.py")
 
     assert "output_text = (" in src, (
         "v0.7.165 regression: source.py missing the `output_text = (...)` "
@@ -112,7 +114,7 @@ def test_chat_py_is_syntactically_valid():
 
 def test_source_graph_is_syntactically_valid():
     """Same as above for the graph module."""
-    src = _read_source("open_notebook/graphs/source.py")
+    src = _read_source("deeper_notebook/graphs/source.py")
     ast.parse(src)
 
 
@@ -127,19 +129,10 @@ def test_api_main_holds_gmail_prewarm_task_reference():
     """
     src = _read_source("api/main.py")
 
-    # The assignment must exist. v0.7.190 — the spawn is now wrapped
-    # in `_track_task(asyncio.create_task(...))` per the asyncio docs'
-    # recommended module-level strong-ref pattern. Both shapes are
-    # acceptable: the v0.7.165 local-var anchor OR the v0.7.190
-    # _track_task anchor (which is strictly stronger).
-    assert (
-        "gmail_prewarm_task = asyncio.create_task(" in src
-        or "gmail_prewarm_task = _track_task(asyncio.create_task(" in src
-    ), (
-        "v0.7.165/v0.7.190 regression: api/main.py reverted to fire-and-"
-        "forget `asyncio.create_task(_prewarm_gmail_cache())` — the "
-        "task may be GC'd before it runs. Reassign to "
-        "`gmail_prewarm_task = _track_task(asyncio.create_task(...))`."
+    assert_lifespan_tracked_task(
+        src,
+        task_name="gmail_prewarm_task",
+        coroutine_name="_prewarm_gmail_cache",
     )
 
     # And the shutdown path must reference it

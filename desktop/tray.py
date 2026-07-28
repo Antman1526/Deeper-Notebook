@@ -1,5 +1,5 @@
 # desktop/tray.py
-"""PyWebView tray-icon menu for Open Notebook Plus.
+"""PyWebView tray-icon menu for Deeper Notebook.
 
 Note: pywebview's tray/menu support varies by platform. On macOS we use the
 `webview.menu` API; on Windows pywebview's Tray support has shifted between
@@ -30,7 +30,7 @@ def install_tray(
         if on_open_memory is not None:
             actions.append(MenuAction("Memory…", on_open_memory))
         actions.append(MenuAction("Quit", on_quit))
-        menu = [Menu("Open Notebook Plus", actions)]
+        menu = [Menu("Deeper Notebook", actions)]
         webview.set_menu(menu)
     except Exception:
         # Tray/menu not supported on this build — silently skip.

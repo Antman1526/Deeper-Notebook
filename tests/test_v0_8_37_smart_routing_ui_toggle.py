@@ -2,7 +2,7 @@
 fields on DefaultModels drive smart routing from the UI.
 
 Background: pre-v0.8.37 the only way to flip smart routing on was the
-OPEN_NOTEBOOK_AUTO_ROUTE_CHAT env var. Power-users could set it before
+DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT env var. Power-users could set it before
 launch but the UI had no surface. v0.8.37 adds two persisted fields:
 
   - `auto_route_enabled: bool` (default False — same as the v0.8.0 default)
@@ -37,7 +37,7 @@ class _FakeDefaults:
 
 def _stub_defaults(monkeypatch, fake_defaults):
     """Patch model_manager.get_defaults to return our stub."""
-    import open_notebook.ai.provision as provision_mod
+    import deeper_notebook.ai.provision as provision_mod
     monkeypatch.setattr(
         provision_mod.model_manager,
         "get_defaults",
@@ -47,7 +47,7 @@ def _stub_defaults(monkeypatch, fake_defaults):
 
 def _stub_provision_inner(monkeypatch):
     """Replace provision_langchain_model with a capturing fake."""
-    import open_notebook.ai.provision as provision_mod
+    import deeper_notebook.ai.provision as provision_mod
     captured: list[dict] = []
 
     async def _fake(content, model_id, default_type, **kwargs):
@@ -69,11 +69,11 @@ class TestSmartRoutingToggleEnvVsField:
     def test_env_var_truthy_wins_even_when_field_false(self, monkeypatch):
         """Env var ON → smart routing runs even if the UI toggle is off.
         Power-user setup keeps working after the v0.8.37 field rollout."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.setenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -90,11 +90,11 @@ class TestSmartRoutingToggleEnvVsField:
         """The headline new behavior — UI toggle ON, no env var, smart
         router runs. Tests the exact path a user clicking "Enable smart
         routing" in Settings would hit on the next chat turn."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -110,8 +110,8 @@ class TestSmartRoutingToggleEnvVsField:
         """Default state — toggle off, env var off. The wrapper must pass
         model_id=None to the inner provision so the existing default-chat
         path drives selection (no router interference)."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
         _stub_defaults(monkeypatch, _FakeDefaults(enabled=False))
         captured = _stub_provision_inner(monkeypatch)
 
@@ -126,8 +126,8 @@ class TestSmartRoutingToggleEnvVsField:
         """If reading DefaultModels.get_instance() raises (DB unavailable,
         migration mid-flight, etc.) we must default to OFF — never
         accidentally route to a half-configured local sidecar."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
         monkeypatch.setattr(
             provision_mod.model_manager,
             "get_defaults",
@@ -150,12 +150,12 @@ class TestProviderPrefField:
         local (per pick_provider's contract). Verified by feeding huge
         content that would normally route to cloud and asserting the
         local model is still picked."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.delenv("OPEN_NOTEBOOK_CHAT_PROVIDER", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_PROVIDER", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -173,14 +173,14 @@ class TestProviderPrefField:
         assert captured[0]["model_id"] == "model:hermes"
 
     def test_env_provider_overrides_field(self, monkeypatch):
-        """OPEN_NOTEBOOK_CHAT_PROVIDER env var wins over the field, same
+        """DEEPER_NOTEBOOK_CHAT_PROVIDER env var wins over the field, same
         precedence shape as the master toggle."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_CHAT_PROVIDER", "cloud")
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_PROVIDER", "cloud")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -196,12 +196,12 @@ class TestProviderPrefField:
     def test_bad_pref_value_falls_back_to_auto(self, monkeypatch):
         """A typo / SurrealQL-direct write of an invalid pref string
         must NOT crash the chat turn — fall back to "auto"."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.delenv("OPEN_NOTEBOOK_CHAT_PROVIDER", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_PROVIDER", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -222,14 +222,14 @@ class TestMeasuredBenchmarkChatRouting:
     """Measured local benchmark winners can fill the smart-router local slot."""
 
     def test_measured_chat_winner_used_when_env_local_model_missing(self, monkeypatch):
-        """UI smart routing + no OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID should still
+        """UI smart routing + no DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID should still
         have a local candidate when the local benchmark history has a measured
         chat winner."""
-        import open_notebook.ai.provision as provision_mod
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        import deeper_notebook.ai.provision as provision_mod
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
@@ -249,12 +249,12 @@ class TestMeasuredBenchmarkChatRouting:
     def test_env_local_model_still_overrides_measured_winner(self, monkeypatch):
         """Explicit operator/user local model choice keeps precedence over
         benchmark automation."""
-        import open_notebook.ai.provision as provision_mod
+        import deeper_notebook.ai.provision as provision_mod
         measured_lookup = AsyncMock(return_value="model:bench-chat")
-        monkeypatch.delenv("OPEN_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
-        monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
-        monkeypatch.setenv("OPEN_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
+        monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
+        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached",
             AsyncMock(return_value=True),

@@ -174,7 +174,7 @@ def test_v181_notfounderror_sweep_credentials_and_transformations():
         "api/routers/transformations.py",
     ):
         src = _read_source(rel)
-        assert "from open_notebook.exceptions" in src
+        assert "from deeper_notebook.exceptions" in src
         assert "NotFoundError" in src, (
             f"v0.7.181 regression: NotFoundError import is gone "
             f"from {rel}. The typed re-raise clauses below will "

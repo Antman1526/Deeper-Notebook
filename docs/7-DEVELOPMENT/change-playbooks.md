@@ -1,6 +1,6 @@
 # Change Playbooks
 
-Step-by-step guides for common types of changes in the Open Notebook codebase. Each playbook lists the files to touch **in order**, what to do at each step, and what to test.
+Step-by-step guides for common types of changes in the Deeper Notebook codebase. Each playbook lists the files to touch **in order**, what to do at each step, and what to test.
 
 > **For AI agents:** Read the relevant playbook BEFORE implementing. Follow the sequence — skipping steps causes incomplete changes that break other layers.
 

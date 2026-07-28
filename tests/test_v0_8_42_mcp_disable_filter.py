@@ -35,7 +35,7 @@ def test_resolve_chat_tools_filters_out_excluded_servers(monkeypatch):
     only one server in the list AND that server excluded, the result
     is an empty list (and no network discovery happens — verified by
     the patched `list_tool_names` never being called)."""
-    import open_notebook.graphs.chat as chat_mod
+    import deeper_notebook.graphs.chat as chat_mod
 
     # Use force_servers so we don't have to mock list_enabled_servers.
     # Two servers; exclude one; verify the other survives.
@@ -63,8 +63,8 @@ def test_resolve_chat_tools_filters_out_excluded_servers(monkeypatch):
 
     monkeypatch.setattr(chat_mod, "MCPClient", _FakeClient, raising=False)
     # Also patch the import inside _resolve_chat_tools — the function
-    # does `from open_notebook.mcp.client import MCPClient` lazily.
-    import open_notebook.mcp.client as mcp_client_mod
+    # does `from deeper_notebook.mcp.client import MCPClient` lazily.
+    import deeper_notebook.mcp.client as mcp_client_mod
     monkeypatch.setattr(mcp_client_mod, "MCPClient", _FakeClient)
 
     # SearXNG excluded → Crawl4AI's URL should be captured.
@@ -79,8 +79,8 @@ def test_resolve_chat_tools_excludes_case_insensitively(monkeypatch):
     """`searxng` and `SearXNG` and `  searxng  ` all match the same
     underlying server name. UI typos / quirky casing shouldn't
     silently bypass the user's intent."""
-    import open_notebook.graphs.chat as chat_mod
-    import open_notebook.mcp.client as mcp_client_mod
+    import deeper_notebook.graphs.chat as chat_mod
+    import deeper_notebook.mcp.client as mcp_client_mod
 
     fake_servers = [{"id": "1", "name": "SearXNG", "url": "http://x"}]
 
@@ -104,8 +104,8 @@ def test_resolve_chat_tools_excludes_case_insensitively(monkeypatch):
 def test_resolve_chat_tools_empty_exclude_list_is_noop(monkeypatch):
     """An empty exclude list MUST NOT accidentally filter everything
     out. None and [] are both the "all-included" sentinel."""
-    import open_notebook.graphs.chat as chat_mod
-    import open_notebook.mcp.client as mcp_client_mod
+    import deeper_notebook.graphs.chat as chat_mod
+    import deeper_notebook.mcp.client as mcp_client_mod
 
     fake_servers = [{"id": "1", "name": "SearXNG", "url": "http://x"}]
 
@@ -138,8 +138,8 @@ def test_resolve_chat_tools_ignores_blank_strings_in_exclude_list(monkeypatch):
     """A frontend that sends `disabled_mcp_servers: ["", "SearXNG", ""]`
     should still exclude SearXNG; empty entries are noise (not "exclude
     a server named empty string")."""
-    import open_notebook.graphs.chat as chat_mod
-    import open_notebook.mcp.client as mcp_client_mod
+    import deeper_notebook.graphs.chat as chat_mod
+    import deeper_notebook.mcp.client as mcp_client_mod
 
     fake_servers = [
         {"id": "1", "name": "SearXNG", "url": "http://a"},
@@ -176,7 +176,7 @@ def test_resolve_chat_tools_ignores_blank_strings_in_exclude_list(monkeypatch):
 def test_bind_loop_forwards_exclude_to_resolver(monkeypatch):
     """bind_mcp_and_run_tool_loop is the seam the chat node calls.
     Verify the exclude list reaches `_resolve_chat_tools`."""
-    import open_notebook.graphs.chat as chat_mod
+    import deeper_notebook.graphs.chat as chat_mod
 
     received: list[dict] = []
 

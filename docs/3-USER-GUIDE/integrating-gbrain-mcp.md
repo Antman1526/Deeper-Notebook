@@ -1,6 +1,6 @@
 # Integrating gbrain as an MCP source
 
-*Open Notebook Plus v0.8.2+*
+*Deeper Notebook v0.8.2+*
 
 [gbrain](https://github.com/garrytan/gbrain) is an open-source "memory
 system" — a TypeScript/Bun service that indexes a folder of markdown
@@ -10,10 +10,10 @@ typed knowledge graph (`attended`, `works_at`, `invested_in`, …) on top.
 It exposes itself as an **MCP server** so any MCP client can ask it
 questions.
 
-Open Notebook Plus v0.8.0 shipped an MCP **client**. Combining the two
+Deeper Notebook v0.8.0 shipped an MCP **client**. Combining the two
 gives your local chat model on-demand access to gbrain's hybrid retrieval
 without any code change in either project — gbrain stays where it is,
-Open Notebook Plus calls it as a tool from chat turns.
+Deeper Notebook calls it as a tool from chat turns.
 
 This guide walks through the three-step setup.
 
@@ -21,7 +21,7 @@ This guide walks through the three-step setup.
 
 ## What you get
 
-When gbrain is registered as an MCP source in Open Notebook Plus:
+When gbrain is registered as an MCP source in Deeper Notebook:
 
 - Every chat turn in any notebook can call `mcp_search` / `mcp_fetch`,
   which now route to gbrain.
@@ -35,7 +35,7 @@ When gbrain is registered as an MCP source in Open Notebook Plus:
   side; the gbrain result text is part of the LLM context, so an
   oversized gbrain result can flip the next turn to the cloud branch.
 
-Importantly, gbrain runs **outside** Open Notebook Plus's process. It
+Importantly, gbrain runs **outside** Deeper Notebook's process. It
 keeps its own Postgres / PGLite database and markdown brain repo. Your
 notebook sources, notes, podcasts, and chat history stay in
 SurrealDB. The only seam is the HTTP MCP call.
@@ -63,20 +63,20 @@ curl -sS http://127.0.0.1:8742/mcp/health | jq .
 # Expect: {"status":"ok","tools":["search","think","find_trajectory",...]}
 ```
 
-If the URL isn't reachable, fix that first — Open Notebook Plus's
+If the URL isn't reachable, fix that first — Deeper Notebook's
 registration step assumes the URL is live (it does a test-connect
 before saving).
 
 > **Privacy note.** gbrain's MCP server has no auth by default. Bind it
 > to `127.0.0.1` only and leave it off your firewall. If you expose
 > gbrain across a LAN, put it behind a reverse proxy with auth before
-> registering it in Open Notebook Plus.
+> registering it in Deeper Notebook.
 
 ---
 
-## Step 2: Register gbrain in Open Notebook Plus → Settings → MCP Servers
+## Step 2: Register gbrain in Deeper Notebook → Settings → MCP Servers
 
-1. Launch Open Notebook Plus and sign in.
+1. Launch Deeper Notebook and sign in.
 2. Sidebar → **Settings → MCP Servers** (added in v0.8.0 Phase 2 Task
    10).
 3. Click **Add server**. Fill in:
@@ -89,7 +89,7 @@ before saving).
    common causes are:
    - gbrain isn't running on that port (`curl` it again).
    - Wrong URL path — gbrain's MCP endpoint is `/mcp` not `/`.
-   - Open Notebook Plus's backend can't reach gbrain because the host
+   - Deeper Notebook's backend can't reach gbrain because the host
      is `localhost` vs `127.0.0.1` mismatch on a particular network
      stack. Try the other form.
 
@@ -127,18 +127,18 @@ New turns will populate.
 
 ---
 
-## When to use gbrain vs Open Notebook Plus sources
+## When to use gbrain vs Deeper Notebook sources
 
 | Need | Use |
 |------|-----|
-| Tight feedback loop on one or two documents — annotate, transform, podcast | Open Notebook Plus **sources** in that notebook |
+| Tight feedback loop on one or two documents — annotate, transform, podcast | Deeper Notebook **sources** in that notebook |
 | Cross-notebook recall over months of accumulated team knowledge | **gbrain** via MCP |
 | "Who knows about X?" / "Find the trajectory of decision Y" / typed graph queries | **gbrain** (uses its `whoknows` / `find_trajectory` skills) |
-| Source-grounded chat with explicit `[source:ID]` / `[note:ID]` citations to the document you're staring at | Open Notebook Plus **notebook context** |
-| Podcasts, transformations, vector search across a single notebook | Open Notebook Plus |
+| Source-grounded chat with explicit `[source:ID]` / `[note:ID]` citations to the document you're staring at | Deeper Notebook **notebook context** |
+| Podcasts, transformations, vector search across a single notebook | Deeper Notebook |
 
 The two are intentionally complementary. Don't ingest gbrain's
-markdown brain into Open Notebook Plus as sources — you'll duplicate
+markdown brain into Deeper Notebook as sources — you'll duplicate
 storage and confuse provenance. Keep them separate; let MCP be the
 only seam.
 

@@ -146,7 +146,7 @@ export function IntroReveal() {
         <motion.div
           key="onp-intro"
           role="dialog"
-          aria-label="Open Notebook Plus"
+          aria-label="Deeper Notebook"
           className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden text-[#eef0ff]"
           style={{ background: NIGHT_BG }}
           initial={{ opacity: 1 }}
@@ -229,11 +229,11 @@ export function IntroReveal() {
               variants={fadeUp(reduce)}
               className="text-5xl font-semibold tracking-tight sm:text-6xl"
             >
-              Open Notebook<span className="onp-aurora-text">+</span>
+              Deeper Notebook
             </motion.h1>
 
             <motion.p variants={fadeUp(reduce)} className="mt-3 text-lg text-[#c5c9ef]">
-              {t('intro.tagline', { defaultValue: 'Your private research brain' })}
+              {t('intro.tagline', { defaultValue: 'Think further with every source' })}
             </motion.p>
 
             {/* Progress sweep. */}

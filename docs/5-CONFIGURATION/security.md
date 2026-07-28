@@ -1,12 +1,12 @@
 # Security Configuration
 
-Protect your Open Notebook deployment with password authentication and production hardening.
+Protect your Deeper Notebook deployment with password authentication and production hardening.
 
 ---
 
 ## API Key Encryption
 
-Open Notebook encrypts API keys stored in the database using Fernet symmetric encryption (AES-128-CBC with HMAC-SHA256).
+Deeper Notebook encrypts API keys stored in the database using Fernet symmetric encryption (AES-128-CBC with HMAC-SHA256).
 
 ### Configuration Methods
 
@@ -21,7 +21,7 @@ Set the encryption key to any secret string:
 
 ```bash
 # .env or docker.env
-OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret-passphrase
+DEEPER_NOTEBOOK_ENCRYPTION_KEY=my-secret-passphrase
 ```
 
 Any string works — it will be securely derived via SHA-256 internally. Use a strong passphrase for production deployments.
@@ -33,7 +33,7 @@ Any string works — it will be securely derived via SHA-256 internally. Use a s
 | Password | `open-notebook-change-me` | Development only |
 | Encryption Key | **None** (must be configured) | Required for API key storage |
 
-**The encryption key has no default.** You must set `OPEN_NOTEBOOK_ENCRYPTION_KEY` before using the API key configuration feature. Without it, encrypting/decrypting API keys will fail.
+**The encryption key has no default.** You must set `DEEPER_NOTEBOOK_ENCRYPTION_KEY` before using the API key configuration feature. The legacy `OPEN_NOTEBOOK_ENCRYPTION_KEY` alias remains accepted during migration.
 
 ### Docker Secrets Support
 
@@ -316,7 +316,7 @@ CORS_ORIGINS=https://notebook.example.com,https://admin.example.com
 
 ## Security Limitations
 
-Open Notebook's password protection provides **basic access control**, not enterprise-grade security:
+Deeper Notebook's password protection provides **basic access control**, not enterprise-grade security:
 
 | Feature | Status |
 |---------|--------|

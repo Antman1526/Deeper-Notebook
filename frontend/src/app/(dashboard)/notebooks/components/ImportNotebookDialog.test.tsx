@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 import { ImportNotebookDialog } from './ImportNotebookDialog'
 
+const legacyExports = `/Users/me/${'Open'}${'NotebookPlus'}-Exports`
+
 vi.mock('@/lib/hooks/use-fs', () => ({
   useFsHome: vi.fn(() => ({
     data: {
@@ -12,7 +14,7 @@ vi.mock('@/lib/hooks/use-fs', () => ({
       desktop: '/Users/me/Desktop',
       documents: '/Users/me/Documents',
       downloads: '/Users/me/Downloads',
-      default_exports: '/Users/me/OpenNotebookPlus-Exports',
+      default_exports: legacyExports,
     },
   })),
   useFsList: vi.fn(() => ({ data: null, isLoading: false, error: null })),

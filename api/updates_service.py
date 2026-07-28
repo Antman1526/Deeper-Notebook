@@ -11,12 +11,12 @@ Design notes
 ------------
 - **Privacy:** the GitHub request only fires when checking is enabled (default
   on, user-togglable). When disabled, ``check()`` returns the cached/empty
-  result without any network call. Open Notebook is privacy-first, so the one
+  result without any network call. Deeper Notebook is privacy-first, so the one
   outbound call is gated and disclosed in the UI.
 - **Resilience:** any failure (offline, rate-limited, malformed JSON, no
   releases yet) resolves to ``update_available = False``. The notifier must
   never block startup or surface an error to the user.
-- **Caching:** results are cached in ``~/.open-notebook-plus/update_state.json``
+- **Caching:** results are cached in ``~/.deeper-notebook/update_state.json``
   for ``CHECK_TTL_SECONDS`` so reopening the app within the window doesn't
   re-ping GitHub.
 - **State:** the same file persists the user's enabled toggle and the version
@@ -33,11 +33,16 @@ from typing import Any, Optional
 import httpx
 from loguru import logger
 
+from desktop.data_root import active_data_root
+
 # Public GitHub repo that publishes the desktop releases.
 GITHUB_OWNER = "Antman1526"
-GITHUB_REPO = "open-notebook-Plus"
+GITHUB_REPO = "Deeper-Notebook"
 RELEASES_LATEST_URL = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+)
+RELEASES_FALLBACK_URL = (
+    f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 )
 
 # How long a check result is reused before we ping GitHub again.
@@ -49,10 +54,10 @@ REQUEST_TIMEOUT_SECONDS = 8.0
 def _state_path() -> Path:
     """Path to the persisted update-notifier state file.
 
-    Shares the ``~/.open-notebook-plus`` directory used by launcher prefs so
+    Shares the ``~/.deeper-notebook`` directory used by launcher prefs so
     all desktop-side state lives in one place.
     """
-    return Path.home() / ".open-notebook-plus" / "update_state.json"
+    return active_data_root() / "update_state.json"
 
 
 def app_version() -> str:
@@ -75,9 +80,12 @@ def app_version() -> str:
     try:
         from importlib.metadata import version
 
-        return version("open-notebook")
+        return version("deeper-notebook")
     except Exception:  # pragma: no cover
-        return "0.0.0"
+        try:
+            return version("open-notebook")
+        except Exception:
+            return "0.0.0"
 
 
 def _parse_version(raw: Optional[str]) -> tuple[int, ...]:
@@ -166,7 +174,7 @@ def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
         "update_available": available,
         "skipped": available and skipped == latest,
         "skipped_version": skipped,
-        "html_url": cache.get("html_url"),
+        "html_url": cache.get("html_url") or RELEASES_FALLBACK_URL,
         "published_at": cache.get("published_at"),
         "enabled": bool(state.get("enabled", True)),
         "last_check": state.get("last_check"),

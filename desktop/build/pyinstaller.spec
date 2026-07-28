@@ -3,10 +3,11 @@
 #
 # Architecture after the uv-bootstrap pivot:
 # - The frozen launcher only bundles its OWN light deps (pywebview, aiohttp,
-#   httpx, stdlib). Upstream Python code (api/, open_notebook/, commands/)
-#   ships as DATA and is run by the user-venv python, not the frozen binary.
+#   httpx, stdlib). Canonical Python code (api/, deeper_notebook/, commands/)
+#   and the open_notebook compatibility shim ship as DATA and are run by the
+#   user-venv python, not the frozen binary.
 # - uv binary + python-build-standalone are bundled in desktop/bin/ so the
-#   launcher can provision ~/.open-notebook-plus/venv on first launch.
+#   launcher can provision the canonical desktop data-root venv on first launch.
 # - requirements.lock is bundled so bootstrap knows what to install.
 import sys
 from pathlib import Path
@@ -16,6 +17,13 @@ from pathlib import Path
 # PROJECT_ROOT = repo root
 ROOT = Path(SPECPATH).resolve().parent
 PROJECT_ROOT = ROOT.parent
+# The PyInstaller console script starts with its own bin directory at
+# ``sys.path[0]``.  Add the checked-out source root before importing the shared
+# package-layout helper so builds do not depend on ``desktop`` being installed
+# as a distribution package.
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from desktop.build.package_layout import pyinstaller_upstream_package_datas
 
 # v0.8.70 — derive the app version from desktop/__init__.py instead of the old
 # hardcoded "0.1.0" in the Info.plist (which left every built .app reporting
@@ -82,6 +90,8 @@ hiddenimports = [
     # producing the exact silent-crash symptom the user hit on rebuild.
     "desktop.singleton",
     "desktop.next_rewrites_patcher",
+    # One-time renamed-bundle recovery card/action contract.
+    "desktop.app_migration",
 ]
 
 # ---------------------------------------------------------------------------
@@ -89,9 +99,10 @@ hiddenimports = [
 # ---------------------------------------------------------------------------
 datas = [
     # Upstream Python source — shipped as data, executed by venv python.
-    # Paths: <MEIPASS>/upstream/api, /upstream/open_notebook, etc.
+    # Paths include <MEIPASS>/upstream/deeper_notebook (canonical) and
+    # /upstream/open_notebook (compatibility shim).
     (str(PROJECT_ROOT / "api"),          "upstream/api"),
-    (str(PROJECT_ROOT / "open_notebook"), "upstream/open_notebook"),
+    *pyinstaller_upstream_package_datas(PROJECT_ROOT),
     (str(PROJECT_ROOT / "commands"),     "upstream/commands"),
     (str(PROJECT_ROOT / "prompts"),      "upstream/prompts"),
     (str(PROJECT_ROOT / "pyproject.toml"), "upstream"),
@@ -133,6 +144,8 @@ datas = [
     # case where this file is missing, but ONLY if no other directory with
     # an __init__.py shadows the search path. Belt-and-suspenders.
     (str(PROJECT_ROOT / "desktop" / "__init__.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "data_root.py"), "upstream/desktop"),
+    (str(PROJECT_ROOT / "desktop" / "paths.py"), "upstream/desktop"),
     # v0.5.7/8 audit-fix: bundle additional desktop modules that upstream
     # API routers import:
     #   - desktop.config           — used by /api/onp/theme (theme switcher)
@@ -143,8 +156,7 @@ datas = [
     (str(PROJECT_ROOT / "desktop" / "config.py"), "upstream/desktop"),
     (str(PROJECT_ROOT / "desktop" / "launcher_prefs.py"), "upstream/desktop"),
     (str(PROJECT_ROOT / "desktop" / "auto_register"), "upstream/desktop/auto_register"),
-    # Migration #15 ships inside upstream/open_notebook/database/migrations
-    # (already covered by the upstream/open_notebook entry above).
+    # Migrations ship inside upstream/deeper_notebook/database/migrations.
     # memory_injection.js is included by the first_run/static directory
     # entry above — no separate line needed.
 ]
@@ -188,33 +200,33 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="Open Notebook Plus",
+    name="Deeper Notebook",
     console=False,
     icon=str(ROOT / "resources" / ("icon.icns" if is_mac else "icon.ico")),
 )
 
 coll = COLLECT(
     exe, a.binaries, a.datas,
-    name="Open Notebook Plus",
+    name="Deeper Notebook",
 )
 
 if is_mac:
     app = BUNDLE(
         coll,
-        name="Open Notebook Plus.app",
+        name="Deeper Notebook.app",
         icon=str(ROOT / "resources" / "icon.icns"),
+        # Compatibility identifier: intentionally pinned for this release.
+        # A future bundle-ID change requires signed packaged-upgrade proof and
+        # explicit macOS permission-migration notes.
         bundle_identifier="com.antman1526.open-notebook-plus",
         info_plist={
             # v0.8.70 — was hardcoded "0.1.0". Now tracks desktop/__init__.py.
             "CFBundleShortVersionString": APP_VERSION,
             "CFBundleVersion": APP_VERSION,
-            # v0.8.65f — user-facing display name. The .app filename + bundle
-            # identifier stay (filesystem/identity), but Finder/Dock/menu bar
-            # use these, so the app shows as "Open notebook+".
-            "CFBundleName": "Open notebook+",
-            "CFBundleDisplayName": "Open notebook+",
+            "CFBundleName": "Deeper Notebook",
+            "CFBundleDisplayName": "Deeper Notebook",
             "NSHighResolutionCapable": True,
             "NSMicrophoneUsageDescription":
-                "Open notebook+ uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
+                "Deeper Notebook uses your microphone for voice chat (Whisper STT, runs locally on this Mac).",
         },
     )

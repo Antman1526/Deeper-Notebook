@@ -1,4 +1,4 @@
-# Contributing to Open Notebook
+# Contributing to Deeper Notebook
 
 **📍 This file has moved!**
 

@@ -129,8 +129,8 @@ Provider order (outer → inner): `ErrorBoundary` → `ThemeProvider` →
 `QueryProvider` → `I18nProvider` → `ConnectionGuard` → children + `IntroReveal`
 (once-per-user "Aurora Reveal" splash) + `Toaster` (sonner). The pre-hydration
 `themeScript` is injected in `<head>` to prevent theme flash. Global CSS imports:
-`globals.css`, `katex/dist/katex.min.css`, and `@/components/onp/tokens.css`
-(the ONP shadow-layer token overlay).
+`globals.css`, `katex/dist/katex.min.css`, and
+`@/components/deeper-notebook/tokens.css` (the downstream token overlay).
 
 ### Dashboard auth guard
 
@@ -231,7 +231,7 @@ Key behaviors:
   `computeSourceSelections`/`computeNoteSelections` (from
   `lib/utils/source-context.ts`) initialize AND prune keys as the source/note
   lists change; the whole selection map is reset when `notebookId` changes.
-- **`ArtifactRail`** (from `components/onp`) sits above the panels; a
+- **`ArtifactRail`** (from `components/deeper-notebook`) sits above the panels; a
   `NotebookHeader` sits above that with a `border-b` divider. When a completed
   structured slide deck is selected, the rail queries completed podcast episodes,
   opens a native dialog to choose one with timestamped captions, and calls
@@ -584,26 +584,27 @@ oklch design tokens plus custom `--success/--warning/--info`, a **motion scale**
 }
 ```
 
-**Layer 2 — ONP shadow-layer tokens.** `components/onp/tokens.css` layers
-`--onp-*` tokens *on top of* the shadcn variables using `color-mix()` so they
+**Layer 2 — Deeper Notebook downstream tokens.**
+`components/deeper-notebook/tokens.css` layers `--dn-*` tokens *on top of* the
+shadcn variables using `color-mix()` so they
 auto-adapt to whichever of the 17 themes is active — no per-theme overrides.
 This includes the **Aurora-glass system** (v0.8.70/72), which is theme-aware:
 the aurora hues derive from the live theme's `--primary`/`--accent`:
 
 ```css
---onp-aurora-1: var(--primary, #6c7bff);  /* theme primary (brand: indigo) */
---onp-aurora-2: var(--accent, #b96cff);   /* theme accent  (brand: violet) */
---onp-aurora-3: color-mix(in oklab, var(--accent, #b96cff) 55%, var(--primary, #36c9b0));
---onp-glow-accent: 0 0 0 1px color-mix(in oklab, var(--primary) 26%, transparent),
+--dn-aurora-1: var(--primary, #2DD4BF);
+--dn-aurora-2: var(--accent, #38BDF8);
+--dn-aurora-3: color-mix(in oklab, var(--accent, #38BDF8) 55%, var(--primary, #2DD4BF));
+--dn-glow-accent: 0 0 0 1px color-mix(in oklab, var(--primary) 26%, transparent),
                    0 10px 34px -8px color-mix(in oklab, var(--primary) 48%, transparent);
---onp-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
---onp-glass-blur: 14px;
+--dn-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
+--dn-glass-blur: 14px;
 ```
 
-`.onp-aurora-bg` renders layered drifting radial gradients
-(`onp-aurora-drift` keyframes, GPU-composited transform/opacity/filter),
-`.onp-glass` is the frosted-glass surface (backdrop-blur + saturate),
-`.onp-aurora-text` is the gradient text used in the hero/intro.
+`.dn-aurora-bg` renders layered drifting radial gradients
+(`dn-aurora-drift` keyframes, GPU-composited transform/opacity/filter),
+`.dn-glass` is the frosted-glass surface (backdrop-blur + saturate),
+`.dn-aurora-text` is the gradient text used in the hero/intro.
 
 ### 8.2 Light/dark via `theme-store` + pre-hydration script
 
@@ -622,7 +623,8 @@ The native desktop wrapper (`desktop/window.py`) injects a `window.ONP` object.
 The frontend feature-detects it and falls back gracefully in a plain browser.
 
 **`window.ONP.setTheme(themeId)`** — used by
-`components/onp/ThemeSwitcher.tsx`. This component lists all 17 ONP themes
+`components/deeper-notebook/ThemeSwitcher.tsx`. This component lists all 17
+themes
 (7 light incl. `system`, 10 dark) with per-theme `swatch`/`accent` dots. On
 select:
 

@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from pptx import Presentation
 
 from api.routers import studio as studio_mod
-from open_notebook.exceptions import NotFoundError
-from open_notebook.studio.generation import service as artifact_generation_service
+from deeper_notebook.exceptions import NotFoundError
+from deeper_notebook.studio.generation import service as artifact_generation_service
 
 
 def _client() -> TestClient:
@@ -27,6 +27,12 @@ def _client() -> TestClient:
 @pytest.fixture(autouse=True)
 def _isolate_background_evaluation(monkeypatch):
     """Keep router tests focused on API behavior, not live evaluation persistence."""
+    for name in (
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DN_EVIDENCE_STUDIO",
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
         artifact_generation_service,
         "_schedule_artifact_evaluation",
@@ -259,7 +265,7 @@ def _install_fake_workflow_runs(monkeypatch):
 
 
 def test_artifact_routes_are_hidden_when_feature_flag_disabled(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "0")
 
     response = _client().get("/api/studio/notebooks/notebook:alpha/artifacts")
 
@@ -268,7 +274,7 @@ def test_artifact_routes_are_hidden_when_feature_flag_disabled(monkeypatch):
 
 
 def test_create_artifact_saves_and_returns_response(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
 
     response = _client().post(
@@ -292,7 +298,7 @@ def test_create_artifact_saves_and_returns_response(monkeypatch):
 
 
 def test_create_training_guide_artifact(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
 
     response = _client().post(
@@ -313,7 +319,7 @@ def test_create_training_guide_artifact(monkeypatch):
 
 
 def test_create_course_pack_artifact(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
 
     response = _client().post(
@@ -334,7 +340,7 @@ def test_create_course_pack_artifact(monkeypatch):
 
 
 def test_list_artifacts_for_notebook(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _FakeArtifact.records = {
         "studio_artifact:1": _FakeArtifact(
@@ -359,7 +365,7 @@ def test_list_artifacts_for_notebook(monkeypatch):
 
 
 def test_list_artifacts_for_missing_notebook_returns_404(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     studio_mod.repo_query.return_value = []
 
@@ -370,7 +376,7 @@ def test_list_artifacts_for_missing_notebook_returns_404(monkeypatch):
 
 
 def test_list_artifacts_for_notebook_excludes_revision_snapshots(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _FakeArtifact.records = {
         "studio_artifact:primary": _FakeArtifact(
@@ -395,7 +401,7 @@ def test_list_artifacts_for_notebook_excludes_revision_snapshots(monkeypatch):
 
 
 def test_list_artifact_revisions(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _FakeArtifact.records = {
         "studio_artifact:primary": _FakeArtifact(
@@ -430,7 +436,7 @@ def test_list_artifact_revisions(monkeypatch):
 
 
 def test_create_workflow_run_for_artifact_requires_approval(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -465,7 +471,7 @@ def test_create_workflow_run_for_artifact_requires_approval(monkeypatch):
 
 
 def test_create_workflow_run_without_approval_submits_generation_command(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -528,7 +534,7 @@ def test_create_workflow_run_without_approval_submits_generation_command(monkeyp
 
 
 def test_create_workflow_run_rejects_not_ready_sources_before_queueing(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -582,7 +588,7 @@ def test_create_workflow_run_rejects_not_ready_sources_before_queueing(monkeypat
 
 
 def test_list_workflow_runs_for_artifact(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -610,7 +616,7 @@ def test_list_workflow_runs_for_artifact(monkeypatch):
 
 
 def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -667,7 +673,7 @@ def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
 
 
 def test_approve_workflow_run_submits_generation_command(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _install_fake_workflow_runs(monkeypatch)
     _FakeArtifact.records = {
@@ -741,7 +747,7 @@ def test_approve_workflow_run_submits_generation_command(monkeypatch):
 
 
 def test_update_artifact_patches_only_supplied_fields(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _FakeArtifact.records = {
         "studio_artifact:1": _FakeArtifact(
@@ -766,7 +772,7 @@ def test_update_artifact_patches_only_supplied_fields(monkeypatch):
 
 
 def test_update_artifact_rejects_invalid_structured_document(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:structured",
@@ -795,7 +801,7 @@ def test_update_artifact_rejects_invalid_structured_document(monkeypatch):
 
 
 def test_update_artifact_accepts_legacy_markdown_payload(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:legacy",
@@ -817,7 +823,7 @@ def test_update_artifact_accepts_legacy_markdown_payload(monkeypatch):
 
 
 def test_update_artifact_rejects_unknown_schema_version(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:future",
@@ -843,7 +849,7 @@ def test_update_artifact_rejects_unknown_schema_version(monkeypatch):
 
 
 def test_update_artifact_renders_canonical_markdown_and_keeps_extras(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:cards",
@@ -882,7 +888,7 @@ def test_update_artifact_renders_canonical_markdown_and_keeps_extras(monkeypatch
 
 
 def test_update_artifact_recomputes_derived_metadata(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:table",
@@ -930,8 +936,8 @@ def test_update_artifact_recomputes_derived_metadata(monkeypatch):
 
 
 def test_update_visual_artifact_snapshots_and_refreshes_exports(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     previous_document = {
         "schema_version": 1,
@@ -1005,7 +1011,7 @@ def test_update_visual_artifact_snapshots_and_refreshes_exports(monkeypatch, tmp
 
 
 def test_delete_artifact_deletes_record(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     _FakeArtifact.records = {
         "studio_artifact:1": _FakeArtifact(
@@ -1024,7 +1030,7 @@ def test_delete_artifact_deletes_record(monkeypatch):
 
 
 def test_generate_artifact_is_hidden_when_feature_flag_disabled(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "0")
 
     response = _client().post("/api/studio/artifacts/studio_artifact:1/generate")
 
@@ -1033,8 +1039,8 @@ def test_generate_artifact_is_hidden_when_feature_flag_disabled(monkeypatch):
 
 
 def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:1",
@@ -1107,7 +1113,7 @@ def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch,
 
 
 def test_generate_artifact_rejects_podcast_audio_text_generation(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:podcast-audio",
@@ -1141,7 +1147,7 @@ def test_generate_artifact_rejects_podcast_audio_text_generation(monkeypatch):
 
 
 def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:not-ready",
@@ -1187,7 +1193,7 @@ def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
 
 
 def test_generate_course_pack_blocks_completed_source_without_text(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:empty-text",
@@ -1234,8 +1240,8 @@ def test_generate_course_pack_blocks_completed_source_without_text(monkeypatch):
 
 
 def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:course-pack",
@@ -1358,8 +1364,8 @@ def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_pa
 
 
 def test_generate_course_pack_flags_unsupported_citation_markers(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:citation-guard",
@@ -1428,8 +1434,8 @@ def test_generate_course_pack_flags_unsupported_citation_markers(monkeypatch, tm
 
 
 def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:1",
@@ -1491,8 +1497,8 @@ def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_pa
 
 
 def test_generate_artifact_keeps_explicit_model_over_role_routing(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:manual",
@@ -1549,7 +1555,7 @@ def test_generate_artifact_keeps_explicit_model_over_role_routing(monkeypatch, t
 
 
 def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     previous_payload = {
         "schema_version": 1,
@@ -1633,7 +1639,7 @@ def test_generate_artifact_preserves_previous_output_as_revision(monkeypatch):
 
 
 def test_generate_artifact_supports_first_text_artifact_types(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
 
     class _SourceMock:
@@ -1682,7 +1688,7 @@ def test_generate_artifact_supports_first_text_artifact_types(monkeypatch):
 
 
 def test_generate_artifact_supports_mind_map_instruction(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:mind-map",
@@ -1723,7 +1729,7 @@ def test_generate_artifact_supports_mind_map_instruction(monkeypatch):
 
 
 def test_generate_artifact_supports_visual_study_artifact_instructions(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
 
     class _SourceMock:
@@ -1768,7 +1774,7 @@ def test_generate_artifact_supports_visual_study_artifact_instructions(monkeypat
 
 
 def test_generate_artifact_supports_podcast_outline_instruction(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:podcast-outline",
@@ -1811,7 +1817,7 @@ def test_generate_artifact_supports_podcast_outline_instruction(monkeypatch):
 
 
 def test_generate_artifact_supports_research_run_instruction(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:research-run",
@@ -1855,8 +1861,8 @@ def test_generate_artifact_supports_research_run_instruction(monkeypatch):
 
 
 def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:research-stages",
@@ -1935,8 +1941,8 @@ def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, t
 
 
 def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:data-table",
@@ -2029,8 +2035,8 @@ def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path)
 
 
 def test_generate_slide_deck_persists_pptx_and_pdf_exports(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:slides",
@@ -2086,8 +2092,8 @@ def test_generate_slide_deck_persists_pptx_and_pdf_exports(monkeypatch, tmp_path
 
 
 def test_generate_infographic_persists_png_and_pdf_exports(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:infographic",
@@ -2142,8 +2148,8 @@ def test_generate_infographic_persists_png_and_pdf_exports(monkeypatch, tmp_path
 
 
 def test_visual_export_failure_keeps_completed_text_exports(monkeypatch, tmp_path):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:visual-failure",
@@ -2192,7 +2198,7 @@ def test_visual_export_failure_keeps_completed_text_exports(monkeypatch, tmp_pat
 
 
 def test_generate_artifact_uses_all_notebook_sources_when_none_selected(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:2",
@@ -2242,7 +2248,7 @@ def test_generate_artifact_uses_all_notebook_sources_when_none_selected(monkeypa
 
 
 def test_generate_artifact_returns_404_when_artifact_notebook_is_missing(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:missing-notebook",
@@ -2276,7 +2282,7 @@ def test_generate_artifact_returns_404_when_artifact_notebook_is_missing(monkeyp
 
 
 def test_generate_artifact_marks_failed_when_model_errors(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:3",
@@ -2310,7 +2316,7 @@ def test_generate_artifact_marks_failed_when_model_errors(monkeypatch):
 
 
 def test_generate_artifact_marks_failed_when_model_returns_blank_output(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:blank",
@@ -2352,7 +2358,7 @@ def test_generate_artifact_marks_failed_when_model_returns_blank_output(monkeypa
 
 
 def test_generate_artifact_returns_404_when_selected_source_is_missing(monkeypatch):
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     _install_fake_artifacts(monkeypatch)
     artifact = _FakeArtifact(
         id="studio_artifact:missing-source",

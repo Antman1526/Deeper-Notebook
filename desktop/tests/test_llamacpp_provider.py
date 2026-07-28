@@ -438,7 +438,7 @@ def test_start_appends_n_predict_draft_when_both_set(gguf_dir, monkeypatch, tmp_
 
 
 def test_start_omits_n_predict_draft_when_draft_path_missing(gguf_dir, monkeypatch, tmp_path):
-    """v0.8.2 Item C — a stale OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT without
+    """v0.8.2 Item C — a stale DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT without
     a valid draft_model_path must NOT emit a stray `--n_predict_draft`
     flag (llama_cpp.server would reject the argv at parse time)."""
     captured: list = []

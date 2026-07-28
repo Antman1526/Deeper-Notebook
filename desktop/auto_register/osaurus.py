@@ -6,7 +6,7 @@ auto-register's point of view it is just another openai_compatible
 server — same probe, same credential kind, same model-discovery
 endpoints. The only special-cases are:
 
-  - **Default port**: 1337 (overridable via OPEN_NOTEBOOK_OSAURUS_PORT).
+  - **Default port**: 1337 (overridable via DEEPER_NOTEBOOK_OSAURUS_PORT).
   - **Branding**: the credential is named "Osaurus (local MLX)" so it's
     distinguishable from llama-cpp / Ollama in the UI.
   - **Probe-before-register**: if nothing's listening on :1337 we
@@ -28,17 +28,18 @@ import os
 
 import httpx
 
+from deeper_notebook.environment import resolve_env
 from desktop.auto_register._http import _ensure_credential, _ensure_model
 
 log = logging.getLogger(__name__)
 
 # Osaurus's documented default port. The user can move it (Settings →
 # Server Port inside the Osaurus app); we honor an override via
-# OPEN_NOTEBOOK_OSAURUS_PORT so power users with two Osaurus instances
+# DEEPER_NOTEBOOK_OSAURUS_PORT so power users with two Osaurus instances
 # or a non-default install can still wire us up without code changes.
 DEFAULT_OSAURUS_PORT = 1337
 
-# Same structured timeout shape as `open_notebook/health/local_models.py`
+# Same structured timeout shape as `deeper_notebook/health/local_models.py`
 # uses for its OpenAI-compatible probe — connect + read kept tight so a
 # black-hole port doesn't stall launcher startup.
 _PROBE_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0)
@@ -46,14 +47,14 @@ _PROBE_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0)
 
 def _osaurus_port() -> int:
     """Read the configured Osaurus port from env, fall back to default."""
-    raw = os.environ.get("OPEN_NOTEBOOK_OSAURUS_PORT", "").strip()
+    raw = resolve_env("DEEPER_NOTEBOOK_OSAURUS_PORT", "").strip()
     if not raw:
         return DEFAULT_OSAURUS_PORT
     try:
         return int(raw)
     except ValueError:
         log.warning(
-            "OPEN_NOTEBOOK_OSAURUS_PORT=%r is not an integer; "
+            "DEEPER_NOTEBOOK_OSAURUS_PORT=%r is not an integer; "
             "falling back to %d",
             raw, DEFAULT_OSAURUS_PORT,
         )
@@ -63,7 +64,7 @@ def _osaurus_port() -> int:
 def _osaurus_running(port: int) -> tuple[bool, list[str]]:
     """Probe http://127.0.0.1:{port}/v1/models — same shape as our
     OpenAI-compatible health probe in
-    `open_notebook/health/local_models.py:_probe_openai_compatible`.
+    `deeper_notebook/health/local_models.py:_probe_openai_compatible`.
 
     Returns (running, discovered_model_ids). `running` is True iff the
     endpoint returns 200 with parseable JSON. On any error (connect

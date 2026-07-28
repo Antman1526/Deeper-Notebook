@@ -1,6 +1,6 @@
 """v0.7.11 — regression tests for chat-history trimming.
 
-`open_notebook.graphs.chat.call_model_with_messages` used to concatenate
+`deeper_notebook.graphs.chat.call_model_with_messages` used to concatenate
 the entire persisted `state["messages"]` list into the LLM payload at
 every turn. LangGraph's `add_messages` reducer is append-only, so a
 long-running session's history grew without bound and — combined with
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from open_notebook.graphs import chat
+from deeper_notebook.graphs import chat
 
 # ---------------------------------------------------------------------------
 # _msg_char_len — defensive against many message shapes
@@ -55,13 +55,13 @@ def _make_history(n_turns: int, content_size: int = 200) -> list:
 
 
 def test_trim_returns_empty_when_input_empty(monkeypatch):
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     assert chat._trim_message_history([]) == []
 
 
 def test_trim_returns_untouched_when_under_cap(monkeypatch):
     """Under the cap → no marker, no slicing, same list returned."""
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     msgs = _make_history(3, content_size=100)  # ~6 × 102 = 612 chars
     out = chat._trim_message_history(msgs)
     assert out == msgs
@@ -74,7 +74,7 @@ def test_trim_returns_untouched_when_under_cap(monkeypatch):
 
 def test_trim_drops_oldest_when_over_cap(monkeypatch):
     """Over the cap → oldest dropped, most-recent kept, marker prepended."""
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)  # 12_000 default
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)  # 12_000 default
     msgs = _make_history(50, content_size=500)  # ~50_000 chars total
     out = chat._trim_message_history(msgs)
 
@@ -101,8 +101,8 @@ def test_trim_keeps_last_message_even_if_oversize(monkeypatch):
     the conversation; truncating it preserves the turn while
     respecting the model's budget.
     """
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_CHAT_MESSAGE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_MESSAGE_CHAR_CAP", raising=False)
     huge = HumanMessage(content="X" * 30_000)  # 2.5x the history cap
     out = chat._trim_message_history([huge])
     # Still exactly one message, no history marker prepended (nothing dropped).
@@ -117,7 +117,7 @@ def test_trim_keeps_last_message_even_if_oversize(monkeypatch):
 
 def test_trim_respects_env_var_higher(monkeypatch):
     """Capable hardware: raise the cap, more history fits."""
-    monkeypatch.setenv("ONP_CHAT_HISTORY_CHAR_CAP", "60000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", "60000")
     msgs = _make_history(30, content_size=500)  # ~30_000 chars
     out = chat._trim_message_history(msgs)
     # Fits under 60k → untouched
@@ -126,7 +126,7 @@ def test_trim_respects_env_var_higher(monkeypatch):
 
 def test_trim_respects_env_var_lower(monkeypatch):
     """Constrained hardware: lower the cap, more aggressive trimming."""
-    monkeypatch.setenv("ONP_CHAT_HISTORY_CHAR_CAP", "2000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", "2000")
     msgs = _make_history(10, content_size=500)
     out = chat._trim_message_history(msgs)
     # Marker present + fewer messages
@@ -137,7 +137,7 @@ def test_trim_respects_env_var_lower(monkeypatch):
 
 def test_trim_falls_back_on_invalid_env(monkeypatch):
     """Garbage env value → default 12_000 cap applied."""
-    monkeypatch.setenv("ONP_CHAT_HISTORY_CHAR_CAP", "not-an-int")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", "not-an-int")
     msgs = _make_history(50, content_size=500)
     out = chat._trim_message_history(msgs)
     # Trimming happened (default cap kicked in, not the bogus value)
@@ -149,7 +149,7 @@ def test_trim_falls_back_on_invalid_env(monkeypatch):
 def test_trim_falls_back_when_cap_too_low(monkeypatch):
     """A cap below 500 is almost certainly a typo — fall back to default
     so we don't ship a useless single-token history."""
-    monkeypatch.setenv("ONP_CHAT_HISTORY_CHAR_CAP", "50")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", "50")
     msgs = _make_history(50, content_size=500)
     out = chat._trim_message_history(msgs)
     # Default applied → many messages survive (not just 1-2)
@@ -159,7 +159,7 @@ def test_trim_falls_back_when_cap_too_low(monkeypatch):
 def test_trim_preserves_message_order(monkeypatch):
     """The order of kept messages must match the original order — we
     drop from the front, never reorder."""
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     msgs = _make_history(40, content_size=500)
     out = chat._trim_message_history(msgs)
     kept = out[1:]  # skip the marker
@@ -184,7 +184,7 @@ async def test_call_model_invokes_trimming(monkeypatch):
     LLM round trip is `await model.ainvoke()` instead of
     `model.invoke()`. The trimmer is invoked the same way; only the
     test's call-site needs `await`."""
-    monkeypatch.delenv("ONP_CHAT_HISTORY_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
 
     called_with: list = []
 

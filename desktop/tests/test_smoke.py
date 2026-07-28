@@ -3,7 +3,6 @@ from pathlib import Path
 
 import desktop
 
-
 # v0.7.210 — was a literal "0.1.0" assertion (set when the project
 # started, never updated). Replaced with a SemVer-shape check plus
 # a sync assertion against the latest `- **vX.Y.Z**` heading in

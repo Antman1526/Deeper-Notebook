@@ -7,7 +7,8 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 
 def _password_matches(provided: str, expected: str) -> bool:
@@ -40,13 +41,13 @@ def _password_matches(provided: str, expected: str) -> bool:
 class PasswordAuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware to check password authentication for all API requests.
-    Always active with default password if OPEN_NOTEBOOK_PASSWORD is not set.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Always active with default password if DEEPER_NOTEBOOK_PASSWORD is not set.
+    Supports Docker secrets via DEEPER_NOTEBOOK_PASSWORD_FILE.
     """
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
-        self.password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+        self.password = resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
         # v0.7.209 — defaults expanded to match what main.py passes
         # in production. Previously the class default omitted the
         # K8s/Docker probes (/livez, /readyz, /healthz/deep) and
@@ -128,11 +129,11 @@ def check_api_password(
     """
     Utility function to check API password.
     Can be used as a dependency in individual routes if needed.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
-    Returns True without checking credentials if OPEN_NOTEBOOK_PASSWORD is not configured.
+    Supports Docker secrets via DEEPER_NOTEBOOK_PASSWORD_FILE.
+    Returns True without checking credentials if DEEPER_NOTEBOOK_PASSWORD is not configured.
     Raises 401 if credentials are missing or don't match the configured password.
     """
-    password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+    password = resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
 
     # No password configured - skip authentication
     if not password:

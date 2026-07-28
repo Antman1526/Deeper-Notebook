@@ -25,8 +25,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from open_notebook.domain import gmail as gmail_mod
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.domain import gmail as gmail_mod
+from deeper_notebook.domain.gmail import GmailIntegration
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +77,7 @@ async def test_gmail_get_single_flight_under_concurrency():
         ]
 
     with patch(
-        "open_notebook.domain.gmail.repo_query",
+        "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(side_effect=_slow_query),
     ):
         # 5 concurrent cache-miss callers; gather joins them.
@@ -112,7 +112,7 @@ async def test_gmail_get_single_flight_lock_does_not_serialize_cache_hits():
         return []
 
     with patch(
-        "open_notebook.domain.gmail.repo_query",
+        "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(side_effect=_query_should_not_run),
     ):
         results = await asyncio.gather(

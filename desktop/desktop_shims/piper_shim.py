@@ -48,7 +48,7 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
         raise ValueError("piper_shim.build_app needs at least one voice")
     default_voice = next(iter(voices))
 
-    app = FastAPI(title="Open Notebook Plus — Piper TTS shim")
+    app = FastAPI(title="Deeper Notebook — Piper TTS shim")
 
     @app.get("/health")
     def health() -> dict:
@@ -66,7 +66,7 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
                 {
                     "id": name,
                     "object": "model",
-                    "owned_by": "open-notebook-plus",
+                    "owned_by": "deeper-notebook",
                 }
                 for name in voices.keys()
             ],

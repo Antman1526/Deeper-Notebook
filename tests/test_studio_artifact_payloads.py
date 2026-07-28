@@ -1,12 +1,12 @@
 import pytest
 
-from open_notebook.exceptions import InvalidInputError
-from open_notebook.studio.payloads import (
+from deeper_notebook.exceptions import InvalidInputError
+from deeper_notebook.studio.payloads import (
     artifact_markdown,
     build_structured_payload,
     parse_payload_document,
 )
-from open_notebook.studio.schemas import (
+from deeper_notebook.studio.schemas import (
     FlashcardsDocument,
     parse_artifact_document,
 )

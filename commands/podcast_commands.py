@@ -9,9 +9,10 @@ from loguru import logger
 from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command
 
-from open_notebook.config import DATA_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.podcasts.models import (
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.podcasts.models import (
     STAGE_AWAITING_REVIEW,
     STAGE_CANCELLED,
     STAGE_OUTLINE,
@@ -402,12 +403,12 @@ async def generate_podcast_command(
         # `max_attempts: 1` means there's no retry — a hang is forever
         # unless we cap it).
         #
-        # Tunable via ONP_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
+        # Tunable via DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC. A timeout
         # propagates as a regular exception → @command framework
         # marks the episode as failed → episode.delete() cleanup
         # path below fires, including the empty-output-dir sweep.
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         episode.generation_stage = STAGE_OUTLINE
         await episode.save()
@@ -457,7 +458,7 @@ async def generate_podcast_command(
                 f"episode {input_data.episode_name!r} while in stage "
                 f"'{episode.generation_stage or 'startup'}'. The provider "
                 f"for that stage may be hung or significantly slower than "
-                f"expected. Raise ONP_PODCAST_GENERATION_TIMEOUT_SEC if it "
+                f"expected. Raise DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC if it "
                 f"legitimately needs more time, or check provider health."
             ) from exc
         except Exception:
@@ -633,7 +634,7 @@ async def resume_podcast_command(
         )
 
         _podcast_timeout = float(
-            os.environ.get("ONP_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
         )
         try:
             result = await run_graph_with_stages(

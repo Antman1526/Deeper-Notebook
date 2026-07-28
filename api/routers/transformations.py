@@ -14,14 +14,15 @@ from api.models import (
     TransformationUpdate,
 )
 from api.utils.iso import iso  # v0.7.183 — Safari-safe datetime serialization
-from open_notebook.ai.models import Model
-from open_notebook.domain.transformation import DefaultPrompts, Transformation
-from open_notebook.exceptions import (
+from deeper_notebook.ai.models import Model
+from deeper_notebook.domain.transformation import DefaultPrompts, Transformation
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import (
+    DeeperNotebookError,
     InvalidInputError,
     NotFoundError,
-    OpenNotebookError,
 )
-from open_notebook.graphs.transformation import graph as transformation_graph
+from deeper_notebook.graphs.transformation import graph as transformation_graph
 
 router = APIRouter()
 
@@ -81,7 +82,7 @@ async def get_transformations(
 class OptimizePromptRequest(BaseModel):
     """v0.8.68 — SkillOpt prompt optimization (microsoft/SkillOpt, MIT)."""
 
-    source_ids: List[str] = Field(..., min_length=2, max_length=10)
+    source_ids: list[str] = Field(..., min_length=2, max_length=10)
     criteria: str = Field(..., min_length=10, max_length=4000)
     epochs: int = Field(2, ge=1, le=4)
     edit_budget: int = Field(4, ge=1, le=8)
@@ -101,7 +102,7 @@ async def optimize_transformation_prompt(
 
     from surreal_commands import submit_command
 
-    from open_notebook.prompt_optimizer import skillopt_available
+    from deeper_notebook.prompt_optimizer import skillopt_available
 
     try:
         if not skillopt_available():
@@ -123,7 +124,7 @@ async def optimize_transformation_prompt(
             raise HTTPException(status_code=501, detail="Optimizer unavailable")
 
         _timeout = float(
-            _os.environ.get("ONP_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
+            resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
         )
         job_id = await _asyncio.wait_for(
             _asyncio.to_thread(
@@ -219,7 +220,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         import os
 
         _xform_timeout = float(
-            os.environ.get("ONP_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
+            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
         )
         try:
             result = await asyncio.wait_for(
@@ -238,7 +239,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
                 detail=(
                     f"Transformation timed out after {_xform_timeout}s. "
                     "The chat model may be loading or overloaded. Try again, "
-                    "or raise ONP_TRANSFORMATION_TIMEOUT_SEC."
+                    "or raise DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC."
                 ),
             ) from exc
 
@@ -261,7 +262,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
 
     except HTTPException:
         raise
-    except OpenNotebookError:
+    except DeeperNotebookError:
         raise  # Let global exception handlers return proper status codes
     except Exception as e:
         logger.error(f"Error executing transformation: {str(e)}")

@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from open_notebook.domain.notebook import Notebook
+from deeper_notebook.domain.notebook import Notebook
 
 
 def _notebook() -> Notebook:

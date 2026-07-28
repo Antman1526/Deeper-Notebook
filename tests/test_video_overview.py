@@ -8,9 +8,9 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from open_notebook.video.captions import render_webvtt
-from open_notebook.video.composer import VideoOverviewError, compose_video_overview
-from open_notebook.video.contracts import VideoNarrationSegment, VideoOverviewDocument
+from deeper_notebook.video.captions import render_webvtt
+from deeper_notebook.video.composer import VideoOverviewError, compose_video_overview
+from deeper_notebook.video.contracts import VideoNarrationSegment, VideoOverviewDocument
 
 
 def _audio(path: Path) -> None:

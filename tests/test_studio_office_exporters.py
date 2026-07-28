@@ -9,11 +9,11 @@ from pathlib import Path
 from docx import Document
 from openpyxl import load_workbook
 
-from open_notebook.domain.notebook import StudioArtifact
-from open_notebook.studio.exporters import export_document, export_spreadsheet
-from open_notebook.studio.generation.persistence import persist_artifact_exports
-from open_notebook.studio.payloads import build_structured_payload
-from open_notebook.studio.schemas import (
+from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.studio.exporters import export_document, export_spreadsheet
+from deeper_notebook.studio.generation.persistence import persist_artifact_exports
+from deeper_notebook.studio.payloads import build_structured_payload
+from deeper_notebook.studio.schemas import (
     CoursePackDocument,
     DataTableDocument,
     GenericDocument,
@@ -25,6 +25,13 @@ from open_notebook.studio.schemas import (
 def _archive_members(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as package:
         return package.namelist()
+
+
+def _office_application(path: Path) -> str:
+    with zipfile.ZipFile(path) as package:
+        xml = package.read("docProps/app.xml").decode("utf-8")
+    start = xml.index("<Application>") + len("<Application>")
+    return xml[start : xml.index("</Application>", start)]
 
 
 def _assert_safe_office_archive(path: Path) -> None:
@@ -178,7 +185,7 @@ def test_docx_exports_structured_documents_with_properties_tables_and_citations(
     assert "Findings" in text
     assert "[S1] [S2]" in text
     assert reopened.core_properties.title == "Local Evidence Report"
-    assert reopened.core_properties.author == "Open Notebook Plus"
+    assert reopened.core_properties.author == "Deeper Notebook"
     assert reopened.tables, "citation appendix should be a real Word table"
     assert _archive_members(path)[0] == "[Content_Types].xml"
     _assert_safe_office_archive(path)
@@ -207,6 +214,19 @@ def test_docx_supports_course_packs_and_research_runs_with_page_boundaries(
     assert "[S3]" in research_text
     _assert_safe_office_archive(course_path)
     _assert_safe_office_archive(research_path)
+
+
+def test_office_exports_use_deeper_notebook_creator_metadata(tmp_path: Path) -> None:
+    docx_path = tmp_path / "report.docx"
+    xlsx_path = tmp_path / "measurements.xlsx"
+
+    export_document(_report(), docx_path)
+    export_spreadsheet(_table(), xlsx_path)
+
+    assert Document(docx_path).core_properties.author == "Deeper Notebook"
+    assert load_workbook(xlsx_path).properties.creator == "Deeper Notebook"
+    assert _office_application(docx_path) == "Deeper Notebook"
+    assert _office_application(xlsx_path) == "Deeper Notebook"
 
 
 def test_xlsx_exports_typed_rows_source_markers_and_validated_chart(
@@ -242,7 +262,7 @@ def test_xlsx_exports_typed_rows_source_markers_and_validated_chart(
 def test_persistence_attaches_office_exports_for_validated_documents(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("OPEN_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     report = _report()
     artifact = StudioArtifact(
         id="studio_artifact:office-report",

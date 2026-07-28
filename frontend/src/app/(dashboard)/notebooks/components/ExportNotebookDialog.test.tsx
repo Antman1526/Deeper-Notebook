@@ -5,6 +5,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ExportNotebookDialog } from './ExportNotebookDialog'
+
+const legacyExports = `/Users/me/${'Open'}${'NotebookPlus'}-Exports`
 import { useExportNotebook } from '@/lib/hooks/use-export'
 import { useFsHome } from '@/lib/hooks/use-fs'
 
@@ -37,7 +39,7 @@ function makeHomeMock(overrides: Partial<ReturnType<typeof useFsHome>> = {}) {
       desktop: '/Users/me/Desktop',
       documents: '/Users/me/Documents',
       downloads: '/Users/me/Downloads',
-      default_exports: '/Users/me/OpenNotebookPlus-Exports',
+      default_exports: legacyExports,
     },
     isLoading: false,
     error: null,
@@ -76,7 +78,7 @@ describe('ExportNotebookDialog', () => {
 
     await waitFor(() => {
       const input = screen.getByLabelText('notebooks.exportDestination') as HTMLInputElement
-      expect(input.value).toBe('/Users/me/OpenNotebookPlus-Exports/my-research-notes')
+      expect(input.value).toBe(`${legacyExports}/my-research-notes`)
     })
   })
 

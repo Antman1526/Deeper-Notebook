@@ -1,6 +1,6 @@
 """v0.7.9 — regression tests for the Ask graph's per-result content cap.
 
-`open_notebook.graphs.ask.provide_answer` used to pass `vector_search`
+`deeper_notebook.graphs.ask.provide_answer` used to pass `vector_search`
 results verbatim into the prompt via `{{results}}`. Each result's
 `matches` field is `array::flatten(content)` and can hold many chunks
 from a hot source, so a single result was easily 10-30 KB and 10 of
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.graphs import ask
+from deeper_notebook.graphs import ask
 
 # ---------------------------------------------------------------------------
 # _truncate_ask_results — pure function tests
@@ -35,8 +35,8 @@ def _result(rid: str, matches: list[str] | str | None) -> dict:
 
 def test_truncate_caps_results_to_default_max(monkeypatch):
     """Default max is 10 — pass 25 results, only first 10 survive."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     results = [_result(f"source:{i}", ["short"]) for i in range(25)]
     out = ask._truncate_ask_results(results)
@@ -46,9 +46,9 @@ def test_truncate_caps_results_to_default_max(monkeypatch):
 
 
 def test_truncate_respects_env_max_results(monkeypatch):
-    """ONP_ASK_MAX_RESULTS lowers the cap."""
-    monkeypatch.setenv("ONP_ASK_MAX_RESULTS", "3")
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    """DEEPER_NOTEBOOK_ASK_MAX_RESULTS lowers the cap."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", "3")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     results = [_result(f"source:{i}", ["x"]) for i in range(10)]
     out = ask._truncate_ask_results(results)
@@ -62,8 +62,8 @@ def test_truncate_truncates_oversize_matches(monkeypatch):
     1500-char snippet plus a truncation marker, so the LLM still sees
     the source and its top semantic content without blowing context.
     """
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)  # 1500 default
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)  # 1500 default
 
     big = "A" * 30_000  # one match, 30 KB
     out = ask._truncate_ask_results([_result("source:big", [big])])
@@ -78,8 +78,8 @@ def test_truncate_truncates_oversize_matches(monkeypatch):
 
 def test_truncate_leaves_small_matches_alone(monkeypatch):
     """A result that fits under the cap is untouched (no marker appended)."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     short_chunks = ["hello", "world", "this is fine"]
     out = ask._truncate_ask_results([_result("note:1", short_chunks)])
@@ -91,9 +91,9 @@ def test_truncate_leaves_small_matches_alone(monkeypatch):
 
 
 def test_truncate_respects_env_char_cap(monkeypatch):
-    """ONP_ASK_PER_RESULT_CHAR_CAP overrides the per-result content cap."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.setenv("ONP_ASK_PER_RESULT_CHAR_CAP", "500")
+    """DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP overrides the per-result content cap."""
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", "500")
 
     out = ask._truncate_ask_results([_result("source:x", ["Z" * 10_000])])
     matches = out[0]["matches"]
@@ -104,8 +104,8 @@ def test_truncate_respects_env_char_cap(monkeypatch):
 def test_truncate_falls_back_on_invalid_env(monkeypatch):
     """Garbage env vars fall back to defaults instead of crashing or
     passing through to be parsed elsewhere as int."""
-    monkeypatch.setenv("ONP_ASK_MAX_RESULTS", "not-an-int")
-    monkeypatch.setenv("ONP_ASK_PER_RESULT_CHAR_CAP", "garbage")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", "not-an-int")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", "garbage")
 
     # Should not raise; should use defaults (10 and 1500)
     results = [_result(f"s:{i}", ["A" * 5000]) for i in range(15)]
@@ -119,8 +119,8 @@ def test_truncate_falls_back_when_char_cap_too_low(monkeypatch):
     """A char cap below 200 is almost certainly a typo (no useful
     snippet fits) — fall back to default rather than ship a useless
     one-sentence-per-result payload."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.setenv("ONP_ASK_PER_RESULT_CHAR_CAP", "50")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", "50")
 
     out = ask._truncate_ask_results([_result("s:1", ["X" * 10_000])])
     matches = out[0]["matches"]
@@ -130,8 +130,8 @@ def test_truncate_falls_back_when_char_cap_too_low(monkeypatch):
 
 def test_truncate_handles_string_matches(monkeypatch):
     """`matches` can be a string (single chunk) — handle gracefully."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     out = ask._truncate_ask_results([_result("s:1", "A" * 5000)])
     matches = out[0]["matches"]
@@ -142,8 +142,8 @@ def test_truncate_handles_string_matches(monkeypatch):
 def test_truncate_preserves_non_matches_fields(monkeypatch):
     """id, parent_id, title, similarity must survive untouched —
     the prompt template needs them for citation."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     r = {
         "id": "source:abc",
@@ -162,8 +162,8 @@ def test_truncate_preserves_non_matches_fields(monkeypatch):
 def test_truncate_does_not_mutate_input(monkeypatch):
     """Other callers might still hold the original list (no surprise
     side effects)."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     original_matches = ["A" * 5000]
     results = [_result("s:1", original_matches)]
@@ -177,15 +177,15 @@ def test_truncate_does_not_mutate_input(monkeypatch):
 
 
 def test_truncate_handles_empty_list(monkeypatch):
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
     assert ask._truncate_ask_results([]) == []
 
 
 def test_truncate_handles_result_without_matches(monkeypatch):
     """A result dict missing `matches` is passed through, not crashed on."""
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     r = {"id": "source:weird", "parent_id": "source:weird", "title": "T"}
     out = ask._truncate_ask_results([r])
@@ -204,8 +204,8 @@ async def test_provide_answer_invokes_truncation(monkeypatch):
     The agent that runs this graph node should never see oversized
     `matches` in the rendered prompt.
     """
-    monkeypatch.delenv("ONP_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("ONP_ASK_PER_RESULT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)
 
     # 12 results, each with a fat 8 KB chunk — would be ~96 KB raw.
     fake_results = [

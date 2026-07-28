@@ -34,7 +34,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -129,23 +128,67 @@ def test_notes_router_has_notfound_bubble_in_list_and_create():
     )
 
 
-def test_setup_banner_points_at_fork_repo():
-    """v0.7.201 — SetupBanner's encryption-docs link must point at
-    the Plus fork (Antman1526/open-notebook-Plus), not upstream
-    lfnovo. The fork's docs may drift from upstream."""
+def test_setup_banner_points_at_deeper_notebook_repo():
+    """The active encryption-docs link must follow the downstream product."""
     src = _src("frontend/src/components/layout/SetupBanner.tsx")
-    assert "Antman1526/open-notebook-Plus" in src, (
-        "v0.7.201 regression: SetupBanner reverted to upstream "
-        "lfnovo docs URL. Plus users would land on upstream docs "
-        "that may not match the build they're running."
+    assert "Antman1526/Deeper-Notebook" in src, (
+        "Deeper Notebook users would land on documentation that may not "
+        "match the downstream build."
     )
-    # The upstream URL must be gone from the active code path
-    # (comments are OK).
     code_only = "\n".join(
         ln for ln in src.splitlines() if not ln.lstrip().startswith("//")
         and not ln.lstrip().startswith("{/*")
     )
+    assert "Antman1526/open-notebook-Plus" not in code_only
     assert "lfnovo/open-notebook" not in code_only
+
+
+def test_active_documentation_uses_downstream_links_and_preserves_upstream():
+    active_paths = (
+        "README.md",
+        "SECURITY.md",
+        "docs/BUILD_WINDOWS.md",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/ISSUE_TEMPLATE/installation_issue.yml",
+    )
+    for path in active_paths:
+        src = _src(path)
+        assert "Antman1526/open-notebook-Plus" not in src, path
+
+    readme = _src("README.md")
+    assert "https://github.com/Antman1526/Deeper-Notebook" in readme
+    assert "https://github.com/lfnovo/open-notebook" in readme
+    assert (
+        "git clone https://github.com/Antman1526/Deeper-Notebook.git"
+        in readme
+    )
+
+    issue_templates = "\n".join(
+        _src(path) for path in active_paths if path.startswith(".github/")
+    )
+    assert "https://github.com/Antman1526/Deeper-Notebook" in issue_templates
+
+
+def test_readme_documents_current_artifacts_and_migration_contract():
+    readme = _src("README.md")
+
+    assert "# Deeper Notebook" in readme
+    assert "Notebook Spark" in readme
+    assert "Research Core" in readme
+    assert "Deeper-Notebook-mac-<arch>.dmg" in readme
+    assert "Deeper-Notebook-windows-x64.zip" in readme
+    assert "Deeper-Notebook-Setup-x64.exe" in readme
+    assert "## Migrating from Open Notebook Plus" in readme
+    assert "DEEPER_NOTEBOOK_*" in readme
+    assert "DN_*" in readme
+    assert "DEEPER_NOTEBOOK_*" in readme
+    assert "DEEPER_NOTEBOOK_*" in readme
+    assert "~/.deeper-notebook/" in readme
+    assert "~/.open-notebook-plus/" in readme
+    assert "%USERPROFILE%\\.deeper-notebook" in readme
+    assert "%USERPROFILE%\\.open-notebook-plus" in readme
 
 
 def test_markdown_editor_follows_theme():

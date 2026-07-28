@@ -6,9 +6,9 @@ import asyncio
 
 import pytest
 
-from open_notebook.health import network
-from open_notebook.health.network import NetworkState
-from open_notebook.tools import web_search as ws
+from deeper_notebook.health import network
+from deeper_notebook.health.network import NetworkState
+from deeper_notebook.tools import web_search as ws
 
 
 @pytest.fixture(autouse=True)

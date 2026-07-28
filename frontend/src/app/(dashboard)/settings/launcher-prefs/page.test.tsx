@@ -16,7 +16,7 @@ import LauncherPrefsPage from './page'
 
 // Mock the hook module — we control what data comes back and capture mutate calls.
 const mockMutate = vi.fn()
-const mockData = { prefs: {} }
+const mockData: { prefs: Record<string, string> } = { prefs: {} }
 let mockIsPending = false
 
 vi.mock('@/lib/hooks/use-launcher-prefs', () => ({
@@ -81,10 +81,10 @@ describe('LauncherPrefsPage', () => {
 
     const [payload] = mockMutate.mock.calls[0]
     // Only the changed field should be in the diff.
-    expect(payload.prefs).toHaveProperty('ONP_CHAT_LLM_CTX', '8192')
+    expect(payload.prefs).toHaveProperty('DEEPER_NOTEBOOK_CHAT_LLM_CTX', '8192')
     // Unchanged fields must NOT be present.
-    expect(payload.prefs).not.toHaveProperty('ONP_CHAT_LLM_CTX_MAX')
-    expect(payload.prefs).not.toHaveProperty('OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH')
+    expect(payload.prefs).not.toHaveProperty('DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX')
+    expect(payload.prefs).not.toHaveProperty('DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH')
   })
 
   it('restart banner appears only after a successful mutation', async () => {
@@ -129,16 +129,60 @@ describe('LauncherPrefsPage', () => {
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1))
 
     const ALLOWED = new Set([
-      'OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
-      'OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
-      'OPEN_NOTEBOOK_LOCAL_N_CTX',
-      'ONP_CHAT_LLM_CTX',
-      'ONP_CHAT_LLM_CTX_MAX',
+      'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
+      'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
+      'DEEPER_NOTEBOOK_LOCAL_N_CTX',
+      'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+      'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
     ])
 
     const [payload] = mockMutate.mock.calls[0]
     for (const key of Object.keys(payload.prefs)) {
       expect(ALLOWED.has(key)).toBe(true)
     }
+  })
+
+  it('reads canonical-only GET preferences', () => {
+    mockData.prefs = {
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/canonical/draft.gguf',
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT: '10',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '16384',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX: '65536',
+    }
+
+    render(<LauncherPrefsPage />)
+
+    expect(screen.getByTestId('draft-model-path')).toHaveValue('/canonical/draft.gguf')
+    expect(screen.getByTestId('draft-n-predict')).toHaveValue(10)
+    expect(screen.getByTestId('n-ctx')).toHaveValue(16384)
+    expect(screen.getByTestId('n-ctx-max')).toHaveValue(65536)
+  })
+
+  it('reads canonical GET preferences returned by the backend registry', () => {
+    mockData.prefs = {
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/legacy/draft.gguf',
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT: '6',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '8192',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX: '32768',
+    }
+
+    render(<LauncherPrefsPage />)
+
+    expect(screen.getByTestId('draft-model-path')).toHaveValue('/legacy/draft.gguf')
+    expect(screen.getByTestId('draft-n-predict')).toHaveValue(6)
+    expect(screen.getByTestId('n-ctx')).toHaveValue(8192)
+    expect(screen.getByTestId('n-ctx-max')).toHaveValue(32768)
+  })
+
+  it('renders canonical draft and context preferences together', () => {
+    mockData.prefs = {
+      DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH: '/canonical/draft.gguf',
+      DEEPER_NOTEBOOK_CHAT_LLM_CTX: '32768',
+    }
+
+    render(<LauncherPrefsPage />)
+
+    expect(screen.getByTestId('draft-model-path')).toHaveValue('/canonical/draft.gguf')
+    expect(screen.getByTestId('n-ctx')).toHaveValue(32768)
   })
 })

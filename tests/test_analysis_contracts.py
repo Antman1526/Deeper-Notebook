@@ -7,8 +7,8 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from open_notebook.analysis.backends.disabled import DisabledBackend
-from open_notebook.analysis.contracts import (
+from deeper_notebook.analysis.backends.disabled import DisabledBackend
+from deeper_notebook.analysis.contracts import (
     AnalysisRun,
     ApprovalReceipt,
     OutputEntry,

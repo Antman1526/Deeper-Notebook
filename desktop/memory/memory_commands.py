@@ -1,17 +1,19 @@
-"""surreal-commands handlers registered by Open Notebook Plus v0.4 memory layer.
+"""surreal-commands handlers registered by the Deeper Notebook memory layer.
 
 This file is copied into the bundled upstream's commands/ directory at first
 launch by desktop/app.py:_phase_register_memory_commands.
 
 Discovery: surreal-commands imports any module passed via --import-modules.
 Each @command-decorated function is registered as
-    open_notebook.<function_name>
+    <persisted_app_identifier>.<function_name>
 """
 from __future__ import annotations
 
 import os
 
 from surreal_commands import command
+
+from deeper_notebook.environment import resolve_env
 
 
 def _build_clients(model_override: str | None = None):
@@ -27,7 +29,7 @@ def _build_clients(model_override: str | None = None):
     v0.7.83 — optional `model_override` lets the caller (the command
     handlers below) pin the LLM to a specific model name when the user
     picked a per-session override in chat. Defaults to whatever
-    ONP_CHAT_MODEL_NAME / "default" resolves to so existing behavior is
+    DEEPER_NOTEBOOK_CHAT_MODEL_NAME / "default" resolves to so existing behavior is
     preserved when the caller doesn't pass an override.
     """
     from desktop.config import default_config_path, load_or_create
@@ -56,7 +58,7 @@ def _build_clients(model_override: str | None = None):
     #     or echoes the active model regardless of the name passed.
     #   - Timeout dropped from 120 s → 30 s default (writer is per-turn,
     #     blocking the worker that long stalls subsequent extracts).
-    #     Overridable via ONP_CHAT_TIMEOUT_S env var.
+    #     Overridable via DEEPER_NOTEBOOK_CHAT_TIMEOUT_S env var.
     #   - Reject the empty system+user case before the network round trip.
     #
     # v0.7.48 — removed redundant `import os` (was on line 55). The
@@ -71,7 +73,7 @@ def _build_clients(model_override: str | None = None):
     # would have crashed the worker.
     import httpx
 
-    chat_timeout_s = float(os.environ.get("ONP_CHAT_TIMEOUT_S", "30"))
+    chat_timeout_s = float(resolve_env("DEEPER_NOTEBOOK_CHAT_TIMEOUT_S", "30"))
     # v0.7.83 — caller-provided model_override takes precedence over
     # the env-var fallback. The local llama-cpp-python server echoes
     # whatever model name we send back as the active model regardless
@@ -80,7 +82,7 @@ def _build_clients(model_override: str | None = None):
     # that actually route by model name.
     chat_model_name = (
         model_override
-        or os.environ.get("ONP_CHAT_MODEL_NAME")
+        or resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME")
         or "default"
     )
 
@@ -160,7 +162,7 @@ def _build_clients(model_override: str | None = None):
     return llm, mem_client
 
 
-@command(name="memory_extract_turn")
+@command(name="memory_extract_turn", app="open_notebook")
 def memory_extract_turn(chat_session_id: str, user_text: str,
                          assistant_text: str,
                          model_override: str | None = None) -> dict:
@@ -169,7 +171,7 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
     v0.7.83 — accepts optional `model_override` (defaults to None for
     backward compatibility with any in-flight rows queued by older API
     versions). When set, the writer's LLM client uses that model name
-    instead of the bundled ONP_CHAT_MODEL_NAME / "default".
+    instead of the bundled DEEPER_NOTEBOOK_CHAT_MODEL_NAME / "default".
     """
     try:
         from desktop.memory.writer import extract_turn
@@ -184,7 +186,7 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
         return {"ok": False, "error": str(e)}
 
 
-@command(name="memory_summarize_session")
+@command(name="memory_summarize_session", app="open_notebook")
 def memory_summarize_session(chat_session_id: str, transcript: str,
                               model_override: str | None = None) -> dict:
     """Per-session episode summarizer.

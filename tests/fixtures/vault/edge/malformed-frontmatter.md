@@ -1,0 +1,4 @@
+---
+key: [unterminated
+---
+body

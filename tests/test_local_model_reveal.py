@@ -13,7 +13,7 @@ from api.routers import local_models as local_models_router
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     app = FastAPI()
     app.include_router(local_models_router.router)
     return TestClient(app)

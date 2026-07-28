@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Notebook, Source
-from open_notebook.evaluation.repository import EvaluationRepository
-from open_notebook.evaluation.schemas import (
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import Notebook, Source
+from deeper_notebook.evaluation.repository import EvaluationRepository
+from deeper_notebook.evaluation.schemas import (
     ClaimVerdict,
     EvidenceSpan,
     hash_source_text,

@@ -1,7 +1,7 @@
 // v0.7.136 — Read-only operator-facing observability card.
 //
 // Renders the GET /settings/observability snapshot (backend endpoint
-// added v0.7.130) so operators can see the effective ONP_* env vars
+// added v0.7.130) so operators can see the effective DEEPER_NOTEBOOK_* env vars
 // their running process is using. Pairs with:
 //   * /metrics   — Prometheus scrape target
 //   * /healthz/deep — per-subsystem deep probe
@@ -178,7 +178,7 @@ export function ObservabilityCard() {
             convention used elsewhere in the app. */}
         <div className="pt-4 mt-2 border-t">
           <a
-            href="https://github.com/Antman1526/open-notebook-Plus/blob/desktop-app/docs/operator/observability.md"
+            href="https://github.com/Antman1526/Deeper-Notebook/blob/main/docs/operator/observability.md"
             target="_blank"
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1 text-xs text-primary underline"

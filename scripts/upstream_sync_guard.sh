@@ -9,14 +9,14 @@ UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
 BASE_BRANCH="${BASE_BRANCH:-desktop-app}"
 DATE_STAMP="$(date +%Y%m%d-%H%M%S)"
 SYNC_BRANCH="${SYNC_BRANCH:-integrate/${UPSTREAM_REMOTE}-${UPSTREAM_BRANCH}-${DATE_STAMP}}"
-WORKTREE_DIR="${WORKTREE_DIR:-../open-notebook-plus-upstream-sync-${DATE_STAMP}}"
+WORKTREE_DIR="${WORKTREE_DIR:-../deeper-notebook-upstream-sync-${DATE_STAMP}}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-output/upstream-sync/${DATE_STAMP}}"
 
-PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|open_notebook/local_models/|open_notebook/database/migrations/|frontend/src/components/onp/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|open_notebook/domain/|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
+PROTECTED_PLUS_PATH_PATTERN='^(desktop/|api/routers/(studio|local_models|sources)\.py|deeper_notebook/(local_models/|database/migrations/|domain/)|deeper_notebook/|frontend/src/components/deeper-notebook/|frontend/src/components/source/|frontend/src/components/sources/|frontend/src/app/\(dashboard\)/(studio|settings/local-models|sources)/|frontend/src/lib/api/(studio|sources)\.ts|frontend/src/lib/hooks/(use-studio|use-sources)\.ts|frontend/next\.config\.ts|output/playwright/onp-visual-smoke\.mjs|migrations/|docs/7-DEVELOPMENT/(upstream-sync|live-source-ingestion-smoke)\.md|scripts/(upstream_sync_guard|live_source_ingestion_smoke)\.py|scripts/upstream_sync_guard\.sh)'
 
 usage() {
   cat <<'USAGE'
-Safe upstream integration guard for Open Notebook Plus.
+Safe upstream integration guard for Deeper Notebook.
 
 Commands:
   scripts/upstream_sync_guard.sh snapshot
@@ -28,7 +28,7 @@ Environment overrides:
   UPSTREAM_BRANCH=main
   BASE_BRANCH=desktop-app
   SYNC_BRANCH=integrate/upstream-main-YYYYMMDD-HHMMSS
-  WORKTREE_DIR=../open-notebook-plus-upstream-sync-YYYYMMDD-HHMMSS
+  WORKTREE_DIR=../deeper-notebook-upstream-sync-YYYYMMDD-HHMMSS
   SNAPSHOT_DIR=output/upstream-sync/YYYYMMDD-HHMMSS
 USAGE
 }
@@ -151,10 +151,10 @@ prepare_worktree() {
     echo
     echo "Resolve conflicts there, then run:"
     echo "  uv run pytest tests/test_evidence_studio_artifact_api.py tests/test_sources_api.py tests/test_v0_8_39_local_models_inventory.py tests/test_local_model_role_routing.py"
-    echo "  cd frontend && npm test -- --run src/components/onp/ArtifactRail.test.tsx src/app/'(dashboard)'/settings/local-models/page.test.tsx"
+    echo "  cd frontend && npm test -- --run src/components/deeper-notebook/ArtifactRail.test.tsx src/app/'(dashboard)'/settings/local-models/page.test.tsx"
     echo "  cd frontend && npx tsc --noEmit && npm run lint"
     echo "  PORT=3100 NEXT_PUBLIC_API_URL=http://127.0.0.1:5055 npm run start"
-    echo "  ONP_BASE_URL=http://127.0.0.1:3100 ONP_FIXTURE_API_PORT=5055 node output/playwright/onp-visual-smoke.mjs"
+    echo "  DEEPER_NOTEBOOK_BASE_URL=http://127.0.0.1:3100 DEEPER_NOTEBOOK_FIXTURE_API_PORT=5055 node output/playwright/onp-visual-smoke.mjs"
   )
 }
 

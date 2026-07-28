@@ -22,7 +22,6 @@ from desktop.model_downloads import (
     ensure_secondary_tts_voice,
 )
 
-
 # ---------------------------------------------------------------------------
 # httpx.stream mock helper
 # ---------------------------------------------------------------------------
@@ -422,9 +421,9 @@ def test_ensure_stt_model_downloads_faster_whisper_not_ggml(tmp_path):
     CTranslate2 model files (Systran/faster-whisper-base.en), NOT the legacy
     whisper.cpp ggml .bin, and return the model dir when all files succeed."""
     from desktop.model_downloads import (
-        ensure_stt_model,
         FASTER_WHISPER_STT_DIR,
         FASTER_WHISPER_STT_FILES,
+        ensure_stt_model,
     )
 
     calls = []

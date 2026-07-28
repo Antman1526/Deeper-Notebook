@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from open_notebook.exceptions import InvalidInputError
-from open_notebook.studio.schemas import (
+from deeper_notebook.exceptions import InvalidInputError
+from deeper_notebook.studio.schemas import (
     CoursePackDocument,
     FlashcardsDocument,
     SlideDeckDocument,

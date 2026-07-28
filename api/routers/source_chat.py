@@ -10,17 +10,18 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import ChatSession, Source
-from open_notebook.exceptions import (
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import ChatSession, Source
+from deeper_notebook.exceptions import (
     InvalidInputError,
     NotFoundError,
 )
-from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
-# v0.7.192 — Lazy async-graph getter. See open_notebook/graphs/chat.py
+
+# v0.7.192 — Lazy async-graph getter. See deeper_notebook/graphs/chat.py
 # for the full rationale on the lazy/aiosqlite pattern.
-from open_notebook.graphs.source_chat import get_async_source_chat_graph
-from open_notebook.utils.graph_utils import get_session_message_count
+from deeper_notebook.graphs.source_chat import get_async_source_chat_graph
+from deeper_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
+from deeper_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
 
@@ -45,7 +46,7 @@ class UpdateSourceChatSessionRequest(BaseModel):
     # semantics in the handler mean omitting the field does NOT clear
     # the persisted value (so the existing rename/model-override flow
     # is untouched). null explicitly clears; [] is "explicitly none".
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -84,7 +85,7 @@ class SourceChatSessionResponse(BaseModel):
     # notebook chat, so migration 20 (v0.8.43) already provisions the
     # column — no new migration needed. The frontend hydrates the
     # source-chat picker from this on session load.
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -106,7 +107,7 @@ class SendMessageRequest(BaseModel):
     # Names match `mcp_server.name` case-insensitively in
     # `_resolve_chat_tools`. Null = all enabled servers visible (the
     # pre-v0.8.44 default — no behavior change for existing clients).
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None,
         description=(
             "MCP server names to skip for this source-chat turn. "
@@ -821,7 +822,7 @@ async def stream_source_chat_response(
         # have an upstream NotFoundError handler, so keep the tuple.
         raise
     except Exception as e:
-        from open_notebook.utils.error_classifier import classify_error
+        from deeper_notebook.utils.error_classifier import classify_error
 
         _, user_friendly_message = classify_error(e)
         logger.error(f"Error in source chat streaming: {str(e)}")

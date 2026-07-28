@@ -206,16 +206,16 @@ def test_prune_memories_never_raises_on_store_error():
 
 
 def test_keep_per_table_default(monkeypatch):
-    monkeypatch.delenv("ONP_MEMORY_KEEP_PER_TABLE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE", raising=False)
     assert writer_mod._keep_per_table() == writer_mod._DEFAULT_KEEP_PER_TABLE
 
 
 def test_keep_per_table_valid_override(monkeypatch):
-    monkeypatch.setenv("ONP_MEMORY_KEEP_PER_TABLE", "1000")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE", "1000")
     assert writer_mod._keep_per_table() == 1000
 
 
 @pytest.mark.parametrize("bad", ["not-int", "0", "-5", ""])
 def test_keep_per_table_falls_back_on_bad(monkeypatch, bad):
-    monkeypatch.setenv("ONP_MEMORY_KEEP_PER_TABLE", bad)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_KEEP_PER_TABLE", bad)
     assert writer_mod._keep_per_table() == writer_mod._DEFAULT_KEEP_PER_TABLE

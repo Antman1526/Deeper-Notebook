@@ -1,0 +1,16 @@
+{
+  "vaultRoot": "/old/root",
+  "records": [
+    {
+      "manifestId": "manifest-alpha",
+      "sourcePath": "/old/root/sources/alpha.md",
+      "status": "approved",
+      "reviewer": "owner",
+      "reviewedAt": "2026-07-27T00:00:00+00:00",
+      "sourceType": "markdown",
+      "evidenceClass": "synthesis",
+      "contentHash": "e92432d70d94f386ba666c049bec53acdeb6d5f9f0e43e43f109af345c7574a6",
+      "derivedFrom": ["source-1"]
+    }
+  ]
+}

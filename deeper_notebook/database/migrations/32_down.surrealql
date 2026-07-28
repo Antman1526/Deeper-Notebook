@@ -1,0 +1,21 @@
+-- Roll back only the vault projection introduced by migration 32.
+REMOVE INDEX IF EXISTS idx_note_vault_title_key ON TABLE note;
+REMOVE INDEX IF EXISTS idx_note_vault_file ON TABLE note;
+REMOVE FIELD IF EXISTS external_state ON TABLE note;
+REMOVE FIELD IF EXISTS source_hash ON TABLE note;
+REMOVE FIELD IF EXISTS tags ON TABLE note;
+REMOVE FIELD IF EXISTS properties ON TABLE note;
+REMOVE FIELD IF EXISTS canonical_external ON TABLE note;
+REMOVE FIELD IF EXISTS title_key ON TABLE note;
+REMOVE FIELD IF EXISTS source_format ON TABLE note;
+REMOVE FIELD IF EXISTS vault_file_id ON TABLE note;
+REMOVE FIELD IF EXISTS vault_id ON TABLE note;
+
+REMOVE TABLE IF EXISTS vault_trust_record;
+REMOVE TABLE IF EXISTS vault_sync_receipt;
+REMOVE TABLE IF EXISTS vault_revision;
+REMOVE TABLE IF EXISTS knowledge_task;
+REMOVE TABLE IF EXISTS note_link;
+REMOVE TABLE IF EXISTS note_block;
+REMOVE TABLE IF EXISTS vault_file;
+REMOVE TABLE IF EXISTS vault_mount;

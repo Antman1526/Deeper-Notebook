@@ -50,12 +50,12 @@ def _read_source(rel: str) -> str:
 
 
 def test_chat_module_exports_lazy_async_graph_factory():
-    """v0.7.192: open_notebook.graphs.chat must export
+    """v0.7.192: deeper_notebook.graphs.chat must export
     `get_async_graph` — the lazy factory that returns the
     AsyncSqliteSaver-backed twin. The lazy pattern is required
     because aiosqlite.connect() captures the event loop at
     construct time, which doesn't exist at module load."""
-    from open_notebook.graphs import chat
+    from deeper_notebook.graphs import chat
     assert hasattr(chat, "get_async_graph"), (
         "v0.7.192 regression: get_async_graph factory is gone. "
         "Streaming/ainvoke paths will fail with NotImplementedError "
@@ -68,7 +68,7 @@ def test_chat_module_exports_lazy_async_graph_factory():
 
 def test_source_chat_module_exports_lazy_async_graph_factory():
     """v0.7.192: same pin for source_chat."""
-    from open_notebook.graphs import source_chat
+    from deeper_notebook.graphs import source_chat
     assert hasattr(source_chat, "get_async_source_chat_graph")
     assert hasattr(source_chat, "source_chat_graph")
 
@@ -79,7 +79,7 @@ def test_chat_router_uses_async_graph_for_ainvoke_and_astream():
     paths that LangGraph internally routes through aget_tuple()."""
     src = _read_source("api/routers/chat.py")
     # The import.
-    assert "from open_notebook.graphs.chat import get_async_graph" in src, (
+    assert "from deeper_notebook.graphs.chat import get_async_graph" in src, (
         "v0.7.192 regression: chat router no longer imports the "
         "lazy async-graph factory. Streaming/ainvoke calls will hit "
         "the sync SqliteSaver and raise NotImplementedError."
@@ -95,7 +95,7 @@ def test_source_chat_router_uses_async_graph_for_astream():
     """v0.7.192: same pin for source_chat router."""
     src = _read_source("api/routers/source_chat.py")
     assert (
-        "from open_notebook.graphs.source_chat import get_async_source_chat_graph"
+        "from deeper_notebook.graphs.source_chat import get_async_source_chat_graph"
         in src
     )
     assert "_source_chat_graph_async = await get_async_source_chat_graph()" in src

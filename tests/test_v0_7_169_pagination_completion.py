@@ -48,7 +48,7 @@ async def test_get_chat_sessions_accepts_limit_and_offset():
     """v0.7.169: `get_chat_sessions(limit=N, offset=M)` must thread
     both into the SurrealQL query. Mock repo_query and read back the
     `LIMIT … START …` tail."""
-    from open_notebook.domain.notebook import Notebook
+    from deeper_notebook.domain.notebook import Notebook
 
     captured: dict = {"query": None}
 
@@ -60,7 +60,7 @@ async def test_get_chat_sessions_accepts_limit_and_offset():
     nb.id = "notebook:abc"
 
     with patch(
-        "open_notebook.domain.notebook.repo_query", new=fake_repo_query
+        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
     ):
         await nb.get_chat_sessions(limit=50, offset=25)
 
@@ -77,7 +77,7 @@ async def test_get_chat_sessions_accepts_limit_and_offset():
 async def test_get_chat_sessions_without_args_is_unbounded():
     """v0.7.169: back-compat. Callers that don't pass limit/offset
     keep the pre-v0.7.169 unbounded behavior."""
-    from open_notebook.domain.notebook import Notebook
+    from deeper_notebook.domain.notebook import Notebook
 
     captured: dict = {"query": None}
 
@@ -89,7 +89,7 @@ async def test_get_chat_sessions_without_args_is_unbounded():
     nb.id = "notebook:abc"
 
     with patch(
-        "open_notebook.domain.notebook.repo_query", new=fake_repo_query
+        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
     ):
         await nb.get_chat_sessions()
 
@@ -104,8 +104,8 @@ async def test_get_chat_sessions_rejects_invalid_limit():
     v0.7.159 — limit must be a positive int, offset non-negative.
     InvalidInputError propagates to the global handler (HTTP 400)
     instead of getting clobbered to 500."""
-    from open_notebook.domain.notebook import Notebook
-    from open_notebook.exceptions import InvalidInputError
+    from deeper_notebook.domain.notebook import Notebook
+    from deeper_notebook.exceptions import InvalidInputError
 
     nb = Notebook(name="test-nb", description="t")
     nb.id = "notebook:abc"

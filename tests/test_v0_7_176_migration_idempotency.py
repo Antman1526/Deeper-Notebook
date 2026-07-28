@@ -27,13 +27,13 @@ This test is a pure text-level pin so it works without a live
 SurrealDB. It enforces that every DEFINE in the affected files
 carries the guard.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
-MIGRATIONS = ROOT / "open_notebook" / "database" / "migrations"
+MIGRATIONS = ROOT / "deeper_notebook" / "database" / "migrations"
 
 
 def _all_defines(text: str) -> list[str]:
@@ -64,8 +64,7 @@ def test_migration_12_every_define_has_guard():
         f"v0.7.176 regression: migration 12 has DEFINE statements "
         f"without IF NOT EXISTS / OVERWRITE — these will fail or "
         f"clobber on re-run after a _sbl_migrations rollback / DR / "
-        f"restore. Offenders:\n  - "
-        + "\n  - ".join(offenders)
+        f"restore. Offenders:\n  - " + "\n  - ".join(offenders)
     )
 
 
@@ -85,8 +84,17 @@ def test_migration_16_every_define_has_guard():
     assert not offenders, (
         f"v0.7.176 regression: migration 16 has DEFINE statements "
         f"without IF NOT EXISTS / OVERWRITE — these will fail or "
-        f"clobber on re-run. Offenders:\n  - "
-        + "\n  - ".join(offenders)
+        f"clobber on re-run. Offenders:\n  - " + "\n  - ".join(offenders)
+    )
+
+
+def test_vault_migration_32_every_define_has_guard():
+    text = (MIGRATIONS / "32.surrealql").read_text(encoding="utf-8")
+    defines = _all_defines(text)
+    assert defines
+    assert all(
+        "IF NOT EXISTS" in statement.upper() or "OVERWRITE" in statement.upper()
+        for statement in defines
     )
 
 
@@ -105,9 +113,7 @@ def test_migration_12_has_version_marker_comment():
 def test_migration_16_has_version_marker_comment():
     """v0.7.176: same marker pin for 16."""
     text = (MIGRATIONS / "16.surrealql").read_text(encoding="utf-8")
-    assert "v0.7.176" in text, (
-        "v0.7.176: marker comment in 16.surrealql is gone."
-    )
+    assert "v0.7.176" in text, "v0.7.176: marker comment in 16.surrealql is gone."
 
 
 def test_no_regression_in_other_migrations():

@@ -1,12 +1,12 @@
 # Security Guidelines
 
-This document outlines security practices for Open Notebook development. It is informed by real vulnerabilities discovered through coordinated disclosure with [CERT-EU](https://cert.europa.eu) and should be treated as mandatory reading for all contributors.
+This document outlines security practices for Deeper Notebook development. It is informed by real vulnerabilities discovered through coordinated disclosure with [CERT-EU](https://cert.europa.eu) and should be treated as mandatory reading for all contributors.
 
 ## Reporting Vulnerabilities
 
 If you discover a security vulnerability, **do not open a public GitHub issue**. Instead:
 
-1. Use [GitHub Security Advisories](https://github.com/lfnovo/open-notebook/security/advisories/new) to report privately
+1. Use [GitHub Security Advisories](https://github.com/Antman1526/Deeper-Notebook/security/advisories/new) to report privately
 2. Or email the maintainers directly
 
 We follow coordinated vulnerability disclosure and will work with you on a fix before any public announcement.
@@ -138,10 +138,10 @@ Never pass user-provided file paths directly to file reading or content extracti
 
 ### Authentication
 
-Open Notebook currently uses simple password-based middleware (`PasswordAuthMiddleware`). This is suitable for single-user self-hosted deployments but should be hardened for production:
+Deeper Notebook currently uses simple password-based middleware (`PasswordAuthMiddleware`). This is suitable for single-user self-hosted deployments but should be hardened for production:
 
-- Change the default password (`OPEN_NOTEBOOK_PASSWORD`)
-- Change the default encryption key (`OPEN_NOTEBOOK_ENCRYPTION_KEY`)
+- Change the default password (`DEEPER_NOTEBOOK_PASSWORD`)
+- Change the default encryption key (`DEEPER_NOTEBOOK_ENCRYPTION_KEY`)
 - Consider deploying behind a reverse proxy with proper authentication (OAuth, OIDC)
 
 ### CORS
@@ -154,10 +154,10 @@ The default CORS configuration allows all origins (`allow_origins=["*"]`). This 
 
 ### Encryption key
 
-`OPEN_NOTEBOOK_ENCRYPTION_KEY` is used to encrypt API keys stored in SurrealDB. In production:
+`DEEPER_NOTEBOOK_ENCRYPTION_KEY` is used to encrypt API keys stored in SurrealDB. In production:
 
 - Set a strong, unique key (do not use the default)
-- Use Docker secrets via `OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE` when possible
+- Use Docker secrets via `DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE` when possible
 - Never log or expose this value
 
 ### Environment variables

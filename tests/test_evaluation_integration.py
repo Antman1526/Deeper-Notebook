@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from api.routers import evaluations
-from open_notebook.evaluation.schemas import ClaimVerdict
-from open_notebook.studio.generation.service import (
+from deeper_notebook.evaluation.schemas import ClaimVerdict
+from deeper_notebook.studio.generation.service import (
     _critical_verdicts,
     _strict_evidence_required,
 )
@@ -47,10 +47,10 @@ async def test_evaluation_detail_requires_matching_notebook(monkeypatch):
 
 
 def test_strict_mode_defaults_only_to_publishable_artifacts(monkeypatch):
-    monkeypatch.delenv("ONP_STUDIO_STRICT_EVIDENCE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_STUDIO_STRICT_EVIDENCE", raising=False)
     assert _strict_evidence_required(SimpleNamespace(artifact_type="report"))
     assert not _strict_evidence_required(SimpleNamespace(artifact_type="flashcards"))
-    monkeypatch.setenv("ONP_STUDIO_STRICT_EVIDENCE", "false")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_STRICT_EVIDENCE", "false")
     assert not _strict_evidence_required(SimpleNamespace(artifact_type="report"))
 
 

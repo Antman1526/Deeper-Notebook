@@ -1,0 +1,2 @@
+-- persisted lifecycle state for read-only vault projection embeddings
+DEFINE FIELD IF NOT EXISTS embedding_state ON TABLE vault_file TYPE string DEFAULT "pending" ASSERT $value IN ["pending", "failed"];

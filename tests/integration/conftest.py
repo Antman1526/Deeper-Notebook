@@ -14,7 +14,7 @@ Design goals (in priority order):
      volume stays clean across runs.
 
   3. **No new fixtures in the hot path.** The fixture sets env vars
-     and relies on the same `open_notebook.database.repository` pool
+     and relies on the same `deeper_notebook.database.repository` pool
      the production code uses. That way every SurrealQL regression
      these tests catch is one the production code can hit too.
 
@@ -87,7 +87,7 @@ def pytest_collection_modifyitems(config, items):  # type: ignore[no-untyped-def
 
 
 def _resolve_url() -> str:
-    """Mirror open_notebook.database.repository.get_database_url() defaults
+    """Mirror deeper_notebook.database.repository.get_database_url() defaults
     for the integration suite. We don't import that function directly
     because it has side effects on first call (and we want tests to be
     able to override SURREAL_URL via env before the repo module touches
@@ -176,8 +176,8 @@ async def surreal_db() -> AsyncIterator[dict[str, Any]]:
 
     # Import here, after env is patched, so the pool's lazy init reads
     # the test namespace on first acquire.
-    from open_notebook.database import repository as repo_mod
-    from open_notebook.database.async_migrate import AsyncMigrationManager
+    from deeper_notebook.database import repository as repo_mod
+    from deeper_notebook.database.async_migrate import AsyncMigrationManager
 
     await repo_mod.close_pool()  # idempotent if not yet initialized
 
@@ -279,7 +279,7 @@ async def _discover_tables() -> list[str]:
     artifact, refers_to) show up here alongside node tables; DELETE on
     them works the same way.
     """
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     rows = await repo_query("INFO FOR DB;")
     # SurrealDB's INFO FOR DB returns a dict-shaped result. The exact
@@ -326,7 +326,7 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
     table) are explicitly protected — wiping them would force a
     migration re-run on the next test.
     """
-    from open_notebook.database.repository import repo_query
+    from deeper_notebook.database.repository import repo_query
 
     try:
         tables = await _discover_tables()
@@ -361,6 +361,6 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
     finally:
         # Do not let a WebSocket or asyncio.Queue created for this test's loop
         # leak into the next test's loop.
-        from open_notebook.database import repository as repo_mod
+        from deeper_notebook.database import repository as repo_mod
 
         await repo_mod.close_pool()

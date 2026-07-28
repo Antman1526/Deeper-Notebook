@@ -46,7 +46,7 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_position_overflow_falls_back_to_vector_search(self):
-        from open_notebook.domain import notebook as notebook_module
+        from deeper_notebook.domain import notebook as notebook_module
 
         overflow = RuntimeError(
             "A value can't be highlighted: position overflow: 2545 - len: 1965"
@@ -69,8 +69,8 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_position_overflow_raises_when_vector_also_fails(self):
-        from open_notebook.domain import notebook as notebook_module
-        from open_notebook.exceptions import DatabaseOperationError
+        from deeper_notebook.domain import notebook as notebook_module
+        from deeper_notebook.exceptions import DatabaseOperationError
 
         overflow = RuntimeError("position overflow: 1 - len: 0")
         with (
@@ -91,8 +91,8 @@ class TestTextSearchHighlightOverflowFallback:
 
     @pytest.mark.asyncio
     async def test_other_runtime_errors_still_raise(self):
-        from open_notebook.domain import notebook as notebook_module
-        from open_notebook.exceptions import DatabaseOperationError
+        from deeper_notebook.domain import notebook as notebook_module
+        from deeper_notebook.exceptions import DatabaseOperationError
 
         with patch.object(
             notebook_module,
@@ -102,3 +102,67 @@ class TestTextSearchHighlightOverflowFallback:
         ):
             with pytest.raises(DatabaseOperationError):
                 await notebook_module.text_search("hello", 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("embedding_state", ["pending", "failed"])
+async def test_vector_search_enriches_mounted_note_without_root_leak(embedding_state: str):
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with (
+        patch("deeper_notebook.utils.embedding.generate_embedding", new_callable=AsyncMock, return_value=[0.1]),
+        patch.object(notebook_module, "repo_query", new_callable=AsyncMock, side_effect=[
+            [{"id": "note:mounted", "title": "Mounted"}],
+            [{"id": "note:mounted", "canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "a" * 64, "embedding_state": embedding_state}],
+        ]),
+    ):
+        result = await notebook_module.vector_search("mounted", 1)
+
+    assert result[0]["vault_provenance"] == {"canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "sha256:" + "a" * 64}
+    assert "/Users/" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_normal_search_result_keeps_legacy_shape():
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with patch.object(notebook_module, "repo_query", new_callable=AsyncMock, return_value=[{"id": "source:plain", "title": "Plain"}]):
+        result = await notebook_module.text_search("plain", 1)
+
+    assert result == [{"id": "source:plain", "title": "Plain"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("embedding_state", ["pending", "failed"])
+async def test_text_search_enriches_mounted_note_with_portable_provenance(embedding_state: str):
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with patch.object(
+        notebook_module,
+        "repo_query",
+        new_callable=AsyncMock,
+        side_effect=[
+            [{"id": "note:mounted", "title": "Mounted"}],
+            [{
+                "id": "note:mounted",
+                "canonical_external": True,
+                "vault_id": "vault_mount:obsidian-brain",
+                "relative_path": "wiki/concepts/local-llms.md",
+                "source_hash": "d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+                "embedding_state": embedding_state,
+            }],
+        ],
+    ) as query:
+        result = await notebook_module.text_search("mounted", 1)
+
+    assert result[0]["vault_provenance"] == {
+        "canonical_external": True,
+        "vault_id": "vault_mount:obsidian-brain",
+        "relative_path": "wiki/concepts/local-llms.md",
+        "source_hash": "sha256:d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+    }
+    assert query.await_count == 2
+    provenance_query = query.await_args_list[1].args[0]
+    assert "vault_file_id.embedding_state" in provenance_query
+    assert "vault_file_id.relative_path" in provenance_query
+    assert "/Users/" not in str(result)

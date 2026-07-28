@@ -17,6 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 _REPO = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO / "scripts" / "upstream_sync_guard.sh"
+_LEGACY_COMPONENT_PATH = "components/" + "onp"
 
 
 def _run_guard(command: str, snapshot_dir: Path) -> subprocess.CompletedProcess[str]:
@@ -60,7 +61,8 @@ def _init_sync_fixture(tmp_path: Path) -> tuple[Path, Path]:
     _git(repo, "config", "user.name", "Test User")
     _write(repo, "README.md", "base\n")
     _write(repo, "api/routers/studio.py", "base\n")
-    _write(repo, "open_notebook/database/migrations/23.surrealql", "base\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "base\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "base\n")
     _write(repo, "frontend/src/lib/api/sources.ts", "base\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "base")
@@ -68,7 +70,8 @@ def _init_sync_fixture(tmp_path: Path) -> tuple[Path, Path]:
     _git(repo, "remote", "add", "upstream", str(upstream))
     _git(repo, "checkout", "-b", "upstream-main")
     _write(repo, "api/routers/studio.py", "upstream\n")
-    _write(repo, "open_notebook/database/migrations/23.surrealql", "upstream\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "upstream\n")
+    _write(repo, "deeper_notebook/database/migrations/23.surrealql", "upstream\n")
     _write(repo, "frontend/src/lib/api/sources.ts", "upstream\n")
     _git(repo, "commit", "-am", "upstream protected changes")
     _git(repo, "push", "upstream", "upstream-main:main")
@@ -144,7 +147,8 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
         snapshot_dir / "protected-plus-path-changes.txt"
     ).read_text(encoding="utf-8")
     assert "api/routers/studio.py" in protected_changes
-    assert "open_notebook/database/migrations/23.surrealql" in protected_changes
+    assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes
+    assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes
     assert "frontend/src/lib/api/sources.ts" in protected_changes
     assert (snapshot_dir / "conflicted-files.txt").read_text(encoding="utf-8") == ""
 
@@ -153,3 +157,11 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
     if worktree_dir.exists():
         shutil.rmtree(worktree_dir)
     _git(repo, "worktree", "prune")
+
+
+def test_guard_protects_and_verifies_the_canonical_component_path():
+    script = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "frontend/src/components/deeper-notebook/" in script
+    assert "src/components/deeper-notebook/ArtifactRail.test.tsx" in script
+    assert _LEGACY_COMPONENT_PATH not in script

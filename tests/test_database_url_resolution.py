@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.database.repository import get_database_url
+from deeper_notebook.database.repository import get_database_url
 
 
 def test_surreal_url_env_takes_precedence(monkeypatch):

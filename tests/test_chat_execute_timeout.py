@@ -73,7 +73,7 @@ def hanging_graph(monkeypatch):
 @pytest.fixture()
 def fake_session(monkeypatch):
     """Make ChatSession.get return a fake session for our test session_id."""
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
 
     async def _get(session_id):
         if session_id.startswith("chat_session:"):
@@ -86,12 +86,12 @@ def fake_session(monkeypatch):
 def test_chat_execute_timeout_returns_504_with_env_knob_hint(
     client, hanging_graph, fake_session, monkeypatch,
 ):
-    """v0.7.108 — When chat_graph.ainvoke hangs past ONP_CHAT_TIMEOUT_SEC,
+    """v0.7.108 — When chat_graph.ainvoke hangs past DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC,
     the endpoint must return 504 with the env knob + /chat/stream hint
     in the detail. Previously (pre-v0.7.99) it would hang the request
     indefinitely."""
     # Force a tiny timeout so the test runs in ~1s instead of 300.
-    monkeypatch.setenv("ONP_CHAT_TIMEOUT_SEC", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC", "1")
 
     resp = client.post(
         "/api/chat/execute",
@@ -104,7 +104,7 @@ def test_chat_execute_timeout_returns_504_with_env_knob_hint(
     assert resp.status_code == 504, resp.text
     detail = resp.json()["detail"]
     # Actionable: name the env knob the user can raise
-    assert "ONP_CHAT_TIMEOUT_SEC" in detail
+    assert "DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC" in detail
     # Actionable: point at the streaming endpoint as the better path
     assert "/chat/stream" in detail
     # Includes the actual timeout value so the user knows what they hit
@@ -116,7 +116,7 @@ def test_chat_execute_returns_200_when_graph_returns_in_time(
 ):
     """v0.7.108 — Negative-space check: a graph that returns within the
     timeout must produce a 200, not be incorrectly timeout-killed."""
-    monkeypatch.setenv("ONP_CHAT_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC", "5")
 
     class _FastGraph:
         def get_state(self, config):

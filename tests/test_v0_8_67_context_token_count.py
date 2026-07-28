@@ -7,8 +7,8 @@ human-readable text fields.
 """
 from __future__ import annotations
 
-from open_notebook.utils.context_builder import ContextItem, _content_text
-from open_notebook.utils.token_utils import token_count
+from deeper_notebook.utils.context_builder import ContextItem, _content_text
+from deeper_notebook.utils.token_utils import token_count
 
 
 def test_extracts_only_text_fields():

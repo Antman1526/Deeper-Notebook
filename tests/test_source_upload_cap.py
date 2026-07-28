@@ -24,37 +24,37 @@ from api.routers import sources as sources_mod
 # ---------------------------------------------------------------------------
 
 def test_default_cap_500mb(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_UPLOAD_MAX_BYTES", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", raising=False)
     assert sources_mod._source_upload_max_bytes() == 500 * 1024 * 1024
 
 
 def test_env_raises_cap(monkeypatch):
-    monkeypatch.setenv("ONP_SOURCE_UPLOAD_MAX_BYTES", str(2 * 1024**3))  # 2 GB
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", str(2 * 1024**3))  # 2 GB
     assert sources_mod._source_upload_max_bytes() == 2 * 1024**3
 
 
 def test_env_lowers_cap(monkeypatch):
     """Tight-disk users can shrink the cap below the default."""
-    monkeypatch.setenv("ONP_SOURCE_UPLOAD_MAX_BYTES", str(50 * 1024**2))  # 50 MB
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", str(50 * 1024**2))  # 50 MB
     assert sources_mod._source_upload_max_bytes() == 50 * 1024**2
 
 
 def test_garbage_env_falls_back(monkeypatch):
     """Non-int env value → default, no crash."""
-    monkeypatch.setenv("ONP_SOURCE_UPLOAD_MAX_BYTES", "five-hundred")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", "five-hundred")
     assert sources_mod._source_upload_max_bytes() == 500 * 1024 * 1024
 
 
 def test_too_low_env_falls_back(monkeypatch):
     """Below 1 MB is almost certainly a typo (rejects every legit
     upload) — fall back to default."""
-    monkeypatch.setenv("ONP_SOURCE_UPLOAD_MAX_BYTES", "100")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", "100")
     assert sources_mod._source_upload_max_bytes() == 500 * 1024 * 1024
 
 
 def test_zero_env_falls_back(monkeypatch):
     """Zero is the same typo class as 100 — fall back."""
-    monkeypatch.setenv("ONP_SOURCE_UPLOAD_MAX_BYTES", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", "0")
     assert sources_mod._source_upload_max_bytes() == 500 * 1024 * 1024
 
 

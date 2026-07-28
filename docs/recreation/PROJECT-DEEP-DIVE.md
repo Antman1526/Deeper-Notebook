@@ -1,5 +1,9 @@
 # Open Notebook Plus — Technical Deep-Dive
 
+> **Historical snapshot:** this deep-dive preserves the identity and paths of
+> the release it analyzed. The current successor is
+> [Deeper Notebook](https://github.com/Antman1526/Deeper-Notebook).
+>
 > Repo: `~/Desktop/OpenNotebook/open-notebook-Plus` (branch `desktop-app`).
 > Fork of `lfnovo/open-notebook`. Desktop app version `0.8.5` (`desktop/__init__.py`); upstream/Docker image version `1.8.5` (`pyproject.toml`) — two intentionally separate version tracks.
 

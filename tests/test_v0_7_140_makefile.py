@@ -11,7 +11,7 @@ the first time:
   2. `start-all` invoked the API as `uv run run_api.py &` —
      missing the `--env-file .env` flag the worker line above it
      correctly uses. Symptom: API came up without seeing
-     OPEN_NOTEBOOK_ENCRYPTION_KEY etc.
+     DEEPER_NOTEBOOK_ENCRYPTION_KEY etc.
 
 These are regression-tests for both: a future commit that
 reintroduces either bug fails the Makefile-shape check before
@@ -78,7 +78,7 @@ def test_start_all_passes_env_file_to_api():
     for call in api_calls:
         assert "--env-file" in call, (
             f"start-all invokes API without --env-file: {call!r}. The API "
-            "needs to see OPEN_NOTEBOOK_ENCRYPTION_KEY etc. The worker "
+            "needs to see DEEPER_NOTEBOOK_ENCRYPTION_KEY etc. The worker "
             "line gets this right; the API line should match."
         )
 

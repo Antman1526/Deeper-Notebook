@@ -9,6 +9,9 @@ from typing import Any, Dict, List, Optional
 import httpx
 from loguru import logger
 
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.utils.encryption import get_secret_from_env
+
 
 class ChatService:
     """Service for chat-related API operations"""
@@ -17,7 +20,10 @@ class ChatService:
         self.base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:5055")
         # Add authentication header if password is set
         self.headers = {}
-        password = os.getenv("OPEN_NOTEBOOK_PASSWORD")
+        password = resolve_env(
+            "DEEPER_NOTEBOOK_PASSWORD",
+            getter=get_secret_from_env,
+        )
         if password:
             self.headers["Authorization"] = f"Bearer {password}"
 

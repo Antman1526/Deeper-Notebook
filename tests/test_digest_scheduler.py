@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.digest import scheduler
+from deeper_notebook.digest import scheduler
 
 
 def _make_g(*, enabled=True, connected=True, frequency="daily", last_sent_at=None):

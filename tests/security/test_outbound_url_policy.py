@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.security import outbound_url
-from open_notebook.security.outbound_url import (
+from deeper_notebook.security import outbound_url
+from deeper_notebook.security.outbound_url import (
     OutboundURLPolicyError,
     normalize_outbound_url,
     validate_outbound_url,

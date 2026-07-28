@@ -12,6 +12,7 @@ import json
 import re
 
 from desktop.splash import build_splash_html
+
 URL = "http://127.0.0.1:54321/"
 
 
