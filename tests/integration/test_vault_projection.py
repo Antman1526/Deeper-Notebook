@@ -39,6 +39,18 @@ ROOT = Path(__file__).resolve().parents[2]
 UP = ROOT / "deeper_notebook/database/migrations/32.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/32_down.surrealql"
 UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
+MIGRATION_34_DOWN = ROOT / "deeper_notebook/database/migrations/34_down.surrealql"
+
+
+async def _restore_recorded_v32_state() -> None:
+    """Undo the current-head migrations so the test starts at recorded v32."""
+    await repo_query(MIGRATION_34_DOWN.read_text(encoding="utf-8"))
+    await repo_query(
+        """
+        DELETE type::thing('_sbl_migrations', 34);
+        DELETE type::thing('_sbl_migrations', 33);
+        """
+    )
 
 
 async def test_migration_creates_vault_projection_tables(clean_namespace):
@@ -190,6 +202,7 @@ async def test_migration_32_up_down_up_and_reapply_are_safe(clean_namespace):
 async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     clean_namespace,
 ):
+    await _restore_recorded_v32_state()
     # Exact schema delta from 25bfea73 migration 32
     # (SHA-256 f38236a6c41eec6e3695881d677ac42ced24ec57c0b899d068339d18f9251dae):
     # title_key, target_title_key, the title-key index, and the composite trust
@@ -204,10 +217,6 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest
             ON TABLE vault_trust_record COLUMNS manifest_id UNIQUE;
         """
-    )
-    await repo_query(
-        "DELETE type::thing('_sbl_migrations', $version);",
-        {"version": 33},
     )
     assert await get_latest_version() == 32
 
@@ -371,7 +380,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
 
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
-    assert await get_latest_version() == 33
+    assert await get_latest_version() == 34
 
     note_info = await repo_query("INFO FOR TABLE note;")
     link_info = await repo_query("INFO FOR TABLE note_link;")
@@ -437,9 +446,11 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         assert after["source_end"] == before["source_end"]
 
     await manager.runner.run_one_down()
+    assert await get_latest_version() == 33
+    await manager.runner.run_one_down()
     assert await get_latest_version() == 32
     await manager.run_migration_up()
-    assert await get_latest_version() == 33
+    assert await get_latest_version() == 34
     assert await repo_query("SELECT * FROM note ORDER BY id;") == list(
         notes_after.values()
     )
@@ -478,10 +489,7 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
     clean_namespace,
     monkeypatch,
 ):
-    await repo_query(
-        "DELETE type::thing('_sbl_migrations', $version);",
-        {"version": 33},
-    )
+    await _restore_recorded_v32_state()
     assert await get_latest_version() == 32
     mount_id = ensure_record_id("vault_mount:migration_rollback_note")
     note_id = ensure_record_id("note:migration_rollback_note")
@@ -539,7 +547,7 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
     assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 33
+    assert await get_latest_version() == 34
     migrated = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
     assert migrated["title_key"] == "rollback note"
     assert migrated["updated"] == before["updated"]
@@ -555,10 +563,7 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
     clean_namespace,
     monkeypatch,
 ):
-    await repo_query(
-        "DELETE type::thing('_sbl_migrations', $version);",
-        {"version": 33},
-    )
+    await _restore_recorded_v32_state()
     assert await get_latest_version() == 32
     mount_id = ensure_record_id("vault_mount:migration_rollback_link")
     source_id = ensure_record_id("note:migration_rollback_link_source")
@@ -637,7 +642,7 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
     )
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 33
+    assert await get_latest_version() == 34
     migrated = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
     assert migrated["target_title_key"] == "target"
     assert migrated["target_note_id"] == str(target_id)
@@ -655,10 +660,7 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
     clean_namespace,
     monkeypatch,
 ):
-    await repo_query(
-        "DELETE type::thing('_sbl_migrations', $version);",
-        {"version": 33},
-    )
+    await _restore_recorded_v32_state()
     assert await get_latest_version() == 32
     note_schema_before = await _updated_field_definition("note")
     link_schema_before = await _updated_field_definition("note_link")
@@ -685,7 +687,7 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
     )
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 33
+    assert await get_latest_version() == 34
     assert await _updated_field_definition("note") == note_schema_before
     assert await _updated_field_definition("note_link") == link_schema_before
 
