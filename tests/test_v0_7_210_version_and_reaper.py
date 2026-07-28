@@ -123,6 +123,8 @@ def test_periodic_reaper_loop_defined():
     function (5-min sleep + same query as the startup pass) and
     anchor the task via `_track_task` so the GC can't reap it."""
     src = _src("api/main.py")
+    from task_lifecycle_assertions import assert_lifespan_tracked_task
+
     assert "async def _reaper_loop()" in src
     # The 5-minute interval is load-bearing (any shorter would
     # spam the DB; any longer and the orphan-row UX regresses).
@@ -131,10 +133,10 @@ def test_periodic_reaper_loop_defined():
     # startup reaper — divergence would cause weird timing
     # discrepancies between the two paths.
     assert "AND updated < (time::now() - 30m)" in src
-    # Anchored via _track_task per the v0.7.190 GC-safe pattern.
-    assert (
-        "_track_task(asyncio.create_task(\n            _reaper_loop()"
-        in src
+    assert_lifespan_tracked_task(
+        src,
+        task_name="reaper_task",
+        coroutine_name="_reaper_loop",
     )
 
 
