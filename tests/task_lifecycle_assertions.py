@@ -4,6 +4,29 @@ from __future__ import annotations
 import ast
 
 
+class _ExecutableAssignmentVisitor(ast.NodeVisitor):
+    """Collect assignments without entering nested lexical scopes."""
+
+    def __init__(self) -> None:
+        self.assignments: list[ast.Assign] = []
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.assignments.append(node)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+
 def assert_lifespan_tracked_task(
     source: str, *, task_name: str, coroutine_name: str
 ) -> None:
@@ -16,11 +39,13 @@ def assert_lifespan_tracked_task(
     ]
     assert len(lifespans) == 1, "api/main.py must define exactly one lifespan handler"
 
+    visitor = _ExecutableAssignmentVisitor()
+    for statement in lifespans[0].body:
+        visitor.visit(statement)
     assignments = [
         node
-        for node in ast.walk(lifespans[0])
-        if isinstance(node, ast.Assign)
-        and any(
+        for node in visitor.assignments
+        if any(
             isinstance(target, ast.Name) and target.id == task_name
             for target in node.targets
         )
