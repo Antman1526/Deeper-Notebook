@@ -616,7 +616,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "3a73c955b641cf62b8dd63aecded2d1937b877135eec2836a67ca90b91fba681"
+      "coverage_sha256": "35dea056cc3f28c1890758d517ff9b19a1f513a3cda85bce774bf95f63f594cc"
     },
     "launcher-pref-env-migration-v1": {
       "kind": "env_alias",
@@ -685,7 +685,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "7beca0b9f0706fde3c346273ffed416ff6143a8b666c296c5539258009b42872"
+      "coverage_sha256": "24cb2dca72f497969a52364c85d79277f1ca35e4aba4766b391c60b03d0e4db9"
     },
     "legacy-test-fixture-v1": {
       "kind": "regression_fixture",
@@ -16098,7 +16098,7 @@
         "column": 35,
         "context_sha256": "a1f6b84d53e755c6421aa9e324b1c915c0fc90688159a410c32d786b49ac0056",
         "category": "compatibility_alias",
-        "explanation": "The desktop test release manifest regression suite keeps the legacy behavior in the `test_makefile_build_contract_is_portable_and_uses_canonical_outputs` function because the statement uses that role while expressing assert \"/Users/Antman/Desktop/ current former compact product title \" not in makefile, while the preceding context concerns makefile = MAKEFILE.read text encoding=\"utf-8\"; the following context concerns assert \"uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q\" in makefile.",
+        "explanation": "The desktop test release manifest regression suite keeps the legacy behavior in the `test_makefile_build_contract_is_portable_and_uses_canonical_outputs` function because the statement uses that role while expressing assert \"/Users/Antman/Desktop/ current former compact product title \" not in makefile, while the preceding context concerns makefile = MAKEFILE.read text encoding=\"utf-8\"; the following context concerns assert \"$ BUILD PY -m pytest desktop/tests/ desktop/memory/tests/ -q\" in makefile.",
         "compatibility_contract": "legacy-artifact-probe-v1"
       }
     },
@@ -16106,7 +16106,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 313,
+      "line": 321,
       "column": 46,
       "context_sha256": "4b00b44e7c09c246762d26e3974a0b2c5a0e9c2fd0d8867eeba415e59f64c6ee",
       "category": "compatibility_alias",
@@ -16114,7 +16114,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 313,
+        "line": 321,
         "column": 46,
         "context_sha256": "4b00b44e7c09c246762d26e3974a0b2c5a0e9c2fd0d8867eeba415e59f64c6ee",
         "category": "compatibility_alias",
@@ -16126,7 +16126,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 318,
+      "line": 326,
       "column": 13,
       "context_sha256": "6b8bf83e7d29c25ff995115b26293cb6a2c8a4b727bfb1b6cf13478b27932038",
       "category": "compatibility_alias",
@@ -16134,7 +16134,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 318,
+        "line": 326,
         "column": 13,
         "context_sha256": "6b8bf83e7d29c25ff995115b26293cb6a2c8a4b727bfb1b6cf13478b27932038",
         "category": "compatibility_alias",
@@ -16146,7 +16146,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 355,
+      "line": 363,
       "column": 11,
       "context_sha256": "3ee366d84727609cf8e1746115f615c7e0ca5bf0a15a27fb33a3ac826e316f06",
       "category": "compatibility_alias",
@@ -16154,7 +16154,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 355,
+        "line": 363,
         "column": 11,
         "context_sha256": "3ee366d84727609cf8e1746115f615c7e0ca5bf0a15a27fb33a3ac826e316f06",
         "category": "compatibility_alias",
@@ -16166,7 +16166,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open notebook+",
       "source": "content",
-      "line": 355,
+      "line": 363,
       "column": 32,
       "context_sha256": "3ee366d84727609cf8e1746115f615c7e0ca5bf0a15a27fb33a3ac826e316f06",
       "category": "compatibility_alias",
@@ -16174,7 +16174,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open notebook+",
         "source": "content",
-        "line": 355,
+        "line": 363,
         "column": 32,
         "context_sha256": "3ee366d84727609cf8e1746115f615c7e0ca5bf0a15a27fb33a3ac826e316f06",
         "category": "compatibility_alias",
@@ -16186,7 +16186,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 369,
+      "line": 377,
       "column": 52,
       "context_sha256": "1dfa2d0943f031405af7d26ba9ebe8e45d8d79965f78c540948c17d50d9f396f",
       "category": "compatibility_alias",
@@ -16194,7 +16194,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 369,
+        "line": 377,
         "column": 52,
         "context_sha256": "1dfa2d0943f031405af7d26ba9ebe8e45d8d79965f78c540948c17d50d9f396f",
         "category": "compatibility_alias",
