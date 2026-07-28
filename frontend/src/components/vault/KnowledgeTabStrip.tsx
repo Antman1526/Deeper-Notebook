@@ -34,6 +34,10 @@ export function getKnowledgeTabId(paneId: string, tabId: string): string {
   return `knowledge-tab-${encodeDomIdPart(paneId)}-${encodeDomIdPart(tabId)}`
 }
 
+export function getEffectiveKnowledgeTabId(pane: KnowledgePane): string | null {
+  return pane.activeTabId ?? pane.tabs[0]?.id ?? null
+}
+
 export function KnowledgeTabStrip({
   pane,
   panelId = getKnowledgePanelId(pane.id),
@@ -45,13 +49,11 @@ export function KnowledgeTabStrip({
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const pendingFocusTabId = useRef<string | null>(null)
   const pendingFallbackFocus = useRef(false)
-  const rovingTabId = pane.tabs.some((tab) => tab.id === pane.activeTabId)
-    ? pane.activeTabId
-    : pane.tabs[0]?.id
+  const effectiveActiveTabId = getEffectiveKnowledgeTabId(pane)
 
   useLayoutEffect(() => {
     const targetTabId = pendingFocusTabId.current
-    if (targetTabId && pane.activeTabId === targetTabId) {
+    if (targetTabId && effectiveActiveTabId === targetTabId) {
       const targetTab = tabRefs.current[targetTabId]
       if (!targetTab) return
       pendingFocusTabId.current = null
@@ -63,16 +65,16 @@ export function KnowledgeTabStrip({
       pendingFallbackFocus.current = false
       onRequestFocusFallback?.()
     }
-  }, [onRequestFocusFallback, pane.activeTabId, pane.tabs])
+  }, [effectiveActiveTabId, onRequestFocusFallback, pane.tabs])
 
   const closeTab = (tabId: string) => {
     const closedIndex = pane.tabs.findIndex((tab) => tab.id === tabId)
     const remainingTabs = pane.tabs.filter((tab) => tab.id !== tabId)
-    const focusTargetTabId = pane.activeTabId === tabId
+    const focusTargetTabId = effectiveActiveTabId === tabId
       ? remainingTabs[closedIndex]?.id
         ?? remainingTabs[closedIndex - 1]?.id
         ?? null
-      : pane.activeTabId
+      : effectiveActiveTabId
     pendingFocusTabId.current = focusTargetTabId
     pendingFallbackFocus.current = focusTargetTabId === null
     onCloseTab(pane.id, tabId)
@@ -116,7 +118,7 @@ export function KnowledgeTabStrip({
       className="flex min-w-0 flex-1 items-stretch overflow-x-auto border-b bg-muted/30"
     >
       {pane.tabs.map((tab, index) => {
-        const isActive = tab.id === pane.activeTabId
+        const isActive = tab.id === effectiveActiveTabId
         const closeLabel = t('knowledge.closeTab', { title: tab.title })
 
         return (
@@ -137,7 +139,7 @@ export function KnowledgeTabStrip({
               role="tab"
               aria-selected={isActive}
               aria-controls={panelId}
-              tabIndex={tab.id === rovingTabId ? 0 : -1}
+              tabIndex={isActive ? 0 : -1}
               title={tab.relativePath}
               onClick={() => onActivateTab(pane.id, tab.id)}
               onKeyDown={(event) => moveSelection(event, index)}

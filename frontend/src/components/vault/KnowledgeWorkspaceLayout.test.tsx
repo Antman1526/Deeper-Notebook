@@ -95,6 +95,41 @@ describe('KnowledgeWorkspaceLayout', () => {
     )
   })
 
+  it('derives one effective active tab for a hydrated pane whose active ID is null', () => {
+    const current = useKnowledgeWorkspaceStore.getState()
+    const paneWithNoActiveId = {
+      ...current.panes['pane-1'],
+      activeTabId: null,
+    }
+    current.replaceWorkspace({
+      version: 1,
+      activePaneId: 'pane-1',
+      nextId: current.nextId,
+      panes: { 'pane-1': paneWithNoActiveId },
+      layout: { type: 'pane', paneId: 'pane-1' },
+    })
+    const renderPane = vi.fn((pane: { activeTabId: string | null }) => (
+      <div>Rendered tab {pane.activeTabId ?? 'none'}</div>
+    ))
+
+    render(<KnowledgeWorkspaceLayout renderPane={renderPane} />)
+    const firstTab = screen.getByRole('tab', { name: 'Plan' })
+    const tabPanel = screen.getByRole('tabpanel')
+    const effectiveTabId = paneWithNoActiveId.tabs[0].id
+
+    expect(firstTab).toHaveAttribute('aria-selected', 'true')
+    expect(firstTab).toHaveAttribute('tabindex', '0')
+    expect(
+      screen.getByRole('region', { name: /Knowledge pane pane-1: Plan/ }),
+    ).toBeInTheDocument()
+    expect(tabPanel).toHaveAttribute('aria-labelledby', firstTab.id)
+    expect(renderPane).toHaveBeenCalledWith(
+      expect.objectContaining({ activeTabId: effectiveTabId }),
+    )
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId)
+      .toBeNull()
+  })
+
   it('preserves named, keyboard-focusable split directions and renders each pane once', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     const secondPaneId = store.splitPane('pane-1', 'horizontal')
