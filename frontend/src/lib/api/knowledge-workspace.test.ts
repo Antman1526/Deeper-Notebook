@@ -6,8 +6,11 @@ vi.mock('./client', () => ({
 
 import apiClient from './client'
 import {
+  defaultKnowledgeWorkspace,
   knowledgeWorkspaceApi,
   knowledgeWorkspaceWireSchema,
+  serializeKnowledgeWorkspace,
+  type KnowledgeLayoutNode,
 } from './knowledge-workspace'
 
 const wireDocument = {
@@ -122,6 +125,34 @@ describe('knowledge workspace API boundary', () => {
 
     vi.mocked(apiClient.get).mockResolvedValue({ data: hostile } as never)
     await expect(knowledgeWorkspaceApi.get()).rejects.toThrow(/depth 64/i)
+  })
+
+  it('rejects a deeply nested camelCase layout before outbound recursive conversion', () => {
+    let layout: unknown = { type: 'pane', paneId: 'pane-1' }
+    for (let depth = 0; depth < 5_000; depth += 1) {
+      layout = {
+        type: 'split',
+        id: `split-${depth}`,
+        direction: 'horizontal',
+        first: layout,
+        second: { type: 'pane', paneId: 'pane-1' },
+      }
+    }
+    let guardedNode = layout as Record<string, unknown>
+    for (let depth = 1; depth <= 64; depth += 1) {
+      guardedNode = guardedNode.first as Record<string, unknown>
+    }
+    Object.defineProperty(guardedNode, 'type', {
+      configurable: true,
+      get: () => {
+        throw new Error('recursive conversion reached unsafe depth')
+      },
+    })
+
+    expect(() => serializeKnowledgeWorkspace({
+      ...defaultKnowledgeWorkspace(),
+      layout: layout as KnowledgeLayoutNode,
+    })).toThrow(/depth 64/i)
   })
 
   it('converts snake_case responses to the camelCase store document', async () => {
