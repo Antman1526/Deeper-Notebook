@@ -22,13 +22,26 @@ import {
 } from '@/lib/api/knowledge-workspace'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import {
-  resetKnowledgeWorkspacePersistenceCoordinatorForTests,
   useHydrateKnowledgeWorkspace,
   usePersistKnowledgeWorkspace,
 } from './use-knowledge-workspace'
+import * as knowledgeWorkspaceHooks from './use-knowledge-workspace'
 
 const originalReplaceWorkspace = useKnowledgeWorkspaceStore.getState().replaceWorkspace
 const originalHydrateWorkspace = useKnowledgeWorkspaceStore.getState().hydrateWorkspace
+const persistenceCoordinatorTestResetKey =
+  '__DEEPER_NOTEBOOK_KNOWLEDGE_WORKSPACE_TEST_RESET__'
+
+function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
+  const testGlobal = globalThis as typeof globalThis & {
+    [persistenceCoordinatorTestResetKey]?: () => void
+  }
+  const reset = testGlobal[persistenceCoordinatorTestResetKey]
+  if (!reset) {
+    throw new Error('workspace persistence test reset is unavailable')
+  }
+  reset()
+}
 
 const plan = {
   vaultId: 'vault:one',
@@ -92,6 +105,11 @@ describe('knowledge workspace synchronization', () => {
       hydrateWorkspace: originalHydrateWorkspace,
     })
     vi.useRealTimers()
+  })
+
+  it('does not expose coordinator test controls from the production module', () => {
+    expect(knowledgeWorkspaceHooks)
+      .not.toHaveProperty('resetKnowledgeWorkspacePersistenceCoordinatorForTests')
   })
 
   it('hydrates from GET exactly once and marks the immediate store hydrated', async () => {
