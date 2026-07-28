@@ -738,7 +738,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "3a3afeb1427e0b2ab888a87a1cc9a8fbb83d6f91a28ffdad6345ee666adfd3cd"
+      "coverage_sha256": "dfe54e6d2ea7aa723f9ded52f82e0c3862a8d3aca2a97dd4930ba4a49ed76992"
     },
     "persisted-queue-identifier-v1": {
       "kind": "persisted_identifier",
@@ -64286,7 +64286,7 @@
       "path": "tests/test_repair_desktop_db_script.py",
       "pattern": "open-notebook-plus",
       "source": "content",
-      "line": 24,
+      "line": 28,
       "column": 27,
       "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
       "category": "compatibility_alias",
@@ -64294,7 +64294,7 @@
         "path": "tests/test_repair_desktop_db_script.py",
         "pattern": "open-notebook-plus",
         "source": "content",
-        "line": 24,
+        "line": 28,
         "column": 27,
         "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
         "category": "compatibility_alias",
@@ -64306,7 +64306,7 @@
       "path": "tests/test_repair_desktop_db_script.py",
       "pattern": "open-notebook-plus",
       "source": "content",
-      "line": 42,
+      "line": 46,
       "column": 27,
       "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
       "category": "compatibility_alias",
@@ -64314,7 +64314,7 @@
         "path": "tests/test_repair_desktop_db_script.py",
         "pattern": "open-notebook-plus",
         "source": "content",
-        "line": 42,
+        "line": 46,
         "column": 27,
         "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
         "category": "compatibility_alias",
@@ -64326,7 +64326,7 @@
       "path": "tests/test_repair_desktop_db_script.py",
       "pattern": "open-notebook-plus",
       "source": "content",
-      "line": 58,
+      "line": 62,
       "column": 27,
       "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
       "category": "compatibility_alias",
@@ -64334,7 +64334,7 @@
         "path": "tests/test_repair_desktop_db_script.py",
         "pattern": "open-notebook-plus",
         "source": "content",
-        "line": 58,
+        "line": 62,
         "column": 27,
         "context_sha256": "d81751874ebd777aa3ecb8382a5c83f3a4c60d0d1b68d3743c4b4b84ee20b568",
         "category": "compatibility_alias",
