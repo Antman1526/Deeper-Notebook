@@ -238,6 +238,8 @@ class VaultService:
             raise
         if result.reconciliation_required:
             await watcher.release_queued(item.relative_path, item.content_hash)
+            self._watchers.pop(mount.id, None)
+            watcher._root.close()
             self._dirty.add(mount.id)
             return VaultScanResult(mount.id, "conflict", operation_id, reconciliation_required=True)
         handoff = await watcher.acknowledge_projected(item.relative_path, item.content_hash)
@@ -270,7 +272,10 @@ class VaultService:
         while not self._closed:
             await asyncio.sleep(2)
             if self._dirty:
-                await self.scan_dirty_mounts()
+                results = await self.scan_dirty_mounts()
+                for result in results:
+                    if result.status == "scanning":
+                        self._dirty.add(result.vault_id)
 
     async def start_watchers(self) -> None:
         self._closed = False
