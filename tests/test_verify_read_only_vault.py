@@ -169,7 +169,7 @@ def test_git_status_lock_is_recorded_without_repairing_it(tmp_path, monkeypatch)
     lock = root / ".git" / "index.lock"
     lock.write_text("pre-existing lock")
 
-    snapshot = verifier._snapshot(root)
+    snapshot = verifier._snapshot(root, verifier._capture_root_identity(root))
     assert snapshot.git_status == "git_status_unavailable"
     assert snapshot.git_status_available is False
     assert lock.read_text() == "pre-existing lock"
@@ -259,9 +259,10 @@ def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation
     ignored = root / "ignored-private.md"
     ignored.write_text("before")
 
-    before = verifier._snapshot(root)
+    identity = verifier._capture_root_identity(root)
+    before = verifier._snapshot(root, identity)
     ignored.write_text("after")
-    after = verifier._snapshot(root)
+    after = verifier._snapshot(root, identity)
 
     assert "ignored-private.md" in before.hashes
     assert verifier._snapshot_differences(before, after)[0] is True
@@ -525,8 +526,42 @@ def test_output_parent_swap_to_source_is_rejected_before_any_source_write(tmp_pa
     report_dir.symlink_to(root, target_is_directory=True)
 
     with pytest.raises(verifier.VerificationError):
-        verifier._write_report(target, {"failures": []})
+        verifier._write_report(target, verifier._capture_root_identity(root), {"failures": []})
     assert not (root / "report.json").exists()
+
+
+def test_root_rebind_during_api_request_fails_closed_without_report_in_rebound_root(tmp_path, monkeypatch, capsys):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    output = tmp_path / "outside" / "report.json"
+    output.parent.mkdir()
+    moved_root = tmp_path / "original-root"
+    responses = _api_responses(root)
+
+    def request(method, api, path, payload=None):
+        if (method, path) == ("GET", ""):
+            root.rename(moved_root)
+            root.symlink_to(output.parent, target_is_directory=True)
+        result = responses[(method, path)]
+        return result(payload) if callable(result) else result
+
+    monkeypatch.setattr(verifier, "_request_json", request)
+
+    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert not output.exists()
+    assert not (root / "report.json").exists()
+    assert str(root) not in capsys.readouterr().err
+
+
+def test_unchanged_root_identity_allows_check_only_report(tmp_path):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    output = tmp_path / "report.json"
+
+    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    assert output.exists()
 
 
 def test_local_http_server_exercises_requests_mount_details_scan_failure_and_sanitization(tmp_path, capsys):
