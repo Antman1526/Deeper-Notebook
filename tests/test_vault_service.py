@@ -139,3 +139,19 @@ async def test_parent_scan_excludes_files_owned_by_child_mount(synthetic_root: P
     await service.scan(parent.id)
 
     assert [path for path, _, _ in repository.projections] == ["parent.md"]
+
+
+@pytest.mark.asyncio
+async def test_one_scan_operation_id_is_reused_for_every_projected_file(synthetic_root: Path):
+    root = synthetic_root / "multi"
+    root.mkdir()
+    (root / "one.md").write_text("# One\n")
+    (root / "two.md").write_text("# Two\n")
+    repository = FakeRepository([_mount(root)], [], [])
+    moments = iter((1.0, 3.0))
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: next(moments))
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert {operation for _, _, operation in repository.projections} == {result.operation_id}

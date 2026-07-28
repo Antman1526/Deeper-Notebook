@@ -308,7 +308,11 @@ class ContextBuilder:
             if note.canonical_external and note.vault_file_id and note.vault_id:
                 provenance_rows = await repo_query(
                     """
-                    SELECT relative_path, source_hash FROM vault_file
+                    SELECT relative_path, source_hash,
+                        (SELECT source_start, source_end FROM note_block
+                         WHERE vault_file_id = $vault_file_id
+                         ORDER BY position LIMIT 1)[0] AS selected_block
+                    FROM vault_file
                     WHERE id = $vault_file_id AND vault_id = $vault_id LIMIT 1;
                     """,
                     {
@@ -323,9 +327,12 @@ class ContextBuilder:
                         normalized_hash = str(source_hash)
                         if not normalized_hash.startswith("sha256:"):
                             normalized_hash = f"sha256:{normalized_hash}"
+                        block = provenance.get("selected_block") or {}
+                        start = block.get("source_start", 0)
+                        end = block.get("source_end", start)
                         note_context["grounded_citation"] = (
                             f"[V1] {provenance['relative_path']} | note {note.id} | "
-                            f"{normalized_hash} | blocks 0-0"
+                            f"{normalized_hash} | blocks {start}-{end}"
                         )
 
             # Add note item
