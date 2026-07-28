@@ -16,8 +16,13 @@ from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
 )
+from deeper_notebook.vault.security import approve_vault_root
 from deeper_notebook.vault.service import VaultService, _ObservationAdapter
-from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
+from deeper_notebook.vault.watcher import (
+    VaultFileObservation,
+    VaultWatcher,
+    VaultWorkItem,
+)
 
 
 @dataclass
@@ -105,10 +110,58 @@ async def test_scan_transitions_to_ready_read_only_and_projects_once(
     await asyncio.sleep(0)
     second = await service.scan("vault_mount:fixture")
 
-    assert first.status == "scanning"
+    assert first.status == "ready-read-only"
     assert second.status == "ready-read-only"
     assert len(repository.projections) == 1
     assert repository.projections[0][2].startswith("vault-scan-")
+
+
+class _BlockingVaultWatcher(VaultWatcher):
+    def __init__(self, *args, started: asyncio.Event, release: asyncio.Event, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._started = started
+        self._release = release
+
+    async def scan(self, *, now_monotonic: float | None = None) -> list[VaultWorkItem]:
+        self._started.set()
+        await self._release.wait()
+        return await super().scan(now_monotonic=now_monotonic)
+
+
+@pytest.mark.asyncio
+async def test_scan_returns_in_progress_only_while_a_real_watcher_scan_is_live(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "concurrent"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository, stable_after_seconds=0, clock=lambda: 3.0)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    approved_root = approve_vault_root(str(root))
+    watcher = _BlockingVaultWatcher(
+        vault_id="vault_mount:fixture",
+        approved_root=approved_root,
+        repository=_ObservationAdapter(repository, service._operation_id),
+        stable_after_seconds=2.0,
+        started=started,
+        release=release,
+    )
+    service._watchers["vault_mount:fixture"] = watcher
+
+    first_scan = asyncio.create_task(service.scan("vault_mount:fixture"))
+    await started.wait()
+    concurrent = await asyncio.wait_for(
+        service.scan("vault_mount:fixture"), timeout=0.1
+    )
+    release.set()
+    completed = await first_scan
+    subsequent = await service.scan("vault_mount:fixture")
+    approved_root.close()
+
+    assert concurrent.status == "scanning"
+    assert completed.status == "ready-read-only"
+    assert subsequent.status == "ready-read-only"
 
 
 @pytest.mark.asyncio
@@ -143,23 +196,31 @@ async def test_parent_scan_excludes_files_owned_by_child_mount(synthetic_root: P
 
 
 @pytest.mark.asyncio
-async def test_one_scan_operation_id_is_reused_for_every_projected_file(synthetic_root: Path):
+async def test_one_scan_operation_id_is_reused_for_every_projected_file(
+    synthetic_root: Path,
+):
     root = synthetic_root / "multi"
     root.mkdir()
     (root / "one.md").write_text("# One\n")
     (root / "two.md").write_text("# Two\n")
     repository = FakeRepository([_mount(root)], [], [])
     moments = iter((1.0, 3.0))
-    service = VaultService(repository, stable_after_seconds=0, clock=lambda: next(moments))
+    service = VaultService(
+        repository, stable_after_seconds=0, clock=lambda: next(moments)
+    )
 
     await service.scan("vault_mount:fixture")
     result = await service.scan("vault_mount:fixture")
 
-    assert {operation for _, _, operation in repository.projections} == {result.operation_id}
+    assert {operation for _, _, operation in repository.projections} == {
+        result.operation_id
+    }
 
 
 @pytest.mark.asyncio
-async def test_real_observer_event_debounces_burst_to_one_projection(synthetic_root: Path):
+async def test_real_observer_event_debounces_burst_to_one_projection(
+    synthetic_root: Path,
+):
     root = synthetic_root / "observed"
     root.mkdir()
     repository = FakeRepository([_mount(root)], [], [])
@@ -176,16 +237,33 @@ async def test_real_observer_event_debounces_burst_to_one_projection(synthetic_r
 
 
 @pytest.mark.asyncio
-async def test_conflict_is_not_acknowledged_then_stable_rescan_projects_authoritative_a(synthetic_root: Path):
+async def test_conflict_is_not_acknowledged_then_stable_rescan_projects_authoritative_a(
+    synthetic_root: Path,
+):
     root = synthetic_root / "conflict"
     root.mkdir()
     (root / "note.md").write_text("# A\n")
     repository = FakeRepository([_mount(root)], [], [])
-    conflict = ProjectionResult(vault_file_id="vault_file:fixture", note_id="note:fixture", status="conflict", parse_state="parsed", embedding_state="pending", reconciliation_required=True)
-    projected = ProjectionResult(vault_file_id="vault_file:fixture", note_id="note:fixture", status="projected", parse_state="parsed", embedding_state="pending")
+    conflict = ProjectionResult(
+        vault_file_id="vault_file:fixture",
+        note_id="note:fixture",
+        status="conflict",
+        parse_state="parsed",
+        embedding_state="pending",
+        reconciliation_required=True,
+    )
+    projected = ProjectionResult(
+        vault_file_id="vault_file:fixture",
+        note_id="note:fixture",
+        status="projected",
+        parse_state="parsed",
+        embedding_state="pending",
+    )
     repository.project_document = AsyncMock(side_effect=[conflict, projected])
     moments = iter((1.0, 3.0, 5.0, 7.0, 9.0))
-    service = VaultService(repository, stable_after_seconds=0, clock=lambda: next(moments))
+    service = VaultService(
+        repository, stable_after_seconds=0, clock=lambda: next(moments)
+    )
 
     await service.scan("vault_mount:fixture")
     first = await service.scan("vault_mount:fixture")
@@ -198,7 +276,9 @@ async def test_conflict_is_not_acknowledged_then_stable_rescan_projects_authorit
 
 
 @pytest.mark.asyncio
-async def test_missing_receipts_always_get_fresh_ids_outside_scan_context(synthetic_root: Path):
+async def test_missing_receipts_always_get_fresh_ids_outside_scan_context(
+    synthetic_root: Path,
+):
     repository = FakeRepository([], [], [])
     adapter = _ObservationAdapter(repository, lambda: "vault-scan-shared")
 

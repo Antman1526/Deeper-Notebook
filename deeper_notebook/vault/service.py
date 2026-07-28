@@ -101,9 +101,11 @@ class VaultService:
         self._watchers: dict[str, VaultWatcher] = {}
         self._mounts: dict[str, VaultMount] = {}
         self._states: dict[str, str] = {}
+        self._scan_locks: dict[str, asyncio.Lock] = {}
         self._dirty: set[str] = set()
-        self._scan_operation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-            "vault_scan_operation_id", default=None
+        self._rescan_after_stability: set[str] = set()
+        self._scan_operation_id: contextvars.ContextVar[str | None] = (
+            contextvars.ContextVar("vault_scan_operation_id", default=None)
         )
         self._worker: asyncio.Task[None] | None = None
         self._observer: Observer | None = None
@@ -169,16 +171,20 @@ class VaultService:
         return tuple(sorted(set(prefixes)))
 
     async def scan(self, vault_id: str) -> VaultScanResult:
-        await self._load_mounts()
-        mount = self._mounts.get(vault_id)
         operation_id = self._operation_id()
-        token = self._scan_operation_id.set(operation_id)
-        try:
-            return await self._scan_with_operation(vault_id, operation_id)
-        finally:
-            self._scan_operation_id.reset(token)
+        scan_lock = self._scan_locks.setdefault(vault_id, asyncio.Lock())
+        if scan_lock.locked():
+            return VaultScanResult(vault_id, "scanning", operation_id)
+        async with scan_lock:
+            token = self._scan_operation_id.set(operation_id)
+            try:
+                return await self._scan_with_operation(vault_id, operation_id)
+            finally:
+                self._scan_operation_id.reset(token)
 
-    async def _scan_with_operation(self, vault_id: str, operation_id: str) -> VaultScanResult:
+    async def _scan_with_operation(
+        self, vault_id: str, operation_id: str
+    ) -> VaultScanResult:
         await self._load_mounts()
         mount = self._mounts.get(vault_id)
         if mount is None:
@@ -187,32 +193,41 @@ class VaultService:
         if watcher is None:
             return VaultScanResult(vault_id, "unavailable", operation_id)
         self._states[vault_id] = "scanning"
-        work = await watcher.scan(now_monotonic=self._clock())
-        if not work:
-            return VaultScanResult(vault_id, self._states[vault_id], operation_id)
-        projected = failed = 0
-        reconciliation_required = False
-        for item in work:
-            outcome = await self._project(mount, watcher, item, operation_id)
-            projected += outcome.projected
-            failed += outcome.failed
-            reconciliation_required = (
-                reconciliation_required or outcome.reconciliation_required
+        try:
+            work = await watcher.scan(now_monotonic=self._clock())
+            if not work:
+                self._states[vault_id] = "ready-read-only"
+                return VaultScanResult(vault_id, self._states[vault_id], operation_id)
+            projected = failed = 0
+            reconciliation_required = False
+            for item in work:
+                outcome = await self._project(mount, watcher, item, operation_id)
+                projected += outcome.projected
+                failed += outcome.failed
+                reconciliation_required = (
+                    reconciliation_required or outcome.reconciliation_required
+                )
+            self._states[vault_id] = (
+                "conflict" if reconciliation_required else "ready-read-only"
             )
-        self._states[vault_id] = (
-            "conflict" if reconciliation_required else "ready-read-only"
-        )
-        return VaultScanResult(
-            vault_id,
-            self._states[vault_id],
-            operation_id,
-            projected,
-            failed=failed,
-            reconciliation_required=reconciliation_required,
-        )
+            return VaultScanResult(
+                vault_id,
+                self._states[vault_id],
+                operation_id,
+                projected,
+                failed=failed,
+                reconciliation_required=reconciliation_required,
+            )
+        finally:
+            if self._states.get(vault_id) == "scanning":
+                self._states[vault_id] = "ready-read-only"
 
     async def _project(
-        self, mount: VaultMount, watcher: VaultWatcher, item: VaultWorkItem, operation_id: str
+        self,
+        mount: VaultMount,
+        watcher: VaultWatcher,
+        item: VaultWorkItem,
+        operation_id: str,
     ) -> VaultScanResult:
         try:
             parsed = parse_document(
@@ -241,8 +256,12 @@ class VaultService:
             self._watchers.pop(mount.id, None)
             watcher._root.close()
             self._dirty.add(mount.id)
-            return VaultScanResult(mount.id, "conflict", operation_id, reconciliation_required=True)
-        handoff = await watcher.acknowledge_projected(item.relative_path, item.content_hash)
+            return VaultScanResult(
+                mount.id, "conflict", operation_id, reconciliation_required=True
+            )
+        handoff = await watcher.acknowledge_projected(
+            item.relative_path, item.content_hash
+        )
         await self._process_corrective(mount, watcher, handoff.corrective_work)
         return VaultScanResult(
             mount.id,
@@ -262,6 +281,7 @@ class VaultService:
     def notify_change(self, vault_id: str, relative_path: str = "") -> None:
         if not self._closed:
             self._dirty.add(vault_id)
+            self._rescan_after_stability.add(vault_id)
 
     async def scan_dirty_mounts(self) -> list[VaultScanResult]:
         vault_ids = sorted(self._dirty)
@@ -274,8 +294,12 @@ class VaultService:
             if self._dirty:
                 results = await self.scan_dirty_mounts()
                 for result in results:
-                    if result.status == "scanning":
+                    if (
+                        result.status == "scanning"
+                        or result.vault_id in self._rescan_after_stability
+                    ):
                         self._dirty.add(result.vault_id)
+                    self._rescan_after_stability.discard(result.vault_id)
 
     async def start_watchers(self) -> None:
         self._closed = False
@@ -284,7 +308,7 @@ class VaultService:
         for mount in self._mounts.values():
             if mount.watch_enabled:
                 await self._watcher_for(mount)
-                self._dirty.add(mount.id)
+                self.notify_change(mount.id)
         if self._worker is None:
             self._worker = asyncio.create_task(
                 self._run_worker(), name="vault-index-worker"
@@ -293,7 +317,9 @@ class VaultService:
             observer = Observer()
             for mount in self._mounts.values():
                 if mount.watch_enabled and mount.id in self._watchers:
-                    observer.schedule(_VaultEventHandler(self, mount), mount.root_path, recursive=True)
+                    observer.schedule(
+                        _VaultEventHandler(self, mount), mount.root_path, recursive=True
+                    )
             observer.start()
             self._observer = observer
 
@@ -338,7 +364,9 @@ class _VaultEventHandler(FileSystemEventHandler):
                 continue
             loop = self._service._event_loop
             if loop is not None and not self._service._closed:
-                loop.call_soon_threadsafe(self._service.notify_change, self._mount.id, relative)
+                loop.call_soon_threadsafe(
+                    self._service.notify_change, self._mount.id, relative
+                )
             return
 
 
