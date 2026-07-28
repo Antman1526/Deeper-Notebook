@@ -16,6 +16,11 @@ import pytest
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_read_only_vault.py"
 
+pytestmark = pytest.mark.skipif(
+    os.name != "posix",
+    reason="controlled proof requires POSIX descriptor-relative report writes",
+)
+
 
 def _load_verifier():
     spec = importlib.util.spec_from_file_location("verify_read_only_vault", SCRIPT)

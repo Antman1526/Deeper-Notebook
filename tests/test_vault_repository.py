@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -1073,6 +1074,20 @@ def test_receipts_are_append_and_list_only():
         {"error_code": "x" * 65},
         {"rollback_path": "/tmp/phase-1-must-not-write"},
     ],
+    ids=[
+        "operation-newline",
+        "operation-kind-newline",
+        "source-newline",
+        "parser-path",
+        "parser-backslash",
+        "parser-newline",
+        "parser-too-long",
+        "write-policy",
+        "policy-newline",
+        "policy-too-long",
+        "error-too-long",
+        "rollback-path",
+    ],
 )
 def test_receipt_contract_rejects_unbounded_or_phase_1_unsafe_fields(override):
     values = {
@@ -1099,6 +1114,7 @@ def test_receipt_contract_rejects_unbounded_or_phase_1_unsafe_fields(override):
         ("parser_version", "parser\nsecret"),
         ("policy_decision", "x" * 100_000),
     ],
+    ids=["parser-path", "parser-newline", "policy-too-long"],
 )
 async def test_append_receipt_revalidates_adversarial_constructed_models(field, value):
     values = {
@@ -1217,6 +1233,10 @@ async def test_backlinks_project_source_note_title_for_display_identity():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
 async def test_trust_manifest_is_contained_hashed_and_idempotent():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
@@ -1263,6 +1283,10 @@ async def test_trust_manifest_is_contained_hashed_and_idempotent():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
 async def test_changed_trust_hash_updates_record_and_stays_unresolved():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "unresolved"
     root = approve_vault_root(vault_root)
@@ -1294,6 +1318,10 @@ async def test_changed_trust_hash_updates_record_and_stays_unresolved():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
 async def test_same_trust_hash_transitions_unresolved_to_resolved_with_receipt():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
@@ -1329,6 +1357,10 @@ async def test_same_trust_hash_transitions_unresolved_to_resolved_with_receipt()
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
 async def test_trust_record_identity_is_scoped_by_vault_and_manifest_path():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
@@ -1359,6 +1391,10 @@ async def test_trust_record_identity_is_scoped_by_vault_and_manifest_path():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
 async def test_trust_import_rejects_non_connector_json_before_database_access():
     vault_root = Path(__file__).parent / "fixtures" / "vault" / "trust" / "resolved"
     root = approve_vault_root(vault_root)
@@ -1430,6 +1466,12 @@ async def test_trust_import_rejects_non_connector_json_before_database_access():
             ).encode(),
             "too_many_derived_from",
         ),
+    ],
+    ids=[
+        "manifest-too-large",
+        "too-many-records",
+        "manifest-id-too-long",
+        "too-many-derived-from",
     ],
 )
 def test_trust_manifest_parser_enforces_explicit_budgets(payload: bytes, code: str):
