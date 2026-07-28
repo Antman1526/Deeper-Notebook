@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from deeper_notebook.database import async_migrate
 from deeper_notebook.database.async_migrate import (
     AsyncMigrationManager,
     get_latest_version,
@@ -158,6 +159,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
             "a_beta",
             "a_cafe_1",
             "a_cafe_2",
+            "a_empty",
             "b_source",
             "b_beta",
             "b_only",
@@ -167,6 +169,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         ("a_source", mount_a, "Source A"),
         ("a_cafe_1", mount_a, " Café "),
         ("a_cafe_2", mount_a, "Ｃａｆｅ\u0301"),
+        ("a_empty", mount_a, ""),
         ("b_source", mount_b, "Source B"),
         ("b_beta", mount_b, "Beta SPACE"),
         ("b_only", mount_b, "Only B"),
@@ -190,7 +193,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
 
     link_ids = {
         name: ensure_record_id(f"note_link:migration_{name}")
-        for name in ("a_unique", "a_duplicate", "a_cross", "b_unique")
+        for name in ("a_unique", "a_duplicate", "a_cross", "a_empty", "b_unique")
     }
     seeded_links = (
         (
@@ -209,6 +212,12 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
             "a_cross",
             note_ids["a_source"],
             "Only\t B",
+            note_ids["b_only"],
+        ),
+        (
+            "a_empty",
+            note_ids["a_source"],
+            "",
             note_ids["b_only"],
         ),
         (
@@ -293,6 +302,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     assert notes_after[str(note_ids["a_beta"])]["title_key"] == "beta space"
     assert notes_after[str(note_ids["a_cafe_1"])]["title_key"] == "café"
     assert notes_after[str(note_ids["a_cafe_2"])]["title_key"] == "café"
+    assert notes_after[str(note_ids["a_empty"])]["title_key"] == ""
     assert links_after[str(link_ids["a_unique"])]["target_title_key"] == "beta space"
     assert links_after[str(link_ids["a_unique"])]["target_note_id"] == str(
         note_ids["a_beta"]
@@ -304,6 +314,11 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     assert links_after[str(link_ids["a_cross"])]["target_title_key"] == "only b"
     assert links_after[str(link_ids["a_cross"])].get("target_note_id") is None
     assert links_after[str(link_ids["a_cross"])]["resolved"] is False
+    assert links_after[str(link_ids["a_empty"])]["target_title_key"] == ""
+    assert links_after[str(link_ids["a_empty"])]["target_note_id"] == str(
+        note_ids["a_empty"]
+    )
+    assert links_after[str(link_ids["a_empty"])]["resolved"] is True
     assert links_after[str(link_ids["b_unique"])]["target_note_id"] == str(
         note_ids["b_beta"]
     )
@@ -314,12 +329,14 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         assert after["title"] == before["title"]
         assert after["content"] == before["content"]
         assert after["created"] == before["created"]
+        assert after["updated"] == before["updated"], note_id
         assert after["source_hash"] == before["source_hash"]
     for link_id, before in before_links.items():
         after = links_after[link_id]
         assert after["target_text"] == before["target_text"]
         assert after["source_note_id"] == before["source_note_id"]
         assert after["created"] == before["created"]
+        assert after["updated"] == before["updated"], link_id
         assert after["source_start"] == before["source_start"]
         assert after["source_end"] == before["source_end"]
 
@@ -333,6 +350,248 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     assert await repo_query("SELECT * FROM note_link ORDER BY id;") == list(
         links_after.values()
     )
+
+
+class _MigrationBatchFailureConnection:
+    def __init__(self, connection, *, mutation_marker: str) -> None:
+        self._connection = connection
+        self._mutation_marker = mutation_marker
+
+    async def query(self, statement, variables=None):
+        if self._mutation_marker in statement:
+            proof = (
+                "RETURN { canonical_updated_fields_restored: true };"
+                if "canonical_updated_fields_restored" in statement
+                else "RETURN { updated_preserved: true };"
+            )
+            statement = statement.replace(
+                proof,
+                f"THROW 'migration-33-injected-failure'; {proof}",
+                1,
+            )
+        return await self._connection.query(statement, variables)
+
+
+async def _updated_field_definition(table: str) -> str:
+    info = await repo_query(f"INFO FOR TABLE {table};")
+    info = info[0] if isinstance(info, list) else info
+    return str((info.get("fields") or {})["updated"])
+
+
+async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definition(
+    clean_namespace,
+    monkeypatch,
+):
+    await repo_query(
+        "DELETE type::thing('_sbl_migrations', $version);",
+        {"version": 33},
+    )
+    assert await get_latest_version() == 32
+    mount_id = ensure_record_id("vault_mount:migration_rollback_note")
+    note_id = ensure_record_id("note:migration_rollback_note")
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": mount_id,
+            "data": {
+                "name": "Migration rollback note",
+                "root_path": "/synthetic/migration-rollback-note",
+                "format_mode": "obsidian",
+                "status": "ready-read-only",
+                "watch_enabled": False,
+                "write_policy": "read-only",
+                "protected_globs": [],
+                "parser_version": "integration",
+            },
+        },
+    )
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": note_id,
+            "data": {
+                "title": "Rollback Note",
+                "content": "before",
+                "vault_id": mount_id,
+                "source_format": "obsidian",
+                "canonical_external": True,
+                "source_hash": "rollback-note".ljust(64, "0"),
+                "external_state": "current",
+            },
+        },
+    )
+    before = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
+    schema_before = await _updated_field_definition("note")
+    original_connection_factory = async_migrate.db_connection
+
+    @asynccontextmanager
+    async def failing_connection_factory():
+        async with original_connection_factory() as connection:
+            yield _MigrationBatchFailureConnection(
+                connection,
+                mutation_marker="SET title_key = $item.title_key",
+            )
+
+    manager = AsyncMigrationManager()
+    with monkeypatch.context() as patch:
+        patch.setattr(async_migrate, "db_connection", failing_connection_factory)
+        with pytest.raises(Exception, match=r"(?i)(migration[_-]33|query[ _]failed)"):
+            await manager.run_migration_up()
+
+    assert await get_latest_version() == 32
+    assert (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0] == before
+    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
+
+    await manager.run_migration_up()
+    assert await get_latest_version() == 33
+    migrated = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
+    assert migrated["title_key"] == "rollback note"
+    assert migrated["updated"] == before["updated"]
+    assert await _updated_field_definition("note") == schema_before
+
+    await asyncio.sleep(0.01)
+    await repo_query("UPDATE $id SET content = 'after';", {"id": note_id})
+    later = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
+    assert later["updated"] > before["updated"]
+
+
+async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definition(
+    clean_namespace,
+    monkeypatch,
+):
+    await repo_query(
+        "DELETE type::thing('_sbl_migrations', $version);",
+        {"version": 33},
+    )
+    assert await get_latest_version() == 32
+    mount_id = ensure_record_id("vault_mount:migration_rollback_link")
+    source_id = ensure_record_id("note:migration_rollback_link_source")
+    target_id = ensure_record_id("note:migration_rollback_link_target")
+    link_id = ensure_record_id("note_link:migration_rollback_link")
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": mount_id,
+            "data": {
+                "name": "Migration rollback link",
+                "root_path": "/synthetic/migration-rollback-link",
+                "format_mode": "obsidian",
+                "status": "ready-read-only",
+                "watch_enabled": False,
+                "write_policy": "read-only",
+                "protected_globs": [],
+                "parser_version": "integration",
+            },
+        },
+    )
+    for note_id, title in ((source_id, "Source"), (target_id, "Target")):
+        await repo_query(
+            "CREATE $id CONTENT $data;",
+            {
+                "id": note_id,
+                "data": {
+                    "title": title,
+                    "title_key": title.casefold(),
+                    "content": title,
+                    "vault_id": mount_id,
+                    "source_format": "obsidian",
+                    "canonical_external": True,
+                    "source_hash": str(note_id).ljust(64, "0")[:64],
+                    "external_state": "current",
+                },
+            },
+        )
+    await repo_query("REMOVE FIELD target_title_key ON TABLE note_link;")
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {
+            "id": link_id,
+            "data": {
+                "source_note_id": source_id,
+                "target_text": "Target",
+                "link_kind": "wikilink",
+                "resolved": False,
+                "source_start": 0,
+                "source_end": 6,
+            },
+        },
+    )
+    before = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
+    schema_before = await _updated_field_definition("note_link")
+    original_connection_factory = async_migrate.db_connection
+
+    @asynccontextmanager
+    async def failing_connection_factory():
+        async with original_connection_factory() as connection:
+            yield _MigrationBatchFailureConnection(
+                connection,
+                mutation_marker="SET target_title_key = $item.target_title_key",
+            )
+
+    manager = AsyncMigrationManager()
+    with monkeypatch.context() as patch:
+        patch.setattr(async_migrate, "db_connection", failing_connection_factory)
+        with pytest.raises(Exception, match=r"(?i)(migration[_-]33|query[ _]failed)"):
+            await manager.run_migration_up()
+
+    assert await get_latest_version() == 32
+    assert (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0] == before
+    assert "VALUE $before OR time::now()" in await _updated_field_definition(
+        "note_link"
+    )
+
+    await manager.run_migration_up()
+    assert await get_latest_version() == 33
+    migrated = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
+    assert migrated["target_title_key"] == "target"
+    assert migrated["target_note_id"] == str(target_id)
+    assert migrated["resolved"] is True
+    assert migrated["updated"] == before["updated"]
+    assert await _updated_field_definition("note_link") == schema_before
+
+    await asyncio.sleep(0.01)
+    await repo_query("UPDATE $id SET alias = 'later';", {"id": link_id})
+    later = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
+    assert later["updated"] > before["updated"]
+
+
+async def test_migration_33_final_restore_failure_rolls_back_both_field_definitions(
+    clean_namespace,
+    monkeypatch,
+):
+    await repo_query(
+        "DELETE type::thing('_sbl_migrations', $version);",
+        {"version": 33},
+    )
+    assert await get_latest_version() == 32
+    note_schema_before = await _updated_field_definition("note")
+    link_schema_before = await _updated_field_definition("note_link")
+    original_connection_factory = async_migrate.db_connection
+
+    @asynccontextmanager
+    async def failing_connection_factory():
+        async with original_connection_factory() as connection:
+            yield _MigrationBatchFailureConnection(
+                connection,
+                mutation_marker="canonical_updated_fields_restored",
+            )
+
+    manager = AsyncMigrationManager()
+    with monkeypatch.context() as patch:
+        patch.setattr(async_migrate, "db_connection", failing_connection_factory)
+        with pytest.raises(Exception, match=r"(?i)(migration[_-]33|query[ _]failed)"):
+            await manager.run_migration_up()
+
+    assert await get_latest_version() == 32
+    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
+    assert "VALUE $before OR time::now()" in await _updated_field_definition(
+        "note_link"
+    )
+
+    await manager.run_migration_up()
+    assert await get_latest_version() == 33
+    assert await _updated_field_definition("note") == note_schema_before
+    assert await _updated_field_definition("note_link") == link_schema_before
 
 
 def _mount() -> VaultMount:
