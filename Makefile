@@ -371,8 +371,8 @@ build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build
 	@echo "Tail logs: tail -F ~/.deeper-notebook/logs/*.log"
 
 # Stage 0: precondition — fast unit suite. Catches regressions before we
-# spend 15+ min on a build that's going to be DOA. Uses the test venv (3.14)
-# which is separate from the build venv (3.12). P2-MED-12 audit fix.
+# spend 15+ min on a build that's going to be DOA. Runs desktop tests in the
+# prepared Python 3.12 desktop build environment. P2-MED-12 audit fix.
 build-mac-test: build-mac-venv
 	@echo "🧪 Running unit tests (precondition for build-mac)…"
 	# v0.8.66 (audit I-M1) — DON'T pipe to `tail`: a piped recipe's exit status
