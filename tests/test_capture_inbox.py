@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from open_notebook.capture.contracts import CaptureInboxItem
-from open_notebook.capture.watcher import CaptureInboxWatcher
+from deeper_notebook.capture.contracts import CaptureInboxItem
+from deeper_notebook.capture.watcher import CaptureInboxWatcher
 
 
 @dataclass

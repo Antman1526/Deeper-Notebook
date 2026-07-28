@@ -1,6 +1,6 @@
-# Open Notebook Windows Installation Guide (Native, No Docker)
+# Deeper Notebook Windows Installation Guide (Native, No Docker)
 
-This guide documents how to install and run [Open Notebook](https://github.com/lfnovo/open-notebook) on Windows **natively without Docker or WSL**.
+This guide documents how to install and run [Deeper Notebook](https://github.com/Antman1526/Deeper-Notebook) on Windows **natively without Docker or WSL**.
 
 ## Who Is This For?
 
@@ -31,8 +31,8 @@ This guide documents how to install and run [Open Notebook](https://github.com/l
 
    ```bash
    cd %USERPROFILE%\Projects  # or your preferred location
-   git clone https://github.com/lfnovo/open-notebook.git
-   cd open-notebook
+   git clone https://github.com/Antman1526/Deeper-Notebook.git
+   cd Deeper-Notebook
    uv sync
    cd frontend && npm install && cd ..
    ```
@@ -51,10 +51,10 @@ This guide documents how to install and run [Open Notebook](https://github.com/l
 
 3. **Start the four services**, each in its own terminal, from the `open-notebook` folder.
 
-   > Open Notebook does not ship a launcher script — start the services manually as below (or wrap them in your own `.bat`, see [Optional: one-click launcher](#optional-one-click-launcher)).
+   > Deeper Notebook does not ship a launcher script — start the services manually as below (or wrap them in your own `.bat`, see [Optional: one-click launcher](#optional-one-click-launcher)).
 
    ```batch
-   REM Optional: point Open Notebook at a separate data folder (see Issue 4 below).
+   REM Optional: point Deeper Notebook at a separate data folder (see Issue 4 below).
    REM Set this in each terminal before running, or skip to use ./data.
    set DATA_FOLDER=%USERPROFILE%\Projects\open-notebook-data
 
@@ -94,7 +94,7 @@ YourProjectsFolder\
 
 ## Optional: one-click launcher
 
-Open Notebook does not ship a launcher, but you can save the following as
+Deeper Notebook does not ship a launcher, but you can save the following as
 `start-open-notebook.bat` (anywhere you like) to start all four services with a
 double-click. Adjust `ROOT` and `DATA_ROOT` to match your setup.
 
@@ -281,5 +281,5 @@ Found another Windows-specific issue? Please share your solution!
 
 ---
 
-*Tested on Windows 11 ARM64 with Open Notebook v1.6.0*
+*Tested on Windows 11 ARM64 with Deeper Notebook v1.6.0*
 *Created: January 2026*

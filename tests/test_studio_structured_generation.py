@@ -3,8 +3,8 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from open_notebook.studio.schemas import FlashcardsDocument
-from open_notebook.studio.structured_generation import (
+from deeper_notebook.studio.schemas import FlashcardsDocument
+from deeper_notebook.studio.structured_generation import (
     StructuredArtifactGenerationError,
     generate_structured_document,
 )

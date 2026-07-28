@@ -1,4 +1,4 @@
-"""v0.7.185 — Centralised home-directory resolution for desktop launcher.
+r"""v0.7.185 — Centralised home-directory resolution for desktop launcher.
 
 The audit (round-9) caught 9 sites independently rolling their own
 home-dir lookup via `os.environ.get("HOME", ...)` with inconsistent

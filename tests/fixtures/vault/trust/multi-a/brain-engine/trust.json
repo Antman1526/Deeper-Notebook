@@ -1,0 +1,29 @@
+{
+  "vaultRoot": "/old/root",
+  "records": [
+    {
+      "manifestId": "shared",
+      "sourcePath": "/old/root/sources/alpha.md",
+      "status": "approved",
+      "reviewer": "owner",
+      "reviewedAt": "2026-07-27T00:00:00+00:00",
+      "sourceType": "markdown",
+      "evidenceClass": "source",
+      "contentHash": "017b70af1737a855266fc9eb9b3f88917dc972f20d2a1c7d6baa03b85260e8b8",
+      "derivedFrom": []
+    },
+    {
+      "manifestId": "second",
+      "sourcePath": "/old/root/sources/beta.md",
+      "status": "approved",
+      "reviewer": "owner",
+      "reviewedAt": "2026-07-27T00:00:00+00:00",
+      "sourceType": "markdown",
+      "evidenceClass": "source",
+      "contentHash": "1a26417491f915994a558d790278bf0a7dde56e16dbb87effde011215c2fe713",
+      "derivedFrom": [
+        "shared"
+      ]
+    }
+  ]
+}

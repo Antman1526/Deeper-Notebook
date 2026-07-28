@@ -56,7 +56,7 @@ Then configure your AI provider:
 
 **PikaPods:**
 1. Click "New App"
-2. Search "Open Notebook"
+2. Search "Deeper Notebook"
 3. Set environment variables (at minimum: `OPEN_NOTEBOOK_ENCRYPTION_KEY`)
 4. Click "Deploy"
 5. Open the app → Go to **Settings → API Keys** to configure your AI provider
@@ -99,9 +99,9 @@ heroku config:set OPEN_NOTEBOOK_ENCRYPTION_KEY=your-secret-key
 
 **EasyPanel:**
 
-Open Notebook ships an EasyPanel template at [`examples/easypanel/`](https://github.com/lfnovo/open-notebook/tree/main/examples/easypanel). Unlike the single-image options above, the template provisions **two services** — the Open Notebook app and a dedicated SurrealDB instance — and generates the database password, encryption key, and (optionally) the app password for you.
+Deeper Notebook ships an EasyPanel template at [`examples/easypanel/`](https://github.com/lfnovo/open-notebook/tree/main/examples/easypanel). Unlike the single-image options above, the template provisions **two services** — the Deeper Notebook app and a dedicated SurrealDB instance — and generates the database password, encryption key, and (optionally) the app password for you.
 
-- **One-click (recommended):** once the template is published to the official [EasyPanel template gallery](https://github.com/easypanel-io/templates), create a new service from "Open Notebook", set an app password (or leave it blank to auto-generate one), and deploy.
+- **One-click (recommended):** once the template is published to the official [EasyPanel template gallery](https://github.com/easypanel-io/templates), create a new service from "Deeper Notebook", set an app password (or leave it blank to auto-generate one), and deploy.
 - **Manual:** copy `examples/easypanel/` into `templates/open-notebook` in a checkout of [`easypanel-io/templates`](https://github.com/easypanel-io/templates), run the templates playground (`npm run dev`), and create the template from the generated JSON in your EasyPanel instance.
 
 After deployment, open the EasyPanel domain and configure your AI provider in **Settings → API Keys**. See [`examples/easypanel/README.md`](https://github.com/lfnovo/open-notebook/blob/main/examples/easypanel/README.md) for details.

@@ -1,4 +1,4 @@
-"""Top-level application orchestration for Open Notebook Plus desktop launcher.
+"""Top-level application orchestration for the Deeper Notebook desktop launcher.
 
 Exposes a single public entry point:
 
@@ -10,30 +10,43 @@ dataclass that carries state forward without 50 nested local variables.
 
 Phase order
 -----------
-1. _phase_load_config      — locate & load config.toml; set up log dir + progress bus
-2. _phase_wizard_if_first_run — run the first-run wizard on first launch
-3. _phase_bootstrap_runtime   — provision the venv (bootstrap.ensure_venv)
-4. _phase_download_models     — auto-download embedding + voice models
-5. _phase_select_provider     — start Ollama or llama.cpp server; populate extra_env
-6. _phase_start_supervisor    — build & start the Supervisor process tree
-7. _phase_auto_register       — register discovered models with the upstream API
-8. _phase_start_model_manager — start the aiohttp model-manager window server
-9. _phase_install_tray        — set up the system tray icon + menu
-10. _phase_open_window        — open the PyWebView main window (blocks until closed)
+1. _phase_detect_data_root_recovery — stop on divergent canonical/legacy roots
+2. _phase_load_config      — locate & load config.toml; set up log dir + progress bus
+3. _phase_wizard_if_first_run — run the first-run wizard on first launch
+4. _phase_bootstrap_runtime   — provision the venv (bootstrap.ensure_venv)
+5. _phase_download_models     — auto-download embedding + voice models
+6. _phase_select_provider     — start Ollama or llama.cpp server; populate extra_env
+7. _phase_start_supervisor    — build & start the Supervisor process tree
+8. _phase_auto_register       — register discovered models with the upstream API
+9. _phase_start_model_manager — start the aiohttp model-manager window server
+10. _phase_install_tray       — set up the system tray icon + menu
+11. _phase_open_window        — open the PyWebView main window (blocks until closed)
 """
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 import platform
 import sys
+import tempfile
+import threading
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from deeper_notebook.environment import resolve_env
+from desktop.data_root import (
+    active_data_root,
+    resolve_data_root,
+    write_conflict_recovery_evidence,
+)
+
 if TYPE_CHECKING:
+    from desktop.app_migration import AppRecoveryController
     from desktop.config import Config
+    from desktop.data_root import DataRootDecision
     from desktop.launcher import Supervisor
     from desktop.progress import ProgressBus
     from desktop.providers import ModelProvider
@@ -50,7 +63,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
     external drive — the underlying `open()` can block UNINTERRUPTIBLY and hang
     the ENTIRE launch (the exact boot wedge seen when models lived on the iCloud
     Desktop: `sample` showed the main thread stuck in scandir → open$NOCANCEL).
-    Run the scan in a daemon thread and give up after ONP_MODEL_SCAN_TIMEOUT
+    Run the scan in a daemon thread and give up after DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT
     seconds: the app boots (local chat degraded, with a clear warning) instead of
     hanging forever. A wedged scan thread leaks, but it's a daemon so it never
     blocks process exit."""
@@ -58,7 +71,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
 
     from desktop.auto_register.assigner import pick_chat_llm_file
     try:
-        timeout = float(os.environ.get("ONP_MODEL_SCAN_TIMEOUT", "20") or 20)
+        timeout = float(resolve_env("DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT", "20") or 20)
     except ValueError:
         timeout = 20.0
     if timeout <= 0:
@@ -78,7 +91,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
         log.error(
             "chat-GGUF scan of %s timed out after %ss (stalled filesystem?) — "
             "starting WITHOUT a local chat model. Move models off iCloud/Desktop, "
-            "or raise ONP_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
+            "or raise DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
         )
         return None
     return result[0]
@@ -105,7 +118,7 @@ def repo_root() -> Path:
 
 
 def upstream_dir() -> Path:
-    """Location of bundled upstream source (api/, open_notebook/, commands/)."""
+    """Bundled source root with canonical and compatibility packages."""
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "upstream"  # type: ignore[attr-defined]
     return Path(__file__).resolve().parents[1]
@@ -165,10 +178,156 @@ class AppContext:
     openchronicle_available: bool = False
     commands_dst: "Path | None" = None
     memory_dashboard_port: int = 0
+    app_recovery: "AppRecoveryController | None" = None
+    data_root_decision: "DataRootDecision | None" = None
+    data_root_recovery_root: Path | None = None
+    data_root_recovery_payload: dict[str, object] | None = None
+    _cleanup_lock: threading.Lock = dataclasses.field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
+    _cleanup_complete: threading.Event = dataclasses.field(
+        default_factory=threading.Event, repr=False, compare=False
+    )
+    _cleanup_started: bool = dataclasses.field(
+        default=False, repr=False, compare=False
+    )
+    _cleanup_owner_thread_id: int | None = dataclasses.field(
+        default=None, repr=False, compare=False
+    )
 
 
 def _new_context() -> AppContext:
     return AppContext()
+
+
+def _phase_detect_data_root_recovery(
+    ctx: AppContext,
+    *,
+    home: Path | None = None,
+) -> None:
+    """Resolve guarded migration or prepare read-only divergent-root recovery."""
+    decision = resolve_data_root(home=home)
+    ctx.data_root_decision = decision
+    if (
+        decision.state != "migration-conflict"
+        or decision.reason_code != "non-equivalent-roots"
+    ):
+        return
+    recovery_root, payload = write_conflict_recovery_evidence(
+        decision,
+        home=home,
+    )
+    ctx.data_root_recovery_root = recovery_root
+    ctx.data_root_recovery_payload = payload
+
+
+def _phase_detect_app_recovery(
+    ctx: AppContext,
+    *,
+    applications_dir: Path = Path("/Applications"),
+    data_root: Path | None = None,
+    recycler=None,
+) -> None:
+    """Read-only startup detection for the renamed macOS application bundle."""
+    if sys.platform != "darwin":
+        return
+    from desktop.app_migration import AppRecoveryController
+
+    if data_root is None and ctx.data_root_recovery_root is not None:
+        data_root = ctx.data_root_recovery_root
+    ctx.app_recovery = AppRecoveryController.detect(
+        applications_dir=applications_dir,
+        data_root=data_root,
+        recycler=recycler,
+    )
+
+
+def _phase_open_data_root_recovery(ctx: AppContext) -> None:
+    """Block in the packaged recovery webview without starting app services."""
+    from desktop.window import open_data_root_recovery_window
+
+    assert ctx.data_root_recovery_payload is not None
+    assert ctx.data_root_recovery_root is not None
+    open_data_root_recovery_window(
+        conflict_payload=ctx.data_root_recovery_payload,
+        app_recovery=ctx.app_recovery,
+        storage_root=ctx.data_root_recovery_root,
+    )
+
+
+_DESKTOP_READINESS_NAME = "desktop-readiness.json"
+
+
+def _clear_desktop_readiness_marker(log_dir: Path) -> None:
+    """Remove only this launcher's stale readiness marker."""
+    (log_dir / _DESKTOP_READINESS_NAME).unlink(missing_ok=True)
+
+
+def _stop_app_runtime_once(ctx: AppContext) -> None:
+    """Tear down owned processes once and wait for an in-flight owner."""
+    caller_thread_id = threading.get_ident()
+    owns_cleanup = False
+    with ctx._cleanup_lock:
+        if not ctx._cleanup_started:
+            ctx._cleanup_started = True
+            ctx._cleanup_owner_thread_id = caller_thread_id
+            owns_cleanup = True
+        elif ctx._cleanup_owner_thread_id == caller_thread_id:
+            return
+
+    if not owns_cleanup:
+        ctx._cleanup_complete.wait()
+        return
+
+    try:
+        if ctx.log_dir is not None:
+            _clear_desktop_readiness_marker(ctx.log_dir)
+        if ctx.sv is not None:
+            ctx.sv.stop_all()
+    finally:
+        try:
+            _stop_runtime(ctx)
+        finally:
+            ctx._cleanup_complete.set()
+
+
+def _write_desktop_readiness_marker(
+    log_dir: Path,
+    *,
+    api_url: str,
+    frontend_url: str,
+) -> Path:
+    """Atomically prove that the packaged webview rendered the real app."""
+    marker = log_dir / _DESKTOP_READINESS_NAME
+    payload = {
+        "schema_version": 1,
+        "status": "ready",
+        "pid": os.getpid(),
+        "api_url": api_url,
+        "frontend_url": frontend_url,
+        "window_marker": "__next_f",
+    }
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=log_dir,
+            prefix=f".{marker.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as marker_file:
+            temporary_path = Path(marker_file.name)
+            json.dump(payload, marker_file, sort_keys=True)
+            marker_file.write("\n")
+            marker_file.flush()
+            os.fsync(marker_file.fileno())
+        os.replace(temporary_path, marker)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    return marker
 
 
 # ---------------------------------------------------------------------------
@@ -185,8 +344,9 @@ def _phase_load_config(ctx: AppContext) -> None:
     ctx._first_run = not cfg_path.exists()
     ctx._cfg_path = cfg_path
 
-    log_dir = Path.home() / ".open-notebook-plus" / "logs"
+    log_dir = active_data_root() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+    _clear_desktop_readiness_marker(log_dir)
     ctx.log_dir = log_dir
 
     # v0.6.25 — wire `desktop.launcher`, `desktop.auto_register.*`,
@@ -194,7 +354,7 @@ def _phase_load_config(ctx: AppContext) -> None:
     # only written by a single .write_text() on supervisor crash (which
     # also OVERWROTE the file each time, losing history). Several
     # comments throughout the codebase promise that users can
-    # `cat ~/.open-notebook-plus/logs/launcher.log` to debug startup —
+    # `cat ~/.deeper-notebook/logs/launcher.log` to debug startup —
     # this makes that actually true. Append-mode + rotate-on-size keeps
     # the file bounded.
     _setup_launcher_log_handler(log_dir / "launcher.log")
@@ -269,7 +429,7 @@ def _phase_bootstrap_runtime(ctx: AppContext) -> None:
 
     standalone_python = bootstrap.extract_python_runtime(
         tarball=_bundled_python_tarball(arch),
-        dest_parent=Path.home() / ".open-notebook-plus",
+        dest_parent=active_data_root(),
     )
 
     ctx.venv_py = bootstrap.ensure_venv(
@@ -341,8 +501,8 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # subprocess that no caller routed traffic to, plus 10-30s
         # of cold-mmap latency on every launch.
         #
-        # Knock-on: v0.8.2 Item A (OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH /
-        # OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT) was wired into
+        # Knock-on: v0.8.2 Item A (DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH /
+        # DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT) was wired into
         # LlamaCppProvider — i.e. the dead path. The Supervisor spawn
         # now picks up those env vars directly (see launcher.py
         # _spawn_llamacpp_chat v0.8.3 block) so speculative decoding
@@ -366,7 +526,7 @@ def _phase_select_provider(ctx: AppContext) -> None:
             model = cfg.default_model or provider.pick_default_model()
             if model:
                 extra_env = provider.start(model)
-                extra_env["OPEN_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
                 ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
@@ -398,7 +558,6 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
     Port + URL come from OPENCHRONICLE_MCP_URL env var if set, else default
     (P1-MED-10). The bridge shim reads the same env var.
     """
-    import os
     import urllib.parse
 
     ctx.openchronicle_available = False
@@ -454,7 +613,7 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "open-notebook-plus", "version": "0.5"},
+                    "clientInfo": {"name": "deeper-notebook", "version": "0.5"},
                 },
             },
             headers={
@@ -541,7 +700,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     # v0.5.1 audit fix: capability-aware chat-LLM selection.
     # Replaces the v0.4 hardcoded Hermes-3*.gguf glob (which loaded the
     # 5 GB model regardless of machine size). Now picks the highest-scoring
-    # `chat`-kind GGUF that fits within ONP_CHAT_RAM_GB_CEILING (default 4 GB
+    # `chat`-kind GGUF that fits within DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING (default 4 GB
     # — small + fast for the chat experience). Hermes-3 still wins the
     # `default_tools_model` assignment if downloaded, since that slot has a
     # different recipe.
@@ -673,7 +832,6 @@ def _handle_already_running(exc, ctx) -> bool:
     minimal Linux container), we log + return False so the caller
     falls through to the generic error path.
     """
-    import os
     import signal
     import time
 
@@ -697,7 +855,7 @@ def _handle_already_running(exc, ctx) -> bool:
         root.withdraw()
         # `askyesno` returns True for Yes, False for No.
         user_chose_quit = _mb.askyesno(
-            title="Open Notebook Plus is already running",
+            title="Deeper Notebook is already running",
             message=(
                 f"Another instance is already running (PID {exc.pid}).\n\n"
                 "Do you want to quit the existing app and relaunch?"
@@ -716,12 +874,12 @@ def _handle_already_running(exc, ctx) -> bool:
             import subprocess
             script = (
                 'display dialog '
-                f'"Another Open Notebook Plus instance is already running '
+                f'"Another Deeper Notebook instance is already running '
                 f'(PID {exc.pid}).\\n\\nDo you want to quit the existing '
                 f'app and relaunch?" '
                 'buttons {"Cancel", "Quit & Relaunch"} '
                 'default button "Quit & Relaunch" '
-                'with title "Open Notebook Plus is already running" '
+                'with title "Deeper Notebook is already running" '
                 'with icon caution'
             )
             result = subprocess.run(
@@ -846,7 +1004,13 @@ def _phase_auto_register(ctx: AppContext) -> None:
         mlx_model_ref = None
         if cfg.provider == "mlx":
             mlx_base_url = ctx.extra_env.get("OPENAI_COMPATIBLE_BASE_URL")
-            mlx_model_ref = ctx.extra_env.get("OPEN_NOTEBOOK_ACTIVE_MLX_MODEL") or cfg.default_model
+            mlx_model_ref = (
+                resolve_env(
+                    "DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL",
+                    getter=ctx.extra_env.get,
+                )
+                or cfg.default_model
+            )
 
         auto_register(
             api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
@@ -862,7 +1026,7 @@ def _phase_auto_register(ctx: AppContext) -> None:
         # frontend's /api/local-models/health endpoint re-runs these on
         # demand from the badge component.
         try:
-            from open_notebook.health.local_models import (
+            from deeper_notebook.health.local_models import (
                 probe_all_local_models,
             )
             creds_for_probe = []
@@ -960,7 +1124,6 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     assert ctx.sv is not None
 
-    sv = ctx.sv
     mm_port = ctx.mm_port
     md_port = ctx.memory_dashboard_port
 
@@ -994,7 +1157,7 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     def _on_quit() -> None:
         try:
-            sv.stop_all()
+            _stop_app_runtime_once(ctx)
         finally:
             try:
                 _webview.windows[0].destroy()
@@ -1045,17 +1208,25 @@ def _phase_open_window(ctx: AppContext) -> None:
     )
 
     try:
-        def _close_runtime() -> None:
-            ctx.sv.stop_all()
-            _stop_runtime(ctx)
+        def _window_ready() -> None:
+            assert ctx.log_dir is not None
+            _write_desktop_readiness_marker(
+                ctx.log_dir,
+                api_url=ctx.sv.session_env["INTERNAL_API_URL"],
+                frontend_url=ctx.sv.frontend_url,
+            )
+            ctx.progress_bus.publish(
+                "window.ready", "done", ctx.sv.frontend_url
+            )
 
-        open_window(ctx.sv.frontend_url, on_close=_close_runtime,
+        open_window(ctx.sv.frontend_url, on_close=lambda: _stop_app_runtime_once(ctx),
                     theme=ctx.cfg.theme,
                     memory_url=memory_url, remind_openchronicle=remind,
-                    stt_url=stt_url, tts_url=tts_url)
+                    stt_url=stt_url, tts_url=tts_url,
+                    app_recovery=ctx.app_recovery,
+                    on_ready=_window_ready)
     finally:
-        ctx.sv.stop_all()
-        _stop_runtime(ctx)
+        _stop_app_runtime_once(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1078,6 +1249,11 @@ def run() -> int:
     covers everything between supervisor.start_all() and that finally.
     """
     ctx = _new_context()
+    _phase_detect_data_root_recovery(ctx)
+    _phase_detect_app_recovery(ctx)
+    if ctx.data_root_recovery_payload is not None:
+        _phase_open_data_root_recovery(ctx)
+        return 0
     _phase_load_config(ctx)
     _phase_wizard_if_first_run(ctx)
     _phase_bootstrap_runtime(ctx)
@@ -1097,11 +1273,9 @@ def run() -> int:
         _phase_install_tray(ctx)
         _phase_open_window(ctx)
     except BaseException:
-        if ctx.sv is not None:
-            try:
-                ctx.sv.stop_all()
-            except Exception:
-                pass  # don't mask the original error
-        _stop_runtime(ctx)
+        try:
+            _stop_app_runtime_once(ctx)
+        except Exception:
+            pass  # don't mask the original error
         raise
     return 0

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from open_notebook.ai import privacy_classifier as pc
-from open_notebook.ai.privacy_gate import apply_privacy_gate
-from open_notebook.ai.router import ModelChoice
+from deeper_notebook.ai import privacy_classifier as pc
+from deeper_notebook.ai.privacy_gate import apply_privacy_gate
+from deeper_notebook.ai.router import ModelChoice
 
 
 # ---------------------------------------------------------------------------
@@ -90,19 +90,19 @@ def _patch_httpx(monkeypatch, payload=None, raise_exc=None):
 
 @pytest.mark.asyncio
 async def test_classify_unconfigured_returns_empty(monkeypatch):
-    monkeypatch.delenv("ONP_PRIVACY_CLASSIFIER_URL", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", raising=False)
     assert await pc.classify_via_model_async("my name is Jane Doe") == []
 
 
 @pytest.mark.asyncio
 async def test_classify_empty_text_returns_empty(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
     assert await pc.classify_via_model_async("   ") == []
 
 
 @pytest.mark.asyncio
 async def test_classify_parses_model_categories(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
     _patch_httpx(monkeypatch, payload={
         "choices": [{"message": {"content": '["person_name", "home_address"]'}}]
     })
@@ -112,7 +112,7 @@ async def test_classify_parses_model_categories(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_classify_best_effort_on_error(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
     _patch_httpx(monkeypatch, raise_exc=RuntimeError("connection refused"))
     # Must swallow and return [] — never block chat on a flaky classifier.
     assert await pc.classify_via_model_async("anything") == []
@@ -120,42 +120,42 @@ async def test_classify_best_effort_on_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_classify_no_choices_returns_empty(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
     _patch_httpx(monkeypatch, payload={"choices": []})
     assert await pc.classify_via_model_async("text") == []
 
 
 def test_classifier_url_explicit_passthrough(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "http://host:1234/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://host:1234/v1")
     assert pc._classifier_url() == "http://host:1234/v1"
 
 
 def test_classifier_url_unset_is_none(monkeypatch):
-    monkeypatch.delenv("ONP_PRIVACY_CLASSIFIER_URL", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", raising=False)
     assert pc._classifier_url() is None
 
 
 @pytest.mark.parametrize("sentinel", ["auto", "sidecar", "chat-sidecar", "local", "AUTO"])
 def test_classifier_url_auto_resolves_to_sidecar(monkeypatch, sentinel):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", sentinel)
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", sentinel)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://127.0.0.1:8080/v1")
     assert pc._classifier_url() == "http://127.0.0.1:8080/v1"
 
 
 def test_classifier_url_auto_without_sidecar_is_none(monkeypatch):
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_URL", "auto")
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "auto")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
     assert pc._classifier_url() is None
 
 
 def test_classifier_timeout_parsing(monkeypatch):
-    monkeypatch.delenv("ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_TIMEOUT_SEC", raising=False)
     assert pc._classifier_timeout() == 5.0
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "2.5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "2.5")
     assert pc._classifier_timeout() == 2.5
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "0")
     assert pc._classifier_timeout() == 5.0
-    monkeypatch.setenv("ONP_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "x")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_TIMEOUT_SEC", "x")
     assert pc._classifier_timeout() == 5.0
 
 
@@ -239,7 +239,7 @@ def test_findings_out_empty_on_passthrough():
 def test_findings_out_populated_before_block(monkeypatch):
     """Even on the no-local BLOCK path, findings_out is populated (before the
     ConfigurationError) so the caller could log the categories."""
-    from open_notebook.exceptions import ConfigurationError
+    from deeper_notebook.exceptions import ConfigurationError
     out_list: list[str] = []
     with pytest.raises(ConfigurationError):
         apply_privacy_gate(

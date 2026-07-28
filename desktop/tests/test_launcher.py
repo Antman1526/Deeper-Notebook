@@ -1,4 +1,6 @@
+import signal
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -120,6 +122,80 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
         p.terminate.assert_called()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups only")
+def test_stop_all_escalates_a_surviving_owned_process_group(
+    cfg, tmp_path, monkeypatch
+):
+    proc = MagicMock()
+    proc.pid = 41001
+    proc.wait.return_value = 0
+    group_alive = True
+    signals: list[int] = []
+
+    def fake_killpg(process_group: int, requested_signal: int) -> None:
+        nonlocal group_alive
+        assert process_group == proc.pid
+        signals.append(requested_signal)
+        if requested_signal == 0 and not group_alive:
+            raise ProcessLookupError
+        if requested_signal == signal.SIGKILL:
+            group_alive = False
+
+    monkeypatch.setattr("desktop.launcher.os.killpg", fake_killpg)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SHUTDOWN_GRACE_SECS", "0.01")
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+    sv._procs = [proc]
+
+    sv.stop_all()
+
+    assert signal.SIGTERM in signals
+    assert signal.SIGKILL in signals
+    assert group_alive is False
+
+
+def test_supervisor_children_cannot_mutate_packaged_python_bytecode(
+    cfg, tmp_path, monkeypatch
+):
+    """Runtime imports must not rewrite signed ``upstream/**/__pycache__``."""
+    spawned_envs: list[dict[str, str]] = []
+
+    def fake_popen(_args, **kwargs):
+        spawned_envs.append(kwargs["env"])
+        return _alive_proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports",
+        lambda n: list(range(40001, 40001 + n)),
+    )
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+    sv.start_all()
+    try:
+        assert spawned_envs
+        assert all(
+            env.get("PYTHONDONTWRITEBYTECODE") == "1"
+            for env in spawned_envs
+        )
+    finally:
+        sv.stop_all()
+
+
 def test_supervisor_uses_venv_python_for_api_and_worker(cfg, tmp_path, monkeypatch):
     """Spawned API and worker commands must use the configured venv_python."""
     spawned_args: list[list[str]] = []
@@ -167,39 +243,39 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
-        # v0.8.4 — CRITICAL: OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
+        # v0.8.4 — CRITICAL: DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
         # in session_env so the API child can probe llama.cpp sidecar
         # health. Without this, v0.8.0 Phase 3 smart routing's
         # "prefer local when healthy" branch was dead in production —
         # `_local_chat_healthy_cached` always saw an empty URL and
         # returned False, so every routed turn went to cloud. Guards
         # against silent regression if a future edit drops the key.
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].startswith(
+        assert sv.session_env["DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL"].startswith(
             "http://127.0.0.1:"
         ), (
-            "OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL missing from session_env; "
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL missing from session_env; "
             "v0.8.4 fix regressed — smart router's local-prefer branch "
             "is dead again"
         )
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"].endswith("/v1")
+        assert sv.session_env["DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL"].endswith("/v1")
         # And the port should match the chat_llm_port the launcher
         # already wires into MEMORY_CHAT_LLM_URL — same source of truth.
         memory_url = sv.session_env["MEMORY_CHAT_LLM_URL"]
-        local_url = sv.session_env["OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL"]
+        local_url = sv.session_env["DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL"]
         assert memory_url == local_url, (
             f"both env vars must point at the SAME chat_llm_port. "
             f"MEMORY_CHAT_LLM_URL={memory_url!r}, "
-            f"OPEN_NOTEBOOK_LOCAL_CHAT_BASE_URL={local_url!r}"
+            f"DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL={local_url!r}"
         )
-        # v0.8.7 — OPEN_NOTEBOOK_LOCAL_N_CTX must be in session_env
+        # v0.8.7 — DEEPER_NOTEBOOK_LOCAL_N_CTX must be in session_env
         # carrying the launcher's resolved n_ctx, so the router's
         # pick_provider() math matches what the chat sidecar actually
         # binds. Pre-v0.8.7 this key wasn't set, so the router
         # defaulted to 32768 even when GGUF autodetect picked higher
         # (e.g. Hermes-3 131k) — operators with capable models
         # under-routed to cloud.
-        assert "OPEN_NOTEBOOK_LOCAL_N_CTX" in sv.session_env, (
-            "OPEN_NOTEBOOK_LOCAL_N_CTX missing from session_env; "
+        assert "DEEPER_NOTEBOOK_LOCAL_N_CTX" in sv.session_env, (
+            "DEEPER_NOTEBOOK_LOCAL_N_CTX missing from session_env; "
             "v0.8.7 fix regressed — router falls back to 32768 default "
             "instead of using launcher's auto-detected ceiling"
         )
@@ -209,9 +285,9 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         # the linkage holds on any machine (32768 on CI / small RAM,
         # higher on a big-RAM Mac).
         expected_ctx = str(sv._default_ctx_max())
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == expected_ctx, (
+        assert sv.session_env["DEEPER_NOTEBOOK_LOCAL_N_CTX"] == expected_ctx, (
             f"unexpected default n_ctx in session_env: "
-            f"{sv.session_env['OPEN_NOTEBOOK_LOCAL_N_CTX']!r} "
+            f"{sv.session_env['DEEPER_NOTEBOOK_LOCAL_N_CTX']!r} "
             f"(expected {expected_ctx!r} with no override and no GGUF)"
         )
     finally:
@@ -221,16 +297,16 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
 def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
     cfg, tmp_path, monkeypatch,
 ):
-    """v0.8.7 — ONP_CHAT_LLM_CTX explicit override must reach the
-    router via OPEN_NOTEBOOK_LOCAL_N_CTX. Pre-v0.8.7 the operator's
-    ONP_CHAT_LLM_CTX=8192 made the SIDECAR bind 8k but the router
+    """v0.8.7 — DEEPER_NOTEBOOK_CHAT_LLM_CTX explicit override must reach the
+    router via DEEPER_NOTEBOOK_LOCAL_N_CTX. Pre-v0.8.7 the operator's
+    DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192 made the SIDECAR bind 8k but the router
     still thought it had 32k headroom (no propagation). v0.8.5
-    patched the router to read ONP_CHAT_LLM_CTX as a fallback;
+    patched the router to read DEEPER_NOTEBOOK_CHAT_LLM_CTX as a fallback;
     v0.8.7 closes the propagation loop by exporting the resolved
     value directly so the explicit-router-knob path
-    (OPEN_NOTEBOOK_LOCAL_N_CTX, set by the launcher) wins."""
-    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "8192")
-    monkeypatch.delenv("OPEN_NOTEBOOK_LOCAL_N_CTX", raising=False)
+    (DEEPER_NOTEBOOK_LOCAL_N_CTX, set by the launcher) wins."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "8192")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", raising=False)
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
     monkeypatch.setattr(
         "desktop.launcher.find_free_ports",
@@ -245,10 +321,10 @@ def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
     )
     sv.start_all()
     try:
-        assert sv.session_env["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "8192", (
-            f"launcher's resolved n_ctx (from ONP_CHAT_LLM_CTX env) "
-            f"must propagate to OPEN_NOTEBOOK_LOCAL_N_CTX in session_env; "
-            f"got {sv.session_env.get('OPEN_NOTEBOOK_LOCAL_N_CTX')!r}"
+        assert sv.session_env["DEEPER_NOTEBOOK_LOCAL_N_CTX"] == "8192", (
+            f"launcher's resolved n_ctx (from DEEPER_NOTEBOOK_CHAT_LLM_CTX env) "
+            f"must propagate to DEEPER_NOTEBOOK_LOCAL_N_CTX in session_env; "
+            f"got {sv.session_env.get('DEEPER_NOTEBOOK_LOCAL_N_CTX')!r}"
         )
         # And sv.chat_llm_n_ctx (the in-memory copy that
         # _spawn_llamacpp_chat reads for --n_ctx argv) must match —
@@ -257,7 +333,7 @@ def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
         assert sv.chat_llm_n_ctx == 8192, (
             f"chat_llm_n_ctx in-memory={sv.chat_llm_n_ctx!r} but "
             f"session_env says "
-            f"{sv.session_env.get('OPEN_NOTEBOOK_LOCAL_N_CTX')!r}; "
+            f"{sv.session_env.get('DEEPER_NOTEBOOK_LOCAL_N_CTX')!r}; "
             f"two sources of truth — v0.8.7 fix regressed"
         )
     finally:
@@ -268,12 +344,12 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
     """v0.7.147 regression test.
 
     The API subprocess inherits cwd=upstream_root which is read-only when
-    the .app is launched from a mounted DMG. open_notebook/config.py used
+    the .app is launched from a mounted DMG. deeper_notebook/config.py used
     to hardcode "./data" → EROFS at module import → uvicorn crash →
     launcher's 180s /readyz wait timed out → silent exit.
 
     The supervisor must inject DATA_FOLDER as an absolute path under
-    ~/.open-notebook-plus/data so the API can always write its sqlite-db
+    ~/.deeper-notebook/data so the API can always write its sqlite-db
     and uploads regardless of cwd writability.
     """
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
@@ -294,7 +370,7 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
             f"DATA_FOLDER must be absolute, got: {data_folder!r}"
         )
         # MUST point under the user's per-app dir so subsequent makedirs succeed.
-        assert ".open-notebook-plus" in data_folder
+        assert ".deeper-notebook" in data_folder
         assert Path(data_folder).name == "data"
         # MUST already exist (we mkdir it before populating session_env).
         assert Path(data_folder).is_dir(), (
@@ -525,7 +601,7 @@ def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_pat
 
 
 # ---------------------------------------------------------------------------
-# v0.7.8 — ONP_CHAT_LLM_CTX env-var handling in _spawn_llamacpp_chat
+# v0.7.8 — DEEPER_NOTEBOOK_CHAT_LLM_CTX env-var handling in _spawn_llamacpp_chat
 #
 # The chat LLM server's --n_ctx was hardcoded to 8192, which (a) capped
 # every chat session below the model's true context window for modern
@@ -579,7 +655,7 @@ def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
 
 
 def test_chat_llm_n_ctx_defaults_to_ram_aware_cap(cfg, tmp_path, monkeypatch):
-    """v0.7.206 / v0.8.67i — No ONP_CHAT_LLM_CTX env var → the server gets
+    """v0.7.206 / v0.8.67i — No DEEPER_NOTEBOOK_CHAT_LLM_CTX env var → the server gets
     --n_ctx equal to the launcher's default ceiling.
 
     v0.7.206 bumped the floor from 16384 to 32768 after a user hit
@@ -595,8 +671,8 @@ def test_chat_llm_n_ctx_defaults_to_ram_aware_cap(cfg, tmp_path, monkeypatch):
     Auto-detection from GGUF metadata is also tried when no env var is set —
     this test uses a fake GGUF path so detection falls back to the cap.
     """
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -613,13 +689,13 @@ def test_chat_llm_n_ctx_defaults_to_ram_aware_cap(cfg, tmp_path, monkeypatch):
 
 
 def test_chat_llm_n_ctx_respects_env_var(cfg, tmp_path, monkeypatch):
-    """ONP_CHAT_LLM_CTX=<n> → server gets --n_ctx <n>.
+    """DEEPER_NOTEBOOK_CHAT_LLM_CTX=<n> → server gets --n_ctx <n>.
 
     Users with capable models (Hermes-3 @ 131k, Qwen2.5 @ 32k) must be
     able to raise the ceiling without code edits; users on constrained
     hardware must be able to lower it for RAM budget reasons.
     """
-    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "32768")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "32768")
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -633,15 +709,15 @@ def test_chat_llm_n_ctx_respects_env_var(cfg, tmp_path, monkeypatch):
 
 
 def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
-    """v0.7.206 — Garbage in env var → falls back to ONP_CHAT_LLM_CTX_MAX
+    """v0.7.206 — Garbage in env var → falls back to DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX
     (default 32768) instead of passing through.
 
     llama-cpp's --n_ctx is an integer arg; forwarding "abc" would crash
     the server at spawn time and leave the memory writer permanently
     broken until the user noticed.
     """
-    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "not-an-int")
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "not-an-int")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 
@@ -660,15 +736,15 @@ def test_chat_llm_n_ctx_falls_back_on_non_int(cfg, tmp_path, monkeypatch):
 
 
 def test_chat_llm_n_ctx_falls_back_when_too_low(cfg, tmp_path, monkeypatch):
-    """v0.7.206 — ONP_CHAT_LLM_CTX < 512 → falls back to
-    ONP_CHAT_LLM_CTX_MAX (default 32768).
+    """v0.7.206 — DEEPER_NOTEBOOK_CHAT_LLM_CTX < 512 → falls back to
+    DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX (default 32768).
 
     Below ~512 tokens the chat server is effectively unusable (system
     prompt alone won't fit), so a fat-fingered "128" or "0" is almost
     certainly a typo.
     """
-    monkeypatch.setenv("ONP_CHAT_LLM_CTX", "128")
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "128")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX", raising=False)
     spawned: list[list[str]] = []
     _stub_launcher_io(monkeypatch, spawned)
 

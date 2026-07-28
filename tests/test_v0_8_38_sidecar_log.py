@@ -5,7 +5,7 @@ Covers:
     input). Plain function, no I/O.
   - `GET /healthz/sidecars/{kind}/log` endpoint:
       - unknown kind → 404
-      - no OPEN_NOTEBOOK_LAUNCHER_LOG_DIR → available=false, log=""
+      - no DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR → available=false, log=""
       - dir set but tail file missing → available=false
       - tail file present → log content + classified hint
       - oversized tail file → capped at 8 KiB
@@ -18,7 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from open_notebook.utils.error_classifier import classify_sidecar_error
+from deeper_notebook.utils.error_classifier import classify_sidecar_error
 from api.routers import local_models as local_models_router
 
 
@@ -96,7 +96,7 @@ def test_unknown_kind_returns_404(app):
 
 
 def test_no_launcher_log_dir_returns_unavailable(app, monkeypatch):
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", raising=False)
     with TestClient(app) as client:
         resp = client.get("/api/healthz/sidecars/chat/log")
     assert resp.status_code == 200
@@ -105,7 +105,7 @@ def test_no_launcher_log_dir_returns_unavailable(app, monkeypatch):
 
 
 def test_tail_file_missing_returns_unavailable(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
     with TestClient(app) as client:
         resp = client.get("/api/healthz/sidecars/chat/log")
     body = resp.json()
@@ -116,7 +116,7 @@ def test_tail_file_missing_returns_unavailable(app, monkeypatch, tmp_path):
 def test_tail_file_present_returns_content_and_hint(app, monkeypatch, tmp_path):
     """Smoke test: write a tail file with a known failure pattern,
     assert the endpoint returns both the raw bytes and the classifier's hint."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
     tail = tmp_path / "supervisor.llamacpp_chat.tail"
     tail.write_text("startup output\nllama_model_load: failed to load model\n")
 
@@ -133,7 +133,7 @@ def test_oversized_tail_capped_at_8kb(app, monkeypatch, tmp_path):
     """Defensive cap: a tail file larger than 8 KiB returns only the
     last 8 KiB. Prevents accidental large-file dumps if a user
     manually edits the file."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
     tail = tmp_path / "supervisor.llamacpp_chat.tail"
     # 20 KiB of "x" + a marker at the end to verify we got the tail
     big = ("x" * 20_000 + "\nfinal-line\n").encode()
@@ -153,7 +153,7 @@ def test_oversized_tail_capped_at_8kb(app, monkeypatch, tmp_path):
 def test_all_known_kinds_accepted(app, monkeypatch, tmp_path):
     """The allowlist matches the launcher's supervisor names exactly.
     A regression here would break the frontend's badge popovers."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
     for kind in ("chat", "embed", "whisper", "piper", "memory"):
         with TestClient(app) as client:
             resp = client.get(f"/api/healthz/sidecars/{kind}/log")
@@ -165,7 +165,7 @@ def test_all_known_kinds_accepted(app, monkeypatch, tmp_path):
 def test_path_traversal_blocked(app, monkeypatch, tmp_path):
     """A `kind` like `../etc/passwd` must hit the 404 path BEFORE we
     join it onto log_dir — defense-in-depth on the path component."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", str(tmp_path))
     # FastAPI itself may reject the `..` at the routing layer, but if a
     # future router refactor accepts a wildcard we want this test to
     # catch the regression.

@@ -1,17 +1,17 @@
-# Operating Open Notebook Plus locally — runbook
+# Operating Deeper Notebook locally — runbook
 
 This is the practical "you're running it on your machine + maybe sharing
 with 2-5 people, something just broke, what do you do" guide. Every
 section is copy-pasteable and assumes a default install at
-`~/.open-notebook-plus/`. For the full env-var inventory see
-[`onp-env-reference.md`](onp-env-reference.md).
+`~/.deeper-notebook/`. For the full env-var inventory see
+[`environment-reference.md`](../docs/5-CONFIGURATION/environment-reference.md).
 
 ---
 
 ## Where things live
 
 ```
-~/.open-notebook-plus/
+~/.deeper-notebook/
 ├── config.toml          # Desktop config (chosen by first-run wizard)
 ├── logs/
 │   ├── api.log          # FastAPI process — most useful one (v0.7.14)
@@ -58,23 +58,23 @@ problem is downstream (usually SurrealDB).
 
 ```bash
 # Live tail (most-recent issues at the bottom)
-tail -F ~/.open-notebook-plus/logs/api.log
+tail -F ~/.deeper-notebook/logs/api.log
 
 # Last 200 lines, looking for warnings/errors only
-grep -E "WARNING|ERROR|CRITICAL" ~/.open-notebook-plus/logs/api.log | tail -200
+grep -E "WARNING|ERROR|CRITICAL" ~/.deeper-notebook/logs/api.log | tail -200
 
 # Search rotated archives for an error from earlier
-zgrep "ContextOverflow" ~/.open-notebook-plus/logs/*.log.gz
+zgrep "ContextOverflow" ~/.deeper-notebook/logs/*.log.gz
 
 # Bump log level temporarily for a noisy debug session:
-ONP_LOG_LEVEL=DEBUG make run    # or set in your shell before launching
+DN_LOG_LEVEL=DEBUG make run    # or set in your shell before launching
 ```
 
 JSON output for tools like `jq` / log aggregators:
 
 ```bash
-ONP_LOG_JSON=1 make run
-# → produces parallel ~/.open-notebook-plus/logs/api.jsonl
+DN_LOG_JSON=1 make run
+# → produces parallel ~/.deeper-notebook/logs/api.jsonl
 ```
 
 ---
@@ -83,24 +83,24 @@ ONP_LOG_JSON=1 make run
 
 | Symptom | First step | Then |
 |---|---|---|
-| Chat hangs forever | `curl /readyz` — is DB up? | Check `api.log` for ContextOverflow; lower `ONP_CHAT_HISTORY_CHAR_CAP` |
+| Chat hangs forever | `curl /readyz` — is DB up? | Check `api.log` for ContextOverflow; lower `DN_CHAT_HISTORY_CHAR_CAP` |
 | "Service unavailable" on /readyz | `lsof -iTCP:8000` — is SurrealDB up? | Restart the desktop launcher; check `surreal_data/` permissions |
-| File upload fails with 413 | Was the file > 500MB? | Raise `ONP_SOURCE_UPLOAD_MAX_BYTES` (in bytes) |
+| File upload fails with 413 | Was the file > 500MB? | Raise `DN_SOURCE_UPLOAD_MAX_BYTES` (in bytes) |
 | Local model context overflow | Which graph? Check log for `truncated` | Raise the relevant `*_CHAR_CAP` env var |
 | Slow first chat turn | DB pool not yet warm | Subsequent turns should be faster — expected (v0.7.18) |
 | Decryption failed errors | Recent key rotation? | See [Encryption key rotation](#encryption-key-rotation) below |
-| Source upload mysteriously slow | Watch `du -sh ~/.open-notebook-plus/uploads/` | Inspect for stuck partial files (filename ends with random suffix); v0.7.1+ auto-cleans on error but pre-v0.7.x partials may linger |
+| Source upload mysteriously slow | Watch `du -sh ~/.deeper-notebook/uploads/` | Inspect for stuck partial files (filename ends with random suffix); v0.7.1+ auto-cleans on error but pre-v0.7.x partials may linger |
 
 ---
 
 ## Encryption key rotation
 
-You set `OPEN_NOTEBOOK_ENCRYPTION_KEY` originally. To rotate without
+You set `DEEPER_NOTEBOOK_ENCRYPTION_KEY` originally. To rotate without
 losing every stored credential (the v0.7.17 path):
 
 ```bash
 # 1. Edit .env to use the plural form, NEW key first:
-OPEN_NOTEBOOK_ENCRYPTION_KEYS=brand-new-secret-2026,old-secret-2025
+DEEPER_NOTEBOOK_ENCRYPTION_KEYS=brand-new-secret-2026,old-secret-2025
 
 # 2. Restart. Existing data still decrypts (via old key); new writes
 #    use the new key.
@@ -109,8 +109,8 @@ OPEN_NOTEBOOK_ENCRYPTION_KEYS=brand-new-secret-2026,old-secret-2025
 #    re-encrypted under the new key. From a Python REPL:
 python -c "
 import asyncio
-from open_notebook.utils.encryption import re_encrypt_value
-from open_notebook.database.repository import repo_query, repo_update
+from deeper_notebook.utils.encryption import re_encrypt_value
+from deeper_notebook.database.repository import repo_query, repo_update
 
 async def sweep():
     creds = await repo_query('SELECT id, api_key FROM credential WHERE api_key IS NOT NONE')
@@ -123,14 +123,14 @@ asyncio.run(sweep())
 "
 
 # 4. Once the sweep is done, drop the old key from the env:
-OPEN_NOTEBOOK_ENCRYPTION_KEYS=brand-new-secret-2026
+DEEPER_NOTEBOOK_ENCRYPTION_KEYS=brand-new-secret-2026
 
 # 5. Restart. Verify a credential test in the UI still passes.
 ```
 
 **If you skipped step 3 and dropped the old key prematurely**, existing
 data is undecryptable. The error message will say so. Fix: add the old
-key back to `OPEN_NOTEBOOK_ENCRYPTION_KEYS`, run the sweep, then drop it.
+key back to `DEEPER_NOTEBOOK_ENCRYPTION_KEYS`, run the sweep, then drop it.
 
 ---
 
@@ -144,9 +144,9 @@ make stop   # or kill the launcher window
 
 # Snapshot
 ts=$(date +%Y-%m-%d_%H-%M)
-mkdir -p ~/onp-backups
-tar czf ~/onp-backups/onp-$ts.tgz \
-    -C ~/.open-notebook-plus \
+mkdir -p ~/deeper-notebook-backups
+tar czf ~/deeper-notebook-backups/deeper-notebook-$ts.tgz \
+    -C ~/.deeper-notebook \
     surreal_data config.toml uploads
 
 # Restart
@@ -154,7 +154,7 @@ make run
 ```
 
 For ongoing backups, add a cron / launchd job that runs this nightly
-and prunes `~/onp-backups/` older than 14 days.
+and prunes `~/deeper-notebook-backups/` older than 14 days.
 
 ---
 
@@ -164,38 +164,38 @@ and prunes `~/onp-backups/` older than 14 days.
 
 ```bash
 # Shrink everything that can be shrunk
-ONP_CHAT_LLM_CTX=8192                  # smaller context window
-ONP_CHAT_HISTORY_CHAR_CAP=6000         # shorter history
-ONP_SOURCE_CHAT_HISTORY_CHAR_CAP=4000
-ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP=600
-ONP_SOURCE_CHAT_MAX_INSIGHTS=5
-ONP_TRANSFORMATION_INPUT_CAP=6000
-ONP_ASK_PER_RESULT_CHAR_CAP=800
-ONP_DB_POOL_SIZE=2                     # fewer concurrent connections
+DN_CHAT_LLM_CTX=8192                  # smaller context window
+DN_CHAT_HISTORY_CHAR_CAP=6000         # shorter history
+DN_SOURCE_CHAT_HISTORY_CHAR_CAP=4000
+DN_SOURCE_CHAT_INSIGHT_CHAR_CAP=600
+DN_SOURCE_CHAT_MAX_INSIGHTS=5
+DN_TRANSFORMATION_INPUT_CAP=6000
+DN_ASK_PER_RESULT_CHAR_CAP=800
+DN_DB_POOL_SIZE=2                     # fewer concurrent connections
 ```
 
 ### Workstation (32-64 GB, big context-window model loaded)
 
 ```bash
 # Match the model's actual context window
-ONP_CHAT_LLM_CTX=131072                # e.g. Hermes-3, Qwen 2.5/3
-ONP_CHAT_HISTORY_CHAR_CAP=40000
-ONP_SOURCE_CHAT_HISTORY_CHAR_CAP=30000
-ONP_SOURCE_CHAT_SOURCE_CHAR_CAP=20000
-ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP=3000
-ONP_SOURCE_CHAT_MAX_INSIGHTS=20
-ONP_TRANSFORMATION_INPUT_CAP=40000
-ONP_STUDIO_MAX_FILE_CHARS=60000
-ONP_STUDIO_MAX_COMBINED_CHARS=200000
-ONP_ASK_PER_RESULT_CHAR_CAP=5000
-ONP_DB_POOL_SIZE=8
+DN_CHAT_LLM_CTX=131072                # e.g. Hermes-3, Qwen 2.5/3
+DN_CHAT_HISTORY_CHAR_CAP=40000
+DN_SOURCE_CHAT_HISTORY_CHAR_CAP=30000
+DN_SOURCE_CHAT_SOURCE_CHAR_CAP=20000
+DN_SOURCE_CHAT_INSIGHT_CHAR_CAP=3000
+DN_SOURCE_CHAT_MAX_INSIGHTS=20
+DN_TRANSFORMATION_INPUT_CAP=40000
+DN_STUDIO_MAX_FILE_CHARS=60000
+DN_STUDIO_MAX_COMBINED_CHARS=200000
+DN_ASK_PER_RESULT_CHAR_CAP=5000
+DN_DB_POOL_SIZE=8
 ```
 
 ### Constrained-disk box
 
 ```bash
-ONP_SOURCE_UPLOAD_MAX_BYTES=104857600   # 100 MB instead of 500
-ONP_LOG_LEVEL=WARNING                   # less log volume
+DN_SOURCE_UPLOAD_MAX_BYTES=104857600   # 100 MB instead of 500
+DN_LOG_LEVEL=WARNING                   # less log volume
 ```
 
 After changing any of these, restart the desktop launcher. Check
@@ -211,7 +211,7 @@ The desktop launcher binds API + frontend to `127.0.0.1` by default,
 which means only your machine can reach it. To let testers on the same
 network connect, **review the security tradeoffs first:**
 
-- Anyone on the LAN can hit your API with the shared `OPEN_NOTEBOOK_PASSWORD`.
+- Anyone on the LAN can hit your API with the shared `DEEPER_NOTEBOOK_PASSWORD`.
 - There's no per-user identity — they all share one bearer token.
 - The frontend Next.js dev server has no CSP set (production deploys
   should add one — see the production-readiness review for details).
@@ -242,7 +242,7 @@ let Tailscale handle the cross-machine routing + auth.
 # 0. Backup first (see above section)
 
 # 1. Pull
-cd /path/to/open-notebook-Plus
+cd /path/to/Deeper-Notebook
 git pull origin desktop-app
 
 # 2. Bump deps if requirements changed
@@ -251,7 +251,7 @@ uv sync   # backend
 
 # 3. Rebuild the desktop bundle (macOS):
 make build-mac
-# Outputs: dist/Open Notebook Plus.app + dist/Open-Notebook-Plus-mac-<arch>.dmg
+# Outputs: dist/Deeper Notebook.app + dist/Deeper-Notebook-mac-<arch>.dmg
 # Composite of: build-mac-test → build-mac-venv → build-mac-frontend
 #               → build-mac-runtimes → build-mac-pyinstaller → build-mac-dmg
 
@@ -262,7 +262,7 @@ make build-mac-clean      # remove build artifacts (keeps dmg)
 make build-mac-distclean  # remove everything including dmg
 
 # 4. Launch and verify:
-open 'dist/Open Notebook Plus.app'
+open 'dist/Deeper Notebook.app'
 curl -sf http://127.0.0.1:5055/readyz | jq    # should be 200 + ready
 ```
 
@@ -271,9 +271,9 @@ can't read), restore your backup:
 
 ```bash
 make stop
-rm -rf ~/.open-notebook-plus/surreal_data
-mkdir ~/.open-notebook-plus/surreal_data
-tar xzf ~/onp-backups/onp-<timestamp>.tgz -C ~/.open-notebook-plus
+rm -rf ~/.deeper-notebook/surreal_data
+mkdir ~/.deeper-notebook/surreal_data
+tar xzf ~/deeper-notebook-backups/deeper-notebook-<timestamp>.tgz -C ~/.deeper-notebook
 make run
 ```
 
@@ -284,14 +284,14 @@ make run
 ```bash
 # Full reset — nukes data, logs, venv. Keeps config.toml.
 make stop
-rm -rf ~/.open-notebook-plus/{surreal_data,logs,venv,uploads}
+rm -rf ~/.deeper-notebook/{surreal_data,logs,venv,uploads}
 make run    # first-run wizard re-runs the venv bootstrap
 ```
 
 To also reset config:
 
 ```bash
-rm ~/.open-notebook-plus/config.toml
+rm ~/.deeper-notebook/config.toml
 make run
 ```
 
@@ -304,7 +304,7 @@ SurrealDB restart that the pool isn't reaping), confirm by reverting to
 pre-v0.7.18 behavior:
 
 ```bash
-ONP_DB_POOL_DISABLED=1 make run
+DN_DB_POOL_DISABLED=1 make run
 # Every repo_query opens + closes its own connection (~50-200ms slower
 # per query). If the bug disappears, it was the pool — report it.
 ```
@@ -317,11 +317,11 @@ For when you need to send something to a maintainer (or your future self):
 
 ```bash
 cat <<EOF > /tmp/onp-diag.txt
-# Open Notebook Plus diagnostic — $(date)
+# Deeper Notebook diagnostic — $(date)
 
 ## Version
-$(cd /path/to/open-notebook-Plus && git rev-parse --short HEAD)
-$(cd /path/to/open-notebook-Plus && git log -1 --format='%s')
+$(cd /path/to/Deeper-Notebook && git rev-parse --short HEAD)
+$(cd /path/to/Deeper-Notebook && git log -1 --format='%s')
 
 ## Live health
 $(curl -sf http://127.0.0.1:5055/readyz 2>&1 | head -20)
@@ -330,13 +330,13 @@ $(curl -sf http://127.0.0.1:5055/readyz 2>&1 | head -20)
 $(ps -ef | grep -E 'open-notebook|surreal|llama|piper|whisper' | grep -v grep)
 
 ## Disk
-$(du -sh ~/.open-notebook-plus/{surreal_data,uploads,logs} 2>/dev/null)
+$(du -sh ~/.deeper-notebook/{surreal_data,uploads,logs} 2>/dev/null)
 
 ## Recent errors (last 50)
-$(grep -E 'ERROR|CRITICAL' ~/.open-notebook-plus/logs/api.log 2>/dev/null | tail -50)
+$(grep -E 'ERROR|CRITICAL' ~/.deeper-notebook/logs/api.log 2>/dev/null | tail -50)
 
-## ONP_ env active
-$(env | grep -E '^ONP_|^OPEN_NOTEBOOK_' | sort)
+## DN_ env active
+$(env | grep -E '^DN_|^DEEPER_NOTEBOOK_' | sort)
 EOF
 
 cat /tmp/onp-diag.txt

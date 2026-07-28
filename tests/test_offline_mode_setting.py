@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.health import network
+from deeper_notebook.health import network
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ def _run(coro):
 
 
 def test_content_settings_has_offline_mode_default_false():
-    from open_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.content_settings import ContentSettings
     assert ContentSettings.model_fields["offline_mode"].default is False
 
 
@@ -45,7 +45,7 @@ def test_forced_offline_enabled_reads_settings(monkeypatch):
     async def _fake_get_instance():
         return _FakeSettings()
 
-    from open_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.content_settings import ContentSettings
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
     assert _run(network.forced_offline_enabled()) is True
 
@@ -54,7 +54,7 @@ def test_forced_offline_db_error_defaults_false(monkeypatch):
     async def _boom():
         raise RuntimeError("db down")
 
-    from open_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.content_settings import ContentSettings
     monkeypatch.setattr(ContentSettings, "get_instance", _boom)
     assert _run(network.forced_offline_enabled()) is False
 
@@ -69,7 +69,7 @@ def test_forced_offline_cached_until_invalidated(monkeypatch):
         calls.append(1)
         return _FakeSettings()
 
-    from open_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.content_settings import ContentSettings
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
 
     async def scenario():
@@ -89,7 +89,7 @@ def test_state_with_settings_forced(monkeypatch):
     async def _fake_get_instance():
         return _FakeSettings()
 
-    from open_notebook.domain.content_settings import ContentSettings
+    from deeper_notebook.domain.content_settings import ContentSettings
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
     state = _run(network.get_network_state_with_settings())
     assert state.status == "offline" and state.forced_offline is True

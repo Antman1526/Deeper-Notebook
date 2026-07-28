@@ -1,6 +1,6 @@
 """Deterministic material-claim extraction tests."""
 
-from open_notebook.evaluation.claims import extract_material_claims
+from deeper_notebook.evaluation.claims import extract_material_claims
 
 
 def test_extracts_declarative_claims_and_attaches_citation_markers() -> None:

@@ -1,0 +1,119 @@
+/* Deeper Notebook design tokens — layered on top of shadcn's --foreground,
+ * --background, --primary etc. set at runtime by desktop/window.py. These
+ * tokens use color-mix() against shadcn variables so they auto-adapt to the
+ * active theme (light-blue, dracula, nord, …) without per-theme overrides. */
+
+:root {
+  /* Soft translucent versions of the primary/accent colors for chips, hover
+   * states, subtle highlights. Works on both light and dark themes. */
+  --dn-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
+  --dn-accent-strong: color-mix(in oklab, var(--primary) 22%, transparent);
+  --dn-surface-raised: color-mix(in oklab, var(--card) 92%, var(--primary) 8%);
+  --dn-border-strong: color-mix(in oklab, var(--border) 72%, var(--primary) 28%);
+
+  /* Status colors not present in shadcn defaults */
+  --dn-success: oklch(0.65 0.18 145);
+  --dn-success-soft: color-mix(in oklab, var(--dn-success) 18%, transparent);
+  --dn-warning: oklch(0.78 0.16 75);
+  --dn-warning-soft: color-mix(in oklab, var(--dn-warning) 18%, transparent);
+  --dn-info: var(--primary);
+  --dn-info-soft: var(--dn-accent-soft);
+  --dn-evidence: oklch(0.58 0.17 285);
+  --dn-model-gguf: oklch(0.57 0.18 245);
+  --dn-model-mlx: oklch(0.62 0.16 175);
+
+  /* Elevation — subtle border + soft shadow that reads as a card without
+   * fighting the body background. */
+  --dn-elevation-low: 0 1px 2px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+  --dn-elevation-md: 0 4px 12px -2px color-mix(in oklab, var(--foreground) 12%, transparent);
+
+  /* Type scale (not all shadcn themes set these consistently) */
+  --dn-text-xs: 0.75rem;
+  --dn-text-sm: 0.875rem;
+  --dn-text-base: 1rem;
+  --dn-text-lg: 1.125rem;
+
+  /* Spacing rhythm — Deeper Notebook components prefer these over Tailwind's gap-N */
+  --dn-space-1: 0.25rem;
+  --dn-space-2: 0.5rem;
+  --dn-space-3: 0.75rem;
+  --dn-space-4: 1rem;
+  --dn-space-6: 1.5rem;
+
+  /* ── Aurora-glass system (v0.8.70) ──────────────────────────────────────
+   * v0.8.72 — the in-app aurora is now THEME-AWARE: it derives from the live
+   * theme's --primary / --accent (set per [data-theme] by the desktop theme
+   * injection), so every theme gets a cohesive hero/glow in its own palette.
+   * The hardcoded Research Core hues are final fallbacks if a theme somehow
+   * leaves --primary/--accent unset. aurora-3 is a
+   * harmonious blend of the two so the third gradient stop always fits.
+   * All motion uses GPU-composited transform/opacity/filter only. */
+  --dn-aurora-1: var(--primary, #2DD4BF);
+  --dn-aurora-2: var(--accent, #38BDF8);
+  --dn-aurora-3: color-mix(in oklab, var(--accent, #38BDF8) 55%, var(--primary, #2DD4BF));
+
+  /* Soft outer glow keyed to the live theme primary. */
+  --dn-glow-accent:
+    0 0 0 1px color-mix(in oklab, var(--primary) 26%, transparent),
+    0 10px 34px -8px color-mix(in oklab, var(--primary) 48%, transparent);
+
+  /* Frosted-glass panel tokens. */
+  --dn-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
+  --dn-glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --dn-glass-blur: 14px;
+}
+
+.dark {
+  --dn-glass-bg: color-mix(in oklab, var(--card) 52%, transparent);
+  --dn-glass-border: color-mix(in oklab, var(--primary) 24%, var(--border));
+}
+
+/* Frosted-glass surface for cards/headers that float above content. */
+.dn-glass {
+  background: var(--dn-glass-bg);
+  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
+  border: 1px solid var(--dn-glass-border);
+  box-shadow:
+    var(--shadow-lg),
+    inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
+}
+
+/* Full-bleed aurora background — layered drifting radial gradients. The drift
+ * keyframe is auto-zeroed under prefers-reduced-motion by the global rule in
+ * globals.css, settling to a static offset (no jank, no spin). */
+.dn-aurora-bg {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(60% 60% at 18% 12%, color-mix(in oklab, var(--dn-aurora-1) 36%, transparent), transparent 70%),
+    radial-gradient(55% 55% at 82% 22%, color-mix(in oklab, var(--dn-aurora-2) 32%, transparent), transparent 68%),
+    radial-gradient(72% 72% at 50% 104%, color-mix(in oklab, var(--dn-aurora-3) 20%, transparent), transparent 72%),
+    var(--background);
+}
+.dn-aurora-bg::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 40% at 30% 28%, color-mix(in oklab, var(--dn-aurora-1) 28%, transparent), transparent 60%),
+    radial-gradient(42% 42% at 72% 64%, color-mix(in oklab, var(--dn-aurora-2) 26%, transparent), transparent 60%);
+  filter: blur(46px);
+  opacity: 0.7;
+  animation: dn-aurora-drift 26s ease-in-out infinite alternate;
+}
+@keyframes dn-aurora-drift {
+  0%   { transform: translate3d(-4%, -2%, 0) scale(1.06); }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.16); }
+}
+
+/* Gradient-clipped text (wordmark "+", accents) — matches the splash. */
+.dn-aurora-text {
+  background: linear-gradient(90deg, var(--dn-aurora-1), var(--dn-aurora-2), var(--dn-aurora-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}

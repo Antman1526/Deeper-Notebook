@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from open_notebook.ai import offline_gate
-from open_notebook.exceptions import ConfigurationError
-from open_notebook.health import network
-from open_notebook.health.network import NetworkState
+from deeper_notebook.ai import offline_gate
+from deeper_notebook.exceptions import ConfigurationError
+from deeper_notebook.health import network
+from deeper_notebook.health.network import NetworkState
 
 
 def _run(coro):

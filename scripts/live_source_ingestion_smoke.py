@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live source-ingestion smoke for a running native Open Notebook Plus app.
+"""Live source-ingestion smoke for a running native Deeper Notebook app.
 
 This is intentionally outside pytest's normal suite. It talks to a real
 running API process and proves the path that fixture browser tests cannot:
@@ -23,9 +23,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
-
 DEFAULT_TEXT = (
-    "Open Notebook Plus live ingestion smoke marker {marker}. "
+    "Deeper Notebook live ingestion smoke marker {marker}. "
     "This source proves native API ingestion, extraction, embedding, and "
     "source detail retrieval are wired together."
 )
@@ -92,7 +91,7 @@ def request_multipart(
     token: str | None = None,
     timeout: float = 30,
 ) -> ApiResponse:
-    boundary = f"----onp-smoke-{uuid.uuid4().hex}"
+    boundary = f"----dn-smoke-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
         chunks.extend([
@@ -223,7 +222,7 @@ def create_upload_source(args: argparse.Namespace, marker: str) -> dict[str, Any
     else:
         filename = f"onp-live-smoke-{marker}.txt"
         content = (
-            f"Open Notebook Plus upload smoke marker {marker}. "
+            f"Deeper Notebook upload smoke marker {marker}. "
             "This proves multipart upload ingestion, extraction, embedding, "
             "and source detail retrieval are wired together."
         ).encode("utf-8")
@@ -280,7 +279,7 @@ def start_marker_http_server(marker: str) -> tuple[http.server.ThreadingHTTPServ
         def do_GET(self) -> None:
             body = (
                 "<!doctype html><html><body>"
-                f"<h1>Open Notebook Plus link smoke {marker}</h1>"
+                f"<h1>Deeper Notebook link smoke {marker}</h1>"
                 f"<p>The unique ingestion marker is {marker}.</p>"
                 "</body></html>"
             ).encode("utf-8")
@@ -425,12 +424,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("ONP_API_BASE_URL", "http://127.0.0.1:5055"),
+        default=os.environ.get("DEEPER_NOTEBOOK_API_BASE_URL", "http://127.0.0.1:5055"),
         help="Running native API base URL. Default: %(default)s",
     )
     parser.add_argument("--api-prefix", default="/api")
-    parser.add_argument("--token", default=os.environ.get("ONP_API_TOKEN"))
-    parser.add_argument("--notebook-id", default=os.environ.get("ONP_SMOKE_NOTEBOOK_ID"))
+    parser.add_argument("--token", default=os.environ.get("DEEPER_NOTEBOOK_API_TOKEN"))
+    parser.add_argument("--notebook-id", default=os.environ.get("DEEPER_NOTEBOOK_SMOKE_NOTEBOOK_ID"))
     parser.add_argument("--title")
     parser.add_argument("--content")
     parser.add_argument(

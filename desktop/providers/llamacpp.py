@@ -10,9 +10,9 @@ from typing import Callable
 
 import httpx
 
+from desktop.data_root import active_data_root
 from desktop.ports import find_free_port
 from desktop.providers import ProviderEnv
-from desktop.paths import user_home
 
 # Files smaller than this are treated as Git LFS pointers / aborted downloads
 # and skipped during model listing.
@@ -34,9 +34,8 @@ def _http_ready(port: int) -> bool:
 
 def _default_log_dir() -> Path:
     """Where to write llama_cpp.server stderr if no override is supplied.
-    Matches desktop/app.py's `log_dir = ~/.open-notebook-plus/logs`."""
-    home = str(user_home())
-    return Path(home) / ".open-notebook-plus" / "logs"
+    Matches desktop/app.py's `log_dir = ~/.deeper-notebook/logs`."""
+    return active_data_root() / "logs"
 
 
 def _tail_lines(path: Path, n: int) -> str:
@@ -81,7 +80,7 @@ class LlamaCppProvider:
         # in parallel — typical 1.5–2x decode speedup with no quality
         # loss when the draft and target share a tokenizer family
         # (e.g. Llama-3.2-1B drafting for Hermes-3-Llama-3.1-8B). Wired
-        # from OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH in desktop/app.py
+        # from DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH in desktop/app.py
         # _phase_select_provider. Default None = current behavior
         # unchanged; the flag is only added to argv when this is set.
         self._draft_model_path: Path | None = draft_model_path
@@ -140,7 +139,7 @@ class LlamaCppProvider:
             self._stderr_fh = subprocess.DEVNULL
 
         # Base argv. v0.8.2 Item A — append --model_draft only when
-        # the operator has set OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH;
+        # the operator has set DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH;
         # missing draft path or unset env keeps current behavior.
         argv = [
             str(self._python_executable), "-m", "llama_cpp.server",

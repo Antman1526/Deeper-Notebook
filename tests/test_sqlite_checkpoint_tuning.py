@@ -5,7 +5,7 @@ Before v0.7.32, both chat.py and source_chat.py called
 integrity check. Two graphs racing the same file could "database is
 locked"; a corrupted file would prevent API startup forever.
 
-The helper at open_notebook.utils.sqlite_checkpoint:
+The helper at deeper_notebook.utils.sqlite_checkpoint:
 - WAL journal_mode → concurrent reader + writer don't block
 - busy_timeout=5000ms → brief writes wait out contention
 - synchronous=NORMAL → WAL's recommended pairing
@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from open_notebook.utils import sqlite_checkpoint as ckpt
+from deeper_notebook.utils import sqlite_checkpoint as ckpt
 
 
 @pytest.fixture(autouse=True)

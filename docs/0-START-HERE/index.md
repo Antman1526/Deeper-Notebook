@@ -1,6 +1,6 @@
-# Open Notebook - Start Here
+# Deeper Notebook - Start Here
 
-**Open Notebook** is a privacy-focused AI research assistant. Upload documents, chat with AI, generate notes, and create podcasts—all with complete control over your data.
+**Deeper Notebook** is a privacy-focused AI research assistant. Upload documents, chat with AI, generate notes, and create podcasts—all with complete control over your data.
 
 ## Choose Your Path
 
@@ -36,9 +36,9 @@
 - 🔍 **Search**: Full-text and semantic search across all content
 - ⚙️ **Transform**: Extract insights, analyze themes, create summaries
 
-## Why Open Notebook?
+## Why Deeper Notebook?
 
-| Feature | Open Notebook | Notebook LM |
+| Feature | Deeper Notebook | Notebook LM |
 |---------|---|---|
 | **Privacy** | Self-hosted, your control | Cloud, Google's servers |
 | **AI Choice** | 17+ providers | Google's models only |

@@ -19,7 +19,7 @@ _SPLASH_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Open Notebook+</title>
+<title>Deeper Notebook</title>
 <style>
   :root {
     --bg0: #0d0e1d; --bg1: #181a33; --ink: #eef0ff; --dim: #9aa0c5;
@@ -114,8 +114,8 @@ _SPLASH_TEMPLATE = """<!DOCTYPE html>
         <path d="M9 7h7M9 11h5"></path>
       </svg>
     </div>
-    <h1>Open Notebook<span class="plus">+</span></h1>
-    <p class="tagline">Your private research brain</p>
+    <h1>Deeper Notebook</h1>
+    <p class="tagline">Think further with every source</p>
     <div class="bar"><i></i></div>
     <p id="status">Waking up your workspace&hellip;</p>
   </main>

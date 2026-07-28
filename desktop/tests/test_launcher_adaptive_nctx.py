@@ -11,7 +11,7 @@ chat failure. These tests pin:
   - the non-darwin floor (32768) — the KV-cache RAM math is Apple-Silicon
     unified-memory specific,
   - the sysconf-unavailable / sysconf-raises fallbacks (never crash boot),
-  - that an explicit ONP_CHAT_LLM_CTX_MAX still overrides the adaptive
+  - that an explicit DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX still overrides the adaptive
     default (operator retains full control).
 """
 from __future__ import annotations
@@ -108,13 +108,13 @@ def test_sysconf_raises_falls_back(monkeypatch):
 
 
 def test_explicit_ctx_max_overrides_adaptive_default(monkeypatch):
-    """An explicit ONP_CHAT_LLM_CTX_MAX wins over the RAM-aware default so
+    """An explicit DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX wins over the RAM-aware default so
     operators keep full control (e.g. capping a low-RAM machine)."""
     sup = Supervisor.__new__(Supervisor)  # no __init__ side effects needed
     sup.chat_llm_path = None  # forces the "return ctx_max" branch
     _patch_ram(monkeypatch, 64)  # adaptive would be 98304
-    monkeypatch.setenv("ONP_CHAT_LLM_CTX_MAX", "8192")
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX", "8192")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
     assert sup._resolve_chat_llm_n_ctx() == 8192
 
 
@@ -124,8 +124,8 @@ def test_no_env_uses_adaptive_default(monkeypatch):
     sup = Supervisor.__new__(Supervisor)
     sup.chat_llm_path = None
     _patch_ram(monkeypatch, 64)  # also mocks _available_ram_bytes (ample)
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX_MAX", raising=False)
-    monkeypatch.delenv("ONP_CHAT_LLM_CTX", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
     assert sup._resolve_chat_llm_n_ctx() == 98304
 
 

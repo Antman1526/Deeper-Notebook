@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide is for developers working on Open Notebook. For end-user documentation, see [README.md](README.md) and [docs/](docs/).
+This guide is for developers working on Deeper Notebook. For end-user documentation, see [README.md](README.md) and [docs/](docs/).
 
 ## Quick Start for Development
 
@@ -246,7 +246,7 @@ cd frontend && npm install package-name
 
 ### Adding a New Language (i18n)
 
-Open Notebook supports internationalization. To add a new language:
+Deeper Notebook supports internationalization. To add a new language:
 
 1. **Create locale file**: Copy an existing locale as template
    ```bash

@@ -35,11 +35,11 @@ import { CitationPill } from '@/components/chat/CitationPill'
 import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
 import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
 import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
-import { RunTimeline } from '@/components/onp'
+import { RunTimeline } from '@/components/deeper-notebook'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import type { MindMapChatContext } from '@/components/onp/MindMapArtifactViewer'
+import type { MindMapChatContext } from '@/components/deeper-notebook/MindMapArtifactViewer'
 
 interface NotebookContextStats {
   sourcesInsights: number
@@ -427,7 +427,7 @@ export function ChatPanel({
                           }
                         />
                         {/* v0.8.62 — agent-FSM "needs input"/"truncated" chip;
-                            null unless ONP_AGENT_FSM surfaced a non-complete
+                            null unless DEEPER_NOTEBOOK_AGENT_FSM surfaced a non-complete
                             terminal state on the done event. */}
                         <ChatMessageAgentStateBadge messageId={message.id} />
                       </div>

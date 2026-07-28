@@ -3,7 +3,7 @@ name: build-windows
 # v0.8.68 — On-demand Windows-only build. Trigger manually from the Actions
 # tab ("Run workflow") to get a Windows .exe/.zip in ~15 min WITHOUT waiting on
 # the slow/expensive macOS jobs in build-desktop.yml. The artifact is attached
-# to the run (Actions tab -> the run -> Artifacts -> Open-Notebook-Plus-windows-x64).
+# to the run (Actions tab -> the run -> Artifacts -> Deeper-Notebook-windows-x64).
 on:
   workflow_dispatch:
 
@@ -22,16 +22,21 @@ jobs:
         run: |
           pip install -r desktop/requirements.txt
           pip install -e .
+          python -m pip install "skillopt==0.1.0"
+      - name: Run locked SkillOpt integration
+        run: python desktop/build/run_skillopt_integration.py --require-installed
       - name: Build frontend
         run: cd frontend; npm ci; npm run build
       - name: Fetch native runtimes (SurrealDB / Node / uv / python-standalone)
         run: python desktop/build/fetch_runtimes.py
       - name: PyInstaller
         run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - name: Verify Python package trees
+        run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - name: Package zip
         run: pwsh desktop/build/post_build_windows.ps1
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-windows-x64
-          path: dist/Open-Notebook-Plus-windows-x64.zip
+          name: Deeper-Notebook-windows-x64
+          path: dist/Deeper-Notebook-windows-x64.zip
           if-no-files-found: error

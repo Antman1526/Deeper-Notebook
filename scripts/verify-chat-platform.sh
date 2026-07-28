@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# verify-chat-platform.sh — Open Notebook Plus v0.8.0 E2E platform smoke test
+# verify-chat-platform.sh — Deeper Notebook v0.8.0 E2E platform smoke test
 # =============================================================================
 #
 # PURPOSE
@@ -16,12 +16,13 @@
 #   NOTEBOOK_ID=notebooks:abc123 bash scripts/verify-chat-platform.sh
 #
 #   # Find a notebook ID:
-#   curl -s -H "Authorization: Bearer $OPEN_NOTEBOOK_PASSWORD" \
+#   curl -s -H "Authorization: Bearer $DEEPER_NOTEBOOK_PASSWORD" \
 #        $API_URL/api/notebooks | jq -r '.[0].id'
 #
 # CONFIGURATION (env vars)
 #   API_URL             Default: http://127.0.0.1:5055
-#   API_PASSWORD        Default: value of OPEN_NOTEBOOK_PASSWORD, or
+#   API_PASSWORD        Default: value of DEEPER_NOTEBOOK_PASSWORD, then the
+#                                deprecated DEEPER_NOTEBOOK_PASSWORD alias, or
 #                                open-notebook-change-me if that is also unset
 #   NOTEBOOK_ID         Required — see USAGE above
 #
@@ -29,7 +30,7 @@
 #   ExecuteChatResponse now carries `selected_provider` ("local"/"cloud"/null).
 #   Steps 4 and 5 assert on that field directly — no more manual eyeball
 #   checks. Requires the API to be launched with:
-#     EITHER  OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1   (env-var path)
+#     EITHER  DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT=1 (env-var path)
 #     OR      DefaultModels.auto_route_enabled=True via Settings → API Keys →
 #             Smart routing toggle                  (v0.8.37 UI path)
 #   plus a configured local model id, cloud model id, and (for Step 4) a
@@ -44,7 +45,7 @@ set -euo pipefail
 # Config
 # ---------------------------------------------------------------------------
 API_URL="${API_URL:-http://127.0.0.1:5055}"
-API_PASSWORD="${API_PASSWORD:-${OPEN_NOTEBOOK_PASSWORD:-open-notebook-change-me}}"
+API_PASSWORD="${API_PASSWORD:-${DEEPER_NOTEBOOK_PASSWORD:-${DEEPER_NOTEBOOK_PASSWORD:-open-notebook-change-me}}}"
 AUTH_HEADER="Authorization: Bearer ${API_PASSWORD}"
 
 # ---------------------------------------------------------------------------
@@ -52,7 +53,7 @@ AUTH_HEADER="Authorization: Bearer ${API_PASSWORD}"
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<'HELP'
-verify-chat-platform.sh — Open Notebook Plus v0.8.0 platform smoke test
+verify-chat-platform.sh — Deeper Notebook v0.8.0 platform smoke test
 
 USAGE
   NOTEBOOK_ID=<id> bash scripts/verify-chat-platform.sh
@@ -64,7 +65,8 @@ REQUIRED ENV
 
 OPTIONAL ENV
   API_URL         API base URL (default: http://127.0.0.1:5055)
-  API_PASSWORD    Bearer token (default: $OPEN_NOTEBOOK_PASSWORD or open-notebook-change-me)
+  API_PASSWORD    Bearer token (default: $DEEPER_NOTEBOOK_PASSWORD, deprecated
+                  $DEEPER_NOTEBOOK_PASSWORD, or open-notebook-change-me)
 
 STEPS
   1. GET  /api/local-models/health  → overall != "down"
@@ -75,7 +77,7 @@ STEPS
 
 NOTE
   Steps 4 and 5 require the API to be running with
-  OPEN_NOTEBOOK_AUTO_ROUTE_CHAT=1 and both local + cloud model IDs configured.
+  DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT=1 and both local + cloud model IDs configured.
   Without smart routing enabled, selected_provider is null on every turn.
 
 HELP
@@ -89,7 +91,7 @@ if [[ -z "${NOTEBOOK_ID:-}" ]]; then
     echo "❌  NOTEBOOK_ID is required."
     echo ""
     echo "  Find it with:"
-    echo "    curl -s -H \"Authorization: Bearer \$OPEN_NOTEBOOK_PASSWORD\" \\"
+    echo "    curl -s -H \"Authorization: Bearer \$DEEPER_NOTEBOOK_PASSWORD\" \\"
     echo "         \${API_URL:-http://127.0.0.1:5055}/api/notebooks | jq -r '.[0].id'"
     echo ""
     echo "  Then re-run:"

@@ -3,7 +3,7 @@
 ## upstream_sync_guard.sh
 
 Creates a safe path for importing updates from `lfnovo/open-notebook` without
-overwriting Open Notebook Plus work.
+overwriting Deeper Notebook work.
 
 ### What It Does
 

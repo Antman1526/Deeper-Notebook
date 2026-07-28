@@ -3,8 +3,8 @@ from loguru import logger
 
 from api.models import NoteResponse, SaveAsNoteRequest, SourceInsightResponse
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
-from open_notebook.domain.notebook import SourceInsight
-from open_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.domain.notebook import SourceInsight
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 
 router = APIRouter()
 

@@ -29,7 +29,8 @@ class WizardTestCase(AioHTTPTestCase):
         assert resp.status == 200
         assert "text/html" in resp.headers["Content-Type"]
         body = await resp.text()
-        assert "Open Notebook Plus" in body
+        assert "Deeper Notebook" in body
+        assert "Open Notebook Plus" not in body
         assert 'value="mlx"' in body
 
     async def test_post_save_writes_config(self):

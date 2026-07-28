@@ -3,10 +3,10 @@
 // v0.8.6 Item D — Settings page for launcher env-var preferences.
 //
 // Surfaces four knobs that are otherwise env-var-only:
-//   OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH — absolute path to a draft GGUF
-//   OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT  — draft tokens per verification pass
-//   ONP_CHAT_LLM_CTX                    — local context window (n_ctx)
-//   ONP_CHAT_LLM_CTX_MAX                — n_ctx upper ceiling
+//   DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH — absolute path to a draft GGUF
+//   DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT  — draft tokens per verification pass
+//   DN_CHAT_LLM_CTX                        — local context window (n_ctx)
+//   DN_CHAT_LLM_CTX_MAX                    — n_ctx upper ceiling
 //
 // Design choices:
 //   - Only the diff (changed fields) is submitted; unchanged fields are
@@ -35,12 +35,24 @@ import {
 // somehow contains one (belt-and-suspenders alongside the backend check).
 // ---------------------------------------------------------------------------
 const ALLOWED_KEYS = new Set([
-  'OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
-  'OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
-  'OPEN_NOTEBOOK_LOCAL_N_CTX',
-  'ONP_CHAT_LLM_CTX',
-  'ONP_CHAT_LLM_CTX_MAX',
+  'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
+  'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
+  'DEEPER_NOTEBOOK_LOCAL_N_CTX',
+  'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+  'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
 ])
+
+const PREF_KEYS = {
+  draftModelPath: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH',
+  draftNPredict: 'DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT',
+  nCtx: 'DEEPER_NOTEBOOK_CHAT_LLM_CTX',
+  nCtxMax: 'DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX',
+} as const
+
+const readPref = (
+  prefs: Record<string, string>,
+  key: (typeof PREF_KEYS)[keyof typeof PREF_KEYS],
+): string => prefs[key] ?? ''
 
 export default function LauncherPrefsPage() {
   const { t } = useTranslation()
@@ -60,10 +72,10 @@ export default function LauncherPrefsPage() {
   useEffect(() => {
     if (!data?.prefs) return
     const p = data.prefs
-    setDraftModelPath(p['OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH'] ?? '')
-    setDraftNPredict(p['OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT'] ?? '')
-    setNCtx(p['ONP_CHAT_LLM_CTX'] ?? '')
-    setNCtxMax(p['ONP_CHAT_LLM_CTX_MAX'] ?? '')
+    setDraftModelPath(readPref(p, PREF_KEYS.draftModelPath))
+    setDraftNPredict(readPref(p, PREF_KEYS.draftNPredict))
+    setNCtx(readPref(p, PREF_KEYS.nCtx))
+    setNCtxMax(readPref(p, PREF_KEYS.nCtxMax))
   }, [data])
 
   // ---------------------------------------------------------------------------
@@ -76,19 +88,19 @@ export default function LauncherPrefsPage() {
     const diff: { [key: string]: string | null } = {}
 
     const check = (
-      key: string,
+      key: (typeof PREF_KEYS)[keyof typeof PREF_KEYS],
       newVal: string,
     ) => {
       if (!ALLOWED_KEYS.has(key)) return  // frontend whitelist guard
-      const old = current[key] ?? ''
+      const old = readPref(current, key)
       if (newVal === old) return          // no change — skip
       diff[key] = newVal.trim() === '' ? null : newVal.trim()
     }
 
-    check('OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH', draftModelPath)
-    check('OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT', draftNPredict)
-    check('ONP_CHAT_LLM_CTX', nCtx)
-    check('ONP_CHAT_LLM_CTX_MAX', nCtxMax)
+    check(PREF_KEYS.draftModelPath, draftModelPath)
+    check(PREF_KEYS.draftNPredict, draftNPredict)
+    check(PREF_KEYS.nCtx, nCtx)
+    check(PREF_KEYS.nCtxMax, nCtxMax)
 
     return diff
   }
@@ -211,7 +223,7 @@ export default function LauncherPrefsPage() {
                     {t('settings.launcherPrefs.contextWindowTitle')}
                   </h2>
 
-                  {/* ONP_CHAT_LLM_CTX */}
+                  {/* DN_CHAT_LLM_CTX */}
                   <div className="space-y-1.5">
                     <label
                       htmlFor="n-ctx"
@@ -243,7 +255,7 @@ export default function LauncherPrefsPage() {
                     </p>
                   </div>
 
-                  {/* ONP_CHAT_LLM_CTX_MAX */}
+                  {/* DN_CHAT_LLM_CTX_MAX */}
                   <div className="space-y-1.5">
                     <label
                       htmlFor="n-ctx-max"

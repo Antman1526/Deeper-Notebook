@@ -32,7 +32,7 @@ def _unwrap(results: Any) -> list:
 
 
 def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
-    app = FastAPI(title="Open Notebook Plus — Memory retriever")
+    app = FastAPI(title="Deeper Notebook — Memory retriever")
     state = {"ambient_paused": False}
 
     # mem0 2.x requires every search/add to be scoped to a user/agent/run.
@@ -59,7 +59,7 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
                 {
                     "id": "memory-local",
                     "object": "model",
-                    "owned_by": "open-notebook-plus",
+                    "owned_by": "deeper-notebook",
                 }
             ],
         }

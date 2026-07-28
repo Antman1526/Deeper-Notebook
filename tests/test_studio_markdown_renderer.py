@@ -1,5 +1,5 @@
-from open_notebook.studio.renderers import render_artifact_markdown
-from open_notebook.studio.schemas import parse_artifact_document
+from deeper_notebook.studio.renderers import render_artifact_markdown
+from deeper_notebook.studio.schemas import parse_artifact_document
 
 
 def _render(artifact_type: str, document: dict) -> str:

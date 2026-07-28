@@ -4,7 +4,7 @@ overflowing the local sidecar (llama.cpp 400 context_length_exceeded).
 """
 from __future__ import annotations
 
-from open_notebook.ai.router import pick_provider
+from deeper_notebook.ai.router import pick_provider
 
 
 def test_near_full_prompt_routes_cloud_with_real_headroom():

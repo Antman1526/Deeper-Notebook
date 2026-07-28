@@ -1,7 +1,7 @@
 """v0.8.67 (audit A1) — vector_search relevance floor.
 
 Default raised 0.2 → 0.3 (matches the memory layer's _MIN_SCORE; 0.0-0.3 is
-"unrelated"), env-tunable via ONP_VECTOR_MIN_SCORE. An explicit caller value is
+"unrelated"), env-tunable via DEEPER_NOTEBOOK_VECTOR_MIN_SCORE. An explicit caller value is
 honored as-is; None resolves to the env/default.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.domain import notebook as nb
+from deeper_notebook.domain import notebook as nb
 
 
 def _run(coro):
@@ -23,9 +23,9 @@ def _run(coro):
 ])
 def test_vector_min_score_env(monkeypatch, val, expected):
     if val is None:
-        monkeypatch.delenv("ONP_VECTOR_MIN_SCORE", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE", raising=False)
     else:
-        monkeypatch.setenv("ONP_VECTOR_MIN_SCORE", val)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE", val)
     assert nb._vector_min_score() == expected
 
 
@@ -40,28 +40,28 @@ def _patch_search(monkeypatch):
         captured["vars"] = vars or {}
         return []
 
-    import open_notebook.utils.embedding as emb
+    import deeper_notebook.utils.embedding as emb
     monkeypatch.setattr(emb, "generate_embedding", _fake_embed)
     monkeypatch.setattr(nb, "repo_query", _fake_repo_query)
     return captured
 
 
 def test_vector_search_none_uses_default(monkeypatch):
-    monkeypatch.delenv("ONP_VECTOR_MIN_SCORE", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE", raising=False)
     captured = _patch_search(monkeypatch)
     _run(nb.vector_search("hello", 10))
     assert captured["vars"]["minimum_score"] == 0.3
 
 
 def test_vector_search_env_override(monkeypatch):
-    monkeypatch.setenv("ONP_VECTOR_MIN_SCORE", "0.45")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE", "0.45")
     captured = _patch_search(monkeypatch)
     _run(nb.vector_search("hello", 10))
     assert captured["vars"]["minimum_score"] == 0.45
 
 
 def test_vector_search_explicit_value_honored(monkeypatch):
-    monkeypatch.setenv("ONP_VECTOR_MIN_SCORE", "0.45")  # ignored when caller passes one
+    monkeypatch.setenv("DEEPER_NOTEBOOK_VECTOR_MIN_SCORE", "0.45")  # ignored when caller passes one
     captured = _patch_search(monkeypatch)
     _run(nb.vector_search("hello", 10, minimum_score=0.1))
     assert captured["vars"]["minimum_score"] == 0.1

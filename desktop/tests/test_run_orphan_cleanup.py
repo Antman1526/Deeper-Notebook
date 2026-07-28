@@ -13,6 +13,7 @@ This test patches the phases to:
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,6 +31,7 @@ def _attach_fake_sv(ctx) -> MagicMock:
 def _patch_pre_phases(mp):
     """Stub out all pre-supervisor phases — they require real config/disk/etc."""
     for name in [
+        "_phase_detect_data_root_recovery",
         "_phase_load_config",
         "_phase_wizard_if_first_run",
         "_phase_bootstrap_runtime",
@@ -128,3 +130,52 @@ def test_run_swallows_stop_all_error_but_reraises_original(monkeypatch):
 
     with pytest.raises(ValueError, match=r"the real reason"):
         app_mod.run()
+
+
+def test_run_window_startup_exception_tears_down_each_runtime_exactly_once(
+    monkeypatch, tmp_path
+):
+    """The window phase and run() exception guard share one teardown owner."""
+    from desktop import app as app_mod
+    from desktop import window as desktop_window
+
+    ctx = app_mod._new_context()
+    supervisor_stops: list[bool] = []
+    runtime_stops: list[bool] = []
+    ctx.cfg = SimpleNamespace(theme="light-blue", openchronicle_choice="skip")
+    ctx.progress_bus = SimpleNamespace(publish=lambda *_args, **_kwargs: None)
+    ctx.log_dir = tmp_path / "logs"
+    ctx.log_dir.mkdir()
+    ctx.sv = SimpleNamespace(
+        frontend_url="http://127.0.0.1:62001/",
+        session_env={"INTERNAL_API_URL": "http://127.0.0.1:62000"},
+        whisper_port=0,
+        piper_port=0,
+        stop_all=lambda: supervisor_stops.append(True),
+    )
+
+    monkeypatch.setattr(app_mod, "_new_context", lambda: ctx)
+    monkeypatch.setattr(app_mod, "_phase_detect_app_recovery", lambda _ctx: None)
+    _patch_pre_phases(monkeypatch)
+    monkeypatch.setattr(app_mod, "_phase_start_supervisor", lambda _ctx: None)
+    for name in [
+        "_phase_auto_register",
+        "_phase_start_model_manager",
+        "_phase_start_memory_dashboard",
+        "_phase_install_tray",
+    ]:
+        monkeypatch.setattr(app_mod, name, lambda _ctx: None)
+
+    def fail_window_startup(*_args, **_kwargs):
+        raise RuntimeError("window startup failed")
+
+    monkeypatch.setattr(desktop_window, "open_window", fail_window_startup)
+    monkeypatch.setattr(
+        app_mod, "_stop_runtime", lambda _ctx: runtime_stops.append(True)
+    )
+
+    with pytest.raises(RuntimeError, match="window startup failed"):
+        app_mod.run()
+
+    assert supervisor_stops == [True]
+    assert runtime_stops == [True]

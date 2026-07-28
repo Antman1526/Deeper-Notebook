@@ -10,7 +10,7 @@ Fixes:
 
   1. `desktop/__init__.py:__version__` synced to v0.7.210.
   2. `api/main.py` exposes `GET /api/version` (auth-excluded).
-  3. `desktop/window.py` injects `window.ONP_VERSION` so the
+  3. `desktop/window.py` injects its compatibility version global so the
      frontend can render it.
   4. `frontend/src/components/layout/AppSidebar.tsx` adds a
      tiny version badge in the sidebar footer.
@@ -22,7 +22,6 @@ Fixes:
 from __future__ import annotations
 
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,7 +36,8 @@ def test_api_version_endpoint_defined():
     src = _src("api/main.py")
     assert '@app.get("/api/version")' in src
     assert 'from desktop import __version__ as desktop_version' in src
-    assert '"name": "Open Notebook Plus"' in src
+    assert '"name": PRODUCT_NAME' in src
+    assert '"description": DESCRIPTION' in src
 
 
 def test_api_version_excluded_from_auth():
@@ -104,10 +104,14 @@ def test_window_injects_onp_version_global():
 
 
 def test_sidebar_renders_version_badge():
-    """v0.7.210 — AppSidebar must render the version badge from
-    `window.ONP_VERSION` (or `—` fallback on SSR)."""
+    """v0.7.210 — AppSidebar renders the normalized desktop version bridge."""
     src = _src("frontend/src/components/layout/AppSidebar.tsx")
-    assert "ONP_VERSION" in src
+    bridge = _src("frontend/src/lib/desktop-version.ts")
+    assert "readDesktopVersion(window)" in src
+    assert (
+        "return bridge.DEEPER_NOTEBOOK_VERSION || bridge.ONP_VERSION"
+        in bridge
+    )
     assert "v0.7.210 — Version badge" in src
     # The badge is hidden when collapsed (matches the existing
     # sidebar pattern for footer chrome).
@@ -119,6 +123,8 @@ def test_periodic_reaper_loop_defined():
     function (5-min sleep + same query as the startup pass) and
     anchor the task via `_track_task` so the GC can't reap it."""
     src = _src("api/main.py")
+    from task_lifecycle_assertions import assert_lifespan_tracked_task
+
     assert "async def _reaper_loop()" in src
     # The 5-minute interval is load-bearing (any shorter would
     # spam the DB; any longer and the orphan-row UX regresses).
@@ -127,10 +133,10 @@ def test_periodic_reaper_loop_defined():
     # startup reaper — divergence would cause weird timing
     # discrepancies between the two paths.
     assert "AND updated < (time::now() - 30m)" in src
-    # Anchored via _track_task per the v0.7.190 GC-safe pattern.
-    assert (
-        "_track_task(asyncio.create_task(\n            _reaper_loop()"
-        in src
+    assert_lifespan_tracked_task(
+        src,
+        task_name="reaper_task",
+        coroutine_name="_reaper_loop",
     )
 
 

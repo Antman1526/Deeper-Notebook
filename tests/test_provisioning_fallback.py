@@ -5,8 +5,8 @@ import asyncio
 
 import pytest
 
-from open_notebook.ai import provision
-from open_notebook.exceptions import ConfigurationError
+from deeper_notebook.ai import provision
+from deeper_notebook.exceptions import ConfigurationError
 
 
 def _run(coro):

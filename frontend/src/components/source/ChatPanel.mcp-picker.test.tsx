@@ -53,7 +53,7 @@ vi.mock('@/components/chat/ChatMessageProviderBadge', () => ({
   ChatMessageProviderBadge: () => <span data-testid="provider-badge" />,
 }))
 
-vi.mock('@/components/onp', () => ({
+vi.mock('@/components/deeper-notebook', () => ({
   RunTimeline: () => <div data-testid="run-timeline" />,
 }))
 

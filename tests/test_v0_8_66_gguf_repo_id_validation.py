@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     async def _fake_start_download(repo_id, filename, dest_dir):
         return types.SimpleNamespace(
@@ -21,7 +21,7 @@ def client(monkeypatch, tmp_path):
             bytes_downloaded=0, bytes_total=None,
         )
 
-    import open_notebook.local_models as lm
+    import deeper_notebook.local_models as lm
     monkeypatch.setattr(lm, "start_download", _fake_start_download, raising=False)
 
     from api.main import app

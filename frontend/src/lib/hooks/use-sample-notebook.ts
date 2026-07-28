@@ -11,13 +11,13 @@ import { useCallback, useState } from 'react'
 import { useCreateNotebook } from './use-notebooks'
 import { useCreateSource } from './use-sources'
 
-const SAMPLE_NOTEBOOK_NAME = 'Sample: Welcome to Open Notebook+'
+const SAMPLE_NOTEBOOK_NAME = 'Sample: Welcome to Deeper Notebook'
 const SAMPLE_NOTEBOOK_DESCRIPTION =
   'A guided example notebook. Explore the source, then ask the AI about it.'
-const SAMPLE_SOURCE_TITLE = 'Getting started with Open Notebook+'
-const SAMPLE_SOURCE_CONTENT = `# Getting started with Open Notebook+
+const SAMPLE_SOURCE_TITLE = 'Getting started with Deeper Notebook'
+const SAMPLE_SOURCE_CONTENT = `# Getting started with Deeper Notebook
 
-Open Notebook+ is a **local-first, privacy-focused research assistant** — an
+Deeper Notebook is a **local-first, privacy-focused research assistant** — an
 alternative to Google's NotebookLM that runs on your own machine. Everything
 here happens locally unless you choose to use a cloud AI provider.
 
@@ -43,7 +43,7 @@ providers are optional and only used when you configure and select them.
 
 This notebook already contains this page as a source. Open the chat on the right
 and try one of the suggested questions — for example, ask **"What can I do with
-Open Notebook+?"** or **"How does Open Notebook+ handle privacy?"** The answer
+Deeper Notebook?"** or **"How does Deeper Notebook handle privacy?"** The answer
 will cite this document, and clicking the citation will highlight the passage it
 came from.
 `

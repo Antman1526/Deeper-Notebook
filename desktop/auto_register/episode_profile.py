@@ -31,6 +31,9 @@ from typing import Any, Dict, List
 
 import httpx
 
+from deeper_notebook.podcasts.profile_names import (
+    equivalent_episode_profile_names,
+)
 from desktop.auto_register._http import _is_embedding_gguf
 
 log = logging.getLogger(__name__)
@@ -52,7 +55,7 @@ _NON_CHAT_PREFIXES = ("piper-", "whisper-", "nomic-", "Local Embeddings")
 # to itself.
 _PRESETS: list[dict[str, Any]] = [
     {
-        "name": "Open Notebook Plus Local",
+        "name": "Deeper Notebook Local",
         "description": "Two-voice podcast using local Piper TTS",
         "num_segments": 5,
         "default_length_minutes": 5,
@@ -198,7 +201,6 @@ _PRESETS: list[dict[str, Any]] = [
     },
 ]
 
-
 def register_default_episode_profile(client: httpx.Client) -> None:
     """Idempotent: create the v0.7.30 preset library.
 
@@ -302,7 +304,10 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     degraded = 0
     skipped_no_speaker = 0
     for preset in _PRESETS:
-        if preset["name"] in existing:
+        equivalent_names = {
+            *equivalent_episode_profile_names(preset["name"]),
+        }
+        if existing & equivalent_names:
             skipped += 1
             continue
         # v0.7.149 — Fall back to "Local Duo" if the preset's preferred

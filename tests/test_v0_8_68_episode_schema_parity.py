@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_MIG_DIR = _REPO / "open_notebook" / "database" / "migrations"
+_MIG_DIR = _REPO / "deeper_notebook" / "database" / "migrations"
 
 # Maintained by ObjectModel/repository code, not by DEFINE FIELD parity.
 _BASE_FIELDS = {"id", "created", "updated"}
@@ -39,7 +39,7 @@ def _defined_episode_fields() -> set[str]:
 
 
 def test_every_episode_model_field_has_a_migration_define_field():
-    from open_notebook.podcasts.models import PodcastEpisode
+    from deeper_notebook.podcasts.models import PodcastEpisode
 
     model_fields = set(PodcastEpisode.model_fields) - _BASE_FIELDS
     defined = _defined_episode_fields()
@@ -72,7 +72,7 @@ def test_generation_stage_none_survives_prepare_save_data():
     """ObjectModel._prepare_save_data drops None fields unless declared
     nullable — without this, clearing the stage on completion is a no-op
     and finished episodes stay stuck on 'combining_audio'."""
-    from open_notebook.podcasts.models import PodcastEpisode
+    from deeper_notebook.podcasts.models import PodcastEpisode
 
     episode = PodcastEpisode(
         name="t", episode_profile={}, speaker_profile={},

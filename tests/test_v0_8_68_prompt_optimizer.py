@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,7 +32,7 @@ def test_trainer_accepts_programmatic_adapter():
     params = list(inspect.signature(ReflACTTrainer.__init__).parameters)
     assert params[1:3] == ["cfg", "adapter"], (
         "ReflACTTrainer no longer takes (cfg, adapter) — the integration "
-        "in open_notebook/prompt_optimizer must be updated"
+        "in deeper_notebook/prompt_optimizer must be updated"
     )
 
 
@@ -39,7 +40,7 @@ def test_vendored_base_config_flattens_with_required_keys():
     from skillopt.config import flatten_config, load_config
 
     flat = flatten_config(load_config(
-        str(_REPO / "open_notebook" / "prompt_optimizer" / "skillopt_base.yaml")
+        str(_REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_base.yaml")
     ))
     for key in ("num_epochs", "batch_size", "edit_budget", "skill_init",
                 "out_root", "target_model", "optimizer_model"):
@@ -51,7 +52,7 @@ def test_vendored_base_config_flattens_with_required_keys():
 # ------------------------------------------------------------- judge parsing
 
 def test_parse_judge_score():
-    from open_notebook.prompt_optimizer.adapter import parse_judge_score
+    from deeper_notebook.prompt_optimizer.adapter import parse_judge_score
 
     assert parse_judge_score('{"score": 0.85, "reason": "good"}') == 0.85
     assert parse_judge_score('garbage {"score": 1.4}') == 1.0  # clamped
@@ -63,7 +64,7 @@ def test_parse_judge_score():
 # ------------------------------------------------------------- dataloader
 
 def test_examples_dataloader_split_and_batches():
-    from open_notebook.prompt_optimizer.adapter import ExamplesDataLoader
+    from deeper_notebook.prompt_optimizer.adapter import ExamplesDataLoader
 
     items = [{"id": f"s{i}", "input_text": f"text {i}"} for i in range(6)]
     dl = ExamplesDataLoader(items, seed=1)
@@ -77,7 +78,7 @@ def test_examples_dataloader_split_and_batches():
 
 
 def test_single_item_still_yields_val():
-    from open_notebook.prompt_optimizer.adapter import ExamplesDataLoader
+    from deeper_notebook.prompt_optimizer.adapter import ExamplesDataLoader
 
     dl = ExamplesDataLoader([{"id": "only", "input_text": "x"}])
     assert dl.train_items and dl.val_items
@@ -85,8 +86,8 @@ def test_single_item_still_yields_val():
 
 # ------------------------------------------------------------- rollout
 
-def test_rollout_scores_with_judge(monkeypatch):
-    from open_notebook.prompt_optimizer import adapter as ad
+def test_rollout_scores_with_judge(monkeypatch, tmp_path):
+    from deeper_notebook.prompt_optimizer import adapter as ad
 
     def _fake_target(system, user, max_completion_tokens=0, **kw):
         return (f"OUTPUT for {user[:10]}", {})
@@ -104,15 +105,17 @@ def test_rollout_scores_with_judge(monkeypatch):
         workers=2,
     )
     results = adapter.rollout(
-        [{"id": "a", "input_text": "alpha"}], "PROMPT", "/tmp/po-test-out"
+        [{"id": "a", "input_text": "alpha"}],
+        "PROMPT",
+        str(tmp_path / "po-test-out"),
     )
     assert results[0]["soft"] == 0.9
     assert results[0]["hard"] == 1
     assert results[0]["task_type"] == "transformation"
 
 
-def test_rollout_target_failure_scores_zero(monkeypatch):
-    from open_notebook.prompt_optimizer import adapter as ad
+def test_rollout_target_failure_scores_zero(monkeypatch, tmp_path):
+    from deeper_notebook.prompt_optimizer import adapter as ad
 
     def _boom(system, user, max_completion_tokens=0, **kw):
         raise RuntimeError("provider down")
@@ -122,7 +125,9 @@ def test_rollout_target_failure_scores_zero(monkeypatch):
         items=[{"id": "a", "input_text": "alpha"}], criteria="c" * 20,
     )
     results = adapter.rollout(
-        [{"id": "a", "input_text": "alpha"}], "PROMPT", "/tmp/po-test-out"
+        [{"id": "a", "input_text": "alpha"}],
+        "PROMPT",
+        str(tmp_path / "po-test-out"),
     )
     assert results[0]["hard"] == 0 and results[0]["soft"] == 0.0
 
@@ -130,8 +135,8 @@ def test_rollout_target_failure_scores_zero(monkeypatch):
 # ------------------------------------------------------------- backends
 
 def test_resolve_backend_local(monkeypatch):
-    from open_notebook.podcasts import models as pm
-    from open_notebook.prompt_optimizer import runner
+    from deeper_notebook.podcasts import models as pm
+    from deeper_notebook.prompt_optimizer import runner
 
     async def _fake_resolve(model_id):
         return ("openai_compatible", "gemma-4-E4B",
@@ -145,8 +150,8 @@ def test_resolve_backend_local(monkeypatch):
 
 
 def test_resolve_backend_rejects_incompatible(monkeypatch):
-    from open_notebook.podcasts import models as pm
-    from open_notebook.prompt_optimizer import runner
+    from deeper_notebook.podcasts import models as pm
+    from deeper_notebook.prompt_optimizer import runner
 
     async def _fake_resolve(model_id):
         return ("anthropic", "claude-haiku-4-5", {})
@@ -157,7 +162,7 @@ def test_resolve_backend_rejects_incompatible(monkeypatch):
 
 
 def test_build_flat_config_wires_endpoints(tmp_path):
-    from open_notebook.prompt_optimizer.runner import build_flat_config
+    from deeper_notebook.prompt_optimizer.runner import build_flat_config
 
     flat = build_flat_config(
         run_dir=str(tmp_path),
@@ -206,15 +211,15 @@ def test_command_registered():
 
 def test_offline_gate_blocks_cloud_models(monkeypatch):
     from commands import prompt_optimizer_commands as poc
-    from open_notebook.health import network
-    from open_notebook.health.network import NetworkState
+    from deeper_notebook.health import network
+    from deeper_notebook.health.network import NetworkState
 
     async def _offline():
         return NetworkState(status="offline", forced_offline=False,
                             checked_at=0.0, source="probe")
     monkeypatch.setattr(network, "get_network_state_with_settings", _offline)
 
-    from open_notebook.podcasts import models as pm
+    from deeper_notebook.podcasts import models as pm
 
     async def _cloud(model_id):
         return ("openai", "gpt-4o-mini", {})
@@ -236,8 +241,9 @@ def test_all_command_input_schemas_resolve():
     ("<name>_command_input is not fully defined" → 500 on the API route,
     caught live). Force-resolve every registered command's input schema so
     the next module added with the future import fails here, not in prod."""
-    import commands  # noqa: F401 — triggers registration
     from surreal_commands.core.registry import CommandRegistry
+
+    import commands  # noqa: F401 — triggers registration
 
     registry = CommandRegistry()
     cmds = registry._commands  # no public enumeration API in 1.x
@@ -257,7 +263,7 @@ def test_dataloader_reports_train_size_to_trainer():
     resolution path."""
     from skillopt.engine.trainer import _resolve_train_size
 
-    from open_notebook.prompt_optimizer.adapter import ExamplesDataLoader
+    from deeper_notebook.prompt_optimizer.adapter import ExamplesDataLoader
 
     items = [{"id": f"s{i}", "input_text": f"text {i}"} for i in range(5)]
     dl = ExamplesDataLoader(items, seed=1)
@@ -270,7 +276,7 @@ def test_vendored_prompts_cover_patch_mode_pipeline():
     config must all be vendored — each was a live mid-training crash."""
     vendored = {
         p.name for p in
-        (_REPO / "open_notebook" / "prompt_optimizer" / "skillopt_prompts").glob("*.md")
+        (_REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_prompts").glob("*.md")
     }
     for name in ("analyst_error", "analyst_success",
                  "merge_failure", "merge_success", "merge_final"):
@@ -278,7 +284,7 @@ def test_vendored_prompts_cover_patch_mode_pipeline():
 
 
 def test_ensure_skillopt_prompts_backfills_missing_only(tmp_path):
-    from open_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
+    from deeper_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
 
     (tmp_path / "analyst_error.md").write_text("EXISTING — do not clobber")
     copied = ensure_skillopt_prompts(dest_dir=tmp_path)
@@ -290,14 +296,34 @@ def test_ensure_skillopt_prompts_backfills_missing_only(tmp_path):
     assert ensure_skillopt_prompts(dest_dir=tmp_path) == 0  # idempotent
 
 
-def test_ensure_skillopt_prompts_fixes_real_package():
-    """After backfill, skillopt's own loader must resolve the names that
-    crashed live ('Prompt analyst_success not found', merge_* in aggregate)."""
-    from skillopt.prompts import load_prompt
+def test_ensure_skillopt_prompts_fixes_disposable_package(monkeypatch, tmp_path):
+    """Backfill must satisfy SkillOpt's loader without mutating site-packages."""
+    import skillopt.prompts as skillopt_prompts
 
-    from open_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
+    from deeper_notebook.prompt_optimizer.runner import ensure_skillopt_prompts
 
-    ensure_skillopt_prompts()
+    installed_prompts = Path(skillopt_prompts.__file__).parent
+    installed_snapshot = {
+        path.name: path.read_bytes()
+        for path in installed_prompts.glob("*.md")
+    }
+    disposable_prompts = tmp_path / "skillopt" / "prompts"
+    shutil.copytree(installed_prompts, disposable_prompts)
+    for prompt in disposable_prompts.glob("*.md"):
+        prompt.unlink()
+
+    ensure_skillopt_prompts(dest_dir=disposable_prompts)
+    monkeypatch.setattr(
+        skillopt_prompts,
+        "_PROMPTS_DIR",
+        str(disposable_prompts),
+    )
     for name in ("analyst_error", "analyst_success",
                  "merge_failure", "merge_success", "merge_final"):
-        assert load_prompt(name).strip(), f"load_prompt({name!r}) empty"
+        assert skillopt_prompts.load_prompt(name).strip(), (
+            f"load_prompt({name!r}) empty"
+        )
+    assert {
+        path.name: path.read_bytes()
+        for path in installed_prompts.glob("*.md")
+    } == installed_snapshot

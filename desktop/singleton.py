@@ -2,7 +2,7 @@
 
 Why this exists (real user incident, 2026-05-19):
 
-  User double-clicked `Open Notebook Plus.app` multiple times during
+  User double-clicked `Deeper Notebook.app` multiple times during
   debugging. Each click spawned a fresh launcher process tree (uvicorn
   API + Next.js + worker + SurrealDB binary) with independent dynamic
   ports. The launchers were completely unaware of each other. Closing
@@ -56,7 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from desktop.paths import user_home
+from desktop.data_root import active_data_root
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class AlreadyRunning(RuntimeError):
 
     def __init__(self, pid: int, pid_file: Path):
         super().__init__(
-            f"Another Open Notebook Plus launcher is already running "
+            f"Another Deeper Notebook launcher is already running "
             f"(PID {pid}; lock at {pid_file}). Quit the existing app "
             "or wait for its shutdown before relaunching."
         )
@@ -188,7 +188,7 @@ def acquire_singleton(
     """Acquire the singleton lock or raise `AlreadyRunning`.
 
     `pid_file` should be a path under the per-user state dir (e.g.,
-    `~/.open-notebook-plus/launcher.pid`). Parent directory is
+    `~/.deeper-notebook/launcher.pid`). Parent directory is
     created if missing.
 
     Behavior:
@@ -339,7 +339,7 @@ def reap_orphans(
     dry_run: bool = False,
 ) -> list[OrphanProcess]:
     """Find processes whose executable path lives inside any of
-    `bundle_paths` (typically `~/.open-notebook-plus/venv` and
+    `bundle_paths` (typically `~/.deeper-notebook/venv` and
     `desktop/bin/`) and whose parent is no longer this launcher.
 
     Cross-platform: uses `ps -ef` on POSIX, `tasklist /v /fo csv` on
@@ -560,5 +560,4 @@ def _kill_orphan(pid: int, cmdline: str) -> None:
 
 def default_pid_file() -> Path:
     """Canonical PID-file location for the desktop launcher."""
-    base = user_home()
-    return base / ".open-notebook-plus" / "launcher.pid"
+    return active_data_root() / "launcher.pid"

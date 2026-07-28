@@ -41,7 +41,7 @@ The fix:
      build) and writes to the live file, never compounding edits.
   3. If the bundle directory is read-only (e.g., `.app` installed
      to `/Applications` by another user), the patcher copies the
-     frontend to `~/.open-notebook-plus/frontend-runtime/` and
+     frontend to `~/.deeper-notebook/frontend-runtime/` and
      patches there instead, returning that path for the launcher
      to use as `cwd`.
 
@@ -59,9 +59,10 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 
-from desktop.paths import user_home
+from desktop.data_root import active_data_root
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ REWRITE_TARGET_FILES: tuple[str, ...] = (
 BUILD_TIME_DEFAULT_HOST = "localhost:5055"
 
 # Where we copy the frontend to if the bundle directory is read-only.
-# Same parent as other launcher runtime state (`~/.open-notebook-plus/`).
+# Same parent as other launcher runtime state (`~/.deeper-notebook/`).
 WRITABLE_COPY_NAME = "frontend-runtime"
 
 
@@ -137,11 +138,11 @@ def _copy_to_writable(frontend_dir: Path) -> Path:
     return the new path. Idempotent: only copies on first invocation
     or when the source has been updated.
 
-    The destination is `~/.open-notebook-plus/frontend-runtime/`.
+    The destination is `~/.deeper-notebook/frontend-runtime/`.
     We compare source/dest mtimes on a sentinel file (`server.js`)
     to decide whether to re-copy after an app upgrade.
     """
-    user_dir = user_home() / ".open-notebook-plus" / WRITABLE_COPY_NAME
+    user_dir = active_data_root() / WRITABLE_COPY_NAME
     src_sentinel = frontend_dir / "server.js"
     dest_sentinel = user_dir / "server.js"
 
@@ -209,7 +210,7 @@ def patch_rewrites_for_api_port(
 
     Returns:
         Path to spawn Next.js from. Either `frontend_dir` (if it
-        was writable) or `~/.open-notebook-plus/frontend-runtime/`
+        was writable) or `~/.deeper-notebook/frontend-runtime/`
         (writable per-user copy).
 
     Raises:
@@ -232,7 +233,7 @@ def patch_rewrites_for_api_port(
     # package.json,public} as symlinks INTO Resources. The launcher passes the
     # Frameworks path (repo_root/frontend = MEIPASS/frontend). Copying that
     # read-only dir with copytree(symlinks=True) reproduces the symlinks in
-    # ~/.open-notebook-plus/frontend-runtime, where they DANGLE — they point
+    # ~/.deeper-notebook/frontend-runtime, where they DANGLE — they point
     # `../../Resources/...` relative to the new location, which does not exist.
     # The patcher then finds no server.js/.next manifests, can't inject the
     # dynamic API port, and the frontend falls back to the baked localhost:5055
@@ -248,13 +249,17 @@ def patch_rewrites_for_api_port(
         )
         frontend_dir = real_dir
 
-    # First: see if we can write to the bundle. If not, copy to a
-    # per-user writable location and patch there.
+    # A frozen bundle is signed even when its filesystem permissions allow
+    # writes. Patching it in place invalidates the macOS code-signing seal, so
+    # packaged runtimes always use a per-user copy. Development trees may
+    # still patch in place when writable.
     work_dir = frontend_dir
-    if not _is_writable(frontend_dir):
+    frozen_runtime = bool(getattr(sys, "frozen", False))
+    if frozen_runtime or not _is_writable(frontend_dir):
         log.info(
-            "Bundle frontend at %s is read-only; using writable copy",
-            frontend_dir,
+            "Frontend at %s requires a writable runtime copy "
+            "(frozen=%s)",
+            frontend_dir, frozen_runtime,
         )
         try:
             work_dir = _copy_to_writable(frontend_dir)

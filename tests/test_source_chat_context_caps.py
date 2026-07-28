@@ -1,6 +1,6 @@
 """v0.7.12 — regression tests for source_chat context-budget caps.
 
-`_format_source_context` in open_notebook/graphs/source_chat.py
+`_format_source_context` in deeper_notebook/graphs/source_chat.py
 previously had ONE cap (source full_text @ 5000 chars hardcoded) and
 zero caps on the insight side. A source with 20 LLM-generated insights
 of 1500 chars each = 30 KB ≈ 7,500 tokens of context — which combined
@@ -8,13 +8,13 @@ with the 8192-token output reservation already overflowed a
 16k-context local server (v0.7.8 default).
 
 These tests pin the new env-configurable caps:
-  - ONP_SOURCE_CHAT_SOURCE_CHAR_CAP    (default 4_000)
-  - ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP   (default 1_000)
-  - ONP_SOURCE_CHAT_MAX_INSIGHTS       (default 10)
+  - DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP    (default 4_000)
+  - DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP   (default 1_000)
+  - DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS       (default 10)
 """
 from __future__ import annotations
 
-from open_notebook.graphs import source_chat
+from deeper_notebook.graphs import source_chat
 
 # ---------------------------------------------------------------------------
 # Builders
@@ -46,9 +46,9 @@ def _insight(rid: str, content: str, itype: str = "summary") -> dict:
 # ---------------------------------------------------------------------------
 
 def test_source_full_text_default_cap_is_4000(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     big = "A" * 10_000
     out = source_chat._format_source_context(_ctx(sources=[_source("source:1", big)]))
@@ -61,9 +61,9 @@ def test_source_full_text_default_cap_is_4000(monkeypatch):
 
 
 def test_source_full_text_respects_env_cap(monkeypatch):
-    monkeypatch.setenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", "1000")
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", "1000")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     big = "B" * 5_000
     out = source_chat._format_source_context(_ctx(sources=[_source("source:1", big)]))
@@ -72,7 +72,7 @@ def test_source_full_text_respects_env_cap(monkeypatch):
 
 
 def test_source_under_cap_not_truncated(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
     short = "Short article body."
     out = source_chat._format_source_context(_ctx(sources=[_source("s:1", short)]))
     assert short in out
@@ -86,9 +86,9 @@ def test_source_under_cap_not_truncated(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_insight_content_default_cap_is_1000(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     fat_insight = _insight("insight:1", "C" * 5_000)
     out = source_chat._format_source_context(_ctx(insights=[fat_insight]))
@@ -97,9 +97,9 @@ def test_insight_content_default_cap_is_1000(monkeypatch):
 
 
 def test_insight_content_respects_env_cap(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.setenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", "300")
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", "300")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     fat = _insight("insight:1", "D" * 2_000)
     out = source_chat._format_source_context(_ctx(insights=[fat]))
@@ -108,9 +108,9 @@ def test_insight_content_respects_env_cap(monkeypatch):
 
 
 def test_short_insight_not_truncated(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     short = _insight("insight:1", "Brief insight body.")
     out = source_chat._format_source_context(_ctx(insights=[short]))
@@ -121,9 +121,9 @@ def test_short_insight_not_truncated(monkeypatch):
 def test_insight_handles_non_string_content(monkeypatch):
     """Defensive: insight content might come back as a list or dict
     from quirky upstream code paths — don't crash."""
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     weird = {"id": "insight:1", "insight_type": "summary",
              "content": ["chunk a", "chunk b"]}
@@ -137,9 +137,9 @@ def test_insight_handles_non_string_content(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_max_insights_default_is_10(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     many = [_insight(f"insight:{i}", f"body {i}") for i in range(25)]
     out = source_chat._format_source_context(_ctx(insights=many))
@@ -154,9 +154,9 @@ def test_max_insights_default_is_10(monkeypatch):
 
 
 def test_max_insights_env_override(monkeypatch):
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.setenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", "3")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", "3")
 
     many = [_insight(f"insight:{i}", f"body {i}") for i in range(10)]
     out = source_chat._format_source_context(_ctx(insights=many))
@@ -170,9 +170,9 @@ def test_max_insights_env_override(monkeypatch):
 def test_under_max_no_drop_marker(monkeypatch):
     """If we have fewer insights than the cap, the 'elided' marker
     must NOT appear (no false-positive warnings about drops)."""
-    monkeypatch.delenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     few = [_insight(f"insight:{i}", "body") for i in range(3)]
     out = source_chat._format_source_context(_ctx(insights=few))
@@ -186,9 +186,9 @@ def test_under_max_no_drop_marker(monkeypatch):
 def test_invalid_env_falls_back_to_defaults(monkeypatch):
     """Garbage in any of the three env vars → default applied silently
     (with a warning log) instead of crashing or passing garbage downstream."""
-    monkeypatch.setenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", "not-an-int")
-    monkeypatch.setenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", "abc")
-    monkeypatch.setenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", "nope")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", "not-an-int")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", "abc")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", "nope")
 
     src = _source("source:1", "X" * 10_000)
     insights = [_insight(f"insight:{i}", "Y" * 3_000) for i in range(20)]
@@ -207,9 +207,9 @@ def test_invalid_env_falls_back_to_defaults(monkeypatch):
 def test_too_low_env_falls_back(monkeypatch):
     """Caps below the minimum sentinel are typo-protection: fall back
     to default rather than ship a useless 50-char snippet."""
-    monkeypatch.setenv("ONP_SOURCE_CHAT_SOURCE_CHAR_CAP", "50")
-    monkeypatch.setenv("ONP_SOURCE_CHAT_INSIGHT_CHAR_CAP", "10")
-    monkeypatch.delenv("ONP_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", "50")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", "10")
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
     src = _source("source:1", "X" * 10_000)
     insight = _insight("insight:1", "Y" * 5_000)

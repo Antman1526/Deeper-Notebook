@@ -3,7 +3,7 @@
 # This is the complete privacy-focused setup with NO external APIs needed:
 # - Ollama: Local LLM and embeddings (mistral, llama, nomic-embed, etc.)
 # - Speaches: Local TTS (text-to-speech) and STT (speech-to-text)
-# - Open Notebook: Your research assistant
+# - Deeper Notebook: Your research assistant
 # - SurrealDB: Local database
 #
 # Perfect for:
@@ -15,7 +15,7 @@
 #
 # Usage:
 #   1. Copy this file to your project folder as docker-compose.yml
-#   2. Change OPEN_NOTEBOOK_ENCRYPTION_KEY below
+#   2. Change DEEPER_NOTEBOOK_ENCRYPTION_KEY below
 #   3. Run: docker compose up -d
 #   4. Pull models (see instructions below)
 #   5. Configure providers in UI
@@ -67,21 +67,21 @@ services:
     # For GPU acceleration, use: ghcr.io/speaches-ai/speaches:latest-cuda
     # and add GPU device mapping (see docs)
 
-  open_notebook:
+  deeper_notebook:
     image: lfnovo/open_notebook:v1-latest
     ports:
       - "8502:8502"
       - "5055:5055"
     environment:
       # REQUIRED: Change this to your own secret string
-      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
+      - DEEPER_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
 
       # Database connection
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=root
       - SURREAL_PASSWORD=root
-      - SURREAL_NAMESPACE=open_notebook
-      - SURREAL_DATABASE=open_notebook
+      - SURREAL_NAMESPACE=deeper_notebook
+      - SURREAL_DATABASE=deeper_notebook
 
       # Ollama connection (optional, can also configure via UI)
       - OLLAMA_BASE_URL=http://ollama:11434
@@ -103,13 +103,13 @@ volumes:
 # ==========================================
 #
 # Ollama Models (LLM):
-#   docker exec open_notebook-ollama-1 ollama pull mistral
-#   docker exec open_notebook-ollama-1 ollama pull llama3.1
-#   docker exec open_notebook-ollama-1 ollama pull qwen2.5
+#   docker exec deeper_notebook-ollama-1 ollama pull mistral
+#   docker exec deeper_notebook-ollama-1 ollama pull llama3.1
+#   docker exec deeper_notebook-ollama-1 ollama pull qwen2.5
 #
 # Ollama Models (Embeddings):
-#   docker exec open_notebook-ollama-1 ollama pull nomic-embed-text
-#   docker exec open_notebook-ollama-1 ollama pull mxbai-embed-large
+#   docker exec deeper_notebook-ollama-1 ollama pull nomic-embed-text
+#   docker exec deeper_notebook-ollama-1 ollama pull mxbai-embed-large
 #
 # Speaches (TTS):
 #   docker compose exec speaches uv tool run speaches-cli model download speaches-ai/Kokoro-82M-v1.0-ONNX

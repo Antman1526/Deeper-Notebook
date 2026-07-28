@@ -7,7 +7,7 @@ Covers:
   - `register_osaurus_models` no-op when port silent (returns False,
     no API calls).
   - Idempotency on re-run: existing credential, no new models → False.
-  - Custom port via OPEN_NOTEBOOK_OSAURUS_PORT env var.
+  - Custom port via DEEPER_NOTEBOOK_OSAURUS_PORT env var.
 
 Tests are network-isolated — no real Osaurus required. We mock the
 probe at the httpx level and stub the auto_register HTTP helpers at
@@ -26,19 +26,19 @@ from desktop.auto_register import osaurus as osaurus_mod
 def test_osaurus_port_default():
     """Default port is 1337 — Osaurus's documented default."""
     import os as _os
-    _os.environ.pop("OPEN_NOTEBOOK_OSAURUS_PORT", None)
+    _os.environ.pop("DEEPER_NOTEBOOK_OSAURUS_PORT", None)
     assert osaurus_mod._osaurus_port() == 1337
 
 
 def test_osaurus_port_env_override(monkeypatch):
-    monkeypatch.setenv("OPEN_NOTEBOOK_OSAURUS_PORT", "1338")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_OSAURUS_PORT", "1338")
     assert osaurus_mod._osaurus_port() == 1338
 
 
 def test_osaurus_port_env_garbage_falls_back(monkeypatch):
     """Garbage env values fall back to 1337 with a warning — better
     than crashing the launcher on a typo."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_OSAURUS_PORT", "not-a-number")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_OSAURUS_PORT", "not-a-number")
     assert osaurus_mod._osaurus_port() == 1337
 
 

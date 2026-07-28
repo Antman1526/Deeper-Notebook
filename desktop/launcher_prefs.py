@@ -1,6 +1,6 @@
 """v0.8.6 Item D — File-backed launcher preference layer.
 
-Reads and writes ``~/.open-notebook-plus/launcher.env`` as a KEY=VALUE file
+Reads and writes ``~/.deeper-notebook/launcher.env`` as a KEY=VALUE file
 so non-CLI users can configure the same knobs that are otherwise set via
 shell env or ``.env`` files.
 
@@ -14,7 +14,7 @@ Format
 Env-var precedence
 ------------------
 ``merge_with_env(env)`` applies file values ONLY for keys not already present
-in ``env``. This means a shell-level ``export OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/x``
+in ``env``. This means a shell-level ``export DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH=/x``
 always wins over anything in the file — consistent with ops/CI override workflows.
 
 Whitelist
@@ -30,6 +30,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from deeper_notebook.environment import normalize_product_environment
+from desktop.data_root import active_data_root
+
 # v0.8.8 — log handle so merge_with_env can surface a malformed
 # launcher.env (was silently swallowing ValueError pre-v0.8.8).
 log = logging.getLogger(__name__)
@@ -40,17 +43,23 @@ log = logging.getLogger(__name__)
 # understood set of knobs — not a general-purpose secrets store.
 # ---------------------------------------------------------------------------
 ALLOWED_KEYS: frozenset[str] = frozenset({
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",    # canonical alias mirroring the spec table
-    "ONP_CHAT_LLM_CTX",
-    "ONP_CHAT_LLM_CTX_MAX",
+    "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+    "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+    "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
+    "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX",
 })
+
+
+def _canonicalize_prefs(prefs: dict[str, str]) -> dict[str, str]:
+    """Canonicalize compatibility keys through the central registry."""
+    normalized = normalize_product_environment(prefs)
+    return {key: normalized[key] for key in ALLOWED_KEYS if key in normalized}
 
 
 def _prefs_path() -> Path:
     """Return the canonical path to the launcher.env file."""
-    return Path.home() / ".open-notebook-plus" / "launcher.env"
+    return active_data_root() / "launcher.env"
 
 
 def _parse_file(text: str) -> dict[str, str]:
@@ -131,7 +140,7 @@ def get_prefs() -> dict[str, str]:
         return {}
     parsed = _parse_file(path.read_text(encoding="utf-8"))
     # Defense in depth — only surface whitelisted keys.
-    return {k: v for k, v in parsed.items() if k in ALLOWED_KEYS}
+    return _canonicalize_prefs(parsed)
 
 
 def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
@@ -163,6 +172,8 @@ def update_prefs(updates: dict[str, Any]) -> dict[str, str]:
             current.pop(key, None)
         else:
             current[key] = str(value)
+
+    current = _canonicalize_prefs(current)
 
     # Write atomically (write to a temp file, rename).
     path.parent.mkdir(parents=True, exist_ok=True)

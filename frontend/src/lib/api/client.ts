@@ -133,7 +133,7 @@ apiClient.interceptors.response.use(
             ? 'Service unavailable. The API or one of its dependencies is down.'
             : status === 502
               ? 'Bad gateway. The local model or downstream service is unreachable.'
-              : 'Server error. Check the API log (~/.open-notebook-plus/logs/api.log) for details.'
+              : 'Server error. Check the API log (~/.deeper-notebook/logs/api.log) for details.'
         toast.error(message)
       }
     }

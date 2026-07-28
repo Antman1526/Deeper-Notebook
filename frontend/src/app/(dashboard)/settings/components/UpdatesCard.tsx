@@ -59,7 +59,7 @@ export function UpdatesCard() {
             <span className="block text-sm text-muted-foreground">
               {t('updates.privacyNote', {
                 defaultValue:
-                  'When on, Open Notebook Plus checks GitHub for new releases on launch (about once a day). This sends a request to GitHub; no other data is shared.',
+                  'When on, Deeper Notebook checks GitHub for new releases on launch (about once a day). This sends a request to GitHub; no other data is shared.',
               })}
             </span>
           </span>

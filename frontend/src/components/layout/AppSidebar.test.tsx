@@ -37,6 +37,7 @@ describe('AppSidebar', () => {
     expect(screen.getByText('common.appName')).toBeDefined()
     expect(screen.getByText('navigation.sources')).toBeDefined()
     expect(screen.getByText('navigation.notebooks')).toBeDefined()
+    expect(screen.getByText('navigation.knowledge')).toBeDefined()
   })
 
   it('toggles collapse state when clicking handle', () => {
@@ -63,5 +64,8 @@ describe('AppSidebar', () => {
 
     // In collapsed mode, app name shouldn't be visible (as text)
     expect(screen.queryByText('common.appName')).toBeNull()
+    expect(
+      screen.getByRole('img', { name: 'Deeper Notebook' }),
+    ).toBeInTheDocument()
   })
 })

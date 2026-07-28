@@ -11,19 +11,22 @@ Two bugs caught by code review:
 These tests exercise the discovery + parallel-list invariants without
 touching SurrealDB.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from open_notebook.database.async_migrate import (
+from deeper_notebook.database.async_migrate import (
     AsyncMigrationManager,
     AsyncMigrationRunner,
 )
 
 
-def _write_migration_files(d: Path, ns: list[int], with_downs: list[int] = None) -> None:
+def _write_migration_files(
+    d: Path, ns: list[int], with_downs: list[int] = None
+) -> None:
     """Write empty migration files `1.surrealql`, `2.surrealql`, ... into d.
     with_downs: list of n's that also get a <n>_down.surrealql."""
     with_downs = with_downs or []
@@ -49,7 +52,7 @@ def test_discover_pads_downs_with_none_when_missing(tmp_path):
     ups, downs = AsyncMigrationManager._discover_migrations(mig_dir=tmp_path)
     assert len(ups) == len(downs) == 3
     assert downs[0] is not None  # 1_down exists
-    assert downs[1] is None       # 2_down missing
+    assert downs[1] is None  # 2_down missing
     assert downs[2] is not None  # 3_down exists
 
 
@@ -79,6 +82,27 @@ def test_discover_empty_dir_returns_empty_lists(tmp_path):
     assert ups == [] and downs == []
 
 
+def test_default_migration_discovery_uses_canonical_package_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 1
+    assert len(downs) == len(ups)
+
+
+def test_default_migration_discovery_includes_vault_repair_33_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 33
+    assert "idx_note_vault_title_key" in ups[32].sql
+    assert "idx_vault_trust_manifest" in ups[32].sql
+    assert downs[32] is not None
+    assert "schema_preserved: true" in downs[32].sql
+    assert ups[32].version == 33
+    assert downs[32].version == 33
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])
@@ -97,7 +121,7 @@ async def test_run_one_down_raises_clear_error_for_missing_down(monkeypatch, tmp
 
     # Stub get_latest_version → 2 (pretend DB is at version 2)
     monkeypatch.setattr(
-        "open_notebook.database.async_migrate.get_latest_version",
+        "deeper_notebook.database.async_migrate.get_latest_version",
         _AsyncReturn(2),
     )
 
@@ -108,4 +132,5 @@ async def test_run_one_down_raises_clear_error_for_missing_down(monkeypatch, tmp
 def _AsyncReturn(value):
     async def _f():
         return value
+
     return _f

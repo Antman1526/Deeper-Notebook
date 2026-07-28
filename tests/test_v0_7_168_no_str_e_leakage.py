@@ -50,7 +50,7 @@ def test_router_does_not_leak_str_e_to_http_detail(router_path: Path):
     internals and be untranslatable.
 
     If you're adding a new endpoint and need to surface a richer
-    error message, raise a typed `OpenNotebookError` subclass
+    error message, raise a typed `DeeperNotebookError` subclass
     (NotFoundError, InvalidInputError, etc.) — those have explicit,
     safe message contracts and are mapped to the right HTTP status
     by the global exception handlers in api/main.py:567-616.

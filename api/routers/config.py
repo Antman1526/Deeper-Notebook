@@ -9,8 +9,8 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 from api.routers.sources import _source_upload_max_bytes
-from open_notebook.database.repository import repo_query
-from open_notebook.utils.version_utils import (
+from deeper_notebook.database.repository import repo_query
+from deeper_notebook.utils.version_utils import (
     compare_versions,
     get_version_from_github_async,
 )

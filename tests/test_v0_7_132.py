@@ -93,7 +93,7 @@ class TestUpstreamProbe:
     async def test_no_credentials_returns_ok_status(self):
         from api.main import _probe_upstream_providers
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=[]),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
@@ -105,7 +105,7 @@ class TestUpstreamProbe:
     async def test_credential_list_failure_returns_error(self):
         from api.main import _probe_upstream_providers
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(side_effect=RuntimeError("db down")),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
@@ -118,10 +118,10 @@ class TestUpstreamProbe:
         from api.main import _probe_upstream_providers
         creds = [_FakeCredential(1, "openai"), _FakeCredential(2, "anthropic")]
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=creds),
         ), patch(
-            "open_notebook.ai.connection_tester.test_provider_connection",
+            "deeper_notebook.ai.connection_tester.test_provider_connection",
             AsyncMock(return_value=(True, "Connection successful")),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
@@ -141,10 +141,10 @@ class TestUpstreamProbe:
             return (True, "ok") if provider == "openai" else (False, "401")
 
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=creds),
         ), patch(
-            "open_notebook.ai.connection_tester.test_provider_connection",
+            "deeper_notebook.ai.connection_tester.test_provider_connection",
             new=fake_probe,
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
@@ -163,10 +163,10 @@ class TestUpstreamProbe:
 
         creds = [_FakeCredential(1, "openai")]
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=creds),
         ), patch(
-            "open_notebook.ai.connection_tester.test_provider_connection",
+            "deeper_notebook.ai.connection_tester.test_provider_connection",
             new=slow_probe,
         ):
             result = await _probe_upstream_providers(timeout_seconds=0.2)
@@ -188,10 +188,10 @@ class TestUpstreamProbe:
 
         creds = [_FakeCredential(1, "openai"), _FakeCredential(2, "anthropic")]
         with patch(
-            "open_notebook.domain.credential.Credential.get_all",
+            "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=creds),
         ), patch(
-            "open_notebook.ai.connection_tester.test_provider_connection",
+            "deeper_notebook.ai.connection_tester.test_provider_connection",
             new=raising_probe,
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
@@ -224,16 +224,16 @@ class TestHealthzDeepProbeFlag:
             "api.routers.config.check_database_health",
             AsyncMock(return_value={"status": "online"}),
         ), patch(
-            "open_notebook.database.async_migrate.AsyncMigrationManager"
+            "deeper_notebook.database.async_migrate.AsyncMigrationManager"
         ) as mgr_cls:
             mgr = MagicMock()
             mgr.needs_migration = AsyncMock(return_value=False)
             mgr_cls.return_value = mgr
             with patch(
-                "open_notebook.ai.models.model_manager.get_embedding_model",
+                "deeper_notebook.ai.models.model_manager.get_embedding_model",
                 AsyncMock(return_value=MagicMock()),
             ), patch(
-                "open_notebook.ai.models.model_manager.get_default_model",
+                "deeper_notebook.ai.models.model_manager.get_default_model",
                 AsyncMock(return_value=MagicMock()),
             ):
                 r = client.get("/healthz/deep")
@@ -249,19 +249,19 @@ class TestHealthzDeepProbeFlag:
             "api.routers.config.check_database_health",
             AsyncMock(return_value={"status": "online"}),
         ), patch(
-            "open_notebook.database.async_migrate.AsyncMigrationManager"
+            "deeper_notebook.database.async_migrate.AsyncMigrationManager"
         ) as mgr_cls:
             mgr = MagicMock()
             mgr.needs_migration = AsyncMock(return_value=False)
             mgr_cls.return_value = mgr
             with patch(
-                "open_notebook.ai.models.model_manager.get_embedding_model",
+                "deeper_notebook.ai.models.model_manager.get_embedding_model",
                 AsyncMock(return_value=MagicMock()),
             ), patch(
-                "open_notebook.ai.models.model_manager.get_default_model",
+                "deeper_notebook.ai.models.model_manager.get_default_model",
                 AsyncMock(return_value=MagicMock()),
             ), patch(
-                "open_notebook.domain.credential.Credential.get_all",
+                "deeper_notebook.domain.credential.Credential.get_all",
                 AsyncMock(return_value=[]),
             ):
                 r = client.get("/healthz/deep?probe_providers=true")

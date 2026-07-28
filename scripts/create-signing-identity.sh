@@ -6,7 +6,7 @@
 # re-signed with the SAME identity on every rebuild:
 #
 #     bash scripts/create-signing-identity.sh
-#     make build-mac ONP_CODESIGN_IDENTITY="Open Notebook Plus Local"
+#     make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY="Deeper Notebook Local"
 #
 # Why: the default build re-seals with an ad-hoc signature (`codesign --sign -`),
 # which gives the app a NEW cryptographic identity every rebuild. macOS ties
@@ -18,18 +18,18 @@
 # SAFE + idempotent: only ADDS a self-signed cert to YOUR login keychain. It
 # does not touch the app build, network, or any secrets. Re-running is a no-op
 # if the identity already exists. Default `make build-mac` is UNCHANGED (still
-# ad-hoc) unless you pass ONP_CODESIGN_IDENTITY.
+# ad-hoc) unless you pass DEEPER_NOTEBOOK_CODESIGN_IDENTITY.
 #
 # This is a LOCAL-DEV convenience, NOT notarization — the app is still not
 # Apple-notarized; first launch may still need right-click → Open.
 set -euo pipefail
 
-IDENTITY="${1:-Open Notebook Plus Local}"
+IDENTITY="${1:-Deeper Notebook Local}"
 KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 
 if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then
   echo "✅ Code-signing identity '$IDENTITY' already exists. Nothing to do."
-  echo "   Build with:  make build-mac ONP_CODESIGN_IDENTITY=\"$IDENTITY\""
+  echo "   Build with:  make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY=\"$IDENTITY\""
   exit 0
 fi
 
@@ -81,7 +81,7 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCH
 
 if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then
   echo "✅ Created '$IDENTITY'."
-  echo "   Build with:  make build-mac ONP_CODESIGN_IDENTITY=\"$IDENTITY\""
+  echo "   Build with:  make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY=\"$IDENTITY\""
 else
   echo "❌ Identity not found after import — see any errors above." >&2
   exit 1

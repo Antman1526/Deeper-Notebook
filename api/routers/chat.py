@@ -12,23 +12,25 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
-from open_notebook.exceptions import (
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import ChatSession, Note, Notebook, Source
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import (
     ConfigurationError,
     ExternalServiceError,
     InvalidInputError,
     NetworkError,
     NotFoundError,
 )
-from open_notebook.graphs.chat import graph as chat_graph
+
 # v0.7.192 — Lazy async-graph getter for ainvoke / astream_events
 # call sites. Newer langgraph raises NotImplementedError when those
 # internally call aget_tuple() against the sync SqliteSaver. The
 # lazy pattern works around aiosqlite capturing the event loop at
-# construct time; see open_notebook/graphs/chat.py for details.
-from open_notebook.graphs.chat import get_async_graph
-from open_notebook.utils.graph_utils import get_session_message_count
+# construct time; see deeper_notebook/graphs/chat.py for details.
+from deeper_notebook.graphs.chat import get_async_graph
+from deeper_notebook.graphs.chat import graph as chat_graph
+from deeper_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
 
@@ -40,7 +42,7 @@ router = APIRouter()
 # up since v0.7.47, but until now NOTHING in the chat path actually
 # submitted those jobs after a turn — so the memory feature was
 # entirely inert at runtime. Both /chat/execute and /chat/stream now
-# fire `open_notebook.memory_extract_turn` fire-and-forget after the
+# fire `deeper_notebook.memory_extract_turn` fire-and-forget after the
 # turn's session.save() succeeds.
 #
 # Best-effort: any failure is logged at debug and swallowed. The
@@ -86,7 +88,7 @@ async def _fire_memory_extract_turn(
 
     v0.7.83 — `model_override` is now plumbed through to the worker. The
     memory writer's LLM client previously always used the bundled chat
-    model (ONP_CHAT_MODEL_NAME env var or "default"). When the user
+    model (DEEPER_NOTEBOOK_CHAT_MODEL_NAME env var or "default"). When the user
     explicitly picked a different model for their chat session, the
     memory extractor still ran against the bundled model, producing
     facts that disagreed with the assistant's voice. Passing the
@@ -225,7 +227,7 @@ class UpdateSessionRequest(BaseModel):
     # all picks ("all servers enabled"); empty list [] means the same
     # in practice but is preserved as-is so the UI can distinguish "I
     # explicitly cleared the list" from "I never set it."
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -250,7 +252,7 @@ class ChatSessionResponse(BaseModel):
         None, description="Model override for this session"
     )
     # v0.8.43 — persistent MCP server disable picks (null = none).
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None, description="MCP server names disabled for this session",
     )
 
@@ -277,7 +279,7 @@ class ExecuteChatRequest(BaseModel):
     # exclude_server_names; server-name match is case-insensitive +
     # trimmed (`_resolve_chat_tools` normalises both sides). Empty list
     # or null = all enabled servers visible (the v0.8.0 default).
-    disabled_mcp_servers: Optional[List[str]] = Field(
+    disabled_mcp_servers: Optional[list[str]] = Field(
         None,
         description=(
             "MCP server names to skip for this chat turn. Each entry "
@@ -325,10 +327,10 @@ class ExecuteChatResponse(BaseModel):
     # v0.8.68 — set when the offline gate answered this turn with a local
     # model: {"offline_fallback": true, "from_model_id", "to_model_id",
     # "to_model_name", "reason": "offline"|"forced-offline"}. None otherwise.
-    offline_fallback: Optional[Dict[str, Any]] = Field(
+    offline_fallback: Optional[dict[str, Any]] = Field(
         None, description="Offline local-model fallback info for this turn"
     )
-    mcp_tool_calls: Optional[List[Dict[str, Any]]] = Field(
+    mcp_tool_calls: Optional[list[dict[str, Any]]] = Field(
         None,
         description=(
             "v0.8.1 Item 3 — MCP tool-call payloads for this turn. Each item: "
@@ -346,7 +348,7 @@ class ExecuteChatResponse(BaseModel):
             "when the gate didn't act."
         ),
     )
-    privacy_categories: Optional[List[str]] = Field(
+    privacy_categories: Optional[list[str]] = Field(
         None,
         description=(
             "v0.8.58 — category LABELS of the sensitive content the gate "
@@ -358,7 +360,7 @@ class ExecuteChatResponse(BaseModel):
         None,
         description=(
             "v0.8.60 — agent-FSM terminal state of the tool loop when "
-            "ONP_AGENT_FSM is on: 'complete', 'clarify' (the model paused to "
+            "DEEPER_NOTEBOOK_AGENT_FSM is on: 'complete', 'clarify' (the model paused to "
             "ask the user), or 'truncated' (hit the tool-iteration cap). None "
             "when the FSM is off."
         ),
@@ -856,7 +858,7 @@ async def execute_chat(request: ExecuteChatRequest):
             # naturally bounded by SSE disconnect handling (v0.7.50+) and
             # doesn't need this wrap.
             _chat_timeout = float(
-                os.environ.get("ONP_CHAT_TIMEOUT_SEC", "300").strip() or 300
+                resolve_env("DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC", "300").strip() or 300
             )
             try:
                 # v0.7.192 — Use the AsyncSqliteSaver-backed twin
@@ -889,7 +891,7 @@ async def execute_chat(request: ExecuteChatRequest):
                     detail=(
                         f"Chat timed out after {_chat_timeout}s. The model may "
                         "be loading, overloaded, or generating a very long "
-                        "response. Raise ONP_CHAT_TIMEOUT_SEC, switch to a "
+                        "response. Raise DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC, switch to a "
                         "faster model, or try /chat/stream for token-by-token "
                         "responses that surface progress immediately."
                     ),
@@ -921,7 +923,7 @@ async def execute_chat(request: ExecuteChatRequest):
         )
 
         # v0.8.1 — read smart-router decision (set by the chat-graph node
-        # when OPEN_NOTEBOOK_AUTO_ROUTE_CHAT is on). Same dual dict /
+        # when DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT is on). Same dual dict /
         # Pydantic guard as messages above so a future LangGraph state
         # shape change doesn't silently drop the field.
         selected_provider = (
@@ -1672,7 +1674,7 @@ async def build_context(request: BuildContextRequest):
         char_count = len(total_content)
         # Use token count utility if available
         try:
-            from open_notebook.utils import token_count
+            from deeper_notebook.utils import token_count
 
             estimated_tokens = token_count(total_content) if total_content else 0
         except ImportError:

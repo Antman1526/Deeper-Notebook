@@ -8,7 +8,7 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -354,7 +354,7 @@ def test_ensure_venv_creates_venv_and_writes_marker(
     assert fake_marker.read_text().strip() == _lock_hash(lock)
 
     # .pth file written into site-packages.
-    pth = site_packages / "open_notebook_upstream.pth"
+    pth = site_packages / "deeper_notebook_upstream.pth"
     assert pth.exists()
     assert str(upstream_dir) in pth.read_text()
 

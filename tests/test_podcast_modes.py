@@ -6,7 +6,7 @@ import pytest
 
 
 def test_overview_modes_are_closed_and_legacy_episodes_default_to_deep_dive():
-    from open_notebook.podcasts.models import (
+    from deeper_notebook.podcasts.models import (
         PodcastOverviewMode,
         normalize_podcast_mode,
     )
@@ -24,7 +24,7 @@ def test_overview_modes_are_closed_and_legacy_episodes_default_to_deep_dive():
 
 
 def test_every_mode_has_a_deterministic_generation_contract():
-    from open_notebook.podcasts.models import (
+    from deeper_notebook.podcasts.models import (
         PodcastOverviewMode,
         get_podcast_mode_spec,
     )
@@ -42,7 +42,7 @@ def test_every_mode_has_a_deterministic_generation_contract():
 
 
 def test_episode_persists_mode_custom_prompt_and_typed_transcript_segments():
-    from open_notebook.podcasts.models import PodcastEpisode
+    from deeper_notebook.podcasts.models import PodcastEpisode
 
     legacy = PodcastEpisode(
         name="Legacy", episode_profile={}, speaker_profile={}, briefing="b", content="c"
@@ -175,7 +175,7 @@ def test_submission_threads_mode_and_custom_prompt_to_the_durable_command(monkey
 
 
 def test_transcript_metadata_normalizes_legacy_dialogue_without_inventing_citations():
-    from open_notebook.podcasts.models import transcript_segments_from_payload
+    from deeper_notebook.podcasts.models import transcript_segments_from_payload
 
     segments = transcript_segments_from_payload(
         [

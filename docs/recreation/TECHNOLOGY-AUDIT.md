@@ -1,5 +1,9 @@
 # Open Notebook Plus — Technology Audit
 
+> **Historical snapshot:** this audit preserves the names and versions present
+> when it was written. For current product identity and build instructions, see
+> [Deeper Notebook](https://github.com/Antman1526/Deeper-Notebook).
+
 An exhaustive inventory of every language, framework, library, tool, and service used, with each item's **specific role in this project** and version constraints. Sourced from `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`, `Dockerfile*`, `.github/workflows/*`, `Makefile`, `supervisord*.conf`, `desktop/build/pyinstaller.spec`, and real imports.
 
 > Version tracks: desktop app `0.8.5` (`desktop/__init__.py`); upstream/Docker image `1.8.5` (`pyproject.toml`). `requires-python = ">=3.11,<3.13"`.

@@ -11,7 +11,9 @@ which still requires webview.
 """
 from __future__ import annotations
 
+import html as _html
 import json as _json
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -280,12 +282,12 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     base_js = f"""
     (function() {{
       var INITIAL_THEME = "{initial}";
-      // ONP v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
-      // The same <style id="onp-theme-injection"> is reused across Next.js soft
+      // DN v0.5.7 — all themes live in CSS; live-switch via data-theme attr.
+      // The same <style id="dn-theme-injection"> is reused across Next.js soft
       // navigations because the CSS block is theme-independent.
-      if (!document.getElementById('onp-theme-injection')) {{
+      if (!document.getElementById('dn-theme-injection')) {{
         var s = document.createElement('style');
-        s.id = 'onp-theme-injection';
+        s.id = 'dn-theme-injection';
         s.textContent = `
         {all_themes_css}
         html, body {{
@@ -312,7 +314,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
       var IS_DARK = {{ {is_dark_js} }};
 
       // Apply a theme: sets dataset.theme + .dark class. Internal — called
-      // by both the initial-load path and window.ONP.setTheme.
+      // by both the initial-load path and window.DN.setTheme.
       function applyTheme(theme) {{
         if (!IS_DARK.hasOwnProperty(theme)) theme = "light-blue";
         document.documentElement.dataset.theme = theme;
@@ -326,23 +328,26 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
 
       // Expose a switcher for the ThemeSwitcher React component. Sets the
       // attribute immediately for instant feedback, then POSTs to persist.
-      // window.ONP is the namespace for all desktop-wrapper-only hooks.
-      window.ONP = window.ONP || {{}};
-      window.ONP.setTheme = function(theme) {{
+      // window.DN is the canonical desktop-wrapper namespace. Reuse an
+      // existing legacy bridge during migration, then expose a deterministic
+      // window.ONP alias for older renderer bundles.
+      window.DN = window.DN || window.ONP || {{}};
+      window.ONP = window.DN;
+      window.DN.setTheme = function(theme) {{
         applyTheme(theme);
         try {{
-          fetch('/api/onp/theme', {{
+          fetch('/api/deeper-notebook/theme', {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
             body: JSON.stringify({{theme: theme}}),
           }}).catch(function() {{}});
         }} catch (e) {{}}
       }};
-      window.ONP.themes = Object.keys(IS_DARK);
+      window.DN.themes = Object.keys(IS_DARK);
       // v0.8.81 — one-click relaunch for the DB repair banner. Bridges to the
       // pywebview js_api; returns false in a plain browser (dev) so callers can
       // fall back. The native side reopens the app after this process exits.
-      window.ONP.relaunch = function() {{
+      window.DN.relaunch = function() {{
         try {{
           if (window.pywebview && window.pywebview.api && window.pywebview.api.relaunch) {{
             window.pywebview.api.relaunch();
@@ -354,8 +359,8 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     voice_js = _voice_injection_js()
-    # v0.7.152 — Set window.ONP_STT_URL and window.ONP_TTS_URL BEFORE the
-    # voice-injection script runs so it picks up the per-launch shim ports.
+    # v0.7.152 — Set canonical voice endpoints plus deterministic legacy
+    # mirrors before the voice-injection script runs.
     #
     # Background: voice_injection.js defaults `STT_URL` to `/api/transcribe`
     # and `TTS_URL` to `/api/audio/speech`. Neither path exists on the main
@@ -374,11 +379,13 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     voice_globals_pieces: list[str] = []
     if stt_url:
         voice_globals_pieces.append(
-            f"window.ONP_STT_URL = {_json.dumps(stt_url)};"
+            f"window.DEEPER_NOTEBOOK_STT_URL = {_json.dumps(stt_url)};"
+            "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;"
         )
     if tts_url:
         voice_globals_pieces.append(
-            f"window.ONP_TTS_URL = {_json.dumps(tts_url)};"
+            f"window.DEEPER_NOTEBOOK_TTS_URL = {_json.dumps(tts_url)};"
+            "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;"
         )
     voice_globals = "\n        ".join(voice_globals_pieces)
     # Append a script-tag injection so the voice JS runs after page DOM is ready.
@@ -391,18 +398,21 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     memory_js = _memory_injection_js()
-    # v0.7.210 — surface the running ONP version to the frontend so
-    # the user can see which build they have. The frontend's
-    # AppSidebar footer reads `window.ONP_VERSION` and renders it as
-    # a tiny badge ("v0.7.210"). Source of truth: desktop/__init__.py.
+    # v0.7.210 — surface the running version to the frontend through the
+    # canonical bridge plus a deterministic legacy mirror.
     try:
         from desktop import __version__ as _onp_version
     except Exception:
         _onp_version = "unknown"
     memory_globals = (
-        f"window.ONP_MEMORY_URL = {_json.dumps(memory_url)};"
-        f"window.ONP_REMIND_OPENCHRONICLE = {('true' if remind_openchronicle else 'false')};"
-        f"window.ONP_VERSION = {_json.dumps(_onp_version)};"
+        f"window.DEEPER_NOTEBOOK_MEMORY_URL = {_json.dumps(memory_url)};"
+        "window.ONP_MEMORY_URL = window.DEEPER_NOTEBOOK_MEMORY_URL;"
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE = "
+        f"{('true' if remind_openchronicle else 'false')};"
+        "window.ONP_REMIND_OPENCHRONICLE = "
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;"
+        f"window.DEEPER_NOTEBOOK_VERSION = {_json.dumps(_onp_version)};"
+        "window.ONP_VERSION = window.DEEPER_NOTEBOOK_VERSION;"
     )
     memory_injector = f"""
     (function() {{
@@ -413,6 +423,97 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     }})();
     """
     return base_js + voice_injector + memory_injector
+
+
+def _app_recovery_injection_js(payload: dict[str, object]) -> str:
+    """Render the packaged app's one-time, explicit bundle recovery card."""
+    encoded = _json.dumps(payload).replace("<", "\\u003c").replace(">", "\\u003e")
+    return f"""
+    (function() {{
+      var payload = {encoded};
+      var existing = document.getElementById('deeper-app-recovery-card');
+      if (!payload.show_recovery_card) {{
+        if (existing) existing.remove();
+        return;
+      }}
+      if (existing) return;
+
+      var card = document.createElement('section');
+      card.id = 'deeper-app-recovery-card';
+      card.setAttribute('role', 'alertdialog');
+      card.setAttribute('aria-label', payload.title);
+      card.style.cssText = [
+        'position:fixed', 'right:24px', 'bottom:24px', 'z-index:2147483647',
+        'width:min(430px,calc(100vw - 48px))', 'padding:20px',
+        'border:1px solid var(--border,#d8e5f5)', 'border-radius:14px',
+        'background:var(--card,#fff)', 'color:var(--card-foreground,#1a2b3c)',
+        'box-shadow:0 18px 55px rgba(15,23,42,.24)',
+        'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif'
+      ].join(';');
+
+      var title = document.createElement('h2');
+      title.textContent = payload.title;
+      title.style.cssText = 'font-size:17px;font-weight:700;margin:0 28px 8px 0';
+      var message = document.createElement('p');
+      message.textContent = payload.message;
+      message.style.cssText = 'font-size:14px;line-height:1.5;margin:0 0 16px';
+      var error = document.createElement('p');
+      error.hidden = true;
+      error.style.cssText = 'font-size:13px;color:#b91c1c;margin:0 0 12px';
+      var actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:10px;justify-content:flex-end';
+      var keep = document.createElement('button');
+      keep.type = 'button';
+      keep.textContent = payload.keep_label;
+      keep.style.cssText = 'padding:8px 12px;border:1px solid var(--border,#ccc);border-radius:8px;background:transparent;color:inherit';
+      var replace = document.createElement('button');
+      replace.type = 'button';
+      replace.textContent = payload.replace_label;
+      replace.style.cssText = 'padding:8px 12px;border:0;border-radius:8px;background:var(--primary,#2d7ff9);color:var(--primary-foreground,#fff);font-weight:600';
+      var dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.textContent = '×';
+      dismiss.setAttribute('aria-label', 'Keep both apps and dismiss');
+      dismiss.style.cssText = 'position:absolute;top:10px;right:12px;border:0;background:transparent;color:inherit;font-size:22px';
+
+      function keepBoth() {{
+        Promise.resolve(window.pywebview.api.keep_both()).finally(function() {{
+          card.remove();
+        }});
+      }}
+      keep.addEventListener('click', keepBoth);
+      dismiss.addEventListener('click', keepBoth);
+      replace.addEventListener('click', function() {{
+        if (!window.confirm(
+          'Move Open Notebook Plus.app to the macOS Trash? ' +
+          'Deeper Notebook.app will remain installed.'
+        )) return;
+        replace.disabled = true;
+        Promise.resolve(window.pywebview.api.replace_old_app(true))
+          .then(function(result) {{
+            if (result && result.ok) {{
+              card.remove();
+              return;
+            }}
+            throw new Error((result && result.error) || 'Replacement was refused.');
+          }})
+          .catch(function(reason) {{
+            error.textContent = String(reason && reason.message || reason);
+            error.hidden = false;
+            replace.disabled = false;
+          }});
+      }});
+
+      actions.appendChild(keep);
+      actions.appendChild(replace);
+      card.appendChild(dismiss);
+      card.appendChild(title);
+      card.appendChild(message);
+      card.appendChild(error);
+      card.appendChild(actions);
+      document.body.appendChild(card);
+    }})();
+    """
 
 
 def _fit_window_size(screen_w: int, screen_h: int,
@@ -465,8 +566,9 @@ def _frontend_server_ready(url: str) -> bool:
     status AND body — so Next's warm-up window, where it serves its
     not-found page (HTTP 200!) for valid routes, reads as not-ready.
     """
-    import httpx
     import re
+
+    import httpx
 
     try:
         r = httpx.get(url, timeout=2.0, follow_redirects=True)
@@ -540,8 +642,6 @@ def _start_handoff_controller(
 
     The error page can therefore never be the resting state.
     """
-    import threading
-
     _sleep = sleep or time.sleep
     _clock = clock or time.monotonic
     _ready = server_ready or (lambda: _frontend_server_ready(url))
@@ -605,8 +705,43 @@ class _OnpJsApi:
     frees any stale ports on boot regardless.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, app_recovery=None) -> None:
         self._window = None  # set by open_window after create_window
+        self._app_recovery = app_recovery
+
+    def get_app_recovery(self) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"show_recovery_card": False}
+        return self._app_recovery.card_payload()
+
+    def keep_both(self) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"ok": True, "kept_both": True}
+        return self._app_recovery.keep_both()
+
+    def replace_old_app(self, confirmed: bool = False) -> dict[str, object]:
+        if self._app_recovery is None:
+            return {"ok": False, "error": "App recovery is unavailable."}
+        try:
+            receipt = self._app_recovery.replace_old_app(confirmed=bool(confirmed))
+        except Exception as error:
+            from desktop.app_migration import AppReplacementOutcomeError
+
+            if isinstance(error, AppReplacementOutcomeError):
+                return {
+                    "ok": False,
+                    "move_outcome": error.move_outcome,
+                    "error": error.user_message,
+                }
+            return {
+                "ok": False,
+                "move_outcome": "move-uncertain",
+                "error": (
+                    "App replacement could not be confirmed. Verify the macOS "
+                    "Trash and Applications before trying again."
+                ),
+            }
+        return {"ok": True, "receipt": str(receipt)}
 
     def relaunch(self) -> bool:  # pragma: no cover - exercised in-app only
         import os
@@ -640,14 +775,170 @@ class _OnpJsApi:
         return True
 
 
+def _install_native_termination_observer(
+    on_terminate: Callable[[], None],
+) -> Callable[[], None]:
+    """Run launcher cleanup when Cocoa terminates the whole application.
+
+    pywebview's ``window.events.closed`` covers a user closing the window, but
+    AppKit termination requests (including ``NSRunningApplication.terminate``)
+    can end the application without publishing that event. Observe the native
+    notification as a second entry into the same idempotent cleanup path.
+    """
+    try:
+        from AppKit import NSApplicationWillTerminateNotification
+        from Foundation import NSNotificationCenter
+
+        center = NSNotificationCenter.defaultCenter()
+        token = center.addObserverForName_object_queue_usingBlock_(
+            NSApplicationWillTerminateNotification,
+            None,
+            None,
+            lambda _notification: on_terminate(),
+        )
+    except Exception:
+        return lambda: None
+
+    def _remove() -> None:
+        try:
+            center.removeObserver_(token)
+        except Exception:
+            pass
+
+    return _remove
+
+
+def _data_root_recovery_html(
+    conflict_payload: dict[str, object],
+) -> str:
+    """Render only paths, aggregate hashes, and counts from conflict evidence."""
+
+    def summary(name: str, label: str) -> str:
+        value = conflict_payload.get(name)
+        item = value if isinstance(value, dict) else {}
+        path = _html.escape(str(item.get("path", "Unavailable")))
+        tree_hash = _html.escape(str(item.get("tree_sha256", "Unavailable")))
+        file_count = _html.escape(str(item.get("file_count", "Unavailable")))
+        directory_count = _html.escape(
+            str(item.get("directory_count", "Unavailable"))
+        )
+        return f"""
+          <article class="root-summary">
+            <h2>{_html.escape(label)}</h2>
+            <dl>
+              <dt>Path</dt><dd><code>{path}</code></dd>
+              <dt>Tree SHA-256</dt><dd><code>{tree_hash}</code></dd>
+              <dt>Files</dt><dd>{file_count}</dd>
+              <dt>Directories</dt><dd>{directory_count}</dd>
+            </dl>
+          </article>
+        """
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deeper Notebook Recovery</title>
+  <style>
+    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif; background: #f4f7fb; color: #172033; }}
+    body {{ margin: 0; padding: 40px; }}
+    main {{ max-width: 960px; margin: 0 auto; }}
+    h1 {{ margin: 0 0 12px; font-size: 30px; }}
+    .notice {{ padding: 16px 18px; border: 1px solid #b7cae5;
+      border-radius: 12px; background: #fff; line-height: 1.55; }}
+    .summaries {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px; margin-top: 24px; }}
+    .root-summary {{ min-width: 0; padding: 18px; border: 1px solid #d3deec;
+      border-radius: 12px; background: #fff; }}
+    .root-summary h2 {{ margin: 0 0 14px; font-size: 18px; }}
+    dl {{ display: grid; grid-template-columns: max-content minmax(0, 1fr);
+      gap: 10px 14px; margin: 0; }}
+    dt {{ color: #526276; font-weight: 600; }}
+    dd {{ min-width: 0; margin: 0; overflow-wrap: anywhere; }}
+    code {{ font-size: 12px; }}
+    @media (max-width: 720px) {{
+      body {{ padding: 24px; }}
+      .summaries {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Data folders need manual review</h1>
+    <p class="notice">
+      Deeper Notebook found different canonical and legacy data folders.
+      Normal services were not started.
+      No data root has been selected or changed.
+      The summaries below contain paths, aggregate hashes, and counts only;
+      neither folder will be merged, copied, or deleted here.
+    </p>
+    <section class="summaries" aria-label="Data root summaries">
+      {summary("canonical", "Canonical data folder")}
+      {summary("legacy", "Legacy data folder")}
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def open_data_root_recovery_window(
+    *,
+    conflict_payload: dict[str, object],
+    app_recovery,
+    storage_root: Path,
+) -> None:
+    """Open the isolated packaged recovery UI without resolving a data root."""
+    import webview
+
+    # Recovery has no browser state worth persisting. pywebview 5.4 defaults
+    # to private mode, where cookies and local storage are ephemeral; passing
+    # no storage_path eliminates the pathname consumer and its swap surface.
+    del storage_root
+
+    api = _OnpJsApi(app_recovery)
+    window = webview.create_window(
+        "Deeper Notebook Recovery",
+        html=_data_root_recovery_html(conflict_payload),
+        width=1080,
+        height=760,
+        js_api=api,
+    )
+    api._window = window
+
+    def _on_loaded() -> None:
+        try:
+            window.evaluate_js(
+                _app_recovery_injection_js(api.get_app_recovery())
+            )
+        except Exception:
+            pass
+
+    window.events.loaded += _on_loaded
+    remove_termination_observer = _install_native_termination_observer(
+        lambda: None
+    )
+    try:
+        try:
+            webview.start(private_mode=True)
+        except TypeError:
+            webview.start()
+    finally:
+        remove_termination_observer()
+
+
 def open_window(url: str, on_close: Callable[[], None],
-                title: str = "Open notebook+",
+                title: str = "Deeper Notebook",
                 width: int = 1280, height: int = 800,
                 theme: str = "light-blue",
                 memory_url: str | None = None,
                 remind_openchronicle: bool = False,
                 stt_url: str | None = None,
-                tts_url: str | None = None) -> None:
+                tts_url: str | None = None,
+                app_recovery=None,
+                on_ready: Callable[[], None] | None = None) -> None:
     """Blocking — returns when the user closes the window.
 
     v0.7.152 — `stt_url` and `tts_url` are the dynamic per-launch endpoints
@@ -658,10 +949,11 @@ def open_window(url: str, on_close: Callable[[], None],
     the "STT failed: HTTP 404" toasts in the UI).
     """
     import webview  # lazy: only the desktop runtime path needs this
-    from desktop import window_state
-    from desktop.paths import user_home
 
-    data_home = user_home() / ".open-notebook-plus"
+    from desktop import window_state
+    from desktop.data_root import active_data_root
+
+    data_home = active_data_root()
     # v0.8.67m — reopen at the size you last left the window, if remembered;
     # otherwise v0.8.67j's screen-aware default. Clamp a remembered size to the
     # CURRENT screen so a size saved on a bigger monitor can't strand the
@@ -693,7 +985,7 @@ def open_window(url: str, on_close: Callable[[], None],
     splash_html = build_splash_html(url)
     # v0.8.81 — js_api bridge for window.pywebview.api.relaunch (DB repair
     # banner's "Repair & restart"). Window ref is set right after creation.
-    _onp_api = _OnpJsApi()
+    _onp_api = _OnpJsApi(app_recovery)
     window = webview.create_window(
         title, html=splash_html, width=win_w, height=win_h, js_api=_onp_api
     )
@@ -703,6 +995,17 @@ def open_window(url: str, on_close: Callable[[], None],
     # name has varied across pywebview versions, so never let its absence break
     # the window). Falls back to the window's own width/height at close time.
     _live = {"w": win_w, "h": win_h}
+    _cleanup_lock = threading.Lock()
+    _cleanup_started = False
+
+    def _notify_close_once() -> None:
+        nonlocal _cleanup_started
+        with _cleanup_lock:
+            if _cleanup_started:
+                return
+            _cleanup_started = True
+        on_close()
+
     try:
         def _on_resized(w, h):  # pragma: no cover - pywebview callback
             _live["w"], _live["h"] = int(w), int(h)
@@ -720,15 +1023,15 @@ def open_window(url: str, on_close: Callable[[], None],
             )
         except Exception:
             pass
-        on_close()
+        _notify_close_once()
 
     window.events.closed += _on_closed
 
-    import threading
-
     _page_loaded = threading.Event()
+    _ready_notified = False
 
     def _on_loaded():
+        nonlocal _ready_notified
         # v0.8.68 — `loaded` fires for the splash, for WebKit's error page,
         # and for Next's warm-up 404 too (get_current_url() is None for
         # html= pages and reports the target URL even for failed loads, so
@@ -743,7 +1046,7 @@ def open_window(url: str, on_close: Callable[[], None],
             return  # splash / error page / warm-up 404 — controller retries
         _page_loaded.set()  # confirms the handoff for the controller
         # v0.5.7 — re-read config.toml on every page load so live theme
-        # switches via /api/onp/theme persist across navigations. Falls back
+        # switches via the canonical theme endpoint persist across navigations.
         # to the `theme` argument if the config can't be read.
         active_theme = theme
         try:
@@ -758,6 +1061,15 @@ def open_window(url: str, on_close: Callable[[], None],
                                     stt_url=stt_url, tts_url=tts_url))
         except Exception:
             pass  # best-effort; never crash on theme injection
+        try:
+            window.evaluate_js(
+                _app_recovery_injection_js(_onp_api.get_app_recovery())
+            )
+        except Exception:
+            pass
+        if not _ready_notified and on_ready is not None:
+            _ready_notified = True
+            on_ready()
     window.events.loaded += _on_loaded
     _start_handoff_controller(window, url, _page_loaded, splash_html)
     # v0.8.73 — PERSIST the webview's cookie/localStorage store across launches.
@@ -769,7 +1081,7 @@ def open_window(url: str, on_close: Callable[[], None],
     # auto-skip (router.replace('/')) raced a cold boot straight into WebKit's
     # "This page couldn't load" — the exact reload-screen-every-launch the user
     # hit. (The same ephemeral wipe also reset the "show the intro once"
-    # cookie.) Persisting to a stable path under ~/.open-notebook-plus means the
+    # cookie.) Persisting to a stable path under ~/.deeper-notebook means the
     # wizard shows ONCE, the intro shows ONCE, and they stay dismissed across
     # launches AND across rebuilds (the stable code-signing identity keeps the
     # same data container).
@@ -780,8 +1092,14 @@ def open_window(url: str, on_close: Callable[[], None],
     except Exception:
         _storage_path = None
     try:
-        webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
-    except TypeError:
-        # Defensive: if a future pywebview drops these kwargs, fall back so the
-        # app still launches (persistence degrades, but it won't crash).
-        webview.start()  # noqa: F821
+        remove_termination_observer = _install_native_termination_observer(
+            _notify_close_once
+        )
+        try:
+            webview.start(private_mode=False, storage_path=_storage_path)  # noqa: F821
+        except TypeError:
+            # Defensive: if a future pywebview drops these kwargs, fall back so the
+            # app still launches (persistence degrades, but it won't crash).
+            webview.start()  # noqa: F821
+    finally:
+        remove_termination_observer()

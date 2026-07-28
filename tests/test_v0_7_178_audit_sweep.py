@@ -18,7 +18,7 @@ Four independent fixes bundled under one version tag:
     in api/main.py map them to 404 / 400. The local
     `if not source: raise HTTPException(404)` guards are dead code
     because Source.get raises NotFoundError instead of returning
-    None (open_notebook/domain/base.py:183).
+    None (deeper_notebook/domain/base.py:183).
 
 3.  api/routers/studio.py — two more HTTPException(detail=f"...{exc}")
     leaks (lines 547, 1342) the v0.7.168/v0.7.177 sweeps missed.
@@ -121,7 +121,7 @@ def test_create_source_insight_reraises_typed_exceptions():
 
     # Import must be present.
     assert (
-        "from open_notebook.exceptions import InvalidInputError, NotFoundError"
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
         in src
     ), (
         "v0.7.178 regression: NotFoundError import in sources.py is "

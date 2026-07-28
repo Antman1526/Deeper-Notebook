@@ -44,8 +44,8 @@ from podcast_creator.nodes import (
     route_audio_generation,
 )
 
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.podcasts.models import (
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.podcasts.models import (
     STAGE_AUDIO,
     STAGE_COMBINE,
     STAGE_OUTLINE,

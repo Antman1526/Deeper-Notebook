@@ -13,7 +13,7 @@ from api.schemas.study import (
     StudyReviewResponse,
     StudyReviewResultResponse,
 )
-from open_notebook.study.repository import StudyRepository, StudyRepositoryError
+from deeper_notebook.study.repository import StudyRepository, StudyRepositoryError
 
 router = APIRouter(prefix="/study", tags=["study"])
 

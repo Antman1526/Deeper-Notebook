@@ -8,6 +8,9 @@ that's left for a future integration suite.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
+
+import pytest
 
 from api.routers import gmail as gmail_mod
 
@@ -53,6 +56,164 @@ def test_purge_stale_states_drops_expired_entries():
     assert "fresh" in gmail_mod._oauth_states
     # Cleanup so we don't pollute later runs
     gmail_mod._oauth_states.clear()
+
+
+def test_new_oauth_connect_callback_url_is_canonical():
+    """New consent flows register the canonical Deeper Notebook callback."""
+    from starlette.requests import Request
+
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("127.0.0.1", 5055),
+            "path": "/api/onp/gmail/connect",
+            "root_path": "",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    assert (
+        gmail_mod._callback_url(request)
+        == "http://127.0.0.1:5055/api/deeper-notebook/gmail/callback"
+    )
+
+
+def test_canonical_and_legacy_callback_paths_share_state_validation():
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    client = TestClient(app)
+    for path in (
+        "/api/deeper-notebook/gmail/callback",
+        "/api/onp/gmail/callback",
+    ):
+        response = client.get(
+            path,
+            params={"code": "oauth-code", "state": "invalid-state"},
+        )
+        assert response.status_code == 200
+        assert "OAuth state mismatch" in response.text
+
+
+@pytest.mark.parametrize(
+    "connect_path",
+    (
+        "/api/deeper-notebook/gmail/connect",
+        "/api/onp/gmail/connect",
+    ),
+)
+def test_canonical_and_legacy_connect_routes_issue_canonical_callback(
+    connect_path,
+):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    integration = MagicMock()
+    integration.client_id = "client-id.apps.googleusercontent.com"
+    integration.client_secret = "client-secret"
+    with patch(
+        "api.routers.gmail.GmailIntegration.get",
+        AsyncMock(return_value=integration),
+    ):
+        response = TestClient(app).get(connect_path, follow_redirects=False)
+
+    assert response.status_code == 307
+    query = parse_qs(urlparse(response.headers["location"]).query)
+    assert query["redirect_uri"] == [
+        "http://testserver/api/deeper-notebook/gmail/callback"
+    ]
+
+
+@pytest.mark.parametrize(
+    "callback_path",
+    (
+        "/api/deeper-notebook/gmail/callback",
+        "/api/onp/gmail/callback",
+    ),
+)
+@pytest.mark.asyncio
+async def test_oauth_callback_preserves_existing_refresh_token(
+    monkeypatch, callback_path
+):
+    """Google may omit refresh_token on reconnect; keep the persisted token."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.requests import Request
+
+    state = "refresh-token-continuity"
+    gmail_mod._oauth_states[state] = datetime.now(timezone.utc) + timedelta(minutes=5)
+    integration = MagicMock()
+    integration.client_id = "client-id.apps.googleusercontent.com"
+    integration.client_secret = "client-secret"
+    integration.refresh_token = "persisted-refresh-token"
+    integration.save = AsyncMock()
+
+    token_response = MagicMock()
+    token_response.raise_for_status.return_value = None
+    token_response.json.return_value = {
+        "access_token": "new-access-token",
+        "expires_in": 3600,
+    }
+    user_response = MagicMock()
+    user_response.raise_for_status.return_value = None
+    user_response.json.return_value = {"email": "owner@example.com"}
+    token_requests = []
+
+    class _Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **kwargs):
+            token_requests.append(kwargs["data"])
+            return token_response
+
+        async def get(self, *_args, **_kwargs):
+            return user_response
+
+    monkeypatch.setattr(
+        gmail_mod.GmailIntegration,
+        "get",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(gmail_mod.httpx, "AsyncClient", _Client)
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("127.0.0.1", 5055),
+            "path": callback_path,
+            "root_path": "",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    response = await gmail_mod.callback(
+        request,
+        code="oauth-code",
+        state=state,
+        error=None,
+    )
+
+    assert response.status_code == 200
+    assert integration.access_token == "new-access-token"
+    assert integration.refresh_token == "persisted-refresh-token"
+    integration.save.assert_awaited_once()
+    assert token_requests[0]["redirect_uri"] == (
+        f"http://127.0.0.1:5055{callback_path}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +282,8 @@ def test_v0824_oauth_callback_sanitizes_token_exchange_error():
     from the Google token exchange. Google's error responses include
     the OAuth client_id and redirect_uri, which leak operator config
     in the user's browser tab beyond what the user needs to triage."""
-    from unittest.mock import AsyncMock, MagicMock, patch
     from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from fastapi.testclient import TestClient
 

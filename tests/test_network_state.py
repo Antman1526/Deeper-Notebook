@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.health import network
+from deeper_notebook.health import network
 
 
 @pytest.fixture(autouse=True)
@@ -89,10 +89,10 @@ def test_forced_offline_wins_without_probe(monkeypatch):
 
 
 def test_probe_host_env_parsing(monkeypatch):
-    monkeypatch.setenv("ONP_NET_PROBE_HOSTS", "example.com:443, 10.0.0.1:8443")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_NET_PROBE_HOSTS", "example.com:443, 10.0.0.1:8443")
     assert network._probe_targets() == [("example.com", 443), ("10.0.0.1", 8443)]
 
 
 def test_probe_host_env_malformed_falls_back(monkeypatch):
-    monkeypatch.setenv("ONP_NET_PROBE_HOSTS", "garbage,:,nohost:notaport")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_NET_PROBE_HOSTS", "garbage,:,nohost:notaport")
     assert network._probe_targets() == network._DEFAULT_PROBE_TARGETS

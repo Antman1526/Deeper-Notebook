@@ -25,8 +25,9 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.models import SettingsResponse, SettingsUpdate
-from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.exceptions import InvalidInputError
+from deeper_notebook.domain.content_settings import ContentSettings
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
 
@@ -95,7 +96,7 @@ async def update_settings(settings_update: SettingsUpdate):
             settings.offline_mode = settings_update.offline_mode
             # v0.8.68 — bust the network-state cache so the toggle takes
             # effect on the next chat turn, not after the 30s accessor TTL.
-            from open_notebook.health.network import invalidate_forced_offline_cache
+            from deeper_notebook.health.network import invalidate_forced_offline_cache
             invalidate_forced_offline_cache()
         # v0.8.88 — opt-in source auto-summary on ingest.
         if settings_update.auto_summarize_on_ingest is not None:
@@ -132,7 +133,7 @@ async def update_settings(settings_update: SettingsUpdate):
 # -------------------------------------------------------------------- #
 # v0.7.130 — Observability read-only view
 #
-# Exposes the current ONP_* env-derived configuration so the UI can
+# Exposes the current DEEPER_NOTEBOOK_* env-derived configuration so the UI can
 # show "your install is running with these flags" without parsing
 # environment variables client-side. All values are read-only at the
 # API level — operators flip them by editing .env + restarting, the
@@ -157,34 +158,34 @@ class ObservabilityResponse(BaseModel):
 
     slow_query_log_ms: Optional[int] = Field(
         default=None,
-        description="ONP_SLOW_QUERY_LOG_MS — queries exceeding this duration "
+        description="DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS — queries exceeding this duration "
         "are logged at WARNING and increment db_slow_queries_total. "
         "None / unset = disabled.",
     )
     encryption_kdf: str = Field(
         default="raw",
-        description="ONP_ENCRYPTION_KDF — 'raw' (legacy direct-Fernet) or "
+        description="DEEPER_NOTEBOOK_ENCRYPTION_KDF — 'raw' (legacy direct-Fernet) or "
         "'pbkdf2' (PBKDF2-HMAC-SHA256 600k iterations with deterministic "
         "salt). New credentials use this; old credentials decrypt under "
         "whichever KDF they were saved with via MultiFernet matrix.",
     )
     checkpoint_keep_per_thread: int = Field(
         default=50,
-        description="ONP_CHECKPOINT_KEEP_PER_THREAD — most-recent checkpoints "
+        description="DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD — most-recent checkpoints "
         "to retain per LangGraph thread on the periodic prune.",
     )
     checkpoint_prune_interval_hours: int = Field(
         default=24,
-        description="ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS — how often the "
+        description="DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS — how often the "
         "background prune loop fires.",
     )
     db_pool_size: int = Field(
         default=4,
-        description="ONP_DB_POOL_SIZE — max concurrent SurrealDB connections.",
+        description="DEEPER_NOTEBOOK_DB_POOL_SIZE — max concurrent SurrealDB connections.",
     )
     db_pool_disabled: bool = Field(
         default=False,
-        description="ONP_DB_POOL_DISABLED — bypasses pool, opens fresh "
+        description="DEEPER_NOTEBOOK_DB_POOL_DISABLED — bypasses pool, opens fresh "
         "connection per query (debugging only).",
     )
     metrics_endpoint_path: str = Field(
@@ -200,7 +201,7 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
     or unparseable value. Unlike `int(os.environ.get(name, default))`
     this doesn't crash if the value is a non-numeric string (a typo
     in .env shouldn't bring down /settings/observability)."""
-    raw = os.environ.get(name)
+    raw = resolve_env(name)
     if raw is None or raw == "":
         return default
     try:
@@ -217,7 +218,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
     """v0.7.130 — Conservative truthy parsing matching the rest of the
     codebase: '1', 'true', 'yes', 'on' (case-insensitive) are truthy.
     Everything else (including missing) is `default`."""
-    raw = os.environ.get(name, "").lower()
+    raw = resolve_env(name, "").lower()
     if not raw:
         return default
     return raw in {"1", "true", "yes", "on"}
@@ -231,15 +232,15 @@ async def get_observability_settings() -> ObservabilityResponse:
     that wrote to env wouldn't survive process restart, so we don't
     pretend the option exists at the API level)."""
     return ObservabilityResponse(
-        slow_query_log_ms=_env_int("ONP_SLOW_QUERY_LOG_MS"),
-        encryption_kdf=os.environ.get("ONP_ENCRYPTION_KDF", "raw").lower(),
+        slow_query_log_ms=_env_int("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS"),
+        encryption_kdf=resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "raw").lower(),
         checkpoint_keep_per_thread=_env_int(
-            "ONP_CHECKPOINT_KEEP_PER_THREAD", 50
+            "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", 50
         ) or 50,
         checkpoint_prune_interval_hours=_env_int(
-            "ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS", 24
+            "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS", 24
         ) or 24,
-        db_pool_size=_env_int("ONP_DB_POOL_SIZE", 4) or 4,
-        db_pool_disabled=_env_bool("ONP_DB_POOL_DISABLED"),
+        db_pool_size=_env_int("DEEPER_NOTEBOOK_DB_POOL_SIZE", 4) or 4,
+        db_pool_disabled=_env_bool("DEEPER_NOTEBOOK_DB_POOL_DISABLED"),
         metrics_endpoint_path="/metrics",
     )

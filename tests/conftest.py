@@ -2,7 +2,7 @@
 Pytest configuration file.
 
 This file ensures that the project root is in the Python path,
-allowing tests to import from the api and open_notebook modules.
+allowing tests to import from the API and Deeper Notebook modules.
 """
 
 import os
@@ -14,7 +14,7 @@ import pytest
 # Ensure password auth is disabled for tests BEFORE any imports
 # The PasswordAuthMiddleware skips auth when this env var is not set
 # Set to empty string instead of deleting to prevent it from being reloaded
-os.environ["OPEN_NOTEBOOK_PASSWORD"] = ""
+os.environ["DEEPER_NOTEBOOK_PASSWORD"] = ""
 
 # Load environment variables from .env file
 # This must be done BEFORE any imports that depend on environment variables
@@ -46,9 +46,9 @@ _WEB_SEARCH_ENV_VARS = (
     "SERPER_API_KEY",
     "TAVILY_API_KEY",
     "SEARXNG_BASE_URL",
-    "ONP_WEB_SEARCH_PROVIDER",
-    "ONP_WEB_SEARCH_MAX_RESULTS",
-    "ONP_WEB_SEARCH_TIMEOUT_SEC",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC",
 )
 
 
@@ -57,6 +57,35 @@ def _isolate_web_search_env(monkeypatch):
     for name in _WEB_SEARCH_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_data_root_home(tmp_path, monkeypatch):
+    """Keep every backend test's resolver inside its own temporary home."""
+    test_home = tmp_path
+    monkeypatch.setenv("HOME", str(test_home))
+    monkeypatch.setenv("USERPROFILE", str(test_home))
+
+    from desktop import data_root
+
+    original_resolve = data_root.resolve_data_root
+    allowed_root = tmp_path.resolve()
+
+    def guarded_resolve(*, home=None, failure_injector=None):
+        candidate = (
+            Path(home)
+            if home is not None
+            else Path(os.environ["HOME"])
+        ).resolve()
+        assert candidate.is_relative_to(allowed_root), (
+            f"test attempted data-root resolution outside {allowed_root}: "
+            f"{candidate}"
+        )
+        return original_resolve(
+            home=home, failure_injector=failure_injector
+        )
+
+    monkeypatch.setattr(data_root, "resolve_data_root", guarded_resolve)
 
 
 # v0.8.68 — pin the network-state service to "online" for every test so the
@@ -68,7 +97,7 @@ def _isolate_web_search_env(monkeypatch):
 # themselves (see tests/test_offline_gate.py, tests/test_web_search_offline.py).
 @pytest.fixture(autouse=True)
 def _pin_network_state_online(monkeypatch):
-    from open_notebook.health import network
+    from deeper_notebook.health import network
 
     network.reset_network_state_for_tests()
     monkeypatch.setattr(network, "_probe_once", lambda: True)
