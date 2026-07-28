@@ -53,8 +53,17 @@ def _map_exception(exc: Exception) -> HTTPException:
         code = "vault_page_not_found" if "note" in str(exc) else "vault_not_found"
         return _error(status.HTTP_404_NOT_FOUND, code)
     if isinstance(exc, VaultSecurityError):
-        code = "vault_root_invalid" if exc.code in {"invalid_root", "unsafe_root"} else "vault_root_unapproved"
-        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT if code == "vault_root_invalid" else status.HTTP_403_FORBIDDEN, code)
+        code = (
+            "vault_root_invalid"
+            if exc.code in {"invalid_root", "unsafe_root"}
+            else "vault_root_unapproved"
+        )
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT
+            if code == "vault_root_invalid"
+            else status.HTTP_403_FORBIDDEN,
+            code,
+        )
     if isinstance(exc, (TrustManifestError, ValueError)):
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "vault_root_invalid")
     return _error(status.HTTP_409_CONFLICT, "vault_unavailable")
@@ -62,7 +71,9 @@ def _map_exception(exc: Exception) -> HTTPException:
 
 def _relative_manifest_path(value: str) -> str:
     candidate = PurePosixPath(value)
-    if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
+    if candidate.is_absolute() or any(
+        part in {"", ".", ".."} for part in candidate.parts
+    ):
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "vault_root_invalid")
     return candidate.as_posix()
 
@@ -79,11 +90,17 @@ def _mount_summary(mount: Any) -> VaultMountSummary:
 
 
 def _mount_detail(mount: Any) -> VaultMountDetail:
-    return VaultMountDetail(**_mount_summary(mount).model_dump(), root_path=mount.root_path)
+    return VaultMountDetail(
+        **_mount_summary(mount).model_dump(), root_path=mount.root_path
+    )
 
 
-@router.post("/vaults", response_model=VaultMountDetail, status_code=status.HTTP_201_CREATED)
-async def create_vault(request: Request, payload: VaultMountCreateRequest) -> VaultMountDetail:
+@router.post(
+    "/vaults", response_model=VaultMountDetail, status_code=status.HTTP_201_CREATED
+)
+async def create_vault(
+    request: Request, payload: VaultMountCreateRequest
+) -> VaultMountDetail:
     try:
         # Validate now, then close the descriptor. The service re-opens a fresh,
         # approved descriptor while watching/scanning; no route retains write access.
@@ -109,7 +126,9 @@ async def create_vault(request: Request, payload: VaultMountCreateRequest) -> Va
 @router.get("/vaults", response_model=list[VaultMountSummary])
 async def list_vaults(request: Request) -> list[VaultMountSummary]:
     try:
-        return [_mount_summary(mount) for mount in await _repository(request).list_mounts()]
+        return [
+            _mount_summary(mount) for mount in await _repository(request).list_mounts()
+        ]
     except HTTPException:
         raise
     except Exception as exc:
@@ -152,9 +171,20 @@ async def scan_vault(request: Request, vault_id: str) -> VaultScanResponse:
 
 
 @router.get("/vaults/{vault_id}/files")
-async def list_files(request: Request, vault_id: str, prefix: str = "", limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)) -> list[dict[str, Any]]:
+async def list_files(
+    request: Request,
+    vault_id: str,
+    prefix: str = "",
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
     try:
-        return [item.model_dump() for item in await _repository(request).list_files(vault_id, prefix, limit, offset)]
+        return [
+            item.model_dump()
+            for item in await _repository(request).list_files(
+                vault_id, prefix, limit, offset
+            )
+        ]
     except HTTPException:
         raise
     except Exception as exc:
@@ -166,7 +196,9 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
     try:
         page = await _repository(request).get_page(vault_id, note_id)
         return VaultPageResponse(
-            note=page.note, blocks=page.blocks, tasks=page.tasks,
+            note=page.note,
+            blocks=page.blocks,
+            tasks=page.tasks,
             outgoing_links=[item.model_dump() for item in page.outgoing_links],
             backlinks=[item.model_dump() for item in page.backlinks],
         )
@@ -177,40 +209,70 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
 
 
 @router.get("/vaults/{vault_id}/pages/{note_id}/backlinks")
-async def backlinks(request: Request, vault_id: str, note_id: str) -> list[dict[str, Any]]:
+async def backlinks(
+    request: Request, vault_id: str, note_id: str
+) -> list[dict[str, Any]]:
     try:
-        return [item.model_dump() for item in await _repository(request).backlinks(vault_id, note_id)]
+        return [
+            item.model_dump()
+            for item in await _repository(request).backlinks(vault_id, note_id)
+        ]
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
 @router.get("/vaults/{vault_id}/pages/{note_id}/outgoing")
-async def outgoing(request: Request, vault_id: str, note_id: str) -> list[dict[str, Any]]:
+async def outgoing(
+    request: Request, vault_id: str, note_id: str
+) -> list[dict[str, Any]]:
     try:
-        return [item.model_dump() for item in await _repository(request).outgoing_links(vault_id, note_id)]
+        return [
+            item.model_dump()
+            for item in await _repository(request).outgoing_links(vault_id, note_id)
+        ]
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
 @router.get("/vaults/{vault_id}/graph")
-async def graph(request: Request, vault_id: str, center_note_id: str, depth: int = Query(1, ge=0, le=8), limit: int = Query(100, ge=1, le=500)) -> dict[str, list[dict[str, Any]]]:
+async def graph(
+    request: Request,
+    vault_id: str,
+    center_note_id: str,
+    depth: int = Query(1, ge=0, le=8),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, list[dict[str, Any]]]:
     try:
-        result = await _repository(request).graph(vault_id, center_note_id, depth, limit)
+        result = await _repository(request).graph(
+            vault_id, center_note_id, depth, limit
+        )
         return result.model_dump()
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
 @router.get("/vaults/{vault_id}/receipts")
-async def receipts(request: Request, vault_id: str, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)) -> list[dict[str, Any]]:
+async def receipts(
+    request: Request,
+    vault_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
     try:
-        return [item.model_dump() for item in await _repository(request).list_receipts(vault_id, limit, offset)]
+        return [
+            item.model_dump()
+            for item in await _repository(request).list_receipts(
+                vault_id, limit, offset
+            )
+        ]
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
 @router.post("/vaults/{vault_id}/trust/import", response_model=VaultTrustImportResponse)
-async def import_trust(request: Request, vault_id: str, payload: VaultTrustImportRequest) -> VaultTrustImportResponse:
+async def import_trust(
+    request: Request, vault_id: str, payload: VaultTrustImportRequest
+) -> VaultTrustImportResponse:
     try:
         path = _relative_manifest_path(payload.manifest_relative_path)
         result = await _repository(request).import_trust_manifest(vault_id, path)
@@ -222,14 +284,26 @@ async def import_trust(request: Request, vault_id: str, payload: VaultTrustImpor
 
 
 @router.get("/vaults/{vault_id}/trust")
-async def trust_records(request: Request, vault_id: str, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)) -> list[dict[str, Any]]:
+async def trust_records(
+    request: Request,
+    vault_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
     try:
-        return [item.model_dump() for item in await _repository(request).list_trust_records(vault_id, limit, offset)]
+        return [
+            item.model_dump()
+            for item in await _repository(request).list_trust_records(
+                vault_id, limit, offset
+            )
+        ]
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
-@router.get("/vaults/{vault_id}/trust/summary", response_model=VaultTrustSummaryResponse)
+@router.get(
+    "/vaults/{vault_id}/trust/summary", response_model=VaultTrustSummaryResponse
+)
 async def trust_summary(request: Request, vault_id: str) -> VaultTrustSummaryResponse:
     try:
         result = await _repository(request).trust_summary(vault_id)

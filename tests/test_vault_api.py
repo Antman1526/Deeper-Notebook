@@ -75,7 +75,10 @@ class _Repository:
 
     async def import_trust_manifest(self, vault_id: str, manifest_relative_path: str):
         self.imported.append(manifest_relative_path)
-        return TrustImportResult(changed=0 if len(self.imported) > 1 else 1, unchanged=1 if len(self.imported) > 1 else 0)
+        return TrustImportResult(
+            changed=0 if len(self.imported) > 1 else 1,
+            unchanged=1 if len(self.imported) > 1 else 0,
+        )
 
     async def list_trust_records(self, vault_id: str, limit: int, offset: int):
         return [
@@ -150,7 +153,9 @@ def client(monkeypatch):
 
     repository = _Repository()
     app.state.vault_service = _Service(repository)
-    monkeypatch.setattr("api.routers.vault.approve_vault_root", lambda _path: nullcontext())
+    monkeypatch.setattr(
+        "api.routers.vault.approve_vault_root", lambda _path: nullcontext()
+    )
     test_client = TestClient(app)
     try:
         yield test_client, repository, app.state.vault_service
@@ -184,7 +189,11 @@ def test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias(client):
     }
     assert required <= routes.keys()
     assert test_client.get("/api/onp/vaults").status_code == 404
-    assert all(not methods & {"PUT", "PATCH", "DELETE"} for path, methods in routes.items() if path.startswith(prefix))
+    assert all(
+        not methods & {"PUT", "PATCH", "DELETE"}
+        for path, methods in routes.items()
+        if path.startswith(prefix)
+    )
 
 
 def test_mount_create_is_strict_and_owner_detail_is_not_returned_by_list(client):
@@ -199,7 +208,12 @@ def test_mount_create_is_strict_and_owner_detail_is_not_returned_by_list(client)
     assert service.request.watch_enabled is True
     assert created.json()["root_path"] == "/Users/owner/fixture"
     assert "root_path" not in test_client.get("/api/deeper-notebook/vaults").json()[0]
-    assert test_client.post("/api/deeper-notebook/vaults", json={**payload, "extra": True}).status_code == 422
+    assert (
+        test_client.post(
+            "/api/deeper-notebook/vaults", json={**payload, "extra": True}
+        ).status_code
+        == 422
+    )
 
 
 def test_read_only_vault_resources_return_relative_data_only(client):
@@ -207,9 +221,15 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     root = "/api/deeper-notebook/vaults/vault_mount:fixture"
     assert test_client.get(f"{root}").status_code == 200
     assert test_client.post(f"{root}/scan").json() == {
-        "operation_id": "vault-scan-1", "state": "ready-read-only", "observed": 6,
-        "parsed": 2, "unchanged": 3, "unsupported": 0, "invalid": 1,
-        "missing": 0, "embeddings_pending": 2,
+        "operation_id": "vault-scan-1",
+        "state": "ready-read-only",
+        "observed": 6,
+        "parsed": 2,
+        "unchanged": 3,
+        "unsupported": 0,
+        "invalid": 1,
+        "missing": 0,
+        "embeddings_pending": 2,
     }
     assert test_client.get(f"{root}/files").json()[0]["relative_path"] == "notes/one.md"
     assert test_client.get(f"{root}/pages/note:one").status_code == 200
@@ -226,17 +246,34 @@ def test_trust_import_is_relative_and_idempotent(client):
     root = "/api/deeper-notebook/vaults/vault_mount:fixture"
     payload = {"manifest_relative_path": "brain-engine/trust.json"}
     assert test_client.post(f"{root}/trust/import", json=payload).json()["changed"] == 1
-    assert test_client.post(f"{root}/trust/import", json=payload).json()["unchanged"] == 1
+    assert (
+        test_client.post(f"{root}/trust/import", json=payload).json()["unchanged"] == 1
+    )
     assert repository.imported == ["brain-engine/trust.json", "brain-engine/trust.json"]
-    assert test_client.post(f"{root}/trust/import", json={"manifest_relative_path": "../trust.json"}).status_code == 422
-    assert test_client.post(f"{root}/trust/import", json={"manifest_relative_path": "/tmp/trust.json"}).status_code == 422
+    assert (
+        test_client.post(
+            f"{root}/trust/import", json={"manifest_relative_path": "../trust.json"}
+        ).status_code
+        == 422
+    )
+    assert (
+        test_client.post(
+            f"{root}/trust/import", json={"manifest_relative_path": "/tmp/trust.json"}
+        ).status_code
+        == 422
+    )
     assert test_client.get(f"{root}/trust").status_code == 200
-    assert test_client.get(f"{root}/trust/summary").json() == {"total": 1, "resolved": 1, "unresolved": 0}
+    assert test_client.get(f"{root}/trust/summary").json() == {
+        "total": 1,
+        "resolved": 1,
+        "unresolved": 0,
+    }
 
 
 def test_domain_failures_have_stable_safe_responses(client):
     test_client, _, service = client
     root = "/api/deeper-notebook/vaults/vault_mount:fixture"
+
     async def missing(_vault_id):
         raise LookupError("vault_mount_not_found")
 
