@@ -298,6 +298,34 @@ function toWireLayout(layout: KnowledgeLayoutNode): KnowledgeLayoutWire {
   }
 }
 
+function preflightCamelLayout(layout: unknown): void {
+  const stack: Array<{ node: unknown; depth: number }> = [{ node: layout, depth: 1 }]
+  const visited = new WeakSet<object>()
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current) break
+    if (current.depth > 64) {
+      throw new Error('workspace layout cannot exceed depth 64')
+    }
+    if (!current.node || typeof current.node !== 'object' || Array.isArray(current.node)) {
+      throw new Error('workspace layout has an invalid shape')
+    }
+    if (visited.has(current.node)) {
+      throw new Error('workspace layout cannot contain cycles or shared nodes')
+    }
+    visited.add(current.node)
+    const node = current.node as Record<string, unknown>
+    if (node.type === 'pane') continue
+    if (node.type !== 'split') {
+      throw new Error('workspace layout has an invalid shape')
+    }
+    stack.push(
+      { node: node.first, depth: current.depth + 1 },
+      { node: node.second, depth: current.depth + 1 },
+    )
+  }
+}
+
 function fromWire(data: unknown): KnowledgeWorkspaceDocument {
   assertNoAbsolutePath(data)
   const wire = knowledgeWorkspaceWireSchema.parse(data)
@@ -327,6 +355,7 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
 }
 
 export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument) {
+  preflightCamelLayout(document.layout)
   const wire = {
     version: document.version,
     active_pane_id: document.activePaneId,

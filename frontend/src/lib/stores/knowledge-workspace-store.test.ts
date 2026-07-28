@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  defaultKnowledgeWorkspace,
   serializeKnowledgeWorkspace,
   type KnowledgeLayoutNode,
   type OpenKnowledgeTab,
@@ -231,5 +232,60 @@ describe('knowledge workspace store', () => {
     )
     expect(returnedPaneId).toBe('pane-1')
     expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+  })
+
+  it('allocates a collision-free tab ID when nextId points at an existing tab', () => {
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace({
+      ...defaultKnowledgeWorkspace(),
+      nextId: 2,
+      panes: {
+        'pane-1': {
+          id: 'pane-1',
+          activeTabId: 'tab-2',
+          tabs: [{
+            id: 'tab-2',
+            ...plan,
+            viewMode: 'reading',
+          }],
+        },
+      },
+    })
+
+    useKnowledgeWorkspaceStore.getState().openTab(research)
+
+    const state = useKnowledgeWorkspaceStore.getState()
+    expect(state.panes['pane-1'].tabs.map((tab) => tab.id))
+      .toEqual(['tab-2', 'tab-3'])
+    expect(state.nextId).toBe(4)
+    expect(() => serializeKnowledgeWorkspace(state)).not.toThrow()
+  })
+
+  it('allocates collision-free pane and split IDs without overwriting existing state', () => {
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace({
+      version: 1,
+      activePaneId: 'pane-1',
+      nextId: 2,
+      panes: {
+        'pane-1': { id: 'pane-1', activeTabId: null, tabs: [] },
+        'pane-2': { id: 'pane-2', activeTabId: null, tabs: [] },
+      },
+      layout: {
+        type: 'split',
+        id: 'split-4',
+        direction: 'horizontal',
+        first: { type: 'pane', paneId: 'pane-1' },
+        second: { type: 'pane', paneId: 'pane-2' },
+      },
+    })
+
+    const newPaneId = useKnowledgeWorkspaceStore
+      .getState().splitPane('pane-1', 'vertical')
+
+    const state = useKnowledgeWorkspaceStore.getState()
+    expect(newPaneId).toBe('pane-3')
+    expect(Object.keys(state.panes).sort()).toEqual(['pane-1', 'pane-2', 'pane-3'])
+    expect(JSON.stringify(state.layout)).toContain('"id":"split-5"')
+    expect(state.nextId).toBe(6)
+    expect(() => serializeKnowledgeWorkspace(state)).not.toThrow()
   })
 })

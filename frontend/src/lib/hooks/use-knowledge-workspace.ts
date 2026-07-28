@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
 import {
@@ -61,11 +61,257 @@ type ValidWorkspaceSnapshot = Extract<
   { ok: true }
 >
 
-interface SaveQueueState {
-  inFlight: boolean
+interface PersistenceStatus {
+  error: Error | null
+  isError: boolean
+  isPending: boolean
+  isSuccess: boolean
+  status: 'idle' | 'pending' | 'error' | 'success'
+}
+
+type SaveExecutor = (
+  document: KnowledgeWorkspaceDocument,
+) => Promise<KnowledgeWorkspaceDocument>
+
+interface PersistenceCoordinator {
+  consumers: number
+  executor: SaveExecutor | null
+  inFlightSnapshot: ValidWorkspaceSnapshot | null
   queuedSnapshot: ValidWorkspaceSnapshot | null
   debouncedSnapshot: ValidWorkspaceSnapshot | null
   timer: ReturnType<typeof setTimeout> | null
+  storeUnsubscribe: (() => void) | null
+  listeners: Set<() => void>
+  status: PersistenceStatus
+  hasSucceeded: boolean
+}
+
+const idlePersistenceStatus: PersistenceStatus = {
+  error: null,
+  isError: false,
+  isPending: false,
+  isSuccess: false,
+  status: 'idle',
+}
+
+const persistenceCoordinator: PersistenceCoordinator = {
+  consumers: 0,
+  executor: null,
+  inFlightSnapshot: null,
+  queuedSnapshot: null,
+  debouncedSnapshot: null,
+  timer: null,
+  storeUnsubscribe: null,
+  listeners: new Set(),
+  status: idlePersistenceStatus,
+  hasSucceeded: false,
+}
+
+function preferLatest(
+  current: ValidWorkspaceSnapshot | null,
+  candidate: ValidWorkspaceSnapshot,
+): ValidWorkspaceSnapshot {
+  if (
+    !current
+    || candidate.revision > current.revision
+    || (
+      candidate.revision === current.revision
+      && candidate.fingerprint !== current.fingerprint
+    )
+  ) {
+    return candidate
+  }
+  return current
+}
+
+function isSnapshotDurable(
+  snapshot: ValidWorkspaceSnapshot,
+  state: KnowledgeWorkspaceState,
+): boolean {
+  return (
+    snapshot.revision < state.durableRevision
+    || (
+      snapshot.revision === state.durableRevision
+      && snapshot.fingerprint === state.durableFingerprint
+    )
+  )
+}
+
+function publishPersistenceStatus(error = persistenceCoordinator.status.error): void {
+  const isPending = Boolean(
+    persistenceCoordinator.inFlightSnapshot
+    || persistenceCoordinator.queuedSnapshot
+    || persistenceCoordinator.debouncedSnapshot
+    || persistenceCoordinator.timer,
+  )
+  const nextStatus: PersistenceStatus = {
+    error,
+    isError: Boolean(error),
+    isPending,
+    isSuccess: !error && !isPending && persistenceCoordinator.hasSucceeded,
+    status: error
+      ? 'error'
+      : isPending
+        ? 'pending'
+        : persistenceCoordinator.hasSucceeded
+          ? 'success'
+          : 'idle',
+  }
+  if (
+    nextStatus.error === persistenceCoordinator.status.error
+    && nextStatus.isPending === persistenceCoordinator.status.isPending
+    && nextStatus.status === persistenceCoordinator.status.status
+  ) {
+    return
+  }
+  persistenceCoordinator.status = nextStatus
+  persistenceCoordinator.listeners.forEach((listener) => listener())
+}
+
+function startCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
+  if (isSnapshotDurable(snapshot, useKnowledgeWorkspaceStore.getState())) return
+  if (persistenceCoordinator.inFlightSnapshot) {
+    persistenceCoordinator.queuedSnapshot = preferLatest(
+      persistenceCoordinator.queuedSnapshot,
+      snapshot,
+    )
+    publishPersistenceStatus()
+    return
+  }
+  const executor = persistenceCoordinator.executor
+  if (!executor) {
+    persistenceCoordinator.queuedSnapshot = preferLatest(
+      persistenceCoordinator.queuedSnapshot,
+      snapshot,
+    )
+    publishPersistenceStatus()
+    return
+  }
+
+  persistenceCoordinator.inFlightSnapshot = snapshot
+  publishPersistenceStatus(null)
+  void executor(snapshot.document)
+    .then(() => {
+      useKnowledgeWorkspaceStore
+        .getState()
+        .markWorkspaceDurable(snapshot.revision, snapshot.fingerprint)
+      persistenceCoordinator.hasSucceeded = true
+    })
+    .catch((cause) => {
+      const error = cause instanceof Error ? cause : new Error(String(cause))
+      publishPersistenceStatus(error)
+    })
+    .finally(() => {
+      persistenceCoordinator.inFlightSnapshot = null
+      const next = persistenceCoordinator.queuedSnapshot
+      persistenceCoordinator.queuedSnapshot = null
+      publishPersistenceStatus()
+      if (next) startCoordinatedSave(next)
+    })
+}
+
+function flushCoordinatedDebounce(): void {
+  persistenceCoordinator.timer = null
+  const snapshot = persistenceCoordinator.debouncedSnapshot
+  persistenceCoordinator.debouncedSnapshot = null
+  if (snapshot) startCoordinatedSave(snapshot)
+  else publishPersistenceStatus()
+}
+
+function scheduleCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
+  if (persistenceCoordinator.inFlightSnapshot) {
+    if (persistenceCoordinator.timer) {
+      clearTimeout(persistenceCoordinator.timer)
+      persistenceCoordinator.timer = null
+    }
+    persistenceCoordinator.debouncedSnapshot = null
+    persistenceCoordinator.queuedSnapshot = preferLatest(
+      persistenceCoordinator.queuedSnapshot,
+      snapshot,
+    )
+    publishPersistenceStatus()
+    return
+  }
+
+  persistenceCoordinator.debouncedSnapshot = preferLatest(
+    persistenceCoordinator.debouncedSnapshot,
+    snapshot,
+  )
+  if (persistenceCoordinator.timer) clearTimeout(persistenceCoordinator.timer)
+  persistenceCoordinator.timer = setTimeout(flushCoordinatedDebounce, 400)
+  publishPersistenceStatus(null)
+}
+
+function observeWorkspaceForPersistence(state: KnowledgeWorkspaceState): void {
+  if (!state.hydrated) return
+  const snapshot = validatedSnapshot(state)
+  if (!snapshot.ok) {
+    const currentError = persistenceCoordinator.status.error
+    publishPersistenceStatus(
+      currentError?.message === snapshot.error.message ? currentError : snapshot.error,
+    )
+    return
+  }
+  if (isSnapshotDurable(snapshot, state)) {
+    if (persistenceCoordinator.status.error?.message.startsWith('Invalid workspace snapshot:')) {
+      publishPersistenceStatus(null)
+    }
+    return
+  }
+  publishPersistenceStatus(null)
+  scheduleCoordinatedSave(snapshot)
+}
+
+function attachPersistenceConsumer(executor: SaveExecutor): () => void {
+  persistenceCoordinator.executor = executor
+  persistenceCoordinator.consumers += 1
+  if (!persistenceCoordinator.storeUnsubscribe) {
+    persistenceCoordinator.storeUnsubscribe =
+      useKnowledgeWorkspaceStore.subscribe(observeWorkspaceForPersistence)
+  }
+  observeWorkspaceForPersistence(useKnowledgeWorkspaceStore.getState())
+
+  return () => {
+    persistenceCoordinator.consumers = Math.max(0, persistenceCoordinator.consumers - 1)
+    if (persistenceCoordinator.consumers > 0) return
+    persistenceCoordinator.storeUnsubscribe?.()
+    persistenceCoordinator.storeUnsubscribe = null
+    if (persistenceCoordinator.timer) {
+      clearTimeout(persistenceCoordinator.timer)
+      persistenceCoordinator.timer = null
+    }
+    const snapshot = persistenceCoordinator.debouncedSnapshot
+    persistenceCoordinator.debouncedSnapshot = null
+    if (snapshot) startCoordinatedSave(snapshot)
+    else publishPersistenceStatus()
+  }
+}
+
+function subscribePersistenceStatus(listener: () => void): () => void {
+  persistenceCoordinator.listeners.add(listener)
+  return () => persistenceCoordinator.listeners.delete(listener)
+}
+
+function getPersistenceStatus(): PersistenceStatus {
+  return persistenceCoordinator.status
+}
+
+export function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
+  if (persistenceCoordinator.inFlightSnapshot) {
+    throw new Error('cannot reset the workspace persistence coordinator while a save is active')
+  }
+  if (persistenceCoordinator.consumers > 0) {
+    throw new Error('cannot reset the workspace persistence coordinator with active consumers')
+  }
+  if (persistenceCoordinator.timer) clearTimeout(persistenceCoordinator.timer)
+  persistenceCoordinator.storeUnsubscribe?.()
+  persistenceCoordinator.executor = null
+  persistenceCoordinator.queuedSnapshot = null
+  persistenceCoordinator.debouncedSnapshot = null
+  persistenceCoordinator.timer = null
+  persistenceCoordinator.storeUnsubscribe = null
+  persistenceCoordinator.status = idlePersistenceStatus
+  persistenceCoordinator.hasSucceeded = false
 }
 
 export function useHydrateKnowledgeWorkspace() {
@@ -89,128 +335,18 @@ export function useHydrateKnowledgeWorkspace() {
 }
 
 export function usePersistKnowledgeWorkspace() {
-  const [validationError, setValidationError] = useState<Error | null>(null)
   const mutation = useMutation({
     mutationFn: knowledgeWorkspaceApi.put,
   })
-  const mutateAsyncRef = useRef(mutation.mutateAsync)
-  const queueRef = useRef<SaveQueueState | null>(null)
+  const status = useSyncExternalStore(
+    subscribePersistenceStatus,
+    getPersistenceStatus,
+    getPersistenceStatus,
+  )
 
   useEffect(() => {
-    mutateAsyncRef.current = mutation.mutateAsync
+    return attachPersistenceConsumer(mutation.mutateAsync)
   }, [mutation.mutateAsync])
 
-  useEffect(() => {
-    const queue = queueRef.current ?? {
-      inFlight: false,
-      queuedSnapshot: null,
-      debouncedSnapshot: null,
-      timer: null,
-    }
-    queueRef.current = queue
-    let unmounted = false
-
-    const preferLatest = (
-      current: ValidWorkspaceSnapshot | null,
-      candidate: ValidWorkspaceSnapshot,
-    ): ValidWorkspaceSnapshot => {
-      if (
-        !current
-        || candidate.revision > current.revision
-        || (
-          candidate.revision === current.revision
-          && candidate.fingerprint !== current.fingerprint
-        )
-      ) {
-        return candidate
-      }
-      return current
-    }
-
-    const startSave = (snapshot: ValidWorkspaceSnapshot) => {
-      const state = useKnowledgeWorkspaceStore.getState()
-      if (snapshot.revision <= state.durableRevision) {
-        return
-      }
-      if (queue.inFlight) {
-        queue.queuedSnapshot = preferLatest(queue.queuedSnapshot, snapshot)
-        return
-      }
-
-      queue.inFlight = true
-      void mutateAsyncRef.current(snapshot.document)
-        .then(() => {
-          useKnowledgeWorkspaceStore
-            .getState()
-            .markWorkspaceDurable(snapshot.revision)
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          queue.inFlight = false
-          const next = queue.queuedSnapshot
-          queue.queuedSnapshot = null
-          if (next) startSave(next)
-        })
-    }
-
-    const flushDebounce = () => {
-      queue.timer = null
-      const snapshot = queue.debouncedSnapshot
-      queue.debouncedSnapshot = null
-      if (snapshot) startSave(snapshot)
-    }
-
-    const schedule = (snapshot: ValidWorkspaceSnapshot) => {
-      if (queue.inFlight) {
-        if (queue.timer) {
-          clearTimeout(queue.timer)
-          queue.timer = null
-        }
-        queue.debouncedSnapshot = null
-        queue.queuedSnapshot = preferLatest(queue.queuedSnapshot, snapshot)
-        return
-      }
-
-      queue.debouncedSnapshot = preferLatest(queue.debouncedSnapshot, snapshot)
-      if (queue.timer) clearTimeout(queue.timer)
-      queue.timer = setTimeout(flushDebounce, 400)
-    }
-
-    const observe = (state: KnowledgeWorkspaceState) => {
-      if (!state.hydrated) return
-      const snapshot = validatedSnapshot(state)
-      if (!snapshot.ok) {
-        if (!unmounted) {
-          setValidationError((current) =>
-            current?.message === snapshot.error.message ? current : snapshot.error)
-        }
-        return
-      }
-      if (!unmounted) setValidationError(null)
-      if (snapshot.revision <= state.durableRevision) return
-      schedule(snapshot)
-    }
-
-    const unsubscribe = useKnowledgeWorkspaceStore.subscribe(observe)
-    observe(useKnowledgeWorkspaceStore.getState())
-
-    return () => {
-      unmounted = true
-      unsubscribe()
-      if (queue.timer) {
-        clearTimeout(queue.timer)
-        queue.timer = null
-      }
-      const snapshot = queue.debouncedSnapshot
-      queue.debouncedSnapshot = null
-      if (snapshot) {
-        startSave(snapshot)
-      }
-    }
-  }, [])
-
-  return {
-    ...mutation,
-    error: validationError ?? mutation.error,
-  }
+  return status
 }
