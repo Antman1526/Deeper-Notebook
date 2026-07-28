@@ -1,0 +1,2 @@
+-- phase-1 rollback preserves read-only vault provenance records
+REMOVE FIELD IF EXISTS embedding_state ON TABLE vault_file;
