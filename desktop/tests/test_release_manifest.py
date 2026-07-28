@@ -404,3 +404,28 @@ def test_macos_dmg_creation_retries_only_resource_busy_and_verifies_image() -> N
     assert '"Resource busy"' in post_build
     assert "hdiutil verify" in post_build
     assert "exit \"${_status}\"" in post_build
+
+
+def test_windows_installer_replaces_and_removes_reserved_internal_tree() -> None:
+    installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+
+    internal_cleanup = 'Type: filesandordirs; Name: "{app}\\_internal"'
+    assert installer.count(internal_cleanup) == 2
+    assert "[InstallDelete]" in installer
+    assert "[UninstallDelete]" in installer
+
+
+def test_windows_repair_closes_package_before_replacing_internal_tree() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+    stopper = (
+        REPOSITORY_ROOT / "desktop" / "build" / "stop_windows_package.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "pwsh desktop/build/stop_windows_package.ps1 "
+        "-ProcessId $process.Id -ScopePath \"$installDir\""
+    ) in workflow
+    assert "Stop-Process -Id $process.Id -Force" not in workflow
+    assert "CloseMainWindow()" in stopper
+    assert "WaitForExit(90000)" in stopper
+    assert "Get-CimInstance Win32_Process" in stopper
