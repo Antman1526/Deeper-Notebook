@@ -18,6 +18,8 @@ from deeper_notebook.vault.parsers import (
     detect_format,
     parse_document,
 )
+from deeper_notebook.vault.parsers.common import SourceRegion
+from deeper_notebook.vault.parsers.markdown import ByteOffsetMapper, ScanContext
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vault"
 
@@ -1147,6 +1149,28 @@ print(json.dumps({
     assert result["blocks"] == 1
     assert result["elapsed"] < 8.0
     assert rss_bytes < 150 * 1024 * 1024
+
+
+def test_escape_map_fast_path_preserves_unescaped_semantics() -> None:
+    scan = ScanContext.from_text("plain text without escapes")
+
+    assert scan.escaped == bytearray(len(scan.text))
+    assert not any(scan.is_escaped(index) for index in range(len(scan.text)))
+
+
+def test_multibyte_offset_map_is_lazy_until_a_span_is_projected() -> None:
+    source = SourceRegion(
+        source_start=7,
+        source_end=13,
+        markdown="ééé",
+        content="ééé",
+    )
+
+    mapper = ByteOffsetMapper.from_source(source)
+
+    assert mapper.offsets is None
+    assert mapper.span(1, 3) == (9, 13)
+    assert mapper.offsets is not None
 
 
 def test_parser_scanners_do_not_stage_unbounded_transient_lists() -> None:
