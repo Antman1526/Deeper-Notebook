@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "repair_desktop_db.sh"
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX repair script")
 
 
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
