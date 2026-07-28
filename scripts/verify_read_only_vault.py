@@ -51,6 +51,10 @@ class ScanVerificationError(VerificationError):
         self.observed = observed
 
 
+class SourceChangedError(VerificationError):
+    """An API operation observed a source mutation in its mandatory after snapshot."""
+
+
 def _safe_root(value: str) -> Path:
     candidate = Path(value).expanduser()
     if candidate == Path("/") or candidate == Path.home():
@@ -89,43 +93,23 @@ def _safe_output(value: str, root: Path) -> OutputTarget:
 
 def _relative_files(root: Path) -> list[Path]:
     """Enumerate regular non-symlink files without changing the tree."""
-    command = [
-        "git",
-        "-C",
-        os.fspath(root),
-        "ls-files",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "-z",
-    ]
     try:
-        result = subprocess.run(command, capture_output=True, check=False)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise VerificationError("source inventory failed") from exc
-    if result.returncode == 0:
-        candidates = [
-            Path(item.decode("utf-8", "surrogateescape"))
-            for item in result.stdout.split(b"\0")
-            if item
-        ]
-    else:
-        try:
-            candidates = [
-                item.relative_to(root)
-                for item in root.rglob("*")
-                if ".git" not in item.relative_to(root).parts
+        files: list[Path] = []
+        for directory, names, filenames in os.walk(root, followlinks=False):
+            directory_path = Path(directory)
+            names[:] = [
+                name
+                for name in names
+                if name != ".git" and not (directory_path / name).is_symlink()
             ]
-        except OSError as exc:
-            raise VerificationError("source inventory failed") from exc
-    files: list[Path] = []
-    for relative in candidates:
-        if ".git" in relative.parts:
-            continue
-        candidate = root / relative
-        if candidate.is_file() and not candidate.is_symlink():
-            files.append(relative)
-    return sorted(files, key=lambda item: item.as_posix())
+            for filename in filenames:
+                candidate = directory_path / filename
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                files.append(candidate.relative_to(root))
+        return sorted(files, key=lambda item: item.as_posix())
+    except OSError as exc:
+        raise VerificationError("source inventory failed") from exc
 
 
 def _hash_file(path: Path) -> str:
@@ -167,7 +151,13 @@ def _snapshot(root: Path) -> Snapshot:
         raise VerificationError("source observation failed") from exc
 
 
-def _manifest_counts(root: Path) -> dict[str, int]:
+def _provenance_digest(mapping: dict[str, list[Any]]) -> str:
+    return hashlib.sha256(
+        json.dumps(mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _manifest_counts(root: Path) -> dict[str, Any]:
     manifest = root / MANIFEST_PATH
     if not manifest.is_file() or manifest.is_symlink():
         raise VerificationError("connector manifest is unavailable")
@@ -200,6 +190,7 @@ def _manifest_counts(root: Path) -> dict[str, int]:
             for record in synthesis
         ),
         "expected_derived_from": expected_derived_from,
+        "expected_derived_from_digest": _provenance_digest(expected_derived_from),
     }
 
 
@@ -221,9 +212,15 @@ def _request_json(
 
 
 def _mount_id(
-    api: str, name: str, path: Path, format_mode: str, parent_vault_id: str | None, watch_enabled: bool
+    api: str,
+    name: str,
+    path: Path,
+    format_mode: str,
+    parent_vault_id: str | None,
+    watch_enabled: bool,
+    request: Any,
 ) -> str:
-    mounts = _request_json("GET", api, "")
+    mounts = request("GET", api, "")
     if not isinstance(mounts, list):
         raise VerificationError("canonical vault API returned an invalid mount list")
     named_mounts = [mount for mount in mounts if isinstance(mount, dict) and mount.get("name") == name]
@@ -233,7 +230,7 @@ def _mount_id(
         value = named_mounts[0].get("id")
         if not isinstance(value, str) or not value:
             raise VerificationError("canonical vault API returned an invalid existing mount")
-        detail = _request_json("GET", api, f"/{value}")
+        detail = request("GET", api, f"/{value}")
         _validate_mount_detail(detail, value, name, path, format_mode, parent_vault_id, watch_enabled)
         return value
     payload: dict[str, Any] = {
@@ -244,11 +241,11 @@ def _mount_id(
     }
     if parent_vault_id:
         payload["parent_vault_id"] = parent_vault_id
-    created = _request_json("POST", api, "", payload)
+    created = request("POST", api, "", payload)
     if not isinstance(created, dict) or not isinstance(created.get("id"), str):
         raise VerificationError("canonical vault API returned an invalid mount")
     value = created["id"]
-    detail = _request_json("GET", api, f"/{value}")
+    detail = request("GET", api, f"/{value}")
     _validate_mount_detail(detail, value, name, path, format_mode, parent_vault_id, watch_enabled)
     return value
 
@@ -282,8 +279,40 @@ def _snapshot_differences(left: Snapshot, right: Snapshot) -> tuple[bool, bool]:
     )
 
 
+class _ObservedApi:
+    """Run every API request with a mandatory before/after source reconciliation."""
+
+    def __init__(self, root: Path, baseline: Snapshot, report: dict[str, Any]):
+        self.root = root
+        self.baseline = baseline
+        self.report = report
+
+    def request(self, method: str, api: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+        before = _snapshot(self.root)
+        request_failed = False
+        try:
+            result = _request_json(method, api, path, payload)
+        except VerificationError:
+            request_failed = True
+            raise
+        finally:
+            after = _snapshot(self.root)
+            before_hashes, before_git = _snapshot_differences(before, self.baseline)
+            after_hashes, after_git = _snapshot_differences(after, self.baseline)
+            if before_hashes or before_git or after_hashes or after_git:
+                _record_observation(
+                    self.report,
+                    before_hashes or after_hashes,
+                    before_git or after_git,
+                    after,
+                )
+                if not request_failed:
+                    raise SourceChangedError("source changed during API operation")
+        return result
+
+
 def _scan_once(
-    api: str, mount_ids: list[str], root: Path, baseline: Snapshot
+    api: str, mount_ids: list[str], root: Path, baseline: Snapshot, request: Any
 ) -> tuple[int, bool, bool, Snapshot | None]:
     changed = 0
     for mount_id in mount_ids:
@@ -291,7 +320,11 @@ def _scan_once(
         request_failed = False
         result: Any = None
         try:
-            result = _request_json("POST", api, f"/{mount_id}/scan")
+            result = request("POST", api, f"/{mount_id}/scan")
+        except SourceChangedError:
+            after = _snapshot(root)
+            hashes_changed, git_changed = _snapshot_differences(after, baseline)
+            return changed, hashes_changed, git_changed, after
         except VerificationError:
             request_failed = True
         finally:
@@ -342,7 +375,10 @@ def _safe_report(root: Path, initial: Snapshot, counts: dict[str, Any], mode: st
         "git_status_available": initial.git_status_available,
         "git_status": initial.git_status if not initial.git_status_available else "captured",
         "second_scan_changed_projections": 0,
-        **counts,
+        "expected_trust_records": counts["expected_trust_records"],
+        "expected_synthesis_records": counts["expected_synthesis_records"],
+        "expected_synthesis_with_derived_from": counts["expected_synthesis_with_derived_from"],
+        "expected_derived_from_digest": counts["expected_derived_from_digest"],
         "trust_records": 0,
         "synthesis_records": 0,
         "synthesis_with_derived_from": 0,
@@ -357,13 +393,15 @@ def _record_git_status(report: dict[str, Any], snapshot: Snapshot) -> None:
 
 
 def _record_observation(report: dict[str, Any], hashes_changed: bool, git_changed: bool, observed: Snapshot) -> None:
-    report["source_files_changed"] = int(hashes_changed)
-    report["git_status_changed"] = git_changed
+    report["source_files_changed"] = int(bool(report["source_files_changed"] or hashes_changed))
+    report["git_status_changed"] = bool(report["git_status_changed"] or git_changed)
     _record_git_status(report, observed)
     if hashes_changed:
-        report["failures"].append("source_hash_mismatch")
+        if "source_hash_mismatch" not in report["failures"]:
+            report["failures"].append("source_hash_mismatch")
     if git_changed:
-        report["failures"].append("git_status_mismatch")
+        if "git_status_mismatch" not in report["failures"]:
+            report["failures"].append("git_status_mismatch")
 
 
 def run(root: Path, api: str, output: OutputTarget, check_only: bool) -> int:
@@ -374,25 +412,30 @@ def run(root: Path, api: str, output: OutputTarget, check_only: bool) -> int:
         _write_report(output, report)
         return 0
     try:
-        parent_id = _mount_id(api, "2nd Brains", root, "mixed", None, False)
-        obsidian_id = _mount_id(api, "Obsidian Brain", root / "Obsidian Brain", "obsidian", parent_id, True)
-        logseq_id = _mount_id(api, "Logseq Brain", root / "Logseq Brain", "logseq", parent_id, True)
-        _request_json("POST", api, f"/{parent_id}/trust/import", {"manifest_relative_path": MANIFEST_PATH})
+        observed_api = _ObservedApi(root, initial, report)
+        request = observed_api.request
+        parent_id = _mount_id(api, "2nd Brains", root, "mixed", None, False, request)
+        obsidian_id = _mount_id(api, "Obsidian Brain", root / "Obsidian Brain", "obsidian", parent_id, True, request)
+        logseq_id = _mount_id(api, "Logseq Brain", root / "Logseq Brain", "logseq", parent_id, True, request)
+        request("POST", api, f"/{parent_id}/trust/import", {"manifest_relative_path": MANIFEST_PATH})
         mounts = [parent_id, obsidian_id, logseq_id]
-        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, mounts, root, initial)
+        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, mounts, root, initial, request)
         if first_hash_mismatch or first_git_mismatch:
             _record_observation(report, first_hash_mismatch, first_git_mismatch, first_observed or initial)
             _write_report(output, report)
             return 1
-        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, mounts, root, initial)
+        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, mounts, root, initial, request)
         report["second_scan_changed_projections"] = second_changed
         if second_hash_mismatch or second_git_mismatch:
             _record_observation(report, second_hash_mismatch, second_git_mismatch, second_observed or initial)
             _write_report(output, report)
             return 1
-        trust = _request_json("GET", api, f"/{parent_id}/trust")
-        summary = _request_json("GET", api, f"/{parent_id}/trust/summary")
-        receipts = _request_json("GET", api, f"/{parent_id}/receipts")
+        trust = request("GET", api, f"/{parent_id}/trust")
+        summary = request("GET", api, f"/{parent_id}/trust/summary")
+        receipts = request("GET", api, f"/{parent_id}/receipts")
+    except SourceChangedError:
+        _write_report(output, report)
+        return 1
     except ScanVerificationError as exc:
         _record_observation(report, exc.hashes_changed, exc.git_changed, exc.observed)
         report["failures"].append("scan_request_failed")
