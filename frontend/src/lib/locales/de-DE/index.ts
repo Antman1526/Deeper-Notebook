@@ -237,7 +237,7 @@ export const deDE = {
     ask: "Fragen",
     knowledge: "Wissen",
   },
-  knowledge: { mounts: "Eingebundene Tresore", scan: "Tresor scannen", status: "Status", readOnly: "Schreibgeschützte externe Datei", backlinks: "Rückverweise", outgoing: "Ausgehende Links", properties: "Eigenschaften", tags: "Tags", unresolved: "Ungelöster Link", loadError: "Wissen konnte nicht geladen werden." },
+  knowledge: { mounts: "Eingebundene Tresore", scan: "Tresor scannen", status: "Status", readOnly: "Schreibgeschützte externe Datei", backlinks: "Rückverweise", outgoing: "Ausgehende Links", properties: "Eigenschaften", tags: "Tags", unresolved: "Ungelöster Link", loadError: "Wissen konnte nicht geladen werden." }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "Notebooks",
     newNotebook: "Neues Notebook",

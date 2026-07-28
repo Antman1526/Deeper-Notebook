@@ -234,7 +234,7 @@ export const bnIN = {
     ask: "জিজ্ঞাসা",
     knowledge: "জ্ঞান",
   },
-  knowledge: { mounts: "মাউন্ট করা ভল্ট", scan: "ভল্ট স্ক্যান করুন", status: "অবস্থা", readOnly: "শুধু-পঠনযোগ্য বাহ্যিক ফাইল", backlinks: "ব্যাকলিংক", outgoing: "আউটগোয়িং লিংক", properties: "বৈশিষ্ট্য", tags: "ট্যাগ", unresolved: "অমীমাংসিত লিংক", loadError: "জ্ঞান লোড করা যায়নি।" },
+  knowledge: { mounts: "মাউন্ট করা ভল্ট", scan: "ভল্ট স্ক্যান করুন", status: "অবস্থা", readOnly: "শুধু-পঠনযোগ্য বাহ্যিক ফাইল", backlinks: "ব্যাকলিংক", outgoing: "আউটগোয়িং লিংক", properties: "বৈশিষ্ট্য", tags: "ট্যাগ", unresolved: "অমীমাংসিত লিংক", loadError: "জ্ঞান লোড করা যায়নি।" }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "নোটবুকগুলি",
     newNotebook: "নতুন নোটবুক",

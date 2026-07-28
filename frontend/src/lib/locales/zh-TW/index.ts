@@ -234,7 +234,7 @@ export const zhTW = {
     ask: "提問",
     knowledge: "知識",
   },
-  knowledge: { mounts: "已掛載的知識庫", scan: "掃描知識庫", status: "狀態", readOnly: "唯讀外部檔案", backlinks: "反向連結", outgoing: "傳出連結", properties: "屬性", tags: "標籤", unresolved: "未解析連結", loadError: "無法載入知識。" },
+  knowledge: { mounts: "已掛載的知識庫", scan: "掃描知識庫", status: "狀態", readOnly: "唯讀外部檔案", backlinks: "反向連結", outgoing: "傳出連結", properties: "屬性", tags: "標籤", unresolved: "未解析連結", loadError: "無法載入知識。" }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "筆記本",
     newNotebook: "新增筆記本",

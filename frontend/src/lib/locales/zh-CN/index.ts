@@ -234,7 +234,7 @@ export const zhCN = {
     ask: "提问",
     knowledge: "知识",
   },
-  knowledge: { mounts: "已挂载的知识库", scan: "扫描知识库", status: "状态", readOnly: "只读外部文件", backlinks: "反向链接", outgoing: "出站链接", properties: "属性", tags: "标签", unresolved: "未解析链接", loadError: "无法加载知识。" },
+  knowledge: { mounts: "已挂载的知识库", scan: "扫描知识库", status: "状态", readOnly: "只读外部文件", backlinks: "反向链接", outgoing: "出站链接", properties: "属性", tags: "标签", unresolved: "未解析链接", loadError: "无法加载知识。" }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "笔记本",
     newNotebook: "创建笔记本",
