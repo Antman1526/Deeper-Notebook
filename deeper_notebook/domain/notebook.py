@@ -103,11 +103,6 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
     descriptor-relative no-follow operations fail closed instead of falling
     back to a race-prone pathname unlink.
     """
-    if not _secure_upload_unlink_is_supported():
-        raise _UnsafeUploadCleanupError(
-            "secure-dir-fd-unlink-unavailable"
-        )
-
     root = Path(os.path.abspath(os.fspath(uploads_root)))
     candidate = Path(os.path.abspath(os.fspath(file_path)))
     try:
@@ -120,6 +115,17 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
         part in {"", ".", ".."} for part in relative.parts
     ):
         raise _UnsafeUploadCleanupError("upload-path-is-not-a-file")
+
+    if os.name == "nt":
+        from deeper_notebook.domain.windows_upload_cleanup import (
+            secure_unlink_uploaded_file_windows,
+        )
+
+        return secure_unlink_uploaded_file_windows(root, relative)
+    if not _secure_upload_unlink_is_supported():
+        raise _UnsafeUploadCleanupError(
+            "secure-dir-fd-unlink-unavailable"
+        )
 
     directory_flags = (
         os.O_RDONLY
