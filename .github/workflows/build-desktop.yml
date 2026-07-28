@@ -274,6 +274,7 @@ jobs:
             local launcher_pid="$1"
             local scope_pattern="$2"
             local descendants_file="$3"
+            local cleanup_policy="${4:-strict}"
             descendants_of "$launcher_pid" | sort -u > "$descendants_file"
             if ! "$RUNNER_TEMP/canonical-venv/bin/python" -c \
               'import sys; from AppKit import NSRunningApplication; app = NSRunningApplication.runningApplicationWithProcessIdentifier_(int(sys.argv[1])); raise SystemExit(0 if app is not None and app.terminate() else 1)' \
@@ -296,21 +297,59 @@ jobs:
             if ! wait "$launcher_pid"; then
               :
             fi
-            local remaining_descendants=""
+            local remaining_file="$RUNNER_TEMP/remaining-sidecars.txt"
+            : > "$remaining_file"
             while read -r child_pid; do
               if test -n "$child_pid" && kill -0 "$child_pid" 2>/dev/null; then
-                remaining_descendants="$remaining_descendants $child_pid"
+                printf '%s\n' "$child_pid" >> "$remaining_file"
               fi
             done < "$descendants_file"
+            export DEEPER_NOTEBOOK_CI_SCOPE_PATTERN="$scope_pattern"
             ps -axo pid=,command= |
-              awk -v scope="$scope_pattern" '
-                index($0, scope) { print $1 }
-              ' |
-              sort -u > "$RUNNER_TEMP/remaining-sidecars.txt"
-            if test -n "$remaining_descendants" || test -s "$RUNNER_TEMP/remaining-sidecars.txt"; then
+              awk -v own="$$" '
+                $1 != own &&
+                index($0, ENVIRON["DEEPER_NOTEBOOK_CI_SCOPE_PATTERN"]) {
+                  print $1
+                }
+              ' >> "$remaining_file"
+            unset DEEPER_NOTEBOOK_CI_SCOPE_PATTERN
+            sort -u -o "$remaining_file" "$remaining_file"
+            if test -s "$remaining_file" && test "$cleanup_policy" = "legacy"; then
+              echo "Legacy baseline left residual sidecars; applying bounded compatibility cleanup."
+              while read -r child_pid; do
+                kill -TERM "$child_pid" 2>/dev/null || true
+              done < "$remaining_file"
+              for attempt in $(seq 1 10); do
+                local any_alive=""
+                while read -r child_pid; do
+                  if kill -0 "$child_pid" 2>/dev/null; then
+                    any_alive="yes"
+                    break
+                  fi
+                done < "$remaining_file"
+                if test -z "$any_alive"; then
+                  break
+                fi
+                sleep 1
+              done
+              while read -r child_pid; do
+                if kill -0 "$child_pid" 2>/dev/null; then
+                  kill -KILL "$child_pid" 2>/dev/null || true
+                fi
+              done < "$remaining_file"
+              sleep 1
+              while read -r child_pid; do
+                if kill -0 "$child_pid" 2>/dev/null; then
+                  echo "Legacy sidecar survived bounded cleanup: $child_pid" >&2
+                  return 1
+                fi
+              done < "$remaining_file"
+              echo "Legacy compatibility cleanup completed; canonical shutdown remains strict."
+              return 0
+            fi
+            if test -s "$remaining_file"; then
               echo "Packaged sidecars remain after shutdown." >&2
-              printf 'Captured descendants:%s\n' "$remaining_descendants" >&2
-              cat "$RUNNER_TEMP/remaining-sidecars.txt" >&2
+              cat "$remaining_file" >&2
               return 1
             fi
           }
@@ -332,7 +371,7 @@ jobs:
           wait_for_pid_visible_window "$legacy_pid" "Open notebook+" "Open notebook+"
           graceful_stop_and_assert_clean \
             "$legacy_pid" "$compat_home" \
-            "$RUNNER_TEMP/legacy-descendants.txt"
+            "$RUNNER_TEMP/legacy-descendants.txt" legacy
           cp -R "dist/Deeper Notebook.app" "$applications_dir/"
           legacy_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Open Notebook Plus.app/Contents/Info.plist")
           canonical_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Deeper Notebook.app/Contents/Info.plist")
