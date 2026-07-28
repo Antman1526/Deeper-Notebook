@@ -177,7 +177,7 @@ class ProjectionResult(_Model):
     note_id: str
     status: Literal["projected", "unchanged", "superseded", "conflict"]
     parse_state: Literal["parsed"]
-    embedding_state: Literal["pending"]
+    embedding_state: Literal["pending", "failed"]
     reconciliation_required: bool = False
 
 
@@ -620,6 +620,7 @@ class VaultRepository:
             "encoding": parsed.encoding,
             "parse_status": "pending",
             "parse_error_code": None,
+            "embedding_state": "pending",
             "deleted_state": "present",
         }
         note_data = {
