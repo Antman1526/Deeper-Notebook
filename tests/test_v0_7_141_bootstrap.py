@@ -29,7 +29,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 _MAKEFILE = Path("Makefile")
 _PYPROJECT = Path("pyproject.toml")
 _LOCKFILE = Path("desktop/requirements.lock")
@@ -68,6 +67,27 @@ def test_build_mac_lock_invokes_uv_pip_compile():
     )
     assert "desktop/requirements.lock" in recipe, (
         "build-mac-lock should write to desktop/requirements.lock"
+    )
+
+
+def test_runtime_lock_recipe_is_universal_across_packaged_platforms() -> None:
+    src = _MAKEFILE.read_text()
+    match = re.search(
+        r"^build-mac-lock:\s*\n((?:[\t ].*\n)+)",
+        src,
+        re.MULTILINE,
+    )
+    assert match
+    assert "--universal" in match.group(1)
+
+    lock = _LOCKFILE.read_text()
+    marker = "platform_machine == 'arm64' and sys_platform == 'darwin'"
+    assert f"mlx-lm==0.26.4 ; {marker}" in lock
+    assert re.search(rf"^mlx==[^\n]+ ; {re.escape(marker)}$", lock, re.MULTILINE)
+    assert re.search(
+        rf"^mlx-metal==[^\n]+ ; {re.escape(marker)}$",
+        lock,
+        re.MULTILINE,
     )
 
 

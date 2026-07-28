@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models import benchmarks as benchmarks_mod
-from open_notebook.local_models.benchmarks import (
+from deeper_notebook.local_models import benchmarks as benchmarks_mod
+from deeper_notebook.local_models.benchmarks import (
     BenchmarkMeasurement,
     BenchmarkResult,
     QualityMeasurement,
@@ -24,9 +24,9 @@ from open_notebook.local_models.benchmarks import (
     score_benchmark_measurement,
     start_benchmark,
 )
-from open_notebook.local_models.gguf_metadata import GGUFMetadata
-from open_notebook.local_models.inventory import LocalModelInfo
-from open_notebook.local_models.role_routing import recommend_model_roles
+from deeper_notebook.local_models.gguf_metadata import GGUFMetadata
+from deeper_notebook.local_models.inventory import LocalModelInfo
+from deeper_notebook.local_models.role_routing import recommend_model_roles
 
 
 def _make_gguf(path: Path, name: str) -> Path:
@@ -160,6 +160,25 @@ def test_legacy_speed_only_history_rows_remain_readable_as_performance_only(tmp_
     assert restored[0].score == 24.5
 
 
+def test_legacy_benchmark_filename_is_read_but_new_writes_are_canonical(tmp_path):
+    manifests = tmp_path / "Manifests"
+    manifests.mkdir()
+    legacy = manifests / "open-notebook-plus-benchmarks.json"
+    legacy.write_text(
+        '{"results": [{"role": "chat", "label": "Legacy", '
+        '"status": "completed", "score": 1.0}]}',
+        encoding="utf-8",
+    )
+
+    restored = load_benchmark_history(tmp_path)
+    canonical = benchmarks_mod.benchmark_history_path(tmp_path)
+    save_benchmark_history(tmp_path, restored)
+
+    assert canonical.name == "deeper-notebook-benchmarks.json"
+    assert canonical.is_file()
+    assert legacy.read_text(encoding="utf-8").startswith('{"results"')
+
+
 @pytest.mark.asyncio
 async def test_benchmark_skips_role_when_context_or_structured_output_gate_fails(
     tmp_path,
@@ -222,7 +241,7 @@ async def test_benchmark_job_marks_unregistered_recommendations_skipped(tmp_path
 
 def test_benchmark_endpoint_starts_and_lists_jobs(app, tmp_path, monkeypatch):
     _make_gguf(tmp_path, "gemma-3-4b-it-Q4_K_M.gguf")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     async def _registered_models():
         return []
@@ -254,7 +273,7 @@ def test_benchmark_endpoint_starts_and_lists_jobs(app, tmp_path, monkeypatch):
 
 
 def test_benchmark_endpoint_rejects_missing_model_dir(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path / "missing"))
 
     with TestClient(app) as client:
         response = client.post("/api/local-models/benchmarks", json={})
@@ -291,7 +310,7 @@ def test_role_routing_endpoint_uses_persisted_benchmark_history(
 ):
     _make_gguf(tmp_path, "Qwen3-Coder-30B-A3B-Q4_K_M.gguf")
     gemma_path = _make_gguf(tmp_path, "gemma-3-4b-it-Q4_K_M.gguf")
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     save_benchmark_history(
         tmp_path,
         [

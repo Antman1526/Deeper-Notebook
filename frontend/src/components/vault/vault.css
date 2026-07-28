@@ -1,0 +1,5 @@
+.vault-flow .react-flow__node.vault-node--obsidian { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.vault-flow .react-flow__node.vault-node--logseq { background: var(--secondary); color: var(--secondary-foreground); border-color: var(--secondary); }
+.vault-flow .react-flow__node.vault-node--markdown { background: var(--muted); color: var(--foreground); border-color: var(--border); }
+.vault-flow .react-flow__node.vault-node--unresolved { background: var(--background); color: var(--muted-foreground); border-color: var(--border); border-style: dashed; }
+.vault-flow .react-flow__edge.vault-edge--unresolved .react-flow__edge-path { stroke-dasharray: 5 4; }

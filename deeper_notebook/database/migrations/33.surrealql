@@ -1,0 +1,21 @@
+-- vault schema repair for recorded migration 32
+--
+-- Migration 32 was exercised locally before its ordering correction landed.
+-- Reassert the canonical fields and indexes so those databases converge with
+-- a fresh install without deleting projection data.
+-- The async migration runner then performs a bounded, idempotent Python data
+-- repair before recording version 33.
+-- Enter timestamp-preservation mode before the hook mutates historical rows.
+-- The hook restores both exact canonical definitions before version 33 can be
+-- recorded; a failed startup remains at version 32 and safely retries.
+
+DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+
+DEFINE FIELD IF NOT EXISTS title_key ON TABLE note TYPE option<string>;
+DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key ON TABLE note COLUMNS vault_id, title_key;
+
+DEFINE FIELD IF NOT EXISTS target_title_key ON TABLE note_link TYPE string;
+
+REMOVE INDEX IF EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record;
+DEFINE INDEX IF NOT EXISTS idx_vault_trust_manifest ON TABLE vault_trust_record COLUMNS vault_id, manifest_relative_path, manifest_id UNIQUE;

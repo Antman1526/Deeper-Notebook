@@ -27,7 +27,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from open_notebook.local_models import downloader as dl_mod
+from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as local_models_router
 
 
@@ -131,7 +131,7 @@ async def test_start_download_completes_and_renames(tmp_path):
         def stream(self, method, url, headers=None):
             return _FakeStreamCtx(_FakeStreamResponse())
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _FakeAsyncClient):
         job = await dl_mod.start_download(
             "bartowski/Some-Model-GGUF",
@@ -192,7 +192,7 @@ async def test_start_download_dedupes_in_flight(tmp_path):
         def stream(self, m, u, headers=None):
             return _BlockingStreamCtx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _BlockingClient):
         job1 = await dl_mod.start_download("repo/a", "x.gguf", tmp_path)
         job2 = await dl_mod.start_download("repo/a", "x.gguf", tmp_path)
@@ -242,7 +242,7 @@ async def test_start_download_handles_http_error(tmp_path):
         def stream(self, m, u, headers=None):
             return _Ctx()
 
-    with patch("open_notebook.local_models.downloader.httpx.AsyncClient",
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
                _Client):
         job = await dl_mod.start_download("repo/bad", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
@@ -295,7 +295,7 @@ def test_download_endpoint_rejects_non_gguf(app):
 
 
 def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, tmp_path):
-    import open_notebook.local_models as lm
+    import deeper_notebook.local_models as lm
 
     calls: list[tuple[str, str, Path]] = []
 
@@ -311,7 +311,7 @@ def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, 
 
         return Job()
 
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(lm, "start_download", fake_start_download, raising=False)
     target = (
         tmp_path
@@ -342,7 +342,7 @@ def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, 
 
 
 def test_download_endpoint_rejects_target_path_outside_model_dir(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path / "models"))
     outside = tmp_path / "outside" / "model.gguf"
 
     with TestClient(app) as client:
@@ -360,7 +360,7 @@ def test_download_endpoint_rejects_target_path_outside_model_dir(app, monkeypatc
 
 
 def test_download_endpoint_rejects_target_path_filename_mismatch(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -383,7 +383,7 @@ def test_download_status_404_for_unknown_job(app):
 
 
 def test_recommendations_endpoint_returns_static_fallback_without_manifest(app, monkeypatch, tmp_path):
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/recommendations")
@@ -421,7 +421,7 @@ def test_recommendations_endpoint_returns_manifest_cards_when_manifest_exists(
             f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/recommendations")

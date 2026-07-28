@@ -225,11 +225,16 @@ class TestSingletonRelease:
 # ---------------------------------------------------------------------- #
 
 
-def test_default_pid_file_location():
+def test_default_pid_file_location(tmp_path, monkeypatch):
+    test_home = tmp_path / "home"
+    test_home.mkdir()
+    monkeypatch.setenv("HOME", str(test_home))
+    monkeypatch.setenv("USERPROFILE", str(test_home))
     from desktop.singleton import default_pid_file
     p = default_pid_file()
     assert p.name == "launcher.pid"
-    assert p.parent.name == ".open-notebook-plus"
+    assert p.parent.name == ".deeper-notebook"
+    assert p.parent.parent == test_home
 
 
 # ---------------------------------------------------------------------- #

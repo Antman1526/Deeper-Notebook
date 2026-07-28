@@ -1,6 +1,6 @@
 """v0.8.87 — tests for the Discover Sources endpoint (guarded web search)."""
 
-import open_notebook.tools.web_search as ws
+import deeper_notebook.tools.web_search as ws
 from api.models import DiscoverSourcesRequest
 from api.routers.notebooks import discover_sources
 

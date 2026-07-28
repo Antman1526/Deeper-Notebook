@@ -179,16 +179,16 @@ class ModelReport:
 
 # ---------------------------------------------------------------------- #
 # API client — uses the same auth pattern as the frontend (Bearer
-# OPEN_NOTEBOOK_PASSWORD from env).
+# DEEPER_NOTEBOOK_PASSWORD from env).
 # ---------------------------------------------------------------------- #
 
 
 def _api_base() -> str:
-    return os.environ.get("ONP_BENCHMARK_API_BASE", "http://localhost:5055")
+    return os.environ.get("DEEPER_NOTEBOOK_BENCHMARK_API_BASE", "http://localhost:5055")
 
 
 def _auth_headers() -> dict[str, str]:
-    password = os.environ.get("OPEN_NOTEBOOK_PASSWORD", "").strip()
+    password = os.environ.get("DEEPER_NOTEBOOK_PASSWORD", "").strip()
     if not password:
         return {}
     return {"Authorization": f"Bearer {password}"}
@@ -466,7 +466,7 @@ def _render_markdown(reports: list[ModelReport], *, total_wall_clock_s: float) -
     out.append("")
     out.append(
         "Re-run with `make benchmark-models`. Re-roll a single model "
-        "by setting `ONP_BENCHMARK_ONLY=<model_name>`."
+        "by setting `DEEPER_NOTEBOOK_BENCHMARK_ONLY=<model_name>`."
     )
     return "\n".join(out)
 
@@ -581,14 +581,14 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--only",
         type=str,
-        default=os.environ.get("ONP_BENCHMARK_ONLY"),
+        default=os.environ.get("DEEPER_NOTEBOOK_BENCHMARK_ONLY"),
         help="Benchmark only the named model (matches Model.name exactly)",
     )
     p.add_argument(
         "--timeout",
         type=float,
         default=float(
-            os.environ.get("ONP_BENCHMARK_PER_CALL_TIMEOUT_SEC", "90").strip() or 90
+            os.environ.get("DEEPER_NOTEBOOK_BENCHMARK_PER_CALL_TIMEOUT_SEC", "90").strip() or 90
         ),
         help="Per-call timeout in seconds (default: 90)",
     )

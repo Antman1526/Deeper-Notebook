@@ -7,7 +7,7 @@ the transformation or prompt graphs — both call `chain.ainvoke(payload)`
 directly without a timeout.
 
 Why this matters specifically for the transformation graph: it's
-invoked from `source_graph` (open_notebook/graphs/source.py:180) which
+invoked from `source_graph` (deeper_notebook/graphs/source.py:180) which
 runs inside the `process_source` surreal-commands worker. With the
 worker's retry config (`max_attempts=15`, `wait_max=120s`), a single
 wedged transformation could keep the worker slot unavailable for
@@ -17,12 +17,12 @@ an outer timeout (v0.7.95), but the graph-internal invocation does
 not — that's the gap this fix closes.
 
 The prompt graph (used by notes router for title generation) had the
-same shape and shares the same env knob now (ONP_TRANSFORM_NODE_TIMEOUT_SEC).
+same shape and shares the same env knob now (DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC).
 
 Tests:
 1. transformation graph times out and surfaces ExternalServiceError
 2. prompt graph times out and surfaces ExternalServiceError
-3. _transform_node_timeout_sec parses ONP_TRANSFORM_NODE_TIMEOUT_SEC
+3. _transform_node_timeout_sec parses DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC
 4. invalid env values fall back to 180s default with a warning
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.exceptions import ExternalServiceError
+from deeper_notebook.exceptions import ExternalServiceError
 
 
 # ---------------------------------------------------------------------------
@@ -43,18 +43,18 @@ def test_v0826_timeout_default_is_180_seconds(monkeypatch):
     """Default is 180s — more generous than the v0.7.138 ask graph's
     120s because transformations run over capped source content
     (~3000 tokens), not just a short query."""
-    monkeypatch.delenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", raising=False)
 
-    from open_notebook.graphs.transformation import _transform_node_timeout_sec
+    from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
     assert _transform_node_timeout_sec() == 180.0
 
 
 def test_v0826_timeout_respects_env_var(monkeypatch):
-    """Setting ONP_TRANSFORM_NODE_TIMEOUT_SEC overrides the default."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "30.5")
+    """Setting DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC overrides the default."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "30.5")
 
-    from open_notebook.graphs.transformation import _transform_node_timeout_sec
+    from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
     assert _transform_node_timeout_sec() == 30.5
 
@@ -62,18 +62,18 @@ def test_v0826_timeout_respects_env_var(monkeypatch):
 def test_v0826_timeout_falls_back_on_garbage_value(monkeypatch, caplog):
     """Malformed env value (e.g. 'fast') must fall back to the default
     with a logged warning — not crash the graph at module import."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "fast")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "fast")
 
-    from open_notebook.graphs.transformation import _transform_node_timeout_sec
+    from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
     assert _transform_node_timeout_sec() == 180.0
 
 
 def test_v0826_timeout_falls_back_on_negative_value(monkeypatch):
     """Negative timeouts make no sense — fall back to default."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "-5")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "-5")
 
-    from open_notebook.graphs.transformation import _transform_node_timeout_sec
+    from deeper_notebook.graphs.transformation import _transform_node_timeout_sec
 
     assert _transform_node_timeout_sec() == 180.0
 
@@ -92,9 +92,9 @@ async def test_v0826_transformation_graph_times_out(monkeypatch):
     ainvoke sleeps for 5s, longer than the timeout, asserting the
     wait_for fires.
     """
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
 
-    from open_notebook.graphs import transformation as tg_mod
+    from deeper_notebook.graphs import transformation as tg_mod
 
     # Build a fake "chain" that takes 5 seconds — far longer than 0.1s.
     class _SlowChain:
@@ -133,7 +133,7 @@ async def test_v0826_transformation_graph_times_out(monkeypatch):
     assert "timed out" in msg.lower(), (
         f"Expected timeout message; got {msg!r}"
     )
-    assert "ONP_TRANSFORM_NODE_TIMEOUT_SEC" in msg, (
+    assert "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC" in msg, (
         f"Timeout message must name the env knob so the operator "
         f"knows how to raise it; got {msg!r}"
     )
@@ -149,9 +149,9 @@ async def test_v0826_prompt_graph_times_out(monkeypatch):
     """v0.8.26 — prompt graph shares the same timeout knob as
     transformation graph. A wedged chain.ainvoke here pins whatever
     invoked the prompt graph (e.g. notes router title generation)."""
-    monkeypatch.setenv("ONP_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC", "0.1")
 
-    from open_notebook.graphs import prompt as pg_mod
+    from deeper_notebook.graphs import prompt as pg_mod
 
     class _SlowChain:
         async def ainvoke(self, payload):
@@ -177,7 +177,7 @@ async def test_v0826_prompt_graph_times_out(monkeypatch):
 
     msg = str(exc_info.value)
     assert "timed out" in msg.lower()
-    assert "ONP_TRANSFORM_NODE_TIMEOUT_SEC" in msg
+    assert "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC" in msg
     # And it identifies which graph timed out so the operator can
     # debug — distinguishes transformation vs prompt failures.
     assert "Prompt graph" in msg, (
@@ -195,7 +195,7 @@ def test_v0826_transformation_uses_wait_for():
     """Pin the wait_for wrap so a future refactor doesn't drop it."""
     from pathlib import Path
 
-    src = Path("open_notebook/graphs/transformation.py").read_text(
+    src = Path("deeper_notebook/graphs/transformation.py").read_text(
         encoding="utf-8",
     )
     assert "asyncio.wait_for(" in src and "chain.ainvoke" in src, (
@@ -211,7 +211,7 @@ def test_v0826_prompt_uses_wait_for():
     """Pin the wait_for wrap on the prompt graph too."""
     from pathlib import Path
 
-    src = Path("open_notebook/graphs/prompt.py").read_text(encoding="utf-8")
+    src = Path("deeper_notebook/graphs/prompt.py").read_text(encoding="utf-8")
     assert "asyncio.wait_for(" in src and "chain.ainvoke" in src
     assert "_transform_node_timeout_sec" in src, (
         "v0.8.26: prompt graph imports _transform_node_timeout_sec "

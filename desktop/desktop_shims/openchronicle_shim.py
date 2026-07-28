@@ -1,4 +1,4 @@
-"""HTTP bridge from Open Notebook Plus to OpenChronicle's MCP daemon.
+"""HTTP bridge from Deeper Notebook to OpenChronicle's MCP daemon.
 
 OpenChronicle exposes (per https://github.com/Einsia/OpenChronicle):
   recent_activity({minutes: int}) → list of screen events
@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 
 
 def build_app(mcp_client: Any) -> FastAPI:
-    app = FastAPI(title="Open Notebook Plus — OpenChronicle bridge")
+    app = FastAPI(title="Deeper Notebook — OpenChronicle bridge")
 
     @app.get("/health")
     def health() -> dict:

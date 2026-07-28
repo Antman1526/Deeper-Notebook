@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from open_notebook.domain.notebook import Note
-from open_notebook.exceptions import InvalidInputError
+from deeper_notebook.domain.notebook import Note
+from deeper_notebook.exceptions import InvalidInputError
 
 
 def _make_row(suffix: str = "1") -> dict:
@@ -48,7 +48,7 @@ async def test_get_all_without_pagination_is_unbounded():
         captured["q"] = q
         return rows
 
-    with patch("open_notebook.domain.base.repo_query", new=fake_repo_query):
+    with patch("deeper_notebook.domain.base.repo_query", new=fake_repo_query):
         result = await Note.get_all()
 
     assert len(result) == 3
@@ -66,7 +66,7 @@ async def test_get_all_with_limit_only_appends_limit_clause():
         captured["q"] = q
         return []
 
-    with patch("open_notebook.domain.base.repo_query", new=fake_repo_query):
+    with patch("deeper_notebook.domain.base.repo_query", new=fake_repo_query):
         await Note.get_all(limit=200)
 
     assert "LIMIT 200" in captured["q"]
@@ -82,7 +82,7 @@ async def test_get_all_with_limit_and_offset_appends_both_clauses():
         captured["q"] = q
         return []
 
-    with patch("open_notebook.domain.base.repo_query", new=fake_repo_query):
+    with patch("deeper_notebook.domain.base.repo_query", new=fake_repo_query):
         await Note.get_all(order_by="updated desc", limit=50, offset=100)
 
     q = captured["q"]

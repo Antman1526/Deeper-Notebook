@@ -6,7 +6,7 @@ launcher the reverse channel: a way to push state updates INTO the
 running API process. Currently one use case:
 
   - After `hot_swap_chat` succeeds, the launcher needs to update
-    `OPEN_NOTEBOOK_LOCAL_N_CTX` in the API's environment so the smart
+    `DEEPER_NOTEBOOK_LOCAL_N_CTX` in the API's environment so the smart
     router (provision.py) sees the new GGUF's native context length on
     the very next chat turn. Without this push, the n_ctx stays at the
     OLD GGUF's value until the next app launch — documented as a
@@ -17,7 +17,7 @@ Design choices:
     main.py:excluded_paths) so the launcher doesn't need to know the
     user-facing password.
   - **Auth via the same bearer token the launcher control plane uses**
-    (`OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`). Both the launcher and the
+    (`DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`). Both the launcher and the
     API have this token via session_env; reusing it for the reverse
     direction is symmetric. A future v0.8.40e could split the token
     if scope separation matters, but the trust boundary is the same
@@ -31,14 +31,15 @@ Design choices:
 from __future__ import annotations
 
 import os
-
 import secrets
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from open_notebook.ai.offline_gate import find_local_language_model
-from open_notebook.health.network import get_network_state_with_settings
+from deeper_notebook.ai.offline_gate import find_local_language_model
+from deeper_notebook.environment import normalize_product_environment, resolve_env
+from deeper_notebook.health.network import get_network_state_with_settings
+from desktop.data_root import active_data_root
 
 router = APIRouter()
 
@@ -47,11 +48,12 @@ router = APIRouter()
 # the running API. Keep this list narrow + audited — each entry should
 # correspond to a documented launcher-side mutation flow.
 #
-# OPEN_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
+# DEEPER_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
 #   hot_swap_chat so provision.py's router sees the new GGUF's native
 #   context length without app restart.
 _ALLOWED_ENV_VARS: frozenset[str] = frozenset({
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
 })
 
 
@@ -73,11 +75,11 @@ async def env_refresh(
     """v0.8.40d — Mutate selected env vars in the running API process.
 
     Called by the launcher's `hot_swap_chat` to push the new
-    `OPEN_NOTEBOOK_LOCAL_N_CTX` value so subsequent chat turns route
+    `DEEPER_NOTEBOOK_LOCAL_N_CTX` value so subsequent chat turns route
     against the new GGUF's actual native context window (not the stale
     pre-swap value).
 
-    Auth: bearer token matching `OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`.
+    Auth: bearer token matching `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN`.
     The launcher and API both receive this token via session_env at
     boot; nothing else on the box should know it. Constant-time compare
     via `secrets.compare_digest` so a timing attack on the token isn't
@@ -86,8 +88,8 @@ async def env_refresh(
     Returns `{updated: [keys], rejected: [keys]}` so the caller can
     distinguish "applied" from "ignored" without parsing log lines.
     """
-    expected_token = os.environ.get(
-        "OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "",
+    expected_token = (
+        resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "") or ""
     ).strip()
     if not expected_token:
         # No token configured → endpoint is disabled. Return 503 so
@@ -95,7 +97,7 @@ async def env_refresh(
         raise HTTPException(
             status_code=503,
             detail=(
-                "env-refresh is disabled — OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN "
+                "env-refresh is disabled — DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN "
                 "is not set in the API environment. The API is likely "
                 "running outside the desktop launcher."
             ),
@@ -112,6 +114,7 @@ async def env_refresh(
 
     updated: list[str] = []
     rejected: list[str] = []
+    accepted: dict[str, str] = {}
     for k, v in (body.vars or {}).items():
         if k not in _ALLOWED_ENV_VARS:
             rejected.append(k)
@@ -119,9 +122,13 @@ async def env_refresh(
         # `os.environ` mutation is process-wide and thread-safe per
         # CPython's GIL. The router reads via `os.getenv()` lazily at
         # chat-turn time, so the next turn picks up the new value.
-        os.environ[k] = str(v)
+        accepted[k] = str(v)
         updated.append(k)
 
+    # Normalize the accepted patch independently so a freshly supplied legacy
+    # alias overrides stale higher-precedence mirrors from an earlier refresh.
+    # Multiple aliases in one request still use the standard precedence rule.
+    os.environ.update(normalize_product_environment(accepted))
     return {"updated": updated, "rejected": rejected}
 
 
@@ -130,7 +137,7 @@ async def db_repair_needed() -> dict:
     """v0.8.67q — Report whether the launcher flagged the SurrealDB live-query
     state as corrupt.
 
-    The launcher's worker watcher (v0.8.67l) writes ~/.open-notebook-plus/
+    The launcher's worker watcher (v0.8.67l) writes ~/.deeper-notebook/
     .needs_db_repair when it sees the "key being inserted already exists"
     crash that bricks source processing. On the NEXT launch the launcher runs
     a backup-first auto-repair and clears the flag. Between detection and that
@@ -140,9 +147,7 @@ async def db_repair_needed() -> dict:
     Read-only, no secrets. Unlike the launcher→API push routes above, this is a
     normal authenticated GET (the frontend calls it through the API client);
     it is intentionally NOT in main.py's excluded_paths."""
-    from pathlib import Path
-
-    flag = Path.home() / ".open-notebook-plus" / ".needs_db_repair"
+    flag = active_data_root() / ".needs_db_repair"
     try:
         needs = flag.exists()
     except OSError:

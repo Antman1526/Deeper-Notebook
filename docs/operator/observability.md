@@ -14,7 +14,7 @@ This document closes two open Areas for Review:
 
 ## 1. `/metrics` — the cheat sheet
 
-Every metric Open Notebook Plus emits, what triggers it, and what
+Every metric Deeper Notebook emits, what triggers it, and what
 "normal" looks like on a healthy single-user install. Hit
 `http://localhost:5055/metrics` to see the live snapshot.
 

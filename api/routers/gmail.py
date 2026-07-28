@@ -1,17 +1,17 @@
-"""ONP v0.6 — Gmail digest integration.
+"""Deeper Notebook Gmail digest integration.
 
 User flow:
   1. User pastes their Google Cloud OAuth Client ID + Secret in Settings.
      (Creating an OAuth app is one-time setup at console.cloud.google.com.
      We can't ship shared client credentials in an open-source desktop app
      because Google's terms forbid it.)
-  2. User clicks "Connect Gmail" → /api/onp/gmail/connect redirects to the
+  2. User clicks "Connect Gmail" and the canonical connect route redirects to the
      Google consent screen.
-  3. Google redirects back to /api/onp/gmail/callback?code=... → we exchange
-     the code for access+refresh tokens, store them encrypted, fetch the
-     user's email address.
+  3. Google redirects back to the canonical callback (or the retained legacy
+     callback for existing registrations/in-flight state), where we exchange
+     the code for access+refresh tokens and fetch the user's email address.
   4. User configures frequency + which sections to include.
-  5. /api/onp/gmail/send-test sends a digest right now to verify everything
+  5. The namespace-relative /gmail/send-test route sends a digest right now
      works end-to-end.
 
 Daily auto-send is a v0.6.1 follow-up (background scheduler). For v0.6 the
@@ -39,12 +39,13 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from open_notebook.digest.scheduler import pending_digest_info
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.digest.scheduler import pending_digest_info
+from deeper_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.identity import API_NAMESPACE, LEGACY_API_NAMESPACE, PRODUCT_NAME
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/onp/gmail", tags=["onp-gmail"])
+router = APIRouter(prefix="/gmail")
 
 
 # Google OAuth scopes — we only need gmail.send. We do NOT request read access.
@@ -209,7 +210,7 @@ async def connect(request: Request):
     """Redirect to Google's consent screen.
 
     Computes the OAuth redirect_uri from the current request's host so the
-    callback lands back at /api/onp/gmail/callback on the same port.
+    callback lands back at the canonical Gmail callback on the same port.
     """
     g = await GmailIntegration.get()
     if not (g.client_id and g.client_secret):
@@ -290,7 +291,7 @@ async def callback(
             ok=False,
         )
 
-    redirect_uri = _callback_url(request)
+    redirect_uri = _callback_url(request, preserve_callback_path=True)
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             r = await client.post(_GOOGLE_TOKEN_URL, data={
@@ -326,7 +327,9 @@ async def callback(
             )
 
         access_token = tok.get("access_token")
-        refresh_token = tok.get("refresh_token")
+        # Google commonly omits refresh_token on a repeat consent exchange.
+        # Preserve the encrypted token already stored for this integration.
+        refresh_token = tok.get("refresh_token") or g.refresh_token
         expires_in = int(tok.get("expires_in", 3600))
         if not access_token or not refresh_token:
             log.warning("Gmail token response missing access_token or refresh_token")
@@ -363,7 +366,7 @@ async def callback(
     return _result_page(
         "Gmail connected!",
         f"Connected as {email or 'your account'}. You can close this tab "
-        "and return to Open Notebook Plus.",
+        f"and return to {PRODUCT_NAME}.",
         ok=True,
     )
 
@@ -401,11 +404,19 @@ async def send_test() -> SendResult:
 # Internals
 # ────────────────────────────────────────────────────────────────────────────────
 
-def _callback_url(request: Request) -> str:
+def _callback_url(
+    request: Request, *, preserve_callback_path: bool = False
+) -> str:
     """Build redirect_uri from the request's host so it matches whatever
     port the dynamically-allocated upstream API is on."""
     base = str(request.base_url).rstrip("/")
-    return f"{base}/api/onp/gmail/callback"
+    namespace = API_NAMESPACE
+    if (
+        preserve_callback_path
+        and request.url.path.startswith(f"{LEGACY_API_NAMESPACE}/")
+    ):
+        namespace = LEGACY_API_NAMESPACE
+    return f"{base}{namespace}/gmail/callback"
 
 
 def _purge_stale_states() -> None:
@@ -495,7 +506,7 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
     async with _get_send_lock():
         g_latest = await GmailIntegration.get()
         if label != "Test":
-            from open_notebook.digest.scheduler import _should_send
+            from deeper_notebook.digest.scheduler import _should_send
             if not await _should_send(g_latest):
                 log.info("digest-scheduler: already sent or no longer due after acquiring send lock")
                 return (True, "Already sent recently", 0)
@@ -512,12 +523,12 @@ async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> 
                     0)
 
     # Build digest content from recent activity
-    from open_notebook.digest import build_digest_html
+    from deeper_notebook.digest import build_digest_html
     html, n = await build_digest_html(g)
 
     msg = MIMEMultipart("alternative")
     today = datetime.now(timezone.utc).strftime("%b %d, %Y")
-    msg["Subject"] = f"[Open Notebook Plus] {label} — {today}"
+    msg["Subject"] = f"[{PRODUCT_NAME}] {label} — {today}"
     msg["From"] = g.email_address or ""
     msg["To"] = g.email_address or ""
     msg.attach(MIMEText(_strip_html(html), "plain"))

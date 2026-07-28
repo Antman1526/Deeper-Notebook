@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from open_notebook.domain import gmail as gmail_mod
-from open_notebook.domain.gmail import GmailIntegration
+from deeper_notebook.domain import gmail as gmail_mod
+from deeper_notebook.domain.gmail import GmailIntegration
 
 # The six keys that represent the clearable credential/token surface. If a
 # disconnect/forget can't null these, the account stays connected.

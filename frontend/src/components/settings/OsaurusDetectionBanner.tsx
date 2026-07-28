@@ -7,7 +7,7 @@
  *   - The user has NO credential named "Osaurus (local MLX)" yet, AND
  *   - Our backend's POST /credentials/detect-osaurus probe reports
  *     `running: true` (i.e., Osaurus is reachable on localhost:1337
- *     or the OPEN_NOTEBOOK_OSAURUS_PORT override).
+ *     or the DEEPER_NOTEBOOK_OSAURUS_PORT override).
  *
  * One-click "Connect" calls the same endpoint with side-effects
  * enabled, which auto-registers the credential + model rows. After

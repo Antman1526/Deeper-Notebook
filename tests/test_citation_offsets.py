@@ -1,5 +1,5 @@
 """v0.8.78 — tests for citation passage location (improvement roadmap, Batch 2)."""
-from open_notebook.utils.citation_offsets import locate_passage
+from deeper_notebook.utils.citation_offsets import locate_passage
 
 TEXT = (
     "Introduction. This document covers many topics.\n\n"

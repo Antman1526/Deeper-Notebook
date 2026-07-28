@@ -79,7 +79,7 @@ jobs:
       # The encryption module fails closed without a key. The actual
       # value doesn't matter for these tests (no credentials are stored)
       # — but it must be present so module import succeeds.
-      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-integration-test-key-not-secret
+      DEEPER_NOTEBOOK_ENCRYPTION_KEY: ci-integration-test-key-not-secret
     steps:
       - name: Checkout
         uses: actions/checkout@v5

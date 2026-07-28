@@ -148,13 +148,16 @@ export default function DashboardPage() {
           {/* Aurora hero header */}
           <motion.header
             variants={item}
-            className="onp-aurora-bg relative overflow-hidden rounded-2xl border border-[var(--onp-glass-border)] px-6 py-7"
+            className="dn-aurora-bg relative overflow-hidden rounded-2xl border border-[var(--dn-glass-border)] px-6 py-7"
           >
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Open Notebook<span className="onp-aurora-text">+</span>
+              Deeper Notebook
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Local-first research and reasoning · {totalNotebooks} notebook
+              Think further with every source
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {totalNotebooks} notebook
               {totalNotebooks === 1 ? '' : 's'}
             </p>
           </motion.header>
@@ -168,7 +171,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Link href="/studio" className="block">
-                  <Card className="onp-glass h-full border-primary/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--onp-glow-accent)] focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="dn-glass h-full border-primary/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--dn-glow-accent)] focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Sparkles className="h-5 w-5 text-primary" />
                       <div>
@@ -185,7 +188,7 @@ export default function DashboardPage() {
                   onClick={() => openNotebookDialog()}
                   className="text-left"
                 >
-                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="dn-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Book className="h-5 w-5" />
                       <div>
@@ -202,7 +205,7 @@ export default function DashboardPage() {
                   onClick={() => openPodcastDialog()}
                   className="text-left"
                 >
-                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="dn-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Mic className="h-5 w-5" />
                       <div>
@@ -215,7 +218,7 @@ export default function DashboardPage() {
                   </Card>
                 </button>
                 <Link href="/search" className="block">
-                  <Card className="onp-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
+                  <Card className="dn-glass h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-ring">
                     <CardContent className="flex flex-col items-start gap-2 p-4">
                       <Search className="h-5 w-5" />
                       <div>
@@ -350,7 +353,7 @@ export default function DashboardPage() {
             </kbd>{' '}
             from anywhere to jump to a notebook, source, or action.
             <Database className="ml-3 mr-1 inline h-3 w-3 align-text-bottom" />
-            All data lives in <code className="rounded bg-background px-1">~/.open-notebook-plus/</code>.
+            All data lives in <code className="rounded bg-background px-1">~/.deeper-notebook/</code>.
           </motion.div>
         </motion.div>
       </div>

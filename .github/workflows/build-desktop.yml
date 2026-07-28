@@ -18,6 +18,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -31,15 +33,17 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
-          cp dist/Open-Notebook-Plus-mac-arm64.dmg release/
-          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
-          shasum -a 256 release/Open-Notebook-Plus-mac-arm64.dmg > release/SHA256SUMS
+          cp dist/Deeper-Notebook-mac-arm64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
+          cd release
+          shasum -a 256 Deeper-Notebook-mac-arm64.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-mac-arm64
+          name: Deeper-Notebook-mac-arm64
           path: release/
 
   build-mac-x86_64:
@@ -53,6 +57,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -66,15 +72,17 @@ jobs:
       - run: cd frontend && npm ci && npm run lint && npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: bash desktop/build/post_build_mac.sh
       - run: |
           mkdir -p release
-          cp dist/Open-Notebook-Plus-mac-x86_64.dmg release/
-          python desktop/build/release_manifest.py --artifact release/Open-Notebook-Plus-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
-          shasum -a 256 release/Open-Notebook-Plus-mac-x86_64.dmg > release/SHA256SUMS
+          cp dist/Deeper-Notebook-mac-x86_64.dmg release/
+          python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
+          cd release
+          shasum -a 256 Deeper-Notebook-mac-x86_64.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-mac-x86_64
+          name: Deeper-Notebook-mac-x86_64
           path: release/
 
   build-windows-x64:
@@ -90,6 +98,8 @@ jobs:
         with: { node-version: '20' }
       - run: pip install -r desktop/requirements.txt
       - run: pip install -e .
+      - run: python -m pip install "skillopt==0.1.0"
+      - run: python desktop/build/run_skillopt_integration.py --require-installed
       - run: python -m pytest desktop/tests -q
       - name: Run backend tests in bounded batches
         run: python desktop/build/run_backend_tests.py
@@ -103,50 +113,541 @@ jobs:
       - run: cd frontend; npm ci; npm run lint; npm run build
       - run: python desktop/build/fetch_runtimes.py
       - run: pyinstaller desktop/build/pyinstaller.spec --noconfirm
+      - run: python desktop/build/verify_package_contents.py --frozen-root "dist/Deeper Notebook"
       - run: pwsh desktop/build/post_build_windows.ps1
       - name: Install Inno Setup 6.7.1
         run: choco install innosetup --version=6.7.1 --no-progress --yes
       - name: Build Windows setup package
         shell: pwsh
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop/build/open-notebook-plus.iss'
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop/build/deeper-notebook.iss'
       - name: Smoke test installed Windows package
         shell: pwsh
         run: |
-          $installDir = Join-Path $env:RUNNER_TEMP "Open Notebook Plus"
+          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook"
           $installerArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
-          $installProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          $installProcess = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
           if ($installProcess.ExitCode -ne 0) { throw "Installer failed with exit code $($installProcess.ExitCode)." }
-          $launcher = Join-Path $installDir "Open Notebook Plus.exe"
+          $launcher = Join-Path $installDir "Deeper Notebook.exe"
           if (-not (Test-Path $launcher)) { throw "Installed launcher not found: $launcher" }
           $process = Start-Process -FilePath $launcher -PassThru
           Start-Sleep -Seconds 15
           if ($process.HasExited) { throw "Installed launcher exited during smoke probe." }
-          Stop-Process -Id $process.Id -Force
-          $upgradeProcess = Start-Process -FilePath "dist\Open-Notebook-Plus-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
-          if ($upgradeProcess.ExitCode -ne 0) { throw "Upgrade-path install failed with exit code $($upgradeProcess.ExitCode)." }
-          if (-not (Test-Path $launcher)) { throw "Launcher not found after upgrade-path install: $launcher" }
+          pwsh desktop/build/stop_windows_package.ps1 -ProcessId $process.Id -ScopePath "$installDir"
+          # This is a same-version repair test, not a legacy-to-canonical upgrade test.
+          $repairProcess = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $installerArguments -Wait -PassThru
+          if ($repairProcess.ExitCode -ne 0) { throw "Repair install failed with exit code $($repairProcess.ExitCode)." }
+          if (-not (Test-Path $launcher)) { throw "Launcher not found after repair install: $launcher" }
           $uninstaller = Join-Path $installDir "unins000.exe"
           if (-not (Test-Path $uninstaller)) { throw "Uninstaller not found: $uninstaller" }
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
           if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)." }
-          if (Test-Path $installDir) { throw "Install directory remains after uninstall: $installDir" }
+          python desktop/build/verify_windows_uninstall.py --install-dir "$installDir" --timeout-seconds 60
       - name: Generate Windows release metadata
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release/windows-zip, release/windows-setup | Out-Null
-          Copy-Item dist/Open-Notebook-Plus-windows-x64.zip release/windows-zip/
-          python desktop/build/release_manifest.py --artifact release/windows-zip/Open-Notebook-Plus-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
-          (Get-FileHash release/windows-zip/Open-Notebook-Plus-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-windows-x64.zip" | Set-Content release/windows-zip/SHA256SUMS
-          Copy-Item dist/Open-Notebook-Plus-Setup-x64.exe release/windows-setup/
-          python desktop/build/release_manifest.py --artifact release/windows-setup/Open-Notebook-Plus-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
-          (Get-FileHash release/windows-setup/Open-Notebook-Plus-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Open-Notebook-Plus-Setup-x64.exe" | Set-Content release/windows-setup/SHA256SUMS
+          Copy-Item dist/Deeper-Notebook-windows-x64.zip release/windows-zip/
+          python desktop/build/release_manifest.py --artifact release/windows-zip/Deeper-Notebook-windows-x64.zip --platform windows --arch x64 --output release/windows-zip/release-manifest.json
+          (Get-FileHash release/windows-zip/Deeper-Notebook-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-windows-x64.zip" | Set-Content -NoNewline -Encoding utf8 release/windows-zip/SHA256SUMS
+          Copy-Item dist/Deeper-Notebook-Setup-x64.exe release/windows-setup/
+          python desktop/build/release_manifest.py --artifact release/windows-setup/Deeper-Notebook-Setup-x64.exe --platform windows --arch x64 --output release/windows-setup/release-manifest.json
+          (Get-FileHash release/windows-setup/Deeper-Notebook-Setup-x64.exe -Algorithm SHA256).Hash.ToLower() + "  Deeper-Notebook-Setup-x64.exe" | Set-Content -NoNewline -Encoding utf8 release/windows-setup/SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
-          name: Open-Notebook-Plus-windows-x64
+          name: Deeper-Notebook-windows-x64
           path: release/
 
+  macos-compatibility-upgrade:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+      - name: Create exact legacy baseline worktree
+        run: git worktree add "$RUNNER_TEMP/legacy-source" 7888102
+      - name: Build approved legacy baseline in its own worktree
+        run: |
+          python -m venv "$RUNNER_TEMP/legacy-venv"
+          "$RUNNER_TEMP/legacy-venv/bin/pip" install -r "$RUNNER_TEMP/legacy-source/desktop/requirements.txt"
+          "$RUNNER_TEMP/legacy-venv/bin/pip" install -e "$RUNNER_TEMP/legacy-source"
+          cd "$RUNNER_TEMP/legacy-source/frontend"
+          npm ci
+          npm run build
+          cd "$RUNNER_TEMP/legacy-source"
+          "$RUNNER_TEMP/legacy-venv/bin/python" desktop/build/fetch_runtimes.py
+          "$RUNNER_TEMP/legacy-venv/bin/pyinstaller" desktop/build/pyinstaller.spec --noconfirm
+          test -d "dist/Open Notebook Plus.app"
+      - name: Build canonical bundle separately
+        run: |
+          python -m venv "$RUNNER_TEMP/canonical-venv"
+          "$RUNNER_TEMP/canonical-venv/bin/pip" install -r desktop/requirements.txt
+          "$RUNNER_TEMP/canonical-venv/bin/pip" install -e .
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
+          "$RUNNER_TEMP/canonical-venv/bin/python" desktop/build/fetch_runtimes.py
+          "$RUNNER_TEMP/canonical-venv/bin/pyinstaller" desktop/build/pyinstaller.spec --noconfirm
+          test -d "dist/Deeper Notebook.app"
+      - name: Install, launch, migrate, and recover in temporary roots
+        run: |
+          descendants_of() {
+            local parent_pid="$1"
+            local child_pid
+            for child_pid in $(pgrep -P "$parent_pid" 2>/dev/null || true); do
+              printf '%s\n' "$child_pid"
+              descendants_of "$child_pid"
+            done
+          }
+          wait_for_packaged_ready() {
+            local launcher_pid="$1"
+            local marker_path="${2:-}"
+            local api_ready=""
+            local frontend_ready=""
+            local marker_ready=""
+            local attempt process_id port body
+            for attempt in $(seq 1 300); do
+              kill -0 "$launcher_pid" 2>/dev/null || {
+                echo "Packaged app exited before readiness." >&2
+                return 1
+              }
+              api_ready=""
+              frontend_ready=""
+              for process_id in "$launcher_pid" $(descendants_of "$launcher_pid"); do
+                for port in $(lsof -Pan -p "$process_id" -iTCP -sTCP:LISTEN -Fn 2>/dev/null |
+                  sed -nE 's/^n.*:([0-9]+)$/\1/p' | sort -u); do
+                  body=$(curl --max-time 2 -fsS "http://127.0.0.1:$port/readyz" 2>/dev/null || true)
+                  if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' <<< "$body"; then
+                    api_ready="http://127.0.0.1:$port"
+                  fi
+                  body=$(curl --max-time 2 -fsSL "http://127.0.0.1:$port/" 2>/dev/null || true)
+                  if grep -q '__next_f' <<< "$body"; then
+                    frontend_ready="http://127.0.0.1:$port/"
+                  fi
+                done
+              done
+              marker_ready="ready"
+              if test -n "$marker_path"; then
+                marker_ready=""
+                if test -f "$marker_path" && "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+                  'import json,sys; p=json.load(open(sys.argv[1])); assert p["status"]=="ready" and p["window_marker"]=="__next_f"' \
+                  "$marker_path"; then
+                  marker_ready="ready"
+                fi
+              fi
+              if test -n "$api_ready" && test -n "$frontend_ready" && test -n "$marker_ready"; then
+                printf 'API ready: %s\nFrontend ready: %s\n' "$api_ready" "$frontend_ready"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for packaged API/frontend/window readiness." >&2
+            return 1
+          }
+          wait_for_pid_visible_window() {
+            local launcher_pid="$1"
+            local expected_owner="$2"
+            local expected_title="$3"
+            local attempt
+            for attempt in $(seq 1 300); do
+              kill -0 "$launcher_pid" 2>/dev/null || {
+                echo "Packaged app exited before its native window appeared." >&2
+                return 1
+              }
+              if "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+                'import sys; from Quartz import CGWindowListCopyWindowInfo,kCGWindowListOptionOnScreenOnly,kCGNullWindowID,kCGWindowOwnerPID,kCGWindowLayer,kCGWindowBounds,kCGWindowName,kCGWindowOwnerName,kCGWindowAlpha; pid=int(sys.argv[1]); owner=sys.argv[2]; title=sys.argv[3]; windows=CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly,kCGNullWindowID) or []; matched=any(int(w.get(kCGWindowOwnerPID,-1))==pid and int(w.get(kCGWindowLayer,-1))==0 and float(w.get(kCGWindowAlpha,0))>0 and float((w.get(kCGWindowBounds) or {}).get("Width",0))>=200 and float((w.get(kCGWindowBounds) or {}).get("Height",0))>=100 and str(w.get(kCGWindowOwnerName) or "").strip()==owner and str(w.get(kCGWindowName) or "").strip()==title for w in windows); raise SystemExit(0 if matched else 1)' \
+                "$launcher_pid" "$expected_owner" "$expected_title"; then
+                echo "Visible native window confirmed for pid=$launcher_pid."
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for the packaged app's PID-bound visible window." >&2
+            "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+              'import json,sys; from Quartz import CGWindowListCopyWindowInfo,kCGWindowListOptionAll,kCGNullWindowID,kCGWindowOwnerPID; pids={int(value) for value in sys.argv[1:]}; windows=CGWindowListCopyWindowInfo(kCGWindowListOptionAll,kCGNullWindowID) or []; print(json.dumps([{key:value for key,value in window.items() if key in {"kCGWindowOwnerPID","kCGWindowOwnerName","kCGWindowName","kCGWindowLayer","kCGWindowAlpha","kCGWindowBounds"}} for window in windows if int(window.get(kCGWindowOwnerPID,-1)) in pids],default=str))' \
+              "$launcher_pid" $(descendants_of "$launcher_pid")
+            return 1
+          }
+          graceful_stop_and_assert_clean() {
+            local launcher_pid="$1"
+            local scope_pattern="$2"
+            local descendants_file="$3"
+            local cleanup_policy="${4:-strict}"
+            descendants_of "$launcher_pid" | sort -u > "$descendants_file"
+            if ! "$RUNNER_TEMP/canonical-venv/bin/python" -c \
+              'import sys; from AppKit import NSRunningApplication; app = NSRunningApplication.runningApplicationWithProcessIdentifier_(int(sys.argv[1])); raise SystemExit(0 if app is not None and app.terminate() else 1)' \
+              "$launcher_pid"; then
+              # Failure cleanup is bounded but never reclassified as a
+              # successful graceful shutdown.
+              kill -TERM "$launcher_pid"
+              echo "Native graceful shutdown request failed." >&2
+              return 1
+            fi
+            local attempt child_pid
+            for attempt in $(seq 1 90); do
+              kill -0 "$launcher_pid" 2>/dev/null || break
+              sleep 1
+            done
+            if kill -0 "$launcher_pid" 2>/dev/null; then
+              echo "Packaged app did not shut down gracefully." >&2
+              return 1
+            fi
+            if ! wait "$launcher_pid"; then
+              :
+            fi
+            local remaining_file="$RUNNER_TEMP/remaining-sidecars.txt"
+            : > "$remaining_file"
+            while read -r child_pid; do
+              if test -n "$child_pid" && kill -0 "$child_pid" 2>/dev/null; then
+                printf '%s\n' "$child_pid" >> "$remaining_file"
+              fi
+            done < "$descendants_file"
+            export DEEPER_NOTEBOOK_CI_SCOPE_PATTERN="$scope_pattern"
+            ps -axo pid=,command= |
+              awk -v own="$$" '
+                $1 != own &&
+                index($0, ENVIRON["DEEPER_NOTEBOOK_CI_SCOPE_PATTERN"]) {
+                  print $1
+                }
+              ' >> "$remaining_file"
+            unset DEEPER_NOTEBOOK_CI_SCOPE_PATTERN
+            sort -u -o "$remaining_file" "$remaining_file"
+            if test -s "$remaining_file" && test "$cleanup_policy" = "legacy"; then
+              echo "Legacy baseline left residual sidecars; applying bounded compatibility cleanup."
+              while read -r child_pid; do
+                kill -TERM "$child_pid" 2>/dev/null || true
+              done < "$remaining_file"
+              for attempt in $(seq 1 10); do
+                local any_alive=""
+                while read -r child_pid; do
+                  if kill -0 "$child_pid" 2>/dev/null; then
+                    any_alive="yes"
+                    break
+                  fi
+                done < "$remaining_file"
+                if test -z "$any_alive"; then
+                  break
+                fi
+                sleep 1
+              done
+              while read -r child_pid; do
+                if kill -0 "$child_pid" 2>/dev/null; then
+                  kill -KILL "$child_pid" 2>/dev/null || true
+                fi
+              done < "$remaining_file"
+              sleep 1
+              while read -r child_pid; do
+                if kill -0 "$child_pid" 2>/dev/null; then
+                  echo "Legacy sidecar survived bounded cleanup: $child_pid" >&2
+                  return 1
+                fi
+              done < "$remaining_file"
+              echo "Legacy compatibility cleanup completed; canonical shutdown remains strict."
+              return 0
+            fi
+            if test -s "$remaining_file"; then
+              echo "Packaged sidecars remain after shutdown." >&2
+              cat "$remaining_file" >&2
+              return 1
+            fi
+          }
+          compat_home="$RUNNER_TEMP/compat-home"
+          applications_dir="$RUNNER_TEMP/Applications"
+          legacy_root="$compat_home/.open-notebook-plus"
+          canonical_root="$compat_home/.deeper-notebook"
+          mkdir -p "$applications_dir" "$legacy_root/data"
+          printf 'synthetic-state\n' > "$legacy_root/data/synthetic-state"
+          shasum -a 256 "$legacy_root/data/synthetic-state" > "$RUNNER_TEMP/state-before.sha256"
+          cp -R "$RUNNER_TEMP/legacy-source/dist/Open Notebook Plus.app" "$applications_dir/"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$RUNNER_TEMP/legacy-venv/bin/python" -c \
+              'from desktop.config import default_config_path,load_or_create; load_or_create(default_config_path())'
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$applications_dir/Open Notebook Plus.app/Contents/MacOS/Open Notebook Plus" &
+          legacy_pid=$!
+          wait_for_packaged_ready "$legacy_pid"
+          wait_for_pid_visible_window "$legacy_pid" "Open notebook+" "Open notebook+"
+          graceful_stop_and_assert_clean \
+            "$legacy_pid" "$compat_home" \
+            "$RUNNER_TEMP/legacy-descendants.txt" legacy
+          cp -R "dist/Deeper Notebook.app" "$applications_dir/"
+          legacy_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Open Notebook Plus.app/Contents/Info.plist")
+          canonical_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$applications_dir/Deeper Notebook.app/Contents/Info.plist")
+          test "$legacy_bundle_id" = "com.antman1526.open-notebook-plus"
+          test "$canonical_bundle_id" = "$legacy_bundle_id"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$applications_dir/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" &
+          canonical_pid=$!
+          wait_for_packaged_ready \
+            "$canonical_pid" "$canonical_root/logs/desktop-readiness.json"
+          graceful_stop_and_assert_clean \
+            "$canonical_pid" "$compat_home" \
+            "$RUNNER_TEMP/canonical-descendants.txt"
+          shasum -a 256 "$canonical_root/data/synthetic-state" > "$RUNNER_TEMP/state-after.sha256"
+          cut -d ' ' -f 1 "$RUNNER_TEMP/state-before.sha256" > "$RUNNER_TEMP/state-before.digest"
+          cut -d ' ' -f 1 "$RUNNER_TEMP/state-after.sha256" > "$RUNNER_TEMP/state-after.digest"
+          diff "$RUNNER_TEMP/state-before.digest" "$RUNNER_TEMP/state-after.digest"
+          HOME="$compat_home" USERPROFILE="$compat_home" \
+            "$RUNNER_TEMP/canonical-venv/bin/python" -m desktop.app_migration replace \
+              --applications-dir "$applications_dir" \
+              --data-root "$canonical_root" \
+              --approve
+          test ! -e "$applications_dir/Open Notebook Plus.app"
+          test -d "$applications_dir/Deeper Notebook.app"
+          test "$(find "$applications_dir" -maxdepth 1 -name '*.app' | wc -l | tr -d ' ')" = "1"
+          test -f "$canonical_root/app-bundle-replacement.json"
+
+  windows-compatibility-upgrade:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+      - name: Install pinned Inno Setup
+        run: choco install innosetup --version=6.7.1 --no-progress --yes
+      - name: Create exact legacy baseline worktree
+        shell: pwsh
+        run: git worktree add (Join-Path $env:RUNNER_TEMP "legacy-source") 7888102
+      - name: Build approved legacy baseline in its own worktree
+        shell: pwsh
+        run: |
+          $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
+          Copy-Item "desktop\requirements.lock" (Join-Path $legacySource "desktop\requirements.lock")
+          pwsh -File (Join-Path $legacySource "desktop\build\build_windows.ps1")
+          if ($LASTEXITCODE -ne 0) { throw "Legacy baseline build failed." }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (Join-Path $legacySource "desktop\build\open-notebook-plus.iss")
+          if ($LASTEXITCODE -ne 0) { throw "Legacy installer build failed." }
+          $legacyInstaller = Join-Path $legacySource "dist\Open-Notebook-Plus-Setup-x64.exe"
+          if (-not (Test-Path $legacyInstaller)) { throw "Legacy installer missing." }
+          (Get-FileHash $legacyInstaller -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "legacy-installer.sha256")
+      - name: Build canonical installer separately
+        shell: pwsh
+        run: |
+          pwsh -File desktop\build\build_windows.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Canonical build failed." }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\build\deeper-notebook.iss
+          if ($LASTEXITCODE -ne 0) { throw "Canonical installer build failed." }
+          if (-not (Test-Path "dist\Deeper-Notebook-windows-x64.zip")) { throw "Canonical zip missing." }
+          if (-not (Test-Path "dist\Deeper-Notebook-Setup-x64.exe")) { throw "Canonical installer missing." }
+      - name: Install legacy, readiness-probe, upgrade, and prove stable identity
+        shell: pwsh
+        run: |
+          function Get-DescendantProcessIds([int]$RootProcessId) {
+            $pending = [System.Collections.Generic.Queue[int]]::new()
+            $pending.Enqueue($RootProcessId)
+            $result = [System.Collections.Generic.List[int]]::new()
+            while ($pending.Count -gt 0) {
+              $parent = $pending.Dequeue()
+              $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parent")
+              foreach ($child in $children) {
+                $childId = [int]$child.ProcessId
+                $result.Add($childId)
+                $pending.Enqueue($childId)
+              }
+            }
+            return @($result)
+          }
+          function Wait-PackagedReady(
+            [System.Diagnostics.Process]$Process,
+            [string]$ReadyFile = ""
+          ) {
+            # A first packaged Windows launch creates its private runtime and
+            # can legitimately spend several minutes compiling dependencies
+            # on a cold hosted runner. Keep probing the real services/window;
+            # do not replace readiness with a fixed sleep.
+            $deadline = [DateTime]::UtcNow.AddMinutes(15)
+            $attempt = 0
+            $apiReady = $false
+            $frontendReady = $false
+            $windowReady = $false
+            $markerReady = [string]::IsNullOrEmpty($ReadyFile)
+            $descendants = @()
+            $ports = @()
+            while ([DateTime]::UtcNow -lt $deadline) {
+              $attempt += 1
+              $Process.Refresh()
+              if ($Process.HasExited) {
+                Write-Host "Packaged app exited before readiness with code $($Process.ExitCode)."
+                Get-ChildItem -Path $env:HOME -Recurse -File -Filter "*.log" -ErrorAction SilentlyContinue |
+                  ForEach-Object {
+                    Write-Host "=== $($_.FullName) ==="
+                    Get-Content $_.FullName -Tail 200 -ErrorAction SilentlyContinue
+                  }
+                throw "Packaged app exited before readiness."
+              }
+              $descendants = @(Get-DescendantProcessIds $Process.Id)
+              $processIds = @($Process.Id) + $descendants
+              $ports = @(
+                Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                  Where-Object { $processIds -contains $_.OwningProcess } |
+                  Select-Object -ExpandProperty LocalPort -Unique
+              )
+              $apiReady = $false
+              $frontendReady = $false
+              foreach ($port in $ports) {
+                try {
+                  $api = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 `
+                    -Uri "http://127.0.0.1:$port/readyz"
+                  if ($api.StatusCode -eq 200 -and $api.Content -match '"status"\s*:\s*"ready"') {
+                    $apiReady = $true
+                  }
+                } catch {}
+                try {
+                  $frontend = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 `
+                    -Uri "http://127.0.0.1:$port/"
+                  if ($frontend.StatusCode -eq 200 -and $frontend.Content -match "__next_f") {
+                    $frontendReady = $true
+                  }
+                } catch {}
+              }
+              $windowReady = $Process.MainWindowHandle -ne 0
+              $markerReady = [string]::IsNullOrEmpty($ReadyFile)
+              if (-not $markerReady -and (Test-Path $ReadyFile)) {
+                try {
+                  $marker = Get-Content $ReadyFile -Raw | ConvertFrom-Json
+                  $markerReady = (
+                    $marker.status -eq "ready" -and
+                    $marker.window_marker -eq "__next_f"
+                  )
+                } catch {
+                  $markerReady = $false
+                }
+              }
+              if ($apiReady -and $frontendReady -and $windowReady -and $markerReady) {
+                $script:PackagedDescendants = $descendants
+                return
+              }
+              if ($attempt % 30 -eq 0) {
+                Write-Host (
+                  "Readiness pending: api=$apiReady frontend=$frontendReady " +
+                  "window=$windowReady marker=$markerReady " +
+                  "descendants=$($descendants.Count) ports=$($ports -join ',')"
+                )
+              }
+              Start-Sleep -Milliseconds 1000
+            }
+            Get-ChildItem -Path $env:HOME -Recurse -File -Filter "*.log" -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Write-Host "=== $($_.FullName) ==="
+                Get-Content $_.FullName -Tail 200 -ErrorAction SilentlyContinue
+              }
+            throw (
+              "Timed out waiting for packaged API/frontend/window readiness: " +
+              "api=$apiReady frontend=$frontendReady window=$windowReady " +
+              "marker=$markerReady descendants=$($descendants.Count) " +
+              "ports=$($ports -join ',')."
+            )
+          }
+          function Stop-PackagedApp(
+            [System.Diagnostics.Process]$Process,
+            [int[]]$KnownDescendants,
+            [string]$ScopePath
+          ) {
+            if (-not $Process.CloseMainWindow()) {
+              throw "Packaged app exposed no graceful window shutdown."
+            }
+            if (-not $Process.WaitForExit(90000)) {
+              throw "Packaged app did not shut down gracefully."
+            }
+            Start-Sleep -Milliseconds 1000
+            foreach ($childId in $KnownDescendants) {
+              if (Get-Process -Id $childId -ErrorAction SilentlyContinue) {
+                throw "Packaged sidecar remains after shutdown: $childId"
+              }
+            }
+            $remaining = @(
+              Get-CimInstance Win32_Process |
+                Where-Object {
+                  $_.ProcessId -ne $PID -and
+                  $_.CommandLine -and
+                  $_.CommandLine.Contains($ScopePath)
+                }
+            )
+            if ($remaining.Count -ne 0) {
+              throw "Packaged sidecar command remains after shutdown."
+            }
+          }
+          $legacySource = Join-Path $env:RUNNER_TEMP "legacy-source"
+          $installDir = Join-Path $env:RUNNER_TEMP "Deeper Notebook Upgrade"
+          $compatHome = Join-Path $env:RUNNER_TEMP "compat-home"
+          $legacyRoot = Join-Path $compatHome ".open-notebook-plus"
+          $canonicalRoot = Join-Path $compatHome ".deeper-notebook"
+          $env:HOME = $compatHome
+          $env:USERPROFILE = $compatHome
+          New-Item -ItemType Directory -Force -Path (Join-Path $legacyRoot "data") | Out-Null
+          "synthetic-state" | Set-Content -NoNewline (Join-Path $legacyRoot "data\synthetic-state")
+          (Get-FileHash (Join-Path $legacyRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")
+          $legacyPython = Join-Path $legacySource ".venv-build-win\Scripts\python.exe"
+          Push-Location $legacySource
+          & $legacyPython -c "from desktop.config import default_config_path,load_or_create; load_or_create(default_config_path())"
+          if ($LASTEXITCODE -ne 0) { throw "Legacy config seed failed." }
+          Pop-Location
+          $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=""$installDir""")
+          $legacyInstaller = Join-Path $legacySource "dist\Open-Notebook-Plus-Setup-x64.exe"
+          $legacyInstall = Start-Process -FilePath $legacyInstaller -ArgumentList $arguments -Wait -PassThru
+          if ($legacyInstall.ExitCode -ne 0) { throw "Legacy install failed." }
+          $legacyLauncher = Join-Path $installDir "Open Notebook Plus.exe"
+          if (-not (Test-Path $legacyLauncher)) { throw "Legacy launcher missing." }
+          $legacyProcess = Start-Process -FilePath $legacyLauncher -PassThru
+          Wait-PackagedReady $legacyProcess
+          $legacyChildren = @($script:PackagedDescendants)
+          Stop-PackagedApp $legacyProcess $legacyChildren $legacyRoot
+
+          $canonicalInstall = Start-Process -FilePath "dist\Deeper-Notebook-Setup-x64.exe" -ArgumentList $arguments -Wait -PassThru
+          if ($canonicalInstall.ExitCode -ne 0) { throw "Canonical upgrade failed." }
+          $canonicalLauncher = Join-Path $installDir "Deeper Notebook.exe"
+          if (-not (Test-Path $canonicalLauncher)) { throw "Canonical launcher missing." }
+          if (Test-Path (Join-Path $installDir "Open Notebook Plus.exe")) { throw "Retired launcher remains." }
+          $programs = @(
+            [Environment]::GetFolderPath('Programs')
+            [Environment]::GetFolderPath('CommonPrograms')
+          ) | Where-Object { $_ } | Select-Object -Unique
+          $canonicalShortcuts = @($programs | ForEach-Object { Join-Path $_ "Deeper Notebook.lnk" } | Where-Object { Test-Path $_ })
+          $legacyShortcuts = @($programs | ForEach-Object { Join-Path $_ "Open Notebook Plus.lnk" } | Where-Object { Test-Path $_ })
+          if ($canonicalShortcuts.Count -ne 1) {
+            throw "Expected one canonical Start Menu shortcut; found $($canonicalShortcuts.Count)."
+          }
+          if ($legacyShortcuts.Count -ne 0) { throw "Retired Start Menu shortcut remains." }
+          $canonicalProcess = Start-Process -FilePath $canonicalLauncher -PassThru
+          $readyFile = Join-Path $canonicalRoot "logs\desktop-readiness.json"
+          Wait-PackagedReady $canonicalProcess $readyFile
+          $canonicalChildren = @($script:PackagedDescendants)
+          Stop-PackagedApp $canonicalProcess $canonicalChildren $canonicalRoot
+          (Get-FileHash (Join-Path $canonicalRoot "data\synthetic-state") -Algorithm SHA256).Hash.ToLower() |
+            Set-Content (Join-Path $env:RUNNER_TEMP "state-after.sha256")
+          if ((Get-Content (Join-Path $env:RUNNER_TEMP "state-before.sha256")) -ne
+              (Get-Content (Join-Path $env:RUNNER_TEMP "state-after.sha256"))) {
+            throw "Synthetic state hash changed during upgrade."
+          }
+          # The stable AppId must own exactly one Windows uninstall entry.
+          $uninstallRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+          $stableAppId = "572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842"
+          $entries = @(Get-ChildItem $uninstallRoot | Where-Object { $_.PSChildName -like "*$stableAppId*" })
+          if ($entries.Count -ne 1) { throw "Expected one stable AppId uninstall entry; found $($entries.Count)." }
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed." }
+          python desktop/build/verify_windows_uninstall.py --install-dir "$installDir" --timeout-seconds 60
+
   release:
-    needs: [build-mac-arm64, build-mac-x86_64, build-windows-x64]
+    needs:
+      - build-mac-arm64
+      - build-mac-x86_64
+      - build-windows-x64
+      - macos-compatibility-upgrade
+      - windows-compatibility-upgrade
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -155,6 +656,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Open-Notebook-Plus-mac-arm64/**
-            dist/Open-Notebook-Plus-mac-x86_64/**
-            dist/Open-Notebook-Plus-windows-x64/**
+            dist/Deeper-Notebook-mac-arm64/**
+            dist/Deeper-Notebook-mac-x86_64/**
+            dist/Deeper-Notebook-windows-x64/**

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 import desktop.memory._register  # noqa: F401 — registers `surreal` provider
+from deeper_notebook.environment import resolve_env
 
 try:
     from mem0 import Memory
@@ -29,12 +30,12 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     lenient about model names) or 404s (when strict). Matches the same
     fix already applied in memory_commands.py.
 
-    Override via ONP_CHAT_MODEL_NAME env var; default "default" works
+    Override via DEEPER_NOTEBOOK_CHAT_MODEL_NAME env var; default "default" works
     against llama-cpp-python's permissive OpenAI-compatible server.
     """
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
-    chat_model_name = os.environ.get("ONP_CHAT_MODEL_NAME", "default")
+    chat_model_name = resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME", "default")
     return Memory.from_config({
         "vector_store": {
             "provider": "surreal",
@@ -55,7 +56,7 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
         # Memory (local) credential test then reported "Cannot
         # connect to server", and every chat session lost the
         # mem0 writer that extracts facts + summarizes turns.
-        # Visible in ~/.open-notebook-plus/logs/memory.log.
+        # Visible in ~/.deeper-notebook/logs/memory.log.
         "embedder": {
             "provider": "openai",
             "config": {

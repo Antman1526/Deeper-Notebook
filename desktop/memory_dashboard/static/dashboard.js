@@ -99,7 +99,7 @@
             fontSize: '10px',
             padding: '2px 6px',
             borderRadius: '4px',
-            background: 'var(--onp-info-soft, var(--border, #eee))',
+            background: 'var(--dn-info-soft, var(--border, #eee))',
             color: 'var(--muted, #888)',
             marginRight: '6px',
           });

@@ -5,7 +5,7 @@ running API's smart router sees the new GGUF's n_ctx without app
 relaunch. Closes the v0.8.40b "stale n_ctx" limitation.
 
 Tests:
-  - 503 when OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN not in env (API
+  - 503 when DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN not in env (API
     running outside the desktop launcher).
   - 401 when token header missing / malformed / mismatched.
   - 200 + os.environ mutated for whitelisted vars.
@@ -35,7 +35,7 @@ def app():
 def token_env(monkeypatch):
     """Configure the API with a known control token."""
     token = "test-token-abcdefghij"
-    monkeypatch.setenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", token)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", token)
     return token
 
 
@@ -43,11 +43,11 @@ def test_endpoint_503_when_no_token_configured(app, monkeypatch):
     """API running outside the launcher → no control token in env →
     503 with a clear hint. Without this, the launcher's best-effort
     push would retry-loop against a 401 forever."""
-    monkeypatch.delenv("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
     with TestClient(app) as client:
         resp = client.post(
             "/api/system/env-refresh",
-            json={"vars": {"OPEN_NOTEBOOK_LOCAL_N_CTX": "65536"}},
+            json={"vars": {"DEEPER_NOTEBOOK_LOCAL_N_CTX": "65536"}},
             headers={"Authorization": "Bearer anything"},
         )
     assert resp.status_code == 503
@@ -59,7 +59,7 @@ def test_endpoint_401_when_authorization_header_missing(app, token_env):
     with TestClient(app) as client:
         resp = client.post(
             "/api/system/env-refresh",
-            json={"vars": {"OPEN_NOTEBOOK_LOCAL_N_CTX": "65536"}},
+            json={"vars": {"DEEPER_NOTEBOOK_LOCAL_N_CTX": "65536"}},
         )
     assert resp.status_code == 401
 
@@ -68,7 +68,7 @@ def test_endpoint_401_when_authorization_header_malformed(app, token_env):
     with TestClient(app) as client:
         resp = client.post(
             "/api/system/env-refresh",
-            json={"vars": {"OPEN_NOTEBOOK_LOCAL_N_CTX": "65536"}},
+            json={"vars": {"DEEPER_NOTEBOOK_LOCAL_N_CTX": "65536"}},
             headers={"Authorization": "WrongScheme token"},
         )
     assert resp.status_code == 401
@@ -78,7 +78,7 @@ def test_endpoint_401_when_token_mismatched(app, token_env):
     with TestClient(app) as client:
         resp = client.post(
             "/api/system/env-refresh",
-            json={"vars": {"OPEN_NOTEBOOK_LOCAL_N_CTX": "65536"}},
+            json={"vars": {"DEEPER_NOTEBOOK_LOCAL_N_CTX": "65536"}},
             headers={"Authorization": "Bearer wrong-token-xyz"},
         )
     assert resp.status_code == 401
@@ -88,20 +88,20 @@ def test_endpoint_updates_whitelisted_var(app, token_env, monkeypatch):
     """Happy path — env var actually mutated in os.environ."""
     # Start with a known different value so the assertion proves the
     # mutation, not coincidence.
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "8192")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "8192")
 
     with TestClient(app) as client:
         resp = client.post(
             "/api/system/env-refresh",
-            json={"vars": {"OPEN_NOTEBOOK_LOCAL_N_CTX": "65536"}},
+            json={"vars": {"DEEPER_NOTEBOOK_LOCAL_N_CTX": "65536"}},
             headers={"Authorization": f"Bearer {token_env}"},
         )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["updated"] == ["OPEN_NOTEBOOK_LOCAL_N_CTX"]
+    assert body["updated"] == ["DEEPER_NOTEBOOK_LOCAL_N_CTX"]
     assert body["rejected"] == []
     # The mutation actually happened — provision.py would see this.
-    assert os.environ["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "65536"
+    assert os.environ["DEEPER_NOTEBOOK_LOCAL_N_CTX"] == "65536"
 
 
 def test_endpoint_rejects_non_whitelisted_var(app, token_env, monkeypatch):
@@ -130,7 +130,7 @@ def test_endpoint_mixed_updates_and_rejects(app, token_env, monkeypatch):
     applies the whitelisted ones and reports the others as rejected.
     Lets the launcher submit best-effort batches without needing to
     pre-filter."""
-    monkeypatch.setenv("OPEN_NOTEBOOK_LOCAL_N_CTX", "8192")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "8192")
     original_path = os.environ.get("PATH", "")
 
     with TestClient(app) as client:
@@ -138,16 +138,16 @@ def test_endpoint_mixed_updates_and_rejects(app, token_env, monkeypatch):
             "/api/system/env-refresh",
             json={
                 "vars": {
-                    "OPEN_NOTEBOOK_LOCAL_N_CTX": "32768",
+                    "DEEPER_NOTEBOOK_LOCAL_N_CTX": "32768",
                     "PATH": "/tmp/evil",
-                    "OPEN_NOTEBOOK_NONEXISTENT": "foo",
+                    "DEEPER_NOTEBOOK_NONEXISTENT": "foo",
                 },
             },
             headers={"Authorization": f"Bearer {token_env}"},
         )
     assert resp.status_code == 200
     body = resp.json()
-    assert "OPEN_NOTEBOOK_LOCAL_N_CTX" in body["updated"]
-    assert set(body["rejected"]) == {"PATH", "OPEN_NOTEBOOK_NONEXISTENT"}
-    assert os.environ["OPEN_NOTEBOOK_LOCAL_N_CTX"] == "32768"
+    assert "DEEPER_NOTEBOOK_LOCAL_N_CTX" in body["updated"]
+    assert set(body["rejected"]) == {"PATH", "DEEPER_NOTEBOOK_NONEXISTENT"}
+    assert os.environ["DEEPER_NOTEBOOK_LOCAL_N_CTX"] == "32768"
     assert os.environ.get("PATH", "") == original_path

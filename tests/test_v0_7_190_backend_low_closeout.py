@@ -17,7 +17,7 @@ Three small but defensible improvements:
     pass an explicit per-query budget so a single stuck pool
     connection doesn't pin the route handler.
 
-3.  `open_notebook/graphs/tools.py::get_current_timestamp` switched
+3.  `deeper_notebook/graphs/tools.py::get_current_timestamp` switched
     from naive local time (`YYYYMMDDHHmmss`) to UTC ISO 8601 basic
     (`YYYYMMDDTHHmmssZ`). The output lands in LLM prompts that may
     be replayed cross-machine; without the TZ marker every
@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
+from task_lifecycle_assertions import assert_lifespan_tracked_task
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,15 +67,55 @@ def test_lifespan_tasks_use_track_task_anchor():
     in _track_task. The pre-fix local-var anchor worked today but
     was fragile to future refactors."""
     src = _read_source("api/main.py")
-    # All three task spawns go through _track_task.
-    for task_name in (
-        "digest_scheduler_task = _track_task(asyncio.create_task(",
-        "checkpoint_prune_task = _track_task(asyncio.create_task(",
-        "gmail_prewarm_task = _track_task(asyncio.create_task(",
+    for task_name, coroutine_name in (
+        ("digest_scheduler_task", "_digest_run_forever"),
+        ("checkpoint_prune_task", "_checkpoint_prune_loop"),
+        ("gmail_prewarm_task", "_prewarm_gmail_cache"),
     ):
-        assert task_name in src, (
-            f"v0.7.190 regression: missing `{task_name}` — one of the "
-            f"three lifespan tasks dropped the GC anchor."
+        assert_lifespan_tracked_task(
+            src, task_name=task_name, coroutine_name=coroutine_name
+        )
+
+
+def test_lifespan_task_guard_rejects_untracked_task_with_nested_function_decoy():
+    source = """
+async def lifespan(app):
+    digest_scheduler_task = asyncio.create_task(_digest_run_forever(stop_event))
+
+    async def unused_decoy():
+        digest_scheduler_task = _track_task(
+            asyncio.create_task(_digest_run_forever(stop_event))
+        )
+
+    yield
+"""
+
+    with pytest.raises(AssertionError, match="digest_scheduler_task must wrap"):
+        assert_lifespan_tracked_task(
+            source,
+            task_name="digest_scheduler_task",
+            coroutine_name="_digest_run_forever",
+        )
+
+
+def test_lifespan_task_guard_rejects_wrong_task_with_nested_class_decoy():
+    source = """
+async def lifespan(app):
+    gmail_prewarm_task = _track_task(asyncio.create_task(_wrong_cache()))
+
+    class UnusedDecoy:
+        gmail_prewarm_task = _track_task(
+            asyncio.create_task(_prewarm_gmail_cache())
+        )
+
+    yield
+"""
+
+    with pytest.raises(AssertionError, match="gmail_prewarm_task must wrap"):
+        assert_lifespan_tracked_task(
+            source,
+            task_name="gmail_prewarm_task",
+            coroutine_name="_prewarm_gmail_cache",
         )
 
 
@@ -111,7 +151,8 @@ def test_repo_query_accepts_timeout_kwarg():
     """v0.7.190: repo_query gained an optional `timeout_s` keyword
     for per-call wait_for bounding."""
     import inspect
-    from open_notebook.database.repository import repo_query
+
+    from deeper_notebook.database.repository import repo_query
 
     sig = inspect.signature(repo_query)
     assert "timeout_s" in sig.parameters, (
@@ -127,7 +168,7 @@ def test_repo_query_default_call_unchanged():
     """v0.7.190 backward-compat pin: existing callers passing only
     (query_str, vars) must still work. The new kwarg is purely
     additive."""
-    src = _read_source("open_notebook/database/repository.py")
+    src = _read_source("deeper_notebook/database/repository.py")
     # The function signature line.
     sig_idx = src.find("async def repo_query(")
     assert sig_idx != -1
@@ -150,7 +191,7 @@ def test_get_current_timestamp_returns_iso8601_with_utc():
     `YYYYMMDDTHHmmssZ` (basic ISO 8601 with explicit UTC marker),
     not the previous ambiguous naive local-time
     `YYYYMMDDHHmmss`."""
-    from open_notebook.graphs.tools import get_current_timestamp
+    from deeper_notebook.graphs.tools import get_current_timestamp
 
     ts = get_current_timestamp.func()
     # T separator + Z marker.

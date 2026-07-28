@@ -1,5 +1,5 @@
 # desktop/bootstrap.py
-"""First-launch bootstrap: creates ~/.open-notebook-plus/venv via uv.
+"""First-launch bootstrap: creates ~/.deeper-notebook/venv via uv.
 
 The launcher's frozen Python only carries pywebview/aiohttp/httpx; upstream's
 FastAPI + langchain + esperanto stack lives in a user-managed venv that uv
@@ -17,7 +17,8 @@ import tarfile
 import zipfile
 from pathlib import Path
 from typing import Callable
-from desktop.paths import user_home
+
+from desktop.data_root import active_data_root
 
 # Max bytes kept in bootstrap-subprocess.log before truncation (P2-MED-19).
 # 5 MB is plenty for the heaviest install we run; rotating on next launch
@@ -45,7 +46,7 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
         shipped inside the bundle.
     dest_parent:
         Directory under which ``python-runtime/`` will be created
-        (typically ``~/.open-notebook-plus``).
+        (typically ``~/.deeper-notebook``).
 
     Returns
     -------
@@ -68,7 +69,7 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     # actually broken; the interpreter can't import its own stdlib.
     # Subsequent `venv` create from this interpreter fails with a
     # cryptic error and the user has to manually `rm -rf
-    # ~/.open-notebook-plus/python-runtime` to recover.
+    # ~/.deeper-notebook/python-runtime` to recover.
     #
     # Health check: if the file is present, ensure it's executable
     # AND can print its version. Anything else means the install is
@@ -133,8 +134,7 @@ def _interpreter_is_healthy(interpreter: Path) -> bool:
 
 
 def venv_dir() -> Path:
-    base = Path(os.environ.get("USERPROFILE") or os.environ["HOME"])
-    return base / ".open-notebook-plus" / "venv"
+    return active_data_root() / "venv"
 
 
 def venv_python() -> Path:
@@ -153,8 +153,7 @@ def _lock_hash(lock_path: Path) -> str:
 
 def _bootstrap_log_path() -> Path:
     """Append-only diagnostic log next to bootstrap.log (same dir)."""
-    base = user_home()
-    return base / ".open-notebook-plus" / "logs" / "bootstrap-subprocess.log"
+    return active_data_root() / "logs" / "bootstrap-subprocess.log"
 
 
 def _rotate_log_if_oversized(log_path: Path) -> None:
@@ -234,7 +233,9 @@ def ensure_venv(
     standalone_python — bundled portable interpreter used to create the venv.
     uv_binary — bundled uv binary used to install requirements.
     lock_path — pinned requirements.lock shipped in the bundle.
-    upstream_dir — bundled upstream source (api/, open_notebook/, commands/).
+    upstream_dir — bundled source root containing the canonical
+    deeper_notebook package, open_notebook compatibility shim, api/, and
+    commands/.
     """
     progress = progress or (lambda msg: None)
 
@@ -280,7 +281,9 @@ def ensure_venv(
     # at the bundled upstream/ source dir.
     site_packages = next(venv_dir().glob("lib/python*/site-packages"), None) \
         or (venv_dir() / "Lib" / "site-packages")  # Windows
-    (site_packages / "open_notebook_upstream.pth").write_text(str(upstream_dir) + "\n")
+    (site_packages / "deeper_notebook_upstream.pth").write_text(
+        str(upstream_dir) + "\n"
+    )
 
     # v0.7.141 — Defensive post-install verification (Area for Review,
     # found by real user). Before this check existed, a stale bundled
@@ -324,7 +327,7 @@ def ensure_venv(
             "Makefile build skipped `build-mac-lock`).\n\n"
             "Recover by force-rebuilding the venv on next launch:\n"
             f"    rm -rf {venv_dir()} {venv_marker()}\n"
-            "    open 'Open Notebook Plus.app'\n\n"
+            "    open 'Deeper Notebook.app'\n\n"
             "If the issue persists after rebuild, the bundled "
             "requirements.lock itself is broken — rebuild the bundle "
             "with `make build-mac` (which now includes the missing "

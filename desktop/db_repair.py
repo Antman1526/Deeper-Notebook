@@ -35,7 +35,6 @@ import time
 import urllib.request
 from pathlib import Path
 
-
 # The worker's crash traceback contains this exact SurrealDB message. Matched
 # case-insensitively; kept specific (not a bare "already exists") so unrelated
 # log lines never trigger a needless repair.

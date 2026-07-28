@@ -7,11 +7,11 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from open_notebook.ai import models, offline_gate
-from open_notebook.health.network import NetworkState
-from open_notebook.local_models.gguf_metadata import GGUFMetadata
-from open_notebook.local_models.inventory import LocalModelInfo
-from open_notebook.local_models.role_routing import (
+from deeper_notebook.ai import models, offline_gate
+from deeper_notebook.health.network import NetworkState
+from deeper_notebook.local_models.gguf_metadata import GGUFMetadata
+from deeper_notebook.local_models.inventory import LocalModelInfo
+from deeper_notebook.local_models.role_routing import (
     BENCHMARK_MAX_AGE_SECONDS,
     MeasuredModelRoute,
     retry_measured_model_route_once,

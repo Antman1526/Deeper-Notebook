@@ -13,15 +13,19 @@ from api.podcast_service import (
     PodcastService,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
-from open_notebook.config import DATA_FOLDER
-from open_notebook.database.repository import repo_query
-from open_notebook.exceptions import InvalidInputError, NotFoundError
-from open_notebook.podcasts import file_uri_to_local_path
-from open_notebook.podcasts.models import (
+from deeper_notebook.config import DATA_FOLDER
+from deeper_notebook.database.repository import repo_query
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.podcasts import file_uri_to_local_path
+from deeper_notebook.podcasts.models import (
     EpisodeProfile,
     PodcastOverviewMode,
     TranscriptSegment,
     normalize_podcast_mode,
+)
+from deeper_notebook.podcasts.profile_names import (
+    CANONICAL_LOCAL_EPISODE_PROFILE,
+    select_existing_episode_profile_name,
 )
 
 router = APIRouter()
@@ -78,7 +82,7 @@ class PodcastEpisodeResponse(BaseModel):
     job_status: Optional[str] = None
     error_message: Optional[str] = None
     # v0.8.68 — per-stage progress / outline-review state (see
-    # GENERATION_STAGES in open_notebook/podcasts/models.py).
+    # GENERATION_STAGES in deeper_notebook/podcasts/models.py).
     generation_stage: Optional[str] = None
 
 
@@ -485,7 +489,7 @@ async def _retry_podcast_episode_locked(episode_id: str):
         # already gone — they couldn't even see the failed entry to
         # diagnose, and lost their stored content. Now we resolve
         # profiles upfront so the 400 lands without side effects.
-        from open_notebook.podcasts.models import (
+        from deeper_notebook.podcasts.models import (
             EpisodeProfile,
             SpeakerProfile,
         )
@@ -616,7 +620,7 @@ async def update_episode_outline(episode_id: str, request: OutlineUpdateRequest)
     """v0.8.68 — outline-review workflow: save the user's edited outline.
     Only allowed while the episode is awaiting review (the outline is about
     to drive transcript + TTS; editing it after audio exists would lie)."""
-    from open_notebook.podcasts.models import STAGE_AWAITING_REVIEW
+    from deeper_notebook.podcasts.models import STAGE_AWAITING_REVIEW
 
     try:
         episode = await PodcastService.get_episode(episode_id)
@@ -886,7 +890,7 @@ async def suggest_episode(req: SuggestRequest):
       2. Score each preset by keyword hits in titles/topics.
       3. If the top score is ≥ 2, pick that preset.
       4. Otherwise default by volume: small → Quick Brief, large →
-         Deep Dive, mid → Open Notebook Plus Local (the safe default).
+         Deep Dive, mid → Deeper Notebook Local (the safe default).
     """
     # ---- 1. Resolve content from the request ----
     source_ids: list[str] = list(req.source_ids or [])
@@ -996,8 +1000,14 @@ async def suggest_episode(req: SuggestRequest):
             chosen = "Deep Dive"
             reason = "Large content volume — long-form deep dive fits."
         else:
-            chosen = "Open Notebook Plus Local"
+            chosen = CANONICAL_LOCAL_EPISODE_PROFILE
             reason = "Balanced two-host format for mid-sized content."
+        equivalent = select_existing_episode_profile_name(
+            chosen,
+            available_presets,
+        )
+        if equivalent is not None:
+            chosen = equivalent
         # If our default isn't available (user deleted everything but
         # one), fall back to whatever exists.
         if chosen not in available_presets and available_presets:

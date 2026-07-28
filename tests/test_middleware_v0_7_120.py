@@ -9,7 +9,7 @@ Covers:
   * GZip middleware: enabled on the actual app, compresses large
     bodies when Accept-Encoding: gzip is sent.
   * Slow-query log: repo_query emits a WARNING when elapsed exceeds
-    ONP_SLOW_QUERY_LOG_MS.
+    DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS.
 
 No external dependencies (no real SurrealDB, no FastAPI lifespan).
 """
@@ -231,12 +231,12 @@ def test_gzip_skipped_for_small_response():
 
 
 def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
-    """v0.7.120 — A query that takes longer than ONP_SLOW_QUERY_LOG_MS
+    """v0.7.120 — A query that takes longer than DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS
     must emit a WARNING with the elapsed time, threshold, and truncated
     query string. Doesn't affect the result the caller gets back."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")  # 10ms threshold
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "10")  # 10ms threshold
 
     # Mock db_connection so we don't need a real SurrealDB. The fake
     # connection's query() sleeps 50ms — exceeds the 10ms threshold.
@@ -274,9 +274,9 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
 
 def test_slow_query_silent_when_under_threshold(monkeypatch):
     """v0.7.120 — Fast queries don't pollute the log."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "5000")  # 5s threshold
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "5000")  # 5s threshold
 
     class _FakeConn:
         async def query(self, q, vars=None):
@@ -309,9 +309,9 @@ def test_slow_query_logs_even_when_query_errors(monkeypatch):
     """v0.7.120 — A slow query that ALSO raised should STILL log the
     slow-query warning. (The `finally:` block runs regardless.) That
     timing info is doubly useful when something's broken."""
-    from open_notebook.database import repository as repo
+    from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("ONP_SLOW_QUERY_LOG_MS", "10")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "10")
 
     class _FailingConn:
         async def query(self, q, vars=None):
@@ -412,7 +412,7 @@ def test_security_headers_hsts_present_on_https():
 
 def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
     """v0.7.121 — When CORS_ORIGINS is unset (default '*') AND
-    OPEN_NOTEBOOK_PASSWORD is unset (auth is a no-op), the API logs an
+    DEEPER_NOTEBOOK_PASSWORD is unset (auth is a no-op), the API logs an
     ERROR-level message at process boot naming the foot-gun. Operators
     tailing logs should see it immediately.
 
@@ -429,16 +429,16 @@ def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
     )
     try:
         # Simulate the check from api/main.py
-        from open_notebook.utils.encryption import get_secret_from_env
+        from deeper_notebook.utils.encryption import get_secret_from_env
 
-        monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD", raising=False)
-        monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD_FILE", raising=False)
-        password_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+        monkeypatch.delenv("DEEPER_NOTEBOOK_PASSWORD", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_PASSWORD_FILE", raising=False)
+        password_set = bool(get_secret_from_env("DEEPER_NOTEBOOK_PASSWORD"))
         cors_wildcard = True  # simulating CORS_IS_DEFAULT_WILDCARD
 
         if cors_wildcard and not password_set:
             logger.error(
-                "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD "
+                "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND DEEPER_NOTEBOOK_PASSWORD "
                 "is unset. Any origin can call this API without credentials. "
                 "ANYONE with the API URL can read/write every notebook. This "
                 "is fine ONLY for local development."
@@ -449,7 +449,7 @@ def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
     assert any("DANGEROUS CONFIG" in msg for msg in captured), \
         f"Expected ERROR-level dangerous-config warning; captured: {captured}"
     # Must name BOTH levers so the user knows what to set
-    assert any("CORS_ORIGINS" in msg and "OPEN_NOTEBOOK_PASSWORD" in msg
+    assert any("CORS_ORIGINS" in msg and "DEEPER_NOTEBOOK_PASSWORD" in msg
                for msg in captured)
 
 
@@ -460,9 +460,9 @@ def test_safe_cors_with_password_set_does_not_log_dangerous_error(
     dangerous combo doesn't apply, so we should NOT emit the ERROR."""
     from loguru import logger
 
-    from open_notebook.utils.encryption import get_secret_from_env
+    from deeper_notebook.utils.encryption import get_secret_from_env
 
-    monkeypatch.setenv("OPEN_NOTEBOOK_PASSWORD", "strong-password-xyz")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_PASSWORD", "strong-password-xyz")
 
     captured: list[str] = []
     sink_id = logger.add(
@@ -470,7 +470,7 @@ def test_safe_cors_with_password_set_does_not_log_dangerous_error(
         level="ERROR",
     )
     try:
-        password_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+        password_set = bool(get_secret_from_env("DEEPER_NOTEBOOK_PASSWORD"))
         cors_wildcard = True  # CORS=* but password is set → safe
 
         # The if-branch shouldn't fire

@@ -20,7 +20,7 @@ import asyncio
 
 import pytest
 
-from open_notebook.database import repository as repo
+from deeper_notebook.database import repository as repo
 
 # Reuse the fakes/fixtures from the sibling pool test module.
 from tests.test_db_pool import (  # noqa: F401
@@ -35,7 +35,7 @@ async def test_broken_release_wakes_parked_acquirer(
 ):
     """cap=1: A holds the only connection; B parks at cap; A releases BROKEN.
     B must then acquire a fresh connection instead of hanging forever."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "1")
 
     a_holding = asyncio.Event()
     a_should_break = asyncio.Event()
@@ -89,7 +89,7 @@ async def test_broken_release_without_waiter_leaves_no_stray_sentinel(
     sentinel would corrupt qsize-based bookkeeping (close_pool, the
     broken-conn-dropped invariant). The next acquire just reserves the freed
     slot and creates a real connection."""
-    monkeypatch.setenv("ONP_DB_POOL_SIZE", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "1")
 
     with pytest.raises(RuntimeError, match="boom"):
         async with repo.db_connection():

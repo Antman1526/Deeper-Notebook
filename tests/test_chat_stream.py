@@ -98,7 +98,7 @@ def fake_graph(monkeypatch):
 def fake_session(monkeypatch):
     """Patch the ChatSession.get so it returns a session for any id
     that starts with chat_session:test, else None."""
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
 
     sessions = {"chat_session:test": _FakeSession()}
 
@@ -170,7 +170,7 @@ def test_stream_emits_error_event_on_missing_session(monkeypatch, fake_graph):
     """No session matches → the FIRST event is {"type":"error"}.
     We do NOT return HTTP 4xx because we've already committed to a
     streaming response by the time we know."""
-    from open_notebook.domain import notebook as nb_mod
+    from deeper_notebook.domain import notebook as nb_mod
 
     async def fake_get(_id):
         return None  # session not found
@@ -239,7 +239,7 @@ def test_stream_surfaces_context_overflow_message(
     only hint to deselect sources or pick a larger-context model, so it must
     reach the wire. It is a safe, app-crafted string (not raw provider text),
     so echoing it does not regress the v0.7.184 info-leak tightening."""
-    from open_notebook.exceptions import ExternalServiceError
+    from deeper_notebook.exceptions import ExternalServiceError
 
     overflow_msg = (
         "Content too large for the selected model. Try using a smaller "
@@ -273,7 +273,7 @@ def test_stream_surfaces_network_error_message(
     """v0.8.67i — NetworkError (e.g. the local sidecar not yet reachable on
     a cold first request) likewise surfaces its actionable message instead
     of the opaque generic failure."""
-    from open_notebook.exceptions import NetworkError
+    from deeper_notebook.exceptions import NetworkError
 
     net_msg = (
         "Could not reach the AI model server. If you're using a local "

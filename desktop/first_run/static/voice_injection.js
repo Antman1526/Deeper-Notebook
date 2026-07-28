@@ -7,11 +7,15 @@
 //     + stop button, inline progress bar
 //   - Toast notifications for errors and successes
 (function () {
-  if (window.__ONP_VOICE_INJECTED) return;
-  window.__ONP_VOICE_INJECTED = true;
+  if (window.__DEEPER_NOTEBOOK_VOICE_INJECTED) return;
+  window.__DEEPER_NOTEBOOK_VOICE_INJECTED = true;
 
-  const STT_URL = (window.ONP_STT_URL || '/api/transcribe');
-  const TTS_URL = (window.ONP_TTS_URL || '/api/audio/speech');
+  const STT_URL = (
+    window.DEEPER_NOTEBOOK_STT_URL || window.ONP_STT_URL || '/api/transcribe'
+  );
+  const TTS_URL = (
+    window.DEEPER_NOTEBOOK_TTS_URL || window.ONP_TTS_URL || '/api/audio/speech'
+  );
 
   // ---------------------------------------------------------------------------
   // Inject global styles
@@ -21,9 +25,9 @@
     style.textContent = [
       // Pulse ring around mic FAB while recording
       '@keyframes onp-pulse {',
-      '  0%   { box-shadow: 0 0 0 0 rgba(var(--onp-pulse-rgb,45,127,249), 0.55); }',
-      '  70%  { box-shadow: 0 0 0 14px rgba(var(--onp-pulse-rgb,45,127,249), 0); }',
-      '  100% { box-shadow: 0 0 0 0 rgba(var(--onp-pulse-rgb,45,127,249), 0); }',
+      '  0%   { box-shadow: 0 0 0 0 rgba(var(--dn-pulse-rgb,45,212,191), 0.55); }',
+      '  70%  { box-shadow: 0 0 0 14px rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
+      '  100% { box-shadow: 0 0 0 0 rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
       '}',
       '#onp-mic-fab.recording { animation: onp-pulse 1.1s ease-out infinite; }',
 

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from open_notebook.exceptions import NotFoundError
+from deeper_notebook.exceptions import NotFoundError
 
 
 @pytest.fixture

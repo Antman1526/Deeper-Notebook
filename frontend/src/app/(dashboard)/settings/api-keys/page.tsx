@@ -47,8 +47,8 @@ import {
 import { Credential, CreateCredentialRequest, UpdateCredentialRequest } from '@/lib/api/credentials'
 import { Model, ModelDefaults } from '@/lib/types/models'
 import { MigrationBanner, ModelTestResultDialog, DeleteCredentialDialog, OsaurusDetectionBanner, SmartRoutingPanel } from '@/components/settings'
-// ONP shadow-layer components (see frontend/src/components/onp/README.md)
-import { ReasoningSlotCard, GmailIntegration } from '@/components/onp'
+// ONP shadow-layer components (see frontend/src/components/deeper-notebook/README.md)
+import { ReasoningSlotCard, GmailIntegration } from '@/components/deeper-notebook'
 import { EmbeddingModelChangeDialog } from '@/components/settings/EmbeddingModelChangeDialog'
 
 // v0.7.46 — type + constants moved to ./constants.tsx so the page and
@@ -704,7 +704,7 @@ function DefaultModelSelectors({
     { key: 'large_context_model', label: t('models.largeContextModelLabel'), description: t('models.largeContextModelDesc'), modelType: 'language', id: `${generatedId}-large` },
     // ONP v0.5 — 8th slot for slow-but-deep reasoning models (R1, gpt-oss, etc.)
     { key: 'default_reasoning_model', label: t('models.reasoningModelLabel'), description: t('models.reasoningModelDesc'), modelType: 'language', id: `${generatedId}-reasoning` },
-    // v0.8.1 — dedicated cloud slot for OPEN_NOTEBOOK_AUTO_ROUTE_CHAT smart routing.
+    // v0.8.1 — dedicated cloud slot for DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT smart routing.
     // Distinct from default_chat_model so the router doesn't silently route
     // oversized prompts to a locally-configured chat model (migration 18).
     { key: 'auto_route_cloud', label: t('models.autoRouteCloudLabel'), description: t('models.autoRouteCloudDesc'), modelType: 'language', id: `${generatedId}-auto-route-cloud` },
@@ -778,7 +778,7 @@ function DefaultModelSelectors({
             capability engine. Two buttons: a non-destructive variant that
             only fills empty slots, and a destructive "Reset & Re-evaluate"
             that wipes existing picks first. Useful after downloading a new
-            model or bumping ONP_CHAT_RAM_GB_CEILING. */}
+            model or bumping DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING. */}
         <div className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
           <span>Local-model auto-assignment:</span>
           <Button
@@ -1163,7 +1163,7 @@ export default function ApiKeysPage() {
           {/* Help link */}
           <div className="border-t pt-6">
             <a
-              href="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md"
+              href="https://github.com/Antman1526/Deeper-Notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-primary hover:underline"

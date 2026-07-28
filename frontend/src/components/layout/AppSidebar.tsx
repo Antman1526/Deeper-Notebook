@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
+import { readDesktopVersion } from '@/lib/desktop-version'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
@@ -27,7 +28,7 @@ import {
 // ONP v0.5.7 — replaced upstream ThemeToggle (light/dark/system) with our
 // shadow-layer ThemeSwitcher that supports all ONP themes + live-switch.
 // import { ThemeToggle } from '@/components/common/ThemeToggle'
-import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/onp'
+import { ThemeSwitcher as ThemeToggle, GmailSidebarButton } from '@/components/deeper-notebook'
 import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
 import type { TFunction } from 'i18next'
@@ -53,6 +54,7 @@ import {
   Sparkles,
   GraduationCap,
   Inbox,
+  Network,
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
@@ -68,6 +70,7 @@ const getNavigation = (t: TFunction) => [
     title: t('navigation.process'),
     items: [
       { name: t('navigation.notebooks'), href: '/notebooks', icon: Book },
+      { name: t('navigation.knowledge'), href: '/knowledge', icon: Network },
       { name: t('navigation.askAndSearch'), href: '/search', icon: Search },
     ],
   },
@@ -157,7 +160,7 @@ export function AppSidebar() {
             <div className="relative flex items-center justify-center w-full">
               <Image
                 src="/logo.svg"
-                alt="Open notebook+"
+                alt="Deeper Notebook"
                 width={32}
                 height={32}
                 className="transition-opacity group-hover:opacity-0"
@@ -470,7 +473,7 @@ export function AppSidebar() {
             </div>
           )}
 
-          {/* v0.7.210 — Version badge. Source: `window.ONP_VERSION`
+          {/* v0.7.210 — Version badge. Source: the desktop version bridge
               injected by desktop/window.py at page load (read from
               desktop/__init__.py:__version__). Falls back to the
               /api/version endpoint when running in dev mode outside
@@ -487,7 +490,7 @@ export function AppSidebar() {
             >
               v{
                 typeof window !== 'undefined'
-                  ? ((window as { ONP_VERSION?: string }).ONP_VERSION || '—')
+                  ? (readDesktopVersion(window) || '—')
                   : '—'
               }
             </div>

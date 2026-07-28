@@ -3,7 +3,6 @@ from loguru import logger
 from surreal_commands import get_command_status
 
 from api.command_service import CommandService
-from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from api.models import (
     RebuildProgress,
     RebuildRequest,
@@ -11,7 +10,8 @@ from api.models import (
     RebuildStats,
     RebuildStatusResponse,
 )
-from open_notebook.database.repository import repo_query
+from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
+from deeper_notebook.database.repository import repo_query
 
 router = APIRouter()
 

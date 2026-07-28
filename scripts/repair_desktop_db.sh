@@ -17,33 +17,87 @@
 #
 # What it does — SAFE BY DESIGN, no data loss:
 #   1. Aborts if the app/SurrealDB is still running (quit the app first).
-#   2. Exports the current DB to ~/onp-backups/ (logical .surql) and copies
+#   2. Exports the current DB to ~/deeper-notebook-backups/ (logical .surql) and copies
 #      surreal_data physically — TWO backups before touching anything.
 #   3. Moves the stale surreal_data aside (never deletes it).
 #   4. Imports the export into a fresh surreal_data — clearing the bad
 #      live-query state while preserving every notebook / source / note / chat.
 #
-# Usage:  quit Open Notebook Plus, then:  bash scripts/repair_desktop_db.sh
+# Usage:
+#   quit Deeper Notebook, then: bash scripts/repair_desktop_db.sh
+#   if both roots exist: bash scripts/repair_desktop_db.sh \
+#     --data-home "$HOME/.deeper-notebook"
 set -euo pipefail
 
-DATA_HOME="${HOME}/.open-notebook-plus"
-DATA_DIR="${DATA_HOME}/surreal_data"
-CONFIG="${DATA_HOME}/config.toml"
-BACKUP_DIR="${HOME}/onp-backups"
-NS="open_notebook"; DB="open_notebook"
-PORT="${ONP_REPAIR_PORT:-18799}"
-TS="$(date +%Y%m%d-%H%M%S)"
+CANONICAL_DATA_HOME="${HOME}/.deeper-notebook"
+LEGACY_DATA_HOME="${HOME}/.open-notebook-plus"
+SELECTED_DATA_HOME=""
 
 err() { echo "❌ $*" >&2; exit 1; }
 
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --data-home)
+      [ "$#" -ge 2 ] || err "--data-home requires an exact data-root path."
+      SELECTED_DATA_HOME="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--data-home PATH]"
+      exit 0
+      ;;
+    *)
+      err "Unknown argument: $1. Usage: $0 [--data-home PATH]"
+      ;;
+  esac
+done
+
+resolve_existing_dir() {
+  [ -d "$1" ] || return 1
+  (cd "$1" && pwd -P)
+}
+
+CANONICAL_RESOLVED="$(resolve_existing_dir "$CANONICAL_DATA_HOME" || true)"
+LEGACY_RESOLVED="$(resolve_existing_dir "$LEGACY_DATA_HOME" || true)"
+
+if [ -n "$SELECTED_DATA_HOME" ]; then
+  SELECTED_RESOLVED="$(resolve_existing_dir "$SELECTED_DATA_HOME" || true)"
+  [ -n "$SELECTED_RESOLVED" ] || err \
+    "Selected --data-home is not an existing directory: $SELECTED_DATA_HOME"
+  if [ "$SELECTED_RESOLVED" != "$CANONICAL_RESOLVED" ] \
+    && [ "$SELECTED_RESOLVED" != "$LEGACY_RESOLVED" ]; then
+    err "--data-home must resolve exactly to $CANONICAL_DATA_HOME or $LEGACY_DATA_HOME."
+  fi
+  DATA_HOME="$SELECTED_RESOLVED"
+elif [ -n "$CANONICAL_RESOLVED" ] && [ -n "$LEGACY_RESOLVED" ]; then
+  err "Both Deeper Notebook data roots exist. Refusing to choose or write. Re-run with --data-home set exactly to $CANONICAL_DATA_HOME or $LEGACY_DATA_HOME."
+elif [ -n "$CANONICAL_RESOLVED" ]; then
+  DATA_HOME="$CANONICAL_DATA_HOME"
+elif [ -n "$LEGACY_RESOLVED" ]; then
+  DATA_HOME="$LEGACY_DATA_HOME"
+else
+  DATA_HOME="$CANONICAL_DATA_HOME"
+fi
+DATA_DIR="${DATA_HOME}/surreal_data"
+CONFIG="${DATA_HOME}/config.toml"
+BACKUP_DIR="${HOME}/deeper-notebook-backups"
+NS="open_notebook"; DB="open_notebook"
+PORT="${DEEPER_NOTEBOOK_REPAIR_PORT:-${DN_REPAIR_PORT:-${DEEPER_NOTEBOOK_REPAIR_PORT:-${DEEPER_NOTEBOOK_REPAIR_PORT:-18799}}}}"
+TS="$(date +%Y%m%d-%H%M%S)"
+
 # 1) Refuse to run against a live instance.
-if pgrep -f 'surreal-darwin' >/dev/null 2>&1 || pgrep -f '/Applications/Open Notebook Plus.app/Contents/MacOS' >/dev/null 2>&1; then
-  err "Open Notebook Plus (or SurrealDB) is still running. Quit the app fully, then re-run."
+if pgrep -f 'surreal-darwin' >/dev/null 2>&1 \
+  || pgrep -f '/Applications/Deeper Notebook.app/Contents/MacOS' >/dev/null 2>&1 \
+  || pgrep -f '/Applications/Open Notebook Plus.app/Contents/MacOS' >/dev/null 2>&1; then
+  err "Deeper Notebook, its legacy predecessor, or SurrealDB is still running. Quit the app fully, then re-run."
 fi
 [ -d "$DATA_DIR" ] || err "No surreal_data at $DATA_DIR — nothing to repair."
 [ -f "$CONFIG" ]   || err "No config.toml at $CONFIG."
 
-BIN="$(ls /Applications/Open\ Notebook\ Plus.app/Contents/Resources/desktop/bin/surreal-darwin-* 2>/dev/null | head -1 || true)"
+BIN="$(ls /Applications/Deeper\ Notebook.app/Contents/Resources/desktop/bin/surreal-darwin-* 2>/dev/null | head -1 || true)"
+if [ ! -x "$BIN" ]; then
+  BIN="$(ls /Applications/Open\ Notebook\ Plus.app/Contents/Resources/desktop/bin/surreal-darwin-* 2>/dev/null | head -1 || true)"
+fi
 [ -x "$BIN" ] || err "Bundled surreal binary not found under the installed .app."
 PW="$(grep '^surreal_password' "$CONFIG" | sed "s/.*= *'\(.*\)'.*/\1/")"
 [ -n "$PW" ] || err "Could not read surreal_password from config.toml."
@@ -82,7 +136,7 @@ start_surreal "$DATA_DIR"
 stop_surreal
 
 echo ""
-echo "✅ Repair complete. Relaunch Open Notebook Plus — the worker should start"
+echo "✅ Repair complete. Relaunch Deeper Notebook — the worker should start"
 echo "   cleanly and source processing should work."
 echo "   Backups kept in $BACKUP_DIR ; old DB at ${DATA_DIR}.stale-${TS}"
 echo "   (delete the .stale dir once you've confirmed everything works)."

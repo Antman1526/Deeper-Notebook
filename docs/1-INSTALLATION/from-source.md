@@ -16,12 +16,12 @@ Clone the repository and run locally. **For developers and contributors.**
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/lfnovo/open-notebook.git
-cd open-notebook
+git clone https://github.com/Antman1526/Deeper-Notebook.git
+cd Deeper-Notebook
 
 # If you forked it:
-git clone https://github.com/YOUR_USERNAME/open-notebook.git
-cd open-notebook
+git clone https://github.com/YOUR_USERNAME/Deeper-Notebook.git
+cd Deeper-Notebook
 git remote add upstream https://github.com/lfnovo/open-notebook.git
 ```
 
@@ -63,7 +63,7 @@ make database
 ```bash
 cp .env.example .env
 # Edit .env and set:
-# OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret-key
+# DEEPER_NOTEBOOK_ENCRYPTION_KEY=my-secret-key
 ```
 
 After starting the app, configure AI providers via the **Manage → Models** UI in the browser.
@@ -192,4 +192,4 @@ uv run uvicorn api.main:app --port 5056
 ## Getting Help
 
 - **Discord**: [Community](https://discord.gg/37XJPXfz2w)
-- **Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
+- **Issues**: [GitHub Issues](https://github.com/Antman1526/Deeper-Notebook/issues)

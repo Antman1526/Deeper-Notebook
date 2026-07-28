@@ -6,7 +6,7 @@ so launcher.log captures verified-working status.
 
 v0.8.38 — also exposes per-sidecar stderr tail + classified hint
 via /healthz/sidecars/{kind}/log. The launcher (v0.8.38) writes
-the rolling tail to {OPEN_NOTEBOOK_LAUNCHER_LOG_DIR}/supervisor.{kind}.tail;
+the rolling tail to {DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR}/supervisor.{kind}.tail;
 this router reads it on demand.
 """
 from __future__ import annotations
@@ -19,13 +19,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from open_notebook.local_models import (
+from deeper_notebook.environment import normalize_product_environment, resolve_env
+from deeper_notebook.local_models import (
     cancel_snapshot_install,
     get_snapshot_install,
     list_snapshot_installs,
     reconcile_snapshot_installs,
     start_snapshot_install,
 )
+from desktop.data_root import active_data_root
 
 router = APIRouter()
 
@@ -56,7 +58,7 @@ async def _load_local_credentials() -> list[dict]:
     so users who registered an openai_compatible credential as
     `http://localhost:PORT/v1` (common LM Studio default) are
     picked up by the probe."""
-    from open_notebook.domain.credential import Credential
+    from deeper_notebook.domain.credential import Credential
 
     creds = await Credential.get_all()
     return [
@@ -99,7 +101,7 @@ async def local_models_health():
     cascaded into freezing the app for 9s every poll. `to_thread`
     pushes the sync httpx calls onto the default executor so the
     loop keeps serving everyone else."""
-    from open_notebook.health.local_models import probe_all_local_models
+    from deeper_notebook.health.local_models import probe_all_local_models
 
     creds = await _load_local_credentials()
     results = await asyncio.to_thread(probe_all_local_models, creds)
@@ -123,8 +125,8 @@ async def local_models_inventory():
     file size).
 
     The model dir is resolved from environment in this order:
-      1. `OPEN_NOTEBOOK_MODEL_DIR` (explicit override)
-      2. The launcher-exported `OPEN_NOTEBOOK_MODEL_DIR_DEFAULT` (set
+      1. `DEEPER_NOTEBOOK_MODEL_DIR` (explicit override)
+      2. The launcher-exported `DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT` (set
          in `desktop/launcher.py` session_env in v0.8.39 — but
          falling back gracefully when running the API standalone)
       3. `~/Desktop/AI_Models` (matches `desktop/config.py:default_model_dir`
@@ -154,12 +156,12 @@ async def local_models_inventory():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import enumerate_models
+    from deeper_notebook.local_models import enumerate_models
 
     # Resolve model dir per docstring precedence.
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -206,7 +208,7 @@ async def local_models_role_routing():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import (
+    from deeper_notebook.local_models import (
         build_manifest_reconciliation,
         enumerate_models,
         find_manifest_matches,
@@ -218,8 +220,8 @@ async def local_models_role_routing():
     )
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -348,8 +350,8 @@ def _launcher_provider_for_runtime(runtime: str | None) -> str | None:
 
 
 def _launcher_config_summary(model_dir: Path):
-    active_gguf_model = os.environ.get("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
-    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    active_gguf_model = resolve_env("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip()
+    config_path = active_data_root() / "config.toml"
     if not config_path.exists():
         return {
             "available": False,
@@ -842,8 +844,8 @@ def _configured_model_dir():
     from pathlib import Path as _Path
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -879,7 +881,7 @@ def _open_path_in_file_manager(path: Path) -> None:
 @router.post("/api/local-models/manifest/rows/preview")
 async def local_models_manifest_row_preview(body: dict):
     """Validate one draft AI_Models manifest row without mutating disk."""
-    from open_notebook.local_models import ManifestRowError, preview_manifest_row
+    from deeper_notebook.local_models import ManifestRowError, preview_manifest_row
 
     row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
     if not row:
@@ -889,7 +891,7 @@ async def local_models_manifest_row_preview(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -908,7 +910,7 @@ async def local_models_manifest_row_preview(body: dict):
 @router.post("/api/local-models/manifest/rows/apply")
 async def local_models_manifest_row_apply(body: dict):
     """Append one validated AI_Models manifest row with a backup."""
-    from open_notebook.local_models import ManifestRowError, append_manifest_row
+    from deeper_notebook.local_models import ManifestRowError, append_manifest_row
 
     row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
     allow_duplicate = bool(body.get("allow_duplicate")) if isinstance(body, dict) else False
@@ -919,7 +921,7 @@ async def local_models_manifest_row_apply(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -957,7 +959,7 @@ async def local_models_reveal(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -1012,8 +1014,8 @@ async def local_models_set_launch_default(body: dict):
     - inventory-only rows are rejected until their runtime has a launcher
       provider.
     """
+    from deeper_notebook.local_models import enumerate_models
     from desktop.config import load_or_create
-    from open_notebook.local_models import enumerate_models
 
     requested_ref = (body.get("launcher_model_ref") or "").strip()
     if not requested_ref:
@@ -1026,7 +1028,7 @@ async def local_models_set_launch_default(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     rows = await asyncio.to_thread(enumerate_models, model_dir)
@@ -1055,7 +1057,7 @@ async def local_models_set_launch_default(body: dict):
             detail=f"Launch default is not supported for runtime {runtime!r}.",
         )
 
-    config_path = Path.home() / ".open-notebook-plus" / "config.toml"
+    config_path = active_data_root() / "config.toml"
     try:
         cfg = load_or_create(config_path)
     except HTTPException:
@@ -1075,7 +1077,10 @@ async def local_models_set_launch_default(body: dict):
     await asyncio.to_thread(updated.save, config_path)
     return {
         "ok": True,
-        "detail": f"Native launcher default set to {requested_ref}. Restart Open Notebook Plus to apply it.",
+        "detail": (
+            f"Native launcher default set to {requested_ref}. "
+            "Restart Deeper Notebook to apply it."
+        ),
         "launcher_config": _launcher_config_summary(model_dir),
     }
 
@@ -1088,13 +1093,13 @@ async def local_models_benchmark_start(body: dict):
     language models, so downloaded-but-unregistered files are reported as
     skipped instead of causing confusing runtime errors.
     """
-    from open_notebook.local_models import start_benchmark
+    from deeper_notebook.local_models import start_benchmark
 
     model_dir = _configured_model_dir()
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     roles = body.get("roles") if isinstance(body, dict) else None
@@ -1109,7 +1114,7 @@ async def local_models_benchmark_start(body: dict):
 
 @router.get("/api/local-models/benchmarks")
 async def local_models_benchmark_list():
-    from open_notebook.local_models import list_benchmark_jobs
+    from deeper_notebook.local_models import list_benchmark_jobs
 
     return {
         "benchmarks": [
@@ -1121,7 +1126,7 @@ async def local_models_benchmark_list():
 
 @router.get("/api/local-models/benchmarks/{job_id}")
 async def local_models_benchmark_status(job_id: str):
-    from open_notebook.local_models import get_benchmark_job
+    from deeper_notebook.local_models import get_benchmark_job
 
     job = get_benchmark_job(job_id)
     if job is None:
@@ -1141,7 +1146,7 @@ async def local_models_recommendations():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import (
+    from deeper_notebook.local_models import (
         RECOMMENDATIONS,
         build_manifest_recommendations,
         enumerate_models,
@@ -1195,11 +1200,11 @@ async def local_models_download(body: dict):
     two concurrent downloaders would cause.
 
     The target directory is resolved the same way as `inventory` above
-    (OPEN_NOTEBOOK_MODEL_DIR > launcher default > POSIX default).
+    (DEEPER_NOTEBOOK_MODEL_DIR > launcher default > POSIX default).
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import start_download
+    from deeper_notebook.local_models import start_download
 
     repo_id = (body.get("repo_id") or "").strip()
     filename = (body.get("filename") or "").strip()
@@ -1239,8 +1244,8 @@ async def local_models_download(body: dict):
         )
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -1249,7 +1254,7 @@ async def local_models_download(body: dict):
     if not raw:
         raise HTTPException(
             status_code=500,
-            detail="No model directory configured. Set OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="No model directory configured. Set DEEPER_NOTEBOOK_MODEL_DIR.",
         )
     model_root = _Path(raw).expanduser().resolve()
     dest_dir = model_root
@@ -1296,7 +1301,7 @@ async def local_models_snapshot_install(body: dict):
     if model_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="Model directory not found. Configure OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="Model directory not found. Configure DEEPER_NOTEBOOK_MODEL_DIR.",
         )
 
     try:
@@ -1385,7 +1390,7 @@ async def local_models_download_cancel(job_id: str):
           failed / cancelled) — caller should poll for current status
           rather than retry.
     """
-    from open_notebook.local_models import cancel_job, get_job
+    from deeper_notebook.local_models import cancel_job, get_job
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1417,11 +1422,11 @@ async def local_models_downloads_list():
     """
     from pathlib import Path as _Path
 
-    from open_notebook.local_models import list_jobs, reconcile_jobs
+    from deeper_notebook.local_models import list_jobs, reconcile_jobs
 
     raw = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw:
@@ -1463,7 +1468,7 @@ async def local_models_download_status(job_id: str):
     reconciles interrupted downloads from disk sidecars first — call
     that to repopulate, then poll individual job IDs.
     """
-    from open_notebook.local_models import get_job
+    from deeper_notebook.local_models import get_job
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1495,7 +1500,7 @@ async def sidecar_log(kind: str):
         "available": true|false }
 
     `available: false` means we couldn't find a tail file — either the
-    launcher hasn't run yet, OPEN_NOTEBOOK_LAUNCHER_LOG_DIR isn't set
+    launcher hasn't run yet, DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR isn't set
     (the API is running outside the desktop launcher), or this
     sidecar kind never spawned (`embed` on a CPU-only install).
 
@@ -1514,7 +1519,7 @@ async def sidecar_log(kind: str):
             ),
         )
 
-    log_dir_str = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_LOG_DIR", "").strip()
+    log_dir_str = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR", "").strip()
     if not log_dir_str:
         # API running standalone (no launcher) — no logs to surface.
         return {"kind": kind, "log": "", "hint": None, "available": False}
@@ -1548,7 +1553,7 @@ async def sidecar_log(kind: str):
     # Classify on the API side so the frontend doesn't have to ship
     # the pattern list. Falls back to None when no pattern matches —
     # UI then renders just the raw tail.
-    from open_notebook.utils.error_classifier import classify_sidecar_error
+    from deeper_notebook.utils.error_classifier import classify_sidecar_error
     hint = classify_sidecar_error(log_text)
 
     return {"kind": kind, "log": log_text, "hint": hint, "available": True}
@@ -1598,8 +1603,8 @@ async def local_models_set_active(body: dict):
     # Resolve the configured model dir using the same precedence as
     # the inventory + download endpoints — keeps the three in sync.
     raw_dir = (
-        os.environ.get("OPEN_NOTEBOOK_MODEL_DIR")
-        or os.environ.get("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT")
+        resolve_env("DEEPER_NOTEBOOK_MODEL_DIR")
+        or resolve_env("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT")
         or ""
     ).strip()
     if not raw_dir:
@@ -1608,7 +1613,7 @@ async def local_models_set_active(body: dict):
     if not raw_dir:
         raise HTTPException(
             status_code=500,
-            detail="No model directory configured. Set OPEN_NOTEBOOK_MODEL_DIR.",
+            detail="No model directory configured. Set DEEPER_NOTEBOOK_MODEL_DIR.",
         )
     model_dir = _Path(raw_dir).resolve()
     # Path-traversal guard at the API edge. The launcher does the
@@ -1629,8 +1634,8 @@ async def local_models_set_active(body: dict):
 
     # Reuse the same control-plane proxy machinery as the restart
     # endpoint.
-    control_url = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
-    control_token = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
+    control_url = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
+    control_token = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
     if not control_url or not control_token:
         raise HTTPException(
             status_code=503,
@@ -1686,7 +1691,11 @@ async def local_models_set_active(body: dict):
                    or f"Launcher returned HTTP {status_code}",
         )
     if lbody.get("ok", False):
-        os.environ["OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL"] = str(resolved)
+        os.environ.update(
+            normalize_product_environment(
+                {"DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL": str(resolved)}
+            )
+        )
     return {
         "ok": lbody.get("ok", False),
         "path": str(resolved),
@@ -1702,7 +1711,7 @@ async def sidecar_restart(kind: str):
     Flow:
       1. Validate `kind` against the same allowlist
          (`_KIND_TO_SUPERVISOR`) the log endpoint uses.
-      2. Read `OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL` + `_TOKEN` from env
+      2. Read `DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL` + `_TOKEN` from env
          (set by the launcher via session_env at boot).
       3. POST `{kind}` to the launcher's `/restart_sidecar` with the
          token in the Authorization header. The launcher kills the
@@ -1731,8 +1740,8 @@ async def sidecar_restart(kind: str):
             ),
         )
 
-    control_url = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
-    control_token = os.environ.get("OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
+    control_url = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "").strip()
+    control_token = resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "").strip()
     if not control_url or not control_token:
         raise HTTPException(
             status_code=503,

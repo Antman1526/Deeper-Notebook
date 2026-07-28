@@ -38,7 +38,7 @@ def app(monkeypatch):
         # api/main.py does it (via `from api.routers.config import …`)
         # and lets monkeypatch on the source module take effect.
         from api.routers.config import check_database_health
-        from open_notebook.database import async_migrate
+        from deeper_notebook.database import async_migrate
 
         db_health = await check_database_health()
         db_status = db_health.get("status", "unknown")
@@ -73,7 +73,7 @@ def test_livez_returns_alive_with_no_io(app, monkeypatch):
     """/livez must not call into the DB — that's the whole point. If
     the process is hung on a DB query, /livez still returns 200."""
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     db_calls = {"count": 0}
 
@@ -97,7 +97,7 @@ def test_livez_returns_alive_with_no_io(app, monkeypatch):
 
 def test_readyz_returns_200_when_all_checks_pass(app, monkeypatch):
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     async def fake_health():
         return {"status": "online"}
@@ -121,7 +121,7 @@ def test_readyz_returns_200_when_all_checks_pass(app, monkeypatch):
 
 def test_readyz_returns_503_when_db_offline(app, monkeypatch):
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     async def fake_health():
         return {"status": "offline", "error": "Connection refused"}
@@ -146,7 +146,7 @@ def test_readyz_returns_503_when_migrations_pending(app, monkeypatch):
     """A successful DB check but pending migrations means the API will
     serve traffic but with stale schema — must NOT advertise ready."""
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     async def fake_health():
         return {"status": "online"}
@@ -173,7 +173,7 @@ def test_readyz_survives_migration_check_exception(app, monkeypatch):
     /readyz must still respond 503 — not 500. Local users debugging a
     half-migrated DB need this signal."""
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     async def fake_health():
         return {"status": "online"}
@@ -198,7 +198,7 @@ def test_readyz_response_shape_stable_across_states(app, monkeypatch):
     in a script — these keys MUST exist on every response regardless of
     success/failure."""
     from api.routers import config as config_mod
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     expected_keys = {
         "database", "database_error", "migrations_applied",

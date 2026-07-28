@@ -1,7 +1,7 @@
 """v0.8.66 (audit S-4) — env-gated in-memory rate limiter.
 
 Default OFF (no env) so the single-user desktop path is unchanged; when
-ONP_RATE_LIMIT_PER_MIN is set, excess requests per IP get 429.
+DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN is set, excess requests per IP get 429.
 """
 from __future__ import annotations
 
@@ -32,14 +32,14 @@ def _app() -> FastAPI:
 ])
 def test_limit_parsing(monkeypatch, val, expected):
     if val is None:
-        monkeypatch.delenv("ONP_RATE_LIMIT_PER_MIN", raising=False)
+        monkeypatch.delenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", raising=False)
     else:
-        monkeypatch.setenv("ONP_RATE_LIMIT_PER_MIN", val)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", val)
     assert _limit_per_min() == expected
 
 
 def test_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("ONP_RATE_LIMIT_PER_MIN", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", raising=False)
     client = TestClient(_app())
     # Way more than any sane limit — all 200 because the limiter is OFF.
     for _ in range(50):
@@ -47,7 +47,7 @@ def test_disabled_by_default(monkeypatch):
 
 
 def test_limits_excess_requests(monkeypatch):
-    monkeypatch.setenv("ONP_RATE_LIMIT_PER_MIN", "3")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", "3")
     client = TestClient(_app())
     codes = [client.get("/api/thing").status_code for _ in range(5)]
     assert codes[:3] == [200, 200, 200]
@@ -59,7 +59,7 @@ def test_limits_excess_requests(monkeypatch):
 
 
 def test_health_is_exempt(monkeypatch):
-    monkeypatch.setenv("ONP_RATE_LIMIT_PER_MIN", "1")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", "1")
     client = TestClient(_app())
     # /health is exempt — never limited even past the limit.
     for _ in range(10):

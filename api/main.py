@@ -1,10 +1,18 @@
-# Load environment variables
+import os
+
 from dotenv import load_dotenv
 
+from deeper_notebook.environment import (
+    apply_product_environment,
+    resolve_env,
+)
+
+# Load and normalize product-owned settings before importing authentication,
+# logging, credentials, model routing, or database modules.
 load_dotenv()
+_NORMALIZED_PRODUCT_ENVIRONMENT = apply_product_environment(os.environ)
 
 import asyncio
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -29,6 +37,7 @@ from api.routers import (
     config,
     context,
     credentials,
+    deeper_notebook,
     embedding,
     embedding_rebuild,
     episode_profiles,
@@ -40,7 +49,6 @@ from api.routers import (
     models,
     notebooks,
     notes,
-    onp,
     podcasts,
     research,
     search,
@@ -52,6 +60,7 @@ from api.routers import (
     study,
     transformations,
     video_overviews,
+    vault,
 )
 from api.routers import commands as commands_router
 from api.routers import (
@@ -62,19 +71,20 @@ from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
 from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
 from api.routers import updates as _updates_router  # v0.8.70 — in-app update notifier
-from open_notebook.database.async_migrate import AsyncMigrationManager
-from open_notebook.exceptions import (
+from deeper_notebook.database.async_migrate import AsyncMigrationManager
+from deeper_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    DeeperNotebookError,
     ExternalServiceError,
     InvalidInputError,
     NetworkError,
     NotFoundError,
-    OpenNotebookError,
     RateLimitError,
 )
-from open_notebook.logging import configure_logging
-from open_notebook.utils.encryption import get_secret_from_env
+from deeper_notebook.identity import DESCRIPTION, PRODUCT_NAME
+from deeper_notebook.logging import configure_logging
+from deeper_notebook.utils.encryption import get_secret_from_env
 
 
 def _parse_cors_origins(raw: str) -> list[str]:
@@ -152,7 +162,7 @@ async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
 
     Returns the acquired AsyncSurreal connection.
     """
-    from open_notebook.database.repository import _acquire
+    from deeper_notebook.database.repository import _acquire
 
     last_exc: BaseException | None = None
     for attempt, delay in enumerate(_WARMUP_RETRY_DELAYS_S):
@@ -163,9 +173,11 @@ async def _warmup_pool_acquire_with_retry(timeout_s: float = 10.0):
             is_last = attempt == len(_WARMUP_RETRY_DELAYS_S) - 1
             if not is_last:
                 logger.warning(
-                    "DB pool warmup attempt {}/{} failed ({}); retrying "
-                    "in {}s",
-                    attempt + 1, len(_WARMUP_RETRY_DELAYS_S), exc, delay,
+                    "DB pool warmup attempt {}/{} failed ({}); retrying in {}s",
+                    attempt + 1,
+                    len(_WARMUP_RETRY_DELAYS_S),
+                    exc,
+                    delay,
                 )
                 await asyncio.sleep(delay)
             # else: fall through, last_exc gets raised below
@@ -213,8 +225,8 @@ async def lifespan(app: FastAPI):
     """
     # v0.7.14 — configure rotated file logging before anything else, so
     # startup errors (migrations, encryption checks) land in a file the
-    # user can `tail`. Default sink: ~/.open-notebook-plus/logs/api.log
-    # Honors ONP_LOG_DIR, ONP_LOG_LEVEL, ONP_LOG_JSON.
+    # user can `tail`. Default sink: ~/.deeper-notebook/logs/api.log
+    # Honors DEEPER_NOTEBOOK_LOG_DIR, DEEPER_NOTEBOOK_LOG_LEVEL, DEEPER_NOTEBOOK_LOG_JSON.
     log_dir = configure_logging("api")
 
     # Startup: Security checks
@@ -222,18 +234,22 @@ async def lifespan(app: FastAPI):
 
     # Security check: Encryption key
     # v0.7.24 — also honor the v0.7.17 plural rotation env var. A user
-    # who has finished rotation and only has OPEN_NOTEBOOK_ENCRYPTION_KEYS
+    # who has finished rotation and only has DEEPER_NOTEBOOK_ENCRYPTION_KEYS
     # set was getting a spurious "encryption will fail" warning pointing
     # at the wrong variable.
-    has_singular = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
-    has_plural = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEYS"))
+    has_singular = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env)
+    )
+    has_plural = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env)
+    )
     if not (has_singular or has_plural):
         logger.warning(
-            "Neither OPEN_NOTEBOOK_ENCRYPTION_KEY nor "
-            "OPEN_NOTEBOOK_ENCRYPTION_KEYS is set. "
+            "Neither DEEPER_NOTEBOOK_ENCRYPTION_KEY nor "
+            "DEEPER_NOTEBOOK_ENCRYPTION_KEYS is set. "
             "API key encryption will fail until one is configured. "
-            "Set OPEN_NOTEBOOK_ENCRYPTION_KEY=<secret> for a single "
-            "key, or OPEN_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for "
+            "Set DEEPER_NOTEBOOK_ENCRYPTION_KEY=<secret> for a single "
+            "key, or DEEPER_NOTEBOOK_ENCRYPTION_KEYS=<new>,<old> for "
             "rotation."
         )
 
@@ -261,9 +277,30 @@ async def lifespan(app: FastAPI):
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
+    # Vault indexing begins only after migrations are durable. Unavailable roots
+    # are contained by the service so local API startup remains available.
+    vault_service = None
+    vault_scan_task = None
+    try:
+        from deeper_notebook.vault.repository import VaultRepository
+        from deeper_notebook.vault.service import VaultService
+
+        vault_service = VaultService(VaultRepository())
+        app.state.vault_service = vault_service
+        await vault_service.start_watchers()
+        vault_scan_task = _track_task(
+            asyncio.create_task(
+                vault_service.scan_dirty_mounts(), name="vault-initial-dirty-scan"
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "Vault read-only index startup unavailable ({})", type(exc).__name__
+        )
+
     # Run podcast profile data migration (legacy strings -> Model registry)
     try:
-        from open_notebook.podcasts.migration import migrate_podcast_profiles
+        from deeper_notebook.podcasts.migration import migrate_podcast_profiles
 
         await migrate_podcast_profiles()
     except Exception as e:
@@ -278,7 +315,7 @@ async def lifespan(app: FastAPI):
     # runs once per startup, is idempotent (clean DB → no-op), and is
     # non-fatal if it fails (we'll retry next boot).
     try:
-        from open_notebook.database.dedup_edges import dedupe_legacy_edges
+        from deeper_notebook.database.dedup_edges import dedupe_legacy_edges
 
         await dedupe_legacy_edges()
     except Exception as e:
@@ -306,7 +343,7 @@ async def lifespan(app: FastAPI):
     # status — only stale work older than 30m. For the desktop
     # launcher's process-tree model this is overkill but cheap.
     try:
-        from open_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import repo_query
 
         reaped = await repo_query(
             "UPDATE command "
@@ -337,7 +374,8 @@ async def lifespan(app: FastAPI):
         # Non-fatal — the API can still serve traffic with stale rows
         # around; the next worker startup will likely sort them out.
         logger.warning(
-            "Stale-command reaper failed (non-fatal): {}", e,
+            "Stale-command reaper failed (non-fatal): {}",
+            e,
         )
 
     # v0.7.210 — Periodic stale-command reaper. The startup pass
@@ -349,7 +387,8 @@ async def lifespan(app: FastAPI):
     # Schedule a 5-minute loop that runs the same query. Cancelled
     # cleanly on shutdown.
     async def _reaper_loop() -> None:
-        from open_notebook.database.repository import repo_query as _rq
+        from deeper_notebook.database.repository import repo_query as _rq
+
         while True:
             try:
                 await asyncio.sleep(300)  # 5 minutes
@@ -371,8 +410,8 @@ async def lifespan(app: FastAPI):
                 )
                 if rows:
                     logger.warning(
-                        "Periodic reaper: marked {} stale command "
-                        "row(s) failed", len(rows),
+                        "Periodic reaper: marked {} stale command row(s) failed",
+                        len(rows),
                     )
             except asyncio.CancelledError:
                 logger.debug("Periodic reaper cancelled at shutdown")
@@ -390,9 +429,12 @@ async def lifespan(app: FastAPI):
         # _BACKGROUND_TASKS set so the GC doesn't reap the loose
         # task. Same pattern as the digest scheduler / checkpoint
         # prune loops below.
-        reaper_task = _track_task(asyncio.create_task(
-            _reaper_loop(), name="periodic_stale_command_reaper",
-        ))
+        reaper_task = _track_task(
+            asyncio.create_task(
+                _reaper_loop(),
+                name="periodic_stale_command_reaper",
+            )
+        )
         logger.info("Started periodic stale-command reaper (every 5m)")
     except Exception as exc:
         logger.warning("Could not start periodic reaper: %s", exc)
@@ -404,14 +446,16 @@ async def lifespan(app: FastAPI):
     digest_stop_event: asyncio.Event = asyncio.Event()
     digest_scheduler_task: asyncio.Task | None = None
     try:
-        from open_notebook.digest.scheduler import run_forever as _digest_run_forever
+        from deeper_notebook.digest.scheduler import run_forever as _digest_run_forever
 
         # v0.7.190 — wrap in _track_task so a future refactor that
         # loses the local-var anchor doesn't silently allow GC.
-        digest_scheduler_task = _track_task(asyncio.create_task(
-            _digest_run_forever(digest_stop_event),
-            name="onp-digest-scheduler",
-        ))
+        digest_scheduler_task = _track_task(
+            asyncio.create_task(
+                _digest_run_forever(digest_stop_event),
+                name="onp-digest-scheduler",
+            )
+        )
         logger.info("Digest scheduler task started")
     except Exception as e:
         logger.warning(f"Failed to start digest scheduler (non-fatal): {e}")
@@ -432,7 +476,7 @@ async def lifespan(app: FastAPI):
     # past 5 s already indicates trouble. We log the timeout and move
     # on (degrades to lazy-warmup, same as the pre-0.7.44 behavior).
     try:
-        from open_notebook.database.repository import (
+        from deeper_notebook.database.repository import (
             _db_pool_size,
             _release,
         )
@@ -475,26 +519,28 @@ async def lifespan(app: FastAPI):
         logger.warning("DB pool warmup encountered an error: {}", exc)
 
     # v0.7.125 — LangGraph SQLite checkpoint pruning. Without this,
-    # ~/.open-notebook-plus/data/sqlite-db/checkpoints.sqlite grows
+    # ~/.deeper-notebook/data/sqlite-db/checkpoints.sqlite grows
     # unbounded — every chat turn appends rows that LangGraph never
     # reads again (it only queries the latest checkpoint per thread
     # when resuming). After a year of moderate use on a single-user
     # install, the file is hundreds of MB. The prune loop keeps the
     # N most recent checkpoints per thread (default 50) and runs
-    # every ONP_CHECKPOINT_PRUNE_INTERVAL_HOURS (default 24).
+    # every DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS (default 24).
     # Non-fatal if it fails to start — chat still works, just grows.
     checkpoint_prune_stop_event: asyncio.Event = asyncio.Event()
     checkpoint_prune_task: asyncio.Task | None = None
     try:
-        from open_notebook.utils.checkpoint_prune import (
+        from deeper_notebook.utils.checkpoint_prune import (
             run_prune_loop as _checkpoint_prune_loop,
         )
 
         # v0.7.190 — _track_task anchor (see digest scheduler above).
-        checkpoint_prune_task = _track_task(asyncio.create_task(
-            _checkpoint_prune_loop(checkpoint_prune_stop_event),
-            name="onp-checkpoint-prune",
-        ))
+        checkpoint_prune_task = _track_task(
+            asyncio.create_task(
+                _checkpoint_prune_loop(checkpoint_prune_stop_event),
+                name="onp-checkpoint-prune",
+            )
+        )
         logger.info("LangGraph checkpoint-prune task started")
     except Exception as e:
         logger.warning(
@@ -512,7 +558,8 @@ async def lifespan(app: FastAPI):
     # one user request slower.
     async def _prewarm_gmail_cache() -> None:
         try:
-            from open_notebook.domain.gmail import GmailIntegration
+            from deeper_notebook.domain.gmail import GmailIntegration
+
             await GmailIntegration.get()
         except Exception as e:
             logger.debug(f"Gmail cache pre-warm failed (non-fatal): {e}")
@@ -531,15 +578,35 @@ async def lifespan(app: FastAPI):
     # v0.7.190 — _track_task anchor (see digest scheduler above).
     # Belt-and-suspenders: gmail_prewarm_task is also held by the
     # closure for await/cancel below.
-    gmail_prewarm_task = _track_task(asyncio.create_task(
-        _prewarm_gmail_cache(), name="onp-gmail-prewarm",
-    ))
+    gmail_prewarm_task = _track_task(
+        asyncio.create_task(
+            _prewarm_gmail_cache(),
+            name="onp-gmail-prewarm",
+        )
+    )
     logger.info("Gmail TTL-cache pre-warm task scheduled")
 
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
     yield
+
+    if vault_service is not None:
+        try:
+            await vault_service.stop_watchers()
+        except Exception as exc:
+            logger.warning("Vault observer shutdown raised ({})", type(exc).__name__)
+        finally:
+            app.state.vault_service = None
+
+    if vault_scan_task is not None and not vault_scan_task.done():
+        vault_scan_task.cancel()
+        try:
+            await vault_scan_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning("Vault initial scan shutdown raised ({})", type(exc).__name__)
 
     # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
     # still running. The task is short-lived (a single SurrealDB read)
@@ -577,9 +644,7 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(checkpoint_prune_task, timeout=10)
             logger.info("Checkpoint-prune task stopped cleanly")
         except asyncio.TimeoutError:
-            logger.warning(
-                "Checkpoint-prune task did not stop in 10s — cancelling"
-            )
+            logger.warning("Checkpoint-prune task did not stop in 10s — cancelling")
             checkpoint_prune_task.cancel()
             try:
                 await checkpoint_prune_task
@@ -606,7 +671,7 @@ async def lifespan(app: FastAPI):
     # v0.7.18 — close pooled SurrealDB connections so we exit clean
     # (avoids "task pending" warnings and leaves the DB free).
     try:
-        from open_notebook.database.repository import close_pool
+        from deeper_notebook.database.repository import close_pool
 
         await close_pool()
         logger.info("SurrealDB pool closed")
@@ -622,30 +687,28 @@ async def lifespan(app: FastAPI):
     # constructed; both helpers no-op if their graph was never
     # used this session.
     try:
-        from open_notebook.graphs.chat import close_async_graph
+        from deeper_notebook.graphs.chat import close_async_graph
 
         await close_async_graph()
         logger.debug("AsyncSqliteSaver (chat) closed")
     except Exception as e:
         logger.warning(f"Closing chat AsyncSqliteSaver raised: {e}")
     try:
-        from open_notebook.graphs.source_chat import (
+        from deeper_notebook.graphs.source_chat import (
             close_async_source_chat_graph,
         )
 
         await close_async_source_chat_graph()
         logger.debug("AsyncSqliteSaver (source_chat) closed")
     except Exception as e:
-        logger.warning(
-            f"Closing source_chat AsyncSqliteSaver raised: {e}"
-        )
+        logger.warning(f"Closing source_chat AsyncSqliteSaver raised: {e}")
 
     logger.info("API shutdown complete")
 
 
 app = FastAPI(
-    title="Open Notebook API",
-    description="API for Open Notebook - Research Assistant",
+    title=PRODUCT_NAME,
+    description=DESCRIPTION,
     lifespan=lifespan,
 )
 
@@ -663,11 +726,13 @@ else:
 # the DANGEROUS combination: CORS=* AND no password set. In that state
 # *any* origin on the internet can hit the API with credential-less
 # requests and read every notebook/source/note. The password
-# middleware short-circuits at startup if `OPEN_NOTEBOOK_PASSWORD` is
+# middleware short-circuits at startup if `DEEPER_NOTEBOOK_PASSWORD` is
 # unset (auth becomes a no-op), so CORS=* + no-password = open API
 # wide open to the world. This is a foot-gun the README warns about
 # but it's worth surfacing at process boot too — operators tail logs.
-_password_is_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+_password_is_set = bool(
+    resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
+)
 # v0.7.154 — Severity downgrade: ERROR → WARNING for the desktop fork.
 # The desktop launcher binds the API to 127.0.0.1 ONLY (see
 # desktop/launcher.py:_spawn_api `--host 127.0.0.1`), so "anyone with
@@ -681,14 +746,14 @@ _password_is_set = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
 # default desktop configuration as a security incident.
 if CORS_IS_DEFAULT_WILDCARD and not _password_is_set:
     logger.warning(
-        "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND OPEN_NOTEBOOK_PASSWORD is "
+        "⚠️ DANGEROUS CONFIG: CORS_ORIGINS='*' AND DEEPER_NOTEBOOK_PASSWORD is "
         "unset. Any origin can call this API without credentials. ANYONE "
         "with the API URL can read/write every notebook. This is fine ONLY "
         "for local development (desktop fork binds to 127.0.0.1, so this "
         "is the expected state). For ANY exposed deployment (Docker, "
         "Kubernetes, public IP), set BOTH: "
         "CORS_ORIGINS=https://your-frontend.example.com AND "
-        "OPEN_NOTEBOOK_PASSWORD=<strong-password>."
+        "DEEPER_NOTEBOOK_PASSWORD=<strong-password>."
     )
 
 # Middleware order matters — Starlette wraps in REVERSE order of registration.
@@ -718,7 +783,7 @@ app.add_middleware(
         "/health",
         "/livez",
         "/readyz",
-        "/healthz/deep",   # v0.7.112 — operators need to poll without auth
+        "/healthz/deep",  # v0.7.112 — operators need to poll without auth
         # v0.7.148 — frontend reaches /healthz/deep through Next.js's /api/*
         # rewrite (frontend builds resolve `apiUrl` to a path that the
         # ApiClient interceptor still routes through /api), so the request
@@ -727,10 +792,10 @@ app.add_middleware(
         # hangs on "Loading..." indefinitely. See incident on 2026-05-20.
         "/api/healthz/deep",
         # v0.8.40d — launcher → API env-refresh has its own auth via
-        # the OPEN_NOTEBOOK_LAUNCHER_CONTROL_TOKEN bearer header (the
+        # the DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN bearer header (the
         # same secret the launcher control plane uses, scoped to the
         # parent↔child trust boundary). The launcher doesn't have the
-        # user-facing OPEN_NOTEBOOK_PASSWORD so it can't satisfy the
+        # user-facing DEEPER_NOTEBOOK_PASSWORD so it can't satisfy the
         # password middleware — the endpoint enforces its own typed
         # auth instead.
         "/api/system/env-refresh",
@@ -741,7 +806,7 @@ app.add_middleware(
         "/api/config",
         "/api/version",  # v0.7.210 — launch splash polls before auth
         "/api/local-models/health",  # v0.8.0 — launch splash polls before auth
-        "/metrics",   # v0.7.124 — Prometheus scrapes without auth
+        "/metrics",  # v0.7.124 — Prometheus scrapes without auth
     ],
 )
 
@@ -810,7 +875,7 @@ app.add_middleware(RequestIDMiddleware)
 # v0.8.66 (audit S-4) — env-gated rate limiter. Registered just BEFORE CORS, so
 # CORS stays outermost (preflight OPTIONS bypass) while rate-limiting still runs
 # BEFORE PasswordAuth — catching auth brute-force + download/discover
-# cost-amplification. DEFAULT OFF (ONP_RATE_LIMIT_PER_MIN unset/0) → zero change
+# cost-amplification. DEFAULT OFF (DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN unset/0) → zero change
 # to the single-user local-first desktop path.
 app.add_middleware(RateLimitMiddleware)
 
@@ -919,8 +984,11 @@ async def external_service_error_handler(request: Request, exc: ExternalServiceE
     )
 
 
-@app.exception_handler(OpenNotebookError)
-async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
+@app.exception_handler(DeeperNotebookError)
+async def deeper_notebook_error_handler(
+    request: Request,
+    exc: DeeperNotebookError,
+):
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)},
@@ -936,8 +1004,31 @@ app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(transformations.router, prefix="/api", tags=["transformations"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
-app.include_router(onp.router, prefix="/api", tags=["onp"])  # ONP desktop-wrapper endpoints
-app.include_router(gmail_router.router, prefix="/api", tags=["onp-gmail"])  # Gmail digest integration
+app.include_router(
+    deeper_notebook.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook"],
+)
+app.include_router(
+    deeper_notebook.router,
+    prefix="/api/onp",
+    include_in_schema=False,
+)
+app.include_router(
+    vault.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-vault"],
+)
+app.include_router(
+    gmail_router.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-gmail"],
+)
+app.include_router(
+    gmail_router.router,
+    prefix="/api/onp",
+    include_in_schema=False,
+)
 app.include_router(embedding.router, prefix="/api", tags=["embedding"])
 app.include_router(
     embedding_rebuild.router, prefix="/api/embeddings", tags=["embeddings"]
@@ -966,16 +1057,30 @@ app.include_router(research.router, prefix="/api", tags=["research"])
 app.include_router(capture.router, prefix="/api", tags=["capture"])
 app.include_router(study.router, prefix="/api", tags=["study"])
 app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])
-app.include_router(_local_models_router.router, tags=["health"])  # v0.8.0 — local sidecar health; path already contains /api prefix
-app.include_router(_mcp_router.router, tags=["mcp"])  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
-app.include_router(_launcher_prefs_router.router, tags=["launcher-prefs"])  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
-app.include_router(_system_router.router, tags=["system"])  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
-app.include_router(_updates_router.router, tags=["updates"])  # v0.8.70 — in-app update notifier
+app.include_router(
+    _local_models_router.router, tags=["health"]
+)  # v0.8.0 — local sidecar health; path already contains /api prefix
+app.include_router(
+    _mcp_router.router, tags=["mcp"]
+)  # v0.8.0 Task 9 — MCP server registry CRUD; path already contains /api prefix
+app.include_router(
+    _launcher_prefs_router.router, tags=["launcher-prefs"]
+)  # v0.8.6 Item D — launcher env-var preferences UI; path already contains /api prefix
+app.include_router(
+    _system_router.router, tags=["system"]
+)  # v0.8.40d — launcher → API env push (n_ctx after hot-swap)
+app.include_router(
+    _updates_router.router, tags=["updates"]
+)  # v0.8.70 — in-app update notifier
 
 
 @app.get("/")
 async def root():
-    return {"message": "Open Notebook API is running"}
+    return {
+        "message": "Deeper Notebook API is running",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 @app.get("/health")
@@ -985,7 +1090,11 @@ async def health():
     Same shape as /livez. Existing dashboards and the launcher's wait
     loop point at /health; new code should use /livez (cheap) or
     /readyz (full dependency check)."""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 # v0.7.210 — Version endpoint. Drives the splash window's "Open
@@ -1010,7 +1119,8 @@ async def api_version():
         desktop_version = "unknown"
     return {
         "version": desktop_version,
-        "name": "Open Notebook Plus",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
     }
 
 
@@ -1026,7 +1136,11 @@ async def livez():
     Intentionally trivial. Should return < 1ms. No DB call. If this
     fails, the process is wedged and needs a restart.
     """
-    return {"status": "alive"}
+    return {
+        "status": "alive",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
+    }
 
 
 @app.get("/readyz")
@@ -1045,7 +1159,7 @@ async def readyz():
     # Late-binding the imports keeps tests cheap (they can monkeypatch
     # without importing the whole api.main side-effect chain).
     from api.routers.config import check_database_health
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     db_health = await check_database_health()
     db_status = db_health.get("status", "unknown")
@@ -1070,6 +1184,8 @@ async def readyz():
     ready = db_status == "online" and migrations_ok
     body = {
         "status": "ready" if ready else "not_ready",
+        "name": PRODUCT_NAME,
+        "description": DESCRIPTION,
         "checks": {
             "database": db_status,
             "database_error": db_health.get("error"),
@@ -1124,7 +1240,7 @@ async def metrics(request: Request):
       - By default the endpoint is auth-exempt (still in
         PasswordAuthMiddleware excluded_paths) so a default install
         works with Prometheus out of the box.
-      - Set ONP_METRICS_AUTH_TOKEN=<random-secret> to require a
+      - Set DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN=<random-secret> to require a
         bearer token: scrapers must send `Authorization: Bearer
         <token>`. The token is compared with `secrets.compare_digest`
         to keep timing-attacks out. The Authorization header is
@@ -1150,7 +1266,7 @@ async def metrics(request: Request):
     # startup) so operators can rotate the token via .env reload
     # without restarting the API. Cost is a single dict lookup;
     # negligible vs the actual metric rendering.
-    expected_token = os.environ.get("ONP_METRICS_AUTH_TOKEN", "").strip()
+    expected_token = resolve_env("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "").strip()
     if expected_token:
         # Authorization parsing is intentionally strict — no
         # case-insensitive 'bearer ' match, no fallback to a query
@@ -1220,7 +1336,7 @@ async def healthz_deep(probe_providers: bool = False):
     broken instead of a generic "providers degraded".
     """
     from api.routers.config import check_database_health
-    from open_notebook.database import async_migrate
+    from deeper_notebook.database import async_migrate
 
     checks: dict[str, dict] = {}
     # v0.7.202 — defensive defaults so `must_have_ok = checks["database"]
@@ -1252,48 +1368,62 @@ async def healthz_deep(probe_providers: bool = False):
         }
     except asyncio.TimeoutError:
         checks["migrations"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "needs_migration() took longer than 3s",
         }
     except Exception as exc:
         checks["migrations"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Embedding model (required for vector search + chat-with-sources)
     try:
-        from open_notebook.ai.models import model_manager
+        from deeper_notebook.ai.models import model_manager
+
         emb = await asyncio.wait_for(
-            model_manager.get_embedding_model(), timeout=2.0,
+            model_manager.get_embedding_model(),
+            timeout=2.0,
         )
         checks["embedding_model"] = {
             "status": "configured" if emb else "missing",
             "ok": bool(emb),
-            "error": None if emb else (
+            "error": None
+            if emb
+            else (
                 "No default embedding model. Configure one in "
                 "Settings → Models to enable vector search."
             ),
         }
     except asyncio.TimeoutError:
         checks["embedding_model"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "embedding model lookup took longer than 2s",
         }
     except Exception as exc:
         checks["embedding_model"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Default chat model (required for /chat, /studio, /ask, etc.)
     try:
-        from open_notebook.ai.models import model_manager
+        from deeper_notebook.ai.models import model_manager
+
         chat = await asyncio.wait_for(
-            model_manager.get_default_model("chat"), timeout=2.0,
+            model_manager.get_default_model("chat"),
+            timeout=2.0,
         )
         checks["chat_model"] = {
             "status": "configured" if chat else "missing",
             "ok": bool(chat),
-            "error": None if chat else (
+            "error": None
+            if chat
+            else (
                 "No default chat model. Configure one in "
                 "Settings → Models — without it, /chat, /studio, and "
                 "/search/ask cannot generate responses."
@@ -1301,12 +1431,15 @@ async def healthz_deep(probe_providers: bool = False):
         }
     except asyncio.TimeoutError:
         checks["chat_model"] = {
-            "status": "timeout", "ok": False,
+            "status": "timeout",
+            "ok": False,
             "error": "chat model lookup took longer than 2s",
         }
     except Exception as exc:
         checks["chat_model"] = {
-            "status": "error", "ok": False, "error": str(exc),
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
         }
 
     # OPTIONAL: Command registry (required for async embedding +
@@ -1317,12 +1450,16 @@ async def healthz_deep(probe_providers: bool = False):
         import commands.embedding_commands  # noqa: F401
         import commands.podcast_commands  # noqa: F401
         import commands.source_commands  # noqa: F401
+
         checks["command_registry"] = {
-            "status": "loaded", "ok": True, "error": None,
+            "status": "loaded",
+            "ok": True,
+            "error": None,
         }
     except Exception as exc:
         checks["command_registry"] = {
-            "status": "error", "ok": False,
+            "status": "error",
+            "ok": False,
             "error": (
                 f"Failed to import command modules: {exc}. Async jobs "
                 "(podcast generation, embeddings) will fail to queue. "
@@ -1339,9 +1476,7 @@ async def healthz_deep(probe_providers: bool = False):
         upstream = await _probe_upstream_providers(timeout_seconds=5.0)
         checks["upstream_providers"] = upstream
 
-    must_have_ok = (
-        checks["database"]["ok"] and checks["migrations"]["ok"]
-    )
+    must_have_ok = checks["database"]["ok"] and checks["migrations"]["ok"]
     # v0.7.132 — `upstream_providers` is informational. A failing
     # provider knocks the overall to 'degraded' but doesn't flip to
     # 'not_ready'; an operator may have intentionally configured a
@@ -1423,8 +1558,8 @@ async def _probe_upstream_providers(*, timeout_seconds: float = 5.0) -> dict:
       - One credential failed mid-probe → that entry has ok=False,
         but the overall response is still emitted with the others
     """
-    from open_notebook.ai.connection_tester import test_provider_connection
-    from open_notebook.domain.credential import Credential
+    from deeper_notebook.ai.connection_tester import test_provider_connection
+    from deeper_notebook.domain.credential import Credential
 
     try:
         creds = await Credential.get_all()

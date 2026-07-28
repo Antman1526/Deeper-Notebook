@@ -3,12 +3,13 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from open_notebook.research.safe_fetch import (
+import deeper_notebook.research.safe_fetch as safe_fetch_mod
+from deeper_notebook.research.safe_fetch import (
     MAX_BODY_BYTES,
     SafeFetcher,
     SafeFetchError,
 )
-from open_notebook.security.outbound_url import (
+from deeper_notebook.security.outbound_url import (
     OutboundURLPolicyError,
     ValidatedOutboundURL,
 )
@@ -18,6 +19,40 @@ def _checked(url: str) -> ValidatedOutboundURL:
     return ValidatedOutboundURL(
         url=url, hostname="public.example", addresses=("8.8.8.8",)
     )
+
+
+@pytest.mark.asyncio
+async def test_safe_fetch_uses_canonical_product_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def validator(url: str) -> ValidatedOutboundURL:
+        return _checked(url)
+
+    observed: dict[str, object] = {}
+    real_async_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed["request_user_agent"] = request.headers["user-agent"]
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            content=b"ok",
+        )
+
+    def client_factory(**kwargs):
+        observed["configured_headers"] = kwargs["headers"]
+        return real_async_client(
+            **kwargs,
+            transport=httpx.MockTransport(handler),
+        )
+
+    monkeypatch.setattr(safe_fetch_mod.httpx, "AsyncClient", client_factory)
+
+    await SafeFetcher(validator=validator).fetch("https://public.example/guide")
+
+    expected = "DeeperNotebook/0.8 safe-research-fetch"
+    assert observed["configured_headers"] == {"User-Agent": expected}
+    assert observed["request_user_agent"] == expected
 
 
 @pytest.mark.asyncio

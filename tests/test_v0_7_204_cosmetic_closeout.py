@@ -21,16 +21,17 @@ explicitly asked to clean up:
 4. `command_service` typed-exception passthrough — the outer
    `except Exception: raise` re-raised untyped exceptions that
    FastAPI's framework rendered as "Internal Server Error" with
-   no detail. Now wraps untyped exceptions as OpenNotebookError
+   no detail. Now wraps untyped exceptions as DeeperNotebookError
    so the global classifier emits a structured 500.
 
 5. `notes.py` title `[:80]` magic number — parameterized via
-   ONP_NOTE_TITLE_FALLBACK_LEN env (clamped to 20-500). Operators
+   DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN env (clamped to 20-500). Operators
    with CJK-heavy content can raise the cap; the default stays at
    80 for English content.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -111,21 +112,24 @@ def test_podcast_get_episode_does_not_mask_all_errors_as_404():
 def test_command_service_wraps_untyped_exceptions():
     """v0.7.204 — `command_service.submit_command_job` outer
     handler must wrap untyped Exception subclasses as
-    OpenNotebookError so the global classifier emits a structured
+    DeeperNotebookError so the global classifier emits a structured
     500. Typed exceptions (ValueError, asyncio.TimeoutError,
-    OpenNotebookError subclasses) pass through unchanged."""
+    DeeperNotebookError subclasses) pass through unchanged."""
     src = _src("api/command_service.py")
-    assert "if isinstance(e, (OpenNotebookError, ValueError, asyncio.TimeoutError)):" in src
-    assert "raise OpenNotebookError(" in src
+    assert "if isinstance(e, (DeeperNotebookError, ValueError, asyncio.TimeoutError)):" in src
+    assert "raise DeeperNotebookError(" in src
 
 
 def test_notes_title_fallback_len_is_parameterized():
     """v0.7.204 — the `first_line[:80]` magic number in notes.py
     title-fallback must be parameterized via
-    ONP_NOTE_TITLE_FALLBACK_LEN env, clamped to a sane range so
+    DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN env, clamped to a sane range so
     a misconfigured value can't break note creation entirely."""
     src = _src("api/routers/notes.py")
-    assert "ONP_NOTE_TITLE_FALLBACK_LEN" in src
+    assert re.search(
+        r'resolve_env\(\s*"DEEPER_NOTEBOOK_NOTE_TITLE_FALLBACK_LEN"',
+        src,
+    )
     # Pin the clamp range so a careless refactor that drops it
     # doesn't let an operator set it to 0 / negative.
     assert "max(\n                        20, min(int(_max_title_len_raw), 500)\n                    )" in src

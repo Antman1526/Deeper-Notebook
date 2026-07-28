@@ -20,12 +20,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import local_models as local_models_router
-from open_notebook.local_models.gguf_metadata import (
+from deeper_notebook.local_models.gguf_metadata import (
     parse_gguf_metadata,
     parse_param_count_b,
     parse_quant_from_filename,
 )
-from open_notebook.local_models.inventory import (
+from deeper_notebook.local_models.inventory import (
     LocalModelInfo,
     enumerate_models,
 )
@@ -267,7 +267,7 @@ def test_inventory_endpoint_returns_unavailable_when_dir_missing(
     app, monkeypatch, tmp_path,
 ):
     bogus = tmp_path / "does-not-exist"
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(bogus))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(bogus))
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
     assert resp.status_code == 200
@@ -281,7 +281,7 @@ def test_inventory_endpoint_lists_models(app, monkeypatch, tmp_path):
     """Happy path — env var points at a dir with GGUFs; endpoint returns them."""
     (tmp_path / "qwen2.5-7b-instruct-q4_k_m.gguf").write_bytes(b"x" * 2048)
     (tmp_path / "hermes-3-8b-q5_k_m.gguf").write_bytes(b"y" * 4096)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -305,7 +305,7 @@ def test_inventory_endpoint_lists_mlx_models(app, monkeypatch, tmp_path):
     repo.mkdir(parents=True)
     (repo / "config.json").write_text('{"model_type": "qwen2"}')
     (repo / "model.safetensors").write_bytes(b"x" * 4096)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -329,7 +329,7 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
     model_dir.mkdir()
     (model_dir / "qwen-7b-q4.gguf").write_bytes(b"x" * 2048)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -342,8 +342,8 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
             "encryption_key = 'also-do-not-leak'",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -374,7 +374,7 @@ def test_inventory_endpoint_marks_activation_state(
     (mlx / "config.json").write_text('{"model_type": "qwen2"}')
     (mlx / "model.safetensors").write_bytes(b"y" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         "\n".join([
@@ -383,9 +383,9 @@ def test_inventory_endpoint_marks_activation_state(
             "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setenv("OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL", str(gguf))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", str(gguf))
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -412,7 +412,7 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
     (repo / "config.json").write_text('{"model_type": "qwen2"}')
     (repo / "model.safetensors").write_bytes(b"x" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -427,8 +427,8 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
             "encryption_key = 'keep-this-key'",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -463,7 +463,7 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
     gguf.parent.mkdir(parents=True)
     gguf.write_bytes(b"x" * 2048)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
@@ -478,8 +478,8 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
             "encryption_key = 'keep-this-key'",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -510,7 +510,7 @@ def test_set_launch_default_rejects_inventory_only_model(
     (repo / "config.json").write_text('{"model_type": "fastcontext"}')
     (repo / "model.safetensors").write_bytes(b"x" * 4096)
     config_home = tmp_path / "home"
-    config_dir = config_home / ".open-notebook-plus"
+    config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         "\n".join([
@@ -521,8 +521,8 @@ def test_set_launch_default_rejects_inventory_only_model(
             "surreal_password = 'keep-this-secret'",
         ])
     )
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.setattr(local_models_router.Path, "home", lambda: config_home)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("HOME", str(config_home))
 
     with TestClient(app) as client:
         resp = client.post(
@@ -552,7 +552,7 @@ def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_pat
         '{"model_type": "prototype", "max_position_embeddings": 32768}'
     )
     (experimental / "model.safetensors").write_bytes(b"z" * 4096)
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")
@@ -589,7 +589,7 @@ def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_pat
 
 
 def test_inventory_endpoint_env_precedence(app, monkeypatch, tmp_path):
-    """OPEN_NOTEBOOK_MODEL_DIR wins over the launcher default."""
+    """DEEPER_NOTEBOOK_MODEL_DIR wins over the launcher default."""
     explicit = tmp_path / "explicit"
     explicit.mkdir()
     (explicit / "m-1b-q4.gguf").write_bytes(b"x" * 10)
@@ -598,8 +598,8 @@ def test_inventory_endpoint_env_precedence(app, monkeypatch, tmp_path):
     launcher_default.mkdir()
     (launcher_default / "other-1b-q4.gguf").write_bytes(b"y" * 10)
 
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR", str(explicit))
-    monkeypatch.setenv("OPEN_NOTEBOOK_MODEL_DIR_DEFAULT", str(launcher_default))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(explicit))
+    monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR_DEFAULT", str(launcher_default))
 
     with TestClient(app) as client:
         resp = client.get("/api/local-models/inventory")

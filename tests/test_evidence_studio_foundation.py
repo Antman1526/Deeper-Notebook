@@ -15,19 +15,19 @@ import pytest
 from pydantic import ValidationError
 
 _REPO = Path(__file__).resolve().parent.parent
-_MIG_DIR = _REPO / "open_notebook" / "database" / "migrations"
+_MIG_DIR = _REPO / "deeper_notebook" / "database" / "migrations"
 
 
 def test_plus_stable_feature_flags_default_on(monkeypatch):
     for name in (
-        "ONP_VISUAL_REFRESH",
-        "ONP_EVIDENCE_STUDIO",
-        "ONP_MODEL_FLEET",
-        "ONP_RESEARCH_RUNS",
+        "DEEPER_NOTEBOOK_VISUAL_REFRESH",
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DEEPER_NOTEBOOK_MODEL_FLEET",
+        "DEEPER_NOTEBOOK_RESEARCH_RUNS",
     ):
         monkeypatch.delenv(name, raising=False)
 
-    import open_notebook.feature_flags as feature_flags
+    import deeper_notebook.feature_flags as feature_flags
 
     importlib.reload(feature_flags)
 
@@ -38,17 +38,23 @@ def test_plus_stable_feature_flags_default_on(monkeypatch):
 
 
 def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
-    import open_notebook.feature_flags as feature_flags
+    import deeper_notebook.feature_flags as feature_flags
 
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "yes")
+    for name in (
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+        "DN_EVIDENCE_STUDIO",
+        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "yes")
     assert feature_flags.evidence_studio_enabled() is True
 
-    monkeypatch.setenv("ONP_EVIDENCE_STUDIO", "0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "0")
     assert feature_flags.evidence_studio_enabled() is False
 
 
 def test_studio_artifact_domain_contract():
-    from open_notebook.domain.notebook import StudioArtifact
+    from deeper_notebook.domain.notebook import StudioArtifact
 
     artifact = StudioArtifact(
         notebook_id="notebook:alpha",
@@ -84,7 +90,7 @@ def test_studio_artifact_domain_contract():
 
 
 def test_studio_artifact_domain_accepts_course_pack_types():
-    from open_notebook.domain.notebook import StudioArtifact
+    from deeper_notebook.domain.notebook import StudioArtifact
 
     for artifact_type in ("course_pack", "training_guide"):
         artifact = StudioArtifact(
@@ -105,7 +111,7 @@ def test_studio_artifact_domain_accepts_course_pack_types():
 
 
 def test_studio_workflow_run_domain_contract():
-    from open_notebook.domain.notebook import StudioWorkflowRun
+    from deeper_notebook.domain.notebook import StudioWorkflowRun
 
     run = StudioWorkflowRun(
         artifact_id="studio_artifact:alpha",
@@ -148,7 +154,7 @@ def test_studio_workflow_run_domain_contract():
 
 
 def test_studio_artifact_prepare_save_preserves_nullable_revision():
-    from open_notebook.domain.notebook import StudioArtifact
+    from deeper_notebook.domain.notebook import StudioArtifact
 
     artifact = StudioArtifact(
         notebook_id="notebook:alpha",
@@ -230,7 +236,7 @@ def test_studio_artifact_api_schemas_validate_known_types():
 
 def test_studio_artifact_migration_defines_all_schema_fields():
     migration = _MIG_DIR / "23.surrealql"
-    assert migration.exists(), "add open_notebook/database/migrations/23.surrealql"
+    assert migration.exists(), "add deeper_notebook/database/migrations/23.surrealql"
     sql = migration.read_text()
 
     assert "DEFINE TABLE IF NOT EXISTS studio_artifact SCHEMAFULL" in sql
@@ -264,7 +270,7 @@ def test_studio_artifact_migration_defines_all_schema_fields():
 
 def test_studio_artifact_down_migration_removes_table():
     down = _MIG_DIR / "23_down.surrealql"
-    assert down.exists(), "add open_notebook/database/migrations/23_down.surrealql"
+    assert down.exists(), "add deeper_notebook/database/migrations/23_down.surrealql"
     sql = down.read_text()
     assert re.search(
         r"REMOVE\s+TABLE\s+IF\s+EXISTS\s+studio_artifact",
@@ -275,7 +281,7 @@ def test_studio_artifact_down_migration_removes_table():
 
 def test_studio_workflow_run_migration_defines_run_history_table():
     migration = _MIG_DIR / "24.surrealql"
-    assert migration.exists(), "add open_notebook/database/migrations/24.surrealql"
+    assert migration.exists(), "add deeper_notebook/database/migrations/24.surrealql"
     sql = migration.read_text()
 
     assert "DEFINE TABLE IF NOT EXISTS studio_workflow_run SCHEMAFULL" in sql
@@ -302,7 +308,7 @@ def test_studio_workflow_run_migration_defines_run_history_table():
     assert expected <= defined
 
     down = _MIG_DIR / "24_down.surrealql"
-    assert down.exists(), "add open_notebook/database/migrations/24_down.surrealql"
+    assert down.exists(), "add deeper_notebook/database/migrations/24_down.surrealql"
     assert re.search(
         r"REMOVE\s+TABLE\s+IF\s+EXISTS\s+studio_workflow_run",
         down.read_text(),
@@ -311,7 +317,7 @@ def test_studio_workflow_run_migration_defines_run_history_table():
 
 
 def test_studio_artifact_domain_queries_separate_roots_from_revisions():
-    src = (_REPO / "open_notebook" / "domain" / "notebook.py").read_text()
+    src = (_REPO / "deeper_notebook" / "domain" / "notebook.py").read_text()
 
     get_for_notebook = src[src.index("async def get_for_notebook"): src.index("async def get_revisions")]
     assert "revision_of_id = NONE" in get_for_notebook
@@ -320,7 +326,7 @@ def test_studio_artifact_domain_queries_separate_roots_from_revisions():
 
 
 def test_studio_workflow_run_domain_queries_by_artifact():
-    src = (_REPO / "open_notebook" / "domain" / "notebook.py").read_text()
+    src = (_REPO / "deeper_notebook" / "domain" / "notebook.py").read_text()
 
     assert "async def get_for_artifact" in src
     get_for_artifact = src[src.index("async def get_for_artifact"): src.index("class ChatSession")]
@@ -331,9 +337,9 @@ def test_studio_workflow_run_domain_queries_by_artifact():
 def test_studio_command_uses_service_not_router_import():
     command_src = (_REPO / "commands" / "studio_commands.py").read_text()
     service_src = (
-        _REPO / "open_notebook" / "studio" / "artifact_generation.py"
+        _REPO / "deeper_notebook" / "studio" / "artifact_generation.py"
     ).read_text()
 
     assert "api.routers.studio" not in command_src
     assert "api.routers.studio" not in service_src
-    assert "open_notebook.studio.artifact_generation" in command_src
+    assert "deeper_notebook.studio.artifact_generation" in command_src

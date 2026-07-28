@@ -45,16 +45,20 @@ def test_wait_tcp_called_between_llamacpp_chat_and_memory():
     # The wait call itself must be present.
     assert "_wait_tcp(" in src
     # v0.8.67 — the chat-llm readiness probe timeout is now env-tunable
-    # (ONP_SIDECAR_TCP_TIMEOUT) with a generous default for cold mmaps; it was a
-    # hardcoded 60.0. Assert the tunable AND a generous default (>=60s) so a
-    # refactor that lowers it — regressing the original memory-retriever spawn
-    # race — is still caught.
-    assert '_startup_timeout("ONP_SIDECAR_TCP_TIMEOUT"' in src, (
+    # (DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT, with legacy aliases accepted) and
+    # a generous default for cold mmaps; it was a hardcoded 60.0. Assert the
+    # tunable AND a generous default (>=60s) so a refactor that lowers it —
+    # regressing the original memory-retriever spawn race — is still caught.
+    assert re.search(
+        r'_startup_timeout\(\s*"DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT"',
+        src,
+    ), (
         "v0.7.198/v0.8.67 regression: chat-llm readiness probe no longer uses "
-        "the env-tunable ONP_SIDECAR_TCP_TIMEOUT."
+        "the env-tunable DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT."
     )
     _m = re.search(
-        r'_startup_timeout\("ONP_SIDECAR_TCP_TIMEOUT",\s*([0-9.]+)\)', src
+        r'_startup_timeout\(\s*"DEEPER_NOTEBOOK_SIDECAR_TCP_TIMEOUT",\s*([0-9.]+)',
+        src,
     )
     assert _m and float(_m.group(1)) >= 60.0, (
         "v0.7.198 regression: chat-llm readiness probe default timeout < 60s. "

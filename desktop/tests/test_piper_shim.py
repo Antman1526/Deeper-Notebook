@@ -47,6 +47,16 @@ def test_health_returns_200():
         assert r.status_code == 200
 
 
+def test_models_use_canonical_owner_identity():
+    app = build_app(voices=_fake_piper_voices())
+    with TestClient(app) as c:
+        body = c.get("/v1/models").json()
+
+    assert {model["owned_by"] for model in body["data"]} == {
+        "deeper-notebook"
+    }
+
+
 def test_speech_returns_wav():
     app = build_app(voices=_fake_piper_voices())
     with TestClient(app) as c:

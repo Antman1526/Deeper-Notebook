@@ -1,6 +1,6 @@
 """v0.8.60 — Phase 5.3c-full: agent-FSM integration in the chat tool loop.
 
-When ONP_AGENT_FSM is on, the loop (a) tells the model it may declare a
+When DEEPER_NOTEBOOK_AGENT_FSM is on, the loop (a) tells the model it may declare a
 terminal <state>, and (b) classifies + surfaces the terminal state via
 agent_state_out — the valuable case being CLARIFY (the model paused to ask
 the user). Default off → no <state> injection, agent_state_out untouched.
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_notebook.graphs import chat as chat_mod
+from deeper_notebook.graphs import chat as chat_mod
 
 
 class _Msg:
@@ -59,7 +59,7 @@ def _instruction_in(payload) -> bool:
 
 @pytest.mark.asyncio
 async def test_clarify_classified_when_fsm_on(monkeypatch):
-    monkeypatch.setenv("ONP_AGENT_FSM", "on")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     _no_tools(monkeypatch)
     model = _Model([_Msg(content="Which file did you mean?\n<state>clarify</state>")])
     out: dict = {}
@@ -73,7 +73,7 @@ async def test_clarify_classified_when_fsm_on(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_complete_classified_on_declared_complete(monkeypatch):
-    monkeypatch.setenv("ONP_AGENT_FSM", "on")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     _no_tools(monkeypatch)
     model = _Model([_Msg(content="All done.\n<state>complete</state>")])
     out: dict = {}
@@ -83,7 +83,7 @@ async def test_complete_classified_on_declared_complete(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_complete_when_no_state_tag(monkeypatch):
-    monkeypatch.setenv("ONP_AGENT_FSM", "on")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     _no_tools(monkeypatch)
     model = _Model([_Msg(content="Here is the answer.")])
     out: dict = {}
@@ -93,7 +93,7 @@ async def test_complete_when_no_state_tag(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_truncated_classified_when_loop_hits_cap(monkeypatch):
-    monkeypatch.setenv("ONP_AGENT_FSM", "on")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     monkeypatch.setattr(
         chat_mod, "_resolve_chat_tools",
         AsyncMock(return_value=[_make_tool("mcp_search", _ok)]),
@@ -112,7 +112,7 @@ async def test_truncated_classified_when_loop_hits_cap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fsm_off_no_injection_no_state(monkeypatch):
-    monkeypatch.delenv("ONP_AGENT_FSM", raising=False)
+    monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
     _no_tools(monkeypatch)
     model = _Model([_Msg(content="answer <state>clarify</state>")])
     out: dict = {}
@@ -125,8 +125,8 @@ async def test_fsm_off_no_injection_no_state(monkeypatch):
 
 def test_agent_fsm_enabled_parsing(monkeypatch):
     for on in ("on", "1", "true", "yes", "ON"):
-        monkeypatch.setenv("ONP_AGENT_FSM", on)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", on)
         assert chat_mod._agent_fsm_enabled() is True
     for off in ("", "off", "0", "false", "no"):
-        monkeypatch.setenv("ONP_AGENT_FSM", off)
+        monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", off)
         assert chat_mod._agent_fsm_enabled() is False

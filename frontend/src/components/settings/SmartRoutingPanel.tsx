@@ -4,7 +4,7 @@
  * SmartRoutingPanel.tsx — v0.8.37 Phase 2
  *
  * UI control for the v0.8.0 smart router. Pre-v0.8.37 the only way to
- * enable it was the OPEN_NOTEBOOK_AUTO_ROUTE_CHAT env var, which meant
+ * enable it was the DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT env var, which meant
  * the feature was effectively hidden from UI-driven users. This panel
  * lives at the top of Settings → API Keys and offers:
  *
@@ -204,7 +204,7 @@ export function SmartRoutingPanel({ defaults }: SmartRoutingPanelProps) {
         <p className="text-xs text-muted-foreground">
           {t('models.smartRouting.envOverrideHint', {
             defaultValue:
-              'Tip: OPEN_NOTEBOOK_AUTO_ROUTE_CHAT and OPEN_NOTEBOOK_CHAT_PROVIDER env vars (if set) override these UI settings.',
+              'Tip: DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT and DEEPER_NOTEBOOK_CHAT_PROVIDER env vars (if set) override these UI settings.',
           })}
         </p>
       </CardContent>

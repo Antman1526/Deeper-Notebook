@@ -6,8 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from open_notebook.evaluation.schemas import EvidenceSpan
-from open_notebook.study.contracts import (
+from deeper_notebook.evaluation.schemas import EvidenceSpan
+from deeper_notebook.study.contracts import (
     FsrsCardState,
     StudyCard,
     StudyRating,

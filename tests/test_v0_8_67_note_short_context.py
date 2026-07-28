@@ -6,8 +6,8 @@ marker, trimmed on a word boundary. 'long' mode is unchanged.
 """
 from __future__ import annotations
 
-from open_notebook.domain.notebook import Note
-from open_notebook.utils.token_utils import token_count
+from deeper_notebook.domain.notebook import Note
+from deeper_notebook.utils.token_utils import token_count
 
 
 def _note(content):

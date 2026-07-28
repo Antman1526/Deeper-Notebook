@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_notebook.graphs import chat as chat_mod
+from deeper_notebook.graphs import chat as chat_mod
 
 
 class _FakeAIMessage:
@@ -105,7 +105,7 @@ async def test_no_outcome_recorded_when_no_tools_bound(monkeypatch):
         chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "open_notebook.tools.opencode.opencode_enabled", lambda: False
+        "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
     model = _ScriptedModel([_FakeAIMessage([])])
 

@@ -29,10 +29,10 @@ from api.schemas.studio import (
     StudioWorkflowRunCreate,
     StudioWorkflowRunResponse,
 )
-from open_notebook.ai.models import Model
-from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import (
+from deeper_notebook.ai.models import Model
+from deeper_notebook.ai.provision import provision_langchain_model
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import (
     Asset,
     Note,
     Notebook,
@@ -40,21 +40,22 @@ from open_notebook.domain.notebook import (
     StudioArtifact,
     StudioWorkflowRun,
 )
-from open_notebook.exceptions import InvalidInputError, NotFoundError
-from open_notebook.feature_flags import evidence_studio_enabled
-from open_notebook.local_models.inventory import enumerate_models
-from open_notebook.local_models.role_routing import (
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.feature_flags import evidence_studio_enabled
+from deeper_notebook.local_models.inventory import enumerate_models
+from deeper_notebook.local_models.role_routing import (
     inventory_model_match_keys,
     model_match_key,
     recommend_model_roles,
 )
-from open_notebook.studio import artifact_generation as artifact_generation_service
-from open_notebook.studio.payloads import (
+from deeper_notebook.studio import artifact_generation as artifact_generation_service
+from deeper_notebook.studio.payloads import (
     build_structured_payload,
     parse_payload_document,
 )
-from open_notebook.studio.renderers import render_artifact_markdown
-from open_notebook.utils.text_utils import (
+from deeper_notebook.studio.renderers import render_artifact_markdown
+from deeper_notebook.utils.text_utils import (
     clean_thinking_content,
     extract_text_content,
 )
@@ -307,7 +308,7 @@ def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | N
 
 
 def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
+    raw = resolve_env(name, "").strip()
     if not raw:
         return default
     try:
@@ -324,8 +325,8 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-_MAX_EXTRACT_CHARS_PER_FILE = _env_int("ONP_STUDIO_MAX_FILE_CHARS", 15_000)
-_MAX_COMBINED_CHARS = _env_int("ONP_STUDIO_MAX_COMBINED_CHARS", 60_000)
+_MAX_EXTRACT_CHARS_PER_FILE = _env_int("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000)
+_MAX_COMBINED_CHARS = _env_int("DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000)
 
 
 async def _notebook_record_exists(notebook_id: str) -> bool:

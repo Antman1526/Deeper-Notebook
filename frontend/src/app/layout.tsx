@@ -3,8 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 // ONP shadow-layer design tokens — layered on top of shadcn variables. See
-// components/onp/README.md for the pattern.
-import "@/components/onp/tokens.css";
+// components/deeper-notebook/README.md for the pattern.
+import "@/components/deeper-notebook/tokens.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
@@ -18,8 +18,8 @@ import { IntroReveal } from "@/components/intro/IntroReveal";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Open notebook+",
-  description: "Privacy-focused research and knowledge management",
+  title: "Deeper Notebook",
+  description: "Local-first research and knowledge workspace",
 };
 
 export default function RootLayout({

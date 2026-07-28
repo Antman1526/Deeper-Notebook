@@ -17,7 +17,7 @@ dist/
 .venv/
 .venv-py312/
 .build-venv/
-open_notebook.egg-info/
+deeper_notebook.egg-info/
 
 # Local databases and runtime state
 data/

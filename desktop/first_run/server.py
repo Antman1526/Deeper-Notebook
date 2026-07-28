@@ -207,7 +207,7 @@ def run_wizard_blocking(config_path: Path,
         lambda: build_app(config_path, on_done=done.set, progress_bus=progress_bus)
     )
 
-    window = webview.create_window("Open Notebook Plus — Setup",
+    window = webview.create_window("Deeper Notebook — Setup",
                                    f"http://127.0.0.1:{site_port}/",
                                    width=720, height=540)
 

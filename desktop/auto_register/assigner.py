@@ -5,7 +5,7 @@ constraints. Picks are deterministic — given the same input pool, the output
 never changes — so re-running auto_register on relaunch is idempotent.
 
 Every pick comes with a human-readable `reason` for logging, so users can run
-`cat ~/.open-notebook-plus/logs/auto_register.log` and see WHY each slot got
+`cat ~/.deeper-notebook/logs/auto_register.log` and see WHY each slot got
 the model it got.
 """
 from __future__ import annotations
@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from deeper_notebook.environment import resolve_env
 from desktop.auto_register.capability import ModelDescriptor, score_model
 
 
@@ -67,9 +68,9 @@ def _get_chat_ram_ceiling_gb() -> float:
       128 GB+   → ceiling = 32.0 GB (Qwen3.6-35B-A3B still wins)
 
     Env var override:
-      ONP_CHAT_RAM_GB_CEILING=N    pins to N GB regardless of system RAM
+      DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING=N    pins to N GB regardless of system RAM
     """
-    env = os.environ.get("ONP_CHAT_RAM_GB_CEILING")
+    env = resolve_env("DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING")
     if env:
         try:
             return max(0.5, float(env))
@@ -216,7 +217,7 @@ def pick_chat_llm_file(
     Same scoring as the `chat` recipe used by the DefaultModels assigner,
     so the loaded model matches what gets assigned. Used by app.py instead
     of the legacy `Hermes-3*.gguf` glob — that hardcoded selection made
-    `ONP_CHAT_RAM_GB_CEILING` ineffective for the actual chat experience
+    `DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING` ineffective for the actual chat experience
     (the assignment slot would change, but the loaded model wouldn't).
 
     Fallback: if no chat-kind model fits the ceiling, return the smallest
@@ -225,13 +226,13 @@ def pick_chat_llm_file(
     """
     if not gguf_dir.exists():
         return None
-    # v0.8.67h — explicit pin. ONP_CHAT_LLM_GGUF forces a specific chat GGUF
+    # v0.8.67h — explicit pin. DEEPER_NOTEBOOK_CHAT_LLM_GGUF forces a specific chat GGUF
     # (by filename, with or without the .gguf suffix, case-insensitive) instead
     # of the heuristic scorer below. Addresses "the loaded chat model doesn't
-    # match what I picked" — e.g. ONP_CHAT_LLM_GGUF=Qwen3.5-9B-Q4_K_M.gguf pins
+    # match what I picked" — e.g. DEEPER_NOTEBOOK_CHAT_LLM_GGUF=Qwen3.5-9B-Q4_K_M.gguf pins
     # Qwen over the auto-pick. If unset, or the named file isn't present, we fall
     # through to the scorer so the sidecar always spawns with *something*.
-    _pin = (os.environ.get("ONP_CHAT_LLM_GGUF") or "").strip()
+    _pin = (resolve_env("DEEPER_NOTEBOOK_CHAT_LLM_GGUF") or "").strip()
     if _pin:
         _pin_name = _pin if _pin.lower().endswith(".gguf") else f"{_pin}.gguf"
         for _cand in sorted(gguf_dir.glob("*.gguf")):

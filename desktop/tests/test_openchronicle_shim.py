@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -26,6 +27,46 @@ def _fake_mcp_client(recent_events=None, search_events=None):
         return {"events": []}
     client.call_tool.side_effect = fake_call_tool
     return client
+
+
+def test_openchronicle_detection_uses_canonical_mcp_client_name(monkeypatch):
+    from desktop import app as app_mod
+
+    observed: dict[str, object] = {}
+
+    class _Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def settimeout(self, _timeout):
+            return None
+
+        def connect(self, address):
+            observed["address"] = address
+
+    def post(_url, **kwargs):
+        observed["json"] = kwargs["json"]
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr("socket.socket", lambda *_args, **_kwargs: _Socket())
+    monkeypatch.setattr("httpx.post", post)
+    ctx = SimpleNamespace(
+        openchronicle_available=False,
+        progress_bus=None,
+        log_dir=None,
+    )
+
+    app_mod._phase_detect_openchronicle(ctx)
+
+    params = observed["json"]["params"]
+    assert params["clientInfo"] == {
+        "name": "deeper-notebook",
+        "version": "0.5",
+    }
+    assert ctx.openchronicle_available is True
 
 
 def test_health_returns_200_when_mcp_reachable():

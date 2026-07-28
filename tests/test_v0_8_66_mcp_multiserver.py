@@ -16,8 +16,8 @@ def _run(coro):
 def _patch_per_url_client(monkeypatch, tools_by_url):
     """Patch MCPClient so list_tools_full() returns a different tool set per
     server url."""
-    import open_notebook.graphs.chat as chat_mod
-    import open_notebook.mcp.client as mcp_client_mod
+    import deeper_notebook.graphs.chat as chat_mod
+    import deeper_notebook.mcp.client as mcp_client_mod
 
     class _FakeClient:
         def __init__(self, *, url):

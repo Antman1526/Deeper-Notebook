@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from surrealdb import RecordID
 
-from open_notebook.domain.notebook import Source
+from deeper_notebook.domain.notebook import Source
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,516 @@
+import asyncio
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Lock
+from typing import Any, ClassVar, Mapping, Optional
+
+from esperanto import (
+    AIFactory,
+    EmbeddingModel,
+    LanguageModel,
+    SpeechToTextModel,
+    TextToSpeechModel,
+)
+from loguru import logger
+
+from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.base import ObjectModel, RecordModel
+from deeper_notebook.exceptions import ConfigurationError
+
+# v0.7.116 — PEP 604 union syntax (Python 3.10+). Was `Union[...]`
+# (PEP 484); equivalent semantics, less import noise.
+ModelType = LanguageModel | EmbeddingModel | SpeechToTextModel | TextToSpeechModel
+
+_ROUTE_RECEIPT_FILENAME = "model-route-receipts.json"
+_ROUTE_RECEIPT_LIMIT = 500
+_ROUTE_RECEIPT_LOCK = Lock()
+_ROUTE_RECEIPT_FIELDS = frozenset(
+    {
+        "selected_model_id",
+        "fallback_model_id",
+        "role",
+        "reason",
+        "benchmark_age_seconds",
+        "outcome",
+    }
+)
+
+
+def route_receipt_path() -> Path:
+    """Return the private local receipt file used by quality-aware routing."""
+    data_folder = os.environ.get("DATA_FOLDER", "").strip() or "./data"
+    return Path(data_folder) / _ROUTE_RECEIPT_FILENAME
+
+
+async def persist_model_route_receipt(receipt: Mapping[str, object]) -> None:
+    """Append a bounded local route receipt without retaining user content.
+
+    Route receipts intentionally live beside other local app data instead of
+    the benchmark file: the benchmark inventory can be rebuilt, while a user
+    needs a durable explanation for why a route or fallback was selected.
+    """
+    safe_receipt = {
+        field: receipt.get(field)
+        for field in _ROUTE_RECEIPT_FIELDS
+        if receipt.get(field) is not None
+    }
+    required = {"selected_model_id", "role", "reason", "outcome"}
+    if not required.issubset(safe_receipt):
+        raise ValueError("Route receipt is missing required routing metadata.")
+    safe_receipt["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    await asyncio.to_thread(
+        _append_model_route_receipt, route_receipt_path(), safe_receipt
+    )
+
+
+def _append_model_route_receipt(path: Path, receipt: dict[str, object]) -> None:
+    with _ROUTE_RECEIPT_LOCK:
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            records = existing if isinstance(existing, list) else []
+        except (OSError, json.JSONDecodeError):
+            records = []
+        records.append(receipt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f"{path.suffix}.tmp")
+        temporary.write_text(
+            json.dumps(records[-_ROUTE_RECEIPT_LIMIT:], indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+
+
+class Model(ObjectModel):
+    table_name: ClassVar[str] = "model"
+    nullable_fields: ClassVar[set[str]] = {"credential"}
+    name: str
+    provider: str
+    type: str
+    credential: Optional[str] = None
+
+    @classmethod
+    async def get_models_by_type(cls, model_type):
+        models = await repo_query(
+            "SELECT * FROM model WHERE type=$model_type;", {"model_type": model_type}
+        )
+        return [Model(**model) for model in models]
+
+    @classmethod
+    async def get_by_credential(cls, credential_id: str):
+        """Get all models linked to a specific credential."""
+        models = await repo_query(
+            "SELECT * FROM model WHERE credential=$cred_id;",
+            {"cred_id": ensure_record_id(credential_id)},
+        )
+        return [Model(**model) for model in models]
+
+    def _prepare_save_data(self) -> dict[str, Any]:
+        data = super()._prepare_save_data()
+        if data.get("credential"):
+            data["credential"] = ensure_record_id(data["credential"])
+        return data
+
+    async def get_credential_obj(self):
+        """Get the Credential object linked to this model, if any."""
+        if not self.credential:
+            return None
+        from deeper_notebook.domain.credential import Credential
+
+        try:
+            return await Credential.get(self.credential)
+        except Exception:
+            logger.warning(
+                f"Could not load credential {self.credential} for model {self.id}"
+            )
+            return None
+
+    async def delete(self) -> bool:
+        """Delete the model and clear any DefaultModels fields that
+        pointed at it.
+
+        v0.7.86 — base ObjectModel.delete leaves dangling references on
+        the singleton `default_models` record and on every
+        `episode_profile` / `speaker_profile` that used this model.
+        Default-model lookups (provision_langchain_model resolving
+        "chat", "transformation", etc.) then fail with a generic
+        ConfigurationError until the user manually reassigns. We clear
+        the default-fields proactively here so the failure mode after
+        a delete becomes the "no model configured" path that the UI
+        explicitly handles, instead of the dangling-reference path.
+        Podcast profile fields are NOT auto-cleared because reassigning
+        a profile's model is a deliberate UX choice — but we log a
+        warning naming each affected profile so the user can act on it.
+        """
+        if self.id is None:
+            return False
+        model_id = ensure_record_id(self.id)
+
+        # Clear any DefaultModels field pointing at this model. The
+        # `default_models` row is a singleton with seven optional
+        # `model` reference fields; null out only the ones matching
+        # this id.
+        try:
+            await repo_query(
+                """
+                UPDATE open_notebook:default_models
+                MERGE {
+                    default_chat_model:
+                        IF default_chat_model = $mid THEN NONE ELSE default_chat_model END,
+                    default_transformation_model:
+                        IF default_transformation_model = $mid THEN NONE ELSE default_transformation_model END,
+                    large_context_model:
+                        IF large_context_model = $mid THEN NONE ELSE large_context_model END,
+                    default_text_to_speech_model:
+                        IF default_text_to_speech_model = $mid THEN NONE ELSE default_text_to_speech_model END,
+                    default_speech_to_text_model:
+                        IF default_speech_to_text_model = $mid THEN NONE ELSE default_speech_to_text_model END,
+                    default_embedding_model:
+                        IF default_embedding_model = $mid THEN NONE ELSE default_embedding_model END,
+                    default_tools_model:
+                        IF default_tools_model = $mid THEN NONE ELSE default_tools_model END,
+                    auto_route_cloud:
+                        IF auto_route_cloud = $mid THEN NONE ELSE auto_route_cloud END
+                };
+                """,
+                {"mid": model_id},
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not clear DefaultModels references to {self.id} "
+                f"(non-fatal, will fall through to ConfigurationError on "
+                f"next resolution): {exc}"
+            )
+
+        # Warn-log any podcast profiles that still reference this
+        # model so the user knows to fix them. Don't auto-clear —
+        # reassigning a profile's model is a UX choice.
+        try:
+            referencing_eps = await repo_query(
+                "SELECT VALUE name FROM episode_profile "
+                "WHERE outline_llm = $mid OR transcript_llm = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_eps or []:
+                logger.warning(
+                    "Model {} deleted while still referenced by episode "
+                    "profile {!r} — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id,
+                    name,
+                )
+            referencing_sps = await repo_query(
+                "SELECT VALUE name FROM speaker_profile WHERE voice_model = $mid;",
+                {"mid": model_id},
+            )
+            for name in referencing_sps or []:
+                logger.warning(
+                    "Model {} deleted while still referenced by speaker "
+                    "profile {!r} — profile retry/regeneration will 400 "
+                    "until the profile is reassigned.",
+                    self.id,
+                    name,
+                )
+        except Exception as exc:
+            logger.debug(
+                "Could not scan podcast profile references for {} (non-fatal): {}",
+                self.id,
+                exc,
+            )
+
+        return await super().delete()
+
+
+class DefaultModels(RecordModel):
+    record_id: ClassVar[str] = "open_notebook:default_models"
+    default_chat_model: Optional[str] = None
+    default_transformation_model: Optional[str] = None
+    large_context_model: Optional[str] = None
+    default_text_to_speech_model: Optional[str] = None
+    default_speech_to_text_model: Optional[str] = None
+    # default_vision_model: Optional[str]
+    default_embedding_model: Optional[str] = None
+    default_tools_model: Optional[str] = None
+    # ONP v0.5 — dedicated slot for slow-but-deep reasoning models (R1, gpt-oss,
+    # Nemotron etc.). Kept separate from chat so the casual chat model can stay
+    # fast. Read by provision_langchain_model() when "reasoning" type requested.
+    default_reasoning_model: Optional[str] = None
+    # v0.8.1 — dedicated cloud slot for the smart router. Distinct
+    # from default_chat_model so the router doesn't silently route
+    # cloud fallbacks to a locally-configured chat model. Migration 18.
+    auto_route_cloud: Optional[str] = None
+    # v0.8.37 — UI-controllable smart-router toggle. Pre-v0.8.37 the
+    # only way to enable smart routing was the DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT
+    # env var, which meant power-users could enable it but the UI was
+    # invisible. These two fields make the toggle settable from
+    # Settings → API Keys → Smart Routing. The env var still wins (for
+    # back-compat + ops overrides) — see provision.py.
+    #
+    # auto_route_enabled — master switch; False keeps the pre-v0.8.1
+    #   behavior (single default_chat_model, no routing).
+    # auto_route_provider_pref — when smart routing is on, this is the
+    #   user preference passed to pick_provider()'s default_provider
+    #   arg: "auto" | "local" | "cloud". Defaults to "auto".
+    auto_route_enabled: Optional[bool] = False
+    auto_route_provider_pref: Optional[str] = "auto"
+
+    @classmethod
+    async def get_instance(cls) -> "DefaultModels":
+        """Always fetch fresh defaults from database (override parent caching behavior)"""
+        result = await repo_query(
+            "SELECT * FROM ONLY $record_id",
+            {"record_id": ensure_record_id(cls.record_id)},
+        )
+
+        if result:
+            if isinstance(result, list) and len(result) > 0:
+                data = result[0]
+            elif isinstance(result, dict):
+                data = result
+            else:
+                data = {}
+        else:
+            data = {}
+
+        # Create new instance with fresh data (bypass singleton cache)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "__dict__", {})
+        super(RecordModel, instance).__init__(**data)
+        return instance
+
+
+class ModelManager:
+    def __init__(self):
+        pass  # No caching needed
+
+    async def get_model(self, model_id: str, **kwargs) -> Optional[ModelType]:
+        """Get a model by ID. Esperanto will cache the actual model instance.
+
+        v0.7.139 — Distinguish 'model record not in DB' (a real
+        ConfigurationError — user needs to reconfigure) from 'DB call
+        failed transiently' (operational failure that misleadingly
+        manifested as 'Model not found'). Previously both produced the
+        same misleading message and users would re-create models that
+        were perfectly valid but momentarily unreachable.
+        """
+        if not model_id:
+            return None
+
+        try:
+            model: Model = await Model.get(model_id)
+        except Exception as exc:
+            # Re-raise typed exceptions with appropriate remapping.
+            # Order matters: NotFoundError extends DeeperNotebookError,
+            # so we must check the more-specific class FIRST before
+            # the broader passthrough catch — otherwise NotFoundError
+            # passes through unchanged instead of becoming a user-
+            # actionable ConfigurationError.
+            from deeper_notebook.exceptions import (
+                DeeperNotebookError,
+                NotFoundError,
+            )
+
+            # NotFoundError from Model.get means the ID really doesn't
+            # exist in the DB — actionable for the user.
+            if isinstance(exc, NotFoundError):
+                raise ConfigurationError(
+                    f"Model with ID {model_id} not found. Re-check that "
+                    f"the model is configured in Settings → Models."
+                ) from exc
+            # Other typed DeeperNotebookError subclasses (RateLimitError,
+            # AuthenticationError, etc.) propagate verbatim — they
+            # already have actionable messages and the right HTTP code.
+            if isinstance(exc, DeeperNotebookError):
+                raise
+            # Anything else: log + surface as a generic operational
+            # error so the user sees "something broke" rather than
+            # being told to fix a configuration that's already correct.
+            logger.error(
+                f"get_model({model_id}): unexpected exception from "
+                f"Model.get(): {type(exc).__name__}: {exc}"
+            )
+            raise DeeperNotebookError(
+                f"Could not load model {model_id}: {exc}. The DB or "
+                f"connection pool may be transiently unavailable; "
+                f"retry shortly."
+            ) from exc
+
+        if model is None:
+            # v0.7.139 — Model.get(...) returning None (not raising)
+            # has the same user-facing meaning as NotFoundError above:
+            # the model ID isn't in the DB.
+            raise ConfigurationError(
+                f"Model with ID {model_id} not found. Re-check that "
+                f"the model is configured in Settings → Models."
+            )
+
+        if not model.type or model.type not in [
+            "language",
+            "embedding",
+            "speech_to_text",
+            "text_to_speech",
+        ]:
+            raise ConfigurationError(
+                f"Model {model.name or model_id} has invalid type "
+                f"{model.type!r}. Re-create the model in Settings → "
+                f"Models and select a valid type (language, embedding, "
+                f"speech_to_text, or text_to_speech)."
+            )
+
+        # Build config from credential if linked, otherwise fall back to env vars
+        config: dict = {}
+        if model.credential:
+            credential = await model.get_credential_obj()
+            if credential:
+                config = credential.to_esperanto_config()
+                logger.debug(
+                    f"Using credential '{credential.name}' for model {model.name}"
+                )
+            else:
+                logger.warning(
+                    f"Model {model.id} has credential {model.credential} but it could not be loaded. "
+                    f"Falling back to env vars."
+                )
+                # Fall back to env var provisioning
+                from deeper_notebook.ai.key_provider import provision_provider_keys
+
+                await provision_provider_keys(model.provider)
+        else:
+            # No credential linked - use env var fallback
+            from deeper_notebook.ai.key_provider import provision_provider_keys
+
+            await provision_provider_keys(model.provider)
+
+        # Merge any additional kwargs (e.g. temperature)
+        config.update(kwargs)
+
+        # Normalize provider name: DB stores underscores but Esperanto expects hyphens
+        provider = model.provider.replace("_", "-")
+
+        # Create model based on type (Esperanto will cache the instance)
+        if model.type == "language":
+            return AIFactory.create_language(
+                model_name=model.name,
+                provider=provider,
+                config=config,
+            )
+        elif model.type == "embedding":
+            return AIFactory.create_embedding(
+                model_name=model.name,
+                provider=provider,
+                config=config,
+            )
+        elif model.type == "speech_to_text":
+            return AIFactory.create_speech_to_text(
+                model_name=model.name,
+                provider=provider,
+                config=config,
+            )
+        elif model.type == "text_to_speech":
+            return AIFactory.create_text_to_speech(
+                model_name=model.name,
+                provider=provider,
+                config=config,
+            )
+        else:
+            raise ConfigurationError(f"Invalid model type: {model.type}")
+
+    async def get_defaults(self) -> DefaultModels:
+        """Get the default models configuration from database"""
+        defaults = await DefaultModels.get_instance()
+        if not defaults:
+            raise RuntimeError("Failed to load default models configuration")
+        return defaults
+
+    async def get_speech_to_text(self, **kwargs) -> Optional[SpeechToTextModel]:
+        """Get the default speech-to-text model"""
+        defaults = await self.get_defaults()
+        model_id = defaults.default_speech_to_text_model
+        if not model_id:
+            return None
+        model = await self.get_model(model_id, **kwargs)
+        assert model is None or isinstance(model, SpeechToTextModel), (
+            f"Expected SpeechToTextModel but got {type(model)}"
+        )
+        return model
+
+    async def get_text_to_speech(self, **kwargs) -> Optional[TextToSpeechModel]:
+        """Get the default text-to-speech model"""
+        defaults = await self.get_defaults()
+        model_id = defaults.default_text_to_speech_model
+        if not model_id:
+            return None
+        model = await self.get_model(model_id, **kwargs)
+        assert model is None or isinstance(model, TextToSpeechModel), (
+            f"Expected TextToSpeechModel but got {type(model)}"
+        )
+        return model
+
+    async def get_embedding_model(self, **kwargs) -> Optional[EmbeddingModel]:
+        """Get the default embedding model"""
+        defaults = await self.get_defaults()
+        model_id = defaults.default_embedding_model
+        if not model_id:
+            return None
+        model = await self.get_model(model_id, **kwargs)
+        assert model is None or isinstance(model, EmbeddingModel), (
+            f"Expected EmbeddingModel but got {type(model)}"
+        )
+        return model
+
+    async def get_default_model_id(self, model_type: str) -> Optional[str]:
+        """v0.8.68 — id-only resolution extracted from get_default_model so
+        the offline gate (deeper_notebook/ai/offline_gate.py) can inspect the
+        candidate's provider BEFORE instantiation. Mapping unchanged."""
+        defaults = await self.get_defaults()
+        model_id = None
+        if model_type == "chat":
+            model_id = defaults.default_chat_model
+        elif model_type == "transformation":
+            model_id = (
+                defaults.default_transformation_model or defaults.default_chat_model
+            )
+        elif model_type == "tools":
+            model_id = defaults.default_tools_model or defaults.default_chat_model
+        elif model_type == "embedding":
+            model_id = defaults.default_embedding_model
+        elif model_type == "text_to_speech":
+            model_id = defaults.default_text_to_speech_model
+        elif model_type == "speech_to_text":
+            model_id = defaults.default_speech_to_text_model
+        elif model_type == "large_context":
+            model_id = defaults.large_context_model
+        return model_id
+
+    async def get_default_model(self, model_type: str, **kwargs) -> Optional[ModelType]:
+        """
+        Get the default model for a specific type.
+
+        Args:
+            model_type: The type of model to retrieve (e.g., 'chat', 'embedding', etc.)
+            **kwargs: Additional arguments to pass to the model constructor
+        """
+        # v0.8.68 — id resolution extracted to get_default_model_id (one
+        # mapping, shared with the offline gate). Behavior unchanged.
+        model_id = await self.get_default_model_id(model_type)
+
+        if not model_id:
+            logger.warning(
+                f"No default model configured for type '{model_type}'. "
+                f"Please go to Settings → Models and set a default model."
+            )
+            return None
+
+        try:
+            return await self.get_model(model_id, **kwargs)
+        except (ValueError, ConfigurationError) as e:
+            logger.error(
+                f"Failed to load default model for type '{model_type}': {e}. "
+                f"The configured model_id '{model_id}' may have been deleted or misconfigured. "
+                f"Please go to Settings → Models and reconfigure the default model."
+            )
+            return None
+
+
+model_manager = ModelManager()

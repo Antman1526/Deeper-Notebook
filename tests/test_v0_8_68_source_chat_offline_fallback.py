@@ -19,7 +19,7 @@ _REPO = Path(__file__).resolve().parent.parent
 def test_source_chat_node_threads_fallback_out():
     """Both provisioning calls in the source-chat node must pass
     fallback_out, and the node result must carry offline_fallback."""
-    from open_notebook.graphs import source_chat
+    from deeper_notebook.graphs import source_chat
 
     src = inspect.getsource(source_chat)
     assert src.count("fallback_out=offline_fallback_out") >= 2, (
@@ -32,7 +32,7 @@ def test_source_chat_node_threads_fallback_out():
 
 
 def test_source_chat_node_has_midturn_network_retry():
-    from open_notebook.graphs import source_chat
+    from deeper_notebook.graphs import source_chat
 
     src = inspect.getsource(source_chat)
     assert "report_network_failure()" in src
@@ -78,7 +78,7 @@ def test_source_chat_panel_renders_provider_badge():
 def test_source_chat_node_threads_selection_out():
     """v0.8.68 item 4 — the smart-router decision reaches the node result
     so the local/cloud badge gets data on the source-chat surface."""
-    from open_notebook.graphs import source_chat
+    from deeper_notebook.graphs import source_chat
 
     src = inspect.getsource(source_chat)
     assert "selection_out=selection_out" in src

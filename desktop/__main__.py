@@ -2,7 +2,7 @@
 
 On first launch (after the wizard), bootstrap.ensure_venv() uses the bundled
 uv binary and python-build-standalone interpreter to create
-~/.open-notebook-plus/venv and install upstream deps (~30-60s). Subsequent
+~/.deeper-notebook/venv and install upstream deps (~30-60s). Subsequent
 launches skip bootstrapping when requirements.lock hasn't changed.
 
 The supervisor spawns FastAPI/worker/llama-cpp using the venv's Python
@@ -12,7 +12,8 @@ tricks are needed.
 from __future__ import annotations
 
 import sys
-from desktop.paths import user_home as _user_home
+
+from desktop.data_root import append_recovery_log, open_recovery_log_directory
 
 
 def _emergency_log(exc: BaseException) -> None:
@@ -23,27 +24,22 @@ def _emergency_log(exc: BaseException) -> None:
     handler wasn't attached yet), just a dock-bouncing PyWebView app that
     failed to open.
 
-    We write to a fixed path that doesn't depend on any of the modules that
-    might have failed to import. Best-effort — if even this fails, the
-    process still exits with a non-zero code so the caller knows it failed.
+    We write outside both product data roots so a failed or ambiguous root
+    resolution cannot recursively trigger itself. Best-effort — if even this
+    fails, the process still exits non-zero so the caller knows it failed.
     """
     import datetime as _dt
-    import os as _os
     import traceback as _traceback
-    from pathlib import Path as _Path
 
-    base = _user_home()
-    log_dir = base / ".open-notebook-plus" / "logs"
     try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "launcher.log"
-        with log_path.open("a") as f:
-            f.write(
-                f"\n===== EARLY-INIT FAILURE at "
-                f"{_dt.datetime.now().isoformat()} =====\n"
-                f"{type(exc).__name__}: {exc}\n"
-                f"{_traceback.format_exc()}\n"
-            )
+        payload = (
+            f"\n===== EARLY-INIT FAILURE at "
+            f"{_dt.datetime.now().isoformat()} =====\n"
+            f"{type(exc).__name__}: {exc}\n"
+            f"{_traceback.format_exc()}\n"
+        ).encode("utf-8", errors="replace")
+        with open_recovery_log_directory() as log_directory:
+            append_recovery_log(log_directory, "launcher.log", payload)
     except Exception:
         # If we can't even write to the log dir, fall back to stderr.
         try:

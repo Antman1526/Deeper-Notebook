@@ -87,7 +87,7 @@ def _pool() -> list[ModelDescriptor]:
 EXPECTED_PICKS = [
     # v0.5.2: chat is RAM-bounded by an adaptive ceiling (~40% of system
     # RAM, clamped to [3, 32] GB). Tests pin the ceiling explicitly via
-    # ONP_CHAT_RAM_GB_CEILING fixture below — at 4 GB, gemma-4-E2B wins.
+    # DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING fixture below — at 4 GB, gemma-4-E2B wins.
     ("chat",           "gemma-4-E2B"),
     # Hermes-3 is the tool specialist — should win Tools regardless of size
     ("tools",          "Hermes-3"),
@@ -112,7 +112,7 @@ def _pin_chat_ram_ceiling(monkeypatch):
     machines (a 64 GB Mac would otherwise pick a different chat model than
     a 16 GB Mac on the same test pool). 4.0 GB matches what the standard
     EXPECTED_PICKS row asserts."""
-    monkeypatch.setenv("ONP_CHAT_RAM_GB_CEILING", "4.0")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING", "4.0")
 
 
 @pytest.mark.parametrize("slot,name_contains", EXPECTED_PICKS)

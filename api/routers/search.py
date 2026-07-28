@@ -6,10 +6,15 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
-from open_notebook.ai.models import Model, model_manager
-from open_notebook.domain.notebook import text_search, vector_search
-from open_notebook.exceptions import DatabaseOperationError, InvalidInputError, NotFoundError
-from open_notebook.graphs.ask import graph as ask_graph
+from deeper_notebook.ai.models import Model, model_manager
+from deeper_notebook.domain.notebook import text_search, vector_search
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.exceptions import (
+    DatabaseOperationError,
+    InvalidInputError,
+    NotFoundError,
+)
+from deeper_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
 
@@ -27,7 +32,7 @@ async def search_knowledge_base(search_request: SearchRequest):
     import asyncio
     import os
     _search_timeout = float(
-        os.environ.get("ONP_SEARCH_TIMEOUT_SEC", "60").strip() or 60
+        resolve_env("DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC", "60").strip() or 60
     )
     try:
         if search_request.type == "vector":
@@ -55,7 +60,7 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail=(
                         f"Vector search timed out after {_search_timeout:.0f}s. "
                         "The embedding model may be slow, or the database "
-                        "pool is overloaded. Raise ONP_SEARCH_TIMEOUT_SEC."
+                        "pool is overloaded. Raise DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC."
                     ),
                 )
         else:
@@ -76,7 +81,7 @@ async def search_knowledge_base(search_request: SearchRequest):
                     detail=(
                         f"Text search timed out after {_search_timeout:.0f}s. "
                         "The database pool may be overloaded. Raise "
-                        "ONP_SEARCH_TIMEOUT_SEC."
+                        "DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC."
                     ),
                 )
 
@@ -310,7 +315,7 @@ async def stream_ask_response(
         # v0.7.183 — bubble typed exceptions to the global handlers.
         raise
     except Exception as e:
-        from open_notebook.utils.error_classifier import classify_error
+        from deeper_notebook.utils.error_classifier import classify_error
 
         _, user_message = classify_error(e)
         logger.error(f"Error in ask streaming: {str(e)}")

@@ -16,25 +16,25 @@ from api.schemas.research import (
     ResearchEventResponse,
     ResearchRunResponse,
 )
-from open_notebook.domain.notebook import Notebook
-from open_notebook.research.analysis import (
+from deeper_notebook.domain.notebook import Notebook
+from deeper_notebook.research.analysis import (
     compare_research_evidence,
     extract_research_evidence,
     synthesize_research_evidence,
     validate_research_evidence,
 )
-from open_notebook.research.discovery import (
+from deeper_notebook.research.discovery import (
     candidate_domain,
     discover_sources,
     ingest_approved_sources,
 )
-from open_notebook.research.graph import ResearchWorkflow
-from open_notebook.research.repository import (
+from deeper_notebook.research.graph import ResearchWorkflow
+from deeper_notebook.research.repository import (
     ResearchRunRepository,
     ResearchRunRepositoryError,
 )
-from open_notebook.research.state import ResearchRun, ResearchStageResult
-from open_notebook.security.outbound_url import (
+from deeper_notebook.research.state import ResearchRun, ResearchStageResult
+from deeper_notebook.security.outbound_url import (
     OutboundURLPolicyError,
     validate_outbound_url,
 )
