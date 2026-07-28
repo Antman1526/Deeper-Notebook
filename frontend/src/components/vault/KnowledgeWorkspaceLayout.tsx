@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Columns2, Rows2, X } from 'lucide-react'
 
 import {
+  getEffectiveKnowledgeTabId,
   getKnowledgePanelId,
   getKnowledgeTabId,
   KnowledgeTabStrip,
@@ -92,10 +93,16 @@ function PaneNode({
 }: PaneNodeProps) {
   const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
-  const activeTitle = pane.tabs.find((tab) => tab.id === pane.activeTabId)?.title
+  const effectiveActiveTabId = getEffectiveKnowledgeTabId(pane)
+  const effectivePane = pane.activeTabId === effectiveActiveTabId
+    ? pane
+    : { ...pane, activeTabId: effectiveActiveTabId }
+  const activeTitle = pane.tabs.find(
+    (tab) => tab.id === effectiveActiveTabId,
+  )?.title
   const panelId = getKnowledgePanelId(pane.id)
-  const activeTabDomId = pane.activeTabId
-    ? getKnowledgeTabId(pane.id, pane.activeTabId)
+  const activeTabDomId = effectiveActiveTabId
+    ? getKnowledgeTabId(pane.id, effectiveActiveTabId)
     : undefined
   const paneLabel = `${t('knowledge.knowledgePane')} ${pane.id}${
     activeTitle ? `: ${activeTitle}` : ''
@@ -116,7 +123,7 @@ function PaneNode({
     >
       <div className="flex min-w-0 items-stretch">
         <KnowledgeTabStrip
-          pane={pane}
+          pane={effectivePane}
           panelId={panelId}
           onActivateTab={activateTab}
           onCloseTab={closeTab}
@@ -160,7 +167,7 @@ function PaneNode({
         tabIndex={0}
         className="min-h-0 min-w-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        {renderPane(pane)}
+        {renderPane(effectivePane)}
       </div>
     </section>
   )
