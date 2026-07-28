@@ -268,6 +268,36 @@ def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation
     assert verifier._snapshot_differences(before, after)[0] is True
 
 
+def test_pre_request_source_mismatch_aborts_before_first_api_call(tmp_path, monkeypatch):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text("ignored-private.md\n")
+    ignored = root / "ignored-private.md"
+    ignored.write_text("before")
+    output = tmp_path / "report.json"
+    calls = []
+    original_snapshot = verifier._snapshot
+    snapshots = 0
+
+    def snapshot_before_first_request(path, identity):
+        nonlocal snapshots
+        snapshots += 1
+        if snapshots == 2:
+            ignored.write_text("mutated before first request")
+        return original_snapshot(path, identity)
+
+    monkeypatch.setattr(verifier, "_snapshot", snapshot_before_first_request)
+    monkeypatch.setattr(verifier, "_request_json", lambda *args: calls.append(args))
+
+    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert calls == []
+    report = json.loads(output.read_text())
+    assert "source_hash_mismatch" in report["failures"]
+    assert str(root) not in output.read_text()
+
+
 @pytest.mark.parametrize("kind", ["missing", "file", "home_symlink"])
 def test_rejects_malformed_roots_without_path_disclosure(tmp_path, monkeypatch, capsys, kind):
     verifier = _load_verifier()
