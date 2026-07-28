@@ -105,6 +105,7 @@ class VaultFile(_Model):
 class VaultLink(_Model):
     id: str
     source_note_id: str
+    source_note_title: str | None = None
     source_block_id: str | None = None
     target_note_id: str | None = None
     target_block_id: str | None = None
@@ -1389,7 +1390,7 @@ class VaultRepository:
         return await self._query(
             connection,
             f"""
-            SELECT * FROM note_link
+            SELECT *, source_note_id.title AS source_note_title FROM note_link
             WHERE {field} = $note_id
             AND source_note_id IN (
                 SELECT VALUE id FROM note WHERE vault_id = $vault_id

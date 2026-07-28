@@ -85,6 +85,21 @@ class VaultPageResponse(_VaultSchema):
     backlinks: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class VaultLinkResponse(_VaultSchema):
+    id: str
+    source_note_id: str
+    source_note_title: str | None = None
+    source_block_id: str | None = None
+    target_note_id: str | None = None
+    target_block_id: str | None = None
+    target_text: str
+    target_heading: str | None = None
+    target_block: str | None = None
+    alias: str | None = None
+    link_kind: str
+    resolved: bool = False
+
+
 class VaultFileResponse(_VaultSchema):
     id: str
     note_id: str

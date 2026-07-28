@@ -143,6 +143,7 @@ def _link(link_id: str, source: str, target: str) -> VaultLink:
         source_note_id=source,
         target_note_id=target,
         target_text="Two",
+        source_note_title="Source note",
         link_kind="wikilink",
         resolved=True,
     )
@@ -236,7 +237,10 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     assert file["relative_path"] == "notes/one.md"
     assert file["note_id"] == "note:derived-projection-id"
     assert test_client.get(f"{root}/pages/note:one").status_code == 200
-    assert test_client.get(f"{root}/pages/note:one/backlinks").status_code == 200
+    backlinks = test_client.get(f"{root}/pages/note:one/backlinks")
+    assert backlinks.status_code == 200
+    assert backlinks.json()[0]["source_note_title"] == "Source note"
+    assert "/Users/owner" not in backlinks.text
     assert test_client.get(f"{root}/pages/note:one/outgoing").status_code == 200
     assert test_client.get(f"{root}/graph?center_note_id=note:one").status_code == 200
     receipts = test_client.get(f"{root}/receipts")
