@@ -39,7 +39,8 @@ jobs:
           mkdir -p release
           cp dist/Deeper-Notebook-mac-arm64.dmg release/
           python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-arm64.dmg --platform macos --arch arm64 --output release/release-manifest.json
-          shasum -a 256 release/Deeper-Notebook-mac-arm64.dmg > release/SHA256SUMS
+          cd release
+          shasum -a 256 Deeper-Notebook-mac-arm64.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Deeper-Notebook-mac-arm64
@@ -77,7 +78,8 @@ jobs:
           mkdir -p release
           cp dist/Deeper-Notebook-mac-x86_64.dmg release/
           python desktop/build/release_manifest.py --artifact release/Deeper-Notebook-mac-x86_64.dmg --platform macos --arch x86_64 --output release/release-manifest.json
-          shasum -a 256 release/Deeper-Notebook-mac-x86_64.dmg > release/SHA256SUMS
+          cd release
+          shasum -a 256 Deeper-Notebook-mac-x86_64.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v5
         with:
           name: Deeper-Notebook-mac-x86_64

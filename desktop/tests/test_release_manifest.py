@@ -204,6 +204,22 @@ def test_release_surfaces_use_exact_deeper_notebook_artifact_names() -> None:
     assert "Open-Notebook-Plus-" not in release_sources
 
 
+def test_macos_checksum_manifests_are_portable_after_artifact_download() -> None:
+    workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
+
+    assert (
+        "cd release\n"
+        "          shasum -a 256 Deeper-Notebook-mac-arm64.dmg > SHA256SUMS"
+        in workflow
+    )
+    assert (
+        "cd release\n"
+        "          shasum -a 256 Deeper-Notebook-mac-x86_64.dmg > SHA256SUMS"
+        in workflow
+    )
+    assert "shasum -a 256 release/Deeper-Notebook-mac-" not in workflow
+
+
 def test_pyinstaller_uses_canonical_visible_names_and_compatible_bundle_id() -> None:
     spec = PYINSTALLER_SPEC.read_text(encoding="utf-8")
 
