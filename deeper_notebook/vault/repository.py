@@ -84,6 +84,8 @@ class VaultMountCreate(_Model):
 
 class VaultMount(VaultMountCreate):
     id: str
+    last_scan_started_at: datetime | None = None
+    last_scan_completed_at: datetime | None = None
 
 
 class VaultFile(_Model):
@@ -222,6 +224,9 @@ class VaultTrustSummary(_Model):
 
 _SAFE_CODE = re.compile(r"^[a-zA-Z0-9_.-]+")
 _SAFE_RECEIPT_FIELD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+_SCAN_TERMINAL_STATES: frozenset[VaultState] = frozenset(
+    {"ready-read-only", "conflict", "degraded", "unavailable"}
+)
 
 
 def _now() -> datetime:
@@ -328,6 +333,50 @@ class VaultRepository:
         if rows:
             return VaultMount.model_validate(rows[0])
         return VaultMount(id=mount_id, **request.model_dump())
+
+    async def mark_scan_started(
+        self,
+        vault_id: str,
+        *,
+        started_at: datetime | None = None,
+    ) -> None:
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                UPDATE $vault_id SET
+                    status = "scanning",
+                    last_scan_started_at = $started_at;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "started_at": started_at or _now(),
+                },
+            )
+
+    async def mark_scan_completed(
+        self,
+        vault_id: str,
+        *,
+        status: VaultState,
+        completed_at: datetime | None = None,
+    ) -> None:
+        if status not in _SCAN_TERMINAL_STATES:
+            raise ValueError("vault_scan_state_not_terminal")
+        async with self._connection_factory() as connection:
+            await self._query(
+                connection,
+                """
+                UPDATE $vault_id SET
+                    status = $status,
+                    last_scan_completed_at = $completed_at;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "status": status,
+                    "completed_at": completed_at or _now(),
+                },
+            )
 
     async def record_observation(
         self, observation: VaultFileObservation

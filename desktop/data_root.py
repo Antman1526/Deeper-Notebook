@@ -147,8 +147,29 @@ class SecureDirectory:
     name: str | None
     device: int
     inode: int
+    windows_handle: int | None = None
 
     def verify_visible_identity(self) -> None:
+        if self.windows_handle is not None:
+            if _windows_path_is_reparse_point(self.path):
+                raise _CriticalPathError(
+                    "recovery-directory-identity-changed"
+                )
+            try:
+                current = self.path.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise _CriticalPathError(
+                    "recovery-directory-identity-changed"
+                ) from exc
+            if (
+                not stat.S_ISDIR(current.st_mode)
+                or current.st_dev != self.device
+                or current.st_ino != self.inode
+            ):
+                raise _CriticalPathError(
+                    "recovery-directory-identity-changed"
+                )
+            return
         if self.parent_fd is None or self.name is None:
             return
         try:
@@ -167,6 +188,244 @@ class SecureDirectory:
             or current.st_ino != self.inode
         ):
             raise _CriticalPathError("recovery-directory-identity-changed")
+
+
+def _windows_path_is_reparse_point(path: Path) -> bool:
+    if sys.platform != "win32":
+        return path.is_symlink()
+
+    import ctypes
+    from ctypes import wintypes
+
+    get_attributes = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).GetFileAttributesW
+    get_attributes.argtypes = (wintypes.LPCWSTR,)
+    get_attributes.restype = wintypes.DWORD
+    attributes = get_attributes(str(path))
+    if attributes == 0xFFFFFFFF:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return bool(attributes & 0x00000400)  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _open_windows_directory_handle(path: Path) -> int:
+    """Hold a directory against rename/reparse swaps for pathname operations."""
+    import ctypes
+    from ctypes import wintypes
+
+    create_file = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path),
+        0xC0000000,  # GENERIC_READ | GENERIC_WRITE
+        0x00000003,  # FILE_SHARE_READ | FILE_SHARE_WRITE; no delete sharing
+        None,
+        3,  # OPEN_EXISTING
+        0x02200000,  # BACKUP_SEMANTICS | OPEN_REPARSE_POINT
+        None,
+    )
+    invalid_handle = wintypes.HANDLE(-1).value
+    if handle == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    raw_handle = int(handle)
+    try:
+        if _windows_path_is_reparse_point(path):
+            raise _CriticalPathError("owned-directory-symlink")
+    except BaseException:
+        _close_windows_handle(raw_handle)
+        raise
+    return raw_handle
+
+
+def _close_windows_handle(handle: int) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    close_handle = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+    if not close_handle(handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _windows_current_user_sid() -> str:
+    import csv
+
+    result = subprocess.run(
+        ["whoami", "/user", "/fo", "csv", "/nh"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode != 0:
+        raise _CriticalPathError("windows-owner-sid-unavailable")
+    try:
+        sid = next(csv.reader([result.stdout.strip()]))[1].strip()
+    except (IndexError, StopIteration):
+        sid = ""
+    if not sid.startswith("S-1-"):
+        raise _CriticalPathError("windows-owner-sid-unavailable")
+    return sid
+
+
+def _windows_path_owner_sid(path: Path) -> str:
+    import ctypes
+    from ctypes import wintypes
+
+    owner = wintypes.LPVOID()
+    descriptor = wintypes.LPVOID()
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    get_security = advapi32.GetNamedSecurityInfoW
+    get_security.argtypes = (
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPVOID),
+        wintypes.LPVOID,
+        wintypes.LPVOID,
+        wintypes.LPVOID,
+        ctypes.POINTER(wintypes.LPVOID),
+    )
+    get_security.restype = wintypes.DWORD
+    error = get_security(
+        str(path),
+        1,  # SE_FILE_OBJECT
+        0x00000001,  # OWNER_SECURITY_INFORMATION
+        ctypes.byref(owner),
+        None,
+        None,
+        None,
+        ctypes.byref(descriptor),
+    )
+    if error:
+        raise ctypes.WinError(error)
+
+    string_sid = wintypes.LPWSTR()
+    convert = advapi32.ConvertSidToStringSidW
+    convert.argtypes = (wintypes.LPVOID, ctypes.POINTER(wintypes.LPWSTR))
+    convert.restype = wintypes.BOOL
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    local_free = kernel32.LocalFree
+    local_free.argtypes = (wintypes.HLOCAL,)
+    local_free.restype = wintypes.HLOCAL
+    try:
+        if not convert(owner, ctypes.byref(string_sid)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return string_sid.value
+    finally:
+        if string_sid:
+            local_free(string_sid)
+        if descriptor:
+            local_free(descriptor)
+
+
+def _harden_windows_owned_directory(path: Path, reason: str) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    sid = _windows_current_user_sid()
+    if _windows_path_owner_sid(path) != sid:
+        raise _CriticalPathError(reason)
+    descriptor = wintypes.LPVOID()
+    descriptor_size = wintypes.DWORD()
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPVOID),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    convert.restype = wintypes.BOOL
+    sddl = (
+        f"D:P(A;OICI;FA;;;{sid})"
+        "(A;OICI;FA;;;SY)"
+        "(A;OICI;FA;;;BA)"
+    )
+    if not convert(sddl, 1, ctypes.byref(descriptor), ctypes.byref(descriptor_size)):
+        raise _CriticalPathError(reason)
+
+    set_security = advapi32.SetFileSecurityW
+    set_security.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+    )
+    set_security.restype = wintypes.BOOL
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    local_free = kernel32.LocalFree
+    local_free.argtypes = (wintypes.HLOCAL,)
+    local_free.restype = wintypes.HLOCAL
+    try:
+        security_information = (
+            0x00000004  # DACL_SECURITY_INFORMATION
+            | 0x80000000  # PROTECTED_DACL_SECURITY_INFORMATION
+        )
+        if not set_security(str(path), security_information, descriptor):
+            raise _CriticalPathError(reason)
+    finally:
+        local_free(descriptor)
+
+    if _windows_path_owner_sid(path) != sid:
+        raise _CriticalPathError(reason)
+
+
+def _open_windows_append_file(path: Path) -> int:
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    create_file = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path),
+        0x00000084,  # FILE_APPEND_DATA | FILE_READ_ATTRIBUTES
+        0x00000003,  # FILE_SHARE_READ | FILE_SHARE_WRITE; no delete sharing
+        None,
+        4,  # OPEN_ALWAYS
+        0x80200000,  # WRITE_THROUGH | OPEN_REPARSE_POINT
+        None,
+    )
+    invalid_handle = wintypes.HANDLE(-1).value
+    if handle == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    raw_handle = int(handle)
+    try:
+        if _windows_path_is_reparse_point(path):
+            raise _CriticalPathError("recovery-log-file-unsafe")
+        return msvcrt.open_osfhandle(
+            raw_handle,
+            os.O_APPEND | os.O_WRONLY | os.O_BINARY,
+        )
+    except BaseException:
+        _close_windows_handle(raw_handle)
+        raise
 
 
 def _secure_directory_flags() -> int:
@@ -209,6 +468,30 @@ def _validate_directory_fd(
 
 @contextmanager
 def _open_directory_path(path: Path) -> Iterator[SecureDirectory]:
+    if sys.platform == "win32":
+        handle = _open_windows_directory_handle(path)
+        try:
+            result = path.stat(follow_symlinks=False)
+            if not stat.S_ISDIR(result.st_mode):
+                raise _CriticalPathError(
+                    "recovery-parent-is-not-directory"
+                )
+            directory = SecureDirectory(
+                path,
+                -1,
+                None,
+                None,
+                result.st_dev,
+                result.st_ino,
+                handle,
+            )
+            directory.verify_visible_identity()
+            yield directory
+            directory.verify_visible_identity()
+        finally:
+            _close_windows_handle(handle)
+        return
+
     fd = os.open(path, _secure_directory_flags())
     try:
         result = _validate_directory_fd(
@@ -230,6 +513,35 @@ def _open_child_directory(
     symlink_reason: str,
     ownership_reason: str,
 ) -> Iterator[SecureDirectory]:
+    if sys.platform == "win32":
+        try:
+            path.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        if _windows_path_is_reparse_point(path):
+            raise _CriticalPathError(symlink_reason)
+        handle = _open_windows_directory_handle(path)
+        try:
+            result = path.stat(follow_symlinks=False)
+            if not stat.S_ISDIR(result.st_mode):
+                raise _CriticalPathError(ownership_reason)
+            _harden_windows_owned_directory(path, ownership_reason)
+            directory = SecureDirectory(
+                path,
+                -1,
+                None,
+                name,
+                result.st_dev,
+                result.st_ino,
+                handle,
+            )
+            directory.verify_visible_identity()
+            yield directory
+            directory.verify_visible_identity()
+        finally:
+            _close_windows_handle(handle)
+        return
+
     try:
         os.mkdir(name, mode=0o700, dir_fd=parent.fd)
     except FileExistsError:
@@ -543,7 +855,8 @@ def _fsync_directory(path: Path) -> None:
     import ctypes
     from ctypes import wintypes
 
-    create_file = ctypes.windll.kernel32.CreateFileW
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
     create_file.argtypes = (
         wintypes.LPCWSTR,
         wintypes.DWORD,
@@ -556,7 +869,7 @@ def _fsync_directory(path: Path) -> None:
     create_file.restype = wintypes.HANDLE
     handle = create_file(
         str(path),
-        0x80000000,  # GENERIC_READ
+        0x40000000,  # GENERIC_WRITE, required by FlushFileBuffers
         0x00000007,  # FILE_SHARE_READ | WRITE | DELETE
         None,
         3,  # OPEN_EXISTING
@@ -565,12 +878,15 @@ def _fsync_directory(path: Path) -> None:
     )
     invalid_handle = wintypes.HANDLE(-1).value
     if handle == invalid_handle:
-        raise ctypes.WinError()
+        raise ctypes.WinError(ctypes.get_last_error())
     try:
-        if not ctypes.windll.kernel32.FlushFileBuffers(handle):
-            raise ctypes.WinError()
+        flush = kernel32.FlushFileBuffers
+        flush.argtypes = (wintypes.HANDLE,)
+        flush.restype = wintypes.BOOL
+        if not flush(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
     finally:
-        ctypes.windll.kernel32.CloseHandle(handle)
+        _close_windows_handle(int(handle))
 
 
 def _write_new_json(path: Path, payload: dict[str, object]) -> None:
@@ -601,6 +917,12 @@ def atomic_replace_json(
     payload: dict[str, object],
 ) -> None:
     """Atomically replace JSON relative to a bound no-follow directory."""
+    if directory.windows_handle is not None:
+        directory.verify_visible_identity()
+        _replace_json(directory.path / name, payload)
+        directory.verify_visible_identity()
+        return
+
     temporary = f".{name}.{uuid.uuid4().hex}.tmp"
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
     try:
@@ -632,7 +954,11 @@ def append_recovery_log(
     """Append to an owned regular file relative to a bound log directory."""
     flags = os.O_CREAT | os.O_APPEND | os.O_WRONLY
     flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(name, flags, 0o600, dir_fd=directory.fd)
+    if directory.windows_handle is not None:
+        directory.verify_visible_identity()
+        fd = _open_windows_append_file(directory.path / name)
+    else:
+        fd = os.open(name, flags, 0o600, dir_fd=directory.fd)
     try:
         result = os.fstat(fd)
         getuid = getattr(os, "getuid", None)
@@ -643,14 +969,21 @@ def append_recovery_log(
             or result.st_dev != directory.device
         ):
             raise _CriticalPathError("recovery-log-file-unsafe")
-        os.fchmod(fd, 0o600)
-        if stat.S_IMODE(os.fstat(fd).st_mode) & 0o177:
-            raise _CriticalPathError("recovery-log-file-permissions-unsafe")
+        if sys.platform != "win32":
+            os.fchmod(fd, 0o600)
+            if stat.S_IMODE(os.fstat(fd).st_mode) & 0o177:
+                raise _CriticalPathError(
+                    "recovery-log-file-permissions-unsafe"
+                )
         _write_all(fd, payload)
         os.fsync(fd)
     finally:
         os.close(fd)
-    os.fsync(directory.fd)
+    if directory.windows_handle is not None:
+        _fsync_directory(directory.path)
+        directory.verify_visible_identity()
+    else:
+        os.fsync(directory.fd)
 
 
 def unlink_owned_file(
@@ -661,11 +994,19 @@ def unlink_owned_file(
 ) -> None:
     """Unlink one entry relative to a bound owned directory and fsync it."""
     try:
-        os.unlink(name, dir_fd=directory.fd)
+        if directory.windows_handle is not None:
+            directory.verify_visible_identity()
+            (directory.path / name).unlink()
+        else:
+            os.unlink(name, dir_fd=directory.fd)
     except FileNotFoundError:
         if not missing_ok:
             raise
-    os.fsync(directory.fd)
+    if directory.windows_handle is not None:
+        _fsync_directory(directory.path)
+        directory.verify_visible_identity()
+    else:
+        os.fsync(directory.fd)
 
 
 def _device_id(path: Path) -> int:

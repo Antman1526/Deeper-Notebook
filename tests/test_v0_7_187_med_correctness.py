@@ -10,11 +10,11 @@ Three independent surfaces tightened:
     time" comparisons. Audit finding #4.
 
 2.  `deeper_notebook/domain/base.py` `created` / `updated` timestamps
-    now serialise as `datetime.now(timezone.utc).isoformat()` —
-    aware UTC ISO 8601. Previously naive local-time with a
-    non-ISO format string. Cross-machine sync produced off-by-N-
-    hour ordering; the v0.7.181 iso() helper couldn't reconstruct
-    a TZ that was never stored. Audit finding #6.
+    persist as native, timezone-aware UTC datetime objects. Previously
+    naive local-time strings broke cross-machine ordering, while the
+    intermediate ISO-string fix violated SurrealDB datetime schemas.
+    API responses still serialize through the v0.7.181 iso() helper.
+    Audit finding #6.
 
 3.  `api/credentials_service.py` AsyncClient() now uses
     `_DISCOVERY_HTTP_TIMEOUT` (connect=5s, read=30s, write=10s,
@@ -26,8 +26,10 @@ Three independent surfaces tightened:
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -83,46 +85,106 @@ def test_config_no_remaining_time_time_for_ttl():
 
 
 # ---------------------------------------------------------------------------
-# base.py — aware UTC ISO 8601 timestamps
+# base.py — aware UTC datetime persistence
 # ---------------------------------------------------------------------------
 
 
-def test_object_model_save_uses_aware_utc_timestamps():
-    """v0.7.187: ObjectModel.save() must use
-    `datetime.now(timezone.utc).isoformat()` for created/updated.
-    Naive local-time silently broke cross-machine ordering."""
-    src = _read_source("deeper_notebook/domain/base.py")
-    # The aware-UTC isoformat pattern is present at least twice
-    # (one for updated, one for created on new records).
-    aware_count = src.count("datetime.now(timezone.utc).isoformat()")
-    assert aware_count >= 2, (
-        f"v0.7.187 regression: ObjectModel.save() lost its "
-        f"aware-UTC timestamp serialisation (found {aware_count} "
-        f"occurrences, expected >=2). Cross-machine sync will "
-        f"break again."
+@pytest.mark.asyncio
+async def test_new_credential_persists_aware_utc_datetime_objects(monkeypatch):
+    """Credential creation must send native UTC datetimes to SurrealDB.
+
+    Credential.created/updated are schema-defined datetime fields. Sending ISO
+    strings makes SurrealDB reject a new credential before the API can return it.
+    """
+    from deeper_notebook.domain import base
+    from deeper_notebook.domain.credential import Credential
+
+    captured: dict = {}
+
+    async def fake_repo_create(table: str, data: dict):
+        captured["table"] = table
+        captured["data"] = dict(data)
+        return {"id": "credential:timestamp-regression", **data}
+
+    monkeypatch.setattr(base, "repo_create", fake_repo_create)
+
+    credential = Credential(
+        name="Timestamp regression",
+        provider="ollama",
+        modalities=["language"],
     )
-    # The old naive strftime form must be gone from the save() block
-    # (rationale comments are allowed to reference it).
-    save_idx = src.find("async def save(")
-    assert save_idx != -1
-    next_async_def = src.find("\n    async def ", save_idx + 1)
-    save_region = src[save_idx:next_async_def] if next_async_def != -1 else src[save_idx:save_idx + 3000]
-    # Strip comment lines before checking.
-    code_only = "\n".join(
-        line for line in save_region.splitlines()
-        if not line.lstrip().startswith("#")
+    await credential.save()
+
+    assert captured["table"] == "credential"
+    for field in ("created", "updated"):
+        value = captured["data"][field]
+        assert isinstance(value, datetime), (
+            f"{field} must be a native datetime, got {type(value).__name__}"
+        )
+        assert value.tzinfo is not None
+        assert value.utcoffset() == timedelta(0)
+
+
+@pytest.mark.asyncio
+async def test_existing_credential_persists_aware_utc_datetime_objects(monkeypatch):
+    """Credential updates must not turn their native timestamps into strings."""
+    from deeper_notebook.domain import base
+    from deeper_notebook.domain.credential import Credential
+
+    captured: dict = {}
+    legacy_created = datetime(2026, 7, 27, 8, 0)
+
+    async def fake_repo_update(table: str, record_id: str, data: dict):
+        captured["table"] = table
+        captured["record_id"] = record_id
+        captured["data"] = dict(data)
+        return {"id": record_id, **data}
+
+    monkeypatch.setattr(base, "repo_update", fake_repo_update)
+
+    credential = Credential(
+        id="credential:timestamp-regression",
+        name="Timestamp regression",
+        provider="ollama",
+        modalities=["language"],
+        created=legacy_created,
     )
-    bad = 'datetime.now().strftime("%Y-%m-%d %H:%M:%S")'
-    assert bad not in code_only, (
-        f"v0.7.187 regression: naive datetime.now() back in save(). "
-        f"Use datetime.now(timezone.utc).isoformat()."
+    await credential.save()
+
+    assert captured["table"] == "credential"
+    assert captured["record_id"] == "credential:timestamp-regression"
+    for field in ("created", "updated"):
+        value = captured["data"][field]
+        assert isinstance(value, datetime)
+        assert value.tzinfo is not None
+        assert value.utcoffset() == timedelta(0)
+    assert captured["data"]["created"].replace(tzinfo=None) == legacy_created
+
+
+def test_credential_response_keeps_iso_timestamp_strings():
+    """Native persistence datetimes still serialize as ISO strings at the API."""
+    from api.credentials_service import credential_to_response
+    from deeper_notebook.domain.credential import Credential
+
+    stamp = datetime(2026, 7, 28, 12, 34, 56, 123456, tzinfo=timezone.utc)
+    credential = Credential(
+        id="credential:timestamp-response",
+        name="Timestamp response",
+        provider="ollama",
+        modalities=["language"],
+        created=stamp,
+        updated=stamp,
     )
+
+    response = credential_to_response(credential)
+
+    assert response.created == stamp.isoformat()
+    assert response.updated == stamp.isoformat()
 
 
 def test_base_module_imports_timezone():
     """v0.7.187: base.py must import timezone from datetime. Without
-    the import, the v0.7.187 aware-UTC isoformat calls NameError
-    at import time."""
+    the import, the aware-UTC persistence calls raise NameError."""
     src = _read_source("deeper_notebook/domain/base.py")
     assert "from datetime import datetime, timezone" in src, (
         "v0.7.187 regression: timezone import gone from base.py. "
