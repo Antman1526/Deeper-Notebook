@@ -332,6 +332,10 @@ class _ObservedApi:
 
     def request(self, method: str, api: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         before = _snapshot(self.root, self.identity)
+        before_hashes, before_git = _snapshot_differences(before, self.baseline)
+        if before_hashes or before_git:
+            _record_observation(self.report, before_hashes, before_git, before)
+            raise SourceChangedError("source changed before API operation")
         request_failed = False
         try:
             result = _request_json(method, api, path, payload)
@@ -340,13 +344,12 @@ class _ObservedApi:
             raise
         finally:
             after = _snapshot(self.root, self.identity)
-            before_hashes, before_git = _snapshot_differences(before, self.baseline)
             after_hashes, after_git = _snapshot_differences(after, self.baseline)
-            if before_hashes or before_git or after_hashes or after_git:
+            if after_hashes or after_git:
                 _record_observation(
                     self.report,
-                    before_hashes or after_hashes,
-                    before_git or after_git,
+                    after_hashes,
+                    after_git,
                     after,
                 )
                 if not request_failed:
