@@ -105,6 +105,33 @@ class TestTextSearchHighlightOverflowFallback:
 
 
 @pytest.mark.asyncio
+async def test_vector_search_enriches_mounted_note_without_root_leak():
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with (
+        patch("deeper_notebook.utils.embedding.generate_embedding", new_callable=AsyncMock, return_value=[0.1]),
+        patch.object(notebook_module, "repo_query", new_callable=AsyncMock, side_effect=[
+            [{"id": "note:mounted", "title": "Mounted"}],
+            [{"id": "note:mounted", "canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "a" * 64}],
+        ]),
+    ):
+        result = await notebook_module.vector_search("mounted", 1)
+
+    assert result[0]["vault_provenance"] == {"canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "sha256:" + "a" * 64}
+    assert "/Users/" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_normal_search_result_keeps_legacy_shape():
+    from deeper_notebook.domain import notebook as notebook_module
+
+    with patch.object(notebook_module, "repo_query", new_callable=AsyncMock, return_value=[{"id": "source:plain", "title": "Plain"}]):
+        result = await notebook_module.text_search("plain", 1)
+
+    assert result == [{"id": "source:plain", "title": "Plain"}]
+
+
+@pytest.mark.asyncio
 async def test_text_search_enriches_mounted_note_with_portable_provenance():
     from deeper_notebook.domain import notebook as notebook_module
 
