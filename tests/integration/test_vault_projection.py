@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from deeper_notebook.database import async_migrate
 from deeper_notebook.database.async_migrate import (
@@ -23,8 +24,13 @@ from deeper_notebook.vault.contracts import (
     ParsedLink,
     ParsedTask,
 )
-from deeper_notebook.vault.repository import VaultMount, VaultRepository
+from deeper_notebook.vault.repository import (
+    VaultMount,
+    VaultMountCreate,
+    VaultRepository,
+)
 from deeper_notebook.vault.security import approve_vault_root
+from deeper_notebook.vault.service import VaultService
 from deeper_notebook.vault.watcher import VaultWorkItem
 
 pytestmark = pytest.mark.integration_surreal
@@ -69,6 +75,96 @@ async def test_migration_rejects_watching_on_mixed_parent(clean_namespace):
                 }
             },
         )
+
+
+async def test_mount_child_round_trips_native_record_typed_parent_id(
+    clean_namespace, tmp_path
+):
+    """A child mount must persist and serialize its parent ID on native SurrealDB."""
+    parent_root = tmp_path / "fixture-parent"
+    child_root = parent_root / "fixture-child"
+    child_root.mkdir(parents=True)
+
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+    parent = await repository.create_mount(
+        VaultMountCreate(
+            name="Fixture Parent",
+            root_path=str(parent_root),
+            format_mode="mixed",
+            parser_version="integration",
+        )
+    )
+    child = await repository.create_mount(
+        VaultMountCreate(
+            name="Fixture Child",
+            root_path=str(child_root),
+            format_mode="obsidian",
+            parent_vault_id=parent.id,
+            parser_version="integration",
+        )
+    )
+
+    assert child.parent_vault_id == parent.id
+    assert (await repository.get_mount(child.id)).parent_vault_id == parent.id
+    listed = {mount.id: mount for mount in await repository.list_mounts()}
+    assert listed[child.id].parent_vault_id == parent.id
+
+
+async def test_vault_api_creates_child_mount_against_native_surrealdb(
+    clean_namespace, monkeypatch, tmp_path
+):
+    """The branch API must not sanitize a valid native child mount as unavailable."""
+    from api.main import app
+
+    parent_root = tmp_path / "api-parent"
+    child_root = parent_root / "api-child"
+    child_root.mkdir(parents=True)
+    # This test isolates native persistence and router serialization; root
+    # approval has dedicated security coverage.
+    monkeypatch.setattr(
+        "api.routers.vault.approve_vault_root", lambda _path: nullcontext()
+    )
+    app.state.vault_service = VaultService(
+        VaultRepository(embedding_submitter=lambda *_args: None)
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            parent_response = await client.post(
+                "/api/deeper-notebook/vaults",
+                json={
+                    "name": "API Parent",
+                    "path": str(parent_root),
+                    "format_mode": "mixed",
+                    "watch_enabled": False,
+                },
+            )
+            assert parent_response.status_code == 201
+            parent_id = parent_response.json()["id"]
+
+            child_response = await client.post(
+                "/api/deeper-notebook/vaults",
+                json={
+                    "name": "API Child",
+                    "path": str(child_root),
+                    "format_mode": "obsidian",
+                    "parent_vault_id": parent_id,
+                },
+            )
+            assert child_response.status_code == 201
+            assert child_response.json()["parent_vault_id"] == parent_id
+
+            listed = await client.get("/api/deeper-notebook/vaults")
+            assert listed.status_code == 200
+            child = next(
+                item
+                for item in listed.json()
+                if item["id"] == child_response.json()["id"]
+            )
+            assert child["parent_vault_id"] == parent_id
+    finally:
+        app.state.vault_service = None
 
 
 async def test_migration_32_up_down_up_and_reapply_are_safe(clean_namespace):
