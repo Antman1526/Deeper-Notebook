@@ -22,6 +22,7 @@ export const vaultMountSchema = z.object({
 
 export const vaultLinkSchema = z.object({
   id: z.string(), source_note_id: z.string(), target_note_id: z.string().nullable(), target_text: z.string(),
+  source_note_title: z.string().nullable().optional(),
   target_heading: z.string().nullable().optional(), alias: z.string().nullable().optional(), link_kind: z.string(), resolved: z.boolean(),
 }).passthrough()
 
@@ -48,7 +49,7 @@ export type VaultGraph = z.infer<typeof vaultGraphSchema>
 
 function assertNoAbsolutePath(value: unknown): void {
   if (typeof value === 'string') {
-    if (/^(?:\/|[A-Za-z]:[\\/])/.test(value)) throw new Error('Vault response contained an absolute path')
+    if (/^(?:[\\/]{2}|\/|[A-Za-z]:[\\/])/.test(value)) throw new Error('Vault response contained an absolute path')
     return
   }
   if (Array.isArray(value)) value.forEach(assertNoAbsolutePath)

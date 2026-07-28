@@ -20,8 +20,13 @@ describe('vault API boundary', () => {
     expect(() => vaultFileSchema.parse({ ...file, parse_status: 'unknown' })).toThrow()
   })
 
-  it('rejects absolute paths from file responses', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({ data: [{ ...file, relative_path: '/Users/owner/secret.md' }] } as never)
+  it.each([
+    '/Users/owner/secret.md',
+    'C:\\Users\\owner\\secret.md',
+    '\\\\server\\share\\secret.md',
+    '//server/share/secret.md',
+  ])('rejects POSIX, drive, and UNC absolute paths from file responses: %s', async (relative_path) => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: [{ ...file, relative_path }] } as never)
     await expect(vaultApi.files('vault_mount:one')).rejects.toThrow(/absolute path/i)
   })
 
