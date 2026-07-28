@@ -178,6 +178,25 @@ def test_manifest_counts_rejects_malformed_or_ambiguous_manifest(tmp_path, paylo
         verifier._manifest_counts(root, verifier._capture_root_identity(root))
 
 
+@pytest.mark.parametrize("records_key", ["documents", "records"])
+@pytest.mark.parametrize("evidence_class", [None, "", "   "])
+def test_manifest_counts_rejects_missing_or_blank_evidence_class(tmp_path, records_key, evidence_class):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    record = {"id": "source-1"}
+    if evidence_class is not None:
+        record["evidenceClass"] = evidence_class
+    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest.write_text(json.dumps({records_key: [record]}))
+
+    with pytest.raises(verifier.VerificationError, match="^connector manifest has invalid records$") as exc_info:
+        verifier._manifest_counts(root, verifier._capture_root_identity(root))
+
+    assert str(root) not in str(exc_info.value)
+    assert "source-1" not in str(exc_info.value)
+
+
 def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, monkeypatch):
     verifier = _load_verifier()
     root = tmp_path / "fixture"

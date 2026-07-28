@@ -220,7 +220,12 @@ def _manifest_counts(root: Path, identity: RootIdentity) -> dict[str, Any]:
             raise VerificationError("connector manifest has invalid records")
         record_id = record.get("id")
         evidence_class = record.get("evidenceClass")
-        if not isinstance(record_id, str) or not record_id or not isinstance(evidence_class, str):
+        if (
+            not isinstance(record_id, str)
+            or not record_id
+            or not isinstance(evidence_class, str)
+            or not evidence_class.strip()
+        ):
             raise VerificationError("connector manifest has invalid records")
         if record_id in record_ids:
             raise VerificationError("connector manifest has duplicate records")
