@@ -441,10 +441,13 @@ class VaultRepository:
                 raise asyncio.CancelledError from None
             raise RuntimeError("projection_outcome_missing")
         if projection_status == "projected":
-            cancelled = await self._submit_embedding_after_commit(
+            cancelled, embedding_failed = await self._submit_embedding_after_commit(
                 note_id,
+                vault_file_id,
                 cancellation_pending=cancelled,
             )
+        else:
+            embedding_failed = False
         if cancelled:
             raise asyncio.CancelledError from None
 
@@ -453,16 +456,17 @@ class VaultRepository:
             note_id=note_id,
             status=projection_status,
             parse_state="parsed",
-            embedding_state="pending",
+            embedding_state="failed" if embedding_failed else "pending",
             reconciliation_required=projection_status == "conflict",
         )
 
     async def _submit_embedding_after_commit(
         self,
         note_id: str,
+        vault_file_id: str,
         *,
         cancellation_pending: bool,
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         async def submit() -> None:
             submitted = self._embedding_submitter(
                 LEGACY_COMMAND_APP,
@@ -484,10 +488,10 @@ class VaultRepository:
                     note_id,
                     type(exc).__name__,
                 )
-            return True
+            return True, False
         try:
             await asyncio.shield(task)
-            return False
+            return False, False
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if (
@@ -506,14 +510,27 @@ class VaultRepository:
                     note_id,
                     type(exc).__name__,
                 )
-            return True
+            return True, False
         except Exception as exc:
             logger.warning(
                 "Vault embedding submission failed for note {} ({})",
                 note_id,
                 type(exc).__name__,
             )
-            return False
+            await self._mark_embedding_failed(vault_file_id)
+            return False, True
+
+    async def _mark_embedding_failed(self, vault_file_id: str) -> None:
+        """Persist only local projection lifecycle state after submission failure."""
+        try:
+            async with self._connection_factory() as connection:
+                await self._query(
+                    connection,
+                    "UPDATE $vault_file_id SET embedding_state = 'failed';",
+                    {"vault_file_id": _db_id(vault_file_id)},
+                )
+        except Exception as exc:
+            logger.warning("Vault embedding failure state update failed ({})", type(exc).__name__)
 
     async def _reconcile_projection_commit(
         self,
