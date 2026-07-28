@@ -7,7 +7,11 @@ Run the verifier only with an explicit vault root supplied by the owner. It
 rejects the filesystem root, the current user's home directory, and paths that
 are not directories. It resolves `--output` before observing or writing
 anything and rejects an output equal to, inside, or symlink-resolved inside the
-source root. `--check-only` validates the root, output, source inventory, Git
+source root. The report target must not already exist: it is created once with
+exclusive creation and owner-only permissions, so an existing file or hard link
+can never be truncated. Its parent directory identity is rechecked immediately
+before creation to fail closed if a path changes during the run. `--check-only`
+validates the root, output, source inventory, Git
 state capture, and connector-manifest counts without making API calls.
 
 For a controlled verification, the script registers the approved mixed parent
@@ -19,12 +23,25 @@ blocked by a pre-existing lock, the report records `git_status_unavailable`; it
 does not alter the lock or repository. A mismatch stops before the next scan,
 writes a sanitized failure report, and returns nonzero.
 
+The post-scan observation is mandatory even when the API request fails or
+times out: the scan attempt is wrapped so the after snapshot runs in `finally`.
+If a failed request changed source hashes or Git state, the report records both
+the observation mismatch and `scan_request_failed`. Filesystem, inventory,
+subprocess, API, and report-creation failures are normalized to stable failure
+codes or a generic user-facing error; they do not expose source paths, source
+contents, or tracebacks.
+
 When a mount has the approved name already, the verifier fetches its owner-safe
 detail and requires the exact resolved root path, format, parent relationship,
 and watch state before reusing its ID. A conflicting or ambiguous matching name
 fails safely and is never scanned or used for trust import. Trust reconciliation
 compares each synthesis record's `derived_from` array to the connector manifest
 by stable record ID, including array order and membership.
+
+The vault-list response itself must be a list. Every ID, including an ID just
+returned by mount creation, is fetched from the canonical detail endpoint and
+must match the normalized root, name, format, parent, and watch setting before
+trust import or scanning can begin.
 
 The generated report is intentionally structured and sanitized. It contains a
 root label, relative file paths and hashes, count reconciliation, and failure
