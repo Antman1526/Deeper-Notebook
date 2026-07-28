@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import pwd
 import shutil
 import uuid
 from dataclasses import dataclass, field
@@ -13,6 +12,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - Windows skips POSIX vault tests
+    pwd = None  # type: ignore[assignment]
 
 from deeper_notebook.vault.repository import (
     FailureResult,
@@ -26,6 +30,11 @@ from deeper_notebook.vault.watcher import (
     VaultFileObservation,
     VaultWatcher,
     VaultWorkItem,
+)
+
+pytestmark = pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
 )
 
 
@@ -135,6 +144,7 @@ def _mount(
 
 @pytest.fixture
 def synthetic_root() -> Path:
+    assert pwd is not None
     root = (
         Path(pwd.getpwuid(os.getuid()).pw_dir)
         / ".cache"

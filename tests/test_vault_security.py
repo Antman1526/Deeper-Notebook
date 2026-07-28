@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pwd
 import shutil
 import socket
 import tempfile
@@ -9,6 +8,11 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - Windows skips POSIX vault tests
+    pwd = None  # type: ignore[assignment]
 
 from deeper_notebook.vault.security import (
     VaultSecurityError,
@@ -18,9 +22,15 @@ from deeper_notebook.vault.security import (
     secure_read,
 )
 
+pytestmark = pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX descriptor-relative vault access required",
+)
+
 
 @pytest.fixture
 def tmp_path() -> Path:
+    assert pwd is not None
     base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "deeper-notebook-tests"
     unique = base / uuid.uuid4().hex
     unique.mkdir(parents=True)
