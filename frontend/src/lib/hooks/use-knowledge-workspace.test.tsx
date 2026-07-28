@@ -17,10 +17,12 @@ vi.mock('@/lib/api/knowledge-workspace', async (importOriginal) => {
 import {
   defaultKnowledgeWorkspace,
   knowledgeWorkspaceApi,
+  serializeKnowledgeWorkspace,
   type KnowledgeWorkspaceDocument,
 } from '@/lib/api/knowledge-workspace'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import {
+  resetKnowledgeWorkspacePersistenceCoordinatorForTests,
   useHydrateKnowledgeWorkspace,
   usePersistKnowledgeWorkspace,
 } from './use-knowledge-workspace'
@@ -79,6 +81,7 @@ function deferred<T>() {
 
 describe('knowledge workspace synchronization', () => {
   beforeEach(() => {
+    resetKnowledgeWorkspacePersistenceCoordinatorForTests()
     vi.clearAllMocks()
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
@@ -344,6 +347,190 @@ describe('knowledge workspace synchronization', () => {
       })
     }
     expect(maxActiveSaves).toBe(1)
+  })
+
+  it('shares one save queue across a real unmount and fresh persistence mount', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const secondSave = deferred<KnowledgeWorkspaceDocument>()
+    let activeSaves = 0
+    let maxActiveSaves = 0
+    vi.mocked(knowledgeWorkspaceApi.put).mockImplementation(() => {
+      activeSaves += 1
+      maxActiveSaves = Math.max(maxActiveSaves, activeSaves)
+      const save = vi.mocked(knowledgeWorkspaceApi.put).mock.calls.length === 1
+        ? firstSave
+        : secondSave
+      return save.promise.finally(() => {
+        activeSaves -= 1
+      })
+    })
+    const firstConsumer = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    firstConsumer.unmount()
+
+    const activeTabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    act(() => {
+      useKnowledgeWorkspaceStore
+        .getState().setTabViewMode('pane-1', activeTabId, 'graph')
+    })
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(maxActiveSaves).toBe(1)
+
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+      await vi.runAllTimersAsync()
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
+    expect(maxActiveSaves).toBe(1)
+    expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
+      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+
+    await act(async () => {
+      secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await secondSave.promise
+      await vi.runAllTimersAsync()
+    })
+  })
+
+  it('shares one save queue between simultaneous persistence consumers', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const secondSave = deferred<KnowledgeWorkspaceDocument>()
+    let activeSaves = 0
+    let maxActiveSaves = 0
+    vi.mocked(knowledgeWorkspaceApi.put).mockImplementation(() => {
+      activeSaves += 1
+      maxActiveSaves = Math.max(maxActiveSaves, activeSaves)
+      const save = vi.mocked(knowledgeWorkspaceApi.put).mock.calls.length === 1
+        ? firstSave
+        : secondSave
+      return save.promise.finally(() => {
+        activeSaves -= 1
+      })
+    })
+    const firstConsumer = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+    const secondConsumer = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(maxActiveSaves).toBe(1)
+    expect(firstConsumer.result.current.isPending).toBe(true)
+    expect(secondConsumer.result.current.isPending).toBe(true)
+
+    const activeTabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    act(() => {
+      useKnowledgeWorkspaceStore
+        .getState().setTabViewMode('pane-1', activeTabId, 'graph')
+    })
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+      await vi.runAllTimersAsync()
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
+      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+    await act(async () => {
+      secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await secondSave.promise
+      await vi.runAllTimersAsync()
+    })
+    expect(maxActiveSaves).toBe(1)
+  })
+
+  it('persists a newer fingerprint that shares the in-flight snapshot revision', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const secondSave = deferred<KnowledgeWorkspaceDocument>()
+    vi.mocked(knowledgeWorkspaceApi.put)
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise)
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    const savedRevision = useKnowledgeWorkspaceStore.getState().revision
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+
+    const current = useKnowledgeWorkspaceStore.getState()
+    useKnowledgeWorkspaceStore.setState({
+      panes: {
+        ...current.panes,
+        'pane-1': {
+          ...current.panes['pane-1'],
+          tabs: current.panes['pane-1'].tabs.map((tab) => ({
+            ...tab,
+            viewMode: 'graph',
+          })),
+        },
+      },
+    })
+    expect(useKnowledgeWorkspaceStore.getState().revision).toBe(savedRevision)
+
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+      await vi.runAllTimersAsync()
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
+      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+
+    await act(async () => {
+      secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await secondSave.promise
+      await vi.runAllTimersAsync()
+    })
+    const finalState = useKnowledgeWorkspaceStore.getState()
+    expect(finalState.durableRevision).toBe(finalState.revision)
+    expect(finalState.durableFingerprint).toBe(
+      JSON.stringify(serializeKnowledgeWorkspace(finalState)),
+    )
   })
 
   it('exposes a stable validation error instead of silently dropping an invalid snapshot', async () => {

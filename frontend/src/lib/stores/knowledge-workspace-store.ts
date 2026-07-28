@@ -18,12 +18,13 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   hydrated: boolean
   revision: number
   durableRevision: number
+  durableFingerprint: string | null
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
   hydrateWorkspace: (
     document: KnowledgeWorkspaceDocument,
     requestStartRevision: number,
   ) => void
-  markWorkspaceDurable: (revision: number) => void
+  markWorkspaceDurable: (revision: number, fingerprint: string) => void
   openTab: (tab: OpenKnowledgeTab, paneId?: string) => void
   closeTab: (paneId: string, tabId: string) => void
   activateTab: (paneId: string, tabId: string) => void
@@ -97,12 +98,39 @@ function deepestPaneOccurrence(node: KnowledgeLayoutNode, paneId: string): numbe
   return deepest
 }
 
-function isValidWorkspace(document: KnowledgeWorkspaceDocument): boolean {
+function collectTabIds(panes: Record<string, KnowledgePane>): Set<string> {
+  return new Set(
+    Object.values(panes).flatMap((pane) => pane.tabs.map((tab) => tab.id)),
+  )
+}
+
+function collectSplitIds(layout: KnowledgeLayoutNode): Set<string> {
+  const ids = new Set<string>()
+  const stack = [layout]
+  while (stack.length > 0) {
+    const node = stack.pop()
+    if (!node || node.type === 'pane') continue
+    ids.add(node.id)
+    stack.push(node.first, node.second)
+  }
+  return ids
+}
+
+function allocateId(
+  prefix: 'tab' | 'pane' | 'split',
+  startingId: number,
+  usedIds: Set<string>,
+): { id: string; nextId: number } {
+  let candidate = startingId
+  while (usedIds.has(`${prefix}-${candidate}`)) candidate += 1
+  return { id: `${prefix}-${candidate}`, nextId: candidate + 1 }
+}
+
+function workspaceFingerprint(document: KnowledgeWorkspaceDocument): string | null {
   try {
-    serializeKnowledgeWorkspace(document)
-    return true
+    return JSON.stringify(serializeKnowledgeWorkspace(document))
   } catch {
-    return false
+    return null
   }
 }
 
@@ -111,21 +139,30 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   hydrated: false,
   revision: 0,
   durableRevision: 0,
+  durableFingerprint: workspaceFingerprint(defaultKnowledgeWorkspace()),
 
   replaceWorkspace: (document) => {
-    if (!isValidWorkspace(document)) return
+    const fingerprint = workspaceFingerprint(document)
+    if (!fingerprint) return
     const state = get()
-    set({ ...document, hydrated: true, durableRevision: state.revision })
+    set({
+      ...document,
+      hydrated: true,
+      durableRevision: state.revision,
+      durableFingerprint: fingerprint,
+    })
   },
 
   hydrateWorkspace: (document, requestStartRevision) => {
-    if (!isValidWorkspace(document)) return
+    const fingerprint = workspaceFingerprint(document)
+    if (!fingerprint) return
     const state = get()
     if (state.revision === requestStartRevision) {
       set({
         ...document,
         hydrated: true,
         durableRevision: Math.max(state.durableRevision, requestStartRevision),
+        durableFingerprint: fingerprint,
       })
       return
     }
@@ -133,15 +170,24 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       set({
         hydrated: true,
         durableRevision: Math.max(state.durableRevision, requestStartRevision),
+        durableFingerprint: fingerprint,
       })
     }
   },
 
-  markWorkspaceDurable: (revision) => {
+  markWorkspaceDurable: (revision, fingerprint) => {
     const state = get()
     const durableRevision = Math.min(revision, state.revision)
-    if (durableRevision <= state.durableRevision) return
-    set({ durableRevision })
+    if (
+      durableRevision < state.durableRevision
+      || (
+        durableRevision === state.durableRevision
+        && fingerprint === state.durableFingerprint
+      )
+    ) {
+      return
+    }
+    set({ durableRevision, durableFingerprint: fingerprint })
   },
 
   openTab: (tab, requestedPaneId) => {
@@ -170,14 +216,15 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     }
     if (totalTabCount(state.panes) >= 128) return
 
+    const allocated = allocateId('tab', state.nextId, collectTabIds(state.panes))
     const created = {
       ...validTab,
-      id: `tab-${state.nextId}`,
+      id: allocated.id,
       viewMode: validTab.viewMode ?? 'reading',
     }
     set({
       activePaneId: paneId,
-      nextId: state.nextId + 1,
+      nextId: allocated.nextId,
       revision: state.revision + 1,
       panes: {
         ...state.panes,
@@ -268,8 +315,18 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     ) {
       return paneId
     }
-    const newPaneId = `pane-${state.nextId}`
-    const splitId = `split-${state.nextId + 1}`
+    const allocatedPane = allocateId(
+      'pane',
+      state.nextId,
+      new Set(Object.keys(state.panes)),
+    )
+    const allocatedSplit = allocateId(
+      'split',
+      allocatedPane.nextId,
+      collectSplitIds(state.layout),
+    )
+    const newPaneId = allocatedPane.id
+    const splitId = allocatedSplit.id
     const activeTab = sourcePane.tabs.find((tab) => tab.id === sourcePane.activeTabId)
     if (activeTab && totalTabCount(state.panes) >= 128) return paneId
     const newPane: KnowledgePane = {
@@ -286,7 +343,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     }
     set({
       activePaneId: newPaneId,
-      nextId: state.nextId + 2,
+      nextId: allocatedSplit.nextId,
       revision: state.revision + 1,
       panes: { ...state.panes, [newPaneId]: newPane },
       layout: replacePaneInLayout(state.layout, paneId, replacement),
@@ -313,11 +370,13 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
 
   resetWorkspace: () => {
     const revision = get().revision + 1
+    const document = defaultKnowledgeWorkspace()
     set({
-      ...defaultKnowledgeWorkspace(),
+      ...document,
       hydrated: false,
       revision,
       durableRevision: revision,
+      durableFingerprint: workspaceFingerprint(document),
     })
   },
 }))
