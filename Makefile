@@ -373,13 +373,13 @@ build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build
 # Stage 0: precondition — fast unit suite. Catches regressions before we
 # spend 15+ min on a build that's going to be DOA. Uses the test venv (3.14)
 # which is separate from the build venv (3.12). P2-MED-12 audit fix.
-build-mac-test:
+build-mac-test: build-mac-venv
 	@echo "🧪 Running unit tests (precondition for build-mac)…"
 	# v0.8.66 (audit I-M1) — DON'T pipe to `tail`: a piped recipe's exit status
 	# is the LAST command's (tail, always 0), so a failing test suite could NOT
 	# fail the build (the "Stage 0 precondition" was toothless). Run pytest
 	# directly so its non-zero exit aborts `build-mac`.
-	@uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q
+	@$(BUILD_PY) -m pytest desktop/tests/ desktop/memory/tests/ -q
 	@# v0.8.67k — ALSO gate the backend suite. Previously the precondition ran
 	@# only desktop/tests/, so a regression in api/ or deeper_notebook/ (e.g. the
 	@# chat-stream overflow handling) could ship in a build with zero coverage.
