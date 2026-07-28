@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import time
 import uuid
 from collections.abc import Callable
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from loguru import logger
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
@@ -99,12 +102,16 @@ class VaultService:
         self._mounts: dict[str, VaultMount] = {}
         self._states: dict[str, str] = {}
         self._dirty: set[str] = set()
+        self._scan_operation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "vault_scan_operation_id", default=None
+        )
         self._worker: asyncio.Task[None] | None = None
-        self._observer: asyncio.Task[None] | None = None
+        self._observer: Observer | None = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
         self._closed = False
 
     def _operation_id(self) -> str:
-        return f"vault-scan-{uuid.uuid4().hex}"
+        return self._scan_operation_id.get() or f"vault-scan-{uuid.uuid4().hex}"
 
     async def register_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = await self._repository.create_mount(request)
@@ -165,6 +172,15 @@ class VaultService:
         await self._load_mounts()
         mount = self._mounts.get(vault_id)
         operation_id = self._operation_id()
+        token = self._scan_operation_id.set(operation_id)
+        try:
+            return await self._scan_with_operation(vault_id, operation_id)
+        finally:
+            self._scan_operation_id.reset(token)
+
+    async def _scan_with_operation(self, vault_id: str, operation_id: str) -> VaultScanResult:
+        await self._load_mounts()
+        mount = self._mounts.get(vault_id)
         if mount is None:
             raise LookupError("vault_mount_not_found")
         watcher = await self._watcher_for(mount)
@@ -177,7 +193,7 @@ class VaultService:
         projected = failed = 0
         reconciliation_required = False
         for item in work:
-            outcome = await self._project(mount, watcher, item)
+            outcome = await self._project(mount, watcher, item, operation_id)
             projected += outcome.projected
             failed += outcome.failed
             reconciliation_required = (
@@ -196,9 +212,8 @@ class VaultService:
         )
 
     async def _project(
-        self, mount: VaultMount, watcher: VaultWatcher, item: VaultWorkItem
+        self, mount: VaultMount, watcher: VaultWatcher, item: VaultWorkItem, operation_id: str
     ) -> VaultScanResult:
-        operation_id = self._operation_id()
         try:
             parsed = parse_document(
                 item.relative_path, item.content, format_mode=mount.format_mode
@@ -221,9 +236,11 @@ class VaultService:
             )
             await self._process_corrective(mount, watcher, handoff.corrective_work)
             raise
-        handoff = await watcher.acknowledge_projected(
-            item.relative_path, item.content_hash
-        )
+        if result.reconciliation_required:
+            await watcher.release_queued(item.relative_path, item.content_hash)
+            self._dirty.add(mount.id)
+            return VaultScanResult(mount.id, "conflict", operation_id, reconciliation_required=True)
+        handoff = await watcher.acknowledge_projected(item.relative_path, item.content_hash)
         await self._process_corrective(mount, watcher, handoff.corrective_work)
         return VaultScanResult(
             mount.id,
@@ -238,7 +255,7 @@ class VaultService:
         self, mount: VaultMount, watcher: VaultWatcher, work: tuple[VaultWorkItem, ...]
     ) -> None:
         for item in work:
-            await self._project(mount, watcher, item)
+            await self._project(mount, watcher, item, self._operation_id())
 
     def notify_change(self, vault_id: str, relative_path: str = "") -> None:
         if not self._closed:
@@ -256,6 +273,8 @@ class VaultService:
                 await self.scan_dirty_mounts()
 
     async def start_watchers(self) -> None:
+        self._closed = False
+        self._event_loop = asyncio.get_running_loop()
         await self._load_mounts()
         for mount in self._mounts.values():
             if mount.watch_enabled:
@@ -266,25 +285,56 @@ class VaultService:
                 self._run_worker(), name="vault-index-worker"
             )
         if self._observer is None:
-            self._observer = asyncio.create_task(
-                asyncio.sleep(float("inf")), name="vault-observer"
-            )
+            observer = Observer()
+            for mount in self._mounts.values():
+                if mount.watch_enabled and mount.id in self._watchers:
+                    observer.schedule(_VaultEventHandler(self, mount), mount.root_path, recursive=True)
+            observer.start()
+            self._observer = observer
 
     async def stop_watchers(self) -> None:
         self._closed = True
-        for task in (self._observer, self._worker):
-            if task is not None:
-                task.cancel()
-        for task in (self._observer, self._worker):
-            if task is not None:
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        self._observer = self._worker = None
+        if self._observer is not None:
+            self._observer.stop()
+            await asyncio.to_thread(self._observer.join)
+            self._observer = None
+        if self._worker is not None:
+            self._worker.cancel()
+            try:
+                await self._worker
+            except asyncio.CancelledError:
+                pass
+            self._worker = None
         for watcher in self._watchers.values():
             watcher._root.close()  # descriptor cleanup; watcher owns the approved root.
         self._watchers.clear()
+
+
+class _VaultEventHandler(FileSystemEventHandler):
+    """Thread-only event bridge; filesystem parsing stays on the async worker."""
+
+    def __init__(self, service: VaultService, mount: VaultMount) -> None:
+        self._service = service
+        self._mount = mount
+        self._root = Path(mount.root_path)
+
+    def on_any_event(self, event: FileSystemEvent) -> None:
+        paths = [event.src_path]
+        destination = getattr(event, "dest_path", None)
+        if destination:
+            paths.append(destination)
+        for raw_path in paths:
+            try:
+                relative = Path(raw_path).relative_to(self._root).as_posix()
+            except ValueError:
+                continue
+            watcher = self._service._watchers.get(self._mount.id)
+            if watcher is not None and watcher._is_excluded(relative):
+                continue
+            loop = self._service._event_loop
+            if loop is not None and not self._service._closed:
+                loop.call_soon_threadsafe(self._service.notify_change, self._mount.id, relative)
+            return
 
 
 __all__ = ["VaultScanResult", "VaultService"]
