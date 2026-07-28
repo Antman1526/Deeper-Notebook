@@ -652,7 +652,8 @@
           "frontend/src/lib/api/onp.ts",
           "frontend/src/lib/task6-active-brand.test.ts",
           "tests/test_gmail_router.py",
-          "tests/test_task6_active_product.py"
+          "tests/test_task6_active_product.py",
+          "tests/test_vault_api.py"
         ],
         "patterns": [
           "/api/onp",
@@ -664,7 +665,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "4f892a7f704f04a59f9e8c95bcdb647776bef79d9a665f3d4d23997c7efcbbc4"
+      "coverage_sha256": "54b7d2dc59b8f1b990071382cdf71376f83de15d77a9f641654bdb5616e9c2df"
     },
     "legacy-artifact-probe-v1": {
       "kind": "legacy_artifact_probe",
@@ -3165,7 +3166,7 @@
       "path": "api/main.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 549,
+      "line": 551,
       "column": 13,
       "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
       "category": "compatibility_alias",
@@ -3173,7 +3174,7 @@
         "path": "api/main.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 549,
+        "line": 551,
         "column": 13,
         "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
         "category": "compatibility_alias",
@@ -3185,7 +3186,7 @@
       "path": "api/main.py",
       "pattern": "/onp/",
       "source": "content",
-      "line": 549,
+      "line": 551,
       "column": 17,
       "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
       "category": "compatibility_alias",
@@ -3193,31 +3194,11 @@
         "path": "api/main.py",
         "pattern": "/onp/",
         "source": "content",
-        "line": 549,
+        "line": 551,
         "column": 17,
         "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
         "category": "compatibility_alias",
         "explanation": "The api main Python module keeps the legacy behavior in the `lifespan` function because the statement uses that role while expressing polls /api current legacy API path segment gmail/status on mount first cold call against the, while the preceding context concerns v0.7.157 — Pre-warm the GmailIntegration TTL cache. The frontend; the following context concerns singleton SurrealDB record takes 4-8s slow-query warnings on.",
-        "compatibility_contract": "legacy-api-route-v1"
-      }
-    },
-    {
-      "path": "api/main.py",
-      "pattern": "/api/onp",
-      "source": "content",
-      "line": 1004,
-      "column": 13,
-      "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
-      "category": "compatibility_alias",
-      "rationale": {
-        "path": "api/main.py",
-        "pattern": "/api/onp",
-        "source": "content",
-        "line": 1004,
-        "column": 13,
-        "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
-        "category": "compatibility_alias",
-        "explanation": "The api main Python module keeps the legacy behavior in the module overview because the statement uses that role while expressing prefix=\" current legacy API namespace \", while the preceding context concerns deeper notebook.router; the following context concerns include in schema=False; the local example is introduced by deeper_notebook_error_handler.",
         "compatibility_contract": "legacy-api-route-v1"
       }
     },
@@ -3234,6 +3215,26 @@
         "pattern": "/api/onp",
         "source": "content",
         "line": 1014,
+        "column": 13,
+        "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
+        "category": "compatibility_alias",
+        "explanation": "The api main Python module keeps the legacy behavior in the module overview because the statement uses that role while expressing prefix=\" current legacy API namespace \", while the preceding context concerns deeper notebook.router; the following context concerns include in schema=False; the local example is introduced by deeper_notebook_error_handler.",
+        "compatibility_contract": "legacy-api-route-v1"
+      }
+    },
+    {
+      "path": "api/main.py",
+      "pattern": "/api/onp",
+      "source": "content",
+      "line": 1029,
+      "column": 13,
+      "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
+      "category": "compatibility_alias",
+      "rationale": {
+        "path": "api/main.py",
+        "pattern": "/api/onp",
+        "source": "content",
+        "line": 1029,
         "column": 13,
         "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
         "category": "compatibility_alias",
@@ -55345,7 +55346,7 @@
       "path": "scripts/rebrand_audit.py",
       "pattern": "open_notebook",
       "source": "content",
-      "line": 2592,
+      "line": 2593,
       "column": 60,
       "context_sha256": "e2c668ef46bf9bd5db91d8b5a3d3792bda87a8cab739972b41314f71c713bf5f",
       "category": "migration_documentation",
@@ -55353,7 +55354,7 @@
         "path": "scripts/rebrand_audit.py",
         "pattern": "open_notebook",
         "source": "content",
-        "line": 2592,
+        "line": 2593,
         "column": 60,
         "context_sha256": "e2c668ef46bf9bd5db91d8b5a3d3792bda87a8cab739972b41314f71c713bf5f",
         "category": "migration_documentation",
@@ -55365,7 +55366,7 @@
       "path": "scripts/rebrand_audit.py",
       "pattern": "open_notebook",
       "source": "content",
-      "line": 2675,
+      "line": 2676,
       "column": 42,
       "context_sha256": "31bcded02e06d27383c5a3944508ea87b4401d0798554d7bdf8724059cfeb6da",
       "category": "migration_documentation",
@@ -55373,7 +55374,7 @@
         "path": "scripts/rebrand_audit.py",
         "pattern": "open_notebook",
         "source": "content",
-        "line": 2675,
+        "line": 2676,
         "column": 42,
         "context_sha256": "31bcded02e06d27383c5a3944508ea87b4401d0798554d7bdf8724059cfeb6da",
         "category": "migration_documentation",
@@ -65159,6 +65160,46 @@
         "category": "compatibility_alias",
         "explanation": "The test v0 8 6 launcher prefs api regression suite keeps the legacy behavior in the `prefs_dir` function because the statement uses that role while expressing prefs path = tmp path / \". current former lowercase package slug \" / \"launcher.env\", while the preceding context concerns \"\"\"Redirect desktop.launcher prefs to a temp directory.\"\"\"; the following context concerns import desktop.launcher prefs as lp.",
         "compatibility_contract": "legacy-test-fixture-v1"
+      }
+    },
+    {
+      "path": "tests/test_vault_api.py",
+      "pattern": "/api/onp",
+      "source": "content",
+      "line": 193,
+      "column": 29,
+      "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
+      "category": "compatibility_alias",
+      "rationale": {
+        "path": "tests/test_vault_api.py",
+        "pattern": "/api/onp",
+        "source": "content",
+        "line": 193,
+        "column": 29,
+        "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
+        "category": "compatibility_alias",
+        "explanation": "The test vault api regression suite keeps the legacy behavior in the `test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias` function because the statement uses that role while expressing assert test client.get \" current legacy API namespace /vaults\" .status code == 404, while the preceding context concerns assert required = routes.keys; the following context concerns assert all.",
+        "compatibility_contract": "legacy-api-route-v1"
+      }
+    },
+    {
+      "path": "tests/test_vault_api.py",
+      "pattern": "/onp/",
+      "source": "content",
+      "line": 193,
+      "column": 33,
+      "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
+      "category": "compatibility_alias",
+      "rationale": {
+        "path": "tests/test_vault_api.py",
+        "pattern": "/onp/",
+        "source": "content",
+        "line": 193,
+        "column": 33,
+        "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
+        "category": "compatibility_alias",
+        "explanation": "The test vault api regression suite keeps the legacy behavior in the `test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias` function because the statement uses that role while expressing assert test client.get \"/api current legacy API path segment vaults\" .status code == 404, while the preceding context concerns assert required = routes.keys; the following context concerns assert all.",
+        "compatibility_contract": "legacy-api-route-v1"
       }
     }
   ]

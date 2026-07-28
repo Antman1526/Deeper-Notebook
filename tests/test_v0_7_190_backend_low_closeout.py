@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
+from task_lifecycle_assertions import assert_lifespan_tracked_task
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,15 +67,13 @@ def test_lifespan_tasks_use_track_task_anchor():
     in _track_task. The pre-fix local-var anchor worked today but
     was fragile to future refactors."""
     src = _read_source("api/main.py")
-    # All three task spawns go through _track_task.
-    for task_name in (
-        "digest_scheduler_task = _track_task(asyncio.create_task(",
-        "checkpoint_prune_task = _track_task(asyncio.create_task(",
-        "gmail_prewarm_task = _track_task(asyncio.create_task(",
+    for task_name, coroutine_name in (
+        ("digest_scheduler_task", "_digest_run_forever"),
+        ("checkpoint_prune_task", "_checkpoint_prune_loop"),
+        ("gmail_prewarm_task", "_prewarm_gmail_cache"),
     ):
-        assert task_name in src, (
-            f"v0.7.190 regression: missing `{task_name}` — one of the "
-            f"three lifespan tasks dropped the GC anchor."
+        assert_lifespan_tracked_task(
+            src, task_name=task_name, coroutine_name=coroutine_name
         )
 
 
@@ -111,6 +109,7 @@ def test_repo_query_accepts_timeout_kwarg():
     """v0.7.190: repo_query gained an optional `timeout_s` keyword
     for per-call wait_for bounding."""
     import inspect
+
     from deeper_notebook.database.repository import repo_query
 
     sig = inspect.signature(repo_query)
