@@ -464,7 +464,11 @@ def _open_windows_append_file(path: Path) -> int:
     create_file.restype = wintypes.HANDLE
     handle = create_file(
         str(path),
-        0x00000084,  # FILE_APPEND_DATA | FILE_READ_ATTRIBUTES
+        # FILE_APPEND_DATA keeps the handle append-only: omitting
+        # FILE_WRITE_DATA prevents any write from replacing existing bytes.
+        # FILE_GENERIC_READ is required by the CRT's O_APPEND path so it can
+        # position an existing file at EOF before each write.
+        0x0012008D,  # FILE_APPEND_DATA | FILE_GENERIC_READ
         0x00000003,  # FILE_SHARE_READ | FILE_SHARE_WRITE; no delete sharing
         None,
         4,  # OPEN_ALWAYS

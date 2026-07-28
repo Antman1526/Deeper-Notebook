@@ -212,6 +212,10 @@ def test_windows_append_handle_closes_when_reparse_query_fails(
     with pytest.raises(OSError, match="probe failed"):
         data_root._open_windows_append_file(tmp_path / "launcher.log")
 
+    desired_access = create.calls[0][1]
+    assert desired_access & 0x00000004  # FILE_APPEND_DATA
+    assert desired_access & 0x00120089 == 0x00120089  # FILE_GENERIC_READ
+    assert desired_access & 0x00000002 == 0  # no FILE_WRITE_DATA
     assert closed == [202]
 
 
@@ -230,10 +234,17 @@ def test_live_windows_owned_directory_hardens_acl_and_appends_safely(tmp_path):
         data_root.append_recovery_log(
             directory,
             "launcher.log",
-            b"native-windows\n",
+            b"first-native-windows\n",
+        )
+        data_root.append_recovery_log(
+            directory,
+            "launcher.log",
+            b"second-native-windows\n",
         )
 
-    assert (owned / "launcher.log").read_bytes() == b"native-windows\n"
+    assert (owned / "launcher.log").read_bytes() == (
+        b"first-native-windows\nsecond-native-windows\n"
+    )
 
 
 @pytest.mark.skipif(
