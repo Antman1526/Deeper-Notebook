@@ -232,7 +232,9 @@ export const ptBR = {
     language: "Alternar idioma",
     theme: "Tema",
     ask: "Perguntar",
+    knowledge: "Conhecimento",
   },
+  knowledge: { mounts: "Cofres montados", scan: "Escanear cofre", status: "Status", readOnly: "Arquivo externo somente leitura", backlinks: "Links de entrada", outgoing: "Links de saída", properties: "Propriedades", tags: "Tags", unresolved: "Link não resolvido", loadError: "Não foi possível carregar o conhecimento." },
   notebooks: {
     title: "Cadernos",
     newNotebook: "Novo Caderno",

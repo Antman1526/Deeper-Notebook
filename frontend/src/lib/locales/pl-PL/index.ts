@@ -235,7 +235,9 @@ export const plPL = {
     language: "Przełącz język",
     theme: "Motyw",
     ask: "Pytaj",
+    knowledge: "Wiedza",
   },
+  knowledge: { mounts: "Zamontowane skarbce", scan: "Skanuj skarbiec", status: "Stan", readOnly: "Zewnętrzny plik tylko do odczytu", backlinks: "Linki zwrotne", outgoing: "Linki wychodzące", properties: "Właściwości", tags: "Tagi", unresolved: "Nierozwiązany link", loadError: "Nie można załadować wiedzy." },
   notebooks: {
     title: "Notatniki",
     newNotebook: "Nowy notatnik",

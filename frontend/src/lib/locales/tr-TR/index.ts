@@ -235,7 +235,9 @@ export const trTR = {
     language: "Dili değiştir",
     theme: "Tema",
     ask: "Sor",
+    knowledge: "Bilgi",
   },
+  knowledge: { mounts: "Bağlı kasalar", scan: "Kasayı tara", status: "Durum", readOnly: "Salt okunur harici dosya", backlinks: "Geri bağlantılar", outgoing: "Giden bağlantılar", properties: "Özellikler", tags: "Etiketler", unresolved: "Çözümlenmemiş bağlantı", loadError: "Bilgi yüklenemedi." },
   notebooks: {
     title: "Defterler",
     newNotebook: "Yeni Defter",

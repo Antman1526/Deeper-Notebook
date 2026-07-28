@@ -232,7 +232,9 @@ export const ruRU = {
     language: "Переключить язык",
     theme: "Тема",
     ask: "Запрос",
+    knowledge: "Знания",
   },
+  knowledge: { mounts: "Подключенные хранилища", scan: "Сканировать хранилище", status: "Статус", readOnly: "Внешний файл только для чтения", backlinks: "Обратные ссылки", outgoing: "Исходящие ссылки", properties: "Свойства", tags: "Теги", unresolved: "Неразрешенная ссылка", loadError: "Не удалось загрузить знания." },
   notebooks: {
     title: "Блокноты",
     newNotebook: "Новый блокнот",
