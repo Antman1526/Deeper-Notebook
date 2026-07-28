@@ -9,6 +9,43 @@ from deeper_notebook.vault.normalization import canonical_title_key
 MIGRATION_33_BATCH_SIZE = 128
 MIGRATION_33_MAX_ROWS = 1_000_000
 
+_NOTE_KEY_BATCH_TRANSACTION = """
+BEGIN TRANSACTION;
+FOR $item IN $items {
+    UPDATE $item.record_id SET title_key = $item.title_key;
+};
+RETURN { updated_preserved: true };
+COMMIT TRANSACTION;
+"""
+
+_LINK_KEY_BATCH_TRANSACTION = """
+BEGIN TRANSACTION;
+FOR $item IN $items {
+    UPDATE $item.record_id SET target_title_key = $item.target_title_key;
+};
+RETURN { updated_preserved: true };
+COMMIT TRANSACTION;
+"""
+
+_LINK_RECONCILIATION_BATCH_TRANSACTION = """
+BEGIN TRANSACTION;
+FOR $item IN $items {
+    UPDATE $item.record_id SET
+        target_note_id = $item.target_note_id,
+        resolved = $item.resolved;
+};
+RETURN { updated_preserved: true };
+COMMIT TRANSACTION;
+"""
+
+_RESTORE_CANONICAL_UPDATED_FIELDS_TRANSACTION = """
+BEGIN TRANSACTION;
+DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE time::now();
+DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime DEFAULT time::now() VALUE time::now();
+RETURN { canonical_updated_fields_restored: true };
+COMMIT TRANSACTION;
+"""
+
 
 class MigrationConnection(Protocol):
     async def query(
@@ -41,10 +78,13 @@ async def _execute(
     connection: MigrationConnection,
     statement: str,
     variables: dict[str, Any],
+    *,
+    proof_key: str = "updated_preserved",
 ) -> None:
     result = await connection.query(statement, variables)
-    if isinstance(result, str):
-        raise RuntimeError("migration_33_query_failed")
+    rows = _rows(result)
+    if rows != [{proof_key: True}]:
+        raise RuntimeError("migration_33_proof_missing")
 
 
 async def _backfill_note_keys(
@@ -59,7 +99,7 @@ async def _backfill_note_keys(
                 """
                 SELECT id, title FROM note
                 WHERE vault_id != NONE
-                AND (title_key = NONE OR title_key = '')
+                AND title_key = NONE
                 ORDER BY id LIMIT $batch_size;
                 """,
                 {"batch_size": batch_size},
@@ -80,11 +120,7 @@ async def _backfill_note_keys(
             )
         await _execute(
             connection,
-            """
-            FOR $item IN $items {
-                UPDATE $item.record_id SET title_key = $item.title_key;
-            };
-            """,
+            _NOTE_KEY_BATCH_TRANSACTION,
             {"items": updates},
         )
         processed += len(updates)
@@ -102,7 +138,7 @@ async def _backfill_link_keys(
             await connection.query(
                 """
                 SELECT id, target_text FROM note_link
-                WHERE target_title_key = NONE OR target_title_key = ''
+                WHERE target_title_key = NONE
                 ORDER BY id LIMIT $batch_size;
                 """,
                 {"batch_size": batch_size},
@@ -123,12 +159,7 @@ async def _backfill_link_keys(
             )
         await _execute(
             connection,
-            """
-            FOR $item IN $items {
-                UPDATE $item.record_id
-                    SET target_title_key = $item.target_title_key;
-            };
-            """,
+            _LINK_KEY_BATCH_TRANSACTION,
             {"items": updates},
         )
         processed += len(updates)
@@ -230,13 +261,7 @@ async def _reconcile_links(
         if updates:
             await _execute(
                 connection,
-                """
-                FOR $item IN $items {
-                    UPDATE $item.record_id SET
-                        target_note_id = $item.target_note_id,
-                        resolved = $item.resolved;
-                };
-                """,
+                _LINK_RECONCILIATION_BATCH_TRANSACTION,
                 {"items": updates},
             )
         offset += len(links)
@@ -256,6 +281,12 @@ async def run_vault_migration_33_backfill(
     await _backfill_note_keys(connection, batch_size=batch_size)
     await _backfill_link_keys(connection, batch_size=batch_size)
     await _reconcile_links(connection, batch_size=batch_size)
+    await _execute(
+        connection,
+        _RESTORE_CANONICAL_UPDATED_FIELDS_TRANSACTION,
+        {},
+        proof_key="canonical_updated_fields_restored",
+    )
 
 
 async def run_python_migration_hook(

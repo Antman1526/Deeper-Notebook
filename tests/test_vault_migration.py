@@ -122,10 +122,18 @@ def test_migration_33_repairs_already_recorded_v32_schema_idempotently():
     assert "DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key" in sql
     assert "REMOVE INDEX IF EXISTS idx_vault_trust_manifest" in sql
     assert "COLUMNS vault_id, manifest_relative_path, manifest_id UNIQUE" in sql
+    preserving_defines = {
+        "DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() "
+        "VALUE $before OR time::now();",
+        "DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime "
+        "DEFAULT time::now() VALUE $before OR time::now();",
+    }
+    assert preserving_defines.issubset(set(sql.splitlines()))
     defines = [
         line.strip()
         for line in sql.splitlines()
         if line.strip().upper().startswith("DEFINE ")
+        and line.strip() not in preserving_defines
     ]
     assert defines
     assert all("IF NOT EXISTS" in statement.upper() for statement in defines)
