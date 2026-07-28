@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { KnowledgePane } from '@/lib/api/knowledge-workspace'
-import { KnowledgeTabStrip } from './KnowledgeTabStrip'
+import { getKnowledgeTabId, KnowledgeTabStrip } from './KnowledgeTabStrip'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -97,11 +97,17 @@ describe('KnowledgeTabStrip', () => {
 
     expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute(
       'id',
-      'knowledge-tab-pane-1-tab-1',
+      'knowledge-tab-6:pane-1-5:tab-1',
     )
     for (const tab of screen.getAllByRole('tab')) {
       expect(tab).toHaveAttribute('aria-controls', 'knowledge-panel-pane-1')
     }
+  })
+
+  it('keeps DOM tab IDs distinct when pane and tab delimiters are ambiguous', () => {
+    expect(getKnowledgeTabId('pane-a-b', 'tab-c')).not.toBe(
+      getKnowledgeTabId('pane-a', 'b-tab-c'),
+    )
   })
 
   it('moves focus from a closed active tab to the newly active adjacent tab', () => {
@@ -142,6 +148,52 @@ describe('KnowledgeTabStrip', () => {
 
     expect(screen.queryByRole('tab', { name: 'Research' })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Decisions' })).toHaveFocus()
+  })
+
+  it('requests focus on the pane fallback after its final tab closes', () => {
+    function SingletonTabHarness() {
+      const fallbackRef = useRef<HTMLDivElement>(null)
+      const [currentPane, setCurrentPane] = useState<KnowledgePane>({
+        ...pane,
+        activeTabId: 'tab-1',
+        tabs: [pane.tabs[0]],
+      })
+
+      return (
+        <>
+          <KnowledgeTabStrip
+            pane={currentPane}
+            panelId="knowledge-panel-pane-1"
+            onActivateTab={() => undefined}
+            onCloseTab={() => {
+              setCurrentPane((current) => ({
+                ...current,
+                activeTabId: null,
+                tabs: [],
+              }))
+            }}
+            onRequestFocusFallback={() => fallbackRef.current?.focus()}
+          />
+          <div
+            ref={fallbackRef}
+            id="knowledge-panel-pane-1"
+            role="tabpanel"
+            aria-label="Empty pane"
+            tabIndex={0}
+          />
+        </>
+      )
+    }
+
+    render(<SingletonTabHarness />)
+    const closeFinalTab = screen.getByRole('button', { name: 'Close Plan' })
+    const fallbackPanel = screen.getByRole('tabpanel', { name: 'Empty pane' })
+    closeFinalTab.focus()
+
+    fireEvent.click(closeFinalTab)
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(fallbackPanel).toHaveFocus()
   })
 
   it.each([

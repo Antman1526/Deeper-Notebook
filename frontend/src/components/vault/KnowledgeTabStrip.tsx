@@ -18,14 +18,20 @@ interface KnowledgeTabStripProps {
   panelId?: string
   onActivateTab: (paneId: string, tabId: string) => void
   onCloseTab: (paneId: string, tabId: string) => void
+  onRequestFocusFallback?: () => void
 }
 
 export function getKnowledgePanelId(paneId: string): string {
   return `knowledge-panel-${encodeURIComponent(paneId)}`
 }
 
+function encodeDomIdPart(value: string): string {
+  const encoded = encodeURIComponent(value)
+  return `${encoded.length}:${encoded}`
+}
+
 export function getKnowledgeTabId(paneId: string, tabId: string): string {
-  return `knowledge-tab-${encodeURIComponent(paneId)}-${encodeURIComponent(tabId)}`
+  return `knowledge-tab-${encodeDomIdPart(paneId)}-${encodeDomIdPart(tabId)}`
 }
 
 export function KnowledgeTabStrip({
@@ -33,32 +39,42 @@ export function KnowledgeTabStrip({
   panelId = getKnowledgePanelId(pane.id),
   onActivateTab,
   onCloseTab,
+  onRequestFocusFallback,
 }: KnowledgeTabStripProps) {
   const { t } = useTranslation()
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const pendingFocusTabId = useRef<string | null>(null)
+  const pendingFallbackFocus = useRef(false)
   const rovingTabId = pane.tabs.some((tab) => tab.id === pane.activeTabId)
     ? pane.activeTabId
     : pane.tabs[0]?.id
 
   useLayoutEffect(() => {
     const targetTabId = pendingFocusTabId.current
-    if (!targetTabId || pane.activeTabId !== targetTabId) return
+    if (targetTabId && pane.activeTabId === targetTabId) {
+      const targetTab = tabRefs.current[targetTabId]
+      if (!targetTab) return
+      pendingFocusTabId.current = null
+      targetTab.focus()
+      return
+    }
 
-    const targetTab = tabRefs.current[targetTabId]
-    if (!targetTab) return
-    pendingFocusTabId.current = null
-    targetTab.focus()
-  }, [pane.activeTabId, pane.tabs])
+    if (pendingFallbackFocus.current && pane.tabs.length === 0) {
+      pendingFallbackFocus.current = false
+      onRequestFocusFallback?.()
+    }
+  }, [onRequestFocusFallback, pane.activeTabId, pane.tabs])
 
   const closeTab = (tabId: string) => {
     const closedIndex = pane.tabs.findIndex((tab) => tab.id === tabId)
     const remainingTabs = pane.tabs.filter((tab) => tab.id !== tabId)
-    pendingFocusTabId.current = pane.activeTabId === tabId
+    const focusTargetTabId = pane.activeTabId === tabId
       ? remainingTabs[closedIndex]?.id
         ?? remainingTabs[closedIndex - 1]?.id
         ?? null
       : pane.activeTabId
+    pendingFocusTabId.current = focusTargetTabId
+    pendingFallbackFocus.current = focusTargetTabId === null
     onCloseTab(pane.id, tabId)
   }
 
