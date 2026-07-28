@@ -174,7 +174,7 @@ def test_windows_installer_and_ci_keep_installation_per_user_and_verifiable() ->
     assert "if ($repairProcess.ExitCode -ne 0)" in workflow
     assert "$uninstallProcess = Start-Process" in workflow
     assert "if ($uninstallProcess.ExitCode -ne 0)" in workflow
-    assert "if (Test-Path $installDir)" in workflow
+    assert workflow.count("verify_windows_uninstall.py") == 2
 
 
 def test_release_surfaces_use_exact_deeper_notebook_artifact_names() -> None:

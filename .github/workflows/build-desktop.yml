@@ -139,7 +139,7 @@ jobs:
           if (-not (Test-Path $uninstaller)) { throw "Uninstaller not found: $uninstaller" }
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
           if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)." }
-          if (Test-Path $installDir) { throw "Install directory remains after uninstall: $installDir" }
+          python desktop/build/verify_windows_uninstall.py --install-dir "$installDir" --timeout-seconds 60
       - name: Generate Windows release metadata
         shell: pwsh
         run: |
@@ -637,7 +637,7 @@ jobs:
           $uninstaller = Join-Path $installDir "unins000.exe"
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed." }
-          if (Test-Path $installDir) { throw "Temporary install directory remains." }
+          python desktop/build/verify_windows_uninstall.py --install-dir "$installDir" --timeout-seconds 60
 
   release:
     needs:
