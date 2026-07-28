@@ -60,6 +60,7 @@ from api.routers import (
     study,
     transformations,
     video_overviews,
+    vault,
 )
 from api.routers import commands as commands_router
 from api.routers import (
@@ -285,6 +286,7 @@ async def lifespan(app: FastAPI):
         from deeper_notebook.vault.service import VaultService
 
         vault_service = VaultService(VaultRepository())
+        app.state.vault_service = vault_service
         await vault_service.start_watchers()
         vault_scan_task = _track_task(
             asyncio.create_task(
@@ -594,6 +596,8 @@ async def lifespan(app: FastAPI):
             await vault_service.stop_watchers()
         except Exception as exc:
             logger.warning("Vault observer shutdown raised ({})", type(exc).__name__)
+        finally:
+            app.state.vault_service = None
 
     if vault_scan_task is not None and not vault_scan_task.done():
         vault_scan_task.cancel()
@@ -1009,6 +1013,11 @@ app.include_router(
     deeper_notebook.router,
     prefix="/api/onp",
     include_in_schema=False,
+)
+app.include_router(
+    vault.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-vault"],
 )
 app.include_router(
     gmail_router.router,
