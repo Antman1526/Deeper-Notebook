@@ -237,7 +237,7 @@ export const caES = {
     ask: "Pregunta",
     knowledge: "Coneixement",
   },
-  knowledge: { mounts: "Voltes muntats", scan: "Escaneja la volta", status: "Estat", readOnly: "Fitxer extern de només lectura", backlinks: "Enllaços entrants", outgoing: "Enllaços sortints", properties: "Propietats", tags: "Etiquetes", unresolved: "Enllaç sense resoldre", loadError: "No s'ha pogut carregar el coneixement." },
+  knowledge: { mounts: "Voltes muntats", scan: "Escaneja la volta", status: "Estat", readOnly: "Fitxer extern de només lectura", backlinks: "Enllaços entrants", outgoing: "Enllaços sortints", properties: "Propietats", tags: "Etiquetes", unresolved: "Enllaç sense resoldre", loadError: "No s'ha pogut carregar el coneixement." }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "Quaderns",
     newNotebook: "Quadern nou",

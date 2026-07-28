@@ -237,7 +237,7 @@ export const trTR = {
     ask: "Sor",
     knowledge: "Bilgi",
   },
-  knowledge: { mounts: "Bağlı kasalar", scan: "Kasayı tara", status: "Durum", readOnly: "Salt okunur harici dosya", backlinks: "Geri bağlantılar", outgoing: "Giden bağlantılar", properties: "Özellikler", tags: "Etiketler", unresolved: "Çözümlenmemiş bağlantı", loadError: "Bilgi yüklenemedi." },
+  knowledge: { mounts: "Bağlı kasalar", scan: "Kasayı tara", status: "Durum", readOnly: "Salt okunur harici dosya", backlinks: "Geri bağlantılar", outgoing: "Giden bağlantılar", properties: "Özellikler", tags: "Etiketler", unresolved: "Çözümlenmemiş bağlantı", loadError: "Bilgi yüklenemedi." }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "Defterler",
     newNotebook: "Yeni Defter",

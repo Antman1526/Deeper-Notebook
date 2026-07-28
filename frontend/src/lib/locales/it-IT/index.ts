@@ -234,7 +234,7 @@ export const itIT = {
     ask: "Chiedi",
     knowledge: "Conoscenza",
   },
-  knowledge: { mounts: "Vault montati", scan: "Scansiona vault", status: "Stato", readOnly: "File esterno in sola lettura", backlinks: "Collegamenti in entrata", outgoing: "Collegamenti in uscita", properties: "Proprietà", tags: "Tag", unresolved: "Collegamento irrisolto", loadError: "Impossibile caricare la conoscenza." },
+  knowledge: { mounts: "Vault montati", scan: "Scansiona vault", status: "Stato", readOnly: "File esterno in sola lettura", backlinks: "Collegamenti in entrata", outgoing: "Collegamenti in uscita", properties: "Proprietà", tags: "Tag", unresolved: "Collegamento irrisolto", loadError: "Impossibile caricare la conoscenza." }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "Quaderni",
     newNotebook: "Nuovo quaderno",

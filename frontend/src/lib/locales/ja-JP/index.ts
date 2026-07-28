@@ -234,7 +234,7 @@ export const jaJP = {
     ask: "質問",
     knowledge: "ナレッジ",
   },
-  knowledge: { mounts: "マウント済み保管庫", scan: "保管庫をスキャン", status: "状態", readOnly: "読み取り専用の外部ファイル", backlinks: "バックリンク", outgoing: "送信リンク", properties: "プロパティ", tags: "タグ", unresolved: "未解決リンク", loadError: "ナレッジを読み込めませんでした。" },
+  knowledge: { mounts: "マウント済み保管庫", scan: "保管庫をスキャン", status: "状態", readOnly: "読み取り専用の外部ファイル", backlinks: "バックリンク", outgoing: "送信リンク", properties: "プロパティ", tags: "タグ", unresolved: "未解決リンク", loadError: "ナレッジを読み込めませんでした。" }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "ノートブック",
     newNotebook: "新規ノートブック",

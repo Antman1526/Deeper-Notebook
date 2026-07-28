@@ -88,6 +88,7 @@ class VaultMount(VaultMountCreate):
 
 class VaultFile(_Model):
     id: str
+    note_id: str
     vault_id: str
     relative_path: str
     file_kind: str
@@ -1332,7 +1333,15 @@ class VaultRepository:
                     "offset": offset,
                 },
             )
-        return [VaultFile.model_validate(row) for row in rows]
+        # Task 6 makes the projection note identity deterministic from the
+        # durable vault-file record. Return that identity explicitly rather
+        # than asking API clients to reconstruct an implementation detail.
+        return [
+            VaultFile.model_validate(
+                {**row, "note_id": _record_id("note", str(row["id"]))}
+            )
+            for row in rows
+        ]
 
     async def get_page(self, vault_id: str, note_id: str) -> VaultPage:
         async with self._connection_factory() as connection:

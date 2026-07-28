@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from api.schemas.vault import (
+    VaultFileResponse,
     VaultMountCreateRequest,
     VaultMountDetail,
     VaultMountSummary,
@@ -170,17 +171,17 @@ async def scan_vault(request: Request, vault_id: str) -> VaultScanResponse:
         raise _map_exception(exc) from None
 
 
-@router.get("/vaults/{vault_id}/files")
+@router.get("/vaults/{vault_id}/files", response_model=list[VaultFileResponse])
 async def list_files(
     request: Request,
     vault_id: str,
     prefix: str = "",
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-) -> list[dict[str, Any]]:
+) -> list[VaultFileResponse]:
     try:
         return [
-            item.model_dump()
+            VaultFileResponse.model_validate(item.model_dump())
             for item in await _repository(request).list_files(
                 vault_id, prefix, limit, offset
             )

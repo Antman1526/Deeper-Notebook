@@ -6,6 +6,7 @@ const vaultPrefix = '/deeper-notebook/vaults'
 
 export const vaultFileSchema = z.object({
   id: z.string(),
+  note_id: z.string(),
   vault_id: z.string(),
   relative_path: z.string(),
   file_kind: z.string(),
