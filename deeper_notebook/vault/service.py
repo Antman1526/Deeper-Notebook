@@ -17,7 +17,11 @@ from watchdog.observers import Observer
 
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
-from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
+from deeper_notebook.vault.security import (
+    VaultSecurityError,
+    approve_vault_root,
+    classify_vault_path,
+)
 from deeper_notebook.vault.watcher import (
     VaultFileObservation,
     VaultWatcher,
@@ -137,12 +141,17 @@ class VaultService:
             logger.warning("Vault mount {} is unavailable ({})", mount.id, exc.code)
             return None
         known = await self._repository.list_files(mount.id, "", 10_000, 0)
+        indexable = [
+            item for item in known if classify_vault_path(item.relative_path).indexable
+        ]
         hashes = {
             item.relative_path: item.content_hash
-            for item in known
+            for item in indexable
             if item.deleted_state == "present"
+            and item.parse_status in {"parsed", "invalid"}
+            and item.content_hash
         }
-        paths = {item.relative_path for item in known}
+        paths = {item.relative_path for item in indexable}
         child_prefixes = self._child_prefixes(mount)
         watcher = VaultWatcher(
             vault_id=mount.id,
@@ -242,7 +251,7 @@ class VaultService:
             await self._repository.record_failure(
                 mount.id, item, operation_id, exc.code
             )
-            handoff = await watcher.release_queued(
+            handoff = await watcher.acknowledge_projected(
                 item.relative_path, item.content_hash
             )
             await self._process_corrective(mount, watcher, handoff.corrective_work)

@@ -26,7 +26,7 @@ from deeper_notebook.vault.repository import (
 )
 from deeper_notebook.vault.security import approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError, parse_trust_manifest
-from deeper_notebook.vault.watcher import VaultWorkItem
+from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
 
 
 class QueryRecorder:
@@ -107,7 +107,16 @@ class QueryRecorder:
                 and self.existing_file.get("content_hash") != variables["content_hash"]
             )
             superseded = bool(
-                self.existing_file and existing_modified_ns >= observed_modified_ns
+                self.existing_file
+                and (
+                    existing_modified_ns > observed_modified_ns
+                    or (
+                        existing_modified_ns == observed_modified_ns
+                        and self.existing_file.get("content_hash")
+                        == variables["content_hash"]
+                        and self.existing_file.get("parse_status") == "parsed"
+                    )
+                )
             )
             self.receipts_created += 1
             return [
@@ -166,6 +175,42 @@ class QueryRecorder:
         if "RETURN AFTER" in compact and "vault_sync_receipt" in compact:
             return [{"id": variables.get("receipt_id"), **variables.get("receipt", {})}]
         return []
+
+
+@pytest.mark.asyncio
+async def test_record_observation_persists_pending_file_without_source_content():
+    connection = QueryRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(connection),
+    )
+    observation = VaultFileObservation(
+        vault_id="vault_mount:test",
+        relative_path="pages/alpha.md",
+        state="pending",
+        file_kind="markdown",
+        protected=False,
+        content_hash=None,
+        byte_size=42,
+        modified_ns=123,
+        parse_state="pending",
+        embedding_state="not_submitted",
+        observed_at=1.0,
+    )
+
+    await repository.record_observation(observation)
+
+    statement, variables = connection.calls[0]
+    assert "UPSERT $vault_file_id" in statement
+    assert "LET $existing_file" in statement
+    assert "LET $same_projection" in statement
+    assert "$existing_file.parse_status IN ['parsed', 'invalid']" in statement
+    assert "$content_hash = NONE" in statement
+    assert "content_hash = IF $same_projection" in statement
+    assert "parse_status = IF $same_projection" in statement
+    assert "embedding_state = IF $same_projection" in statement
+    assert variables["relative_path"] == "pages/alpha.md"
+    assert variables["parse_status"] == "pending"
+    assert "content" not in variables
 
 
 class ConnectionSequence:
@@ -548,6 +593,31 @@ async def test_equal_timestamp_same_hash_failure_does_not_invalidate_success():
     )
 
     assert result.status == "superseded"
+    assert result.reconciliation_required is False
+    assert "$existing_file.parse_status = 'parsed'" in connection.calls[0][0]
+
+
+@pytest.mark.asyncio
+async def test_equal_timestamp_same_hash_failure_invalidates_pending_observation():
+    connection = QueryRecorder(
+        existing_file={
+            "id": "vault_file:existing",
+            "content_hash": "b" * 64,
+            "modified_ns": 200,
+            "parse_status": "pending",
+            "deleted_state": "present",
+        }
+    )
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    result = await repository.record_failure(
+        "vault_mount:test",
+        _work(content_hash="b" * 64, modified_ns=200),
+        "operation-pending-failure",
+        "invalid_frontmatter",
+    )
+
+    assert result.status == "stale-invalid"
     assert result.reconciliation_required is False
 
 
@@ -1318,6 +1388,40 @@ def test_trust_manifest_parser_enforces_explicit_budgets(payload: bytes, code: s
     with pytest.raises(TrustManifestError) as caught:
         parse_trust_manifest(payload)
     assert caught.value.code == code
+
+
+def test_trust_manifest_parser_accepts_canonical_connector_documents():
+    payload = json.dumps(
+        {
+            "vaultRoot": "/approved/vault",
+            "documents": [
+                {
+                    "id": "source-alpha",
+                    "sourcePath": "/approved/vault/Obsidian Brain/source.md",
+                    "approval": {
+                        "status": "approved",
+                        "reviewer": "owner",
+                        "reviewedAt": "2026-07-27T00:00:00+00:00",
+                    },
+                    "sourceType": "markdown",
+                    "evidenceClass": "source",
+                    "contentHash": "sha256:" + "a" * 64,
+                    "derivedFrom": [],
+                }
+            ],
+        }
+    ).encode()
+
+    manifest = parse_trust_manifest(payload)
+
+    assert len(manifest.entries) == 1
+    assert manifest.entries[0].manifest_id == "source-alpha"
+    assert (
+        manifest.entries[0].canonical_relative_path
+        == "Obsidian Brain/source.md"
+    )
+    assert manifest.entries[0].reviewer == "owner"
+    assert manifest.entries[0].content_hash == "a" * 64
 
 
 def test_mark_missing_returns_outcome_before_transaction_commit():

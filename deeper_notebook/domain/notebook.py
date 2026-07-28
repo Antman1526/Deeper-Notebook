@@ -1560,8 +1560,8 @@ async def _enrich_vault_provenance(
     rows = await repo_query(
         """
         SELECT id, canonical_external, vault_id, source_hash,
-               vault_file.embedding_state AS embedding_state,
-               vault_file.relative_path AS relative_path
+               vault_file_id.embedding_state AS embedding_state,
+               vault_file_id.relative_path AS relative_path
         FROM note WHERE id IN $note_ids;
         """,
         {"note_ids": [ensure_record_id(note_id) for note_id in note_ids]},

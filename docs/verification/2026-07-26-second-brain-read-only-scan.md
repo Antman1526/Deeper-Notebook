@@ -1,7 +1,51 @@
 # Second Brain read-only scan protocol
 
-Status: reusable protocol only. This document does not claim that a private
-vault was mounted, scanned, or verified.
+Status: protocol plus one owner-authorized controlled native proof completed on
+2026-07-28. The proof used a disposable localhost API/SurrealDB namespace and
+did not write to the mounted source vault.
+
+## Controlled native proof — 2026-07-28
+
+The persistent native runtime completed the controlled verifier with exit code
+zero. The sanitized source inventory covered 88 regular non-symlink files and
+produced aggregate digest
+`35320a85997a5ee383a9a2e2382d13cd77fee5c51b49706ab0d8929ecd7db9a0`.
+The before/after inventory reported zero changed source files. Git status was
+unavailable for this source root, so the all-file hash inventory—not Git—was
+the source-preservation proof.
+
+The two child mounts retained their projection state across an API restart:
+
+- Obsidian: 29 observed Markdown files, 28 parsed projections, zero pending,
+  and one terminal `invalid_frontmatter` source file.
+- Logseq: 20 observed Markdown files, 20 parsed projections, zero pending, and
+  zero invalid.
+
+The invalid Obsidian source was not repaired or rewritten. Its durable failure
+receipt is terminal for that exact file hash, so an unchanged malformed file
+does not hold the scan lock or enter a retry loop. A later source change clears
+that terminal observation and permits a fresh parse.
+
+The second controlled scan changed zero projections. Trust import reconciled 21
+records, including nine synthesis records; all nine synthesis records retained
+non-empty `derived_from` provenance. The final verifier report contained no
+failure codes.
+
+Read-only product surfaces were also exercised against the persisted
+projections:
+
+- Obsidian backlinks: 16 pages with backlinks, 92 resolved backlinks total;
+  outgoing links: 26 pages, 177 links total.
+- Logseq backlinks: 14 pages with backlinks, 104 resolved backlinks total;
+  outgoing links: 18 pages, 133 links total.
+- Depth-two graph queries returned 21 nodes/64 edges for Obsidian and 17
+  nodes/47 edges for Logseq.
+- Text search returned 14 mounted-note results; all 14 included portable vault
+  provenance (`vault_id`, relative path, and SHA-256 source hash), and none
+  exposed the absolute source root.
+
+The disposable API and SurrealDB processes are stopped after verification; the
+source mounts are not left scanning.
 
 Run the verifier only with an explicit vault root supplied by the owner. It
 rejects the filesystem root, the current user's home directory, and paths that

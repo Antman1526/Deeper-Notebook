@@ -58,11 +58,17 @@ def _fixture(root: Path) -> None:
 
 def _trust_records() -> list[dict[str, object]]:
     return [
-        {"id": f"source-{index}", "evidence_class": "source", "derived_from": []}
+        {
+            "id": f"vault_trust_record:source-{index}",
+            "manifest_id": f"source-{index}",
+            "evidence_class": "source",
+            "derived_from": [],
+        }
         for index in range(1, 13)
     ] + [
         {
-            "id": f"synthesis-{index}",
+            "id": f"vault_trust_record:synthesis-{index}",
+            "manifest_id": f"synthesis-{index}",
             "evidence_class": "synthesis",
             "derived_from": [f"source-{index}", f"source-{index + 1}"],
         }
