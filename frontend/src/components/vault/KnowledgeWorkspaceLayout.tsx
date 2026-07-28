@@ -91,6 +91,7 @@ function PaneNode({
   registerPane,
 }: PaneNodeProps) {
   const { t } = useTranslation()
+  const panelRef = useRef<HTMLDivElement>(null)
   const activeTitle = pane.tabs.find((tab) => tab.id === pane.activeTabId)?.title
   const panelId = getKnowledgePanelId(pane.id)
   const activeTabDomId = pane.activeTabId
@@ -119,6 +120,7 @@ function PaneNode({
           panelId={panelId}
           onActivateTab={activateTab}
           onCloseTab={closeTab}
+          onRequestFocusFallback={() => panelRef.current?.focus()}
         />
         <div
           role="toolbar"
@@ -150,6 +152,7 @@ function PaneNode({
         </div>
       </div>
       <div
+        ref={panelRef}
         id={panelId}
         role="tabpanel"
         aria-labelledby={activeTabDomId}
