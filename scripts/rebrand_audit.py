@@ -750,7 +750,7 @@ _KIND_SCOPE_EXACT_PATHS = {
             "frontend/src/lib/api/onp.ts",
             "frontend/src/lib/task6-active-brand.test.ts",
             "tests/test_gmail_router.py",
-            "tests/test_task6_active_product.py",
+            "tests/test_task6_active_product.py", "tests/test_vault_api.py",
         }
     ),
     "data_migration": frozenset(
@@ -790,7 +790,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "e5bb34224c246eb339ffc390f46feb3d75aa959ca664bc7d69c1e7a87ec929cc"
+    "25a72002e70ecf159585f598cc3649b9002940291aa1edfac92bd3590ad7861e"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -1939,6 +1939,7 @@ def compatibility_selector_inventory(
         ),
     ]
     semantic = _frontend_semantic_selectors(root)
+    semantic.update(_backend_legacy_api_route_selectors(root))
     for occurrences, contract in semantic_groups:
         for occurrence in occurrences:
             key = _selector_key(occurrence)
@@ -2802,6 +2803,66 @@ def main() -> int:
         if categories["unexpected_active_identity"] or report["stale_allowlist"]:
             return 1
     return 0
+
+
+def _backend_legacy_api_route_selectors(
+    root: Path,
+) -> dict[OccurrenceKey, str]:
+    """Select only the reviewed hidden legacy API route compatibility seams."""
+    selectors: dict[OccurrenceKey, str] = {}
+    legacy_api_namespace = "/" + "api/" + "onp"
+    legacy_path_fragment = "/" + "onp" + "/"
+    exact_lines = {
+        "api/main.py": {
+            (
+                "    # polls "
+                f"{legacy_api_namespace}/gmail/status on mount; first cold call against the"
+            ): {legacy_api_namespace, legacy_path_fragment},
+        },
+        "tests/test_vault_api.py": {
+            (
+                "    assert test_client.get("
+                f'"{legacy_api_namespace}/vaults").status_code == 404'
+            ): {legacy_api_namespace, legacy_path_fragment},
+        },
+    }
+    for path, lines in exact_lines.items():
+        target = root / path
+        if not target.is_file():
+            continue
+        source_lines = target.read_text(encoding="utf-8").splitlines()
+        for expected_line, patterns in lines.items():
+            if source_lines.count(expected_line) != 1:
+                continue
+            for occurrence in _selector_occurrences_for_path(root, path):
+                key = _selector_key(occurrence)
+                line_number = occurrence.get("line")
+                if (
+                    key is not None
+                    and occurrence["pattern"] in patterns
+                    and isinstance(line_number, int)
+                    and source_lines[line_number - 1] == expected_line
+                ):
+                    selectors[key] = "legacy-api-route-v1"
+    main_path = "api/main.py"
+    main_target = root / main_path
+    if main_target.is_file():
+        main_lines = main_target.read_text(encoding="utf-8").splitlines()
+        expected_router_line = "    " + "gmail_router.router,"
+        for occurrence in _selector_occurrences_for_path(root, main_path):
+            key = _selector_key(occurrence)
+            line_number = occurrence.get("line")
+            if (
+                key is not None
+                and occurrence["pattern"] == legacy_api_namespace
+                and isinstance(line_number, int)
+                and line_number > 1
+                and main_lines[line_number - 2] == expected_router_line
+                and main_lines[line_number - 1]
+                == f'    prefix="{legacy_api_namespace}",'
+            ):
+                selectors[key] = "legacy-api-route-v1"
+    return selectors
 
 
 if __name__ == "__main__":

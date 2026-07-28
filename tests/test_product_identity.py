@@ -2568,3 +2568,57 @@ def test_check_exits_for_unexpected_identity_and_passes_for_clean_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "add", "product.txt"], check=True)
 
     assert subprocess.run(command, capture_output=True, check=False).returncode == 1
+
+
+def test_vault_legacy_route_selector_rejects_an_unapproved_new_route(tmp_path):
+    legacy_api_namespace = "/" + "api/" + "onp"
+    approved_line = (
+        f'    assert test_client.get("{legacy_api_namespace}/vaults").status_code == 404'
+    )
+    unapproved_line = (
+        f'    assert test_client.get("{legacy_api_namespace}/unapproved").status_code == 404'
+    )
+    root = _init_tracked_repo(
+        tmp_path / "repo",
+        {
+            "tests/test_vault_api.py": (
+                "def test_vault_routes_are_read_only():\n"
+                f"{approved_line}\n"
+                f"{unapproved_line}\n"
+            )
+        },
+    )
+    selectors = rebrand_audit.compatibility_selector_inventory(root)
+    occurrences = rebrand_audit._selector_occurrences_for_path(
+        root, "tests/test_vault_api.py"
+    )
+    approved = next(
+        occurrence
+        for occurrence in occurrences
+        if occurrence["pattern"] == legacy_api_namespace and occurrence["line"] == 2
+    )
+    unapproved = next(
+        occurrence
+        for occurrence in occurrences
+        if occurrence["pattern"] == legacy_api_namespace and occurrence["line"] == 3
+    )
+
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            approved, root=root, selectors=selectors
+        )
+        == "legacy-api-route-v1"
+    )
+    assert (
+        rebrand_audit.compatibility_contract_for_occurrence(
+            unapproved, root=root, selectors=selectors
+        )
+        is None
+    )
+    report = audit_repository(root, {})
+    assert any(
+        occurrence["path"] == "tests/test_vault_api.py"
+        and occurrence["pattern"] == legacy_api_namespace
+        and occurrence["line"] == 3
+        for occurrence in report["categories"]["unexpected_active_identity"]
+    )
