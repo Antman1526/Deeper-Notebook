@@ -116,6 +116,37 @@ async def test_scan_transitions_to_ready_read_only_and_projects_once(
     assert repository.projections[0][2].startswith("vault-scan-")
 
 
+@pytest.mark.asyncio
+async def test_scan_reports_unchanged_work_from_a_real_watcher(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "unchanged"
+    root.mkdir()
+    (root / "note.md").write_text("# Fixture\ntext\n")
+    repository = FakeRepository([_mount(root)], [], [])
+    repository.project_document = AsyncMock(
+        return_value=ProjectionResult(
+            vault_file_id="vault_file:fixture",
+            note_id="note:fixture",
+            status="unchanged",
+            parse_state="parsed",
+            embedding_state="pending",
+        )
+    )
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        repository, stable_after_seconds=0, clock=lambda: next(moments)
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 0
+    assert result.unchanged == 1
+    assert result.failed == 0
+    assert result.projected + result.unchanged + result.failed == 1
+
+
 class _BlockingVaultWatcher(VaultWatcher):
     def __init__(self, *args, started: asyncio.Event, release: asyncio.Event, **kwargs):
         super().__init__(*args, **kwargs)
