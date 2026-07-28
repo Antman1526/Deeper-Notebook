@@ -325,7 +325,9 @@ class VaultRepository:
                 "CREATE $mount_id CONTENT $mount RETURN AFTER;",
                 {"mount_id": _db_id(mount_id), "mount": data},
             )
-        return VaultMount(id=mount_id, **(rows[0] if rows else request.model_dump()))
+        if rows:
+            return VaultMount.model_validate(rows[0])
+        return VaultMount(id=mount_id, **request.model_dump())
 
     async def list_mounts(self) -> list[VaultMount]:
         async with self._connection_factory() as connection:
