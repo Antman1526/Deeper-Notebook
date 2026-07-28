@@ -37,7 +37,7 @@ def load_knowledge_workspace(
     try:
         payload = json.loads(target.read_text(encoding="utf-8"))
         return KnowledgeWorkspaceDocument.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
         raise WorkspaceStateError(f"invalid workspace state in {target}") from exc
 
 
@@ -64,12 +64,15 @@ def save_knowledge_workspace(
 ) -> None:
     """Atomically save a validated workspace document."""
 
+    validated_document = KnowledgeWorkspaceDocument.model_validate(
+        document.model_dump(warnings=False)
+    )
     target = path if path is not None else knowledge_workspace_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(f"{target.suffix}.tmp")
     serialized = (
         json.dumps(
-            document.model_dump(mode="json"),
+            validated_document.model_dump(mode="json"),
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
