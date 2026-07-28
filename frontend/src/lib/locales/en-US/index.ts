@@ -236,7 +236,9 @@ export const enUS = {
     language: "Toggle language",
     theme: "Theme",
     ask: "Ask",
+    knowledge: "Knowledge",
   },
+  knowledge: { mounts: "Mounted vaults", scan: "Scan vault", status: "Status", readOnly: "Read-only external file", backlinks: "Backlinks", outgoing: "Outgoing links", properties: "Properties", tags: "Tags", unresolved: "Unresolved link", loadError: "Could not load knowledge." },
   notebooks: {
     title: "Notebooks",
     newNotebook: "New Notebook",

@@ -232,7 +232,9 @@ export const zhTW = {
     language: "切換語言",
     theme: "主題",
     ask: "提問",
+    knowledge: "知識",
   },
+  knowledge: { mounts: "已掛載的知識庫", scan: "掃描知識庫", status: "狀態", readOnly: "唯讀外部檔案", backlinks: "反向連結", outgoing: "傳出連結", properties: "屬性", tags: "標籤", unresolved: "未解析連結", loadError: "無法載入知識。" },
   notebooks: {
     title: "筆記本",
     newNotebook: "新增筆記本",

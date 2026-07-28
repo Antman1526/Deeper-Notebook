@@ -235,7 +235,9 @@ export const caES = {
     language: "Canvia l'idioma",
     theme: "Tema",
     ask: "Pregunta",
+    knowledge: "Coneixement",
   },
+  knowledge: { mounts: "Voltes muntats", scan: "Escaneja la volta", status: "Estat", readOnly: "Fitxer extern de només lectura", backlinks: "Enllaços entrants", outgoing: "Enllaços sortints", properties: "Propietats", tags: "Etiquetes", unresolved: "Enllaç sense resoldre", loadError: "No s'ha pogut carregar el coneixement." },
   notebooks: {
     title: "Quaderns",
     newNotebook: "Quadern nou",

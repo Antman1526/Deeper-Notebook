@@ -232,7 +232,9 @@ export const esES = {
     language: "Cambiar idioma",
     theme: "Tema",
     ask: "Preguntar",
+    knowledge: "Conocimiento",
   },
+  knowledge: { mounts: "Bóvedas montadas", scan: "Escanear bóveda", status: "Estado", readOnly: "Archivo externo de solo lectura", backlinks: "Enlaces entrantes", outgoing: "Enlaces salientes", properties: "Propiedades", tags: "Etiquetas", unresolved: "Enlace sin resolver", loadError: "No se pudo cargar el conocimiento." },
   notebooks: {
     title: "Cuadernos",
     newNotebook: "Nuevo cuaderno",

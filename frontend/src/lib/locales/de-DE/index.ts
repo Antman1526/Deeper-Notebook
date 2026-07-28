@@ -235,7 +235,9 @@ export const deDE = {
     language: "Sprache wechseln",
     theme: "Design",
     ask: "Fragen",
+    knowledge: "Wissen",
   },
+  knowledge: { mounts: "Eingebundene Tresore", scan: "Tresor scannen", status: "Status", readOnly: "Schreibgeschützte externe Datei", backlinks: "Rückverweise", outgoing: "Ausgehende Links", properties: "Eigenschaften", tags: "Tags", unresolved: "Ungelöster Link", loadError: "Wissen konnte nicht geladen werden." },
   notebooks: {
     title: "Notebooks",
     newNotebook: "Neues Notebook",

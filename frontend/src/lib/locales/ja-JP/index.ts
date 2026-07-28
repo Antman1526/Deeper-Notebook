@@ -232,7 +232,9 @@ export const jaJP = {
     language: "言語を切り替え",
     theme: "テーマ",
     ask: "質問",
+    knowledge: "ナレッジ",
   },
+  knowledge: { mounts: "マウント済み保管庫", scan: "保管庫をスキャン", status: "状態", readOnly: "読み取り専用の外部ファイル", backlinks: "バックリンク", outgoing: "送信リンク", properties: "プロパティ", tags: "タグ", unresolved: "未解決リンク", loadError: "ナレッジを読み込めませんでした。" },
   notebooks: {
     title: "ノートブック",
     newNotebook: "新規ノートブック",
