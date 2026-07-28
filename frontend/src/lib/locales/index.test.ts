@@ -33,6 +33,49 @@ describe('Locale Parity', () => {
   )
 })
 
+const getTranslation = (translation: Record<string, unknown>, key: string): unknown =>
+  key.split('.').reduce<unknown>((value, segment) => (
+    value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)[segment]
+      : undefined
+  ), translation)
+
+const knowledgeExplorerKeys = (): string[] => {
+  const srcDir = path.resolve(__dirname, '../../..')
+  const explorerFiles = [
+    'src/components/vault/KnowledgeExplorer.tsx',
+    'src/components/vault/VaultFileTree.tsx',
+    'src/components/vault/VaultGraph.tsx',
+    'src/components/vault/VaultLinks.tsx',
+  ]
+
+  return [...new Set(explorerFiles.flatMap(file => {
+    const source = fs.readFileSync(path.join(srcDir, file), 'utf-8')
+    return [...source.matchAll(/\bt\(['"](knowledge\.[^'"]+)['"]\)/g)].map(match => match[1])
+  }))].sort()
+}
+
+describe('Knowledge Explorer locale resolution', () => {
+  const keys = knowledgeExplorerKeys()
+
+  it('discovers the exact knowledge keys used by the Explorer components', () => {
+    expect(keys).not.toEqual([])
+  })
+
+  it.each(Object.entries(resources))(
+    '%s resolves every Knowledge Explorer key directly in its translation object',
+    (code, resource) => {
+      for (const key of keys) {
+        const value = getTranslation(resource.translation as Record<string, unknown>, key)
+
+        expect(value, `${code} is missing ${key}`).toEqual(expect.any(String))
+        expect((value as string).trim(), `${code} has an empty ${key}`).not.toBe('')
+        expect(value, `${code} falls back to the untranslated key ${key}`).not.toBe(key)
+      }
+    },
+  )
+})
+
 describe('Unused Key Detection', () => {
   it(
     'all en-US leaf keys should be referenced in source files',
