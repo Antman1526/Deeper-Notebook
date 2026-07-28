@@ -1,9 +1,13 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Columns2, Rows2, X } from 'lucide-react'
 
-import { KnowledgeTabStrip } from '@/components/vault/KnowledgeTabStrip'
+import {
+  getKnowledgePanelId,
+  getKnowledgeTabId,
+  KnowledgeTabStrip,
+} from '@/components/vault/KnowledgeTabStrip'
 import { Button } from '@/components/ui/button'
 import {
   ResizableHandle,
@@ -71,6 +75,7 @@ interface PaneNodeProps {
   setActivePane: (paneId: string) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
+  registerPane: (paneId: string, element: HTMLElement | null) => void
 }
 
 function PaneNode({
@@ -83,15 +88,21 @@ function PaneNode({
   setActivePane,
   splitPane,
   closePane,
+  registerPane,
 }: PaneNodeProps) {
   const { t } = useTranslation()
   const activeTitle = pane.tabs.find((tab) => tab.id === pane.activeTabId)?.title
+  const panelId = getKnowledgePanelId(pane.id)
+  const activeTabDomId = pane.activeTabId
+    ? getKnowledgeTabId(pane.id, pane.activeTabId)
+    : undefined
   const paneLabel = `${t('knowledge.knowledgePane')} ${pane.id}${
     activeTitle ? `: ${activeTitle}` : ''
   }`
 
   return (
     <section
+      ref={(element) => registerPane(pane.id, element)}
       aria-label={paneLabel}
       data-active={isActive ? 'true' : 'false'}
       tabIndex={-1}
@@ -105,13 +116,19 @@ function PaneNode({
       <div className="flex min-w-0 items-stretch">
         <KnowledgeTabStrip
           pane={pane}
+          panelId={panelId}
           onActivateTab={activateTab}
           onCloseTab={closeTab}
         />
         <div
           role="toolbar"
           aria-label={paneLabel}
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            if (event.target === event.currentTarget) {
+              setActivePane(pane.id)
+            }
+          }}
           className="flex shrink-0 items-center border-b bg-muted/30 px-1"
         >
           <PaneAction
@@ -132,7 +149,14 @@ function PaneNode({
           />
         </div>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+      <div
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={activeTabDomId}
+        aria-label={activeTabDomId ? undefined : paneLabel}
+        tabIndex={0}
+        className="min-h-0 min-w-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
         {renderPane(pane)}
       </div>
     </section>
@@ -151,10 +175,16 @@ function LayoutNode({
   activePaneId,
   ...paneProps
 }: LayoutNodeProps) {
+  const { t } = useTranslation()
+
   if (node.type === 'split') {
+    const separatorLabel = node.direction === 'horizontal'
+      ? t('knowledge.resizeHorizontalSplit')
+      : t('knowledge.resizeVerticalSplit')
+
     return (
       <ResizablePanelGroup direction={node.direction}>
-        <ResizablePanel>
+        <ResizablePanel defaultSize={50}>
           <LayoutNode
             node={node.first}
             panes={panes}
@@ -162,8 +192,8 @@ function LayoutNode({
             {...paneProps}
           />
         </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
+        <ResizableHandle withHandle aria-label={separatorLabel} />
+        <ResizablePanel defaultSize={50}>
           <LayoutNode
             node={node.second}
             panes={panes}
@@ -199,7 +229,26 @@ export function KnowledgeWorkspaceLayout({
   const setActivePane = useKnowledgeWorkspaceStore((state) => state.setActivePane)
   const splitPane = useKnowledgeWorkspaceStore((state) => state.splitPane)
   const closePane = useKnowledgeWorkspaceStore((state) => state.closePane)
+  const paneRefs = useRef<Record<string, HTMLElement | null>>({})
+  const pendingPaneFocus = useRef(false)
   const canClose = Object.keys(panes).length > 1
+
+  useLayoutEffect(() => {
+    if (!pendingPaneFocus.current) return
+    const activePane = paneRefs.current[activePaneId]
+    if (!activePane) return
+    pendingPaneFocus.current = false
+    activePane.focus()
+  }, [activePaneId, panes])
+
+  const registerPane = (paneId: string, element: HTMLElement | null) => {
+    paneRefs.current[paneId] = element
+  }
+
+  const closePaneWithFocus = (paneId: string) => {
+    pendingPaneFocus.current = true
+    closePane(paneId)
+  }
 
   return (
     <section
@@ -216,7 +265,8 @@ export function KnowledgeWorkspaceLayout({
         closeTab={closeTab}
         setActivePane={setActivePane}
         splitPane={splitPane}
-        closePane={closePane}
+        closePane={closePaneWithFocus}
+        registerPane={registerPane}
       />
     </section>
   )

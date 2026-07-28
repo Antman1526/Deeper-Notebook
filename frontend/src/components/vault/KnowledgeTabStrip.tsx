@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -15,20 +15,52 @@ import { cn } from '@/lib/utils'
 
 interface KnowledgeTabStripProps {
   pane: KnowledgePane
+  panelId?: string
   onActivateTab: (paneId: string, tabId: string) => void
   onCloseTab: (paneId: string, tabId: string) => void
 }
 
+export function getKnowledgePanelId(paneId: string): string {
+  return `knowledge-panel-${encodeURIComponent(paneId)}`
+}
+
+export function getKnowledgeTabId(paneId: string, tabId: string): string {
+  return `knowledge-tab-${encodeURIComponent(paneId)}-${encodeURIComponent(tabId)}`
+}
+
 export function KnowledgeTabStrip({
   pane,
+  panelId = getKnowledgePanelId(pane.id),
   onActivateTab,
   onCloseTab,
 }: KnowledgeTabStripProps) {
   const { t } = useTranslation()
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const pendingFocusTabId = useRef<string | null>(null)
   const rovingTabId = pane.tabs.some((tab) => tab.id === pane.activeTabId)
     ? pane.activeTabId
     : pane.tabs[0]?.id
+
+  useLayoutEffect(() => {
+    const targetTabId = pendingFocusTabId.current
+    if (!targetTabId || pane.activeTabId !== targetTabId) return
+
+    const targetTab = tabRefs.current[targetTabId]
+    if (!targetTab) return
+    pendingFocusTabId.current = null
+    targetTab.focus()
+  }, [pane.activeTabId, pane.tabs])
+
+  const closeTab = (tabId: string) => {
+    const closedIndex = pane.tabs.findIndex((tab) => tab.id === tabId)
+    const remainingTabs = pane.tabs.filter((tab) => tab.id !== tabId)
+    pendingFocusTabId.current = pane.activeTabId === tabId
+      ? remainingTabs[closedIndex]?.id
+        ?? remainingTabs[closedIndex - 1]?.id
+        ?? null
+      : pane.activeTabId
+    onCloseTab(pane.id, tabId)
+  }
 
   const moveSelection = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -84,9 +116,11 @@ export function KnowledgeTabStrip({
               ref={(element) => {
                 tabRefs.current[tab.id] = element
               }}
+              id={getKnowledgeTabId(pane.id, tab.id)}
               type="button"
               role="tab"
               aria-selected={isActive}
+              aria-controls={panelId}
               tabIndex={tab.id === rovingTabId ? 0 : -1}
               title={tab.relativePath}
               onClick={() => onActivateTab(pane.id, tab.id)}
@@ -109,7 +143,7 @@ export function KnowledgeTabStrip({
                   variant="ghost"
                   size="icon"
                   aria-label={closeLabel}
-                  onClick={() => onCloseTab(pane.id, tab.id)}
+                  onClick={() => closeTab(tab.id)}
                   className="mr-1 size-7 shrink-0 text-muted-foreground hover:text-foreground"
                 >
                   <X aria-hidden="true" className="size-3.5" />

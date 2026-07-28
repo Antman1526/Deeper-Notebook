@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -51,6 +52,7 @@ function renderTabStrip() {
   render(
     <KnowledgeTabStrip
       pane={pane}
+      panelId="knowledge-panel-pane-1"
       onActivateTab={onActivateTab}
       onCloseTab={onCloseTab}
     />,
@@ -88,6 +90,58 @@ describe('KnowledgeTabStrip', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close Plan' }))
     expect(onCloseTab).toHaveBeenCalledWith('pane-1', 'tab-1')
     expect(onActivateTab).not.toHaveBeenCalled()
+  })
+
+  it('associates every stable tab ID with its pane content panel', () => {
+    renderTabStrip()
+
+    expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute(
+      'id',
+      'knowledge-tab-pane-1-tab-1',
+    )
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab).toHaveAttribute('aria-controls', 'knowledge-panel-pane-1')
+    }
+  })
+
+  it('moves focus from a closed active tab to the newly active adjacent tab', () => {
+    function StatefulTabStripHarness() {
+      const [currentPane, setCurrentPane] = useState(pane)
+
+      return (
+        <KnowledgeTabStrip
+          pane={currentPane}
+          panelId="knowledge-panel-pane-1"
+          onActivateTab={(_paneId, tabId) => {
+            setCurrentPane((current) => ({ ...current, activeTabId: tabId }))
+          }}
+          onCloseTab={(_paneId, tabId) => {
+            setCurrentPane((current) => {
+              const closedIndex = current.tabs.findIndex((tab) => tab.id === tabId)
+              const tabs = current.tabs.filter((tab) => tab.id !== tabId)
+              return {
+                ...current,
+                tabs,
+                activeTabId: current.activeTabId === tabId
+                  ? tabs[closedIndex]?.id ?? tabs[closedIndex - 1]?.id ?? null
+                  : current.activeTabId,
+              }
+            })
+          }}
+        />
+      )
+    }
+
+    render(<StatefulTabStripHarness />)
+    const closeActiveTab = screen.getByRole('button', {
+      name: 'Close Research',
+    })
+    closeActiveTab.focus()
+
+    fireEvent.click(closeActiveTab)
+
+    expect(screen.queryByRole('tab', { name: 'Research' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Decisions' })).toHaveFocus()
   })
 
   it.each([
