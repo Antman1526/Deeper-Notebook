@@ -40,6 +40,7 @@ describe('vault query cache', () => {
     const { result } = renderHook(() => useScanVault('vault:one', 'note:one'), { wrapper })
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     await act(async () => { await result.current.mutateAsync() })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: vaultKeys.all })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: vaultKeys.detail('vault:one') })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: vaultKeys.files('vault:one') })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: vaultKeys.graph('vault:one') })

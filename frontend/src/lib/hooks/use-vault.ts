@@ -24,6 +24,7 @@ export function useScanVault(vaultId: string, noteId?: string) {
     mutationFn: () => vaultApi.scan(vaultId),
     onSuccess: async () => {
       await Promise.all([
+        client.invalidateQueries({ queryKey: vaultKeys.all }),
         client.invalidateQueries({ queryKey: vaultKeys.detail(vaultId) }),
         client.invalidateQueries({ queryKey: vaultKeys.files(vaultId) }),
         client.invalidateQueries({ queryKey: vaultKeys.graph(vaultId) }),
