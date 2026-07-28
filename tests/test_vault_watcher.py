@@ -902,8 +902,9 @@ async def test_indexed_file_becoming_fifo_aborts_without_missing(
 
 @pytest.mark.asyncio
 async def test_indexed_file_becoming_socket_aborts_without_missing() -> None:
-    shared_root = Path("/Users/Shared")
-    temp_parent = shared_root if shared_root.is_dir() else Path(tempfile.gettempdir())
+    real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    temp_parent = real_home / ".cache" / "dn-sockets"
+    temp_parent.mkdir(parents=True, exist_ok=True)
     short_root = Path(tempfile.mkdtemp(prefix="dn-watch-", dir=temp_parent))
     note = short_root / "note.md"
     note.write_bytes(b"body")
@@ -927,6 +928,10 @@ async def test_indexed_file_becoming_socket_aborts_without_missing() -> None:
     finally:
         server.close()
         shutil.rmtree(short_root)
+        try:
+            temp_parent.rmdir()
+        except OSError:
+            pass
 
 
 @pytest.mark.asyncio

@@ -490,8 +490,9 @@ def test_secure_read_never_blocks_on_fifo(vault_root: Path) -> None:
 
 
 def test_secure_read_rejects_socket() -> None:
-    shared_root = Path("/Users/Shared")
-    temp_parent = shared_root if shared_root.is_dir() else Path(tempfile.gettempdir())
+    real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    temp_parent = real_home / ".cache" / "dn-sockets"
+    temp_parent.mkdir(parents=True, exist_ok=True)
     short_root = Path(tempfile.mkdtemp(prefix="dn-vault-", dir=temp_parent))
     socket_path = short_root / "socket.md"
     server = socket.socket(socket.AF_UNIX)
@@ -504,6 +505,10 @@ def test_secure_read_rejects_socket() -> None:
     finally:
         server.close()
         shutil.rmtree(short_root)
+        try:
+            temp_parent.rmdir()
+        except OSError:
+            pass
 
 
 def test_secure_read_detects_oversize_before_returning_content(
