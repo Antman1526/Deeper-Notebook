@@ -302,10 +302,9 @@ jobs:
                 remaining_descendants="$remaining_descendants $child_pid"
               fi
             done < "$descendants_file"
-            ps eww -axo pid=,command= |
+            ps -axo pid=,command= |
               awk -v scope="$scope_pattern" '
-                index($0, "HOME=" scope " ") ||
-                index($0, "USERPROFILE=" scope " ") { print $1 }
+                index($0, scope) { print $1 }
               ' |
               sort -u > "$RUNNER_TEMP/remaining-sidecars.txt"
             if test -n "$remaining_descendants" || test -s "$RUNNER_TEMP/remaining-sidecars.txt"; then
@@ -422,8 +421,20 @@ jobs:
             [System.Diagnostics.Process]$Process,
             [string]$ReadyFile = ""
           ) {
-            $deadline = [DateTime]::UtcNow.AddMinutes(5)
+            # A first packaged Windows launch creates its private runtime and
+            # can legitimately spend several minutes compiling dependencies
+            # on a cold hosted runner. Keep probing the real services/window;
+            # do not replace readiness with a fixed sleep.
+            $deadline = [DateTime]::UtcNow.AddMinutes(15)
+            $attempt = 0
+            $apiReady = $false
+            $frontendReady = $false
+            $windowReady = $false
+            $markerReady = [string]::IsNullOrEmpty($ReadyFile)
+            $descendants = @()
+            $ports = @()
             while ([DateTime]::UtcNow -lt $deadline) {
+              $attempt += 1
               $Process.Refresh()
               if ($Process.HasExited) {
                 Write-Host "Packaged app exited before readiness with code $($Process.ExitCode)."
@@ -476,9 +487,26 @@ jobs:
                 $script:PackagedDescendants = $descendants
                 return
               }
+              if ($attempt % 30 -eq 0) {
+                Write-Host (
+                  "Readiness pending: api=$apiReady frontend=$frontendReady " +
+                  "window=$windowReady marker=$markerReady " +
+                  "descendants=$($descendants.Count) ports=$($ports -join ',')"
+                )
+              }
               Start-Sleep -Milliseconds 1000
             }
-            throw "Timed out waiting for packaged API/frontend/window readiness."
+            Get-ChildItem -Path $env:HOME -Recurse -File -Filter "*.log" -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Write-Host "=== $($_.FullName) ==="
+                Get-Content $_.FullName -Tail 200 -ErrorAction SilentlyContinue
+              }
+            throw (
+              "Timed out waiting for packaged API/frontend/window readiness: " +
+              "api=$apiReady frontend=$frontendReady window=$windowReady " +
+              "marker=$markerReady descendants=$($descendants.Count) " +
+              "ports=$($ports -join ',')."
+            )
           }
           function Stop-PackagedApp(
             [System.Diagnostics.Process]$Process,

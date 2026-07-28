@@ -1,4 +1,6 @@
+import signal
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -118,6 +120,44 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     sv.stop_all()
     for p in procs[:spawned_count]:
         p.terminate.assert_called()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups only")
+def test_stop_all_escalates_a_surviving_owned_process_group(
+    cfg, tmp_path, monkeypatch
+):
+    proc = MagicMock()
+    proc.pid = 41001
+    proc.wait.return_value = 0
+    group_alive = True
+    signals: list[int] = []
+
+    def fake_killpg(process_group: int, requested_signal: int) -> None:
+        nonlocal group_alive
+        assert process_group == proc.pid
+        signals.append(requested_signal)
+        if requested_signal == 0 and not group_alive:
+            raise ProcessLookupError
+        if requested_signal == signal.SIGKILL:
+            group_alive = False
+
+    monkeypatch.setattr("desktop.launcher.os.killpg", fake_killpg)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SHUTDOWN_GRACE_SECS", "0.01")
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+    sv._procs = [proc]
+
+    sv.stop_all()
+
+    assert signal.SIGTERM in signals
+    assert signal.SIGKILL in signals
+    assert group_alive is False
 
 
 def test_supervisor_children_cannot_mutate_packaged_python_bytecode(
