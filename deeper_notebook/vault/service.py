@@ -198,11 +198,12 @@ class VaultService:
             if not work:
                 self._states[vault_id] = "ready-read-only"
                 return VaultScanResult(vault_id, self._states[vault_id], operation_id)
-            projected = failed = 0
+            projected = unchanged = failed = 0
             reconciliation_required = False
             for item in work:
                 outcome = await self._project(mount, watcher, item, operation_id)
                 projected += outcome.projected
+                unchanged += outcome.unchanged
                 failed += outcome.failed
                 reconciliation_required = (
                     reconciliation_required or outcome.reconciliation_required
@@ -215,6 +216,7 @@ class VaultService:
                 self._states[vault_id],
                 operation_id,
                 projected,
+                unchanged=unchanged,
                 failed=failed,
                 reconciliation_required=reconciliation_required,
             )
