@@ -33,20 +33,41 @@ def _fixture(root: Path) -> None:
     (root / "Logseq Brain" / "page.md").write_text("- Safe fixture\n")
     manifest = root / "brain-engine" / "generated" / "deepercode-connector"
     manifest.mkdir(parents=True)
+    documents = [
+        {
+            "id": f"source-{index}",
+            "evidenceClass": "source",
+            "sourcePath": "private-source-path",
+            "contentPath": "private-content-path",
+            "title": "private-title",
+            "vaultRoot": "private-vault-root",
+        }
+        for index in range(1, 13)
+    ] + [
+        {
+            "id": f"synthesis-{index}",
+            "evidenceClass": "synthesis",
+            "derivedFrom": [f"source-{index}", f"source-{index + 1}"],
+        }
+        for index in range(1, 10)
+    ]
     (manifest / "manifest.json").write_text(
-        json.dumps(
-            {
-                "records": [
-                    {"id": "source-1", "evidenceClass": "source"},
-                    {
-                        "id": "synthesis-1",
-                        "evidenceClass": "synthesis",
-                        "derivedFrom": ["source-1"],
-                    },
-                ]
-            }
-        )
+        json.dumps({"schemaVersion": {"major": 1}, "documents": documents})
     )
+
+
+def _trust_records() -> list[dict[str, object]]:
+    return [
+        {"id": f"source-{index}", "evidence_class": "source", "derived_from": []}
+        for index in range(1, 13)
+    ] + [
+        {
+            "id": f"synthesis-{index}",
+            "evidence_class": "synthesis",
+            "derived_from": [f"source-{index}", f"source-{index + 1}"],
+        }
+        for index in range(1, 10)
+    ]
 
 
 def _api_responses(root: Path):
@@ -63,19 +84,12 @@ def _api_responses(root: Path):
         ("GET", "/parent"): _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
         ("GET", "/obsidian"): _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
         ("GET", "/logseq"): _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
-        ("POST", "/parent/trust/import"): {"changed": 0, "unchanged": 2},
-        ("POST", "/parent/scan"): {"parsed": 0, "unchanged": 2},
-        ("POST", "/obsidian/scan"): {"parsed": 0, "unchanged": 1},
-        ("POST", "/logseq/scan"): {"parsed": 0, "unchanged": 1},
-        ("GET", "/parent/trust"): [
-            {"id": "source-1", "evidence_class": "source", "derived_from": []},
-            {
-                "id": "synthesis-1",
-                "evidence_class": "synthesis",
-                "derived_from": ["source-1"],
-            },
-        ],
-        ("GET", "/parent/trust/summary"): {"total": 2},
+        ("POST", "/parent/trust/import"): {"changed": 0, "unchanged": 21},
+        ("POST", "/parent/scan"): {"parsed": 0, "unchanged": 21},
+        ("POST", "/obsidian/scan"): {"parsed": 0, "unchanged": 12},
+        ("POST", "/logseq/scan"): {"parsed": 0, "unchanged": 9},
+        ("GET", "/parent/trust"): _trust_records(),
+        ("GET", "/parent/trust/summary"): {"total": 21},
         ("GET", "/parent/receipts"): [{"operation": "project"}],
     }
 
@@ -107,7 +121,61 @@ def test_check_only_never_calls_api_and_reports_relative_paths(tmp_path, monkeyp
     assert report["source_files_changed"] == 0
     assert all(not Path(path).is_absolute() for path in report["source_hashes"])
     assert str(Path.home()) not in output.read_text()
+    assert "private-source-path" not in output.read_text()
+    assert "private-content-path" not in output.read_text()
+    assert "private-title" not in output.read_text()
+    assert "private-vault-root" not in output.read_text()
     assert output.stat().st_mode & 0o777 == 0o600
+
+
+def test_manifest_counts_accept_canonical_documents_and_preserve_only_digest(tmp_path):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+
+    counts = verifier._manifest_counts(root, verifier._capture_root_identity(root))
+
+    assert counts["expected_trust_records"] == 21
+    assert counts["expected_synthesis_records"] == 9
+    assert counts["expected_synthesis_with_derived_from"] == 9
+    assert set(counts) == {
+        "expected_trust_records",
+        "expected_synthesis_records",
+        "expected_synthesis_with_derived_from",
+        "expected_derived_from",
+        "expected_derived_from_digest",
+    }
+
+
+def test_manifest_counts_supports_legacy_records_only_when_unambiguous(tmp_path):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest.write_text(json.dumps({"records": [{"id": "source-1", "evidenceClass": "source"}]}))
+
+    counts = verifier._manifest_counts(root, verifier._capture_root_identity(root))
+
+    assert counts["expected_trust_records"] == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"documents": "not-a-list"},
+        {"documents": [{"id": "source-1", "evidenceClass": "source"}], "records": []},
+        {"documents": [{"id": "source-1", "evidenceClass": "source"}, {"id": "source-1", "evidenceClass": "source"}]},
+    ],
+)
+def test_manifest_counts_rejects_malformed_or_ambiguous_manifest(tmp_path, payload):
+    verifier = _load_verifier()
+    root = tmp_path / "fixture"
+    _fixture(root)
+    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest.write_text(json.dumps(payload))
+
+    with pytest.raises(verifier.VerificationError):
+        verifier._manifest_counts(root, verifier._capture_root_identity(root))
 
 
 def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, monkeypatch):
@@ -130,9 +198,9 @@ def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, mon
     assert report["source_files_changed"] == 0
     assert report["git_status_changed"] is False
     assert report["second_scan_changed_projections"] == 0
-    assert report["trust_records"] == 2
-    assert report["synthesis_records"] == 1
-    assert report["synthesis_with_derived_from"] == 1
+    assert report["trust_records"] == 21
+    assert report["synthesis_records"] == 9
+    assert report["synthesis_with_derived_from"] == 9
     assert ("POST", "/parent/trust/import", {"manifest_relative_path": "brain-engine/generated/deepercode-connector/manifest.json"}) in requests
     assert sum(path.endswith("/scan") for _, path, _ in requests) == 6
     assert str(root) not in output.read_text()
@@ -377,7 +445,7 @@ def test_trust_derived_from_arrays_must_match_manifest_by_record_id(tmp_path, mo
     _fixture(root)
     output = tmp_path / "report.json"
     responses = _api_responses(root)
-    responses[("GET", "/parent/trust")][1]["derived_from"] = ["different-but-not-empty"]
+    responses[("GET", "/parent/trust")][12]["derived_from"] = ["different-but-not-empty"]
     monkeypatch.setattr(
         verifier,
         "_request_json",
@@ -685,12 +753,9 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
             if self.path == "/api/deeper-notebook/vaults":
                 return self._reply([])
             if self.path.endswith("/trust"):
-                return self._reply([
-                    {"id": "source-1", "evidence_class": "source", "derived_from": []},
-                    {"id": "synthesis-1", "evidence_class": "synthesis", "derived_from": ["source-1"]},
-                ])
+                return self._reply(_trust_records())
             if self.path.endswith("/trust/summary"):
-                return self._reply({"total": 2})
+                return self._reply({"total": 21})
             if self.path.endswith("/receipts"):
                 return self._reply([])
             return self._reply(details[self.path.rsplit("/", 1)[-1]])
@@ -716,7 +781,7 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
         server.server_close()
     report = json.loads(output.read_text())
     assert report["failures"] == []
-    assert report["trust_records"] == 2
+    assert report["trust_records"] == 21
     assert all(path.startswith("/api/deeper-notebook/vaults") for path in paths)
 
 
@@ -752,14 +817,11 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
             if self.path == "/api/deeper-notebook/vaults":
                 return self._reply([])
             if self.path.endswith("/trust"):
-                return self._reply([
-                    {"id": "source-1", "evidence_class": "source", "derived_from": []},
-                    {"id": "synthesis-1", "evidence_class": "synthesis", "derived_from": ["source-1"]},
-                ])
+                return self._reply(_trust_records())
             if self.path.endswith("/trust/summary"):
                 if mutation_point == "summary":
                     mutate()
-                return self._reply({"total": 2})
+                return self._reply({"total": 21})
             if self.path.endswith("/receipts"):
                 return self._reply([])
             return self._reply(details[self.path.rsplit("/", 1)[-1]])
@@ -802,7 +864,7 @@ def test_derived_from_values_are_never_disclosed_in_report_or_errors(tmp_path, m
     secret = "/private/absolute/path/SECRET-derivation-token"
     manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
     payload = json.loads(manifest.read_text())
-    payload["records"][1]["derivedFrom"] = [secret]
+    payload["documents"][12]["derivedFrom"] = [secret]
     manifest.write_text(json.dumps(payload))
     output = tmp_path / "report.json"
     responses = _api_responses(root)
