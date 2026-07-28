@@ -196,7 +196,7 @@ def test_upload_cleanup_refuses_fifo_without_blocking_or_leaking_fds(
     child_code = """
 import json
 import os
-import sys
+import signal, sys
 
 from deeper_notebook import config
 from deeper_notebook.database import repository
@@ -229,13 +229,13 @@ surreal_commands.get_command_status = forbidden_async
 service.get_command_service = forbidden_sync
 config.UPLOADS_FOLDER = sys.argv[1]
 fd_root = "/proc/self/fd" if os.path.isdir("/proc/self/fd") else "/dev/fd"
-before = len(os.listdir(fd_root))
+signal.alarm(2); before = len(os.listdir(fd_root))
 Source(
     id="source:fifo",
     title="FIFO",
     asset=Asset(file_path=sys.argv[2]),
 )._cleanup_uploaded_file()
-after = len(os.listdir(fd_root))
+signal.alarm(0); after = len(os.listdir(fd_root))
 print(json.dumps({"calls": calls, "fd_delta": after - before}))
 """
 
@@ -244,7 +244,7 @@ print(json.dumps({"calls": calls, "fd_delta": after - before}))
         capture_output=True,
         check=False,
         text=True,
-        timeout=2,
+        timeout=30,
     )
 
     assert result.returncode == 0, result.stderr
