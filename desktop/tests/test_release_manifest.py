@@ -270,10 +270,18 @@ def test_makefile_build_contract_is_portable_and_uses_canonical_outputs() -> Non
     makefile = MAKEFILE.read_text(encoding="utf-8")
 
     assert "/Users/Antman/Desktop/OpenNotebook" not in makefile
-    assert "uv run python -m pytest desktop/tests/ desktop/memory/tests/ -q" in makefile
+    assert "$(BUILD_PY) -m pytest desktop/tests/ desktop/memory/tests/ -q" in makefile
     assert "dist/Deeper Notebook.app" in makefile
     assert "dist/Deeper-Notebook-mac-<arch>.dmg" in makefile
     assert "/Applications/Deeper Notebook.app" in makefile
+
+
+def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+
+    assert "build-mac-test: build-mac-venv" in makefile
+    assert "$(BUILD_PY) -m pytest desktop/tests/ desktop/memory/tests/ -q" in makefile
+    assert "uv run pytest tests/ -q --ignore=tests/integration" in makefile
 
 
 def test_makefile_requires_a_deep_strict_codesign_verification() -> None:
