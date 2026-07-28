@@ -10,6 +10,7 @@ from deeper_notebook.utils.context_builder import ContextBuilder
 @pytest.mark.parametrize("embedding_state", ["pending", "failed"])
 async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not_ready(
     embedding_state: str,
+    caplog,
 ):
     note = Note(
         id="note:mounted",
@@ -19,7 +20,6 @@ async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not
         vault_id="vault_mount:brain",
         vault_file_id="vault_file:mounted",
         source_hash="a" * 64,
-        properties={"embedding_state": embedding_state},
     )
     with (
         patch.object(Note, "get", new_callable=AsyncMock, return_value=note),
@@ -29,6 +29,7 @@ async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not
             return_value=[{
                 "relative_path": "wiki/selected.md",
                 "source_hash": "a" * 64,
+                "embedding_state": embedding_state,
                 "selected_block": {"source_start": 12, "source_end": 34},
             }],
         ),
@@ -39,6 +40,7 @@ async def test_mounted_note_context_keeps_grounded_v1_span_when_embedding_is_not
     citation = builder.items[0].content["grounded_citation"]
     assert citation == "[V1] wiki/selected.md | note note:mounted | sha256:" + "a" * 64 + " | blocks 12-34"
     assert "/Users/" not in str(builder.items[0].content)
+    assert "/Users/" not in caplog.text
 
 
 @pytest.mark.asyncio

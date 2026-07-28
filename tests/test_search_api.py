@@ -105,14 +105,15 @@ class TestTextSearchHighlightOverflowFallback:
 
 
 @pytest.mark.asyncio
-async def test_vector_search_enriches_mounted_note_without_root_leak():
+@pytest.mark.parametrize("embedding_state", ["pending", "failed"])
+async def test_vector_search_enriches_mounted_note_without_root_leak(embedding_state: str):
     from deeper_notebook.domain import notebook as notebook_module
 
     with (
         patch("deeper_notebook.utils.embedding.generate_embedding", new_callable=AsyncMock, return_value=[0.1]),
         patch.object(notebook_module, "repo_query", new_callable=AsyncMock, side_effect=[
             [{"id": "note:mounted", "title": "Mounted"}],
-            [{"id": "note:mounted", "canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "a" * 64}],
+            [{"id": "note:mounted", "canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "a" * 64, "embedding_state": embedding_state}],
         ]),
     ):
         result = await notebook_module.vector_search("mounted", 1)
