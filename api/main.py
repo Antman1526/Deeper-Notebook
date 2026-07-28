@@ -45,6 +45,7 @@ from api.routers import (
     exports,  # v0.7.90 — notebook/note export to host filesystem
     filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
+    knowledge_workspace,
     languages,
     models,
     notebooks,
@@ -59,8 +60,8 @@ from api.routers import (
     studio,
     study,
     transformations,
-    video_overviews,
     vault,
+    video_overviews,
 )
 from api.routers import commands as commands_router
 from api.routers import (
@@ -1018,6 +1019,11 @@ app.include_router(
     vault.router,
     prefix="/api/deeper-notebook",
     tags=["deeper-notebook-vault"],
+)
+app.include_router(
+    knowledge_workspace.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-workspace"],
 )
 app.include_router(
     gmail_router.router,
