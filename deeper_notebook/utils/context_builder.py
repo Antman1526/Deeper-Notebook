@@ -308,7 +308,7 @@ class ContextBuilder:
             if note.canonical_external and note.vault_file_id and note.vault_id:
                 provenance_rows = await repo_query(
                     """
-                    SELECT relative_path, source_hash,
+                    SELECT relative_path, source_hash, embedding_state,
                         (SELECT source_start, source_end FROM note_block
                          WHERE vault_file_id = $vault_file_id
                          ORDER BY position LIMIT 1)[0] AS selected_block

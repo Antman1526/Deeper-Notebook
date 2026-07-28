@@ -1559,7 +1559,7 @@ async def _enrich_vault_provenance(
         return search_results
     rows = await repo_query(
         """
-        SELECT id, canonical_external, vault_id, source_hash,
+        SELECT id, canonical_external, vault_id, source_hash, embedding_state,
                vault_file.relative_path AS relative_path
         FROM note WHERE id IN $note_ids;
         """,
