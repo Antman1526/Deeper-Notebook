@@ -122,6 +122,36 @@ async def test_malformed_stored_json_returns_stable_conflict(
 
 
 @pytest.mark.asyncio
+async def test_read_failure_returns_stable_unavailable(
+    api_app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.routers import knowledge_workspace
+
+    workspace_path = api_app.state.workspace_path
+
+    def fail_to_load(*, path: Path) -> None:
+        assert path == workspace_path
+        raise OSError(f"cannot read {path}")
+
+    monkeypatch.setattr(
+        knowledge_workspace,
+        "load_knowledge_workspace",
+        fail_to_load,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/deeper-notebook/workspace/knowledge")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": "workspace_state_unavailable"}}
+    assert str(workspace_path) not in response.text
+
+
+@pytest.mark.asyncio
 async def test_write_failure_returns_stable_unavailable(
     api_app: FastAPI,
     monkeypatch: pytest.MonkeyPatch,
@@ -172,3 +202,25 @@ async def test_router_exposes_only_canonical_get_and_put(api_app: FastAPI) -> No
         )
 
     assert legacy.status_code == 404
+
+
+def test_main_app_registers_only_canonical_knowledge_workspace_routes() -> None:
+    from api.main import app
+
+    routes: dict[str, set[str]] = {}
+    for route in app.routes:
+        candidates = [route]
+        effective_routes = getattr(route, "effective_route_contexts", None)
+        if effective_routes:
+            candidates.extend(effective_routes())
+        for candidate in candidates:
+            path = getattr(candidate, "path", None)
+            if path in {
+                "/api/deeper-notebook/workspace/knowledge",
+                "/api/onp/workspace/knowledge",
+            }:
+                routes.setdefault(path, set()).update(candidate.methods or set())
+
+    assert routes == {
+        "/api/deeper-notebook/workspace/knowledge": {"GET", "PUT"},
+    }

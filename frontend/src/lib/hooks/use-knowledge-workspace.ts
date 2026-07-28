@@ -107,6 +107,9 @@ const persistenceCoordinator: PersistenceCoordinator = {
   hasSucceeded: false,
 }
 
+const persistenceCoordinatorTestResetKey =
+  '__DEEPER_NOTEBOOK_KNOWLEDGE_WORKSPACE_TEST_RESET__'
+
 function preferLatest(
   current: ValidWorkspaceSnapshot | null,
   candidate: ValidWorkspaceSnapshot,
@@ -296,7 +299,7 @@ function getPersistenceStatus(): PersistenceStatus {
   return persistenceCoordinator.status
 }
 
-export function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
+function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
   if (persistenceCoordinator.inFlightSnapshot) {
     throw new Error('cannot reset the workspace persistence coordinator while a save is active')
   }
@@ -312,6 +315,13 @@ export function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
   persistenceCoordinator.storeUnsubscribe = null
   persistenceCoordinator.status = idlePersistenceStatus
   persistenceCoordinator.hasSucceeded = false
+}
+
+if (process.env.NODE_ENV === 'test') {
+  Object.defineProperty(globalThis, persistenceCoordinatorTestResetKey, {
+    configurable: true,
+    value: resetKnowledgeWorkspacePersistenceCoordinatorForTests,
+  })
 }
 
 export function useHydrateKnowledgeWorkspace() {
