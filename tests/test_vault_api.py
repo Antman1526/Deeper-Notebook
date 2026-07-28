@@ -37,6 +37,7 @@ class _Repository:
         return [
             VaultFile(
                 id="vault_file:one",
+                note_id="note:derived-projection-id",
                 vault_id=vault_id,
                 relative_path="notes/one.md",
                 file_kind="markdown",
@@ -231,7 +232,9 @@ def test_read_only_vault_resources_return_relative_data_only(client):
         "missing": 0,
         "embeddings_pending": 2,
     }
-    assert test_client.get(f"{root}/files").json()[0]["relative_path"] == "notes/one.md"
+    file = test_client.get(f"{root}/files").json()[0]
+    assert file["relative_path"] == "notes/one.md"
+    assert file["note_id"] == "note:derived-projection-id"
     assert test_client.get(f"{root}/pages/note:one").status_code == 200
     assert test_client.get(f"{root}/pages/note:one/backlinks").status_code == 200
     assert test_client.get(f"{root}/pages/note:one/outgoing").status_code == 200

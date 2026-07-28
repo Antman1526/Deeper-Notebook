@@ -234,7 +234,7 @@ export const ruRU = {
     ask: "Запрос",
     knowledge: "Знания",
   },
-  knowledge: { mounts: "Подключенные хранилища", scan: "Сканировать хранилище", status: "Статус", readOnly: "Внешний файл только для чтения", backlinks: "Обратные ссылки", outgoing: "Исходящие ссылки", properties: "Свойства", tags: "Теги", unresolved: "Неразрешенная ссылка", loadError: "Не удалось загрузить знания." },
+  knowledge: { mounts: "Подключенные хранилища", scan: "Сканировать хранилище", status: "Статус", readOnly: "Внешний файл только для чтения", backlinks: "Обратные ссылки", outgoing: "Исходящие ссылки", properties: "Свойства", tags: "Теги", unresolved: "Неразрешенная ссылка", loadError: "Не удалось загрузить знания." }, description: "Read local Obsidian and Logseq notes without changing the originals.", files: "Vault files", mountsLoading: "Loading mounted vaults…", noMounts: "No mounted vaults are available yet.", filesLoading: "Loading files…", reader: "Reader", localGraph: "Local graph", selectNote: "Select a note to explore it", externalReadOnly: "Your vault stays external and read-only.", noteLoading: "Loading note…", untitledNote: "Untitled note", canonicalSource: "canonical source", noProperties: "No properties.", noTags: "No tags.", outline: "Outline", graphLoading: "Loading graph…", graphLoadError: "Could not load graph.", noteLinks: "Note links", linksLoading: "Loading links…", linksLoadError: "Could not load links.", filterFiles: "Filter files", noMatchingFiles: "No matching files.", noGraphLinks: "No note links to map yet.", noLinks: "No links yet.",
   notebooks: {
     title: "Блокноты",
     newNotebook: "Новый блокнот",

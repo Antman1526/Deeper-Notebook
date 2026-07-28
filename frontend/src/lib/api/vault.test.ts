@@ -9,12 +9,14 @@ import { vaultApi, vaultFileSchema } from './vault'
 
 const file = {
   id: 'vault_file:one', vault_id: 'vault_mount:one', relative_path: 'Projects/Plan.md',
+  note_id: 'note:real-projection-id',
   file_kind: 'markdown', format: 'obsidian', content_hash: 'abc', parse_status: 'parsed',
 }
 
 describe('vault API boundary', () => {
   it('validates a vault file before exposing it to callers', () => {
     expect(vaultFileSchema.parse(file)).toMatchObject(file)
+    expect(() => vaultFileSchema.parse({ ...file, note_id: undefined })).toThrow()
     expect(() => vaultFileSchema.parse({ ...file, parse_status: 'unknown' })).toThrow()
   })
 

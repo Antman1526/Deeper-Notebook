@@ -83,3 +83,19 @@ class VaultPageResponse(_VaultSchema):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     outgoing_links: list[dict[str, Any]] = Field(default_factory=list)
     backlinks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VaultFileResponse(_VaultSchema):
+    id: str
+    note_id: str
+    vault_id: str
+    relative_path: str
+    file_kind: str
+    format: str
+    content_hash: str | None = None
+    size_bytes: int = 0
+    modified_ns: int = 0
+    encoding: str | None = None
+    parse_status: str
+    parse_error_code: str | None = None
+    deleted_state: str
