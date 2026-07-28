@@ -77,6 +77,48 @@ def test_lifespan_tasks_use_track_task_anchor():
         )
 
 
+def test_lifespan_task_guard_rejects_untracked_task_with_nested_function_decoy():
+    source = """
+async def lifespan(app):
+    digest_scheduler_task = asyncio.create_task(_digest_run_forever(stop_event))
+
+    async def unused_decoy():
+        digest_scheduler_task = _track_task(
+            asyncio.create_task(_digest_run_forever(stop_event))
+        )
+
+    yield
+"""
+
+    with pytest.raises(AssertionError, match="digest_scheduler_task must wrap"):
+        assert_lifespan_tracked_task(
+            source,
+            task_name="digest_scheduler_task",
+            coroutine_name="_digest_run_forever",
+        )
+
+
+def test_lifespan_task_guard_rejects_wrong_task_with_nested_class_decoy():
+    source = """
+async def lifespan(app):
+    gmail_prewarm_task = _track_task(asyncio.create_task(_wrong_cache()))
+
+    class UnusedDecoy:
+        gmail_prewarm_task = _track_task(
+            asyncio.create_task(_prewarm_gmail_cache())
+        )
+
+    yield
+"""
+
+    with pytest.raises(AssertionError, match="gmail_prewarm_task must wrap"):
+        assert_lifespan_tracked_task(
+            source,
+            task_name="gmail_prewarm_task",
+            coroutine_name="_prewarm_gmail_cache",
+        )
+
+
 @pytest.mark.asyncio
 async def test_track_task_holds_strong_reference_and_self_evicts():
     """v0.7.190 behavioural: _track_task keeps the task alive while
