@@ -65,6 +65,29 @@ describe('VaultCodeMirror', () => {
     expect(view!.state.doc.toString()).toBe('# Plan\n')
   })
 
+  it('rejects an unauthorized sequential batch atomically', () => {
+    render(
+      <VaultCodeMirror
+        ariaLabel="Plan source"
+        markdown={'# Plan\n'}
+        extensions={[]}
+      />,
+    )
+    const editor = screen.getByRole('textbox', { name: 'Plan source' })
+    const view = EditorView.findFromDOM(editor)!
+    const unauthorizedChange = view.state.update({
+      changes: { from: 0, insert: 'changed' },
+      filter: false,
+    })
+    const followup = unauthorizedChange.state.update({
+      selection: { anchor: unauthorizedChange.state.doc.length },
+      filter: false,
+    })
+
+    expect(() => view.dispatch([unauthorizedChange, followup])).not.toThrow()
+    expect(view.state.doc.toString()).toBe('# Plan\n')
+  })
+
   it('offers non-mutating local search and code folding', () => {
     render(
       <VaultCodeMirror
