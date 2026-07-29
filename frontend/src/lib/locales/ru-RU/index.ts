@@ -1261,3 +1261,20 @@ export const ruRU = {
     },
   },
 }
+
+Object.assign(ruRU.knowledge, {
+  source: "Исходник",
+  livePreview: "Живой предпросмотр",
+  emptyNote: "Эта заметка пуста.",
+  pageInvalid: "Данные проекции страницы недействительны.",
+  canonicalPathUnavailable: "Канонический путь хранилища недоступен.",
+  pagePreview: "Предпросмотр: {{title}}",
+  previewUnavailable: "Предпросмотр недоступен.",
+  footnotes: "Сноски",
+  sourceProvenance: "Происхождение источника",
+  lineEnding: "Окончание строки",
+  encoding: "Кодировка",
+  contentHash: "Хеш содержимого",
+  readOnlyMode: "{{mode}} доступен только для чтения",
+  headingLevel: "Уровень {{level}} {{title}}",
+})

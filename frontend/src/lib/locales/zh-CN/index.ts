@@ -1261,3 +1261,20 @@ export const zhCN = {
     },
   },
 }
+
+Object.assign(zhCN.knowledge, {
+  source: "源码",
+  livePreview: "实时预览",
+  emptyNote: "此笔记为空。",
+  pageInvalid: "投影的页面数据无效。",
+  canonicalPathUnavailable: "规范的知识库路径不可用。",
+  pagePreview: "{{title}} 预览",
+  previewUnavailable: "预览不可用。",
+  footnotes: "脚注",
+  sourceProvenance: "来源溯源",
+  lineEnding: "换行符",
+  encoding: "编码",
+  contentHash: "内容哈希",
+  readOnlyMode: "{{mode}} 为只读模式",
+  headingLevel: "{{level}} 级 {{title}}",
+})
