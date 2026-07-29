@@ -88,10 +88,11 @@ function appendRegexConstructs(
   constructs: MarkdownConstruct[],
   excludedRanges: MarkdownConstruct[],
 ): void {
-  const addMatches = (kind: 'wikilink' | 'tag', expression: RegExp, offset = 0) => {
+  const addMatches = (kind: 'wikilink' | 'tag', expression: RegExp, capture = 0) => {
     for (const match of markdown.matchAll(expression)) {
-      const from = (match.index ?? 0) + offset
-      const to = from + match[0].length - offset
+      const source = match[capture] ?? match[0]
+      const from = (match.index ?? 0) + match[0].indexOf(source)
+      const to = from + source.length
       if (!excludedRanges.some((range) => intersects(range, from, to))) {
         constructs.push({ kind, from, to })
       }
@@ -99,7 +100,7 @@ function appendRegexConstructs(
   }
 
   addMatches('wikilink', /\[\[[^\]\r\n]{1,2048}\]\]/gu)
-  addMatches('tag', /(?:^|[\s([{])#([\p{Letter}\p{Number}_/-]{1,256})/gmu, 1)
+  addMatches('tag', /(?:^|[\s([{])(#[\p{Letter}\p{Number}_/-]{1,256})/gmu, 1)
 }
 
 function uniqueSortedConstructs(constructs: MarkdownConstruct[]): MarkdownConstruct[] {
