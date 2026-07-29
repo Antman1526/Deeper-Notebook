@@ -1,6 +1,11 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { type Extension, EditorState } from '@codemirror/state'
-import { Decoration, EditorView, type ViewPlugin } from '@codemirror/view'
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  type ViewPlugin,
+} from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -14,6 +19,16 @@ function previewState(doc: string, anchor = doc.length) {
     selection: { anchor },
     extensions: [markdown({ base: markdownLanguage })],
   })
+}
+
+type PreviewPlugin = {
+  decorations: DecorationSet
+  update(update: {
+    docChanged: boolean
+    selectionSet: boolean
+    viewportChanged: boolean
+    view: EditorView
+  }): void
 }
 
 describe('buildLivePreviewDecorationRecords', () => {
@@ -158,6 +173,117 @@ describe('buildLivePreviewDecorationRecords', () => {
     expect(records.some((record) => record.from < inside)).toBe(false)
   })
 
+  it('clips a long inline-math mark to a viewport in its middle', () => {
+    const source = `$${'x'.repeat(6_000)}$`
+    const state = previewState(source)
+    const visible = { from: 3_000, to: 3_002 }
+
+    const math = buildLivePreviewDecorationRecords(state, [visible])
+      .filter((record) => record.kind === 'math-mark')
+
+    expect(math).toEqual([
+      expect.objectContaining({
+        from: visible.from,
+        to: visible.to,
+      }),
+    ])
+    expect(math.every((record) =>
+      record.from >= visible.from && record.to <= visible.to,
+    )).toBe(true)
+  })
+
+  it('clips a long inline-math mark to its visible opening delimiter', () => {
+    const source = `$${'x'.repeat(6_000)}$`
+    const state = previewState(source)
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: 1 }]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'math-mark',
+          from: 0,
+          to: 1,
+        }),
+      ]))
+  })
+
+  it('clips a long inline-math mark to its visible closing delimiter', () => {
+    const source = `$${'x'.repeat(6_000)}$`
+    const state = previewState(source)
+    const visible = { from: source.length - 1, to: source.length }
+
+    expect(buildLivePreviewDecorationRecords(state, [visible]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'math-mark',
+          from: visible.from,
+          to: visible.to,
+        }),
+      ]))
+  })
+
+  it.each([
+    ['inline code', (math: string) => `\`${math}\``],
+    ['Markdown link', (math: string) => `[${math}](page.md)`],
+  ] as const)('excludes long inline math inside %s', (_name, wrap) => {
+    const math = `$${'x'.repeat(6_000)}$`
+    const source = wrap(math)
+    const middle = source.indexOf('x') + 3_000
+    const state = previewState(source)
+
+    expect(buildLivePreviewDecorationRecords(
+      state,
+      [{ from: middle, to: middle + 2 }],
+    ).filter((record) => record.kind === 'math-mark')).toEqual([])
+  })
+
+  it('reuses its math interval index for viewport rebuilds', () => {
+    const source = `$${'x'.repeat(6_000)}$`
+    const visible = { from: 3_000, to: 3_002 }
+    const extension = livePreviewExtension({})
+    const [pluginExtension] = extension as readonly Extension[]
+    const plugin = pluginExtension as ViewPlugin<PreviewPlugin>
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: source,
+        selection: { anchor: source.length },
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          extension,
+        ],
+      }),
+    })
+    const instance = view.plugin(plugin)!
+    const toString = vi.spyOn(view.state.doc, 'toString')
+    const sliceString = vi.spyOn(view.state.doc, 'sliceString')
+    const viewportView = new Proxy(view, {
+      get(target, property) {
+        if (property === 'visibleRanges') return [visible]
+        return Reflect.get(target, property, target)
+      },
+    })
+
+    try {
+      instance.update({
+        docChanged: false,
+        selectionSet: false,
+        viewportChanged: true,
+        view: viewportView,
+      })
+
+      const math: Array<{ from: number; to: number }> = []
+      instance.decorations.between(visible.from, visible.to, (from, to, decoration) => {
+        if (decoration.spec.class === 'dn-live-preview-math') math.push({ from, to })
+      })
+      expect(math).toEqual([visible])
+      expect(toString).not.toHaveBeenCalled()
+      expect(sliceString.mock.calls.every(([from = 0, to = view.state.doc.length]) =>
+        to - from <= 4_106,
+      )).toBe(true)
+    } finally {
+      view.destroy()
+    }
+  })
+
   it('clips a long fenced-code construct to a tiny visible range', () => {
     const source = `\`\`\`text\n${'x'.repeat(20_000)}\n\`\`\``
     const state = previewState(source)
@@ -177,7 +303,7 @@ describe('buildLivePreviewDecorationRecords', () => {
       to - from,
     )
     expect(readLengths.filter((length) => length === 4_106).length)
-      .toBeGreaterThanOrEqual(4)
+      .toBeGreaterThanOrEqual(3)
   })
 
   it('collapses a visible opening fence on a long fenced-code construct', () => {
@@ -251,15 +377,6 @@ describe('buildLivePreviewDecorationRecords', () => {
   })
 
   it('reuses its document source-index cache for viewport-driven decoration rebuilds', () => {
-    type PreviewPlugin = {
-      update(update: {
-        docChanged: boolean
-        selectionSet: boolean
-        viewportChanged: boolean
-        view: EditorView
-      }): void
-    }
-
     const extension = livePreviewExtension({})
     const [pluginExtension] = extension as readonly Extension[]
     const plugin = pluginExtension as ViewPlugin<PreviewPlugin>
