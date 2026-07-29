@@ -2,13 +2,40 @@ import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import { describe, expect, it, vi } from 'vitest'
 
-import { remarkVaultLinks } from './remark-vault-links'
+import { buildUniqueResolvedSpanMap, remarkVaultLinks } from './remark-vault-links'
 
 function utf8ByteLength(value: string) {
   return new TextEncoder().encode(value).length
 }
 
 describe('remarkVaultLinks', () => {
+  const canonicalLink = {
+    id: 'canonical',
+    source_note_id: 'note:plan',
+    target_note_id: 'note:research',
+    target_note_title: 'Research',
+    target_relative_path: 'research.md',
+    target_text: 'Research',
+    link_kind: 'wikilink',
+    resolved: true,
+    source_start: 2,
+    source_end: 14,
+  }
+
+  it.each([
+    ['a resolved and unresolved record', [canonicalLink, { ...canonicalLink, id: 'unresolved', resolved: false, target_note_id: null }]],
+    ['duplicate records for the same target', [canonicalLink, { ...canonicalLink, id: 'duplicate' }]],
+    ['a noncanonical resolved record', [{ ...canonicalLink, target_note_title: null }]],
+  ])('does not map %s sharing one source span', (_label, links) => {
+    expect(buildUniqueResolvedSpanMap(links)).toEqual(new Map())
+  })
+
+  it('accepts an empty but present canonical target title', () => {
+    const link = { ...canonicalLink, target_note_title: '' }
+
+    expect(buildUniqueResolvedSpanMap([link]).get('2:14')).toBe(link)
+  })
+
   it('preserves source text and resolves duplicate labels only by their UTF-8 spans', () => {
     const markdown = 'é [[Research|Same]] then [[Research|Same]]'
     const firstStart = utf8ByteLength('é ')

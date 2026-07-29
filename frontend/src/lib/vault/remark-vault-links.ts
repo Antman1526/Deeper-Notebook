@@ -106,19 +106,25 @@ export function vaultLinkSpanKey(start: number, end: number): string {
 }
 
 export function buildUniqueResolvedSpanMap(links: VaultLink[]): Map<string, VaultLink> {
-  const targetsBySpan = new Map<string, Map<string, VaultLink>>()
+  const recordsBySpan = new Map<string, VaultLink | null>()
   for (const link of links) {
-    if (!link.resolved || !link.target_note_id) continue
     const key = vaultLinkSpanKey(link.source_start, link.source_end)
-    const targets = targetsBySpan.get(key) || new Map<string, VaultLink>()
-    const current = targets.get(link.target_note_id)
-    if (!current || link.id < current.id) targets.set(link.target_note_id, link)
-    targetsBySpan.set(key, targets)
+    recordsBySpan.set(key, recordsBySpan.has(key) ? null : link)
   }
 
   const unique = new Map<string, VaultLink>()
-  for (const [key, targets] of targetsBySpan) {
-    if (targets.size === 1) unique.set(key, targets.values().next().value!)
+  for (const [key, link] of recordsBySpan) {
+    if (
+      link?.resolved
+      && link.target_note_id !== null
+      && link.target_note_id !== undefined
+      && link.target_note_title !== null
+      && link.target_note_title !== undefined
+      && link.target_relative_path !== null
+      && link.target_relative_path !== undefined
+    ) {
+      unique.set(key, link)
+    }
   }
   return unique
 }
