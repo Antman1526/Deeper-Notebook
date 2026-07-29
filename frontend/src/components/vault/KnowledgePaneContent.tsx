@@ -22,6 +22,7 @@ export type KnowledgeNavigate = (
   noteId: string,
   relativePathHint?: string,
   titleHint?: string,
+  paneId?: string,
 ) => void
 
 interface KnowledgePaneContentProps {
@@ -79,7 +80,13 @@ export function KnowledgePaneContent({
       || link?.alias
       || link?.target_text
       || targetNoteId
-    onNavigate(activeTab.vaultId, targetNoteId, link?.target_text, title)
+    onNavigate(
+      activeTab.vaultId,
+      targetNoteId,
+      link?.target_text,
+      title,
+      pane.id,
+    )
   }
 
   if (!activeTab) {
