@@ -689,11 +689,13 @@ class _OnpJsApi:
     `window.pywebview.api`. Currently just `relaunch()`, called by the DB
     repair banner's one-click "Repair & restart".
 
-    relaunch() spawns a DETACHED helper that terminates THIS process and then
-    reopens the .app bundle; it also closes the window for immediate feedback.
-    On the next boot the launcher's auto-repair (db_repair.auto_repair,
-    backup-first) runs and clears the flag. It reopens exactly once (no relaunch
-    loop). In dev (no .app bundle on the path) it just closes the window.
+    relaunch() requests a flush-gated window close. Only after the window has
+    actually closed and launcher cleanup has completed does
+    complete_relaunch_after_close() spawn a detached helper that terminates
+    this process and reopens the .app bundle. On the next boot the launcher's
+    auto-repair (db_repair.auto_repair, backup-first) runs and clears the flag.
+    It reopens exactly once (no relaunch loop). In dev (no .app bundle on the
+    path) it just closes the window.
 
     v0.8.84 — FIX: the helper now ACTIVELY terminates the process (SIGTERM, then
     SIGKILL fallback) instead of passively waiting for it to exit. `window
@@ -708,6 +710,7 @@ class _OnpJsApi:
     def __init__(self, app_recovery=None) -> None:
         self._window = None  # set by open_window after create_window
         self._app_recovery = app_recovery
+        self._relaunch_requested = False
 
     def get_app_recovery(self) -> dict[str, object]:
         if self._app_recovery is None:
@@ -744,35 +747,136 @@ class _OnpJsApi:
         return {"ok": True, "receipt": str(receipt)}
 
     def relaunch(self) -> bool:  # pragma: no cover - exercised in-app only
-        import os
-        import subprocess
-        import sys
-
-        try:
-            exe = Path(sys.executable)
-            app_bundle = next((p for p in exe.parents if p.suffix == ".app"), None)
-            if app_bundle is not None:
-                pid = os.getpid()
-                # Give the window a beat to close, SIGTERM for a clean child
-                # teardown, wait up to ~6s, SIGKILL as a backstop, then reopen.
-                sh = (
-                    f"/bin/sleep 1; "
-                    f"/bin/kill {pid} 2>/dev/null; "
-                    f"n=0; while /bin/kill -0 {pid} 2>/dev/null && [ $n -lt 20 ]; do "
-                    f"/bin/sleep 0.3; n=$((n+1)); done; "
-                    f"/bin/kill -9 {pid} 2>/dev/null; "
-                    f"/bin/sleep 0.5; "
-                    f'/usr/bin/open "{app_bundle}"'
-                )
-                subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
-        except Exception:
-            pass
+        self._relaunch_requested = True
         try:
             if self._window is not None:
                 self._window.destroy()
         except Exception:
             pass
         return True
+
+    def complete_relaunch_after_close(
+        self,
+    ) -> bool:  # pragma: no cover - exercised in-app only
+        import os
+        import subprocess
+        import sys
+
+        if not self._relaunch_requested:
+            return False
+        self._relaunch_requested = False
+        try:
+            exe = Path(sys.executable)
+            app_bundle = next((p for p in exe.parents if p.suffix == ".app"), None)
+            if app_bundle is None:
+                return False
+            pid = os.getpid()
+            sh = (
+                f"/bin/sleep 1; "
+                f"/bin/kill {pid} 2>/dev/null; "
+                f"n=0; while /bin/kill -0 {pid} 2>/dev/null && [ $n -lt 20 ]; do "
+                f"/bin/sleep 0.3; n=$((n+1)); done; "
+                f"/bin/kill -9 {pid} 2>/dev/null; "
+                f"/bin/sleep 0.5; "
+                f'/usr/bin/open "{app_bundle}"'
+            )
+            subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
+        except Exception:
+            return False
+        return True
+
+
+_WORKSPACE_FLUSH_BEFORE_CLOSE_JS = """
+(() => {
+  const flush = window.DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE;
+  if (typeof flush !== 'function') {
+    return Promise.resolve({ok: true, skipped: true});
+  }
+  return Promise.resolve(flush()).then((result) => {
+    if (result && result.ok === true) return result;
+    return {
+      ok: false,
+      error: result && result.error
+        ? String(result.error)
+        : 'Workspace persistence did not complete.',
+    };
+  }).catch((error) => ({
+    ok: false,
+    error: error && error.message
+      ? String(error.message)
+      : 'Workspace persistence failed.',
+  }));
+})()
+"""
+
+
+def _install_workspace_flush_close_gate(
+    window,
+    frontend_loaded: threading.Event,
+    *,
+    timeout_seconds: float = 5.0,
+) -> None:
+    """Delay native close until the frontend confirms workspace durability."""
+
+    state_lock = threading.Lock()
+    state = {
+        "allow_close": False,
+        "flush_in_progress": False,
+        "timeout": None,
+    }
+
+    def _reset_failed_flush() -> None:
+        with state_lock:
+            state["flush_in_progress"] = False
+            timer = state["timeout"]
+            state["timeout"] = None
+        if isinstance(timer, threading.Timer):
+            timer.cancel()
+
+    def _finish_close(result) -> None:
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            _reset_failed_flush()
+            return
+        with state_lock:
+            if state["allow_close"]:
+                return
+            state["allow_close"] = True
+            state["flush_in_progress"] = False
+            timer = state["timeout"]
+            state["timeout"] = None
+        if isinstance(timer, threading.Timer):
+            timer.cancel()
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    def _on_timeout() -> None:
+        _reset_failed_flush()
+
+    def _on_closing():
+        if not frontend_loaded.is_set():
+            return None
+        with state_lock:
+            if state["allow_close"]:
+                return None
+            if state["flush_in_progress"]:
+                return False
+            state["flush_in_progress"] = True
+            timeout = threading.Timer(timeout_seconds, _on_timeout)
+            timeout.daemon = True
+            state["timeout"] = timeout
+        timeout.start()
+        try:
+            window.evaluate_js(
+                _WORKSPACE_FLUSH_BEFORE_CLOSE_JS,
+                callback=_finish_close,
+            )
+        except Exception:
+            _reset_failed_flush()
+        return False
+
+    window.events.closing += _on_closing
 
 
 def _install_native_termination_observer(
@@ -1024,6 +1128,7 @@ def open_window(url: str, on_close: Callable[[], None],
         except Exception:
             pass
         _notify_close_once()
+        _onp_api.complete_relaunch_after_close()
 
     window.events.closed += _on_closed
 
@@ -1071,6 +1176,7 @@ def open_window(url: str, on_close: Callable[[], None],
             _ready_notified = True
             on_ready()
     window.events.loaded += _on_loaded
+    _install_workspace_flush_close_gate(window, _page_loaded)
     _start_handoff_controller(window, url, _page_loaded, splash_html)
     # v0.8.73 — PERSIST the webview's cookie/localStorage store across launches.
     # pywebview defaults to private_mode=True: an EPHEMERAL WKWebsiteDataStore

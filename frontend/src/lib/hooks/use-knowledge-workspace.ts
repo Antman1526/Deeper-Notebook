@@ -69,6 +69,11 @@ interface PersistenceStatus {
   status: 'idle' | 'pending' | 'error' | 'success'
 }
 
+interface WorkspaceFlushResult {
+  ok: boolean
+  error?: string
+}
+
 type SaveExecutor = (
   document: KnowledgeWorkspaceDocument,
 ) => Promise<KnowledgeWorkspaceDocument>
@@ -82,6 +87,7 @@ interface PersistenceCoordinator {
   timer: ReturnType<typeof setTimeout> | null
   storeUnsubscribe: (() => void) | null
   listeners: Set<() => void>
+  flushWaiters: Set<(result: WorkspaceFlushResult) => void>
   status: PersistenceStatus
   hasSucceeded: boolean
 }
@@ -103,12 +109,15 @@ const persistenceCoordinator: PersistenceCoordinator = {
   timer: null,
   storeUnsubscribe: null,
   listeners: new Set(),
+  flushWaiters: new Set(),
   status: idlePersistenceStatus,
   hasSucceeded: false,
 }
 
 const persistenceCoordinatorTestResetKey =
   '__DEEPER_NOTEBOOK_KNOWLEDGE_WORKSPACE_TEST_RESET__'
+const desktopWorkspaceFlushKey =
+  'DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE'
 
 function preferLatest(
   current: ValidWorkspaceSnapshot | null,
@@ -140,13 +149,33 @@ function isSnapshotDurable(
   )
 }
 
-function publishPersistenceStatus(error = persistenceCoordinator.status.error): void {
-  const isPending = Boolean(
+function coordinatorHasPendingWork(): boolean {
+  return Boolean(
     persistenceCoordinator.inFlightSnapshot
     || persistenceCoordinator.queuedSnapshot
     || persistenceCoordinator.debouncedSnapshot
     || persistenceCoordinator.timer,
   )
+}
+
+function settleFlushWaitersIfIdle(): void {
+  if (
+    coordinatorHasPendingWork()
+    || persistenceCoordinator.flushWaiters.size === 0
+  ) {
+    return
+  }
+  const error = persistenceCoordinator.status.error
+  const result: WorkspaceFlushResult = error
+    ? { ok: false, error: error.message }
+    : { ok: true }
+  const waiters = [...persistenceCoordinator.flushWaiters]
+  persistenceCoordinator.flushWaiters.clear()
+  waiters.forEach((resolve) => resolve(result))
+}
+
+function publishPersistenceStatus(error = persistenceCoordinator.status.error): void {
+  const isPending = coordinatorHasPendingWork()
   const nextStatus: PersistenceStatus = {
     error,
     isError: Boolean(error),
@@ -165,10 +194,12 @@ function publishPersistenceStatus(error = persistenceCoordinator.status.error): 
     && nextStatus.isPending === persistenceCoordinator.status.isPending
     && nextStatus.status === persistenceCoordinator.status.status
   ) {
+    settleFlushWaitersIfIdle()
     return
   }
   persistenceCoordinator.status = nextStatus
   persistenceCoordinator.listeners.forEach((listener) => listener())
+  settleFlushWaitersIfIdle()
 }
 
 function startCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
@@ -208,8 +239,8 @@ function startCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
       persistenceCoordinator.inFlightSnapshot = null
       const next = persistenceCoordinator.queuedSnapshot
       persistenceCoordinator.queuedSnapshot = null
-      publishPersistenceStatus()
       if (next) startCoordinatedSave(next)
+      else publishPersistenceStatus()
     })
 }
 
@@ -243,6 +274,24 @@ function scheduleCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
   if (persistenceCoordinator.timer) clearTimeout(persistenceCoordinator.timer)
   persistenceCoordinator.timer = setTimeout(flushCoordinatedDebounce, 400)
   publishPersistenceStatus(null)
+}
+
+function flushKnowledgeWorkspacePersistence(): Promise<WorkspaceFlushResult> {
+  observeWorkspaceForPersistence(useKnowledgeWorkspaceStore.getState())
+  if (persistenceCoordinator.timer) {
+    clearTimeout(persistenceCoordinator.timer)
+    flushCoordinatedDebounce()
+  }
+  if (!coordinatorHasPendingWork()) {
+    const error = persistenceCoordinator.status.error
+    return Promise.resolve(
+      error ? { ok: false, error: error.message } : { ok: true },
+    )
+  }
+  return new Promise((resolve) => {
+    persistenceCoordinator.flushWaiters.add(resolve)
+    settleFlushWaitersIfIdle()
+  })
 }
 
 function observeWorkspaceForPersistence(state: KnowledgeWorkspaceState): void {
@@ -313,8 +362,16 @@ function resetKnowledgeWorkspacePersistenceCoordinatorForTests(): void {
   persistenceCoordinator.debouncedSnapshot = null
   persistenceCoordinator.timer = null
   persistenceCoordinator.storeUnsubscribe = null
+  persistenceCoordinator.flushWaiters.clear()
   persistenceCoordinator.status = idlePersistenceStatus
   persistenceCoordinator.hasSucceeded = false
+}
+
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, desktopWorkspaceFlushKey, {
+    configurable: true,
+    value: flushKnowledgeWorkspacePersistence,
+  })
 }
 
 if (process.env.NODE_ENV === 'test') {

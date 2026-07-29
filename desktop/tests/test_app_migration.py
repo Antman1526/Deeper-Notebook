@@ -925,12 +925,15 @@ def test_tray_quit_and_destroy_close_callback_share_one_runtime_teardown(
 
     class Window:
         def destroy(self) -> None:
+            runtime_stop_count_at_destroy.append(len(supervisor_stops))
             desktop_app._stop_app_runtime_once(ctx)
 
     webview = types.ModuleType("webview")
     webview.windows = [Window()]
     monkeypatch.setitem(sys.modules, "webview", webview)
     monkeypatch.setattr(desktop_tray, "install_tray", capture_tray)
+
+    runtime_stop_count_at_destroy: list[int] = []
 
     desktop_app._phase_install_tray(ctx)
 
@@ -946,5 +949,6 @@ def test_tray_quit_and_destroy_close_callback_share_one_runtime_teardown(
 
     assert not quit_thread.is_alive(), "tray Quit deadlocked with close callback"
     assert quit_errors == []
+    assert runtime_stop_count_at_destroy == [0]
     assert supervisor_stops == [True]
     assert provider_stops == [True]

@@ -386,6 +386,7 @@ def test_native_app_termination_runs_window_cleanup_exactly_once(
     fake_window = SimpleNamespace(
         events=SimpleNamespace(
             resized=Event(),
+            closing=Event(),
             closed=Event(),
             loaded=Event(),
         ),
@@ -418,3 +419,135 @@ def test_native_app_termination_runs_window_cleanup_exactly_once(
 
     assert cleaned == [True]
     assert callbacks["removed"] == "observer-token"
+
+
+def test_native_close_waits_for_frontend_workspace_flush(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    callbacks: dict[str, object] = {}
+
+    class Event:
+        def __init__(self):
+            self.callback = None
+
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    closing = Event()
+    closed = Event()
+    loaded = Event()
+    fake_window = SimpleNamespace(
+        events=SimpleNamespace(
+            resized=Event(),
+            closing=closing,
+            closed=closed,
+            loaded=loaded,
+        ),
+        width=1280,
+        height=800,
+    )
+
+    def evaluate_js(source, callback=None):
+        if callback is None:
+            return True
+        callbacks["flush_source"] = source
+        callbacks["flush_callback"] = callback
+        return None
+
+    def destroy():
+        callbacks["second_close_result"] = closing.callback()
+        if callbacks["second_close_result"] is not False:
+            closed.callback()
+
+    fake_window.evaluate_js = evaluate_js
+    fake_window.destroy = destroy
+    cleaned: list[bool] = []
+
+    def start(**_kwargs):
+        loaded.callback()
+        if closing.callback is None:
+            callbacks["first_close_result"] = "missing"
+            callbacks["cleaned_before_flush"] = bool(cleaned)
+            closed.callback()
+            return
+        callbacks["first_close_result"] = closing.callback()
+        callbacks["cleaned_before_flush"] = bool(cleaned)
+        flush_callback = callbacks.get("flush_callback")
+        if callable(flush_callback):
+            flush_callback({"ok": True})
+
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(
+            create_window=lambda *_args, **_kwargs: fake_window,
+            start=start,
+        ),
+    )
+    monkeypatch.setattr(
+        window_module,
+        "_install_native_termination_observer",
+        lambda _callback: lambda: None,
+    )
+    monkeypatch.setattr(
+        window_module,
+        "_preferred_window_size",
+        lambda *_: (1280, 800),
+    )
+    monkeypatch.setattr(
+        window_module,
+        "_start_handoff_controller",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "desktop.data_root.active_data_root",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr("desktop.window_state.load_size", lambda *_: None)
+    monkeypatch.setattr("desktop.window_state.save_size", lambda *_: None)
+
+    window_module.open_window(
+        "http://127.0.0.1:62001",
+        lambda: cleaned.append(True),
+    )
+
+    assert callbacks["first_close_result"] is False
+    assert callbacks["cleaned_before_flush"] is False
+    assert "DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE" in str(
+        callbacks["flush_source"]
+    )
+    assert callbacks["second_close_result"] is not False
+    assert cleaned == [True]
+
+
+def test_relaunch_helper_starts_only_after_the_flush_gated_window_closes(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    launched: list[tuple[list[str], dict[str, object]]] = []
+    destroyed: list[bool] = []
+    bridge = window_module._OnpJsApi()
+    bridge._window = SimpleNamespace(
+        destroy=lambda: destroyed.append(True),
+    )
+    monkeypatch.setattr(
+        sys,
+        "executable",
+        "/Applications/Deeper Notebook.app/Contents/MacOS/Deeper Notebook",
+    )
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda command, **kwargs: launched.append((command, kwargs)),
+    )
+
+    assert bridge.relaunch() is True
+
+    assert destroyed == [True]
+    assert launched == []
+
+    bridge.complete_relaunch_after_close()
+
+    assert len(launched) == 1
+    assert launched[0][0][:2] == ["/bin/sh", "-c"]
+    assert launched[0][1] == {"start_new_session": True}
