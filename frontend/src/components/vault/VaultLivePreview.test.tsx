@@ -179,4 +179,115 @@ describe('VaultLivePreview', () => {
 
     expect(toString).not.toHaveBeenCalled()
   })
+
+  it('reuses its source cache when only resolved links change', () => {
+    const markdown = 'x [[Research]]'
+    const onNavigate = vi.fn()
+    const { rerender } = render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[]}
+        onNavigate={onNavigate}
+      />,
+    )
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const toString = vi.spyOn(view.state.doc, 'toString')
+
+    rerender(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[{
+          ...resolvedLinkFixture,
+          source_start: 2,
+          source_end: new TextEncoder().encode(markdown).length,
+        }]}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    expect(toString).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+    expect(onNavigate).toHaveBeenCalledWith('note:research')
+  })
+
+  it('reuses its source cache when only onNavigate changes', () => {
+    const markdown = 'x [[Research]]'
+    const links = [{
+      ...resolvedLinkFixture,
+      source_start: 2,
+      source_end: new TextEncoder().encode(markdown).length,
+    }]
+    const firstNavigate = vi.fn()
+    const nextNavigate = vi.fn()
+    const { rerender } = render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={links}
+        onNavigate={firstNavigate}
+      />,
+    )
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const toString = vi.spyOn(view.state.doc, 'toString')
+
+    rerender(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={links}
+        onNavigate={nextNavigate}
+      />,
+    )
+
+    expect(toString).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+    expect(firstNavigate).not.toHaveBeenCalled()
+    expect(nextNavigate).toHaveBeenCalledWith('note:research')
+  })
+
+  it('rebuilds its source cache when raw line endings change', () => {
+    const lfSource = 'intro\n[[Research]]'
+    const crlfSource = 'intro\r\n[[Research]]'
+    const onNavigate = vi.fn()
+    const linkFor = (source: string) => ({
+      ...resolvedLinkFixture,
+      source_start: new TextEncoder().encode(source.slice(0, source.indexOf('[['))).length,
+      source_end: new TextEncoder().encode(source).length,
+    })
+    const { rerender } = render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={lfSource}
+        links={[linkFor(lfSource)]}
+        onNavigate={onNavigate}
+      />,
+    )
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const textPrototype = Object.getPrototypeOf(view.state.doc) as {
+      toString(): string
+    }
+    const toString = vi.spyOn(textPrototype, 'toString')
+
+    try {
+      rerender(
+        <VaultLivePreview
+          title="Plan"
+          markdown={crlfSource}
+          links={[linkFor(crlfSource)]}
+          onNavigate={onNavigate}
+        />,
+      )
+
+      expect(toString).toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+      expect(onNavigate).toHaveBeenCalledWith('note:research')
+    } finally {
+      toString.mockRestore()
+    }
+  })
 })
