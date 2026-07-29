@@ -3,3 +3,16 @@
 .vault-flow .react-flow__node.vault-node--markdown { background: var(--muted); color: var(--foreground); border-color: var(--border); }
 .vault-flow .react-flow__node.vault-node--unresolved { background: var(--background); color: var(--muted-foreground); border-color: var(--border); border-style: dashed; }
 .vault-flow .react-flow__edge.vault-edge--unresolved .react-flow__edge-path { stroke-dasharray: 5 4; }
+
+.dn-vault-source-view { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--background); }
+.dn-vault-editor { min-height: 18rem; color: var(--foreground); }
+.dn-vault-editor .cm-editor { min-height: inherit; background: color-mix(in oklab, var(--background) 92%, var(--muted)); }
+.dn-vault-editor .cm-scroller { font-family: var(--font-mono), monospace; }
+.dn-vault-editor .cm-activeLine, .dn-vault-editor .cm-activeLineGutter { background: color-mix(in oklab, var(--primary) 18%, transparent); }
+.dn-vault-editor .cm-gutters { color: var(--muted-foreground); background: var(--muted); border-right-color: var(--border); }
+.dn-vault-editor .cm-focused { outline: 2px solid var(--ring); outline-offset: -2px; }
+.dn-vault-editor .cm-foldGutter .cm-gutterElement { color: var(--primary); }
+.dn-vault-source-status { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; margin: 0; padding: 0.625rem 0.875rem; border-top: 1px solid var(--border); color: var(--muted-foreground); background: var(--muted); font-size: 0.75rem; }
+.dn-vault-source-status div { display: flex; gap: 0.25rem; }
+.dn-vault-source-status dt { font-weight: 600; color: var(--foreground); }
+.dn-vault-source-status dd { margin: 0; font-family: var(--font-mono), monospace; }
