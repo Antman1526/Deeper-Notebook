@@ -16,6 +16,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -74,6 +75,10 @@ EmbeddingSubmitter = Callable[
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
+
+class VaultProjectionError(RuntimeError):
+    """Persisted vault projection data violates a public read contract."""
 
 
 def _canonical_vault_relative_path(value: str) -> str:
@@ -293,6 +298,35 @@ def _record_id(table: str, *parts: str) -> str:
 
 def _db_id(value: str) -> RecordID:
     return ensure_record_id(value)
+
+
+def _persisted_vault_file(data: dict[str, Any]) -> VaultFile:
+    try:
+        return VaultFile.model_validate(data)
+    except ValidationError as exc:
+        raise VaultProjectionError("vault_file_invalid") from exc
+
+
+def _persisted_vault_link(
+    row: dict[str, Any],
+    *,
+    vault_id: str,
+) -> VaultLink:
+    if row.get("resolved"):
+        target_note_id = str(row.get("target_note_id") or "")
+        target_vault_file_id = str(row.get("target_vault_file_id") or "")
+        target_vault_id = str(row.get("target_vault_id") or "")
+        if (
+            not target_note_id
+            or not target_vault_file_id
+            or target_vault_id != vault_id
+            or _record_id("note", target_vault_file_id) != target_note_id
+        ):
+            raise VaultProjectionError("vault_link_target_invalid")
+    try:
+        return VaultLink.model_validate(row)
+    except ValidationError as exc:
+        raise VaultProjectionError("vault_link_invalid") from exc
 
 
 def _safe_error_code(value: str) -> str:
@@ -1522,7 +1556,7 @@ class VaultRepository:
         # durable vault-file record. Return that identity explicitly rather
         # than asking API clients to reconstruct an implementation detail.
         return [
-            VaultFile.model_validate(
+            _persisted_vault_file(
                 {**row, "note_id": _record_id("note", str(row["id"]))}
             )
             for row in rows
@@ -1551,10 +1585,23 @@ class VaultRepository:
             )
             if not files:
                 raise LookupError("vault_note_file_not_found")
-            file = VaultFile.model_validate(
+            file_row = files[0]
+            file_record_id = str(file_row.get("id") or "")
+            stored_note_id = str(note.get("id") or "")
+            canonical_note_id = (
+                _record_id("note", file_record_id) if file_record_id else ""
+            )
+            if (
+                not canonical_note_id
+                or file_record_id != vault_file_id
+                or canonical_note_id != stored_note_id
+                or canonical_note_id != note_id
+            ):
+                raise VaultProjectionError("vault_page_identity_invalid")
+            file = _persisted_vault_file(
                 {
-                    **files[0],
-                    "note_id": note_id,
+                    **file_row,
+                    "note_id": canonical_note_id,
                 }
             )
             blocks = await self._query(
@@ -1586,8 +1633,8 @@ class VaultRepository:
             note=note,
             blocks=blocks,
             tasks=tasks,
-            outgoing_links=[VaultLink.model_validate(row) for row in outgoing],
-            backlinks=[VaultLink.model_validate(row) for row in incoming],
+            outgoing_links=outgoing,
+            backlinks=incoming,
         )
 
     async def _link_rows(
@@ -1598,16 +1645,18 @@ class VaultRepository:
         *,
         outgoing: bool,
         validate_note: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> list[VaultLink]:
         if validate_note:
             await self._require_note_in_vault(connection, vault_id, note_id)
         field = "source_note_id" if outgoing else "target_note_id"
-        return await self._query(
+        rows = await self._query(
             connection,
             f"""
             SELECT *,
                 source_note_id.title AS source_note_title,
                 target_note_id.title AS target_note_title,
+                target_note_id.vault_file_id AS target_vault_file_id,
+                target_note_id.vault_file_id.vault_id AS target_vault_id,
                 target_note_id.vault_file_id.relative_path AS target_relative_path
             FROM note_link
             WHERE {field} = $note_id
@@ -1623,6 +1672,10 @@ class VaultRepository:
             """,
             {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
         )
+        return [
+            _persisted_vault_link(row, vault_id=vault_id)
+            for row in rows
+        ]
 
     async def _require_note_in_vault(
         self,
@@ -1641,12 +1694,12 @@ class VaultRepository:
     async def backlinks(self, vault_id: str, note_id: str) -> list[VaultLink]:
         async with self._connection_factory() as connection:
             rows = await self._link_rows(connection, vault_id, note_id, outgoing=False)
-        return [VaultLink.model_validate(row) for row in rows]
+        return rows
 
     async def outgoing_links(self, vault_id: str, note_id: str) -> list[VaultLink]:
         async with self._connection_factory() as connection:
             rows = await self._link_rows(connection, vault_id, note_id, outgoing=True)
-        return [VaultLink.model_validate(row) for row in rows]
+        return rows
 
     async def graph(
         self,
@@ -2099,6 +2152,7 @@ __all__ = [
     "VaultMount",
     "VaultMountCreate",
     "VaultPage",
+    "VaultProjectionError",
     "VaultRepository",
     "VaultSyncReceipt",
     "VaultTrustRecord",
