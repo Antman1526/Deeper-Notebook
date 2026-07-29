@@ -854,6 +854,15 @@ def _install_workspace_flush_close_gate(
     def _on_timeout() -> None:
         _reset_failed_flush()
 
+    def _evaluate_flush() -> None:
+        try:
+            window.evaluate_js(
+                _WORKSPACE_FLUSH_BEFORE_CLOSE_JS,
+                callback=_finish_close,
+            )
+        except Exception:
+            _reset_failed_flush()
+
     def _on_closing():
         if not frontend_loaded.is_set():
             return None
@@ -868,10 +877,11 @@ def _install_workspace_flush_close_gate(
             state["timeout"] = timeout
         timeout.start()
         try:
-            window.evaluate_js(
-                _WORKSPACE_FLUSH_BEFORE_CLOSE_JS,
-                callback=_finish_close,
-            )
+            threading.Thread(
+                target=_evaluate_flush,
+                name="workspace-close-flush",
+                daemon=True,
+            ).start()
         except Exception:
             _reset_failed_flush()
         return False
