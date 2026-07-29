@@ -18,7 +18,7 @@ const vaultQueries = vi.hoisted(() => ({
   page: vi.fn(),
   backlinks: vi.fn(),
   outgoing: vi.fn(),
-  scan: vi.fn(async () => undefined),
+  scan: vi.fn(async (vaultId: string) => { void vaultId }),
 }))
 
 const resolvedLink = {
@@ -346,6 +346,10 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     const { unmount } = await renderExplorer()
     expect(useKnowledgeCommandContextStore.getState().context?.selectedVaultId)
       .toBe('vault:one')
+    expect(useKnowledgeCommandContextStore.getState().context?.activePaneElement)
+      .toBe(screen.getByRole('region', {
+        name: /knowledge\.knowledgePane pane-1/,
+      }))
     unmount()
     expect(useKnowledgeCommandContextStore.getState().context).toBeNull()
   })

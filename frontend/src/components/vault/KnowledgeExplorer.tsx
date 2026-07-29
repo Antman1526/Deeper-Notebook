@@ -46,13 +46,16 @@ export function KnowledgeExplorer() {
   const persistence = usePersistKnowledgeWorkspace()
   const mounts = useVaults()
   const [vaultId, setVaultId] = useState('')
+  const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
   const linksRef = useRef<HTMLDivElement>(null)
+  const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
   const files = useVaultFiles(vaultId)
   const activePane = useKnowledgeWorkspaceStore(
     (state) => state.panes[state.activePaneId],
   )
+  const activePaneId = useKnowledgeWorkspaceStore((state) => state.activePaneId)
   const activeTab = activePane?.tabs.find(
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
@@ -125,9 +128,18 @@ export function KnowledgeExplorer() {
     ? activeTab.noteId
     : ''
   const scanSelectedVault = useCallback(
-    () => scan.mutateAsync(),
+    async () => { await scan.mutateAsync() },
     [scan],
   )
+
+  useEffect(() => {
+    setActivePaneElement(paneElementsRef.current[activePaneId] ?? null)
+  }, [activePaneId])
+
+  const onPaneElement = useCallback((paneId: string, element: HTMLElement | null) => {
+    paneElementsRef.current[paneId] = element
+    if (paneId === activePaneId) setActivePaneElement(element)
+  }, [activePaneId])
 
   return (
     <div
@@ -248,6 +260,7 @@ export function KnowledgeExplorer() {
         </aside>
         <main className="min-h-0 min-w-0 overflow-hidden">
           <KnowledgeWorkspaceLayout
+            onPaneElement={onPaneElement}
             renderPane={(pane) => (
               <KnowledgePaneContent
                 pane={pane}
@@ -263,6 +276,7 @@ export function KnowledgeExplorer() {
       </div>
       <KnowledgeCommandBridge
         workspaceRef={workspaceRef}
+        activePaneElement={activePaneElement}
         fileTreeRef={fileTreeRef}
         linksRef={linksRef}
         selectedVaultId={vaultId || null}

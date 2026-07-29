@@ -231,6 +231,24 @@ describe('KnowledgeWorkspaceLayout', () => {
     expect(useKnowledgeWorkspaceStore.getState().activePaneId).toBe('pane-1')
   })
 
+  it('reports the current pane element and clears it on unmount', () => {
+    const onPaneElement = vi.fn()
+    const { unmount } = render(
+      <KnowledgeWorkspaceLayout
+        renderPane={(pane) => <div>Content for {pane.id}</div>}
+        onPaneElement={onPaneElement}
+      />,
+    )
+
+    const pane = screen.getByRole('region', {
+      name: /Knowledge pane pane-1/,
+    })
+    expect(onPaneElement).toHaveBeenCalledWith('pane-1', pane)
+
+    unmount()
+    expect(onPaneElement).toHaveBeenLastCalledWith('pane-1', null)
+  })
+
   it('does not allow the last pane to close', () => {
     renderLayout()
 
