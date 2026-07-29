@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -51,6 +52,15 @@ def _map_exception(exc: Exception) -> HTTPException:
         return _error(status.HTTP_409_CONFLICT, "vault_scan_in_progress")
     if "vault_read_only" in message or isinstance(exc, PermissionError):
         return _error(status.HTTP_405_METHOD_NOT_ALLOWED, "vault_read_only")
+    if isinstance(exc, LookupError) and "vault_note_file_not_found" in message:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "vault_canonical_file_unavailable",
+        )
+    if isinstance(exc, LookupError) and (
+        "vault_page_content_hash_unavailable" in message
+    ):
+        return _error(status.HTTP_409_CONFLICT, "vault_page_invalid")
     if isinstance(exc, LookupError):
         code = "vault_page_not_found" if "note" in str(exc) else "vault_not_found"
         return _error(status.HTTP_404_NOT_FOUND, code)
@@ -197,12 +207,21 @@ async def list_files(
 async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageResponse:
     try:
         page = await _repository(request).get_page(vault_id, note_id)
+        if re.fullmatch(r"[0-9a-fA-F]{64}", page.file.content_hash or "") is None:
+            raise LookupError("vault_page_content_hash_unavailable")
         return VaultPageResponse(
+            file=VaultFileResponse.model_validate(page.file.model_dump()),
             note=page.note,
             blocks=page.blocks,
             tasks=page.tasks,
-            outgoing_links=[item.model_dump() for item in page.outgoing_links],
-            backlinks=[item.model_dump() for item in page.backlinks],
+            outgoing_links=[
+                VaultLinkResponse.model_validate(item.model_dump())
+                for item in page.outgoing_links
+            ],
+            backlinks=[
+                VaultLinkResponse.model_validate(item.model_dump())
+                for item in page.backlinks
+            ],
         )
     except HTTPException:
         raise

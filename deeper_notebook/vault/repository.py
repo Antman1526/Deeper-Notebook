@@ -12,7 +12,13 @@ from datetime import date, datetime, time, timezone
 from typing import Any, Literal, Protocol
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from surreal_commands import submit_command as _submit_command
 from surrealdb import RecordID
 
@@ -70,6 +76,21 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+def _canonical_vault_relative_path(value: str) -> str:
+    if (
+        not value
+        or len(value) > 4096
+        or value.strip() != value
+        or value.startswith("/")
+        or re.match(r"^[A-Za-z]:", value) is not None
+        or "\\" in value
+        or "\x00" in value
+        or any(part in {"", ".", ".."} for part in value.split("/"))
+    ):
+        raise ValueError("value must be a canonical vault-relative path")
+    return value
+
+
 class VaultMountCreate(_Model):
     name: str
     root_path: str
@@ -99,9 +120,15 @@ class VaultFile(_Model):
     size_bytes: int = 0
     modified_ns: int = 0
     encoding: str | None = None
+    newline: Literal["lf", "crlf", "mixed", "none"] | None = None
     parse_status: str
     parse_error_code: str | None = None
     deleted_state: Literal["present", "missing"]
+
+    @field_validator("relative_path")
+    @classmethod
+    def canonical_relative_path(cls, value: str) -> str:
+        return _canonical_vault_relative_path(value)
 
 
 class VaultLink(_Model):
@@ -110,6 +137,8 @@ class VaultLink(_Model):
     source_note_title: str | None = None
     source_block_id: str | None = None
     target_note_id: str | None = None
+    target_note_title: str | None = None
+    target_relative_path: str | None = None
     target_block_id: str | None = None
     target_text: str
     target_heading: str | None = None
@@ -117,9 +146,29 @@ class VaultLink(_Model):
     alias: str | None = None
     link_kind: str
     resolved: bool = False
+    source_start: int = Field(ge=0)
+    source_end: int = Field(ge=0)
+
+    @field_validator("target_relative_path")
+    @classmethod
+    def canonical_target_relative_path(cls, value: str | None) -> str | None:
+        return None if value is None else _canonical_vault_relative_path(value)
+
+    @model_validator(mode="after")
+    def resolved_target_is_canonical(self) -> "VaultLink":
+        if self.resolved and (
+            self.target_note_id is None
+            or self.target_note_title is None
+            or self.target_relative_path is None
+        ):
+            raise ValueError("resolved link is missing canonical target identity")
+        if self.source_end < self.source_start:
+            raise ValueError("source_end must not precede source_start")
+        return self
 
 
 class VaultPage(_Model):
+    file: VaultFile
     note: dict[str, Any]
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     tasks: list[dict[str, Any]] = Field(default_factory=list)
@@ -769,6 +818,7 @@ class VaultRepository:
             "size_bytes": observation.byte_size,
             "modified_ns": observation.modified_ns,
             "encoding": parsed.encoding,
+            "newline": parsed.newline,
             "parse_status": "pending",
             "parse_error_code": None,
             "embedding_state": "pending",
@@ -1487,6 +1537,26 @@ class VaultRepository:
             )
             if not notes:
                 raise LookupError("vault_note_not_found")
+            note = notes[0]
+            vault_file_id = str(note.get("vault_file_id") or "")
+            if not vault_file_id:
+                raise LookupError("vault_note_file_not_found")
+            files = await self._query(
+                connection,
+                "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id;",
+                {
+                    "vault_file_id": _db_id(vault_file_id),
+                    "vault_id": _db_id(vault_id),
+                },
+            )
+            if not files:
+                raise LookupError("vault_note_file_not_found")
+            file = VaultFile.model_validate(
+                {
+                    **files[0],
+                    "note_id": note_id,
+                }
+            )
             blocks = await self._query(
                 connection,
                 "SELECT * FROM note_block WHERE note_id = $note_id ORDER BY position;",
@@ -1498,13 +1568,22 @@ class VaultRepository:
                 {"note_id": _db_id(note_id)},
             )
             outgoing = await self._link_rows(
-                connection, vault_id, note_id, outgoing=True
+                connection,
+                vault_id,
+                note_id,
+                outgoing=True,
+                validate_note=False,
             )
             incoming = await self._link_rows(
-                connection, vault_id, note_id, outgoing=False
+                connection,
+                vault_id,
+                note_id,
+                outgoing=False,
+                validate_note=False,
             )
         return VaultPage(
-            note=notes[0],
+            file=file,
+            note=note,
             blocks=blocks,
             tasks=tasks,
             outgoing_links=[VaultLink.model_validate(row) for row in outgoing],
@@ -1518,13 +1597,19 @@ class VaultRepository:
         note_id: str,
         *,
         outgoing: bool,
+        validate_note: bool = True,
     ) -> list[dict[str, Any]]:
-        await self._require_note_in_vault(connection, vault_id, note_id)
+        if validate_note:
+            await self._require_note_in_vault(connection, vault_id, note_id)
         field = "source_note_id" if outgoing else "target_note_id"
         return await self._query(
             connection,
             f"""
-            SELECT *, source_note_id.title AS source_note_title FROM note_link
+            SELECT *,
+                source_note_id.title AS source_note_title,
+                target_note_id.title AS target_note_title,
+                target_note_id.vault_file_id.relative_path AS target_relative_path
+            FROM note_link
             WHERE {field} = $note_id
             AND source_note_id IN (
                 SELECT VALUE id FROM note WHERE vault_id = $vault_id

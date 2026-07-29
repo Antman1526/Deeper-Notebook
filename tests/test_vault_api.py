@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -50,7 +51,24 @@ class _Repository:
     async def get_page(self, vault_id: str, note_id: str):
         if note_id != "note:one":
             raise LookupError("vault_note_not_found")
-        return VaultPage(note={"id": note_id, "title": "One"})
+        return VaultPage(
+            file=VaultFile(
+                id="vault_file:one",
+                note_id=note_id,
+                vault_id=vault_id,
+                relative_path="notes/one.md",
+                file_kind="markdown",
+                format="markdown",
+                content_hash="a" * 64,
+                size_bytes=7,
+                modified_ns=1,
+                encoding="utf-8",
+                newline="lf",
+                parse_status="parsed",
+                deleted_state="present",
+            ),
+            note={"id": note_id, "title": "One", "content": "# One\n"},
+        )
 
     async def backlinks(self, vault_id: str, note_id: str):
         return [_link("note_link:back", "note:two", note_id)]
@@ -142,8 +160,12 @@ def _link(link_id: str, source: str, target: str) -> VaultLink:
         id=link_id,
         source_note_id=source,
         target_note_id=target,
+        target_note_title="",
+        target_relative_path="notes/two.md",
         target_text="Two",
         source_note_title="Source note",
+        source_start=12,
+        source_end=22,
         link_kind="wikilink",
         resolved=True,
     )
@@ -236,12 +258,22 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     file = test_client.get(f"{root}/files").json()[0]
     assert file["relative_path"] == "notes/one.md"
     assert file["note_id"] == "note:derived-projection-id"
-    assert test_client.get(f"{root}/pages/note:one").status_code == 200
+    page = test_client.get(f"{root}/pages/note:one")
+    assert page.status_code == 200
+    assert page.json()["file"]["relative_path"] == "notes/one.md"
+    assert page.json()["file"]["content_hash"] == "a" * 64
+    assert page.json()["file"]["newline"] == "lf"
+    assert "/Users/" not in page.text
     backlinks = test_client.get(f"{root}/pages/note:one/backlinks")
     assert backlinks.status_code == 200
     assert backlinks.json()[0]["source_note_title"] == "Source note"
     assert "/Users/owner" not in backlinks.text
-    assert test_client.get(f"{root}/pages/note:one/outgoing").status_code == 200
+    outgoing = test_client.get(f"{root}/pages/note:one/outgoing")
+    assert outgoing.status_code == 200
+    assert outgoing.json()[0]["source_start"] == 12
+    assert outgoing.json()[0]["source_end"] == 22
+    assert outgoing.json()[0]["target_relative_path"] == "notes/two.md"
+    assert outgoing.json()[0]["target_note_title"] == ""
     assert test_client.get(f"{root}/graph?center_note_id=note:one").status_code == 200
     receipts = test_client.get(f"{root}/receipts")
     assert receipts.status_code == 200
@@ -300,3 +332,44 @@ def test_domain_failures_have_stable_safe_responses(client):
     response = test_client.post(f"{root}/scan")
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "vault_scan_in_progress"}}
+
+
+def test_page_maps_orphaned_note_to_canonical_file_error(client):
+    test_client, repository, _ = client
+    repository.get_page = AsyncMock(
+        side_effect=LookupError("vault_note_file_not_found"),
+    )
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:orphan"
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == ("vault_canonical_file_unavailable")
+    assert "/Users/" not in response.text
+
+
+def test_page_rejects_missing_or_invalid_content_hash(client):
+    test_client, repository, _ = client
+    for content_hash in (None, "short", "g" * 64):
+        repository.get_page = AsyncMock(
+            return_value=VaultPage(
+                file=VaultFile(
+                    id="vault_file:one",
+                    note_id="note:one",
+                    vault_id="vault_mount:fixture",
+                    relative_path="notes/one.md",
+                    file_kind="markdown",
+                    format="markdown",
+                    content_hash=content_hash,
+                    encoding="utf-8",
+                    newline="lf",
+                    parse_status="parsed",
+                    deleted_state="present",
+                ),
+                note={"id": "note:one", "title": "One", "content": "# One\n"},
+            ),
+        )
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "vault_page_invalid"

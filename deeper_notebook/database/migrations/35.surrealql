@@ -1,0 +1,1 @@
+DEFINE FIELD IF NOT EXISTS newline ON TABLE vault_file TYPE option<string> ASSERT $value = NONE OR $value IN ["lf", "crlf", "mixed", "none"];
