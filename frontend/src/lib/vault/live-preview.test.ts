@@ -1,5 +1,5 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { type Extension, EditorState } from '@codemirror/state'
+import { Compartment, type Extension, EditorState } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -400,6 +400,57 @@ describe('buildLivePreviewDecorationRecords', () => {
       })
 
       expect(toString).not.toHaveBeenCalled()
+    } finally {
+      view.destroy()
+    }
+  })
+
+  it('rebuilds its source cache for changed raw line endings on the same document', () => {
+    const lfSource = 'intro\n[[Research]]'
+    const crlfSource = 'intro\r\n[[Research]]'
+    const onNavigate = vi.fn()
+    const linkFor = (source: string) => ({
+      id: 'link:research',
+      source_note_id: 'note:plan',
+      target_note_id: 'note:research',
+      target_note_title: 'Research',
+      target_relative_path: 'pages/research.md',
+      target_text: 'Research',
+      link_kind: 'wikilink',
+      resolved: true,
+      source_start: new TextEncoder().encode(source.slice(0, source.indexOf('[['))).length,
+      source_end: new TextEncoder().encode(source).length,
+    })
+    const compartment = new Compartment()
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: lfSource,
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          compartment.of(livePreviewExtension({
+            links: [linkFor(lfSource)],
+            onNavigate,
+            source: lfSource,
+          })),
+        ],
+      }),
+    })
+    const document = view.state.doc
+    const toString = vi.spyOn(document, 'toString')
+
+    try {
+      view.dispatch({
+        effects: compartment.reconfigure(livePreviewExtension({
+          links: [linkFor(crlfSource)],
+          onNavigate,
+          source: crlfSource,
+        })),
+      })
+
+      expect(view.state.doc).toBe(document)
+      expect(toString).toHaveBeenCalled()
+      view.dom.querySelector<HTMLButtonElement>('button')?.click()
+      expect(onNavigate).toHaveBeenCalledWith('note:research')
     } finally {
       view.destroy()
     }
