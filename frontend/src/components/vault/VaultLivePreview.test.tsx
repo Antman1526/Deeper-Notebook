@@ -156,6 +156,32 @@ describe('VaultLivePreview', () => {
   })
 
   it.each([
+    ['wiki source with Markdown metadata', '[[Research]]', 'markdown'],
+    ['Markdown source with wiki metadata', '[Research](pages/research.md)', 'wikilink'],
+    ['wiki source with unknown metadata', '[[Research]]', 'unknown'],
+  ] as const)('keeps %s inert', (_name, linkSource, linkKind) => {
+    const prefix = 'x '
+    const markdown = `${prefix}${linkSource}`
+    const onNavigate = vi.fn()
+    render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[{
+          ...resolvedLinkFixture,
+          link_kind: linkKind,
+          source_start: new TextEncoder().encode(prefix).length,
+          source_end: new TextEncoder().encode(markdown).length,
+        }]}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it.each([
     ['wiki', '[[Research]]', 'wikilink'],
     ['Markdown', '[Research](pages/research.md)', 'markdown'],
   ] as const)('treats an exact resolved %s navigation widget as one cursor atom', (

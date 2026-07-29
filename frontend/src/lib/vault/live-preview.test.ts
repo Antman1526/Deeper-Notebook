@@ -76,6 +76,39 @@ describe('buildLivePreviewDecorationRecords', () => {
     expect(records.some((record) => record.kind.startsWith(allowedKind))).toBe(true)
   })
 
+  it.each([
+    ['tag', '[[#Heading]]', 'tag'],
+    ['footnote', '[[^footnote]]', 'footnote-mark'],
+    ['math', '[[Math $x$]]', 'math-mark'],
+  ] as const)('treats a wiki token containing %s syntax as one construct', (
+    _name,
+    source,
+    nestedKind,
+  ) => {
+    const state = previewState(source)
+    const kinds = buildLivePreviewDecorationRecords(
+      state,
+      [{ from: 0, to: state.doc.length }],
+    ).map((record) => record.kind)
+
+    expect(kinds).toContain('wiki-link')
+    expect(kinds).not.toContain(nestedKind)
+  })
+
+  it.each([
+    ['wiki link', '\\[[Research]]', ['wiki-link', 'wiki-link-mark']],
+    ['footnote', '\\[^note]', ['footnote-mark', 'markdown-link', 'markdown-link-mark']],
+  ] as const)('leaves an escaped %s literal inert', (_name, source, forbiddenKinds) => {
+    const state = previewState(source)
+    const forbidden = new Set<string>(forbiddenKinds)
+    const records = buildLivePreviewDecorationRecords(
+      state,
+      [{ from: 0, to: state.doc.length }],
+    )
+
+    expect(records.filter((record) => forbidden.has(record.kind))).toEqual([])
+  })
+
   it('does not decorate a prose checkbox lookalike as a task', () => {
     const state = previewState('prose [ ]')
 
