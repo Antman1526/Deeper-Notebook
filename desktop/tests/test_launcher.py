@@ -122,6 +122,48 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
         p.terminate.assert_called()
 
 
+def test_supervisor_registers_owned_process_cleanup_for_launcher_signals(
+    cfg, tmp_path, monkeypatch
+):
+    captured: dict[str, object] = {}
+    procs = [_alive_proc() for _ in range(10)]
+    seq = iter(procs)
+
+    class _Handle:
+        def release(self) -> None:
+            pass
+
+    def capture_singleton(*_args, **kwargs):
+        captured.update(kwargs)
+        return _Handle()
+
+    monkeypatch.setattr(
+        "desktop.singleton.acquire_singleton",
+        capture_singleton,
+    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: next(seq))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports",
+        lambda n: list(range(40001, 40001 + n)),
+    )
+    monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
+    monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+    sv.start_all()
+
+    cleanup = captured["on_signal_cleanup"]
+    cleanup(signal.SIGTERM)
+
+    assert all(proc.terminate.called for proc in procs[: len(sv._procs)])
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups only")
 def test_stop_all_escalates_a_surviving_owned_process_group(
     cfg, tmp_path, monkeypatch
