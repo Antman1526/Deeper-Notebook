@@ -78,8 +78,16 @@ async function fulfillJson(
   page: Page,
   pathname: string,
   body: unknown,
+  unexpectedApiTraffic: string[],
+  allowedMethods: readonly string[] = ['GET', 'HEAD'],
 ): Promise<void> {
-  await page.route(`**${pathname}`, async (route) => {
+  await page.route((url) => url.pathname === pathname, async (route) => {
+    if (
+      !(await allowRequestMethod(route, allowedMethods, unexpectedApiTraffic))
+    ) {
+      return
+    }
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -88,7 +96,34 @@ async function fulfillJson(
   })
 }
 
-export async function installKnowledgeShellMocks(page: Page): Promise<void> {
+function requestLabel(route: Route): string {
+  const request = route.request()
+  return `${request.method()} ${new URL(request.url()).pathname}`
+}
+
+async function allowRequestMethod(
+  route: Route,
+  allowedMethods: readonly string[],
+  unexpectedApiTraffic: string[],
+): Promise<boolean> {
+  if (allowedMethods.includes(route.request().method())) {
+    return true
+  }
+
+  unexpectedApiTraffic.push(requestLabel(route))
+  await route.fulfill({
+    status: 405,
+    contentType: 'application/json',
+    headers: { Allow: allowedMethods.join(', ') },
+    body: JSON.stringify({ detail: 'Method not allowed by E2E fixture' }),
+  })
+  return false
+}
+
+export async function installKnowledgeShellMocks(
+  page: Page,
+  unexpectedApiTraffic: string[] = [],
+): Promise<void> {
   await page.context().addCookies([
     {
       name: 'wizard_completed',
@@ -99,45 +134,148 @@ export async function installKnowledgeShellMocks(page: Page): Promise<void> {
   ])
 
   await page.route('**/api/**', async (route) => {
+    unexpectedApiTraffic.push(requestLabel(route))
     await route.fulfill({
-      status: 200,
+      status: 501,
       contentType: 'application/json',
-      body: '{}',
+      body: JSON.stringify({ detail: 'Unhandled API request in E2E fixture' }),
     })
   })
 
-  await fulfillJson(page, '/config', { apiUrl: '' })
-  await fulfillJson(page, '/api/config', {
-    version: 'fixture',
-    latestVersion: null,
-    hasUpdate: false,
-    dbStatus: 'healthy',
-  })
-  await fulfillJson(page, '/api/auth/status', { auth_required: false })
-  await fulfillJson(page, '/api/version', { version: 'fixture' })
-  await fulfillJson(page, '/api/local-models/health', {
-    overall: 'healthy',
-    models: [],
-  })
-  await fulfillJson(page, '/api/notebooks**', [])
-  await fulfillJson(page, '/api/sources**', [])
-  await fulfillJson(page, '/api/episode-profiles**', [])
-  await fulfillJson(page, '/api/speaker-profiles**', [])
-  await fulfillJson(page, '/healthz/deep', {
-    status: 'healthy',
-    checks: {
-      database: { status: 'ready', ok: true, error: null },
-      migrations: { status: 'ready', ok: true, error: null },
-      embedding_model: { status: 'ready', ok: true, error: null },
-      chat_model: { status: 'ready', ok: true, error: null },
-      command_registry: { status: 'ready', ok: true, error: null },
+  await fulfillJson(page, '/config', { apiUrl: '' }, unexpectedApiTraffic)
+  await fulfillJson(
+    page,
+    '/api/config',
+    {
+      version: 'fixture',
+      latestVersion: null,
+      hasUpdate: false,
+      dbStatus: 'healthy',
     },
-  })
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/auth/status',
+    { auth_required: false },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/version',
+    { version: 'fixture' },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/local-models/health',
+    {
+      overall: 'healthy',
+      models: [],
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(page, '/api/notebooks', [], unexpectedApiTraffic)
+  await fulfillJson(page, '/api/sources', [], unexpectedApiTraffic)
+  await fulfillJson(page, '/api/episode-profiles', [], unexpectedApiTraffic)
+  await fulfillJson(page, '/api/speaker-profiles', [], unexpectedApiTraffic)
+  await fulfillJson(
+    page,
+    '/api/deeper-notebook/gmail/status',
+    {
+      connected: false,
+      email_address: null,
+      has_client_credentials: false,
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/credentials/status',
+    {
+      configured: {},
+      source: {},
+      encryption_configured: false,
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/credentials/env-status',
+    {},
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/system/db-repair-needed',
+    { needs_repair: false },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/updates/check',
+    {
+      current: 'fixture',
+      latest: null,
+      update_available: false,
+      skipped: false,
+      skipped_version: null,
+      html_url: null,
+      published_at: null,
+      enabled: false,
+      last_check: null,
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/system/network-status',
+    {
+      status: 'online',
+      forced_offline: false,
+      local_fallback_model: null,
+      checked_epoch_ms: 0,
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(page, '/api/transformations', [], unexpectedApiTraffic)
+  await fulfillJson(page, '/api/settings', {}, unexpectedApiTraffic)
+  await fulfillJson(
+    page,
+    '/healthz/deep',
+    {
+      status: 'healthy',
+      checks: {
+        database: { status: 'ready', ok: true, error: null },
+        migrations: { status: 'ready', ok: true, error: null },
+        embedding_model: { status: 'ready', ok: true, error: null },
+        chat_model: { status: 'ready', ok: true, error: null },
+        command_registry: { status: 'ready', ok: true, error: null },
+      },
+    },
+    unexpectedApiTraffic,
+  )
+  await fulfillJson(
+    page,
+    '/api/healthz/deep',
+    {
+      status: 'healthy',
+      checks: {
+        database: { status: 'ready', ok: true, error: null },
+        migrations: { status: 'ready', ok: true, error: null },
+        embedding_model: { status: 'ready', ok: true, error: null },
+        chat_model: { status: 'ready', ok: true, error: null },
+        command_registry: { status: 'ready', ok: true, error: null },
+      },
+    },
+    unexpectedApiTraffic,
+  )
 }
 
 export async function fulfillKnowledgeRequest(
   route: Route,
   state: KnowledgeFixtureState,
+  unexpectedApiTraffic: string[] = [],
 ): Promise<void> {
   const request = route.request()
   const path = new URL(request.url()).pathname
@@ -145,11 +283,25 @@ export async function fulfillKnowledgeRequest(
   let payload: unknown
 
   if (path.endsWith('/deeper-notebook/workspace/knowledge')) {
+    if (
+      !(await allowRequestMethod(
+        route,
+        ['GET', 'HEAD', 'PUT'],
+        unexpectedApiTraffic,
+      ))
+    ) {
+      return
+    }
     if (method === 'PUT') {
       state.workspace = request.postDataJSON() as Record<string, unknown>
     }
     payload = state.workspace
   } else if (path.endsWith('/deeper-notebook/vaults')) {
+    if (
+      !(await allowRequestMethod(route, ['GET', 'HEAD'], unexpectedApiTraffic))
+    ) {
+      return
+    }
     payload = [
       {
         id: 'vault:fixture',
@@ -164,11 +316,21 @@ export async function fulfillKnowledgeRequest(
     path.endsWith('/vaults/vault%3Afixture/files') ||
     path.endsWith('/vaults/vault:fixture/files')
   ) {
+    if (
+      !(await allowRequestMethod(route, ['GET', 'HEAD'], unexpectedApiTraffic))
+    ) {
+      return
+    }
     payload = [file]
   } else if (
     path.includes('/pages/note%3Aplan') ||
     path.includes('/pages/note:plan')
   ) {
+    if (
+      !(await allowRequestMethod(route, ['GET', 'HEAD'], unexpectedApiTraffic))
+    ) {
+      return
+    }
     payload = path.endsWith('/outgoing')
       ? page.outgoing_links
       : path.endsWith('/backlinks')
@@ -178,6 +340,11 @@ export async function fulfillKnowledgeRequest(
     path.endsWith('/vaults/vault%3Afixture/graph') ||
     path.endsWith('/vaults/vault:fixture/graph')
   ) {
+    if (
+      !(await allowRequestMethod(route, ['GET', 'HEAD'], unexpectedApiTraffic))
+    ) {
+      return
+    }
     payload = {
       nodes: [
         {
