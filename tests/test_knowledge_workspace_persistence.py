@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 
 import pytest
@@ -88,6 +89,10 @@ def tab(index: int) -> dict:
     }
 
 
+def attempt_temporary_files(path: Path) -> list[Path]:
+    return list(path.parent.glob(f".{path.name}.*.tmp"))
+
+
 def test_missing_workspace_returns_default(tmp_path: Path):
     state = load_knowledge_workspace(path=tmp_path / "knowledge.json")
     assert state == default_knowledge_workspace()
@@ -98,6 +103,67 @@ def test_workspace_round_trips_through_atomic_file(tmp_path: Path):
     save_knowledge_workspace(populated(), path=path)
     assert load_knowledge_workspace(path=path) == populated()
     assert not path.with_suffix(".json.tmp").exists()
+
+
+def test_stale_legacy_temporary_file_does_not_block_future_saves(
+    tmp_path: Path,
+):
+    path = tmp_path / "knowledge.json"
+    stale = path.with_suffix(".json.tmp")
+    stale.write_bytes(b"interrupted older save")
+
+    save_knowledge_workspace(populated(), path=path)
+
+    assert load_knowledge_workspace(path=path) == populated()
+    assert stale.read_bytes() == b"interrupted older save"
+    assert attempt_temporary_files(path) == []
+
+
+def test_overlapping_saves_use_distinct_temporary_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    path = tmp_path / "knowledge.json"
+    first = populated()
+    second = default_knowledge_workspace()
+    replace_barrier = threading.Barrier(2)
+    original_replace = __import__("os").replace
+    replacement_sources: list[Path] = []
+
+    def synchronized_replace(source: Path, destination: Path) -> None:
+        replacement_sources.append(Path(source))
+        replace_barrier.wait(timeout=5)
+        original_replace(source, destination)
+
+    monkeypatch.setattr(
+        "deeper_notebook.workspace.persistence.os.replace",
+        synchronized_replace,
+    )
+    errors: list[BaseException] = []
+
+    def save(document: KnowledgeWorkspaceDocument) -> None:
+        try:
+            save_knowledge_workspace(document, path=path)
+        except BaseException as error:
+            errors.append(error)
+
+    threads = [
+        threading.Thread(target=save, args=(first,)),
+        threading.Thread(target=save, args=(second,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(replacement_sources) == 2
+    assert replacement_sources[0] != replacement_sources[1]
+    assert all(source.parent == path.parent for source in replacement_sources)
+    restored = load_knowledge_workspace(path=path)
+    assert restored == first or restored == second
+    assert attempt_temporary_files(path) == []
 
 
 def test_absolute_or_parent_relative_paths_are_rejected():
@@ -174,6 +240,66 @@ def test_malformed_utf8_raises_workspace_state_error_without_rewriting(
     with pytest.raises(WorkspaceStateError):
         load_knowledge_workspace(path=path)
     assert path.read_bytes() == original
+
+
+def test_oversized_workspace_is_rejected_without_unbounded_text_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    path = tmp_path / "knowledge.json"
+    path.write_bytes(b" " * (1024 * 1024 + 1))
+    read_text_calls: list[Path] = []
+    original_read_text = Path.read_text
+
+    def tracked_read_text(target: Path, *args, **kwargs) -> str:
+        read_text_calls.append(target)
+        return original_read_text(target, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read_text)
+
+    with pytest.raises(WorkspaceStateError, match="invalid workspace state"):
+        load_knowledge_workspace(path=path)
+    assert read_text_calls == []
+
+
+def test_save_rejects_encoded_state_larger_than_persistence_limit(
+    tmp_path: Path,
+):
+    path = tmp_path / "knowledge.json"
+    payload = populated().model_dump()
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-1"
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            **tab(index),
+            "title": "🧠" * 512,
+            "relative_path": f"Notes/{'🧠' * 4080}-{index}.md",
+        }
+        for index in range(1, 129)
+    ]
+    document = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    with pytest.raises(WorkspaceStateError, match="invalid workspace state"):
+        save_knowledge_workspace(document, path=path)
+
+    assert not path.exists()
+    assert attempt_temporary_files(path) == []
+
+
+def test_tab_limit_is_rejected_before_nested_tab_validation():
+    payload = populated().model_dump()
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-1"
+    payload["panes"]["pane-1"]["tabs"] = [
+        tab(index) for index in range(1, 130)
+    ]
+    payload["panes"]["pane-1"]["tabs"][-1]["relative_path"] = (
+        "/must-not-be-deeply-validated.md"
+    )
+
+    with pytest.raises(ValidationError) as error:
+        KnowledgeWorkspaceDocument.model_validate(payload)
+
+    assert "more than 128 tabs" in str(error.value)
+    assert "relative to its vault" not in str(error.value)
 
 
 def test_recursive_split_depth_boundary():

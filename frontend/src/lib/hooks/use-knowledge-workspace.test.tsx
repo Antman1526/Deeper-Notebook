@@ -605,4 +605,109 @@ describe('knowledge workspace synchronization', () => {
     expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
     expect(sendBeacon).not.toHaveBeenCalled()
   })
+
+  it('lets the desktop host await a pending save before closing the native window', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const save = deferred<KnowledgeWorkspaceDocument>()
+    vi.mocked(knowledgeWorkspaceApi.put).mockReturnValue(save.promise)
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    expect(knowledgeWorkspaceApi.put).not.toHaveBeenCalled()
+
+    const hostWindow = window as typeof window & {
+      DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE?: () => Promise<{
+        ok: boolean
+        error?: string
+      }>
+    }
+    const flush = hostWindow.DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE
+    expect(flush).toBeTypeOf('function')
+
+    let flushPromise!: Promise<{ ok: boolean; error?: string }>
+    await act(async () => {
+      flushPromise = flush!()
+      await Promise.resolve()
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+
+    let settled = false
+    void flushPromise.then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    await act(async () => {
+      save.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await save.promise
+    })
+
+    await expect(flushPromise).resolves.toEqual({ ok: true })
+    expect(useKnowledgeWorkspaceStore.getState().durableRevision)
+      .toBe(useKnowledgeWorkspaceStore.getState().revision)
+  })
+
+  it('keeps the desktop close gate pending until the newest queued snapshot is durable', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const firstSave = deferred<KnowledgeWorkspaceDocument>()
+    const finalSave = deferred<KnowledgeWorkspaceDocument>()
+    vi.mocked(knowledgeWorkspaceApi.put)
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(finalSave.promise)
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    const activeTabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    act(() => {
+      useKnowledgeWorkspaceStore
+        .getState().setTabViewMode('pane-1', activeTabId, 'graph')
+    })
+
+    const flush = (
+      window as typeof window & {
+        DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE?: () => Promise<{
+          ok: boolean
+          error?: string
+        }>
+      }
+    ).DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE
+    expect(flush).toBeTypeOf('function')
+    const flushPromise = flush!()
+    let settled = false
+    void flushPromise.then(() => {
+      settled = true
+    })
+
+    await act(async () => {
+      firstSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await firstSave.promise
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
+    expect(settled).toBe(false)
+    expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
+      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+
+    await act(async () => {
+      finalSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
+      await finalSave.promise
+    })
+    await expect(flushPromise).resolves.toEqual({ ok: true })
+  })
 })

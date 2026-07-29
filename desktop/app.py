@@ -1157,12 +1157,9 @@ def _phase_install_tray(ctx: AppContext) -> None:
 
     def _on_quit() -> None:
         try:
+            _webview.windows[0].destroy()
+        except Exception:
             _stop_app_runtime_once(ctx)
-        finally:
-            try:
-                _webview.windows[0].destroy()
-            except Exception:
-                pass
 
     install_tray(
         on_open_main=_on_open_main,

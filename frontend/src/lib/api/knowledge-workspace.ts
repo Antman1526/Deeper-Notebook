@@ -151,9 +151,40 @@ const rawKnowledgeWorkspaceWireSchema = z.object({
   }
 })
 
-function preflightLayoutDepth(value: unknown, context: z.RefinementCtx): void {
+function preflightWorkspaceBounds(value: unknown, context: z.RefinementCtx): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return
-  const layout = (value as Record<string, unknown>).layout
+  const document = value as Record<string, unknown>
+  const panes = document.panes
+  if (panes && typeof panes === 'object' && !Array.isArray(panes)) {
+    const paneValues = Object.values(panes)
+    if (paneValues.length > 32) {
+      context.addIssue({
+        code: 'custom',
+        fatal: true,
+        path: ['panes'],
+        message: 'workspace cannot contain more than 32 panes',
+      })
+      return
+    }
+    let totalTabs = 0
+    for (const pane of paneValues) {
+      if (!pane || typeof pane !== 'object' || Array.isArray(pane)) continue
+      const tabs = (pane as Record<string, unknown>).tabs
+      if (!Array.isArray(tabs)) continue
+      totalTabs += tabs.length
+      if (totalTabs > 128) {
+        context.addIssue({
+          code: 'custom',
+          fatal: true,
+          path: ['panes'],
+          message: 'workspace cannot contain more than 128 tabs',
+        })
+        return
+      }
+    }
+  }
+
+  const layout = document.layout
   const stack: Array<{ node: unknown; depth: number }> = [{ node: layout, depth: 1 }]
 
   while (stack.length > 0) {
@@ -181,8 +212,10 @@ function preflightLayoutDepth(value: unknown, context: z.RefinementCtx): void {
   }
 }
 
-export const knowledgeWorkspaceWireSchema = z.unknown()
-  .superRefine(preflightLayoutDepth)
+const knowledgeWorkspacePreflightSchema = z.unknown()
+  .superRefine(preflightWorkspaceBounds)
+
+export const knowledgeWorkspaceWireSchema = knowledgeWorkspacePreflightSchema
   .pipe(rawKnowledgeWorkspaceWireSchema)
 
 export type KnowledgeViewMode = z.infer<typeof knowledgeViewModeSchema>
@@ -326,9 +359,24 @@ function preflightCamelLayout(layout: unknown): void {
   }
 }
 
+function preflightCamelWorkspace(document: KnowledgeWorkspaceDocument): void {
+  const panes = Object.values(document.panes)
+  if (panes.length > 32) {
+    throw new Error('workspace cannot contain more than 32 panes')
+  }
+  let totalTabs = 0
+  for (const pane of panes) {
+    totalTabs += pane.tabs.length
+    if (totalTabs > 128) {
+      throw new Error('workspace cannot contain more than 128 tabs')
+    }
+  }
+}
+
 function fromWire(data: unknown): KnowledgeWorkspaceDocument {
+  knowledgeWorkspacePreflightSchema.parse(data)
   assertNoAbsolutePath(data)
-  const wire = knowledgeWorkspaceWireSchema.parse(data)
+  const wire = rawKnowledgeWorkspaceWireSchema.parse(data)
   return {
     version: wire.version,
     activePaneId: wire.active_pane_id,
@@ -355,6 +403,7 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
 }
 
 export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument) {
+  preflightCamelWorkspace(document)
   preflightCamelLayout(document.layout)
   const wire = {
     version: document.version,
