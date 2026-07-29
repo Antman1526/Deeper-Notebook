@@ -89,23 +89,43 @@ export type VaultPage = z.infer<typeof vaultPageSchema>
 export type VaultLink = z.infer<typeof vaultLinkSchema>
 export type VaultGraph = z.infer<typeof vaultGraphSchema>
 
-function isPathBearingField(key: string): boolean {
+function isAuthoredContentField(key: string): boolean {
   const normalized = key
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
-  if (normalized === 'heading_path' || normalized === 'heading_paths') {
-    return false
-  }
-  return normalized === 'path'
-    || normalized === 'paths'
-    || normalized.endsWith('_path')
-    || normalized.endsWith('_paths')
+  return normalized === 'content'
+    || normalized === 'markdown'
+    || normalized === 'properties'
+    || normalized === 'tag'
+    || normalized === 'tags'
+    || normalized === 'heading_path'
+    || normalized === 'heading_paths'
+    || normalized === 'title'
+    || normalized === 'titles'
+    || normalized.endsWith('_title')
+    || normalized.endsWith('_titles')
+    || normalized === 'alias'
+    || normalized === 'aliases'
+    || normalized.endsWith('_alias')
+    || normalized.endsWith('_aliases')
+    || normalized === 'heading'
+    || normalized === 'headings'
+    || normalized.endsWith('_heading')
+    || normalized.endsWith('_headings')
+    || normalized === 'text'
+    || normalized === 'texts'
+    || normalized.endsWith('_text')
+    || normalized.endsWith('_texts')
+    || normalized === 'description'
+    || normalized === 'descriptions'
+    || normalized.endsWith('_description')
+    || normalized.endsWith('_descriptions')
 }
 
 function assertNoAbsolutePath(value: unknown): void {
-  const stack: Array<{ value: unknown; pathBearing: boolean }> = [{
+  const stack: Array<{ value: unknown; structural: boolean }> = [{
     value,
-    pathBearing: false,
+    structural: true,
   }]
   const visitedByContext = [
     new WeakSet<object>(),
@@ -117,7 +137,7 @@ function assertNoAbsolutePath(value: unknown): void {
     if (!current) break
     if (typeof current.value === 'string') {
       if (
-        current.pathBearing
+        current.structural
         && /^(?:[\\/]|[A-Za-z]:[\\/])/.test(current.value)
       ) {
         throw new Error('Vault response contained an absolute path')
@@ -126,20 +146,20 @@ function assertNoAbsolutePath(value: unknown): void {
     }
     if (!current.value || typeof current.value !== 'object') continue
 
-    const visited = visitedByContext[current.pathBearing ? 1 : 0]
+    const visited = visitedByContext[current.structural ? 1 : 0]
     if (visited.has(current.value)) continue
     visited.add(current.value)
 
     if (Array.isArray(current.value)) {
       for (const item of current.value) {
-        stack.push({ value: item, pathBearing: current.pathBearing })
+        stack.push({ value: item, structural: current.structural })
       }
       continue
     }
     for (const [key, item] of Object.entries(current.value)) {
       stack.push({
         value: item,
-        pathBearing: current.pathBearing || isPathBearingField(key),
+        structural: current.structural && !isAuthoredContentField(key),
       })
     }
   }
