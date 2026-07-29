@@ -710,4 +710,52 @@ describe('knowledge workspace synchronization', () => {
     })
     await expect(flushPromise).resolves.toEqual({ ok: true })
   })
+
+  it('settles the desktop close gate when a remount queued an already-durable duplicate', async () => {
+    vi.useFakeTimers()
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(defaultKnowledgeWorkspace())
+    const save = deferred<KnowledgeWorkspaceDocument>()
+    vi.mocked(knowledgeWorkspaceApi.put).mockReturnValue(save.promise)
+    const firstConsumer = renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+
+    act(() => {
+      useKnowledgeWorkspaceStore.getState().openTab(plan)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+
+    firstConsumer.unmount()
+    renderHook(
+      () => usePersistKnowledgeWorkspace(),
+      { wrapper: createWrapper() },
+    )
+    const flush = (
+      window as typeof window & {
+        DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE: () => Promise<{
+          ok: boolean
+          error?: string
+        }>
+      }
+    ).DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE
+    const flushPromise = flush()
+    let result: { ok: boolean; error?: string } | undefined
+    void flushPromise.then((value) => {
+      result = value
+    })
+
+    await act(async () => {
+      save.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[0][0])
+      await save.promise
+      await Promise.resolve()
+    })
+
+    expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ ok: true })
+    await expect(flushPromise).resolves.toEqual({ ok: true })
+  })
 })
