@@ -22,6 +22,7 @@ interface SourceRange {
 }
 
 interface PreviewDocumentContext {
+  mathRanges: SourceRange[]
   resolvedSpans: Map<string, VaultLink>
   sourceIndex: Pick<ReturnType<typeof createMarkdownSourceIndex>, 'byteOffset'>
 }
@@ -126,6 +127,41 @@ function collectMatches(
     }
   }
   return matches.sort((left, right) => left.from - right.from || left.to - right.to)
+}
+
+function indexMathRanges(source: string): SourceRange[] {
+  return [...source.matchAll(/(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)]
+    .map((match) => {
+      const from = match.index
+      return { from, to: from + match[0].length }
+    })
+}
+
+function indexedIntersections(
+  indexed: readonly SourceRange[],
+  visible: readonly SourceRange[],
+): SourceRange[] {
+  const intersections: SourceRange[] = []
+  const seen = new Set<string>()
+  for (const viewport of visible) {
+    let low = 0
+    let high = indexed.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (indexed[middle].to <= viewport.from) low = middle + 1
+      else high = middle
+    }
+    for (let index = low; index < indexed.length; index += 1) {
+      const range = indexed[index]
+      if (range.from >= viewport.to) break
+      const key = `${range.from}:${range.to}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        intersections.push(range)
+      }
+    }
+  }
+  return intersections.sort((left, right) => left.from - right.from || left.to - right.to)
 }
 
 function visibleIntersections(
@@ -277,6 +313,7 @@ function createPreviewDocumentContext(
 ): PreviewDocumentContext {
   const editorSource = state.doc.toString()
   return {
+    mathRanges: indexMathRanges(editorSource),
     resolvedSpans: buildUniqueResolvedSpanMap(options.links || []),
     sourceIndex: createPreviewSourceIndex(editorSource, options.source),
   }
@@ -381,7 +418,7 @@ function createRecords(
   const bounded = scannerRanges(state, visible)
   const rawWikiRanges = collectMatches(state.doc, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
   const rawFootnoteRanges = collectMatches(state.doc, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
-  const rawMathRanges = collectMatches(state.doc, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
+  const rawMathRanges = indexedIntersections(context.mathRanges, visible)
   const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
   const exclusions: SourceRange[] = []
   const seenParserRanges = new Set<string>()
