@@ -1,9 +1,12 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { EditorState } from '@codemirror/state'
-import { Decoration } from '@codemirror/view'
+import { type Extension, EditorState } from '@codemirror/state'
+import { Decoration, EditorView, type ViewPlugin } from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildLivePreviewDecorationRecords } from './live-preview'
+import {
+  buildLivePreviewDecorationRecords,
+  livePreviewExtension,
+} from './live-preview'
 
 function previewState(doc: string, anchor = doc.length) {
   return EditorState.create({
@@ -153,6 +156,66 @@ describe('buildLivePreviewDecorationRecords', () => {
       expect.objectContaining({ kind: 'strong-mark', from: inside, to: inside + 2 }),
     ]))
     expect(records.some((record) => record.from < inside)).toBe(false)
+  })
+
+  it('clips a long fenced-code construct to a tiny visible range', () => {
+    const source = `\`\`\`text\n${'x'.repeat(20_000)}\n\`\`\``
+    const state = previewState(source)
+    const visible = { from: 10_000, to: 10_002 }
+    buildLivePreviewDecorationRecords(state, [visible])
+    const sliceString = vi.spyOn(state.doc, 'sliceString')
+
+    const records = buildLivePreviewDecorationRecords(state, [visible])
+
+    expect(records).not.toEqual([])
+    expect(records.every((record) =>
+      record.from >= visible.from
+      && record.to <= visible.to
+      && record.to - record.from <= visible.to - visible.from,
+    )).toBe(true)
+    const readLengths = sliceString.mock.calls.map(([from = 0, to = state.doc.length]) =>
+      to - from,
+    )
+    expect(readLengths.filter((length) => length === 4_106).length)
+      .toBeGreaterThanOrEqual(4)
+  })
+
+  it('reuses its document source-index cache for viewport-driven decoration rebuilds', () => {
+    type PreviewPlugin = {
+      update(update: {
+        docChanged: boolean
+        selectionSet: boolean
+        viewportChanged: boolean
+        view: EditorView
+      }): void
+    }
+
+    const extension = livePreviewExtension({})
+    const [pluginExtension] = extension as readonly Extension[]
+    const plugin = pluginExtension as ViewPlugin<PreviewPlugin>
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: `${'# Plan\n\n'.repeat(2_000)}[[Research]]`,
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          extension,
+        ],
+      }),
+    })
+    const toString = vi.spyOn(view.state.doc, 'toString')
+
+    try {
+      view.plugin(plugin)!.update({
+        docChanged: false,
+        selectionSet: false,
+        viewportChanged: true,
+        view,
+      })
+
+      expect(toString).not.toHaveBeenCalled()
+    } finally {
+      view.destroy()
+    }
   })
 
   it('does not make cross-line punctuation replacements', () => {
