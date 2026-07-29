@@ -89,6 +89,7 @@ implementation:
 - `@codemirror/commands`
 - `@codemirror/lang-markdown`
 - `@codemirror/language`
+- `@codemirror/search`
 - `@codemirror/state`
 - `@codemirror/view`
 
@@ -126,15 +127,24 @@ backlinks.
 - `relative_path`
 - `content_hash`
 - `encoding`
+- `newline`
 - `modified_ns`
 - `size_bytes`
 - `format`
 - `parse_status`
 - `deleted_state`
 
+Migration `35.surrealql` adds optional `vault_file.newline` metadata for
+existing installations, and `35_down.surrealql` removes only that field. New
+projections persist `ParsedDocument.newline` as one of `lf`, `crlf`, `mixed`,
+or `none`; older records may return `None` until they are rescanned.
+
 The repository raises `vault_note_file_not_found` if a note exists without its
-canonical file record. The API maps this through the existing vault error
-contract. It does not return a partial page.
+canonical file record. The API maps this to the path-free
+`409 vault_canonical_file_unavailable` code before its generic lookup-error
+mapping. A page whose canonical file lacks a complete 64-character hexadecimal
+content hash maps to `409 vault_page_invalid`. It does not return a partial
+page or expose a filesystem path in either error.
 
 ### Canonical resolved-link target
 
@@ -142,11 +152,16 @@ contract. It does not return a partial page.
 
 - `target_note_title: str | None`
 - `target_relative_path: str | None`
+- `source_start: int`
+- `source_end: int`
 
 The link query projects those values through the resolved target note and its
 vault file. Both values remain `None` for unresolved links. A link marked
-`resolved=True` without a target note ID, target title, or canonical relative
-path is rejected as inconsistent projection data.
+`resolved=True` without a target note ID, present target title, or canonical
+relative path is rejected as inconsistent projection data. An empty canonical
+title remains present and valid; display code may fall back to `target_text`.
+The source span remains the parser's zero-based UTF-8 byte range and is
+converted to a JavaScript string range before matching rendered Markdown links.
 
 ### Content identity
 
@@ -154,20 +169,31 @@ The note's `content` remains the exact UTF-8-decoded Markdown captured by the
 parser, preserving original line endings. The page file's `content_hash`
 identifies the original bytes, including BOM when present. The UI displays the
 hash in abbreviated form but preserves and passes the full value internally.
+File-list compatibility may retain nullable hashes for old unscanned rows, but
+an opened page is accepted only with the complete hash.
 
 ## Frontend Contracts
 
 `vaultPageSchema` gains a required `file: vaultFileSchema`.
-`vaultLinkSchema` gains the optional target title and target relative path
-fields. Existing absolute-path rejection runs over both additions before Zod
-parsing.
+`vaultLinkSchema` gains the optional target title, target relative path, and
+required source-span fields. One shared canonical-relative-path schema rejects
+empty paths, leading or trailing whitespace, absolute paths, backslashes, NULs,
+repeated separators, and `.` or `..` segments for both the page file and
+resolved targets.
 
 The API layer performs two consistency checks:
 
 1. `page.file.note_id === page.note.id`
 2. `page.file.vault_id` matches the requested vault ID
 
-The caller receives a stable `VaultPage` only after those checks pass.
+The caller receives a stable `VaultPage` only after those checks pass. Document
+Markdown is selected exactly as `page.note.content ?? page.note.markdown ?? ''`;
+blocks never reconstruct or replace the canonical projected source.
+
+The frontend translates only the two stable page HTTP error codes into
+`VaultPageContractError`: `vault_canonical_file_unavailable` becomes
+`canonical-path-unavailable`, and `vault_page_invalid` becomes `page-invalid`.
+Other HTTP failures remain generic load failures.
 
 `KnowledgeTab.relativePath` always comes from `VaultFile.relative_path`.
 `KnowledgeExplorer.fallbackRelativePath()` is removed. Resolved link navigation
@@ -185,7 +211,8 @@ reconciliation. It does not render mode-specific Markdown.
 
 ### `VaultDocumentView`
 
-Receives one validated `VaultPage` plus navigation callbacks. It selects:
+Receives one validated `VaultPage`, the owning pane/tab `viewId`, plus
+navigation callbacks. It selects:
 
 - `VaultReadingView`
 - `VaultSourceView`
@@ -206,12 +233,20 @@ and task-list syntax. KaTeX renders math without enabling raw HTML.
 
 Custom renderers:
 
-- assign deterministic, collision-safe IDs to headings;
+- assign deterministic IDs to headings prefixed by the pane/tab `viewId`, so
+  two split panes showing the same note never share a heading ID;
 - turn resolved vault links into keyboard-accessible buttons;
 - make task checkboxes disabled and explicitly read-only;
 - render attachments as projected metadata placeholders;
 - leave external links inert;
 - style footnote backlinks and the notes section.
+
+A local `remarkVaultLinks` transformer recognizes wiki links without rewriting
+the Markdown input. It retains the original MDAST positions and stores exact
+UTF-8 source-byte spans on generated link nodes. Both wiki and ordinary
+Markdown links resolve only by those spans, so duplicate labels and Unicode
+prefixes cannot cross-wire targets. The localized `knowledge.footnotes` value
+is passed to React Markdown rather than hard-coding an English label.
 
 ### `VaultSourceView`
 
@@ -266,7 +301,9 @@ Source, and Live Preview so mode switches do not move the user's context.
 The outline parser consumes the Markdown syntax tree rather than a regular
 expression. It supports heading levels one through six, duplicate headings, and
 stable slugs. Clicking an item scrolls the active view to the corresponding
-source offset or reading-mode anchor.
+source offset or reading-mode anchor. Reading-mode lookup is scoped to the
+owning `VaultDocumentView` container and its pane/tab-prefixed heading IDs;
+global DOM ID lookup is forbidden.
 
 ### `VaultPagePreview`
 
@@ -317,10 +354,12 @@ existing workspace serialization contract.
   opening an editor.
 - Missing canonical file metadata shows `knowledge.canonicalPathUnavailable`.
 - Editor initialization failure falls back to Reading mode for display only and
-  does not rewrite the persisted selected mode.
+  does not rewrite the persisted selected mode. The boundary resets when note
+  ID, selected editor mode, or canonical content hash changes.
 - A live-preview decoration failure falls back to visible source syntax for the
   affected construct.
-- Page-preview failure closes the preview and leaves link navigation available.
+- Page-preview failure suppresses the preview body and leaves its trigger and
+  link navigation available.
 - Graph failures remain isolated to Graph mode.
 - Empty Markdown renders an explicit empty-note state in all document modes.
 
@@ -371,12 +410,14 @@ The editor chrome remains quiet and research-oriented:
   be changed through typing, paste, drop, keymaps, or dispatched user commands.
 - Live-preview tests cover every supported construct plus unsupported-source
   fallback.
-- Reading tests cover GFM, footnotes, math, duplicate heading anchors, disabled
-  tasks, safe links, properties, and tags.
+- Reading tests cover GFM, localized footnotes, math, duplicate pane-scoped
+  heading anchors, disabled tasks, source-span-safe wiki/Markdown links,
+  properties, tags, Unicode prefixes, and duplicate link labels.
 - Preview tests cover hover, focus, delay, cache reuse, failure, Escape, and
   no-absolute-path behavior.
 - Accessibility tests cover button names, pressed state, `aria-readonly`,
-  keyboard mode switching, focus previews, and outline navigation.
+  keyboard mode switching, focus previews, and split-pane-isolated outline
+  navigation.
 
 ### Integration and release gates
 
