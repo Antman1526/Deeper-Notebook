@@ -48,4 +48,13 @@ describe('buildMarkdownModel', () => {
       && construct.to <= markdown.length,
     )).toBe(true)
   })
+
+  it('includes the marker in a start-of-document tag range', () => {
+    const markdown = '#tag'
+    const tag = buildMarkdownModel(markdown).constructs
+      .find((construct) => construct.kind === 'tag')
+
+    expect(tag).toEqual({ kind: 'tag', from: 0, to: 4 })
+    expect(markdown.slice(tag?.from, tag?.to)).toBe('#tag')
+  })
 })
