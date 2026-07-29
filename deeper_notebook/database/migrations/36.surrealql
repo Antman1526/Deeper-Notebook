@@ -62,4 +62,4 @@ DEFINE INDEX IF NOT EXISTS idx_note_overlay_note ON TABLE note COLUMNS overlay_n
 
 DEFINE FIELD OVERWRITE vault_file_id ON TABLE note_block TYPE option<record<vault_file>>;
 DEFINE FIELD IF NOT EXISTS overlay_note_id ON TABLE note_block TYPE option<record<overlay_note>>;
-DEFINE INDEX IF NOT EXISTS idx_note_block_overlay ON TABLE note_block COLUMNS overlay_note_id, parser_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_note_block_overlay ON TABLE note_block COLUMNS note_id, parser_id UNIQUE;

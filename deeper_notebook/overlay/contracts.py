@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -19,6 +19,9 @@ OverlayReceiptStatus = Literal[
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _DATE_KEY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_UNIQUE_RELATIVE_PATH = re.compile(
+    r"^Notes/(?P<timestamp>\d{8}-\d{4}) (?P<title>[^/\x00]+?)(?:-[2-9]\d*)?\.md$"
+)
 
 
 def _canonical_relative_path(value: str) -> str:
@@ -33,6 +36,34 @@ def _canonical_relative_path(value: str) -> str:
     ):
         raise ValueError("path must be canonical and relative")
     return value
+
+
+def _calendar_date_key(value: str) -> str:
+    if not _DATE_KEY.fullmatch(value):
+        raise ValueError("date_key must be an ISO calendar date")
+    try:
+        date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("date_key must be an ISO calendar date") from error
+    return value
+
+
+def _unique_note_relative_path(value: str) -> str:
+    match = _UNIQUE_RELATIVE_PATH.fullmatch(value)
+    if match is None:
+        raise ValueError("unique note path must use the generated filename shape")
+    try:
+        datetime.strptime(match.group("timestamp"), "%Y%m%d-%H%M")
+    except ValueError as error:
+        raise ValueError("unique note path must use a valid timestamp") from error
+    return value
+
+
+def _visible_title(value: str) -> str:
+    normalized = value.strip()
+    if not normalized or any(ord(char) < 32 for char in normalized):
+        raise ValueError("title must contain visible text")
+    return normalized
 
 
 class _Strict(BaseModel):
@@ -80,12 +111,16 @@ class OverlayNote(_Strict):
 
     @model_validator(mode="after")
     def kind_matches_date_key(self) -> OverlayNote:
-        if self.kind == "daily" and (
-            self.date_key is None or not _DATE_KEY.fullmatch(self.date_key)
-        ):
-            raise ValueError("daily note requires an ISO date_key")
+        if self.kind == "daily":
+            if self.date_key is None:
+                raise ValueError("daily note requires an ISO date_key")
+            _calendar_date_key(self.date_key)
+            if self.relative_path != f"Daily/{self.date_key}.md":
+                raise ValueError("daily note path must match its date_key")
         if self.kind == "unique" and self.date_key is not None:
             raise ValueError("unique note cannot have date_key")
+        if self.kind == "unique":
+            _unique_note_relative_path(self.relative_path)
         return self
 
 
@@ -123,6 +158,11 @@ class OverlayMutationReceipt(_Strict):
 class CreateDailyNote(_Strict):
     date_key: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
+    @field_validator("date_key")
+    @classmethod
+    def date_key_is_calendar_date(cls, value: str) -> str:
+        return _calendar_date_key(value)
+
 
 class CreateUniqueNote(_Strict):
     title: str = Field(min_length=1, max_length=512)
@@ -131,10 +171,7 @@ class CreateUniqueNote(_Strict):
     @field_validator("title")
     @classmethod
     def title_is_visible(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized or any(ord(char) < 32 for char in normalized):
-            raise ValueError("title must contain visible text")
-        return normalized
+        return _visible_title(value)
 
 
 class UpdateOverlayNote(_Strict):
@@ -142,6 +179,11 @@ class UpdateOverlayNote(_Strict):
     markdown: str = Field(max_length=10 * 1024 * 1024)
     expected_revision: int = Field(ge=1)
     idempotency_key: str = Field(min_length=1, max_length=128)
+
+    @field_validator("title")
+    @classmethod
+    def title_is_visible(cls, value: str) -> str:
+        return _visible_title(value)
 
 
 class OverlayPage(_Strict):
@@ -152,3 +194,9 @@ class OverlayPage(_Strict):
     outgoing_links: list[VaultLink] = Field(default_factory=list)
     backlinks: list[VaultLink] = Field(default_factory=list)
     graph: VaultGraph | None = None
+
+    @model_validator(mode="after")
+    def note_matches_overlay_projection(self) -> OverlayPage:
+        if self.note.get("id") != self.overlay.projected_note_id:
+            raise ValueError("page note must match the overlay projection")
+        return self
