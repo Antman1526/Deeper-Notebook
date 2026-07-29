@@ -1,5 +1,5 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { Compartment, type Extension, EditorState } from '@codemirror/state'
+import { Compartment, type Extension, EditorSelection, EditorState } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -451,6 +451,45 @@ describe('buildLivePreviewDecorationRecords', () => {
       expect(toString).toHaveBeenCalled()
       view.dom.querySelector<HTMLButtonElement>('button')?.click()
       expect(onNavigate).toHaveBeenCalledWith('note:research')
+    } finally {
+      view.destroy()
+    }
+  })
+
+  it('matches a raw UTF-8 wiki-link span through lone CR and CRLF normalization', () => {
+    const source = 'a\ré\r\n[[Research]]'
+    const prefix = 'a\ré\r\n'
+    const onNavigate = vi.fn()
+    const extension = livePreviewExtension({
+      links: [{
+        id: 'link:research',
+        source_note_id: 'note:plan',
+        target_note_id: 'note:research',
+        target_note_title: 'Research',
+        target_relative_path: 'pages/research.md',
+        target_text: 'Research',
+        link_kind: 'wikilink',
+        resolved: true,
+        source_start: new TextEncoder().encode(prefix).length,
+        source_end: new TextEncoder().encode(source).length,
+      }],
+      onNavigate,
+      source,
+    })
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: source,
+        extensions: [markdown({ base: markdownLanguage }), extension],
+      }),
+    })
+    const editorPrefix = 'a\né\n'
+
+    try {
+      expect(view.state.doc.toString()).toBe(`${editorPrefix}[[Research]]`)
+      view.dom.querySelector<HTMLButtonElement>('button')?.click()
+      expect(onNavigate).toHaveBeenCalledWith('note:research')
+      expect(view.moveByChar(EditorSelection.cursor(editorPrefix.length), true).head)
+        .toBe(view.state.doc.length)
     } finally {
       view.destroy()
     }

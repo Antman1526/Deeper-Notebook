@@ -79,6 +79,34 @@ describe('VaultLivePreview', () => {
     expect(onNavigate).toHaveBeenCalledWith('note:research')
   })
 
+  it('navigates an atomic wiki link through Unicode, lone CR, and CRLF source offsets', () => {
+    const prefix = 'a\ré\r\n'
+    const linkSource = '[[Research]]'
+    const markdown = `${prefix}${linkSource}`
+    const onNavigate = vi.fn()
+    render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[{
+          ...resolvedLinkFixture,
+          source_start: new TextEncoder().encode(prefix).length,
+          source_end: new TextEncoder().encode(markdown).length,
+        }]}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const editorPrefix = 'a\né\n'
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+    expect(onNavigate).toHaveBeenCalledWith('note:research')
+    expect(view.moveByChar(EditorSelection.cursor(editorPrefix.length), true).head)
+      .toBe(view.state.doc.length)
+  })
+
   it('does not navigate unresolved, external, or attachment links', () => {
     const onNavigate = vi.fn()
     const external = '[External](https://example.test)'
