@@ -665,7 +665,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "f49b93852aa3d4fee65e636e6191cb9d088852d55dada0f1efe8f8a8aa89c8b4"
+      "coverage_sha256": "d603587560e6c8510e2d72783814441561c4dc6b717e414677f88d896c505d9c"
     },
     "legacy-artifact-probe-v1": {
       "kind": "legacy_artifact_probe",
@@ -65166,7 +65166,7 @@
       "path": "tests/test_vault_api.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 193,
+      "line": 216,
       "column": 29,
       "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
       "category": "compatibility_alias",
@@ -65174,7 +65174,7 @@
         "path": "tests/test_vault_api.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 193,
+        "line": 216,
         "column": 29,
         "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
         "category": "compatibility_alias",
@@ -65186,7 +65186,7 @@
       "path": "tests/test_vault_api.py",
       "pattern": "/onp/",
       "source": "content",
-      "line": 193,
+      "line": 216,
       "column": 33,
       "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
       "category": "compatibility_alias",
@@ -65194,7 +65194,7 @@
         "path": "tests/test_vault_api.py",
         "pattern": "/onp/",
         "source": "content",
-        "line": 193,
+        "line": 216,
         "column": 33,
         "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
         "category": "compatibility_alias",
