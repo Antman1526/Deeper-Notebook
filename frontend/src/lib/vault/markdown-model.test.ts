@@ -102,6 +102,19 @@ describe('buildMarkdownModel', () => {
     },
   )
 
+  it('strips a trailing carriage return from a non-final CRLF Setext heading', () => {
+    const headingSource = '**Setext**\r\n---\r'
+    const markdown = `${headingSource}\n\r\nNext block`
+
+    expect(buildMarkdownModel(markdown).headings).toEqual([{
+      level: 2,
+      text: '**Setext**',
+      slug: 'setext',
+      sourceFrom: 0,
+      sourceTo: headingSource.length,
+    }])
+  })
+
   it('scales across a large adversarial Markdown document', () => {
     const count = 100_000
     const markdown = Array.from(
