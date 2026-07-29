@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./client', () => ({
   default: { get: vi.fn(), post: vi.fn() },
@@ -7,17 +7,81 @@ vi.mock('./client', () => ({
 import apiClient from './client'
 import { vaultApi, vaultFileSchema } from './vault'
 
-const file = {
-  id: 'vault_file:one', vault_id: 'vault_mount:one', relative_path: 'Projects/Plan.md',
-  note_id: 'note:real-projection-id',
-  file_kind: 'markdown', format: 'obsidian', content_hash: 'abc', parse_status: 'parsed',
+const mockedGet = vi.mocked(apiClient.get)
+
+const realisticModifiedNs = 1_780_000_000_000_000_000
+
+const fileFixture = {
+  id: 'vault_file:one',
+  vault_id: 'vault:one',
+  relative_path: 'pages/one.md',
+  note_id: 'note:one',
+  file_kind: 'markdown',
+  format: 'obsidian',
+  content_hash: 'a'.repeat(64),
+  parse_status: 'parsed',
+  size_bytes: 123,
+  modified_ns: realisticModifiedNs,
+  encoding: 'utf-8',
+  newline: 'lf',
+  deleted_state: 'present',
+}
+
+const linkFixture = {
+  id: 'vault_link:one',
+  source_note_id: 'note:one',
+  target_note_id: null,
+  target_text: 'Two',
+  link_kind: 'wikilink',
+  resolved: false,
+  source_start: 0,
+  source_end: 7,
+}
+
+function pageFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    file: fileFixture,
+    note: { id: 'note:one', title: 'One', markdown: '# One' },
+    blocks: [],
+    tasks: [],
+    outgoing_links: [],
+    backlinks: [],
+    ...overrides,
+  }
 }
 
 describe('vault API boundary', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
   it('validates a vault file before exposing it to callers', () => {
-    expect(vaultFileSchema.parse(file)).toMatchObject(file)
-    expect(() => vaultFileSchema.parse({ ...file, note_id: undefined })).toThrow()
-    expect(() => vaultFileSchema.parse({ ...file, parse_status: 'unknown' })).toThrow()
+    expect(vaultFileSchema.parse(fileFixture)).toMatchObject(fileFixture)
+    expect(() => vaultFileSchema.parse({ ...fileFixture, note_id: undefined })).toThrow()
+    expect(() => vaultFileSchema.parse({ ...fileFixture, parse_status: 'unknown' })).toThrow()
+  })
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
+    ['negative', -1],
+    ['fractional', 1.5],
+  ])('rejects a %s modified_ns value', (_case, modified_ns) => {
+    expect(() => vaultFileSchema.parse({ ...fileFixture, modified_ns })).toThrow()
+  })
+
+  it('accepts realistic decoded modified_ns values from files and page responses', async () => {
+    mockedGet
+      .mockResolvedValueOnce({ data: [fileFixture] } as never)
+      .mockResolvedValueOnce({ data: pageFixture() } as never)
+
+    await expect(vaultApi.files('vault:one')).resolves.toEqual([
+      expect.objectContaining({ modified_ns: realisticModifiedNs }),
+    ])
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        file: { modified_ns: realisticModifiedNs },
+      })
   })
 
   it.each([
@@ -26,16 +90,319 @@ describe('vault API boundary', () => {
     '\\\\server\\share\\secret.md',
     '//server/share/secret.md',
   ])('rejects POSIX, drive, and UNC absolute paths from file responses: %s', async (relative_path) => {
-    vi.mocked(apiClient.get).mockResolvedValue({ data: [{ ...file, relative_path }] } as never)
-    await expect(vaultApi.files('vault_mount:one')).rejects.toThrow(/absolute path/i)
+    mockedGet.mockResolvedValue({ data: [{ ...fileFixture, relative_path }] } as never)
+    await expect(vaultApi.files('vault:one')).rejects.toThrow(/absolute path/i)
   })
 
-  it('rejects absolute paths from page and graph responses', async () => {
-    vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: { note: { id: 'note:one', source_path: '/Users/owner/secret.md' }, blocks: [], tasks: [], outgoing_links: [], backlinks: [] } } as never)
-      .mockResolvedValueOnce({ data: { nodes: [{ id: '/Users/owner/secret.md', title: 'Secret', source_format: 'obsidian' }], edges: [] } } as never)
+  it('rejects an absolute source path from a page response', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          source_path: '/Users/owner/secret.md',
+        },
+      }),
+    } as never)
 
-    await expect(vaultApi.page('vault_mount:one', 'note:one')).rejects.toThrow(/absolute path/i)
-    await expect(vaultApi.graph('vault_mount:one', 'note:one')).rejects.toThrow(/absolute path/i)
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('rejects an absolute path exposed as a graph node ID', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        nodes: [{
+          id: '/Users/owner/secret.md',
+          title: 'Secret',
+          source_format: 'obsidian',
+        }],
+        edges: [],
+      },
+    } as never)
+
+    await expect(vaultApi.graph('vault:one', 'note:one')).rejects.toThrow(/absolute path/i)
+  })
+
+  it('rejects an absolute path in unknown passthrough metadata', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          integrity_marker: '/Users/owner/secret.md',
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
+  })
+
+  it('rejects a Windows root-relative passthrough path without leaking it', async () => {
+    const rootRelativePath = '\\Users\\owner\\private.md'
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          source_path: rootRelativePath,
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
+  })
+
+  it('preserves Markdown and TeX content that begins with a backslash', async () => {
+    const content = '\\# Literal heading\n\\alpha\n\\[x^2\\]'
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          content,
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        note: { content },
+      })
+  })
+
+  it('preserves authored title and property values that resemble rooted paths', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          title: '\\Literal title',
+          properties: {
+            example: '/not/a/path-field',
+          },
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        note: {
+          title: '\\Literal title',
+          properties: {
+            example: '/not/a/path-field',
+          },
+        },
+      })
+  })
+
+  it('rejects rooted paths nested in a named path array', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          provenance: {
+            source_paths: [
+              'pages/one.md',
+              '\\Users\\owner\\private.md',
+            ],
+          },
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
+  })
+
+  it('accepts a page with canonical requested identity', async () => {
+    mockedGet.mockResolvedValueOnce({ data: pageFixture() } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        file: fileFixture,
+        note: { id: 'note:one' },
+      })
+  })
+
+  it.each([
+    ['file vault', { file: { ...fileFixture, vault_id: 'vault:other' } }],
+    ['file note', { file: { ...fileFixture, note_id: 'note:other' } }],
+    ['page note', { note: { id: 'note:other', title: 'Other' } }],
+  ])('rejects a page whose %s conflicts with requested identity', async (_field, overrides) => {
+    mockedGet.mockResolvedValueOnce({ data: pageFixture(overrides) } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it.each([
+    '',
+    '/Users/owner/private/two.md',
+    '../outside.md',
+    'pages\\two.md',
+    'pages//two.md',
+    'pages/./two.md',
+    'pages/\0two.md',
+    'C:/private/two.md',
+    ' pages/two.md',
+    'pages/two.md ',
+  ])('rejects noncanonical target path %j', async (targetRelativePath) => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        outgoing_links: [{
+          ...linkFixture,
+          resolved: true,
+          target_note_id: 'note:two',
+          target_note_title: 'Two',
+          target_relative_path: targetRelativePath,
+        }],
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('classifies missing canonical file metadata separately', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({ file: undefined }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'canonical-path-unavailable' })
+  })
+
+  it('classifies a noncanonical page file path separately', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        file: { ...fileFixture, relative_path: '../outside.md' },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'canonical-path-unavailable' })
+  })
+
+  it.each([null, 'short', 'g'.repeat(64)])(
+    'rejects page content hash %j',
+    async (contentHash) => {
+      mockedGet.mockResolvedValueOnce({
+        data: pageFixture({
+          file: { ...fileFixture, content_hash: contentHash },
+        }),
+      } as never)
+
+      await expect(vaultApi.page('vault:one', 'note:one'))
+        .rejects.toMatchObject({ code: 'page-invalid' })
+    },
+  )
+
+  it.each([
+    ['target note ID', { target_note_id: null }],
+    ['target note title', { target_note_title: null }],
+    ['target relative path', { target_relative_path: null }],
+  ])('rejects a resolved link missing canonical %s', async (_field, linkOverrides) => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        outgoing_links: [{
+          ...linkFixture,
+          resolved: true,
+          target_note_id: 'note:two',
+          target_note_title: 'Two',
+          target_relative_path: 'pages/two.md',
+          ...linkOverrides,
+        }],
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('rejects a link whose source range is reversed', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        outgoing_links: [{
+          ...linkFixture,
+          source_start: 8,
+          source_end: 7,
+        }],
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('translates the orphaned-note API error', async () => {
+    mockedGet.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          detail: { code: 'vault_canonical_file_unavailable' },
+        },
+      },
+    })
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'canonical-path-unavailable' })
+  })
+
+  it('translates the invalid-page API error', async () => {
+    mockedGet.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          detail: { code: 'vault_page_invalid' },
+        },
+      },
+    })
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('does not translate unrelated API failures', async () => {
+    const error = {
+      isAxiosError: true,
+      response: {
+        status: 500,
+        data: { detail: { code: 'database_unavailable' } },
+      },
+    }
+    mockedGet.mockRejectedValueOnce(error)
+
+    await expect(vaultApi.page('vault:one', 'note:one')).rejects.toBe(error)
+  })
+
+  it('accepts a resolved link with a present empty canonical title', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        outgoing_links: [{
+          ...linkFixture,
+          resolved: true,
+          target_note_id: 'note:two',
+          target_note_title: '',
+          target_relative_path: 'pages/two.md',
+        }],
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        outgoing_links: [expect.objectContaining({ target_note_title: '' })],
+      })
   })
 })

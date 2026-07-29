@@ -1282,3 +1282,20 @@ export const enUS = {
     },
   },
 }
+
+Object.assign(enUS.knowledge, {
+  source: "Source",
+  livePreview: "Live Preview",
+  emptyNote: "This note is empty.",
+  pageInvalid: "The projected page data is invalid.",
+  canonicalPathUnavailable: "The canonical vault path is unavailable.",
+  pagePreview: "{{title}} preview",
+  previewUnavailable: "Preview unavailable.",
+  footnotes: "Footnotes",
+  sourceProvenance: "Source provenance",
+  lineEnding: "Line ending",
+  encoding: "Encoding",
+  contentHash: "Content hash",
+  readOnlyMode: "{{mode}} is read-only",
+  headingLevel: "Level {{level}} {{title}}",
+})

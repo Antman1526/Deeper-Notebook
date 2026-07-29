@@ -1261,3 +1261,20 @@ export const jaJP = {
     },
   },
 }
+
+Object.assign(jaJP.knowledge, {
+  source: "ソース",
+  livePreview: "ライブプレビュー",
+  emptyNote: "このノートは空です。",
+  pageInvalid: "投影されたページデータが無効です。",
+  canonicalPathUnavailable: "正規の保管庫パスを利用できません。",
+  pagePreview: "{{title}} のプレビュー",
+  previewUnavailable: "プレビューを利用できません。",
+  footnotes: "脚注",
+  sourceProvenance: "ソースの来歴",
+  lineEnding: "改行コード",
+  encoding: "エンコーディング",
+  contentHash: "コンテンツハッシュ",
+  readOnlyMode: "{{mode}} は読み取り専用です",
+  headingLevel: "レベル {{level}} {{title}}",
+})

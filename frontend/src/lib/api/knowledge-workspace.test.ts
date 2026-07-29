@@ -9,6 +9,7 @@ import {
   defaultKnowledgeWorkspace,
   knowledgeWorkspaceApi,
   knowledgeWorkspaceWireSchema,
+  openKnowledgeTabSchema,
   serializeKnowledgeWorkspace,
   type KnowledgeLayoutNode,
 } from './knowledge-workspace'
@@ -34,9 +35,22 @@ const wireDocument = {
   layout: { type: 'pane', pane_id: 'pane-1' },
 } as const
 
+const noncanonicalRelativePaths = [
+  '',
+  '/Users/owner/private/two.md',
+  '../outside.md',
+  'pages\\two.md',
+  'pages//two.md',
+  'pages/./two.md',
+  'pages/\0two.md',
+  'C:/private/two.md',
+  ' pages/two.md',
+  'pages/two.md ',
+]
+
 describe('knowledge workspace API boundary', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it.each([
@@ -80,7 +94,8 @@ describe('knowledge workspace API boundary', () => {
       },
     }
 
-    expect(() => knowledgeWorkspaceWireSchema.parse(unsafe)).toThrow(/relative to its vault/i)
+    expect(() => knowledgeWorkspaceWireSchema.parse(unsafe))
+      .toThrow(/canonical vault-relative path/i)
   })
 
   it('rejects relative paths that escape their vault', () => {
@@ -97,8 +112,35 @@ describe('knowledge workspace API boundary', () => {
       },
     }
 
-    expect(() => knowledgeWorkspaceWireSchema.parse(escaping)).toThrow(/escape/i)
+    expect(() => knowledgeWorkspaceWireSchema.parse(escaping))
+      .toThrow(/canonical vault-relative path/i)
   })
+
+  it.each(noncanonicalRelativePaths)(
+    'rejects noncanonical shared path %j for wire and open-tab input',
+    (relativePath) => {
+      const unsafeWire = {
+        ...wireDocument,
+        panes: {
+          'pane-1': {
+            ...wireDocument.panes['pane-1'],
+            tabs: [{
+              ...wireDocument.panes['pane-1'].tabs[0],
+              relative_path: relativePath,
+            }],
+          },
+        },
+      }
+
+      expect(knowledgeWorkspaceWireSchema.safeParse(unsafeWire).success).toBe(false)
+      expect(openKnowledgeTabSchema.safeParse({
+        vaultId: 'vault:one',
+        noteId: 'note:two',
+        title: 'Two',
+        relativePath,
+      }).success).toBe(false)
+    },
+  )
 
   it('rejects inconsistent layout references', () => {
     expect(() => knowledgeWorkspaceWireSchema.parse({
@@ -180,7 +222,7 @@ describe('knowledge workspace API boundary', () => {
     if (result.success) return
     const messages = result.error.issues.map((issue) => issue.message)
     expect(messages).toContain('workspace cannot contain more than 128 tabs')
-    expect(messages).not.toContain('note path must be relative to its vault')
+    expect(messages).not.toContain('value must be a canonical vault-relative path')
 
     vi.mocked(apiClient.get).mockResolvedValue({
       data: {

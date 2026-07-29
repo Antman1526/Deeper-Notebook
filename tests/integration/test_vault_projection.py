@@ -24,9 +24,11 @@ from deeper_notebook.vault.contracts import (
     ParsedLink,
     ParsedTask,
 )
+from deeper_notebook.vault.parsers import parse_document
 from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
+    VaultProjectionError,
     VaultRepository,
 )
 from deeper_notebook.vault.security import approve_vault_root
@@ -40,13 +42,17 @@ UP = ROOT / "deeper_notebook/database/migrations/32.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/32_down.surrealql"
 UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
 MIGRATION_34_DOWN = ROOT / "deeper_notebook/database/migrations/34_down.surrealql"
+MIGRATION_35 = ROOT / "deeper_notebook/database/migrations/35.surrealql"
+MIGRATION_35_DOWN = ROOT / "deeper_notebook/database/migrations/35_down.surrealql"
 
 
 async def _restore_recorded_v32_state() -> None:
     """Undo the current-head migrations so the test starts at recorded v32."""
+    await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
     await repo_query(MIGRATION_34_DOWN.read_text(encoding="utf-8"))
     await repo_query(
         """
+        DELETE type::thing('_sbl_migrations', 35);
         DELETE type::thing('_sbl_migrations', 34);
         DELETE type::thing('_sbl_migrations', 33);
         """
@@ -68,6 +74,113 @@ async def test_migration_creates_vault_projection_tables(clean_namespace):
         "vault_sync_receipt",
         "vault_trust_record",
     }.issubset(tables)
+
+
+async def _vault_file_fields() -> dict:
+    rows = await repo_query("INFO FOR TABLE vault_file;")
+    head = rows[0] if isinstance(rows, list) else rows
+    return head.get("fields") or head.get("fd") or {}
+
+
+async def _create_v34_vault_file(record_id: str, *, newline=None) -> None:
+    data = {
+        "schema_version": 1,
+        "vault_id": ensure_record_id("vault_mount:integration"),
+        "relative_path": f"Pages/{record_id.rsplit(':', 1)[-1]}.md",
+        "file_kind": "markdown",
+        "format": "obsidian",
+        "content_hash": "a" * 64,
+        "size_bytes": 7,
+        "modified_ns": 1,
+        "encoding": "utf-8",
+        "parse_status": "parsed",
+        "parse_error_code": None,
+        "embedding_state": "pending",
+        "deleted_state": "present",
+    }
+    if newline is not None:
+        data["newline"] = newline
+    await repo_query(
+        "CREATE $id CONTENT $data;",
+        {"id": ensure_record_id(record_id), "data": data},
+    )
+
+
+async def test_migration_35_exposes_optional_vault_file_newline_field(
+    clean_namespace,
+):
+    assert "newline" in await _vault_file_fields()
+    assert await get_latest_version() == 35
+
+
+async def test_migration_35_upgrades_v34_row_without_newline(clean_namespace):
+    await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 35);")
+    assert await get_latest_version() == 34
+    await _create_mount()
+    await _create_v34_vault_file("vault_file:migration_without_newline")
+    before = (
+        await repo_query(
+            "SELECT * FROM $id;",
+            {"id": ensure_record_id("vault_file:migration_without_newline")},
+        )
+    )[0]
+    assert "newline" not in before
+
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+
+    assert await get_latest_version() == 35
+    row = (
+        await repo_query(
+            "SELECT * FROM $id;",
+            {"id": ensure_record_id("vault_file:migration_without_newline")},
+        )
+    )[0]
+    assert row.get("newline") is None
+
+
+async def test_migration_35_validates_newline_values_natively(clean_namespace):
+    await _create_mount()
+    await _create_v34_vault_file("vault_file:newline_crlf", newline="crlf")
+    row = (
+        await repo_query(
+            "SELECT * FROM $id;",
+            {"id": ensure_record_id("vault_file:newline_crlf")},
+        )
+    )[0]
+    assert row["newline"] == "crlf"
+
+    with pytest.raises(Exception):
+        await _create_v34_vault_file(
+            "vault_file:newline_invalid",
+            newline="invalid-newline",
+        )
+
+
+async def test_migration_35_down_preserves_row_and_up_is_idempotent(
+    clean_namespace,
+):
+    await _create_mount()
+    await _create_v34_vault_file("vault_file:newline_round_trip", newline="crlf")
+
+    await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
+
+    assert "newline" not in await _vault_file_fields()
+    rows = await repo_query(
+        "SELECT * FROM $id;",
+        {"id": ensure_record_id("vault_file:newline_round_trip")},
+    )
+    assert len(rows) == 1
+    assert str(rows[0]["id"]) == "vault_file:newline_round_trip"
+
+    await repo_query("DELETE type::thing('_sbl_migrations', 35);")
+    assert await get_latest_version() == 34
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+    await manager.run_migration_up()
+    assert await get_latest_version() == 35
+    assert "newline" in await _vault_file_fields()
 
 
 async def test_migration_rejects_watching_on_mixed_parent(clean_namespace):
@@ -380,7 +493,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
 
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
-    assert await get_latest_version() == 34
+    assert await get_latest_version() == 35
 
     note_info = await repo_query("INFO FOR TABLE note;")
     link_info = await repo_query("INFO FOR TABLE note_link;")
@@ -446,11 +559,13 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         assert after["source_end"] == before["source_end"]
 
     await manager.runner.run_one_down()
+    assert await get_latest_version() == 34
+    await manager.runner.run_one_down()
     assert await get_latest_version() == 33
     await manager.runner.run_one_down()
     assert await get_latest_version() == 32
     await manager.run_migration_up()
-    assert await get_latest_version() == 34
+    assert await get_latest_version() == 35
     assert await repo_query("SELECT * FROM note ORDER BY id;") == list(
         notes_after.values()
     )
@@ -547,7 +662,7 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
     assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 34
+    assert await get_latest_version() == 35
     migrated = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
     assert migrated["title_key"] == "rollback note"
     assert migrated["updated"] == before["updated"]
@@ -642,7 +757,7 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
     )
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 34
+    assert await get_latest_version() == 35
     migrated = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
     assert migrated["target_title_key"] == "target"
     assert migrated["target_note_id"] == str(target_id)
@@ -687,7 +802,7 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
     )
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 34
+    assert await get_latest_version() == 35
     assert await _updated_field_definition("note") == note_schema_before
     assert await _updated_field_definition("note_link") == link_schema_before
 
@@ -793,7 +908,9 @@ async def test_complete_projection_is_atomic_and_record_typed(clean_namespace):
     )
 
     assert result.status == "projected"
-    assert len(await repo_query("SELECT * FROM vault_file;")) == 1
+    file_rows = await repo_query("SELECT * FROM vault_file;")
+    assert len(file_rows) == 1
+    assert file_rows[0]["newline"] == "lf"
     assert len(await repo_query("SELECT * FROM note;")) == 1
     assert len(await repo_query("SELECT * FROM note_block;")) == 2
     assert len(await repo_query("SELECT * FROM note_link;")) == 1
@@ -803,6 +920,38 @@ async def test_complete_projection_is_atomic_and_record_typed(clean_namespace):
     assert receipts[0]["status"] == "success"
     assert receipts[0].get("before_hash") is None
     assert receipts[0]["after_hash"] == "a" * 64
+
+
+async def test_obsidian_fixture_embeds_project_once_per_source_span(clean_namespace):
+    await _create_mount()
+    raw = (ROOT / "tests/fixtures/vault/obsidian/complete.md").read_bytes()
+    parsed = parse_document("complete.md", raw, format_mode="obsidian")
+    work = VaultWorkItem(
+        vault_id="vault_mount:integration",
+        relative_path="complete.md",
+        file_kind="markdown",
+        protected=False,
+        content=raw,
+        content_hash=parsed.content_hash,
+        byte_size=len(raw),
+        modified_ns=456,
+    )
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+
+    first = await repository.project_document(
+        _mount(), work, parsed, "integration-obsidian-embeds"
+    )
+    second = await repository.project_document(
+        _mount(), work, parsed, "integration-obsidian-embeds-repeat"
+    )
+
+    assert first.status == "projected"
+    assert second.status == "unchanged"
+    links = await repo_query("SELECT * FROM note_link;")
+    assert len(links) == len(
+        {(link.source_start, link.source_end) for link in parsed.links}
+    )
+    assert sum(link["link_kind"] == "embed" for link in links) == 2
 
 
 class _InjectFailureConnection:
@@ -1168,6 +1317,69 @@ async def test_link_reads_and_graph_reject_corrupt_cross_mount_target(clean_name
     graph = await repository.graph(first.id, source.note_id, depth=2, limit=10)
     assert [node["id"] for node in graph.nodes] == [source.note_id]
     assert graph.edges == []
+
+
+async def test_link_reads_reject_cross_vault_target_file_corruption(clean_namespace):
+    first = await _create_named_mount(
+        vault_id="vault_mount:integration",
+        name="First",
+        root_path="/synthetic/first",
+    )
+    second = await _create_named_mount(
+        vault_id="vault_mount:second",
+        name="Second",
+        root_path="/synthetic/second",
+    )
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+    source = await repository.project_document(
+        first, _work(), _document(), "cross-file-source"
+    )
+    target = await repository.project_document(
+        first,
+        _single_note_work(
+            vault_id=first.id,
+            relative_path="Beta.md",
+            title="Beta",
+            content_hash="b" * 64,
+            modified_ns=200,
+        ),
+        _single_note_document(
+            relative_path="Beta.md",
+            title="Beta",
+            content_hash="b" * 64,
+        ),
+        "cross-file-target",
+    )
+    foreign = await repository.project_document(
+        second,
+        _single_note_work(
+            vault_id=second.id,
+            relative_path="Foreign.md",
+            title="Foreign",
+            content_hash="c" * 64,
+            modified_ns=300,
+        ),
+        _single_note_document(
+            relative_path="Foreign.md",
+            title="Foreign",
+            content_hash="c" * 64,
+        ),
+        "cross-file-foreign",
+    )
+    await repo_query(
+        "DELETE $foreign_note;",
+        {"foreign_note": ensure_record_id(foreign.note_id)},
+    )
+    await repo_query(
+        "UPDATE $target SET vault_file_id = $foreign_file;",
+        {
+            "target": ensure_record_id(target.note_id),
+            "foreign_file": ensure_record_id(foreign.vault_file_id),
+        },
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_link_target_invalid"):
+        await repository.outgoing_links(first.id, source.note_id)
 
 
 class _DelayedOrLostResponseConnection:

@@ -38,22 +38,6 @@ function tabFromFile(file: VaultFile): OpenKnowledgeTab {
   }
 }
 
-function fallbackRelativePath(noteId: string, hint?: string): string {
-  const normalized = hint?.trim()
-  if (
-    normalized
-    && !/^(?:[\\/]|[A-Za-z]:)/.test(normalized)
-    && !normalized.split(/[\\/]/).includes('..')
-  ) {
-    return normalized
-  }
-  const safeNoteId = noteId
-    .replace(/[\\/]/g, '-')
-    .replace(/\.\./g, '-')
-    .trim()
-  return `${safeNoteId || 'note'}.md`
-}
-
 export function KnowledgeExplorer() {
   const { t } = useTranslation()
   const hydration = useHydrateKnowledgeWorkspace()
@@ -87,13 +71,21 @@ export function KnowledgeExplorer() {
     relativePathHint,
     titleHint,
     paneId,
+    targetText,
   ) => {
     const listedFile = files.data?.find(
       (file) => file.vault_id === targetVaultId
         && file.note_id === targetNoteId,
     )
     if (listedFile) {
-      openFile(listedFile, paneId)
+      openTab({
+        vaultId: listedFile.vault_id,
+        noteId: listedFile.note_id,
+        title: titleHint?.trim()
+          || targetText
+          || titleFromRelativePath(listedFile.relative_path),
+        relativePath: listedFile.relative_path,
+      }, paneId)
       return
     }
 
@@ -114,12 +106,12 @@ export function KnowledgeExplorer() {
       return
     }
 
-    const relativePath = fallbackRelativePath(targetNoteId, relativePathHint)
+    if (!relativePathHint) return
     openTab({
       vaultId: targetVaultId,
       noteId: targetNoteId,
-      title: titleHint?.trim() || titleFromRelativePath(relativePath),
-      relativePath,
+      title: titleHint?.trim() || targetText || titleFromRelativePath(relativePathHint),
+      relativePath: relativePathHint,
     }, paneId)
   }
 

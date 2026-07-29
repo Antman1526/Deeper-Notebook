@@ -1261,3 +1261,20 @@ export const deDE = {
     },
   },
 }
+
+Object.assign(deDE.knowledge, {
+  source: "Quelltext",
+  livePreview: "Live-Vorschau",
+  emptyNote: "Diese Notiz ist leer.",
+  pageInvalid: "Die projizierten Seitendaten sind ungültig.",
+  canonicalPathUnavailable: "Der kanonische Vault-Pfad ist nicht verfügbar.",
+  pagePreview: "Vorschau für {{title}}",
+  previewUnavailable: "Vorschau nicht verfügbar.",
+  footnotes: "Fußnoten",
+  sourceProvenance: "Quellherkunft",
+  lineEnding: "Zeilenende",
+  encoding: "Kodierung",
+  contentHash: "Inhalts-Hash",
+  readOnlyMode: "{{mode}} ist schreibgeschützt",
+  headingLevel: "Ebene {{level}} {{title}}",
+})

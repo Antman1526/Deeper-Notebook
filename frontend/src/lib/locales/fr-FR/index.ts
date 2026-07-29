@@ -1261,3 +1261,20 @@ export const frFR = {
     },
   },
 }
+
+Object.assign(frFR.knowledge, {
+  source: "Source",
+  livePreview: "Aperçu en direct",
+  emptyNote: "Cette note est vide.",
+  pageInvalid: "Les données projetées de la page sont invalides.",
+  canonicalPathUnavailable: "Le chemin canonique du coffre n’est pas disponible.",
+  pagePreview: "Aperçu de {{title}}",
+  previewUnavailable: "Aperçu indisponible.",
+  footnotes: "Notes de bas de page",
+  sourceProvenance: "Provenance de la source",
+  lineEnding: "Fin de ligne",
+  encoding: "Encodage",
+  contentHash: "Empreinte du contenu",
+  readOnlyMode: "{{mode}} est en lecture seule",
+  headingLevel: "Niveau {{level}} {{title}}",
+})
