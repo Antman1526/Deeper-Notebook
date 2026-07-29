@@ -21,6 +21,8 @@ from deeper_notebook.vault.contracts import (
 )
 from deeper_notebook.vault.repository import (
     ProjectionResult,
+    VaultFile,
+    VaultLink,
     VaultMount,
     VaultRepository,
     VaultSyncReceipt,
@@ -1203,6 +1205,81 @@ async def test_link_reads_validate_center_and_filter_both_resolved_endpoints():
 
 
 @pytest.mark.asyncio
+async def test_get_page_returns_its_canonical_file_record():
+    class PageRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            self.calls.append((compact, variables or {}))
+            if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": "note:alpha",
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": "vault_file:alpha",
+                        "title": "Alpha",
+                        "content": "# Alpha\n",
+                    }
+                ]
+            if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": "vault_file:alpha",
+                        "vault_id": "vault_mount:test",
+                        "relative_path": "pages/alpha.md",
+                        "file_kind": "markdown",
+                        "format": "obsidian",
+                        "content_hash": "a" * 64,
+                        "encoding": "utf-8",
+                        "newline": "lf",
+                        "parse_status": "parsed",
+                        "deleted_state": "present",
+                    }
+                ]
+            return []
+
+    recorder = PageRecorder()
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(recorder),
+    )
+
+    page = await repository.get_page("vault_mount:test", "note:alpha")
+
+    assert page.file.relative_path == "pages/alpha.md"
+    assert page.file.content_hash == "a" * 64
+    assert page.file.newline == "lf"
+    file_call = next(
+        variables
+        for statement, variables in recorder.calls
+        if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in statement
+    )
+    assert str(file_call["vault_file_id"]) == "vault_file:alpha"
+
+
+@pytest.mark.asyncio
+async def test_get_page_rejects_note_without_canonical_file():
+    class OrphanRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": "note:alpha",
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": "vault_file:missing",
+                        "title": "Alpha",
+                    }
+                ]
+            return []
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(OrphanRecorder()),
+    )
+
+    with pytest.raises(LookupError, match="vault_note_file_not_found"):
+        await repository.get_page("vault_mount:test", "note:alpha")
+
+
+@pytest.mark.asyncio
 async def test_backlinks_project_source_note_title_for_display_identity():
     class BacklinkRecorder(QueryRecorder):
         async def query(self, statement, variables=None):
@@ -1211,15 +1288,21 @@ async def test_backlinks_project_source_note_title_for_display_identity():
             if "SELECT VALUE id FROM $note_id" in compact:
                 return ["note:target"]
             if "FROM note_link" in compact:
-                return [{
-                    "id": "note_link:source-target",
-                    "source_note_id": "note:source",
-                    "target_note_id": "note:target",
-                    "target_text": "Target",
-                    "source_note_title": "Source title",
-                    "link_kind": "wikilink",
-                    "resolved": True,
-                }]
+                return [
+                    {
+                        "id": "note_link:source-target",
+                        "source_note_id": "note:source",
+                        "target_note_id": "note:target",
+                        "target_text": "Target",
+                        "source_note_title": "Source title",
+                        "target_note_title": "Target title",
+                        "target_relative_path": "pages/target.md",
+                        "source_start": 12,
+                        "source_end": 22,
+                        "link_kind": "wikilink",
+                        "resolved": True,
+                    }
+                ]
             return []
 
     connection = BacklinkRecorder()
@@ -1228,8 +1311,78 @@ async def test_backlinks_project_source_note_title_for_display_identity():
     backlinks = await repository.backlinks("vault_mount:test", "note:target")
 
     assert backlinks[0].source_note_title == "Source title"
-    link_query = next(statement for statement, _ in connection.calls if "FROM note_link" in statement)
+    assert backlinks[0].target_note_title == "Target title"
+    assert backlinks[0].target_relative_path == "pages/target.md"
+    assert backlinks[0].source_start == 12
+    assert backlinks[0].source_end == 22
+    link_query = next(
+        statement for statement, _ in connection.calls if "FROM note_link" in statement
+    )
     assert "source_note_id.title AS source_note_title" in link_query
+    assert "target_note_id.title AS target_note_title" in link_query
+    assert (
+        "target_note_id.vault_file_id.relative_path AS target_relative_path"
+        in link_query
+    )
+
+
+def test_resolved_link_requires_canonical_target_identity():
+    with pytest.raises(ValidationError):
+        VaultLink(
+            id="note_link:broken",
+            source_note_id="note:source",
+            target_note_id="note:target",
+            target_text="Target",
+            source_start=0,
+            source_end=8,
+            link_kind="wikilink",
+            resolved=True,
+        )
+
+
+def test_resolved_link_allows_present_empty_canonical_title():
+    link = VaultLink(
+        id="note_link:empty-title",
+        source_note_id="note:source",
+        target_note_id="note:target",
+        target_note_title="",
+        target_relative_path="pages/target.md",
+        target_text="Target",
+        source_start=0,
+        source_end=8,
+        link_kind="wikilink",
+        resolved=True,
+    )
+    assert link.target_note_title == ""
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "",
+        "/absolute.md",
+        "../outside.md",
+        "pages\\outside.md",
+        "a//b.md",
+        "pages/\x00outside.md",
+        "C:/outside.md",
+        " pages/outside.md",
+        "pages/outside.md ",
+        "p" * 4097,
+    ],
+)
+def test_vault_models_reject_noncanonical_relative_paths(relative_path):
+    with pytest.raises(ValidationError, match="canonical vault-relative path"):
+        VaultFile(
+            id="vault_file:broken",
+            note_id="note:broken",
+            vault_id="vault_mount:test",
+            relative_path=relative_path,
+            file_kind="markdown",
+            format="markdown",
+            parse_status="parsed",
+            deleted_state="present",
+        )
 
 
 @pytest.mark.asyncio
