@@ -189,6 +189,57 @@ function sourceText(state: EditorState, range: SourceRange): string {
   return state.doc.sliceString(range.from, range.to)
 }
 
+function pairedMarker(
+  state: EditorState,
+  range: SourceRange,
+  expression: RegExp,
+): string | undefined {
+  const prefix = state.doc.sliceString(
+    range.from,
+    Math.min(range.to, range.from + constructReadLimit),
+  )
+  const marker = expression.exec(prefix)?.[0]
+  if (!marker || range.to - range.from < marker.length * 2) return undefined
+  const suffix = state.doc.sliceString(
+    Math.max(range.from, range.to - constructReadLimit),
+    range.to,
+  )
+  return suffix.endsWith(marker) ? marker : undefined
+}
+
+function linePrefixFragment(
+  state: EditorState,
+  range: SourceRange,
+  position: number,
+  limit = constructReadLimit,
+): { from: number; value: string } {
+  const line = state.doc.lineAt(position)
+  const from = Math.max(range.from, line.from)
+  const to = Math.min(range.to, line.to, from + limit)
+  return { from, value: state.doc.sliceString(from, to) }
+}
+
+function visibleLinePrefixFragments(
+  state: EditorState,
+  range: SourceRange,
+  visible: readonly SourceRange[],
+): Array<{ from: number; value: string }> {
+  const fragments: Array<{ from: number; value: string }> = []
+  const seenLines = new Set<number>()
+  for (const intersection of visibleIntersections(range, visible)) {
+    let line = state.doc.lineAt(intersection.from)
+    while (line.from < intersection.to) {
+      if (!seenLines.has(line.number)) {
+        seenLines.add(line.number)
+        fragments.push(linePrefixFragment(state, range, line.from, 5))
+      }
+      if (line.to >= state.doc.length) break
+      line = state.doc.line(line.number + 1)
+    }
+  }
+  return fragments
+}
+
 function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
   if (!rawSource || rawSource === editorSource) {
     return createMarkdownSourceIndex(editorSource)
@@ -414,16 +465,16 @@ function createRecords(
   for (const { kind, range } of parserRanges) {
     try {
       if (selectionIntersects(state, range)) continue
-      const canReadConstruct = range.to - range.from <= constructReadLimit
-      const value = canReadConstruct ? sourceText(state, range) : ''
       if (kind === 'heading') {
-        const marker = /^ {0,3}#{1,6}[ \t]+/.exec(value)?.[0]
+        const prefix = linePrefixFragment(state, range, range.from).value
+        const marker = /^ {0,3}#{1,6}[ \t]+/.exec(prefix)?.[0]
         if (marker) {
           replace('heading-mark', {
             from: range.from,
             to: range.from + marker.length,
           }, Decoration.replace({}))
-        } else {
+        } else if (range.to - range.from <= constructReadLimit) {
+          const value = sourceText(state, range)
           const underlines = [...value.matchAll(/^ {0,3}[=-]+[ \t]*$/gmu)]
           for (const underline of underlines) {
             replace('heading-mark', {
@@ -434,39 +485,44 @@ function createRecords(
         }
         add('heading-content', range, Decoration.mark({ class: 'dn-live-preview-heading' }))
       } else if (kind === 'emphasis' || kind === 'strong' || kind === 'strikethrough') {
-        const marker = kind === 'emphasis' ? /^[_*]/.exec(value)?.[0]
-          : kind === 'strong' ? /^(?:\*\*|__)/.exec(value)?.[0]
-            : /^~~/.exec(value)?.[0]
-        if (!marker || value.length < marker.length * 2) continue
+        const marker = pairedMarker(
+          state,
+          range,
+          kind === 'emphasis' ? /^[_*]/u
+            : kind === 'strong' ? /^(?:\*\*|__)/u
+              : /^~~/u,
+        )
+        if (!marker) continue
         replace(`${kind}-mark`, { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
         replace(`${kind}-mark`, { from: range.to - marker.length, to: range.to }, Decoration.replace({}))
         add(`${kind}-content`, range, Decoration.mark({ class: `dn-live-preview-${kind}` }))
       } else if (kind === 'inline-code') {
-        const marker = /^`+/.exec(value)?.[0]
-        if (!marker || value.length < marker.length * 2) continue
+        const marker = pairedMarker(state, range, /^`+/u)
+        if (!marker) continue
         replace('inline-code-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
         replace('inline-code-mark', { from: range.to - marker.length, to: range.to }, Decoration.replace({}))
         add('inline-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
       } else if (kind === 'fenced-code') {
-        const fences = [...value.matchAll(/^( {0,3}(?:`{3,}|~{3,}))/gmu)]
-        const opening = fences[0]
-        const closing = fences.at(-1)
-        if (opening) {
+        const fragments = [
+          linePrefixFragment(state, range, range.from),
+          linePrefixFragment(state, range, range.to - 1),
+        ].filter((fragment, index, all) =>
+          all.findIndex((candidate) => candidate.from === fragment.from) === index,
+        )
+        for (const fragment of fragments) {
+          const fence = /^( {0,3}(?:`{3,}|~{3,}))/u.exec(fragment.value)
+          if (!fence) continue
           replace('fenced-code-mark', {
-            from: range.from + (opening.index || 0),
-            to: range.from + (opening.index || 0) + opening[1].length,
-          }, Decoration.replace({}))
-        }
-        if (closing && closing !== opening) {
-          replace('fenced-code-mark', {
-            from: range.from + (closing.index || 0),
-            to: range.from + (closing.index || 0) + closing[1].length,
+            from: fragment.from,
+            to: fragment.from + fence[1].length,
           }, Decoration.replace({}))
         }
         add('fenced-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
       } else if (kind === 'link') {
         if (containedBy(range, wikiRanges) || containedBy(range, footnoteRanges)) continue
-        const link = canReadConstruct && isFullyVisible(range, visible)
+        const canReadLink = range.to - range.from <= constructReadLimit
+        const value = canReadLink ? sourceText(state, range) : ''
+        const link = canReadLink && isFullyVisible(range, visible)
           ? resolvedLinkFor(
             state,
             range,
@@ -489,20 +545,24 @@ function createRecords(
           replace('markdown-link-mark', { from: range.from + closingBracket, to: range.to }, Decoration.replace({}))
         }
       } else if (kind === 'task-marker') {
+        const value = linePrefixFragment(state, range, range.from, 3).value
         replace('task-marker', range, Decoration.replace({
           widget: new TaskMarkerWidget(/^\[x\]/i.test(value)),
         }))
       } else if (kind === 'blockquote') {
-        for (const marker of value.matchAll(/^ {0,3}>[ \t]?/gmu)) {
+        for (const fragment of visibleLinePrefixFragments(state, range, visible)) {
+          const marker = /^ {0,3}>[ \t]?/u.exec(fragment.value)?.[0]
+          if (!marker) continue
           replace('blockquote-mark', {
-            from: range.from + (marker.index || 0),
-            to: range.from + (marker.index || 0) + marker[0].length,
+            from: fragment.from,
+            to: fragment.from + marker.length,
           }, Decoration.replace({}))
         }
         add('blockquote-content', range, Decoration.mark({ class: 'dn-live-preview-quote' }))
       } else if (kind === 'horizontal-rule') {
         add('horizontal-rule', range, Decoration.mark({ class: 'dn-live-preview-rule' }))
       } else if (kind === 'list-marker') {
+        const value = linePrefixFragment(state, range, range.from, 1).value
         const listKind = /^\d/.test(value) ? 'ordered-list-mark' : 'unordered-list-mark'
         add(listKind, range, Decoration.mark({ class: 'dn-live-preview-list-marker' }))
       }

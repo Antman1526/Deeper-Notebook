@@ -180,6 +180,76 @@ describe('buildLivePreviewDecorationRecords', () => {
       .toBeGreaterThanOrEqual(4)
   })
 
+  it('collapses a visible opening fence on a long fenced-code construct', () => {
+    const source = `\`\`\`text\n${'x'.repeat(20_002)}\n\`\`\``
+    const state = previewState(source)
+    const visible = { from: 0, to: 3 }
+
+    expect(buildLivePreviewDecorationRecords(state, [visible]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'fenced-code-mark',
+          from: 0,
+          to: 3,
+        }),
+      ]))
+  })
+
+  it('collapses a visible closing fence on a long fenced-code construct', () => {
+    const source = `\`\`\`text\n${'x'.repeat(20_002)}\n\`\`\``
+    const state = previewState(source)
+    const visible = { from: source.length - 3, to: source.length }
+
+    expect(buildLivePreviewDecorationRecords(state, [visible]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'fenced-code-mark',
+          from: source.length - 3,
+          to: source.length,
+        }),
+      ]))
+  })
+
+  it('collapses a visible marker on a long blockquote with bounded reads', () => {
+    const prefix = 'intro\n\n'
+    const source = `${prefix}> ${'x'.repeat(7_000)}\n\ntail`
+    const state = previewState(source)
+    const visible = { from: prefix.length, to: prefix.length + 2 }
+    buildLivePreviewDecorationRecords(state, [visible])
+    const sliceString = vi.spyOn(state.doc, 'sliceString')
+
+    const records = buildLivePreviewDecorationRecords(state, [visible])
+
+    expect(records).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'blockquote-mark',
+        from: prefix.length,
+        to: prefix.length + 2,
+      }),
+    ]))
+    const fragmentReadLengths = sliceString.mock.calls
+      .filter(([from = 0, to = state.doc.length]) =>
+        from !== 0 || to !== state.doc.length,
+      )
+      .map(([from = 0, to = state.doc.length]) => to - from)
+    expect(fragmentReadLengths).not.toEqual([])
+    expect(Math.max(...fragmentReadLengths)).toBeLessThanOrEqual(4_106)
+  })
+
+  it('collapses a visible paired marker on a long inline construct', () => {
+    const source = `**${'x'.repeat(5_000)}**`
+    const state = previewState(source)
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: 2 }]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'strong-mark',
+          from: 0,
+          to: 2,
+        }),
+      ]))
+  })
+
   it('reuses its document source-index cache for viewport-driven decoration rebuilds', () => {
     type PreviewPlugin = {
       update(update: {
