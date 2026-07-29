@@ -20,7 +20,7 @@ from api.schemas.vault import (
     VaultTrustImportResponse,
     VaultTrustSummaryResponse,
 )
-from deeper_notebook.vault.repository import VaultMountCreate
+from deeper_notebook.vault.repository import VaultMountCreate, VaultProjectionError
 from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError
 
@@ -60,6 +60,8 @@ def _map_exception(exc: Exception) -> HTTPException:
     if isinstance(exc, LookupError) and (
         "vault_page_content_hash_unavailable" in message
     ):
+        return _error(status.HTTP_409_CONFLICT, "vault_page_invalid")
+    if isinstance(exc, VaultProjectionError):
         return _error(status.HTTP_409_CONFLICT, "vault_page_invalid")
     if isinstance(exc, LookupError):
         code = "vault_page_not_found" if "note" in str(exc) else "vault_not_found"

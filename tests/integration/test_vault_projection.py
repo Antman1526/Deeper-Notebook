@@ -27,6 +27,7 @@ from deeper_notebook.vault.contracts import (
 from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
+    VaultProjectionError,
     VaultRepository,
 )
 from deeper_notebook.vault.security import approve_vault_root
@@ -1283,6 +1284,69 @@ async def test_link_reads_and_graph_reject_corrupt_cross_mount_target(clean_name
     graph = await repository.graph(first.id, source.note_id, depth=2, limit=10)
     assert [node["id"] for node in graph.nodes] == [source.note_id]
     assert graph.edges == []
+
+
+async def test_link_reads_reject_cross_vault_target_file_corruption(clean_namespace):
+    first = await _create_named_mount(
+        vault_id="vault_mount:integration",
+        name="First",
+        root_path="/synthetic/first",
+    )
+    second = await _create_named_mount(
+        vault_id="vault_mount:second",
+        name="Second",
+        root_path="/synthetic/second",
+    )
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+    source = await repository.project_document(
+        first, _work(), _document(), "cross-file-source"
+    )
+    target = await repository.project_document(
+        first,
+        _single_note_work(
+            vault_id=first.id,
+            relative_path="Beta.md",
+            title="Beta",
+            content_hash="b" * 64,
+            modified_ns=200,
+        ),
+        _single_note_document(
+            relative_path="Beta.md",
+            title="Beta",
+            content_hash="b" * 64,
+        ),
+        "cross-file-target",
+    )
+    foreign = await repository.project_document(
+        second,
+        _single_note_work(
+            vault_id=second.id,
+            relative_path="Foreign.md",
+            title="Foreign",
+            content_hash="c" * 64,
+            modified_ns=300,
+        ),
+        _single_note_document(
+            relative_path="Foreign.md",
+            title="Foreign",
+            content_hash="c" * 64,
+        ),
+        "cross-file-foreign",
+    )
+    await repo_query(
+        "DELETE $foreign_note;",
+        {"foreign_note": ensure_record_id(foreign.note_id)},
+    )
+    await repo_query(
+        "UPDATE $target SET vault_file_id = $foreign_file;",
+        {
+            "target": ensure_record_id(target.note_id),
+            "foreign_file": ensure_record_id(foreign.vault_file_id),
+        },
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_link_target_invalid"):
+        await repository.outgoing_links(first.id, source.note_id)
 
 
 class _DelayedOrLostResponseConnection:
