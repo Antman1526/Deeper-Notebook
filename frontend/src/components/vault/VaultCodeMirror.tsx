@@ -4,6 +4,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
 } from 'react'
 import { markdown } from '@codemirror/lang-markdown'
@@ -42,6 +43,29 @@ export interface VaultCodeMirrorProps {
 
 const externalUpdate = Annotation.define<boolean>()
 
+function collectCrlfCarriageReturns(source: string): number[] {
+  const positions: number[] = []
+  for (
+    let position = source.indexOf('\r\n');
+    position >= 0;
+    position = source.indexOf('\r\n', position + 2)
+  ) {
+    positions.push(position)
+  }
+  return positions
+}
+
+function countPositionsBefore(positions: readonly number[], offset: number): number {
+  let start = 0
+  let end = positions.length
+  while (start < end) {
+    const middle = start + Math.floor((end - start) / 2)
+    if (positions[middle] < offset) start = middle + 1
+    else end = middle
+  }
+  return start
+}
+
 const rejectDocumentChanges = EditorState.transactionFilter.of(
   (transaction) => transaction.docChanged && !transaction.annotation(externalUpdate)
     ? []
@@ -74,9 +98,14 @@ export const VaultCodeMirror = forwardRef<
   VaultCodeMirrorHandle,
   VaultCodeMirrorProps
 >(function VaultCodeMirror({ ariaLabel, markdown: source, extensions, className }, ref) {
+  const crlfCarriageReturns = useMemo(
+    () => collectCrlfCarriageReturns(source),
+    [source],
+  )
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const sourceRef = useRef(source)
+  const crlfCarriageReturnsRef = useRef(crlfCarriageReturns)
   const initialExtensionsRef = useRef(extensions)
   const initialAriaLabelRef = useRef(ariaLabel)
 
@@ -85,7 +114,11 @@ export const VaultCodeMirror = forwardRef<
     scrollToOffset: (offset) => {
       const view = viewRef.current
       if (!view) return
-      const position = Math.max(0, Math.min(offset, view.state.doc.length))
+      const rawPosition = Math.max(0, Math.min(offset, sourceRef.current.length))
+      const position = rawPosition - countPositionsBefore(
+        crlfCarriageReturnsRef.current,
+        rawPosition,
+      )
       view.dispatch({
         selection: { anchor: position },
         effects: EditorView.scrollIntoView(position, { y: 'center' }),
@@ -131,7 +164,8 @@ export const VaultCodeMirror = forwardRef<
       annotations: externalUpdate.of(true),
     })
     sourceRef.current = source
-  }, [source])
+    crlfCarriageReturnsRef.current = crlfCarriageReturns
+  }, [crlfCarriageReturns, source])
 
   return <div ref={hostRef} className={['dn-vault-editor', className].filter(Boolean).join(' ')} />
 })
