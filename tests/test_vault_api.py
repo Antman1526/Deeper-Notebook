@@ -15,6 +15,7 @@ from deeper_notebook.vault.repository import (
     VaultLink,
     VaultMount,
     VaultPage,
+    VaultProjectionError,
     VaultSyncReceipt,
     VaultTrustRecord,
     VaultTrustSummary,
@@ -402,3 +403,40 @@ def test_page_rejects_missing_or_invalid_content_hash(client):
         )
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "vault_page_invalid"
+
+
+def test_page_maps_invalid_persisted_file_to_safe_projection_error(client):
+    test_client, repository, _ = client
+    repository.get_page = AsyncMock(
+        side_effect=VaultProjectionError(
+            "invalid persisted path /Users/private/alpha.md"
+        ),
+    )
+
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "vault_page_invalid"}}
+    assert "vault_root_invalid" not in response.text
+    assert "/Users/" not in response.text
+
+
+def test_outgoing_maps_invalid_resolved_link_to_safe_projection_error(client):
+    test_client, repository, _ = client
+    repository.outgoing_links = AsyncMock(
+        side_effect=VaultProjectionError(
+            "incomplete resolved link pages/private.md"
+        ),
+    )
+
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/"
+        "vault_mount:fixture/pages/note:one/outgoing"
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "vault_page_invalid"}}
+    assert "vault_root_invalid" not in response.text
+    assert "pages/private.md" not in response.text

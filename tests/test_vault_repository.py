@@ -24,8 +24,10 @@ from deeper_notebook.vault.repository import (
     VaultFile,
     VaultLink,
     VaultMount,
+    VaultProjectionError,
     VaultRepository,
     VaultSyncReceipt,
+    _record_id,
 )
 from deeper_notebook.vault.security import approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError, parse_trust_manifest
@@ -1206,6 +1208,9 @@ async def test_link_reads_validate_center_and_filter_both_resolved_endpoints():
 
 @pytest.mark.asyncio
 async def test_get_page_returns_its_canonical_file_record():
+    file_id = "vault_file:alpha"
+    canonical_note_id = _record_id("note", file_id)
+
     class PageRecorder(QueryRecorder):
         async def query(self, statement, variables=None):
             compact = " ".join(statement.split())
@@ -1213,9 +1218,9 @@ async def test_get_page_returns_its_canonical_file_record():
             if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
                 return [
                     {
-                        "id": "note:alpha",
+                        "id": canonical_note_id,
                         "vault_id": "vault_mount:test",
-                        "vault_file_id": "vault_file:alpha",
+                        "vault_file_id": file_id,
                         "title": "Alpha",
                         "content": "# Alpha\n",
                     }
@@ -1223,7 +1228,7 @@ async def test_get_page_returns_its_canonical_file_record():
             if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in compact:
                 return [
                     {
-                        "id": "vault_file:alpha",
+                        "id": file_id,
                         "vault_id": "vault_mount:test",
                         "relative_path": "pages/alpha.md",
                         "file_kind": "markdown",
@@ -1242,8 +1247,9 @@ async def test_get_page_returns_its_canonical_file_record():
         connection_factory=ConnectionSequence(recorder),
     )
 
-    page = await repository.get_page("vault_mount:test", "note:alpha")
+    page = await repository.get_page("vault_mount:test", canonical_note_id)
 
+    assert page.file.note_id == canonical_note_id
     assert page.file.relative_path == "pages/alpha.md"
     assert page.file.content_hash == "a" * 64
     assert page.file.newline == "lf"
@@ -1253,6 +1259,98 @@ async def test_get_page_returns_its_canonical_file_record():
         if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in statement
     )
     assert str(file_call["vault_file_id"]) == "vault_file:alpha"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored_note_id", "requested_note_id"),
+    [
+        ("note:stored-mismatch", None),
+        (None, "note:requested-mismatch"),
+    ],
+)
+async def test_get_page_rejects_noncanonical_note_file_pair(
+    stored_note_id,
+    requested_note_id,
+):
+    file_id = "vault_file:alpha"
+    canonical_note_id = _record_id("note", file_id)
+    stored_note_id = stored_note_id or canonical_note_id
+    requested_note_id = requested_note_id or canonical_note_id
+
+    class MismatchRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": stored_note_id,
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": file_id,
+                        "title": "Alpha",
+                    }
+                ]
+            if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": file_id,
+                        "vault_id": "vault_mount:test",
+                        "relative_path": "pages/alpha.md",
+                        "file_kind": "markdown",
+                        "format": "obsidian",
+                        "content_hash": "a" * 64,
+                        "parse_status": "parsed",
+                        "deleted_state": "present",
+                    }
+                ]
+            return []
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(MismatchRecorder()),
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_page_identity_invalid"):
+        await repository.get_page("vault_mount:test", requested_note_id)
+
+
+@pytest.mark.asyncio
+async def test_get_page_wraps_invalid_persisted_file_path():
+    file_id = "vault_file:alpha"
+    canonical_note_id = _record_id("note", file_id)
+
+    class InvalidFileRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": canonical_note_id,
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": file_id,
+                        "title": "Alpha",
+                    }
+                ]
+            if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in compact:
+                return [
+                    {
+                        "id": file_id,
+                        "vault_id": "vault_mount:test",
+                        "relative_path": "/Users/private/alpha.md",
+                        "file_kind": "markdown",
+                        "format": "obsidian",
+                        "content_hash": "a" * 64,
+                        "parse_status": "parsed",
+                        "deleted_state": "present",
+                    }
+                ]
+            return []
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(InvalidFileRecorder()),
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_file_invalid"):
+        await repository.get_page("vault_mount:test", canonical_note_id)
 
 
 @pytest.mark.asyncio
@@ -1281,18 +1379,23 @@ async def test_get_page_rejects_note_without_canonical_file():
 
 @pytest.mark.asyncio
 async def test_backlinks_project_source_note_title_for_display_identity():
+    target_file_id = "vault_file:target"
+    target_note_id = _record_id("note", target_file_id)
+
     class BacklinkRecorder(QueryRecorder):
         async def query(self, statement, variables=None):
             compact = " ".join(statement.split())
             self.calls.append((compact, variables or {}))
             if "SELECT VALUE id FROM $note_id" in compact:
-                return ["note:target"]
+                return [target_note_id]
             if "FROM note_link" in compact:
                 return [
                     {
                         "id": "note_link:source-target",
                         "source_note_id": "note:source",
-                        "target_note_id": "note:target",
+                        "target_note_id": target_note_id,
+                        "target_vault_file_id": target_file_id,
+                        "target_vault_id": "vault_mount:test",
                         "target_text": "Target",
                         "source_note_title": "Source title",
                         "target_note_title": "Target title",
@@ -1308,7 +1411,7 @@ async def test_backlinks_project_source_note_title_for_display_identity():
     connection = BacklinkRecorder()
     repository = VaultRepository(connection_factory=ConnectionSequence(connection))
 
-    backlinks = await repository.backlinks("vault_mount:test", "note:target")
+    backlinks = await repository.backlinks("vault_mount:test", target_note_id)
 
     assert backlinks[0].source_note_title == "Source title"
     assert backlinks[0].target_note_title == "Target title"
@@ -1320,10 +1423,97 @@ async def test_backlinks_project_source_note_title_for_display_identity():
     )
     assert "source_note_id.title AS source_note_title" in link_query
     assert "target_note_id.title AS target_note_title" in link_query
+    assert "target_note_id.vault_file_id AS target_vault_file_id" in link_query
+    assert (
+        "target_note_id.vault_file_id.vault_id AS target_vault_id" in link_query
+    )
     assert (
         "target_note_id.vault_file_id.relative_path AS target_relative_path"
         in link_query
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "target_updates",
+    [
+        {"target_vault_file_id": None},
+        {"target_vault_id": "vault_mount:other"},
+        {"target_vault_file_id": "vault_file:inconsistent"},
+    ],
+)
+async def test_resolved_link_rejects_invalid_target_file_scope(target_updates):
+    target_file_id = "vault_file:target"
+    target_note_id = _record_id("note", target_file_id)
+
+    class InvalidTargetFileRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "SELECT VALUE id FROM $note_id" in compact:
+                return ["note:source"]
+            if "FROM note_link" in compact:
+                return [
+                    {
+                        "id": "note_link:invalid-target-file",
+                        "source_note_id": "note:source",
+                        "target_note_id": target_note_id,
+                        "target_vault_file_id": target_file_id,
+                        "target_vault_id": "vault_mount:test",
+                        "target_note_title": "Target",
+                        "target_relative_path": "pages/target.md",
+                        "target_text": "Target",
+                        "source_start": 4,
+                        "source_end": 14,
+                        "link_kind": "wikilink",
+                        "resolved": True,
+                        **target_updates,
+                    }
+                ]
+            return []
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(InvalidTargetFileRecorder()),
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_link_target_invalid"):
+        await repository.outgoing_links("vault_mount:test", "note:source")
+
+
+@pytest.mark.asyncio
+async def test_resolved_link_wraps_invalid_persisted_metadata():
+    target_file_id = "vault_file:target"
+    target_note_id = _record_id("note", target_file_id)
+
+    class InvalidResolvedLinkRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            if "SELECT VALUE id FROM $note_id" in compact:
+                return ["note:source"]
+            if "FROM note_link" in compact:
+                return [
+                    {
+                        "id": "note_link:invalid-metadata",
+                        "source_note_id": "note:source",
+                        "target_note_id": target_note_id,
+                        "target_vault_file_id": target_file_id,
+                        "target_vault_id": "vault_mount:test",
+                        "target_note_title": None,
+                        "target_relative_path": "pages/target.md",
+                        "target_text": "Target",
+                        "source_start": 4,
+                        "source_end": 14,
+                        "link_kind": "wikilink",
+                        "resolved": True,
+                    }
+                ]
+            return []
+
+    repository = VaultRepository(
+        connection_factory=ConnectionSequence(InvalidResolvedLinkRecorder()),
+    )
+
+    with pytest.raises(VaultProjectionError, match="vault_link_invalid"):
+        await repository.outgoing_links("vault_mount:test", "note:source")
 
 
 @pytest.mark.asyncio
