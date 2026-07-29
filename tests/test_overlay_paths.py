@@ -45,6 +45,31 @@ def test_unique_path_uses_timestamp_title_and_suffixes():
     assert path == "Notes/20260729-1542 Research Idea-2.md"
 
 
+def test_unique_path_limits_unicode_filename_bytes_and_utf16_code_units():
+    for title in ("🧠" * 200, "漢字" * 200):
+        path = unique_relative_path(
+            datetime(2026, 7, 29, 15, 42),
+            title,
+            exists=lambda _path: False,
+        )
+        filename = path.rsplit("/", 1)[-1]
+
+        assert len(filename.encode("utf-8")) <= 240
+        assert len(filename.encode("utf-16-le")) // 2 <= 240
+
+
+def test_unique_path_limits_collision_suffix_unicode_filename_budgets():
+    when = datetime(2026, 7, 29, 15, 42)
+    for title in ("🧠" * 200, "漢字" * 200):
+        initial = unique_relative_path(when, title, exists=lambda _path: False)
+        path = unique_relative_path(when, title, exists={initial}.__contains__)
+        filename = path.rsplit("/", 1)[-1]
+
+        assert path.endswith("-2.md")
+        assert len(filename.encode("utf-8")) <= 240
+        assert len(filename.encode("utf-16-le")) // 2 <= 240
+
+
 def test_unique_path_rejects_bounded_collision_exhaustion():
     when = datetime(2026, 7, 29, 15, 42)
 

@@ -14,9 +14,13 @@ import yaml
 from deeper_notebook.overlay.contracts import OverlayNote
 from desktop.data_root import active_data_root
 
-MAX_FILENAME_CHARS = 180
+MAX_FILENAME_BYTES = 240
+MAX_FILENAME_UTF16_CODE_UNITS = 240
 _DATE_KEY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _UNSAFE_TITLE = re.compile(r"[\x00-\x1f/\\\\:*?\"<>|]+")
+_FILENAME_PREFIX = "20260729-1542 "
+_FILENAME_EXTENSION = ".md"
+_WORST_CASE_COLLISION_SUFFIX = "-10000"
 
 
 class OverlayPathError(ValueError):
@@ -92,10 +96,28 @@ def daily_relative_path(date_key: str) -> str:
 
 def _safe_title(title: str) -> str:
     value = unicodedata.normalize("NFC", title).strip()
+    value = "".join(char if not 0xD800 <= ord(char) <= 0xDFFF else " " for char in value)
     value = _UNSAFE_TITLE.sub(" ", value)
     value = re.sub(r"\s+", " ", value).strip(" .")
     value = value or "Untitled"
-    return value[:MAX_FILENAME_CHARS].rstrip(" .") or "Untitled"
+    fixed_name = f"{_FILENAME_PREFIX}{_WORST_CASE_COLLISION_SUFFIX}{_FILENAME_EXTENSION}"
+    remaining_utf8_bytes = MAX_FILENAME_BYTES - len(fixed_name.encode("utf-8"))
+    remaining_utf16_code_units = (
+        MAX_FILENAME_UTF16_CODE_UNITS - len(fixed_name.encode("utf-16-le")) // 2
+    )
+    safe_characters: list[str] = []
+    for char in value:
+        char_utf8_bytes = len(char.encode("utf-8"))
+        char_utf16_code_units = len(char.encode("utf-16-le")) // 2
+        if (
+            char_utf8_bytes > remaining_utf8_bytes
+            or char_utf16_code_units > remaining_utf16_code_units
+        ):
+            break
+        safe_characters.append(char)
+        remaining_utf8_bytes -= char_utf8_bytes
+        remaining_utf16_code_units -= char_utf16_code_units
+    return "".join(safe_characters).rstrip(" .") or "Untitled"
 
 
 def unique_relative_path(
