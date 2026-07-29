@@ -11,6 +11,7 @@ describe('VaultLinks', () => {
     render(<VaultLinks title="Backlinks" direction="source" unresolvedLabel="Unresolved" onNavigate={onNavigate} links={[{
       id: 'note_link:one', source_note_id: 'note:source', target_note_id: 'note:current',
       target_text: 'Current note', source_note_title: 'Project overview', link_kind: 'wikilink', resolved: true,
+      source_start: 0, source_end: 14,
     }]} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Project overview' }))
