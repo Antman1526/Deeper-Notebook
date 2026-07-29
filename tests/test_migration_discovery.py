@@ -103,6 +103,16 @@ def test_default_migration_discovery_includes_vault_repair_33_and_down():
     assert downs[32].version == 33
 
 
+def test_default_migration_discovery_includes_overlay_36_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 36
+    assert "overlay_space" in ups[35].sql
+    assert "overlay_mutation_receipt" in ups[35].sql
+    assert downs[35] is not None
+    assert "REMOVE TABLE IF EXISTS overlay_note" in downs[35].sql
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])

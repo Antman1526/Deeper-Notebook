@@ -1,0 +1,65 @@
+DEFINE TABLE IF NOT EXISTS overlay_space SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE overlay_space TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS slug ON TABLE overlay_space TYPE string ASSERT $value = "default";
+DEFINE FIELD IF NOT EXISTS display_name ON TABLE overlay_space TYPE string;
+DEFINE FIELD IF NOT EXISTS root_version ON TABLE overlay_space TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE overlay_space TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE overlay_space TYPE datetime DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_overlay_space_slug ON TABLE overlay_space COLUMNS slug UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS overlay_note SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE overlay_note TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS space_id ON TABLE overlay_note TYPE record<overlay_space>;
+DEFINE FIELD IF NOT EXISTS projected_note_id ON TABLE overlay_note TYPE record<note>;
+DEFINE FIELD IF NOT EXISTS stable_id ON TABLE overlay_note TYPE string;
+DEFINE FIELD IF NOT EXISTS kind ON TABLE overlay_note TYPE string ASSERT $value IN ["daily", "unique"];
+DEFINE FIELD IF NOT EXISTS date_key ON TABLE overlay_note TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS relative_path ON TABLE overlay_note TYPE string;
+DEFINE FIELD IF NOT EXISTS title ON TABLE overlay_note TYPE string;
+DEFINE FIELD IF NOT EXISTS content_hash ON TABLE overlay_note TYPE string;
+DEFINE FIELD IF NOT EXISTS revision ON TABLE overlay_note TYPE int ASSERT $value >= 1;
+DEFINE FIELD IF NOT EXISTS projection_state ON TABLE overlay_note TYPE string DEFAULT "pending" ASSERT $value IN ["pending", "current", "failed", "conflict"];
+DEFINE FIELD IF NOT EXISTS encoding ON TABLE overlay_note TYPE string DEFAULT "utf-8" ASSERT $value = "utf-8";
+DEFINE FIELD IF NOT EXISTS newline ON TABLE overlay_note TYPE string DEFAULT "lf" ASSERT $value = "lf";
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE overlay_note TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE overlay_note TYPE datetime DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_overlay_stable_id ON TABLE overlay_note COLUMNS stable_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_overlay_daily ON TABLE overlay_note COLUMNS space_id, date_key UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_overlay_path ON TABLE overlay_note COLUMNS space_id, relative_path UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_overlay_projected_note ON TABLE overlay_note COLUMNS projected_note_id UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS overlay_revision SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE overlay_revision TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS overlay_note_id ON TABLE overlay_revision TYPE record<overlay_note>;
+DEFINE FIELD IF NOT EXISTS revision ON TABLE overlay_revision TYPE int ASSERT $value >= 1;
+DEFINE FIELD IF NOT EXISTS relative_snapshot ON TABLE overlay_revision TYPE string;
+DEFINE FIELD IF NOT EXISTS content_hash ON TABLE overlay_revision TYPE string;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE overlay_revision TYPE int ASSERT $value >= 0;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE overlay_revision TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+DEFINE INDEX IF NOT EXISTS idx_overlay_revision ON TABLE overlay_revision COLUMNS overlay_note_id, revision UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS overlay_mutation_receipt SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE overlay_mutation_receipt TYPE int DEFAULT 1;
+DEFINE FIELD IF NOT EXISTS operation_id ON TABLE overlay_mutation_receipt TYPE string;
+DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE overlay_mutation_receipt TYPE string;
+DEFINE FIELD IF NOT EXISTS overlay_note_id ON TABLE overlay_mutation_receipt TYPE option<record<overlay_note>>;
+DEFINE FIELD IF NOT EXISTS operation ON TABLE overlay_mutation_receipt TYPE string ASSERT $value IN ["create-daily", "create-unique", "update", "recover"];
+DEFINE FIELD IF NOT EXISTS expected_revision ON TABLE overlay_mutation_receipt TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS resulting_revision ON TABLE overlay_mutation_receipt TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS before_hash ON TABLE overlay_mutation_receipt TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS after_hash ON TABLE overlay_mutation_receipt TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE overlay_mutation_receipt TYPE string ASSERT $value IN ["started", "success", "unchanged", "conflict", "failed", "superseded"];
+DEFINE FIELD IF NOT EXISTS error_code ON TABLE overlay_mutation_receipt TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE overlay_mutation_receipt TYPE datetime;
+DEFINE FIELD IF NOT EXISTS completed_at ON TABLE overlay_mutation_receipt TYPE option<datetime>;
+DEFINE INDEX IF NOT EXISTS idx_overlay_operation ON TABLE overlay_mutation_receipt COLUMNS operation_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_overlay_idempotency ON TABLE overlay_mutation_receipt COLUMNS operation, idempotency_key UNIQUE;
+
+DEFINE FIELD IF NOT EXISTS source_authority ON TABLE note TYPE option<string> ASSERT $value = NONE OR $value IN ["external-vault", "overlay"];
+DEFINE FIELD IF NOT EXISTS overlay_space_id ON TABLE note TYPE option<record<overlay_space>>;
+DEFINE FIELD IF NOT EXISTS overlay_note_id ON TABLE note TYPE option<record<overlay_note>>;
+DEFINE INDEX IF NOT EXISTS idx_note_overlay_note ON TABLE note COLUMNS overlay_note_id UNIQUE;
+
+DEFINE FIELD OVERWRITE vault_file_id ON TABLE note_block TYPE option<record<vault_file>>;
+DEFINE FIELD IF NOT EXISTS overlay_note_id ON TABLE note_block TYPE option<record<overlay_note>>;
+DEFINE INDEX IF NOT EXISTS idx_note_block_overlay ON TABLE note_block COLUMNS overlay_note_id, parser_id UNIQUE;

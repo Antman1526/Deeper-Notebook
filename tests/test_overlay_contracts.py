@@ -1,0 +1,105 @@
+from datetime import datetime, timezone
+
+import pytest
+from pydantic import ValidationError
+
+from deeper_notebook.overlay.contracts import (
+    CreateDailyNote,
+    CreateUniqueNote,
+    OverlayMutationReceipt,
+    OverlayNote,
+    OverlayRevision,
+    UpdateOverlayNote,
+)
+
+
+def test_daily_and_unique_requests_are_strict_and_bounded():
+    daily = CreateDailyNote(date_key="2026-07-29")
+    unique = CreateUniqueNote(
+        title="Research Idea",
+        idempotency_key="req-123",
+    )
+    assert daily.date_key == "2026-07-29"
+    assert unique.title == "Research Idea"
+    with pytest.raises(ValidationError):
+        CreateDailyNote(date_key="07/29/2026")
+    with pytest.raises(ValidationError):
+        CreateUniqueNote(
+            title="x" * 513,
+            idempotency_key="req-123",
+        )
+    with pytest.raises(ValidationError):
+        CreateUniqueNote(
+            title="Research",
+            idempotency_key="req-123",
+            external_vault_id="vault_mount:forbidden",
+        )
+
+
+def test_overlay_note_forbids_paths_and_invalid_hashes():
+    now = datetime.now(timezone.utc)
+    note = OverlayNote(
+        id="overlay_note:one",
+        space_id="overlay_space:default",
+        projected_note_id="note:overlay-one",
+        stable_id="01JTESTOVERLAY000000000001",
+        kind="daily",
+        date_key="2026-07-29",
+        relative_path="Daily/2026-07-29.md",
+        title="2026-07-29",
+        content_hash="a" * 64,
+        revision=1,
+        projection_state="current",
+        encoding="utf-8",
+        newline="lf",
+        created_at=now,
+        updated_at=now,
+    )
+    assert note.source_authority == "overlay"
+    with pytest.raises(ValidationError):
+        OverlayNote.model_validate({
+            **note.model_dump(),
+            "relative_path": "/Users/owner/private.md",
+        })
+    with pytest.raises(ValidationError):
+        OverlayNote.model_validate({
+            **note.model_dump(),
+            "content_hash": "not-a-hash",
+        })
+
+
+def test_update_requires_expected_revision_and_idempotency():
+    update = UpdateOverlayNote(
+        title="Today",
+        markdown="# Today\n",
+        expected_revision=3,
+        idempotency_key="save-3",
+    )
+    assert update.expected_revision == 3
+    with pytest.raises(ValidationError):
+        UpdateOverlayNote(
+            title="Today",
+            markdown="# Today\n",
+            expected_revision=0,
+            idempotency_key="save-3",
+        )
+
+
+def test_receipt_has_no_content_or_absolute_path_fields():
+    fields = set(OverlayMutationReceipt.model_fields)
+    assert "markdown" not in fields
+    assert "absolute_path" not in fields
+    assert "root_path" not in fields
+
+
+def test_revision_snapshot_must_be_canonical_and_relative():
+    with pytest.raises(ValidationError):
+        OverlayRevision(
+            id="overlay_revision:one",
+            overlay_note_id="overlay_note:one",
+            revision=1,
+            relative_snapshot="/Users/owner/private.md",
+            content_hash="a" * 64,
+            byte_size=1,
+            created_at=datetime.now(timezone.utc),
+        )
